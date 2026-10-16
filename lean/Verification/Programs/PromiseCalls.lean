@@ -275,17 +275,52 @@ theorem aliasFacts_holds {G : NormalGraph ι} {links : HeapLinks.Links} {facts :
 
 /-! ### Yields of a slot read and of a tag test -/
 
+/-- A tag test's yield about the object the tested value was read from: a
+current read link says field `f` of the object in `y.target` holds the tested
+slot's value, and the object's arms whose field answers the test so
+(`fieldSlice`) are within the yield's type, by the yield's evidence. -/
+@[nospecialize] def fieldYield (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
+    (links : HeapLinks.Links) (y : Yield ι) (i : Nat) (tag : Tag) (q : Bool) : Bool :=
+  (Γ[i]?).isSome &&
+  links.any fun g => !g.distinct && !g.alias && !g.optional && g.value == i && g.cell == y.target &&
+    match Γ[g.cell]?, y.evidence with
+    | some A, some p => PositiveCertificates.checkUsing G images (fieldSlice G A g.field tag q) y.type p
+    | _, _ => false
+
+theorem fieldYield_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ links y i tag q}
+    (hf : fieldYield G images Γ links y i tag q = true) {ρ m W h}
+    (he : EnvOk G Γ ρ (m+1) W) (hh : HeapOk (m+1) W h) (hl : HeapLinks.Holds links ρ h)
+    (htag : tagHoldsIn h tag (ρ i) = q) : meaning G y.type (m+1) W (ρ y.target) := by
+  unfold fieldYield at hf
+  simp only [Bool.and_eq_true] at hf
+  obtain ⟨g, hg, hc⟩ := List.any_eq_true.mp hf.2
+  simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, beq_iff_eq] at hc
+  obtain ⟨⟨⟨⟨⟨hd, ha⟩, ho⟩, hv⟩, hcell⟩, hp⟩ := hc
+  split at hp
+  · rename_i A p hA _
+    have hlink := hl g hg
+    simp only [hd, ha, ho, Bool.false_eq_true, ite_false] at hlink
+    obtain ⟨flds, c, oid, l, hobj, hlk, hu⟩ := hlink
+    have hs := fieldSlice_sound (he.2 g.cell A hA) hh hobj hlk hu
+      (tagHolds_of_heap (hv ▸ htag))
+    rw [← hcell]
+    exact PositiveCertificates.acceptedUsing hp _ _ _ hs
+  · cases hp
+
 /-- One yield of a node's expression, without a call: a slot read, whose value
 is the slot's, yields what an implication on the slot states; a tag test of a
 slot, read as a Boolean, yields where it answers `true` what its observation
-leaves of the slot. -/
+leaves of the slot, or of the object the slot's value was read from
+(`fieldYield`). -/
 @[nospecialize] def yieldFollows (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
-    (xs : List (Implication ι)) (t : Tm) (y : Yield ι) : Bool :=
+    (xs : List (Implication ι)) (links : HeapLinks.Links) (t : Tm) (y : Yield ι) : Bool :=
   match t with
   | .var i => y.conditional && (Γ[i]?).isSome &&
       xs.any fun x => x.test == i && x.target == y.target && within x.type y.type
-  | .ite (.test tag (.var i)) .tru .fls => y.conditional && y.target == i && observed i tag true
-  | .ite (.test tag (.var i)) .fls .tru => y.conditional && y.target == i && observed i tag false
+  | .ite (.test tag (.var i)) .tru .fls => y.conditional &&
+      (y.target == i && observed i tag true || fieldYield G images Γ links y i tag true)
+  | .ite (.test tag (.var i)) .fls .tru => y.conditional &&
+      (y.target == i && observed i tag false || fieldYield G images Γ links y i tag false)
   | _ => false
 where
   observed (i : Nat) (tag : Tag) (q : Bool) : Bool :=
@@ -349,16 +384,23 @@ theorem steps_value {h v h' u m} (hv : isVal v = true) (run : Steps m h v h' u) 
   | refl => rfl
   | next st _ => exact absurd st (value_no_step hv)
 
-theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ xs t} {ys : List (Yield ι)}
-    (hc : ys.all (yieldFollows G images Γ xs t) = true) {ρ n W h} {T : Fam} {Q : Post}
-    (he : EnvOk G Γ ρ n W) (hx : ImpliesOk G xs ρ n W)
+theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ xs links t} {ys : List (Yield ι)}
+    (hc : ys.all (yieldFollows G images Γ xs links t) = true) {ρ n W h} {T : Fam} {Q : Post}
+    (he : EnvOk G Γ ρ n W) (hx : ImpliesOk G xs ρ n W) (hh : HeapOk n W h)
+    (hl : HeapLinks.Holds links ρ h)
     (hs : SafePost (excOf G) T Q n W h (instantiate 0 ρ t)) :
     SafePost (excOf G) (fun k U u => T k U u ∧ YieldsOk G ys ρ k U u) Q n W h (instantiate 0 ρ t) := by
+  cases n with
+  | zero => trivial
+  | succ m =>
   apply conj_reached hs
-  intro k hk U hU m h' u run hu y hy hcond
+  intro k hk U hU r h' u run hu y hy hcond
   have he' := he.transfer k hk U hU
   have hx' := hx.transfer k hk U hU
   have hf := List.all_eq_true.mp hc y hy
+  -- The object's slice, at the run's own level, carried to the reached world.
+  have later : ∀ {B : Ty ι} {v}, meaning G B (m+1) W v → meaning G B k U v := fun hv =>
+    (meaning_adm G _).mono k _ U hU _ ((meaning_adm G _).down_le (m+1) k hk W _ hv)
   unfold yieldFollows at hf
   split at hf
   · rename_i i
@@ -370,29 +412,47 @@ theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
     rw [← htarget]
     exact meaning_within hw (hx' x hxm (by rw [htest, ← hui, htru]))
   · rename_i tag i
-    simp only [Bool.and_eq_true, beq_iff_eq] at hf
-    obtain ⟨⟨hcy, rfl⟩, hob⟩ := hf
-    unfold yieldFollows.observed at hob
-    split at hob
-    · rename_i A p hA _
-      have hval : isVal (ρ y.target) = true := (meaning_value (he.2 _ A hA)).1
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hf
+    obtain ⟨hcy, ⟨rfl, hob⟩ | hfy⟩ := hf
+    · unfold yieldFollows.observed at hob
+      split at hob
+      · rename_i A p hA _
+        have hval : isVal (ρ y.target) = true := (meaning_value (he.2 _ A hA)).1
+        have hu' := test_ite_run hval rfl rfl (by simpa [instantiate] using run) hu
+        have htag : tagHoldsIn h tag (ρ y.target) = true := by
+          cases htg : tagHoldsIn h tag (ρ y.target) <;> simp_all
+        exact checkObservedSub_sound hob k U _ (he'.2 _ A hA) (tagHolds_of_heap htag)
+      · cases hob
+    · have hval : isVal (ρ i) = true := by
+        unfold fieldYield at hfy
+        simp only [Bool.and_eq_true, Option.isSome_iff_exists] at hfy
+        obtain ⟨⟨A, hA⟩, -⟩ := hfy
+        exact (meaning_value (he.2 i A hA)).1
       have hu' := test_ite_run hval rfl rfl (by simpa [instantiate] using run) hu
-      have htag : tagHoldsIn h tag (ρ y.target) = true := by
-        cases htg : tagHoldsIn h tag (ρ y.target) <;> simp_all
-      exact checkObservedSub_sound hob k U _ (he'.2 _ A hA) (tagHolds_of_heap htag)
-    · cases hob
+      have htag : tagHoldsIn h tag (ρ i) = true := by
+        cases htg : tagHoldsIn h tag (ρ i) <;> simp_all
+      exact later (fieldYield_sound hfy he hh hl htag)
   · rename_i tag i
-    simp only [Bool.and_eq_true, beq_iff_eq] at hf
-    obtain ⟨⟨hcy, rfl⟩, hob⟩ := hf
-    unfold yieldFollows.observed at hob
-    split at hob
-    · rename_i A p hA _
-      have hval : isVal (ρ y.target) = true := (meaning_value (he.2 _ A hA)).1
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hf
+    obtain ⟨hcy, ⟨rfl, hob⟩ | hfy⟩ := hf
+    · unfold yieldFollows.observed at hob
+      split at hob
+      · rename_i A p hA _
+        have hval : isVal (ρ y.target) = true := (meaning_value (he.2 _ A hA)).1
+        have hu' := test_ite_run hval rfl rfl (by simpa [instantiate] using run) hu
+        have htag : tagHoldsIn h tag (ρ y.target) = false := by
+          cases htg : tagHoldsIn h tag (ρ y.target) <;> simp_all
+        exact checkObservedSub_sound hob k U _ (he'.2 _ A hA) (tagHolds_of_heap htag)
+      · cases hob
+    · have hval : isVal (ρ i) = true := by
+        unfold fieldYield at hfy
+        simp only [Bool.and_eq_true, Option.isSome_iff_exists] at hfy
+        obtain ⟨⟨A, hA⟩, -⟩ := hfy
+        exact (meaning_value (he.2 i A hA)).1
       have hu' := test_ite_run hval rfl rfl (by simpa [instantiate] using run) hu
-      have htag : tagHoldsIn h tag (ρ y.target) = false := by
-        cases htg : tagHoldsIn h tag (ρ y.target) <;> simp_all
-      exact checkObservedSub_sound hob k U _ (he'.2 _ A hA) (tagHolds_of_heap htag)
-    · cases hob
+      have htag : tagHoldsIn h tag (ρ i) = false := by
+        cases htg : tagHoldsIn h tag (ρ i) <;> simp_all
+      exact later (fieldYield_sound hfy he hh hl htag)
   · cases hf
 
 /-! ### A call at a promise signature -/

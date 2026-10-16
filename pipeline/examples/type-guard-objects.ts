@@ -1,6 +1,7 @@
-// Promises about objects: a guard narrowing a discriminated union to one arm
-// by a branch on its tag, and a union of a tuple and a number to the tuple; each call
-// reads what only the narrowed arm has.
+// Promises about objects: guards narrowing a discriminated union to one arm,
+// by a branch on its tag and by returning the tag's test, and a union of a
+// tuple and a number to the tuple; each call reads what only the narrowed
+// arm has.
 export interface Circle {
   kind: "circle";
   radius: number;
@@ -16,6 +17,14 @@ export type Shape = Circle | Square;
 export function isCircle(s: Shape): s is Circle {
   if (s.kind === "circle") return true;
   return false;
+}
+
+export function isSquare(s: Shape): s is Square {
+  return s.kind === "square";
+}
+
+export function side(s: Shape): number {
+  return isSquare(s) ? s.side : 0;
 }
 
 export function area(s: Shape): number {

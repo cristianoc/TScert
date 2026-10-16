@@ -237,12 +237,21 @@ theorem checkBranchTarget_reassign (P : Program) (C : ControlFlow.Certificate ι
   simp only [checkBranchTargetUsing_eq, checkObserved_reassign, carries_reassign]
   rfl
 
-theorem yieldFollows_reassign (Γ : List (List ι)) (xs : List (PromiseCalls.Implication ι)) (t : Tm) :
-    PromiseCalls.yieldFollows (reassign G η) (images.reassign η) Γ xs t =
-      PromiseCalls.yieldFollows G images Γ xs t := by
+theorem fieldYield_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (y : PromiseCalls.Yield ι)
+    (i : Nat) (tag : Tag) (q : Bool) :
+    PromiseCalls.fieldYield (reassign G η) (images.reassign η) Γ links y i tag q =
+      PromiseCalls.fieldYield G images Γ links y i tag q := by
+  unfold PromiseCalls.fieldYield
+  simp only [check_fun_reassign]
+  rfl
+
+theorem yieldFollows_reassign (Γ : List (List ι)) (xs : List (PromiseCalls.Implication ι))
+    (links : HeapLinks.Links) (t : Tm) :
+    PromiseCalls.yieldFollows (reassign G η) (images.reassign η) Γ xs links t =
+      PromiseCalls.yieldFollows G images Γ xs links t := by
   funext y
   unfold PromiseCalls.yieldFollows PromiseCalls.yieldFollows.observed
-  simp only [checkObservedSub_reassign]
+  simp only [checkObservedSub_reassign, fieldYield_reassign]
 
 theorem promiseOf_reassign (e : ProgramCertificates.Evidence ι) :
     PromiseCalls.promiseOf (reassign G η) e = PromiseCalls.promiseOf G e := rfl

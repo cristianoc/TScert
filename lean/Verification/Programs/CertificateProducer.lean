@@ -1142,10 +1142,20 @@ type, a type of the pool the test decides. Untrusted: the checker decides. -/
     match (claim e).term with
     | .var i => implies.filterMap fun x =>
         if x.test == i then some { conditional := true, target := x.target, type := x.type } else none
-    | .ite (.test tag (.var i)) .tru .fls => tested i tag true
-    | .ite (.test tag (.var i)) .fls .tru => tested i tag false
+    | .ite (.test tag (.var i)) .tru .fls => tested i tag true ++ throughFields i tag true
+    | .ite (.test tag (.var i)) .fls .tru => tested i tag false ++ throughFields i tag false
     | _ => []
 where
+  /-- The objects a current read link says the tested slot's value was read
+  from: each at the arms whose field answers the test so. -/
+  throughFields (i : Nat) (tag : Tag) (q : Bool) : List (PromiseCalls.Yield ι) :=
+    k.links.filterMap fun g =>
+      if g.distinct || g.alias || g.optional || g.value != i then none else do
+        let A ← Γ[g.cell]?
+        let sliced := BranchRefinement.fieldSlice G A g.field tag q
+        if sliced == A then none
+        let p ← (subtypeUsing G images sliced sliced).value
+        return { conditional := true, target := g.cell, type := sliced, evidence := some p }
   tested (i : Nat) (tag : Tag) (q : Bool) : List (PromiseCalls.Yield ι) :=
     match Γ[i]? with
     | some A =>

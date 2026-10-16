@@ -1901,8 +1901,10 @@ possible:
 $`\Gamma_{e=\mathtt{true}}`$ is $`\Gamma`$ refined by what the returned value
 being `true` establishes: a test of a slot (`typeof x === "string"`, a strict
 equality, a conjunction or disjunction of these), a Boolean slot carrying such
-a test's answer, or a call at a promise signature. A branch before the return
-refines $`\Gamma`$ itself (`if (s.kind === "circle") return true;`). A return
+a test's answer, or a call at a promise signature. A test of a value read
+from a field refines the object it was read from, while the read is current,
+to the arms whose field answers the test so (`return s.kind === "circle"`).
+A branch before the return refines $`\Gamma`$ itself. A return
 is claimed at its value's own type, so a `return false` answers `false`
 alone.
 
@@ -1947,6 +1949,7 @@ narrowed claim after a call, which the edge check verifies. Pipeline cases:
 `type-guard-value-import` and `type-guard-overload-value-import` verify;
 `invalid-type-guard-promise`, `invalid-type-guard-undefined`,
 `invalid-type-guard-default`, `invalid-type-guard-object`,
+`invalid-type-guard-field-test`,
 `invalid-type-guard-method` and
 `invalid-assertion-promise` are refused at the return where the argument is
 not a $`T`$, each run under Node by `node-runs.mts`.

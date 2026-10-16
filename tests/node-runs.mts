@@ -30,6 +30,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-type-guard-default: the narrowed argument is undefined, returned at string");
   assert.equal(runExample("invalid-type-guard-method", "size(new Box(), 1)"), undefined,
     "invalid-type-guard-method: the narrowed argument is a number, whose length is undefined");
+  assert.equal(runExample("invalid-type-guard-field-test", `radius({ kind: "square", side: 1 })`), undefined,
+    "invalid-type-guard-field-test: the narrowed argument is a square, whose radius is undefined");
   assert.equal(runExample("invalid-type-guard-object", `radius({ kind: "square", side: 1 })`), undefined,
     "invalid-type-guard-object: the narrowed argument is a square, whose radius is undefined");
   assert.equal(runExample("invalid-assertion-promise", "length(true)"), undefined,

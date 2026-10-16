@@ -265,7 +265,8 @@ expression's; without one, by those of a slot read and of a tag test. -/
   | some (effect, a, T) => checkTreeUsing G images c.expression codes &&
       PromiseCalls.promiseYields G (result c) effect a T c.yields &&
       decide (c.output = HeapExpressionRules.ordinaryOutput c.knowledge)
-  | none => c.yields.all (PromiseCalls.yieldFollows G images (entry c) c.implies (claim c.expression).term)
+  | none => c.yields.all (PromiseCalls.yieldFollows G images (entry c) c.implies c.knowledge.links
+      (claim c.expression).term)
 
 /-- A return under the graph's goal: at the result's type; a type guard's
 Boolean, never `true` or with the argument, as the yields leave it where the
@@ -619,7 +620,7 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
       rw [hy.2]
       simpa only [entry, result, hterm] using hs
     · have ht := checker.sound hc.1.1.2 hcodes he hf hw hh
-      have ht' := PromiseCalls.yieldFollows_sound hy he hi ht
+      have ht' := PromiseCalls.yieldFollows_sound hy he hi hh hf.2.2 ht
       simpa only [entry, result, hterm] using ht'
   · have hk := hc.2
     split at hk <;> (try (rename_i hcont hedges; rw [hcont]))
