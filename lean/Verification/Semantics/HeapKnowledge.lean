@@ -398,8 +398,4 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
     · exact hout
   · exact hout
 
-#print axioms observeTyped_holds
-#print axioms atoms_sem
-#print axioms observeTag_holds
-
 end Verification.HeapKnowledge

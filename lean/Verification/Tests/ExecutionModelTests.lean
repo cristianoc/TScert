@@ -290,10 +290,4 @@ theorem returns_expected (callable fresh : Bool) :
   cases callable <;> cases fresh <;> run_machine
 end Reentry
 
-#print axioms KnownCondition.known_condition_effects_preserved
-#print axioms CallOrder.returns_false
-#print axioms CallOrder.initializer_blocks_argument
-#print axioms CallOrder.argument_blocks_body
-#print axioms Mutation.returns_expected
-#print axioms Reentry.returns_expected
 end Verification.ExecutionModelTests

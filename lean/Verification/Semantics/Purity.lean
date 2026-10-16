@@ -197,8 +197,4 @@ theorem read_step {h t h' t'} (hs : Step h t h' t') (hp : readTerm t = true)
   | elemStr => exact ⟨rfl, by unfold codeUnitAt; split <;> rfl⟩
   | _ => simp [readTerm, isVal] at hp
 
-#print axioms CollectingRun.step
-#print axioms read_step
-#print axioms PureRun.step
-
 end Verification.Purity

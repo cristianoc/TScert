@@ -157,8 +157,6 @@ theorem Args.instantiate_heads (scope : Scope sig) (H : Nat → Prop)
         (fun j hj => ht j (List.mem_append_right _ hj)) h hh
 end
 
-#print axioms Tree.instantiate_heads
-
 /-- A label whose finite syntax names only the selected heads. -/
 def Label.withinHeads (H : Nat → Prop) (l : Label sig) : Prop :=
   ∀ h ∈ l.1.dependencyHeads, H h
@@ -416,7 +414,5 @@ theorem OrdinaryRegion.denote (R : OrdinaryRegion E)
       (mixedParameters { E.graph with domain := domain }) (η,l) =
       qDenoteWithArgs E.graph (mixedParameters E.graph) (η,l) :=
   (R.domainRegion domain).denote η l hl
-
-#print axioms OrdinaryRegion.denote
 
 end Verification.EquationGraphs

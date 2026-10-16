@@ -1272,6 +1272,4 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
       | some stop => .error (.exhaustedExpression (stop.nodeLabel.getD start) stop)
       | none => .error ((failedEdge G P C).getD .rejected)
 
-#print axioms comparisonUsing_sound
-#print axioms accepted_from_inputs
 end Verification.CertificateProducer

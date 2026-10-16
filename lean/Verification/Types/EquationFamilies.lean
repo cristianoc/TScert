@@ -589,8 +589,4 @@ def Equations.images (equations : Equations) (v : Variances equations) :
     InstanceImageCheck equations.graph :=
   { equations.instanceImageCheck with sub := some equations.renaming, base := v.base, gen := varGen }
 
-#print axioms Equations.substituteAll_meaning
-#print axioms Equations.scheme_binders
-#print axioms Variances.sound
-
 end Verification.EquationGraphs

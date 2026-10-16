@@ -277,9 +277,4 @@ theorem call_step_iff : Step h (.invoke f r args) h' result ↔
     · exact hp.step
     · exact hi.step _
 
-#print axioms invoke_deterministic
-#print axioms focus_iff
-#print axioms Prepare.step
-#print axioms call_step_iff
-#print axioms Invoke.step
 end Verification.CallArguments

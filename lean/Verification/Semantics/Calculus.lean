@@ -1044,9 +1044,6 @@ end
 
 instance : DecidableEq Tm := tmDecEq
 
-#print axioms tmDecEq
-#print axioms callCodeDecEq
-
 /-- Unary application is the singleton case of the argument-list constructor. -/
 @[match_pattern] abbrev Tm.app (f a : Tm) : Tm := .call f [a]
 
@@ -3005,9 +3002,6 @@ theorem Step_det {h t h1 t1 h2 t2} (s1 : Step h t h1 t1) (s2 : Step h t h2 t2) :
     | makeKeyV _ hk' =>
       cases Option.some.inj (hk.symm.trans hk')
       exact ⟨rfl, rfl⟩
-
-#print axioms raises_no_step
-#print axioms Raises_det
 
 theorem makeFn_step_inv {c : CallCode} {v : Val} (hv : isVal v = true) {h h' t}
     (hs : Step h (.makeFn c v) h' t) : h' = h ++ [v] ++ [.nul] ∧ t = .fnObj h.length c := by

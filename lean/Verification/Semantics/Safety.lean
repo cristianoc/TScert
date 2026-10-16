@@ -283,11 +283,6 @@ theorem ArgsT_congr {As Bs : List Fam} {n : Nat}
     | nil => rfl
     | cons a args => exact and_congr (hd j hj W a) (ih args)
 
-#print axioms ArgsT_transfer
-#print axioms ArgsT_length
-#print axioms ArgsT_values
-#print axioms ArgsT_mono
-
 theorem value_safe (B : Fam) (n : Nat) (U : WorldT n) (h : Heap) (v : Val)
     (hv : isVal v = true) (hb : B n U v) : Safe Ξ B n U h v := by
   cases n with

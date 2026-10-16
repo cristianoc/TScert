@@ -1901,6 +1901,4 @@ def mergeResult (G : NormalGraph ι) (d : List PropKey) (ca cb : Clause (List ι
       (bound.filter fun K => ix.all fun y => K.keeps y.1) ix
   pure (if MergeClause G d ca cb dict then dict else record)
 
-#print axioms merge_values_safe
-
 end Verification.ObjectMerge

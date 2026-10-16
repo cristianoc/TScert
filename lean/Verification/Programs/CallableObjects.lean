@@ -53,8 +53,4 @@ theorem bag_write {fs : Fields} {f : PropKey} {P : Fam} (hP : Adm P)
   cases he
   exact write_rule (code := code) hP n W h l a hval hw hh hf hl hc ha
 
-#print axioms bagT_contractive
-#print axioms bag_read
-#print axioms bag_write
-
 end Verification

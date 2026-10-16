@@ -1155,5 +1155,4 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
       map_self fun t ht => tuple_self fun x hx => h x (.inr ⟨t, ht, hx⟩)⟩
   | _ => rfl
 
-#print axioms sourceClause_sound
 end Verification.PositiveNormalization

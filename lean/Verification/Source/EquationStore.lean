@@ -403,8 +403,6 @@ def structuralImages (E : Equations) (v : Variances E) (budget : SearchBudget) :
         (fun _ _ h => structuralEquivalent_sound h) η bs c.instances c.table hlen hkinds
         (by simpa only [ComparisonResult.accepted_fromBool] using checked) }
 
-#print axioms structuralEquivalent_sound
-
 /-- Semantic equality by the common subtype operation in both directions,
 with the equations' validated variances and image checker. -/
 def compareEquivalent (E : Equations) (v : Variances E) (X Y : List (Label E.signature))
@@ -565,8 +563,6 @@ theorem constructor_domain (p : NativePromise E)
   · exact p.applyFamily_domain domain _
   · rfl
 
-#print axioms constructor_domain
-
 /-- The native arm reads the exact constructor application and checks the
 payload sort. The certificate cannot substitute a structural lookalike. -/
 def payload (p : NativePromise E) (l : Label E.signature) :
@@ -601,10 +597,6 @@ theorem descriptor_input (p : NativePromise E) {N U : Fam}
   rw [child]
   exact (p.application_meaning η A kind).symm
 
-#print axioms descriptor_input
-#print axioms application_meaning
-#print axioms constructor_valid
-
 end NativePromise
 
 /-- The native constructor and the closed stable-value bound used by source
@@ -632,8 +624,6 @@ theorem nativeSeparate (c : ResolutionContext E) (A : Fam) (valid : ValueFam A) 
   rw [dif_pos valid]
   exact c.shape.separate _ _
 
-#print axioms nativeSeparate
-
 theorem source_values {G : NormalGraph ι} {A : List ι}
     (h : ProgramTyping.SourceValues G A) (η : MixedAssignment ι) :
     FamLe (mixedValues G η A) (excOf G) := sourceTy_exc h η
@@ -648,9 +638,6 @@ theorem native (c : ResolutionContext E) :
     rw [dif_pos valid]
     exact source_values c.nativeSource _
   stable_source := source_values c.stableSource _
-
-#print axioms source_values
-#print axioms native
 
 def capabilities (c : ResolutionContext E) :
     ResolutionDescriptors.Capabilities (excOf E.graph) c.stableFamily :=
@@ -737,9 +724,6 @@ theorem stable_meaning (c : ResolutionContext E)
     intro l hl p hp
     simp only [c.closed l hl, List.not_mem_nil] at hp)
   exact congrArg (fun F => fun n W v => F n W (.inl v)) he
-
-#print axioms domain_fixed
-#print axioms stable_meaning
 
 end ResolutionContext
 
@@ -873,7 +857,5 @@ def freeze (s : State) : Except String Frozen := do
         promise := some context'.promise
         resolution := some ⟨context', (context.domain_fixed D).symm⟩ }
       return ⟨E', p', store⟩
-
-#print axioms equivalent_sound
 
 end Verification.EquationStore

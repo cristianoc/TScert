@@ -1411,8 +1411,6 @@ theorem compareInstArrsState_sound [DecidableEq ι] {G : NormalGraph ι} {images
     (fun s c hc => images.allowed_sound s c hc η)
     (fun U V prior h => hc U V prior h η) h
 
-#print axioms compareInstArrsState_sound_at
-
 /-- Quantified instantiation establishes a value, rather than an argument pack. -/
 theorem compareInstArrsState_source [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {compare : List ι → List ι → σ → ComparisonResult α × σ} {empty S L M c state}
@@ -1810,17 +1808,4 @@ theorem acceptedUsing [DecidableEq ι] {G : NormalGraph ι}
     (h : checkUsing G images S T proof = true) : FamLe (meaning G S) (meaning G T) :=
   fun n W v hv => checkUsing_sound h G.env n W (.inl v) hv
 
-#print axioms compareInstState_sound
-#print axioms checkUsing_sound
-#print axioms checkEntries_sound
-#print axioms checkEntries_entries_sound
-#print axioms prem_iff
-#print axioms premAt_sound
-#print axioms compareUsing_sound
-#print axioms comparePrepared_sound
-#print axioms checkStructural_sound
-#print axioms compareStructural_sound
-#print axioms compareInstancesState_sound
-#print axioms compareInstArrsState_sound
-#print axioms compareUsingCore_sound
 end Verification.PositiveCertificates

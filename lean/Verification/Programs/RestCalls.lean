@@ -342,11 +342,4 @@ theorem store_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) :
     (by simpa using hk)
   simpa using this
 
-#print axioms argument_alloc_safe
-#print axioms call_elim_rest
-#print axioms listT_spreads
-#print axioms parts_safe
-#print axioms spread_parts_safe
-#print axioms store_parts_safe
-
 end Verification.RestCalls

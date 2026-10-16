@@ -4305,15 +4305,4 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     exact Safe_mono n (fun k _ V v hv => subtyping.sound hc k V v hv)
       W h _ (ih n W h ρ he hw hh)
 
-#print axioms bind_list
-#print axioms HasTyUsing.sound
-#print axioms dictCellT_of_recT
-#print axioms meaning_assign_free
-#print axioms tagClause_sound
-#print axioms SourceValues.sound
-#print axioms opResult_sound
-#print axioms builtinsFree_meaning
-#print axioms storeTy_sound
-#print axioms allocBuiltins_sound
-
 end Verification.ProgramTyping

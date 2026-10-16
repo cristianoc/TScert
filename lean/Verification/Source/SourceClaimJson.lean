@@ -113,5 +113,4 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
           · simp only [checkRequests] at hx
             simp [hx] at h
 
-#print axioms checkJson_safe
 end Verification.SourceClaimJson

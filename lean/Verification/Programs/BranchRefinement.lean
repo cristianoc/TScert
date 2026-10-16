@@ -999,12 +999,4 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
         rw [hfl] at hn
         cases hn
 
-#print axioms fieldSlice_sound
-#print axioms checkObservedSub_sound
-#print axioms checkObserved_sound
-#print axioms ObservedCovers.env
-#print axioms builtinArray_of_record
-#print axioms arraySlice_sound
-#print axioms familyMember_sound
-#print axioms meetSlice_sound
 end Verification.BranchRefinement

@@ -177,12 +177,4 @@ theorem ReadGave.observed {flds field h v c oid n W}
       WorldAdm_trunc _ hw, hr.step, HeapOk_trunc n W h hh,
       HeapObservations.value hv rfl ⟨rfl, rfl⟩⟩
 
-#print axioms ReadGave.step
-#print axioms ReadGave.observed
-#print axioms Atom.excludes_sound
-#print axioms Atom.sem
-#print axioms Atom.isValue
-#print axioms Atom.le_sound
-#print axioms covers_sound
-#print axioms check_sound
 end Verification.HeapFacts

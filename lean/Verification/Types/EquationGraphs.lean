@@ -834,10 +834,4 @@ theorem Equations.kind_application (equations : Equations) (scope : Scope equati
   cases h : (equations.body scope.head).1 <;>
     simp_all [RowTemplate.wellBound, GraphRow.map]
 
-#print axioms Equations.row_application
-#print axioms Equations.kind_bound
-#print axioms Equations.kind_familyVar
-#print axioms Equations.kind_application
-#print axioms Scope.bound_fresh
-
 end Verification.EquationGraphs

@@ -291,8 +291,4 @@ theorem Equations.substitutionTableUpTo_instanceImages (equations : Equations)
   · rw [he, hequiv _ _ entry η]
     exact mixedMeaning_union equations.graph η T n W x
 
-#print axioms Equations.substitutionTableUpTo_instanceImages
-#print axioms Label.substitute_meaning
-#print axioms Equations.substitutionTable_instanceImages
-
 end Verification.EquationGraphs

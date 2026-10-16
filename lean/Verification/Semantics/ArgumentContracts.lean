@@ -106,8 +106,4 @@ theorem call_safe {P : Family} {Rc R : Fam} (hP : Admissible P) (hRc : Adm Rc)
     exact .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
       HeapOk_trunc n W heap hh, hs⟩
 
-#print axioms fits_adm
-#print axioms fits_exact
-#print axioms fits_elem
-#print axioms call_safe
 end Verification.ArgumentContracts

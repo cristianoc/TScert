@@ -780,12 +780,4 @@ theorem Equations.application_congr (equations : Equations)
   intro i hi hj m hm U u
   rw [args i hi hj]
 
-#print axioms Equations.arguments_assign
-#print axioms Equations.locals_assign
-#print axioms Equations.signature_expression_agree
-#print axioms Equations.bound_expression_agree
-#print axioms Equations.clauses_step
-#print axioms Equations.scheme_step
-#print axioms Equations.application_congr
-
 end Verification.EquationGraphs

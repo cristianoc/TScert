@@ -500,7 +500,4 @@ theorem Equations.agree_free (equations : Equations) (η θ : MixedAssignment (L
     (agree_supportWith hs (mixedParameters equations.graph) (mixed_respectsSupport hs))
     η θ S (fun _ _ => True.intro) (fun l hl p hp => congrArg _ (h l hl p hp))
 
-#print axioms Equations.free_support
-#print axioms Equations.agree_free
-
 end Verification.EquationGraphs

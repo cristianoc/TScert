@@ -211,6 +211,4 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
       have h2 : g ≠ CallArguments.protoField := hnp
       simp [KeyBound.admits, modelKeys, h1, h2]
 
-#print axioms keyed_values_safe
-
 end Verification.ComputedKey

@@ -201,5 +201,4 @@ def check [DecidableEq ι] (G : NormalGraph ι) (root : ι) (stable : List ι) :
     else none
   else none
 
-#print axioms Shape.separate
 end Verification.NativePromiseSeparation

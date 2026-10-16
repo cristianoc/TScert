@@ -1397,23 +1397,6 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       · contradiction
     · contradiction
 
-#print axioms alloc_sound
-#print axioms merge_alloc_sound
-#print axioms makeKey_alloc_sound
-#print axioms store_alloc_sound
-#print axioms graphCreation_sound
-#print axioms checkStep_sound
-#print axioms read_frame
-#print axioms reading_sound
-#print axioms fieldOperand_sound
-#print axioms nullishAtoms_sound
-#print axioms nullish_partition
-#print axioms typedRead_sound
-#print axioms optionalRead_sound
-#print axioms write_sound
-#print axioms read_sound
-#print axioms value_sound
-#print axioms ordinary_sound
 /-- An expression-step checker carries the safety theorem required by graph
 composition, including its output heap knowledge. -/
 structure Checker [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) where
@@ -1459,7 +1442,5 @@ as ordinary calls. Other effect rules retain their existing checks. -/
         exact ordinary_sound typed he hk hw hh
       · cases checked
     | _ => exact checkStep_sound checked hcodes he hk hw hh
-
-#print axioms Checker.withSubtyping
 
 end Verification.HeapExpressionRules

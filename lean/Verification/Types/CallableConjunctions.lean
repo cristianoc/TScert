@@ -121,7 +121,4 @@ theorem congr_below {Ξ Ξ' : Fam} {α : Type} (X Y : α → Fam) (a : List (Pro
     (CallEffects.callsT_congr L (Arrow.map X) (Arrow.map Y) hexc (fun _ _ => rfl)
       (fun p _ => ⟨h p.receiver, hd p.arguments, h p.result⟩) W v)
 
-#print axioms merge
-#print axioms adm
-#print axioms congr_below
 end Verification.CallableConjunctions

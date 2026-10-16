@@ -1568,11 +1568,4 @@ theorem normalDenote_value {G : NormalGraph ι} {i : ι} {n W v}
     (h : normalDenote G i n W v) : isVal v = true ∧ Scoped 0 v :=
   mixedDenote_value G G.env i h
 
-#print axioms mixedMeaning_selected
-#print axioms mixedMeaning_valid
-#print axioms mixedMeaning_parameter
-#print axioms graphArguments_valid
-#print axioms boundedSem_adm
-#print axioms qDenoteWithArgs_unfold
-#print axioms qDenoteWithArgs_adm
 end Verification.PositiveGraphs

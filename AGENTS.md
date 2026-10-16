@@ -128,7 +128,7 @@ for every extracted function. Preserve this by construction:
   premise is the exact CLI success condition and whose conclusion gives safety
   for every accepted function. A theorem about a retained subset, decoded
   bundle, or Boolean alone is not an acceptance soundness theorem.
-- `#print axioms` checks how a theorem was proved, not whether it proves the
+- The axiom check checks how a theorem was proved, not whether it proves the
   required statement. Review the theorem's premise and conclusion whenever the
   accepted plan type or CLI path changes.
 - Search output, direct-check success and compiled ground consequences are
@@ -277,8 +277,10 @@ increasing trust silently.
   shim, a second decoder, or a field that records which shape a document is:
   every producer and consumer of these documents is in this repository, nothing
   outside reads them, and there is no older document to keep working.
-- Lean: no `sorry`, no project axioms; `#print axioms` on every soundness
-  theorem stays in the file. No warnings: `lakefile.toml` sets
+- Lean: no `sorry`, no project axioms.
+  [AxiomCheck.lean](lean/Verification/Tests/AxiomCheck.lean) fails the build
+  when `checkJson_safe` depends on an axiom other than `propext`,
+  `Classical.choice` and `Quot.sound`. No warnings: `lakefile.toml` sets
   `warningAsError`, so a warning fails the build; fix it (a deprecated name's
   replacement, an unused variable as `_`, an unused simp argument dropped)
   rather than silencing it. Build only the module you changed while

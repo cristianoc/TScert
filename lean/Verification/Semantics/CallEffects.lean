@@ -472,13 +472,4 @@ theorem restsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → Rest
     exact (PromiseWith.congr hexc (h x hm).1 (args x hm) (h x hm).2.2.2).mpr
       (hs (g x) (List.mem_map_of_mem hm))
 
-#print axioms call_safe
-#print axioms prefix_safe
-#print axioms pure_safe
-#print axioms PromiseWith.combine
-#print axioms PromiseWith.bound
-#print axioms callsT_bound
-#print axioms restsT_bound
-#print axioms PromiseWith.weaken
-#print axioms PromiseWith.erase
 end Verification.CallEffects

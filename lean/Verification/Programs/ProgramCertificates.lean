@@ -705,9 +705,6 @@ declared bounds. -/
         (lexicalComparison_sound domain η As length allowed renamed n W v
           ((renameTy_meaning same A n W v).mpr hv))
 
-#print axioms renameTy_meaning
-#print axioms lexicalBodySubtyping
-
 /-- Only finite, syntactic premises of one rule. -/
 @[nospecialize] def LocalUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false)
@@ -1419,9 +1416,6 @@ theorem funScheme_of_checked [DecidableEq ι] {G : NormalGraph ι}
     HasTyUsing G images (subtyping := subtyping) Γ
       (.makeFn (.graph arity E K start (caps.map fun c => .var c.2) kind rest) .nul) [j] :=
   .funScheme hp hs hcon hkind (schemeOffersChecked_sound hcodes hc) (offersChecked_shape hc) hfree hlt hcap
-
-#print axioms schemeOffersChecked_sound
-#print axioms funScheme_of_checked
 
 /-- A checked offer holds at every assignment: each entry does (`CodesSound`),
 and a store type is read through the graph's rows only. -/
@@ -2303,8 +2297,5 @@ theorem checkTreeWith_sound [DecidableEq ι] {G : NormalGraph ι}
     exact checkTreeWith_sound subtyping e (he.2 ⟨e, he'⟩ (by simp)) hcodes
 termination_by sizeOf e
 
-#print axioms checkTreeWith_sound
 
-
-#print axioms checkTreeUsing_sound
 end Verification.ProgramCertificates

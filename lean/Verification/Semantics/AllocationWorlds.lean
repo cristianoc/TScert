@@ -82,5 +82,4 @@ theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV
       rw [this]
       simp [List.getElem?_append_left hib, List.getElem?_map, List.getElem?_eq_getElem (show i < As.length by omega)]
 
-#print axioms allocation_safe
 end Verification.AllocationWorlds

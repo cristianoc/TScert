@@ -102,9 +102,4 @@ theorem allowed_descriptor {U N : Fam} (C : Capabilities U N) (s : SchemeRow ι)
   exact ⟨⟨⟨T.value.1, O.value.1, T.value.2, O.value.2, ho⟩, R.value.1, R.value.2,
     hs, hr, hf⟩, T, O, R, hT, hO, hR, rfl, rfl, rfl⟩
 
-#print axioms Observation.exactStable
-#print axioms Descriptor.exactStable
-#print axioms allowed_observation
-#print axioms Descriptor.result_eq_input
-#print axioms allowed_descriptor
 end Verification.ResolutionDescriptors

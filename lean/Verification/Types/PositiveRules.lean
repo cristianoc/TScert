@@ -3298,8 +3298,6 @@ theorem sourceTy_sound {G : NormalGraph ι} {A : List ι}
     FamLe (mixedValues G η A) sourceT :=
   fun n W v hv => (sourceTy_exc checked η n W v hv).1
 
-#print axioms sourceTy_sound
-
 /-- **A meet target, read part by part**: each part of a target meet row is
 the source row, one of the source meet's parts, or a scheme the source row or
 one of its scheme parts covers; its clauses admit every value or are the
@@ -6367,41 +6365,4 @@ theorem family_closed_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option 
 every derivation over `G` is one over each reassignment. -/
 @[nospecialize] def reassign (G : NormalGraph ι) (η : MixedAssignment ι) : NormalGraph ι := { G with env := η }
 
-#print axioms covers_presence_sound
-#print axioms covers_ctors_sound
-#print axioms covers_body_sound
-#print axioms instance_body
-#print axioms pair_arguments_sound
-#print axioms pair_values_sound
-#print axioms pairs_sound
-#print axioms renames_sound
-#print axioms alpha_sound
-#print axioms family_sound
-#print axioms family_entries_sound
-#print axioms family_closed_sound
-#print axioms prem_mixed
-#print axioms prem_values
-#print axioms InstanceAt.transport
-#print axioms RenamesBound.transport
-#print axioms table_instanceImages
-#print axioms inst_images_sound
-#print axioms table_row_mixed
-#print axioms table_row_mixed_of_values
-#print axioms table_row_arguments
-#print axioms mixed_assignment_substitution
-#print axioms mixed_parameter_image
-#print axioms mixed_enter_binder
-#print axioms agree_supportWith
-#print axioms freeOk_support
-#print axioms agree_freeWith
-#print axioms mixed_respectsFree
-#print axioms graphArguments_image
-#print axioms bounded_substitution_elim
-#print axioms Domains.sound
-#print axioms CallArrow.sound
-#print axioms scheme_covers_sound
-#print axioms covers_by_scheme_sound
-#print axioms covers_arrs_sound
-#print axioms meetBelow_sound
-#print axioms meetBelow_mixed
 end Verification.PositiveRules

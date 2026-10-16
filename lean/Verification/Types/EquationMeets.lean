@@ -303,10 +303,4 @@ theorem Equations.distribute_meaning (equations : Equations)
       obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hA
       exact (h i hi (by omega) m hm W v).mpr (hB _ (List.getElem_mem (by omega)))
 
-#print axioms Equations.meet_denote
-#print axioms Equations.meet_noArguments
-#print axioms Equations.meetOf_denote
-#print axioms Equations.distribute_values
-#print axioms Equations.distribute_meaning
-
 end Verification.EquationGraphs

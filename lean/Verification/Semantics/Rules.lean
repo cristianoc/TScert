@@ -117,8 +117,6 @@ theorem read_proto_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : Pr
       hP p _ h (WorldAdm_trunc _ hadm) (HeapOk_trunc p W h hok) pv
         (hag p (by omega) _ pv (hmem p (by omega)))⟩
 
-#print axioms read_proto_rule
-
 /-- An index view covers every present field under a key its class admits,
 while a missing key reads `undefined`. A lookup cannot discard that
 alternative. -/
@@ -199,8 +197,6 @@ theorem index_dict_rule {flds : List (PropKey × Nat)} {key : Tm} {f : PropKey} 
       cases p with
       | zero => trivial
       | succ q => exact Or.inl (Or.inl ⟨rfl, Or.inr rfl⟩)
-
-#print axioms index_dict_rule
 
 /-- **Write.** -/
 theorem write_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey} {A : Fam}
@@ -565,7 +561,5 @@ theorem ite_test_rule {B : Fam} (k : Tag) (a : Val) (hv : isVal a = true) (u e :
     rw [trunc_trunc]
     exact helse hb
 
-
-#print axioms let_rule
 
 end Verification

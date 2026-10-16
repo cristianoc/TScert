@@ -449,7 +449,4 @@ theorem checkCodes_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
     ProgramCertificates.CodesSound G (admits table) :=
   extendTable_sound (fun c hc => by simp [admits] at hc) h
 
-#print axioms safe_of_sim
-#print axioms goto_safe
-#print axioms checkCodes_sound
 end Verification.GraphCode

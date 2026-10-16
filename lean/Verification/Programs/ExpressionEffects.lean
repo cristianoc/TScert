@@ -260,6 +260,4 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
             (fun _ _ hp => hp) (by rw [hterm] at ih; exact ih)
 termination_by sizeOf e
 
-#print axioms sound
-#print axioms selectedCall_sound
 end Verification.ExpressionEffects

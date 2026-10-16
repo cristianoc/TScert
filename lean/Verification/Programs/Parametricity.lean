@@ -303,8 +303,6 @@ theorem checkBodyEntry_reassign (body : BodySubtyping G)
     checkEntryUsing G images Rty P C start inputs codes (Checker.withSubtyping G images body) := by
   simp only [checkEntryUsing_eq, checkBodyGraph_reassign G η images body body' same]
 
-#print axioms checkBodyEntry_reassign
-
 theorem checkNode_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) :
     checkNodeUsing (reassign G η) (images.reassign η) Rty P C node c codes =
@@ -347,8 +345,5 @@ theorem accepted_at {G : NormalGraph ι} {images : InstanceImageCheck G} {R P cl
     SafeGraph (excOf (reassign G η)) P (meaning (reassign G η) R) n W h (.at start ρ) :=
   CertificateProducer.accepted_from_inputs
     ((accept_reassign G η images R P claims C start inputs codes).trans hc) n W h ρ he hw hh hcodes
-
-#print axioms accept_reassign
-#print axioms accepted_at
 
 end Verification.Parametricity

@@ -587,8 +587,6 @@ theorem stableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.dom
       exact same n W v
     · simp at member
 
-#print axioms rawStableAliases_sound
-
 /-- Construct the qualified body checker only for a valid source signature,
 using the descriptor domain installed in the frozen equations. -/
 def bodyChecking (c : ResolutionContext E) (domain : E.domain = c.domain)
@@ -627,13 +625,5 @@ def bodyChecking (c : ResolutionContext E) (domain : E.domain = c.domain)
       aliases_sound := stableAliases_sound c domain source images
       check_eq := rfl }
   else none
-
-#print axioms stableInScope
-#print axioms stableAliases_sound
-#print axioms bodyChecking
-
-#print axioms Checked.sound
-#print axioms native
-#print axioms equivalent
 
 end Verification.SourceResolution

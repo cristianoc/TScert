@@ -146,5 +146,4 @@ theorem MappedCovers.env {G : NormalGraph ι} {Γ Δ mapping ρ n W}
   obtain ⟨A, ha, hab⟩ := hc i B hi
   exact hab n W (ρ (slot mapping i)) (he.2 _ A ha)
 
-#print axioms checkEdge_sound
 end Verification.PointClaims

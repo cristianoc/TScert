@@ -179,18 +179,6 @@ theorem domain_congr {ι : Type} {P P' : Fam → Fam} {N N' U U' : Fam}
   subst hp hn hu
   rfl
 
-#print axioms Resolves.source
-#print axioms Observes.source
-#print axioms Resolves.exact
-#print axioms Observes.exact
-#print axioms stableObservation
-#print axioms nativeObservation
-#print axioms unionObservation
-#print axioms stable
-#print axioms native
-#print axioms union
-#print axioms Resolves.describe
-
 namespace OperationContract
 
 end OperationContract

@@ -306,8 +306,6 @@ theorem DomainRegion.denote {G : NormalGraph ι}
   funext n W v
   exact congrFun (congrFun (congrFun (R.approx (n+1) η i hi) n) W) v
 
-#print axioms DomainRegion.denote
-
 end DomainChange
 
 end Verification.QualifiedTemplateEmbedding

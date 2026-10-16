@@ -66,9 +66,6 @@ theorem assigned_descriptor (G : NormalGraph ι) (η : MixedAssignment ι)
     (assigned_value G η s As o O (ho.trans hO) ko).trans eO,
     (assigned_value G η s As r R (hr.trans hR) kr).trans eR⟩
 
-#print axioms assigned_observation
-#print axioms assigned_descriptor
-
 /-- A group's value binders, checked against the graph: the input, the
 observation, and the result where the group has one. -/
 structure GroupBinders (ι : Type) where
@@ -125,8 +122,6 @@ theorem sourceView_sound [DecidableEq ι] {G : NormalGraph ι} {A : List ι} {p 
         exact source n W v ⟨p, List.mem_singleton_self _, h⟩
     | [] => cases checked
     | _ :: _ :: _ => cases checked
-
-#print axioms sourceView_sound
 
 /-- A lexical instance retains the input and observation of one enclosing
 group, and its result wherever the target group has one. -/
@@ -252,8 +247,6 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
     · rw [et', er']; exact e.resolved
     · rw [eo', er']; exact e.forwarded
 
-#print axioms lexicalAdmission_sound
-
 /-- The shared instance checker with admission checked against the enclosing
 lexical descriptor. Signature images, kinds and bounds use the ordinary checks. -/
 @[nospecialize] def compareLexicalInstance [DecidableEq ι] (G : NormalGraph ι)
@@ -287,7 +280,5 @@ theorem compareLexicalInstance_sound [DecidableEq ι] (G : NormalGraph ι)
   simp only [ComparisonResult.accepted_fromBool] at h
   rw [hd] at ha ⊢
   exact lexicalAdmission_sound G source target inst.instances h η As hl ha hU
-
-#print axioms compareLexicalInstance_sound
 
 end Verification.QualifiedGraphs

@@ -299,5 +299,4 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
 
 end
 
-#print axioms checkRequests_safe_at
 end Verification.SourceExtraction

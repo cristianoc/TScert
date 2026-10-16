@@ -612,6 +612,4 @@ inductive Execution (P : Program) : Nat → Heap → State → Heap → State �
   | refl : Execution P 0 h s h s
   | next : Transition P h s h' s' → Execution P n h' s' h'' s'' → Execution P (n+1) h s h'' s''
 
-#print axioms accepted_entry_safe
-#print axioms accepted_inputs_safe
 end Verification.ControlFlow

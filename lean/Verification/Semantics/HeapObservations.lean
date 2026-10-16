@@ -199,6 +199,4 @@ theorem alloc_frames {h l u} (vs : List Val) (ho : Observes h l u) :
   have hlt := (List.getElem?_eq_some_iff.mp ho).1
   simpa [Observes, List.getElem?_append_left hlt] using ho
 
-#print axioms bind_value
-#print axioms bind
 end Verification.HeapObservations

@@ -792,9 +792,6 @@ theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
       (fun e he η' => codeTable_sound ht e he η')
   · contradiction
 
-#print axioms verify_qualified_safe_at
-
 end
 
-#print axioms verify_safe_at
 end Verification.RequestJson
