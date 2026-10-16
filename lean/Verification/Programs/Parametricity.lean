@@ -23,25 +23,6 @@ variable {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment
 
 omit [DecidableEq ι] in
 
-theorem reads_reassign : reads (reassign G η) = reads G := rfl
-
-theorem readsFrom_go_reassign : ∀ fuel (seen frontier : List ι),
-    readsFrom.go (reassign G η) fuel seen frontier = readsFrom.go G fuel seen frontier
-  | 0, _, _ => rfl
-  | fuel + 1, seen, frontier => by
-    simp only [readsFrom.go, reads_reassign, readsFrom_go_reassign fuel]
-
-theorem readsFrom_reassign (fuel : Nat) (S : List ι) :
-    readsFrom (reassign G η) fuel S = readsFrom G fuel S := by
-  simp only [readsFrom, readsFrom_go_reassign]
-
-theorem freeMapOf_reassign (D : List ι) : ∀ fuel (V : FreeMap ι),
-    freeMapOf (reassign G η) D fuel V = freeMapOf G D fuel V
-  | 0, _ => rfl
-  | fuel + 1, V => by
-    simp only [freeMapOf, reads_reassign, freeMapOf_reassign D fuel]
-    rfl
-
 omit [DecidableEq ι] in
 
 theorem expand_reassign (F : List ι) : expand (reassign G η) F = expand G F := rfl
@@ -104,15 +85,15 @@ theorem checkMapped_reassign (Γ Δ : List (List ι)) (m : Mapping) (ps : EdgeEv
       checkMappedUsing G images Γ Δ m ps := by
   cases m <;> simp only [checkMappedUsing_eq, checkEdge_reassign, check_fun_reassign]
 
-/-- The built-ins checks read the graph's rows only. -/
-theorem builtinsFree_reassign (P : List ι) : builtinsFree (reassign G η) P = builtinsFree G P := by
-  simp only [builtinsFree, readsFrom_reassign, freeMapOf_reassign]
-  rfl
-
 theorem allocBuiltins_reassign (parts : List (PropKey × List ι)) :
     allocBuiltins (reassign G η) parts = allocBuiltins G parts := by
   unfold allocBuiltins
   simp only [builtinsFree_reassign]
+  rfl
+
+theorem allocBuiltinsUsing_reassign (parts : List (PropKey × List ι)) :
+    allocBuiltinsUsing (images.reassign η) parts = allocBuiltinsUsing images parts := by
+  unfold allocBuiltinsUsing
   rfl
 
 theorem builtinArrayLabel_reassign :
@@ -181,7 +162,7 @@ theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     LocalUsing (reassign G η) (images.reassign η) j r ps codes = LocalUsing G images j r ps codes := by
   unfold LocalUsing MemberProofsUsing
   simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign, graphCodesChecked_reassign,
-    allocBuiltins_reassign]
+    allocBuiltinsUsing_reassign]
   rfl
 
 /-- A body's explicit subsumption procedure is held fixed while its
@@ -193,7 +174,7 @@ theorem LocalWith_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι
       LocalUsing G images j r ps codes subtype := by
   unfold LocalUsing MemberProofsUsing
   simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign,
-    graphCodesChecked_reassign, allocBuiltins_reassign]
+    graphCodesChecked_reassign, allocBuiltinsUsing_reassign]
   rfl
 
 theorem checkTreeWith_reassign

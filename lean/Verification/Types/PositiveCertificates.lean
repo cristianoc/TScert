@@ -807,6 +807,16 @@ structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
   gen : ι → List ι → List (Nat × List (List ι)) := fun _ _ => []
   /-- Execution policy shared by comparisons and their bound/image obligations. -/
   budget : SearchBudget := {}
+  /-- Whether the built-in prototype type reads no parameter row
+  (`builtinsFree`), decided at most once per checker, when an allocation
+  check first reads it. -/
+  builtinsOk : Thunk Bool := Thunk.mk fun _ => match G.builtins with
+    | some r => builtinsFree G r.proto
+    | none => true
+  builtinsOk_sound : builtinsOk.get = true → ∀ r, G.builtins = some r → builtinsFree G r.proto = true := by
+    intro h r hr
+    simp only [Thunk.get, hr] at h
+    exact h
 
 /-- Finite closed-table images use the domain's proved ordinary admission law. -/
 @[nospecialize] def finiteInstanceImages [DecidableEq ι] (G : NormalGraph ι) : InstanceImageCheck G where
@@ -817,6 +827,32 @@ structure InstanceImageCheck [DecidableEq ι] (G : NormalGraph ι) where
     intro s c h η
     apply G.domain.ordinary_allowed
     exact List.isEmpty_iff.mp (by simpa only [ComparisonResult.accepted_fromBool] using h)
+
+theorem reads_reassign (G : NormalGraph ι) (η : MixedAssignment ι) : reads (reassign G η) = reads G := rfl
+
+theorem readsFrom_go_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι) :
+    ∀ fuel (seen frontier : List ι),
+    readsFrom.go (reassign G η) fuel seen frontier = readsFrom.go G fuel seen frontier
+  | 0, _, _ => rfl
+  | fuel + 1, seen, frontier => by
+    simp only [readsFrom.go, reads_reassign, readsFrom_go_reassign G η fuel]
+
+theorem readsFrom_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι) (fuel : Nat) (S : List ι) :
+    readsFrom (reassign G η) fuel S = readsFrom G fuel S := by
+  simp only [readsFrom, readsFrom_go_reassign]
+
+theorem freeMapOf_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι) (D : List ι) :
+    ∀ fuel (V : FreeMap ι), freeMapOf (reassign G η) D fuel V = freeMapOf G D fuel V
+  | 0, _ => rfl
+  | fuel + 1, V => by
+    simp only [freeMapOf, reads_reassign, freeMapOf_reassign G η D fuel]
+    rfl
+
+/-- The built-ins checks read the graph's rows only. -/
+theorem builtinsFree_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι) (P : List ι) :
+    builtinsFree (reassign G η) P = builtinsFree G P := by
+  simp only [builtinsFree, readsFrom_reassign, freeMapOf_reassign]
+  rfl
 
 /-- The same check at a reassignment of the graph's parameter rows. Its
 obligation quantifies over every assignment and reads no `env`, so one proof
@@ -831,6 +867,10 @@ serves every reassignment (`Parametricity`). -/
   base := images.base.reassign η
   gen := images.gen
   budget := images.budget
+  builtinsOk := images.builtinsOk
+  builtinsOk_sound h r hr := by
+    rw [builtinsFree_reassign]
+    exact images.builtinsOk_sound h r hr
 
 /-! ### The fallback's search (RECURSIVE-EQUATIONS §4.2–4.3)
 

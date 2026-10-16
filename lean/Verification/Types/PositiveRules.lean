@@ -803,6 +803,13 @@ reads, except a scheme row's own binders. Untrusted: `FreeOk` checks it. -/
 /-- How far to follow a graph's rows. -/
 def closureFuel : Nat := 4096
 
+/-- The built-in prototype type reads no parameter row: a checked free map of
+the rows it reaches gives it none. -/
+def builtinsFree [DecidableEq ι] (G : NormalGraph ι) (P : List ι) : Bool :=
+  let D := readsFrom G closureFuel P
+  let V := freeMapOf G D closureFuel []
+  FreeOk G D V && P.all fun l => D.contains l && (fv V l).isEmpty
+
 
 /-- A method signature covers another of the same key: each fixed target
 signature is covered by a fixed source one taking as many parameters, each at

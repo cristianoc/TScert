@@ -130,7 +130,7 @@ def offerRows (L : List (Arrow (Ty ι))) (S : List (RestArrow (Ty ι))) :
   L ++ S.map fun s => s.fixed
 
 
-export PositiveRules (readsFrom freeMapOf closureFuel)
+export PositiveRules (readsFrom freeMapOf closureFuel builtinsFree)
 
 /-! ### The built-in prototype type
 
@@ -138,13 +138,6 @@ The array invariant reads `ArrayProto` at one fixed assignment
 (`ParameterInterpretation.builtinsAt`); a type reading no parameter row means the
 same at every assignment, which a rule relating the invariant to a type checks
 of the built-in prototype type. -/
-
-/-- The built-in prototype type reads no parameter row: a checked free map of
-the rows it reaches gives it none. -/
-def builtinsFree [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) : Bool :=
-  let D := readsFrom G closureFuel P
-  let V := freeMapOf G D closureFuel []
-  FreeOk G D V && P.all fun l => D.contains l && (fv V l).isEmpty
 
 /-- Such a type means at the graph's assignment what the invariant reads. -/
 theorem builtinsFree_meaning [DecidableEq ι] {G : NormalGraph ι} {P : Ty ι}
@@ -235,6 +228,32 @@ def allocBuiltins [DecidableEq ι] (G : NormalGraph ι) (parts : List (PropKey �
       parts.all (fun p => !IndexKeys.numeric.may p.1) &&
       parts.any (fun p => p.1 == CallArguments.arrayStoreField && storeTy G p.2) &&
       parts.any (fun p => p.1 == CallArguments.protoField && p.2 == r.proto)
+
+/-- `allocBuiltins` with the prototype check the graph's image checker
+decides once (`InstanceImageCheck.builtinsOk`): what the certificate checker
+runs at each allocation. -/
+def allocBuiltinsUsing [DecidableEq ι] {G : NormalGraph ι} (images : PositiveCertificates.InstanceImageCheck G)
+    (parts : List (PropKey × Ty ι)) : Bool :=
+  !parts.any (·.1 == CallArguments.arrayStoreField) ||
+  match G.builtins with
+  | none => parts.any (fun p => p.1 == CallArguments.arrayStoreField && listsOnly G p.2)
+  | some r => images.builtinsOk.get && unknownTy G r.unknown && parts.all (fun p => !r.keys.contains p.1) &&
+      parts.all (fun p => !IndexKeys.numeric.may p.1) &&
+      parts.any (fun p => p.1 == CallArguments.arrayStoreField && storeTy G p.2) &&
+      parts.any (fun p => p.1 == CallArguments.protoField && p.2 == r.proto)
+
+theorem allocBuiltins_of_using [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {parts : List (PropKey × Ty ι)}
+    (h : allocBuiltinsUsing images parts = true) : allocBuiltins G parts = true := by
+  unfold allocBuiltinsUsing at h
+  unfold allocBuiltins
+  cases hb : G.builtins with
+  | none => simpa [hb] using h
+  | some r =>
+    simp only [hb, Bool.or_eq_true, Bool.and_eq_true] at h ⊢
+    rcases h with h | ⟨⟨⟨⟨⟨hok, hu⟩, hk⟩, hn⟩, hs⟩, hp⟩
+    · exact .inl h
+    · exact .inr ⟨⟨⟨⟨⟨images.builtinsOk_sound hok r hb, hu⟩, hk⟩, hn⟩, hs⟩, hp⟩
 
 theorem allocBuiltins_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (PropKey × Ty ι)}
     (hok : allocBuiltins G parts = true) (_hnd : (parts.map Prod.fst).Nodup) (c : Clause (Ty ι))
