@@ -610,22 +610,34 @@ export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm 
   }
 }
 
+/** A tuple element's kind and type, read through its name when it has one. */
+function tupleMember(element: TypeNode): { kind: "required" | "optional" | "rest"; type: TypeNode } {
+  if (ts.isNamedTupleMember(element))
+    return { kind: element.dotDotDotToken ? "rest" : element.questionToken ? "optional" : "required",
+      type: element.type };
+  if (ts.isRestTypeNode(element)) return { kind: "rest", type: element.type };
+  if (ts.isOptionalTypeNode(element)) return { kind: "optional", type: element.type };
+  return { kind: "required", type: element };
+}
+
 function tuple(scope: TermScope, node: ts.TupleTypeNode, readonly: boolean, span: Span): TypeTerm {
   const required: TypeTerm[] = [], optional: TypeTerm[] = [];
   let rest: TypeTerm | null = null;
   for (const element of node.elements) {
-    if (ts.isNamedTupleMember(element)) scope.fail(element, "named tuple members are outside the fragment");
-    if (ts.isRestTypeNode(element)) {
-      if (rest !== null || !ts.isArrayTypeNode(element.type))
+    // A member's name is a label with no runtime meaning: `[start: number]`
+    // is `[number]`, `[a?: T]` is `[T?]` and `[...rest: T[]]` is `[...T[]]`.
+    const member = tupleMember(element);
+    if (member.kind === "rest") {
+      if (rest !== null || !ts.isArrayTypeNode(member.type))
         scope.fail(element, "a tuple rest must be one final array");
-      rest = typeTerm(scope, element.type.elementType);
-    } else if (ts.isOptionalTypeNode(element)) {
+      rest = typeTerm(scope, member.type.elementType);
+    } else if (member.kind === "optional") {
       if (rest !== null) scope.fail(element, "an optional position cannot follow the rest");
-      optional.push(typeTerm(scope, element.type));
+      optional.push(typeTerm(scope, member.type));
     } else {
       if (optional.length || rest !== null)
         scope.fail(element, "a required position cannot follow an optional one");
-      required.push(typeTerm(scope, element));
+      required.push(typeTerm(scope, member.type));
     }
   }
   return { k: "tuple", presence: "dense", readonly, required, optional, rest, span };

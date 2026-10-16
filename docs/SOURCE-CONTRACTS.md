@@ -934,6 +934,19 @@ one; the library's `next(...[value]: [] | [TNext])` is `next()` and
      {⟦(\vec P,\ \ldots r\colon R)\colon B⟧=(\vec P\,\vec A_1)\colon B;\ \ldots;\ (\vec P\,\vec A_n)\colon B}\ \textsf{rest-tuples}
 ```
 
+A tuple member's name is a label with no runtime meaning: a named member
+reads as its unnamed form, at its type and with its optionality and rest, so
+`[start: number, end: number]` is `[number, number]`. A named form is
+admitted and refused exactly as its unnamed one:
+
+```math
+⟦[\ldots,\ x\colon\tau,\ \ldots]⟧=⟦[\ldots,\ \tau,\ \ldots]⟧
+\qquad
+⟦[\ldots,\ x?\colon\tau,\ \ldots]⟧=⟦[\ldots,\ \tau?,\ \ldots]⟧
+\qquad
+⟦[\ldots,\ \ldots x\colon\tau]⟧=⟦[\ldots,\ \ldots\tau]⟧\ \ \textsf{named-member}
+```
+
 ### Intersections of functions and records
 
 A record type's clause is a plain object, which no function is, so the
