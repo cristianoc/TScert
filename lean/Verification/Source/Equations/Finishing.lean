@@ -95,7 +95,7 @@ def compact (s : State) : Except String Built := do
 
 /-- Validated equations, with the built-ins. -/
 def Built.equations (b : Built) : Except String Equations := do
-  let E ← Equations.ofRaw (rawHeads b.drafts b.bodies)
+  let E := (← Equations.ofRaw (rawHeads b.drafts b.bodies)).memo
   let proto := b.state.proto.map b.rename
   let unknown := (b.state.keys.get? unknownKey).map b.rename
   return { E with builtins := if b.state.arrays then builtinsOf E proto unknown b.state.excluded else none }

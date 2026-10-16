@@ -815,16 +815,6 @@ structure Frozen where
   primitive : Primitive equations
   store : Checked equations primitive
 
-/-- The same equations, each template read once: `Equations.ofRaw` states
-a head's template as the validator's result at that head, which reading a
-row would otherwise recompute. -/
-def _root_.Verification.EquationGraphs.Equations.memo (E : Equations) : Equations :=
-  let templates : Array ((h : Fin E.signature.length) × Template E.signature h) :=
-    (List.finRange E.signature.length).toArray.map fun h => ⟨h, E.body h⟩
-  { E with body := fun h => match templates[h.val]? with
-      | some ⟨g, t⟩ => if e : g = h then e ▸ t else E.body h
-      | none => E.body h }
-
 /-- **Freezing.** The heads become equations only through the validator
 (`Equations.ofRaw`): scope, arity and lexicality, constructor-headed
 templates binding exactly their locals, meet normal form, a kind per

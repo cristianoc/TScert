@@ -191,4 +191,14 @@ def Equations.ofRaw (heads : List RawHead) : Except String Equations :=
       .ok { signature := sig, body := fun i => (templateOf? sig i (raw i)).toOption.get (hall i) }
     else .error "equations: a head is not a template"
 
+/-- The same equations, each template read once: `Equations.ofRaw` states
+a head's template as the validator's result at that head, which reading a
+row would otherwise recompute. -/
+def Equations.memo (E : Equations) : Equations :=
+  let templates : Array ((h : Fin E.signature.length) × Template E.signature h) :=
+    (List.finRange E.signature.length).toArray.map fun h => ⟨h, E.body h⟩
+  { E with body := fun h => match templates[h.val]? with
+      | some ⟨g, t⟩ => if e : g = h then e ▸ t else E.body h
+      | none => E.body h }
+
 end Verification.EquationGraphs
