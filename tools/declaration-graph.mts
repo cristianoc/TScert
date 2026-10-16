@@ -17,7 +17,7 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
 import { nameOf } from "./syntax.mts";
-import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute,
+import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
@@ -446,7 +446,7 @@ export function collectDeclarations(file: string, options: {
    * joins the symbols and is reported to `symbolName` with its index, any
    * other with the reason it names none. */
   symbolNames?: readonly Span[];
-  symbolName?: (span: Span, result: number | { refused: string }) => void;
+  symbolName?: (span: Span, result: number | { literal: string } | { refused: string }) => void;
   /** Told each TypeScript error the gate reads while deciding whether a
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
@@ -627,6 +627,16 @@ export function collectDeclarations(file: string, options: {
       const type = checker.getTypeFromTypeNode(node);
       return type ? literalUnion(type, [node.getStart(node.getSourceFile()), node.end]) : null;
     };
+    // The key an entity of a string or number literal type names, as an enum
+    // member or a constant does: its value, a number at its canonical
+    // spelling.
+    const literalKeyOf = (name: Identifier | ts.PropertyAccessExpression): string | null => {
+      const type = checker.getTypeAtLocation(name);
+      if (!type) return null;
+      if (type.isStringLiteralType()) return type.value;
+      if (type.isNumberLiteralType() && Number.isFinite(type.value)) return numericKey(String(type.value));
+      return null;
+    };
     // Whether a name denotes a standard library value, such as `Symbol`.
     const isLibraryValue = (name: Identifier): boolean => {
       const nodes = (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve());
@@ -752,6 +762,7 @@ export function collectDeclarations(file: string, options: {
           } }, body, alias);
         },
         symbol: symbolOf,
+        literalKey: literalKeyOf,
         computed: (part, pos, read) => computedType(computedContext, part, pos, read),
         keys: keyTypeOf,
         fail: (_node, message) => { throw Error(`${message} in ${what}`); },
@@ -1628,7 +1639,8 @@ export function collectDeclarations(file: string, options: {
         continue;
       }
       try {
-        options.symbolName?.(span, symbolOf(node));
+        const literal = literalKeyOf(node);
+        options.symbolName?.(span, literal !== null ? { literal } : symbolOf(node));
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         options.symbolName?.(span, { refused: error instanceof Error ? error.message : String(error) });
@@ -1700,6 +1712,24 @@ export function collectDeclarations(file: string, options: {
           return { name: name.text, span: [name.getStart(source), name.end],
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(node) };
         },
+        members: (object, key) => {
+          const type = checker.getTypeFromTypeNode(object);
+          if (!type) return [];
+          const keyType = key ? checker.getTypeFromTypeNode(key) : null;
+          const parts = keyType ? (keyType.isUnionType() ? keyType.getTypes() : [keyType]) : [];
+          const literals = parts.length && parts.every(p => p.isStringLiteralType() || p.isNumberLiteralType())
+            ? parts.map(p => p.isStringLiteralType() ? p.value : p.isNumberLiteralType() ? String(p.value) : "") : null;
+          const properties = literals ? literals.map(k => checker.getPropertyOfType(type, k)) : checker.getPropertiesOfType(type);
+          // Each member's top-level declaration, swept with its scope.
+          const top = (node: Node): Node => {
+            let at = node;
+            while (at.parent && !ts.isSourceFile(at.parent) && !ts.isModuleBlock(at.parent)) at = at.parent;
+            return at;
+          };
+          return properties.flatMap(p => (p?.declarations ?? []).map(d => d.resolve())
+            .filter((d): d is Node => !!d).map(top));
+        },
+        computed: node => ts.isTypeAliasDeclaration(node) && computedAlias(node, aliasOf),
         module: file => idOf(file),
         client,
       }, [client, ...valueDeclarations]);
@@ -1724,7 +1754,7 @@ export function collectDeclarations(file: string, options: {
     // otherwise is collected already.
     for (const { node: start, span } of [...starts, ...appliedTargets]) {
       try {
-        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
+        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
           keys: keyTypeOf, alias: aliasOf, awaited, boundOnly: node => boundOnly.has(node) });
       } catch (error) {
@@ -2291,6 +2321,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
   symbol: (written: Identifier | ts.PropertyAccessExpression) => number;
+  literalKey: (written: Identifier | ts.PropertyAccessExpression) => string | null;
   privateName: (name: ts.PrivateIdentifier) => number;
   partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
   library: (identifier: Identifier, what: string) => LibraryType | null;
@@ -2377,6 +2408,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       awaited: context.awaited,
       ...(body ? { body } : {}),
       symbol,
+      literalKey: context.literalKey,
       privateName: context.privateName,
       keys: context.keys,
       computed,

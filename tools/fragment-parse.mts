@@ -177,7 +177,7 @@ export class Gate {
   /** The computed keys of the file's annotations' type literals, by span of
    * the key expression: the `unique symbol` each names, as the declaration
    * document lists it, or the reason it names none. */
-  readonly symbolNames = new Map<string, number | { refused: string }>();
+  readonly symbolNames = new Map<string, number | { literal: string } | { refused: string }>();
   /** Mapped types' keys and library mapped types' arguments in the file's
    * annotations, by span: the union of literals and primitives TypeScript
    * computes for each, or null. */
@@ -566,8 +566,13 @@ export class Gate {
         const [start, end] = this.span(name);
         const result = this.symbolNames.get(`${start}:${end}`);
         if (result === undefined) return this.fail(name, "a computed key names a symbol constant");
-        if (typeof result !== "number") return this.fail(name, result.refused);
-        return result;
+        if (typeof result === "number") return result;
+        if ("literal" in result) return this.fail(name, "a computed key naming a literal is no symbol");
+        return this.fail(name, result.refused);
+      },
+      literalKey: (name) => {
+        const result = this.symbolNames.get(this.span(name).join(":"));
+        return result !== undefined && typeof result !== "number" && "literal" in result ? result.literal : null;
       },
       keys: (node) => this.keyTypes.get(this.span(node).join(":")) ?? null,
       // The alias the reference names, as TypeScript resolved it, at every

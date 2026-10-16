@@ -154,3 +154,13 @@ function made<T>(): { new (): { n: number } } {
   };
 }
 export class Made extends made<Bounded<any>>() {}
+
+// A constant a client selects through the module's namespace
+// (`invalid-written-namespace-member-value-import`).
+export const selected: keyof { a: Bounded<any> } = "a";
+
+// A class with a private field (`written-private-name-value-import`).
+export class Private {
+  #x: number = 1;
+  a: number = this.#x;
+}

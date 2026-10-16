@@ -28,6 +28,13 @@ export type SweepContext = {
   read(node: TypeNode, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TypeTerm;
   /** The written reference's edge to the declaration it names. */
   reference(name: ts.Identifier, args: readonly TypeNode[]): WrittenApplication["reference"];
+  /** The declarations a member selection depends on: the top-level
+   * declarations holding the members of `object`'s type at `key`'s literal
+   * keys, or at every key where `key` is null or not a union of literals. */
+  members(object: TypeNode, key: TypeNode | null): readonly Node[];
+  /** Whether a declaration is an alias TypeScript computes from its
+   * parameters, whose equation may select members of its arguments. */
+  computed(declaration: Node): boolean;
   /** The module a file is, as identities name it. */
   module(file: ts.SourceFile): string;
   /** The client file, whose spans the verifier reports. */
@@ -140,7 +147,9 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     // Every expression in erased syntax is an entity name or a literal key
     // (`admitted`); any other is refused before a type holding it is
     // replaced, whatever node holds it.
-    if (ts.isExpression(node) && erased(node, context.client) && !admitted(node))
+    // A declaration's name is no expression, a private name `#x` included.
+    const named = !!node.parent && "name" in node.parent && node.parent.name === node;
+    if (ts.isExpression(node) && !named && erased(node, context.client) && !admitted(node))
       throw refusal(node, "an expression in a type or a declared module names a constant (an identifier, a " +
         "property of one read by name) or is a literal: another is erased, and nothing checks what it applies");
     // Every form naming a type with arguments: a type reference, simple or
@@ -161,6 +170,12 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     } else if (form?.name && !context.declarationsOf(form.name).some(d => env.names.has(d))) {
       application(node, form.name, form.args, env);
     }
+    // A member selection's meaning depends on the declarations of the members
+    // it selects: an indexed access's at its keys, and a computed alias's,
+    // whose equation may select any member of its arguments, at every key.
+    if (ts.isIndexedAccessTypeNode(node)) reach(context.members(node.objectType, node.indexType));
+    if (form?.name && !form.instantiation && context.declarationsOf(form.name).some(d => context.computed(d)))
+      for (const arg of form.args) reach(context.members(arg, null));
     // Every child is visited, in the scope it is in.
     node.forEachChild(child => { visit(child, scopeOf(node, child, env), client); });
   };
