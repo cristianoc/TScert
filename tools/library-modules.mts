@@ -36,6 +36,10 @@ const stdio: TypeTerm = { k: "tuple", presence: "dense", readonly: true, optiona
   required: [union(text("pipe"), text("ignore"), text("inherit")), text("pipe"),
     union(text("pipe"), text("ignore"), text("inherit"))] };
 
+/** A record of strings: every string key it owns holds a string. */
+const strings: TypeTerm = { k: "object", fields: [], calls: [], span: at,
+  stringIndex: { readonly: true, value: union(atom("string"), atom("undefined")), span: at } };
+
 export const modulesOverlay: readonly ModuleEntry[] = [
   // `execFileSync(file, args, options)` runs `file` with the arguments and,
   // when the child exits with status 0, returns its standard output: decoded
@@ -44,12 +48,18 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // "inherit"), whatever the declaration says. A failure to run, a nonzero
   // status, a signal, a timeout and output past `maxBuffer` throw. Stated at
   // `encoding: "utf8"`, at standard output piped (or `stdio` absent, which
-  // pipes every stream), at a string `input` written to standard input and a
-  // number `maxBuffer`. The host validates the other options it reads and
-  // throws on a type it does not accept; it reads `options.encoding` and
-  // `options.stdio` before it converts the values of `options.env` to
-  // strings, the one place it runs code of the client's (an object value's
-  // `toString`).
+  // pipes every stream), at a string `input` written to standard input, a
+  // number `maxBuffer`, and an `env` absent or a record of strings. The host
+  // copies the options' own properties, then converts each value `env` owns
+  // to a string before it reads the `stdio` array the copy shares: an
+  // object value's `toString` would run code of the client's that may
+  // change `stdio` to ignore standard output, and the result is then `null`
+  // (`invalid-node-exec-env-object`). Every other option the host reads it
+  // validates without converting, throwing on a type it does not accept: an
+  // object at each key it reads, the declared options and `argv0`,
+  // `detached` and `windowsVerbatimArguments`, ran no code of the client's
+  // under Node 25.2.1, and `env` alone did. A record type states nothing of
+  // the keys it does not name, so `env` is stated.
   { module: "child_process", name: "execFileSync",
     signature: "function execFileSync(file: string, args: readonly string[], options: ExecFileSyncOptionsWithStringEncoding): string;",
     stated: { binders: [], params: [atom("string"),
@@ -57,7 +67,8 @@ export const modulesOverlay: readonly ModuleEntry[] = [
       { k: "object", stringIndex: null, calls: [], span: at, fields: [
         field("encoding", text("utf8"), false), field("input", union(atom("string"), atom("undefined")), true),
         field("maxBuffer", union(atom("number"), atom("undefined")), true),
-        field("stdio", union(stdio, atom("undefined")), true)] }],
+        field("stdio", union(stdio, atom("undefined")), true),
+        field("env", union(strings, atom("undefined")), true)] }],
       result: atom("string") } },
   // `writeFileSync(file, data)` with a path and a string writes the string,
   // encoded as UTF-8, to the file, replacing it, and returns `undefined`. A

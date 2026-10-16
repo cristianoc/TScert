@@ -1476,12 +1476,17 @@ unrestricted in its effect. The entries:
   (`invalid-node-exec-stdout-ignored`). It is stated at the options the
   host returns a string under: $`(\mathtt{string},\ \mathtt{readonly\ string[]},\ O)\Rightarrow\mathtt{string}`$ with
 
-  `O = { encoding: "utf8"; input?: string; maxBuffer?: number; stdio?: readonly [S, "pipe", S] }`,
+  `O = { encoding: "utf8"; input?: string; maxBuffer?: number; stdio?: readonly [S, "pipe", S]; env?: { readonly [k: string]: string | undefined } }`,
   `S = "pipe" | "ignore" | "inherit"`.
 
-  The host validates the other options it reads, throwing on a type it does
-  not accept, and reads `encoding` and `stdio` before it converts the values
-  of `env` to strings, the one place it runs code of the client's.
+  The host copies the options' own properties and converts each value `env`
+  owns to a string before it reads the `stdio` array the copy shares; an
+  object value's `toString` may set `stdio[1]` to "ignore", and the result is
+  then `null` (`invalid-node-exec-env-object`). A record type states nothing
+  of the keys it does not name, so `env` is stated at strings. Every other
+  option the host reads it validates without converting, throwing on a type
+  it does not accept: an object at each such key ran no code of the client's
+  under Node 25.2.1.
 - `writeFileSync(file, data)` with a path and a string writes the string to
   the file as UTF-8 and returns `undefined`; a path it cannot write throws:
   $`(\mathtt{string},\ \mathtt{string})\Rightarrow\mathtt{undefined}`$.

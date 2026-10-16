@@ -61,6 +61,12 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-node-exec-stdout-ignored: standard output not piped, the result is null at string");
   assert.equal(runExample("invalid-array-flat-map-value", "first()"), 1,
     "invalid-array-flat-map-value: the flattened array's number is returned at number[]");
+  // An `env` value's `toString`, which the host runs before it reads `stdio`.
+  assert.equal(runImporting("invalid-node-exec-env-object", `(() => {
+    const stdio = ["pipe", "pipe", "ignore"];
+    const X = { toString() { stdio[1] = "ignore"; return "x"; } };
+    return run(["-e", ""], { encoding: "utf8", stdio, env: { PATH: process.env.PATH, X } });
+  })()`), null, "invalid-node-exec-env-object: standard output ignored by an env value's toString, null at string");
   // The further actual a rest of strings takes is a number.
   assert.equal(runExample("invalid-rest-function-longer-signature", `wrong()("s", 1)`), 1,
     "invalid-rest-function-longer-signature: the number is returned at string");
