@@ -222,8 +222,8 @@ instance : FromJson State where
                 binders := binders.toList, body := some body } : Draft)
     let keys := (List.range heads.size).foldl (fun (m : Std.HashMap String Nat) h =>
       match heads[h]!.kind, heads[h]!.body with
-      | .primitive, some (.clauses cs) => if m.contains s!"ground|{reprStr cs}" then m
-          else m.insert s!"ground|{reprStr cs}" h
+      | .primitive, some (.clauses cs) => if m.contains s!"ground|{spelling cs}" then m
+          else m.insert s!"ground|{spelling cs}" h
       | _, _ => m) {}
     let arrayProtos : List (List Tree) := heads.toList.flatMap fun d => match d.body with
       | some (.clauses cs) => cs.filterMap fun c => if arrayShaped c then

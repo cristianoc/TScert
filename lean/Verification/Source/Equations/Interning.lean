@@ -48,16 +48,23 @@ def draft (h : Nat) : M Draft := do
   | some d => return d
   | none => throw s!"no head {h}"
 
+/-- How a hash-consing key spells a value: its compressed JSON, which
+determines the value. -/
+def spelling {α : Type} [ToJson α] (x : α) : String := (toJson x).compress
+
+/-- How a key spells binders: each one's name and kind. -/
+def bindersSpelling (bs : List Binder) : String := spelling (bs.map fun b => (b.name, b.kind))
+
 /-- A nullary head whose row is the given clauses, hash-consed by them. -/
 def ground (name : String) (cs : List (Clause (List Tree))) : M Tree := do
-  let key := s!"ground|{reprStr cs}"
+  let key := s!"ground|{spelling cs}"
   let h ← alloc key { name, kind := .primitive, kinds := [], body := some (.clauses cs) } fun _ => none
   return mkApp h []
 
 def prim (name : String) (c : Clause (List Tree)) : M Tree := ground name [c]
 
 /-- The key of the built-ins' `unknown`: the nullary head of the `source` clause. -/
-def unknownKey : String := s!"ground|{reprStr ([.source] : List (Clause (List Tree)))}"
+def unknownKey : String := s!"ground|{spelling ([.source] : List (Clause (List Tree)))}"
 
 /-- The four primitive values' heads come first, as `LabelStore.Labels`
 requires: `null`, `true`, `false`, `undefined`. -/
@@ -189,7 +196,7 @@ def occurrence (ctx : Ctx) (tag : String) (term : Json) (shadow : List String :=
   let items := liftedItems ctx (mentions shadow term)
   let args ← items.mapM fun it => (ctxValue ctx it : Except String Union)
   let kinds := items.map (ctxKind ctx)
-  let key := s!"{tag}|{reprStr kinds}|{term.compress}"
+  let key := s!"{tag}|{spelling kinds}|{term.compress}"
   let kind := if tag == "scheme" then HeadKind.scheme else .literal
   let h ← alloc key { name := literalName term, kind, kinds, binders } fun h =>
     some (job h (liftedCtx ctx items h))
@@ -262,8 +269,8 @@ def liftClauses (cs : List (Clause (List Tree))) : Array Tree × List (Clause (L
 `ground` gives when nothing is lifted. -/
 def internKey (heads : Array Draft) (cs : List (Clause (List Tree))) : String × List Union :=
   let (acc, cs') := liftClauses cs
-  if acc.isEmpty then (s!"ground|{reprStr cs}", [])
-  else (s!"lifted|{reprStr (acc.toList.map (rigidKindIn heads))}|{reprStr cs'}", acc.toList.map ([·]))
+  if acc.isEmpty then (s!"ground|{spelling cs}", [])
+  else (s!"lifted|{spelling (acc.toList.map (rigidKindIn heads))}|{spelling cs'}", acc.toList.map ([·]))
 
 /-- The label of a union of clauses: its head, lifted over its rigid
 subtrees, applied to them. Nullary when there are none, and then the head
@@ -322,7 +329,7 @@ def schemeOver (binders : List Tree) (sigs : List (Arrow (List Tree))) (bounds :
     | _ => .value⟩
   let row : GraphRow Tree (List Tree) :=
     .scheme ((List.range binders.length).map Tree.local) sigs bounds rests [] construct
-  let key := s!"schemeOver|{reprStr kinds}|{reprStr bs}|{reprStr row}"
+  let key := s!"schemeOver|{spelling kinds}|{bindersSpelling bs}|{spelling row}"
   let h ← alloc key { name := "scheme", kind := .scheme, kinds, binders := bs, body := some row }
     fun _ => none
   return mkApp h (acc.toList.map ([·]))

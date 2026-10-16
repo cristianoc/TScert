@@ -22,7 +22,7 @@ def hashCons (heads : Array Draft) : Array Nat := Id.run do
       if !mergeable d then continue
       let r := rep
       let body := d.body.map (mapRow fun U => U.map (treeRename fun g => r[g]!))
-      let key := s!"{reprStr d.kinds}|{reprStr d.binders}|{reprStr body}"
+      let key := s!"{spelling d.kinds}|{bindersSpelling d.binders}|{spelling body}"
       match seen.get? key with
       | some g => next := next.set! h (min g next[h]!)
       | none => seen := seen.insert key h
@@ -118,7 +118,7 @@ def Built.store (b : Built) : State :=
     -- Every nullary head is found by its clauses, a declaration's among
     -- them, as a finite table finds a row by its clauses.
     | _, some (.clauses cs) =>
-      if d.kinds.isEmpty && !m.contains s!"ground|{reprStr cs}" then m.insert s!"ground|{reprStr cs}" h
+      if d.kinds.isEmpty && !m.contains s!"ground|{spelling cs}" then m.insert s!"ground|{spelling cs}" h
       else m
     | _, _ => m) kept
   let rnB (b : Binding) : Binding := { b with value := b.value.map (treeRename f) }
