@@ -22,6 +22,7 @@
     "./relay.ts",
     "./whole.ts",
     "./defaulted.ts",
-    "./defaulted-key.ts"
+    "./defaulted-key.ts",
+    "./generated-names.d.ts"
   ]
 }

@@ -46,10 +46,14 @@ type Symbolic = Symbol;
 export type ProbeProgram = <T>(files: ReadonlyMap<string, string>,
   read: (program: Program, checker: Checker) => T) => T;
 
-/** One evaluation: `form`, written in `declaration`'s parameter list, at the
- * application `use` (a node whose `typeArguments` are its written
- * arguments). */
-export type ProbeRequest = { declaration: Node; form: TypeNode; use: Node; span: Span; what: string };
+/** One evaluation: `form`, written in `declaration` (whose `parameters` are
+ * merged across its declarations), at the application `use` (a node whose
+ * `typeArguments` are its written arguments). */
+export type ProbeRequest = { declaration: Node; parameters: readonly MergedParameter[]; form: TypeNode; use: Node;
+  span: Span; what: string };
+/** A declaration's type parameter at one position, its merged declarations
+ * together: its name, and the bound and default some declaration states. */
+export type MergedParameter = { name: Identifier; constraint: TypeNode | undefined; default: TypeNode | undefined };
 
 /** Original text copied into the probe: `[start, end)` of `file`. */
 type Copy = { file: string; start: number; end: number };
@@ -105,20 +109,15 @@ function nodeAt<N extends Node>(file: SourceFile, start: number, end: number, te
 export function makeProbe(original: { program: Program; checker: Checker }, probeProgram: ProbeProgram,
     unique: (name: Identifier) => number): (request: ProbeRequest) => TypeTerm {
   let count = 0;
-  return ({ declaration, form, use, span, what }) => {
+  return ({ declaration, parameters, form, use, span, what }) => {
     const refuse = (why: string): never => {
       throw Error(`${what}: ${form.getText(form.getSourceFile())} at the application: ${why}`);
     };
     const declarationFile = declaration.getSourceFile();
     const useFile = use.getSourceFile();
-    // Names neither file spells; what binds them is checked in the probe.
-    let k = count++;
-    while ([declarationFile, useFile].some(f => f.text.includes(`__TScertProbe${k}`) || f.text.includes(`__TScertUse${k}`)))
-      k = count++;
-    const probeName = `__TScertProbe${k}`, useName = `__TScertUse${k}`;
-    const parameters = childrenOf(declaration, "typeParameters").filter(ts.isTypeParameterDeclaration);
     const args = argumentsOf(use);
-    const copied: Node[] = [...parameters, form, ...args];
+    const copied: Node[] = [...parameters.flatMap(p => [p.name, ...(p.constraint ? [p.constraint] : []),
+      ...(p.default ? [p.default] : [])]), form, ...args];
     if (copied.some(holdsThis)) refuse("a `this` type means what it means where it is written");
     // The statement list holding the application.
     let list: Node | undefined = use.parent;
@@ -132,8 +131,20 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
     };
     const listed = (nodes: readonly Node[]): Piece[] =>
       nodes.flatMap((n, i) => i ? [{ text: ", " }, copy(n)] : [copy(n)]);
+    // Each position's parameter: its name, and its bound and default copied
+    // from the declarations stating them.
+    const parameterList: Piece[] = parameters.flatMap((p, i) => [...(i ? [{ text: ", " }] : []), copy(p.name),
+      ...(p.constraint ? [{ text: " extends " }, copy(p.constraint)] : []),
+      ...(p.default ? [{ text: " = " }, copy(p.default)] : [])]);
+    // Names neither file spells; what binds them is checked in the probe,
+    // and another pair is tried where they bind elsewhere.
+    for (let tries = 0; tries < 8; tries++) {
+    let k = count++;
+    while ([declarationFile, useFile].some(f => f.text.includes(`__TScertProbe${k}`) || f.text.includes(`__TScertUse${k}`)))
+      k = count++;
+    const probeName = `__TScertProbe${k}`, useName = `__TScertUse${k}`;
     // `type P<the parameters> = form;` and `type U = P<the arguments>;`
-    const probe: Piece[] = [{ text: `type ${probeName}<`, mark: "probe" }, ...listed(parameters), { text: "> = " },
+    const probe: Piece[] = [{ text: `type ${probeName}<`, mark: "probe" }, ...parameterList, { text: "> = " },
       copy(form), { text: ";" }];
     const application: Piece[] = [{ text: "\n" }, { text: `type ${useName} = `, mark: "use" },
       { text: probeName, mark: "reference" },
@@ -186,7 +197,7 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
       }
       return { file, offset: at };
     };
-    return probeProgram(files, (program, checker) => {
+    const answer = probeProgram(files, (program, checker): TypeTerm | null => {
       const where = (node: Node, map: boolean): unknown => {
         const file = node.getSourceFile();
         const start = node.getStart(file);
@@ -227,7 +238,7 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
           nodes[0].getStart(nodes[0].getSourceFile()) === node.getStart(node.getSourceFile()) && nodes[0].end === node.end;
       };
       if (!only(checker.getSymbolAtLocation(reference), probeAlias) || !only(checker.getSymbolAtLocation(alias.name), alias))
-        return refuse("a generated name binds to a declaration other than the generated one");
+        return null;
       // A type parameter of the declaration, merged parts included, by its
       // position in their parameter lists.
       const declarationSymbol = (() => {
@@ -296,5 +307,8 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
       }
       return term;
     });
+    if (answer) return answer;
+    }
+    return refuse("no fresh generated name binds to the inserted declarations");
   };
 }

@@ -4,6 +4,7 @@
  * meet its parameter's bound under the scope's assumptions, whatever term a
  * reader states for the type it is written in: the obligations are read
  * from the syntax here, never from a denotation. */
+import type { MergedParameter } from "./type-probe.mts";
 import * as ts from "typescript/unstable/ast";
 import type { Node, TypeNode } from "typescript/unstable/ast";
 import type { Span } from "./span.mts";
@@ -48,6 +49,9 @@ export type SweepContext = {
    * `use`: its type parameters read as the arguments' terms, a computed form
    * naming them as TypeScript computes it at `use` (`type-probe.mts`). */
   instantiate(declaration: Node, args: readonly TypeTerm[], use: Node): (node: TypeNode) => TypeTerm;
+  /** A declaration's type parameters by position, its merged declarations
+   * together: each one's bound and default from a declaration stating it. */
+  parameters(declaration: Node): readonly MergedParameter[];
   /** The application's arguments, the written ones completed with the
    * defaults at them; the one completion every reader of an application
    * shares. */
@@ -283,7 +287,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (listed.has(node)) return;
     listed.add(node);
     const first = target.find(t => childParameters(t).length);
-    const parameters = first ? childParameters(first) : [];
+    const parameters = first ? context.parameters(first) : [];
     if (!first || !parameters.some(p => p.constraint)) return;
     const read = resolve(env);
     const file = node.getSourceFile();
@@ -299,7 +303,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       const bounds = parameters.map(p => p.constraint ? instance(p.constraint) : null);
       found.push({ scope: pruned(env, [...terms, ...bounds.filter((b): b is TypeTerm => !!b)]),
         reference: context.reference(name, args),
-        parameters: parameters.map(p => ({ name: p.name.text, span: spanOf(p) })),
+        parameters: parameters.map(p => ({ name: p.name.text, span: spanOf(p.name.parent) })),
         args: terms, bounds, span, site: site(node) });
     } catch (error) {
       if (error instanceof SweepError) throw error;

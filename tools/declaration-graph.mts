@@ -27,7 +27,7 @@ import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./li
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { SweepError, writtenApplications, type Entity } from "./written-applications.mts";
-import { makeProbe, type ProbeProgram } from "./type-probe.mts";
+import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -953,6 +953,23 @@ export function collectDeclarations(file: string, options: {
     // TypeScript's evaluation of a form in a declaration's parameter list at
     // an application (`type-probe.mts`).
     const probe = makeProbe({ program, checker }, probeProgram, name => symbolOf(name));
+    // A declaration's type parameters by position, its merged declarations
+    // together, as TypeScript merges them: each position's name from the
+    // declaration binding the longest list, its bound and default from a
+    // declaration stating them (TypeScript requires those to agree).
+    const mergedParameters = (declaration: Node): MergedParameter[] => {
+      const name = nameOf(declaration);
+      const parts = name && ts.isIdentifier(name)
+        ? typeDeclarationsOf(name).filter(isTypeDeclaration) : [];
+      const lists = (parts.length ? parts : [declaration]).map(part =>
+        childrenOf(part, "typeParameters").filter(ts.isTypeParameterDeclaration));
+      const longest = lists.reduce((a, b) => (b.length > a.length ? b : a), []);
+      return longest.map((parameter, index) => {
+        const stated = lists.flatMap(list => list[index] ? [list[index]] : []);
+        return { name: parameter.name, constraint: stated.find(p => p.constraint)?.constraint,
+          default: stated.find(p => p.defaultType)?.defaultType };
+      });
+    };
     // A declaration's bound or default read at an application's arguments:
     // each parameter its argument; a computed form naming the parameters,
     // or a computed alias's application naming them, what TypeScript
@@ -961,8 +978,8 @@ export function collectDeclarations(file: string, options: {
     const instantiateAt = (declaration: Node, args: readonly TypeTerm[], use: Node | null): (node: TypeNode) => TypeTerm => {
       const source = declaration.getSourceFile();
       const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
-      const parameters = childrenOf(declaration, "typeParameters").filter(ts.isTypeParameterDeclaration)
-        .map(p => p.name.text);
+      const merged = mergedParameters(declaration);
+      const parameters = merged.map(p => p.name.text);
       const argumentOf = (part: Node): TypeTerm | undefined => {
         const index = ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && !part.typeArguments?.length
           ? parameters.indexOf(part.typeName.text) : -1;
@@ -976,7 +993,7 @@ export function collectDeclarations(file: string, options: {
         if (!namesParameter(part)) return computedType(computedContext, part, pos, read);
         if (!use) throw Error(`${what}: ${part.getText(source)} names the declaration's parameters, ` +
           "and is evaluated only at an application written in source");
-        return probe({ declaration, form: part, use, span: pos, what });
+        return probe({ declaration, parameters: merged, form: part, use, span: pos, what });
       };
       const scope: TermScope = { ...outer,
         named: (part, pos, read) => {
@@ -994,12 +1011,12 @@ export function collectDeclarations(file: string, options: {
     // before it (`instantiateAt`).
     const completeArguments = (declaration: Node, written: readonly TypeTerm[], use: Node | null,
         what: string): TypeTerm[] => {
-      const parameters = childrenOf(declaration, "typeParameters").filter(ts.isTypeParameterDeclaration);
+      const parameters = mergedParameters(declaration);
       if (written.length > parameters.length) throw Error(`${what} applied to too many type arguments`);
       const completed = [...written];
       for (const parameter of parameters.slice(written.length)) {
-        if (!parameter.defaultType) throw Error(`${what}'s ${parameter.name.text} has neither an argument nor a default`);
-        completed.push(instantiateAt(declaration, completed, use)(parameter.defaultType));
+        if (!parameter.default) throw Error(`${what}'s ${parameter.name.text} has neither an argument nor a default`);
+        completed.push(instantiateAt(declaration, completed, use)(parameter.default));
       }
       return completed;
     };
@@ -1841,6 +1858,7 @@ export function collectDeclarations(file: string, options: {
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(node) };
         },
         instantiate: instantiateAt,
+        parameters: mergedParameters,
         complete: completeArguments,
         resolve: name => {
           // The declarations a name denotes: TypeScript's symbol at its
@@ -1897,7 +1915,7 @@ export function collectDeclarations(file: string, options: {
     ];
     for (const { node: start, span } of starts) {
       try {
-        collect(start, seen, definitions, { complete: completeArguments, lookup, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+        collect(start, seen, definitions, { complete: completeArguments, parameters: mergedParameters, lookup, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
           keys: keyTypeOf, alias: aliasOf, awaited });
       } catch (error) {
@@ -2502,6 +2520,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   awaited: NonNullable<TermScope["awaited"]>;
   /** A mapped type's keys as TypeScript computes them. */
   keys: NonNullable<TermScope["keys"]>;
+  /** A declaration's type parameters, its merged declarations together. */
+  parameters: (declaration: Node) => readonly MergedParameter[];
   /** An application's arguments completed with its defaults. */
   complete: (declaration: Node, written: readonly TypeTerm[], use: Node | null, what: string) => TypeTerm[];
 }): void {
@@ -2520,7 +2540,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       continue;
     }
     const source = node.getSourceFile();
-    const parameterNodes = node.typeParameters ?? [];
+    // Its parameters, its merged declarations together.
+    const parameterNodes = context.parameters(node);
     const parameterNames = parameterNodes.map(parameter => parameter.name.text);
     if (new Set(parameterNames).size !== parameterNames.length)
       throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
@@ -2589,12 +2610,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const scope = scopeOf(source);
     const parse = (part: TypeNode): TypeTerm => typeTerm(scope, part);
     let sawDefault = false;
-    const parameters = parameterNodes.map(parameter => {
-      if (sawDefault && !parameter.defaultType)
+    const parameters = parameterNodes.map((parameter, index) => {
+      if (sawDefault && !parameter.default)
         throw Error(`required type parameter after default in ${identity.module}#${identity.name}`);
-      sawDefault ||= !!parameter.defaultType;
-      const parameterSpan: Span = [parameter.getStart(source), parameter.end];
-      return { name: parameter.name.text, span: parameterSpan, defaulted: !!parameter.defaultType };
+      sawDefault ||= !!parameter.default;
+      const own = node.typeParameters?.[index] ?? parameter.name.parent;
+      const parameterSpan: Span = [own.getStart(own.getSourceFile()), own.end];
+      return { name: parameter.name.text, span: parameterSpan, defaulted: !!parameter.default };
     });
     // An alias TypeScript computes from its parameters has no equation: its
     // definition states its parameters and defaults.

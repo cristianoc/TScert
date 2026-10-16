@@ -1237,14 +1237,20 @@ syntax, so the question is asked in a probe program (`type-probe.mts`): the
 project with two declarations added,
 
 ```ts
-type P</* the declaration's parameter list, verbatim */> = /* the form */;
+type P</* the declaration's parameters, verbatim */> = /* the form */;
 type U = P</* the application's written arguments, verbatim */>;
 ```
 
-`P` beside the declaration (in a global augmentation of its module) or, where
-that file cannot be read again (a standard library file), beside `U`; `U` at
-the end of the statement list holding the application, under names neither
-file spells. TypeScript completes
+`P`'s parameters are the declaration's by position, its merged declarations
+together: each position's name, with the bound and the default a
+declaration states for it, copied from that declaration. `P` stands beside
+the declaration (in a global augmentation of its module) or, where that file
+cannot be read again (a standard library file), beside `U`; `U` at the end of
+the statement list holding the application. Their names are fresh; where one
+binds to anything other than its generated declaration, another pair is
+tried, and after a few the evaluation is refused. A reference's omitted
+arguments, and the arity a definition states, count the defaults of all the
+merged declarations. TypeScript completes
 the omitted arguments with the defaults, substitutes and evaluates: `U`'s
 type is the answer. Each name in the copied parameter list, form and
 arguments must resolve in the probe to the declarations it resolves to where
