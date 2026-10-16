@@ -1359,6 +1359,7 @@ export const cases: Case[] = [
   negative("invalid-let-definite-object", "a path leaving the cell unassigned reaches the read holding `undefined`", /return-contract claim/),
   negative("invalid-let-definite-object-call", "a call between the write and the read forgets the fact: a closure it runs may write the cell", /return-contract claim/),
   positive("dynamic-index", "an array read at a `number` key is the host's `%ElementAt%`: an element, or `undefined`"),
+  positive("element-at-preserving-callback", "`map` callbacks reading an array at a `number` key, directly and through a helper: `%ElementAt%` states heap preservation, so the result is dense"),
   negative("invalid-dynamic-index", "a read at a `number` key may find no element"),
   negative("invalid-method-receiver-literal", "a literal asserted `as unknown as D` whose fields meet no arm of D: the assertion is an obligation the operand fails"),
   positive("assertion-snapshot", "a type assertion returns its operand unchanged, which a later write to the field it was read from leaves"),

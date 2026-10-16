@@ -312,9 +312,12 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       type: fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")) }),
     [symbolForName]: () => ({ typeParams: [], type: fn([atom("string")], atom("symbol")) }),
     [symbolKeyForName]: () => ({ typeParams: [], type: fn([atom("symbol")], either(atom("string"), atom("undefined"))) }),
+    // The read runs no code and writes nothing: an own numeric key of an
+    // array holds a data property (`numericOwn`), and neither
+    // `Array.prototype` nor `Object.prototype` owns one, so no getter runs.
     [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
-      type: fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
-        either(binder, atom("undefined"))) }),
+      type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
+        either(binder, atom("undefined"))), effect: "preservesInputHeap" } }),
   };
   return [...needed].map(name => {
     const make = definitions[name];

@@ -1100,13 +1100,15 @@ writes where TypeScript's types of the object and the key are these:
 ```math
 \mathit{xs}[k]\;\equiv\;\%\mathsf{ElementAt}\%(\mathit{xs},\ k)
 \qquad
-\%\mathsf{ElementAt}\%:\forall T.\ (\mathtt{readonly}\ T[\,],\ \mathtt{number})\Rightarrow T\mid\mathtt{undefined}
+\%\mathsf{ElementAt}\%:\forall T.\ (\mathtt{readonly}\ T[\,],\ \mathtt{number})\Rightarrow_{\mathsf{preservesInputHeap}} T\mid\mathtt{undefined}
 ```
 
 The element at an index below the length, an own property at another
 numeric key, which `Array<T>`'s `[n: number]: T` says holds a `T`, else
 `undefined`: `Array.prototype` and `Object.prototype` own no numeric key
-([trust surface](DESIGN.md#trust-surface)). `elemAny` would read the store
+([trust surface](DESIGN.md#trust-surface)). No getter runs, so the read
+writes nothing and states heap preservation
+([effects](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)). `elemAny` would read the store
 alone, which answers `undefined` where the array owns such a key.
 
 #### A literal with spreads
