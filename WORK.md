@@ -196,3 +196,51 @@ Three slices reach the producer and fail there, and twelve fail in search,
 among them `Array.isArray(v)` not narrowing an `unknown` `v` to
 `unknown[]` (two) and a `.map` result built where a union of records is
 expected (`emptyObject`).
+
+The goal is every function of the repository's own TypeScript verified:
+`tools/`, `pipeline/`, `tests/` and `dev/`, about 21,000 lines (the sources
+under `pipeline/examples/` are the cases' inputs, many refused by design).
+Verification states safety, each function's annotated contract at every
+call, not that the parser reads TypeScript correctly. A scan of that code
+against the fragment (2026-10-16) gives the work, each item its own design:
+
+- **The compiler API.** About 120 functions read TypeScript's syntax tree
+  through `typescript/unstable/ast` and its checker through
+  `typescript/unstable/sync`. The API is a host library, so it gets a
+  contract like the library globals': audited, collected by use, and
+  checked against the declarations. Its 326 guards `isX(node): node is X`
+  are `node.kind === SyntaxKind.X`; with one stated invariant, that a node's
+  shape is the interface its kind names, they are one assumption rather than
+  326. Its enums are literal unions, its flag sets (`NodeFlags`, `TypeFlags`,
+  `SymbolFlags`) numbers tested by bit, and its node methods
+  (`forEachChild`, `getText`, `getStart`) contracts with their callbacks.
+  The guards need guard signatures, the next item, to cross modules.
+- **Guard signatures.** A guard's promise is part of its function type,
+  proved at its definition and consumed at a call, for any promised type
+  and across modules.
+- **Bounds of every alias application.** An alias with a bounded parameter
+  keeps the obligation that its arguments meet their bounds, whatever its
+  body.
+- **Regular expressions.** 633 literals (most in `pipeline/cases.mts`) and
+  `test`, `exec`, `match`, `matchAll`, `replace` and `split` with them: a
+  `RegExp` object, the `lastIndex` state of a global or sticky one, and match
+  arrays whose unmatched groups are `undefined`.
+- **The library globals left.** `Array.prototype.flatMap` (79 calls) and
+  `flat`, `String.prototype.match`, `matchAll`, `padEnd`, `padStart` and
+  `search`, `Object.fromEntries`, `hasOwn`, `getOwnPropertyDescriptor` and
+  `assign`, `Array.from`, `Math`, `Reflect.get`, and `JSON.stringify` of an
+  object, whose `toJSON` runs client code.
+- **Node's modules.** `node:fs`, `path`, `child_process` (`spawnSync`,
+  `execFileSync`, `fork` and its messages), `os`, `crypto`, `vm`, `net`,
+  `module`, `assert/strict` (assertion functions) and `process`.
+- **Classes and `this` parameters.** The parser's `Gate` class, the functions
+  of `fragment-*.mts` declaring `this: Gate` (198 reads of `this`), and the
+  error classes extending `Error`.
+- **Imports between the repository's modules.** Namespace and default
+  imports, and a value imported from another module certified against its
+  signature, which [module composition](#module-composition) proves sound.
+- **The code's own departures from the fragment.** Downcasting `as`
+  assertions and module-level `let`: the code changes to meet the fragment.
+- **Proof precision.** Of the slices past the gate, about half fail in
+  proposal or search; each failure is a separate investigation.
+
