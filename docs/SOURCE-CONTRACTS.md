@@ -209,19 +209,25 @@ a constructor is refused as unguarded, and everything else terminates
 because heads are keyed by source occurrence.
 
 An interface the checked file declares more than once, as TypeScript merges
-it, is one declaration: its first declaration is its identity, and its body holds every
-declaration's members, each at its own type. The declarations bind the same
-type parameters, name no member twice and state at most one index signature
-of each key kind, or the interface is refused:
+it, is one declaration: its body holds every declaration's members, each at
+its own type. Its type parameters are positional: each declaration binds a
+prefix of the longest list under the same names (TypeScript requires the
+others to have defaults), and its members are read with the parameters it
+binds, so a name it does not bind is what that name denotes there. The first
+declaration binding the longest list is its identity. The declarations name
+no member twice and state at most one index signature of each key kind, or
+the interface is refused:
 
 ```math
-\frac{\mathtt{interface}\ I\langle\vec X\rangle\ \{\varphi_i;\ \vec\sigma_i\}\ \ (1\le i\le n)\quad
+\frac{\mathtt{interface}\ I\langle X_1\ldots X_{k_i}\rangle\ \{\varphi_i;\ \vec\sigma_i\}\ \ (1\le i\le n)\quad
+      k=\max_i k_i\quad
       \mathrm{names}(\varphi_i)\ \text{pairwise disjoint}}
-     {⟦I\langle\vec X\rangle⟧=⟦\{\varphi_1\cdots\varphi_n;\ \vec\sigma_1\cdots\vec\sigma_n\}⟧}\ \textsf{interface-merge}
+     {⟦I\langle X_1\ldots X_k\rangle⟧=⟦\{\varphi_1\cdots\varphi_n;\ \vec\sigma_1\cdots\vec\sigma_n\}⟧}\ \textsf{interface-merge}
 ```
 
 with $`\varphi_i`$ a declaration's fields, methods and index signatures and
-$`\vec\sigma_i`$ its call signatures.
+$`\vec\sigma_i`$ its call signatures, each read in the scope of
+$`X_1\ldots X_{k_i}`$ (`interface-merge-prefix-parameters`).
 
 The store a unit is extracted over is the lowering's heads, and extraction
 grows it ([Equations/Store.lean](../lean/Verification/Source/Equations/Store.lean)): a union of clauses, a scheme over a closure's

@@ -544,9 +544,13 @@ export function collectDeclarations(file: string, options: {
       return visit(node.type);
     };
     // An interface declared several times is one interface with every
-    // declaration's members, as TypeScript merges it; the first declaration is
-    // its identity. A same-named value declaration, a constant or a function,
-    // is the name's other meaning, which a type reference does not denote.
+    // declaration's members, as TypeScript merges it. Its type parameters are
+    // positional: each declaration binds a prefix of the longest list (the
+    // others have defaults, which TypeScript checks), under the same names,
+    // and its members are read with the binders it states. The first
+    // declaration stating the longest list is its identity. A same-named
+    // value declaration, a constant or a function, is the name's other
+    // meaning, which a type reference does not denote.
     const partners = new Map<TypeDeclaration, TypeDeclaration[]>();
     // The type aliases a name resolved to, by identity: a rest parameter
     // typed by one, and an indexed access into one's application, read it
@@ -555,18 +559,21 @@ export function collectDeclarations(file: string, options: {
     const aliasKey = (identity: DeclarationIdentity) =>
       `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
     const declarationOf = (nodes: readonly Node[], what: string): TypeDeclaration => {
-      const types = nodes.filter(isTypeDeclaration);
-      const [node] = types;
+      const declared = nodes.filter(isTypeDeclaration);
+      const longest = Math.max(0, ...declared.map(n => n.typeParameters?.length ?? 0));
+      const node = declared.find(n => (n.typeParameters?.length ?? 0) === longest);
+      const types = node ? [node, ...declared.filter(n => n !== node)] : declared;
       if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n) &&
             !ts.isFunctionDeclaration(n)) ||
           (types.length > 1 && !types.every(ts.isInterfaceDeclaration)))
         throw Error(types.length > 1 || nodes.length > 1
           ? `TypeScript found ${nodes.length} declarations for ${what}`
           : `${what} is not one type alias, interface or class`);
-      const names = (n: TypeDeclaration) => (n.typeParameters ?? []).map(p => p.name.text).join(",");
+      const names = (n: TypeDeclaration) => (n.typeParameters ?? []).map(p => p.name.text);
       for (const part of types) {
         if (!part.name) throw Error(`${what} is not one type alias, interface or class`);
-        if (names(part) !== names(node))
+        const own = names(part), all = names(node);
+        if (own.length > all.length || own.some((n, i) => n !== all[i]))
           throw Error(`the merged declarations of ${what} have different type parameters`);
         clean(part, `${idOf(part.getSourceFile())}#${part.name.text}`);
       }
@@ -2338,7 +2345,7 @@ function mergeMembers(parts: TypeTerm[], fail: (at: Node, message: string) => ne
  * host-relative member and a property as declared. A member the project's
  * library does not declare is left out. */
 function overlaidInterface(node: InterfaceDeclaration, parts: readonly InterfaceDeclaration[],
-    entries: readonly OverlayEntry[], scopeOf: (source: SourceFile) => TermScope,
+    entries: readonly OverlayEntry[], scopeOf: (part: InterfaceDeclaration) => TermScope,
     identityOf: (node: TypeDeclaration) => DeclarationIdentity,
     symbol: (written: Identifier | ts.PropertyAccessExpression) => number,
     library: (name: string, span: Span) => (args: TypeTerm[]) => TypeTerm): TypeTerm {
@@ -2354,14 +2361,14 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
         .filter((m): m is ts.MethodSignatureDeclaration | ts.PropertySignatureDeclaration =>
           (ts.isMethodSignatureDeclaration(m) || ts.isPropertySignatureDeclaration(m)) &&
           keyText(m, source) === entry.name)
-        .map(member => ({ member, source }));
+        .map(member => ({ member, source, part }));
     });
     if (!named.length) continue;
     const found = named.filter(({ member, source }) => member.getText(source).trim() === entry.signature);
     const [only, ...more] = found;
     if (!only || more.length) throw Error(`${where}.${entry.name} is not declared as reviewed: ${entry.signature}`);
-    const { member, source } = only;
-    const scope = scopeOf(source);
+    const { member, source, part } = only;
+    const scope = scopeOf(part);
     const span: Span = [member.getStart(source), member.end];
     const name = member.name;
     const key: PropertyKey = ts.isComputedPropertyName(name) &&
@@ -2480,7 +2487,9 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         throw Error(`${computedForm(part) ?? "a computed alias"} reaches a function's type parameter in ${identity.module}#${identity.name}`);
       return term;
     };
-    const scopeOf = (source: SourceFile): TermScope => ({
+    // A part of a merged interface binds a prefix of the declaration's
+    // parameters, by position: its members are read with only those.
+    const scopeOf = (source: SourceFile, names: readonly string[] = parameterNames): TermScope => ({
       source,
       annotation: false,
       awaited: context.awaited,
@@ -2493,7 +2502,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       named: (part, pos, read) => {
         const name = part.typeName;
         if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${identity.module}#${identity.name}`);
-        const index = parameterNames.indexOf(name.text);
+        const index = names.indexOf(name.text);
         if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
         if (part.typeArguments?.length)
           throw Error(`type parameter applied as constructor: ${name.text}`);
@@ -2513,6 +2522,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         default: parameter.defaultType ? parse(parameter.defaultType) : null };
     });
     const parts = partners.get(node) ?? [node];
+    const partScope = (part: TypeDeclaration): TermScope =>
+      scopeOf(part.getSourceFile(), (part.typeParameters ?? []).map(parameter => parameter.name.text));
     // A standard library interface read through the overlay: only its listed
     // members, and no base.
     const overlaid = ts.isInterfaceDeclaration(node) && Object.hasOwn(interfaceOverlay, node.name.text) &&
@@ -2520,7 +2531,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       ? interfaceOverlay[node.name.text] : undefined;
     if (overlaid && ts.isInterfaceDeclaration(node)) {
       definitions.push({ declaration: identity, parameters, bases: [],
-        expression: overlaidInterface(node, parts.filter(ts.isInterfaceDeclaration), overlaid, scopeOf,
+        expression: overlaidInterface(node, parts.filter(ts.isInterfaceDeclaration), overlaid, partScope,
           identityOf, symbol, (name, span) => {
           const target = context.libraryInterface(name);
           queue.push(target);
@@ -2536,7 +2547,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         : mergeMembers(parts.map(part => {
             const file = part.getSourceFile();
             if (!ts.isInterfaceDeclaration(part)) return scope.fail(part, "a declaration merged with an interface is not one");
-            return members(scopeOf(file), part.members, part,
+            return members(partScope(part), part.members, part,
               [part.getStart(file), part.end], true);
           }), (at, message) => scope.fail(at, message), node);
     // Native promise observation uses PromiseResolve's constructor equality
@@ -2614,7 +2625,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const bases = parts.flatMap(part => {
       if (!ts.isInterfaceDeclaration(part) && !ts.isClassDeclaration(part)) return [];
       const file = part.getSourceFile();
-      const read = (t: TypeNode): TypeTerm => typeTerm(scopeOf(file), t);
+      const read = (t: TypeNode): TypeTerm => typeTerm(partScope(part), t);
       return (part.heritageClauses ?? []).filter(clause =>
           !(ts.isClassDeclaration(part) && clause.token === ts.SyntaxKind.ImplementsKeyword)).flatMap(clause => {
           if (clause.token !== ts.SyntaxKind.ExtendsKeyword)
