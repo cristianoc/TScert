@@ -26,12 +26,12 @@ There is no iteration to infer a loop invariant. The independent source consumer
 enforces the reset, so supplying a graph-safe certificate with extra facts at a
 statement entry still fails source verification.
 
-[CertificateProducer.lean](lean/Verification/Programs/CertificateProducer.lean) accepts an actual graph, its declared result type and
+[CertificateProducer.lean](../lean/Verification/Programs/CertificateProducer.lean) accepts an actual graph, its declared result type and
 start label, and one `PointClaim` per node. Each claim fixes both the entry
 context and the expression result type. These are annotations in this Lean
 interface. The source adapter supplies them for the supported
 fragment; new source forms require the corresponding extraction obligations.
-[DirectProof.lean](lean/Verification/Programs/DirectProof.lean) holds the recipes for source closures: untrusted plans fixing rule structure and intermediate types.
+[DirectProof.lean](../lean/Verification/Programs/DirectProof.lean) holds the recipes for source closures: untrusted plans fixing rule structure and intermediate types.
 
 `produceUsing` builds expression derivation trees and per-slot subtype evidence for
 every actual edge. It does not infer or repair point invariants. Its inputs also
@@ -162,7 +162,7 @@ extended source claims are outside these results.
 A condition of a Boolean literal type takes only its arm (`ifKnown`): the
 pipeline case `known-condition` reaches the rule, and `pipeline/test.mts`
 claims its result at that arm alone, a claim refused for
-`invalid-known-condition`, whose condition a closure resets. [ExecutionModelTests.lean](lean/Verification/Tests/ExecutionModelTests.lean) shows the
+`invalid-known-condition`, whose condition a closure resets. [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) shows the
 machine keeping a known condition's write. Source closure blocks support
 terminal branches with both arms returning, including nested branches and
 checked entry refinements.
@@ -680,7 +680,7 @@ binds its saved value directly:
 ```
 
 The predicate's semantic guarantee is proved by `ProgramTyping.answers_sound`
-in [ProgramTyping.lean](lean/Verification/Programs/ProgramTyping.lean).
+in [ProgramTyping.lean](../lean/Verification/Programs/ProgramTyping.lean).
 This specializes the existing conditional semantics. The read occurs once,
 and its preceding effects are retained; the default contributes neither
 execution nor a type claim. The condition uses the read type derived by the
@@ -1189,7 +1189,7 @@ The semantic introduction and elimination rules are proved in
 together; a separate unqualified body check cannot introduce a qualified type.
 Rest-collecting entries retain their store contract in the checked frame, and
 the entry allocation preserves the input heap before the checked body runs.
-The effect algorithm ([ExpressionEffects.lean](lean/Verification/Programs/ExpressionEffects.lean)) composes pure computations, required field reads through
+The effect algorithm ([ExpressionEffects.lean](../lean/Verification/Programs/ExpressionEffects.lean)) composes pure computations, required field reads through
 invariant cells or readonly views, and fresh object/array allocations. Reads use
 the field contract to establish valuehood; arbitrary heap entries are not assumed
 to be values. Allocations append locations. `ControlFlow.state_progress` is shared
@@ -1203,7 +1203,7 @@ rule must carry `preservesInputHeap`, and its operands must already be values.
 The proof consumes `CallEffects.call_safe`, including padded missing arguments;
 a result-subtyping derivation retains the same postcondition. It never inspects
 the callee's implementation. Pure immutable lets also compose: $`\mathsf{Pure}(a) \land \mathsf{Pure}(b)`$ implies $`\mathsf{Pure}(\mathsf{let}\ x=a\ \mathsf{in}\ b)`$.
-[Purity.lean](lean/Verification/Semantics/Purity.lean) checks purity; its `pure_subst` proves preservation under the value substitution at the
+[Purity.lean](../lean/Verification/Semantics/Purity.lean) checks purity; its `pure_subst` proves preservation under the value substitution at the
 binding step; instantiation respects bound variables at every binder depth.
 This covers the nested lets introduced by pure coalescing and logical operands.
 Other call forms and nested heap operations remain conservative.

@@ -1579,14 +1579,14 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`).
 
 ## Lean files and validation
 
-- [Types/ReferenceConjunctions.lean](lean/Verification/Types/ReferenceConjunctions.lean): the meaning of a conjunction of record contracts (`refsT`), its admissibility and congruence
-- [Types/MethodMembers.lean](lean/Verification/Types/MethodMembers.lean): host-relative method members
-- [Types/CallableConjunctions.lean](lean/Verification/Types/CallableConjunctions.lean): proves that bag conjunctions and overloads on one callable value merge into one contract (`merge`, `calls_merge`)
-- [Types/PositiveNormalization.lean](lean/Verification/Types/PositiveNormalization.lean): the clause language and the clause meet
-- [Types/PositiveGraphs.lean](lean/Verification/Types/PositiveGraphs.lean): normal graphs and the rows' denotation
-- [Types/PositiveRules.lean](lean/Verification/Types/PositiveRules.lean): the declarative subtyping rules and their soundness
-- [Types/PositiveCertificates.lean](lean/Verification/Types/PositiveCertificates.lean): the certificate checker and its soundness
-- [Types/GraphRows.lean](lean/Verification/Types/GraphRows.lean): the label-independent row representation
+- [Types/ReferenceConjunctions.lean](../lean/Verification/Types/ReferenceConjunctions.lean): the meaning of a conjunction of record contracts (`refsT`), its admissibility and congruence
+- [Types/MethodMembers.lean](../lean/Verification/Types/MethodMembers.lean): host-relative method members
+- [Types/CallableConjunctions.lean](../lean/Verification/Types/CallableConjunctions.lean): proves that bag conjunctions and overloads on one callable value merge into one contract (`merge`, `calls_merge`)
+- [Types/PositiveNormalization.lean](../lean/Verification/Types/PositiveNormalization.lean): the clause language and the clause meet
+- [Types/PositiveGraphs.lean](../lean/Verification/Types/PositiveGraphs.lean): normal graphs and the rows' denotation
+- [Types/PositiveRules.lean](../lean/Verification/Types/PositiveRules.lean): the declarative subtyping rules and their soundness
+- [Types/PositiveCertificates.lean](../lean/Verification/Types/PositiveCertificates.lean): the certificate checker and its soundness
+- [Types/GraphRows.lean](../lean/Verification/Types/GraphRows.lean): the label-independent row representation
 - `Types/EquationGraphs.lean`, `Types/EquationSupport.lean`, `Types/EquationCongruence.lean`
 
 All under `lean/Verification/`. `lake -d lean build`

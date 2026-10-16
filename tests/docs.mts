@@ -152,7 +152,7 @@ for (const file of files) {
 
 // Citations: an author of a paper in REFERENCES.md (an entry whose heading
 // carries a year) is named only inside a link to that document.
-const references = join(root, "REFERENCES.md");
+const references = join(root, "docs", "REFERENCES.md");
 const authors = new Set([...readFileSync(references, "utf8").matchAll(/^### (.+?) (?:19|20)\d\d\b/gm)]
   .flatMap((m) => (m[1] ?? "").replace(/\bet al\.?/g, "").split(/,| and /))
   .flatMap((part) => [...part.matchAll(/\p{Lu}[\p{L}'’-]+/gu)].map((w) => w[0]).slice(-1)));

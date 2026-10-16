@@ -4,7 +4,7 @@ An independent verifier for type claims about TypeScript programs: a calculus
 with a semantic model and soundness proofs in Lean, a checker that validates
 certificates, and a pipeline that parses a TypeScript source, has the OCaml
 producer propose its claims, and asks whether they are derivable.
-[README.md](README.md) is the entry point; [DESIGN.md](DESIGN.md) holds the
+[README.md](README.md) is the entry point; [DESIGN.md](docs/DESIGN.md) holds the
 decisions. Everything below is what an agent needs to change things here
 without breaking the suite's shape.
 
@@ -182,7 +182,7 @@ separate review obligations, even when every Lean proof and suite passes.
   external code. Keep these key bounds and the prototype's undefined hook view:
   numeric elements alone do not justify implicit conversion. The recursive
   conversion contract and the rationale for excluding custom hooks live in
-  [prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts).
+  [prototype contracts](docs/SOURCE-CONTRACTS.md#prototype-contracts).
 - **Test the unproved boundary independently.** A producer-side refusal needs
   a verifier test bypassing that producer when annotation interpretation is
   involved. For native-contract repairs, execute the actual negative source
@@ -207,7 +207,7 @@ Preserve the presence mode through every graph/claim mapping and distinguish
 array-store metadata from argument packs, which hold values and have no holes.
 
 For inferred callable effects, follow the
-[elaboration/certification boundary](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification).
+[elaboration/certification boundary](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification).
 Annotation translation must not strengthen an ordinary arrow. Producer inference
 proposes a qualified signature; definition evidence must prove both safety and
 the effect before application consumes it. Never recognize callback syntax at
@@ -312,7 +312,7 @@ increasing trust silently.
   numbers in link texts, KaTeX rendering, and the math forms GitHub cannot
   render. A doc-only change runs that check and no suite. Cite papers,
   specifications and issues by a link to an entry of
-  [REFERENCES.md](REFERENCES.md), adding the entry there.
+  [REFERENCES.md](docs/REFERENCES.md), adding the entry there.
 - Commits: every commit carries a commit
   record, the format of the [review skill](.claude/skills/review/SKILL.md):
   prose sections, then trailers with `Outcome`, `Parts` and `Trust`. The

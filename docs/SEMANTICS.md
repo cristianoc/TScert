@@ -1,6 +1,6 @@
 # Semantics
 
-The stateful development in [lean/Verification](lean/Verification)
+The stateful development in [lean/Verification](../lean/Verification)
 provides the semantic foundation for the positive-type rules specified in
 [POSITIVE-TYPES.md](POSITIVE-TYPES.md). This is the semantics used by the current verifier. [PROGRAM-TYPING.md](PROGRAM-TYPING.md) specifies the proved program
 typing system and checked control-flow graphs. The
@@ -9,7 +9,7 @@ distinguishes the supported source fragment from model-only features.
 
 ## Operational language
 
-[Calculus.lean](lean/Verification/Semantics/Calculus.lean) defines an untyped call-by-value language with a mutable heap.
+[Calculus.lean](../lean/Verification/Semantics/Calculus.lean) defines an untyped call-by-value language with a mutable heap.
 The following is the original one-field kernel notation, not an exhaustive
 constructor inventory (see `Tm` in `Calculus.lean` for the maintained syntax):
 
@@ -293,7 +293,7 @@ case, creating a function object; creating code uses it with the code's
 contracts (`HasTyUsing.sound`).
 
 The graph consumer checks
-[`sourceTerm`](lean/Verification/Semantics/ObjectCoherence.lean) on every
+[`sourceTerm`](../lean/Verification/Semantics/ObjectCoherence.lean) on every
 node, so program syntax embeds no already allocated identity, even inside
 unselected branches and empty-overload bodies.
 
@@ -621,7 +621,7 @@ created, from its graph's check at each signature (`GraphCodeSpec`):
 
 ### Effect-qualified call contracts
 
-[CallEffects.lean](lean/Verification/Semantics/CallEffects.lean) extends exactly the callable equation above;
+[CallEffects.lean](../lean/Verification/Semantics/CallEffects.lean) extends exactly the callable equation above;
 graph code, expression effects and equation lowering read its contracts.
 For a signature effect $\epsilon$, replace
 its conclusion `Safe` with
@@ -654,7 +654,7 @@ fixed signatures; `restsT_adm` does the same for argument-pack rests.
 `PromiseWith.weaken` and the fixed/rest congruence and conjunction lemmas
 justify effect-aware contract operations. `call_safe` proves application from
 the qualified promise without access to the body.
-[GraphCode.lean](lean/Verification/Programs/GraphCode.lean) checks ordinary
+[GraphCode.lean](../lean/Verification/Programs/GraphCode.lean) checks ordinary
 graph evidence and the effect together in `codeCheckedUsing`; `codeChecked_sound`
 establishes the semantic contract used by fixed and variadic closure introduction.
 The positive type graph carries the effect on every signature. Source export
@@ -687,7 +687,7 @@ actuals. `call f args` abbreviates `invoke f undefined args`, and `app f a` the
 singleton call; neither is a second form of call. Substitution, scope checking,
 capture instantiation and object-name traversal visit the receiver, the entire
 list and every code descriptor, including a `bound` descriptor's saved values.
-[CallArguments.lean](lean/Verification/Semantics/CallArguments.lean) defines call preparation: its `Frame` keeps the callee, the receiver and
+[CallArguments.lean](../lean/Verification/Semantics/CallArguments.lean) defines call preparation: its `Frame` keeps the callee, the receiver and
 ordered arguments separate from invocation.
 
 `Prepare` evaluates the callee, then the receiver, then processes arguments from
@@ -730,7 +730,7 @@ index in order with the ordinary store operations, then invokes the target with
 those elements. It never iterates the list, so it shares the prepared actual
 list with ordinary calls but not the spread's operation.
 
-[ArgumentContracts.lean](lean/Verification/Semantics/ArgumentContracts.lean) states same-level contracts on argument lists and proves dispatch under them safe;
+[ArgumentContracts.lean](../lean/Verification/Semantics/ArgumentContracts.lean) states same-level contracts on argument lists and proves dispatch under them safe;
 its `call_safe` obtains safe dispatch from a behavioral promise.
 `ProgramTyping.call_safe_short` first evaluates the callee and composes effectful
 arguments using `bind_list` and `FutureSafe`. `ArgsT_transfer` preserves saved
@@ -762,10 +762,10 @@ none is thrown ([SOURCE-MODEL](SOURCE-MODEL.md#throws)). The model is step-index
 ([Appel and McAllester 2001](REFERENCES.md#appel-and-mcallester-2001)) with worlds for mutable state ([Ahmed 2004](REFERENCES.md#ahmed-2004)); the
 safety shape is that of [Wright and Felleisen 1994](REFERENCES.md#wright-and-felleisen-1994).
 
-[Worlds.lean](lean/Verification/Semantics/Worlds.lean) defines stratified worlds, the contract each location is for, and proves world extension a preorder preserved by truncation (`WExt_trans`, `WExt_trunc`). A world is admissible (`WorldAdm`) when each contract survives the world growing and admits only values, so a heap meeting an admissible world above level zero holds values at every location (`heap_values`).
-[Heaps.lean](lean/Verification/Semantics/Heaps.lean) defines the heap invariant `HeapOk`, every location holding a value meeting its contract, and proves reads, writes and allocation sound for it (`read_sound`, `write_sound`, `heap_alloc`).
-[Types.lean](lean/Verification/Types/Types.lean) defines semantic types: budget-indexed families judged against a world.
-[Safety.lean](lean/Verification/Semantics/Safety.lean) defines the safety predicate `Safe` and function types, and proves `Safe` monotone in its result type (`Safe_mono`) and the function types admissible (`callsT_adm`, `restsT_adm`).
+[Worlds.lean](../lean/Verification/Semantics/Worlds.lean) defines stratified worlds, the contract each location is for, and proves world extension a preorder preserved by truncation (`WExt_trans`, `WExt_trunc`). A world is admissible (`WorldAdm`) when each contract survives the world growing and admits only values, so a heap meeting an admissible world above level zero holds values at every location (`heap_values`).
+[Heaps.lean](../lean/Verification/Semantics/Heaps.lean) defines the heap invariant `HeapOk`, every location holding a value meeting its contract, and proves reads, writes and allocation sound for it (`read_sound`, `write_sound`, `heap_alloc`).
+[Types.lean](../lean/Verification/Types/Types.lean) defines semantic types: budget-indexed families judged against a world.
+[Safety.lean](../lean/Verification/Semantics/Safety.lean) defines the safety predicate `Safe` and function types, and proves `Safe` monotone in its result type (`Safe_mono`) and the function types admissible (`callsT_adm`, `restsT_adm`).
 
 **Throws.** `throw a` (`Tm.throw`) evaluates `a` (`throwC`), then throws its
 value. A term *throws* $`v`$ (`Raises t v`) when `throw v`, $`v`$ a JavaScript value, is in
@@ -847,7 +847,7 @@ all these call obligations.
 
 A guarded operator consults recursive operands only below the current budget.
 Its approximation tower stabilizes at every finite observation level, and the
-diagonal is a fixed point. [Tower.lean](lean/Verification/Semantics/Tower.lean) supplies that construction for graph
+diagonal is a fixed point. [Tower.lean](../lean/Verification/Semantics/Tower.lean) supplies that construction for graph
 interpretations. It does not require monotonicity of the recursive operand, so
 negative occurrences in function domains are permitted when guarded. This is
 not a greatest-fixed-point construction on unindexed sets of values; it is
@@ -1059,7 +1059,7 @@ checked `allocated` rule applies to both plain and callable objects through
 kinds of bag and retain their actual descriptor in the read links. Closure
 bodies may mutate when called; allocating their code does not execute them.
 
-`ValueHolds` and the alias branch of the links in [HeapLinks.lean](lean/Verification/Semantics/HeapLinks.lean) interpret $\Pi$;
+`ValueHolds` and the alias branch of the links in [HeapLinks.lean](../lean/Verification/Semantics/HeapLinks.lean) interpret $\Pi$;
 `HeapFacts.Holds` and the read branch interpret $\Sigma$. The implementation stores
 them as three lists — cell facts, value facts, and links carrying an `alias`
 flag — so the links list straddles the division: the flag is what says which side
@@ -1072,7 +1072,7 @@ for what a source claim may say.
 value it additionally requires `Q h e`; its step case uses exactly the same
 operational step, truncated-world extension, admissibility and heap satisfaction.
 At budget zero it is true. Divergence is permitted.
-[HeapObservations.lean](lean/Verification/Semantics/HeapObservations.lean)
+[HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean)
 defines it: `erase` yields ordinary safety, and `forget` embeds ordinary
 safety with `Q = True`.
 
@@ -1088,7 +1088,7 @@ the operation and composition rules using this predicate;
 
 ## What the checked development establishes
 
-- [Rules.lean](lean/Verification/Semantics/Rules.lean) proves the semantic typing rules for calls, heap operations, shape
+- [Rules.lean](../lean/Verification/Semantics/Rules.lean) proves the semantic typing rules for calls, heap operations, shape
   testing and branching.
 - `ProgramTyping.lean` proves safety by induction on syntactic typing
   derivations (`HasTyUsing.sound`).
@@ -1140,7 +1140,7 @@ code's global-object substitution and primitive boxing have no step
 properties (`name`, `length`) are not modelled, and the source forms that
 would need them are refused. What the source
 fragment admits is summarised in the
-[README](README.md#current-source-fragment); what it refuses, on principle or
+[README](../README.md#current-source-fragment); what it refuses, on principle or
 as a model limit, is the [fragment boundary](SOURCE-FRAGMENT.md#fragment-boundary),
 and the open work is
-[next steps](WORK.md#next-steps).
+[next steps](../WORK.md#next-steps).

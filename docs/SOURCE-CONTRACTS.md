@@ -220,7 +220,7 @@ with $`\varphi_i`$ a declaration's fields, methods and index signatures and
 $`\vec\sigma_i`$ its call signatures.
 
 The store a unit is extracted over is the lowering's heads, and extraction
-grows it ([EquationStore.lean](lean/Verification/Source/EquationStore.lean)): a union of clauses, a scheme over a closure's
+grows it ([EquationStore.lean](../lean/Verification/Source/EquationStore.lean)): a union of clauses, a scheme over a closure's
 binders and a bounded binder's meet each become a head whose template lifts
 the owned parameters it names to arguments. Every unit of a file grows the
 one store in turn, and once extraction is done the heads are validated
@@ -454,7 +454,7 @@ parameter ("has exactly one source parameter"), and in an ambient
 declaration, which has no body to check ("requires a resolution-qualified
 scope"). The fragment lists the two
 owned names in the parameter's `resolution` field
-([fragment](FRAGMENT.md)), and the request states the triple
+([fragment](FRAGMENT-FORMAT.md)), and the request states the triple
 $`(T,O_T,R_T)`$ as a resolution descriptor of the scheme
 ([request protocol](REQUEST-PROTOCOL.md)).
 
@@ -469,7 +469,7 @@ declared: a function declaration's type parameter bounded by the verifier's
 ```
 
 `Resolvable` is `type Resolvable = unknown` in
-[`tools/resolvable.d.ts`](tools/resolvable.d.ts), which the project of a lone
+[`tools/resolvable.d.ts`](../tools/resolvable.d.ts), which the project of a lone
 source lists (`verify-source.mts`), and the parser recognizes the bound by
 that declaration, which TypeScript binds the name to, not shadowed by a type
 parameter (`resolvableBound`). A program's own alias of that name is an
@@ -1802,7 +1802,7 @@ The declaration runs each such initializer in order, bound to a constant of
 its own, then builds the object with the trusted step
 $`\%\mathsf{Enum{:}E}\%:(\mathcal O^{\circ}(E))\Rightarrow\mathcal O^{\circ}(E)`$,
 which adds the reverse mapping
-([intrinsics](tools/intrinsics.mts)):
+([intrinsics](../tools/intrinsics.mts)):
 
 ```math
 \frac{\exists i.\ v_i=\bot\qquad

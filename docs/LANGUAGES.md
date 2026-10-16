@@ -29,17 +29,17 @@ languages.
 
 | Language | Lean definition or codec | Other definitions and readers | Produced by |
 | --- | --- | --- | --- |
-| **Fragment** — the subset of TypeScript this pipeline accepts, as a tree; its required `declarations` slot is emptied once Lean has interpreted its equations | [Fragment.lean](lean/Verification/Source/Fragment.lean) | [fragment.mts](tools/fragment.mts), parsed by [fragment-parse.mts](tools/fragment-parse.mts) | the parser |
-| **Declaration graph** — the source type equations of every local and imported declaration a file reaches, with the declaration TypeScript binds each name to; function annotations are written in the same source type terms | [EquationLowering.lean](lean/Verification/Source/EquationLowering.lean) | [declaration-types.mts](tools/declaration-types.mts), read by [type-term.mts](tools/type-term.mts) and collected by [declaration-graph.mts](tools/declaration-graph.mts) | the parser, with TypeScript's checker |
-| **Claim expressions** — structural type expressions used by diagnostics and internal source-type conversion | [Claim.lean](lean/Verification/Types/Claim.lean) | [claim.mts](tools/claim.mts), printed by [claim-text.mts](tools/claim-text.mts) | claim parsing and type conversion |
-| **SourceClaims** — entry claims keyed by execution point, expression claims by point and source span, and separate mutable lifetime contracts; producer-independent | [SourceClaims.lean](lean/Verification/Source/SourceClaims.lean) | [source-claims.mts](tools/source-claims.mts) | the [OCaml producer](ocaml-producer/README.md) |
-| **Source execution plans** — claim-independent control-flow graphs with expression and binding schedules | [FlowJson.lean](lean/Verification/Source/FlowJson.lean) writes [FlowGraph.lean](lean/Verification/Source/FlowGraph.lean), [ExpressionPlan.lean](lean/Verification/Source/ExpressionPlan.lean) and [BindingPlan.lean](lean/Verification/Source/BindingPlan.lean) | [source-flow.mts](tools/source-flow.mts); OCaml readers [flow.ml](ocaml-producer/flow.ml) and [execution.ml](ocaml-producer/execution.ml) | Lean source lowering |
-| **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](lean/Verification/Semantics/Calculus.lean) | [calculus.mts](tools/calculus.mts) | extraction |
-| **ControlFlow** — the program graph over those terms | [ControlFlow.lean](lean/Verification/Programs/ControlFlow.lean) | [control-flow.mts](tools/control-flow.mts) | extraction |
-| **TypeGraph** — positive types as labelled rows | [PositiveNormalization.lean](lean/Verification/Types/PositiveNormalization.lean) | [type-graph.mts](tools/type-graph.mts) | extraction |
-| **Request** — the whole verification request | [RequestJson.lean](lean/Verification/Source/RequestJson.lean) | — | extraction |
-| **Evidence** — certificates the checker validates | [ProgramCertificates.lean](lean/Verification/Programs/ProgramCertificates.lean), [PositiveCertificates.lean](lean/Verification/Types/PositiveCertificates.lean) | — | proof search |
-| **Diagnostic** — why an attempt did not succeed | in [RequestJson.lean](lean/Verification/Source/RequestJson.lean) | [diagnostic.mts](tools/diagnostic.mts), rendered by [diagnostic-view.mts](tools/diagnostic-view.mts) | the verifier |
+| **Fragment** — the subset of TypeScript this pipeline accepts, as a tree; its required `declarations` slot is emptied once Lean has interpreted its equations | [Fragment.lean](../lean/Verification/Source/Fragment.lean) | [fragment.mts](../tools/fragment.mts), parsed by [fragment-parse.mts](../tools/fragment-parse.mts) | the parser |
+| **Declaration graph** — the source type equations of every local and imported declaration a file reaches, with the declaration TypeScript binds each name to; function annotations are written in the same source type terms | [EquationLowering.lean](../lean/Verification/Source/EquationLowering.lean) | [declaration-types.mts](../tools/declaration-types.mts), read by [type-term.mts](../tools/type-term.mts) and collected by [declaration-graph.mts](../tools/declaration-graph.mts) | the parser, with TypeScript's checker |
+| **Claim expressions** — structural type expressions used by diagnostics and internal source-type conversion | [Claim.lean](../lean/Verification/Types/Claim.lean) | [claim.mts](../tools/claim.mts), printed by [claim-text.mts](../tools/claim-text.mts) | claim parsing and type conversion |
+| **SourceClaims** — entry claims keyed by execution point, expression claims by point and source span, and separate mutable lifetime contracts; producer-independent | [SourceClaims.lean](../lean/Verification/Source/SourceClaims.lean) | [source-claims.mts](../tools/source-claims.mts) | the [OCaml producer](../ocaml-producer/README.md) |
+| **Source execution plans** — claim-independent control-flow graphs with expression and binding schedules | [FlowJson.lean](../lean/Verification/Source/FlowJson.lean) writes [FlowGraph.lean](../lean/Verification/Source/FlowGraph.lean), [ExpressionPlan.lean](../lean/Verification/Source/ExpressionPlan.lean) and [BindingPlan.lean](../lean/Verification/Source/BindingPlan.lean) | [source-flow.mts](../tools/source-flow.mts); OCaml readers [flow.ml](../ocaml-producer/flow.ml) and [execution.ml](../ocaml-producer/execution.ml) | Lean source lowering |
+| **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](../lean/Verification/Semantics/Calculus.lean) | [calculus.mts](../tools/calculus.mts) | extraction |
+| **ControlFlow** — the program graph over those terms | [ControlFlow.lean](../lean/Verification/Programs/ControlFlow.lean) | [control-flow.mts](../tools/control-flow.mts) | extraction |
+| **TypeGraph** — positive types as labelled rows | [PositiveNormalization.lean](../lean/Verification/Types/PositiveNormalization.lean) | [type-graph.mts](../tools/type-graph.mts) | extraction |
+| **Request** — the whole verification request | [RequestJson.lean](../lean/Verification/Source/RequestJson.lean) | — | extraction |
+| **Evidence** — certificates the checker validates | [ProgramCertificates.lean](../lean/Verification/Programs/ProgramCertificates.lean), [PositiveCertificates.lean](../lean/Verification/Types/PositiveCertificates.lean) | — | proof search |
+| **Diagnostic** — why an attempt did not succeed | in [RequestJson.lean](../lean/Verification/Source/RequestJson.lean) | [diagnostic.mts](../tools/diagnostic.mts), rendered by [diagnostic-view.mts](../tools/diagnostic-view.mts) | the verifier |
 
 A representation's syntax does not establish the truth of what it says.
 Fragment and declaration collection are trusted translations of source. Source
@@ -50,7 +50,7 @@ Diagnostic explains an outcome and has no role in acceptance.
 
 The OCaml producer has internal inference types and environments as well as
 these external documents. Those internal data structures are not additional
-protocols. The [producer guide](ocaml-producer/README.md) explains their roles.
+protocols. The [producer guide](../ocaml-producer/README.md) explains their roles.
 
 Exact callable fields and effect contracts belong to the
 [request protocol](REQUEST-PROTOCOL.md), declaration terms to

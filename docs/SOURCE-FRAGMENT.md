@@ -71,7 +71,7 @@ obstacle named. A search failure is neither.
 
 Sound JavaScript that TypeScript accepts, refused because the model or its
 representation cannot state it yet; the paths are in
-[next steps](WORK.md#next-steps).
+[next steps](../WORK.md#next-steps).
 
 | Construct | Obstacle |
 | --- | --- |
@@ -124,7 +124,7 @@ representation cannot state it yet; the paths are in
 | A `let` with neither an initializer nor an annotation (`let y;`) | TypeScript types it as an evolving `any`; the pipeline reads a local's contract from its annotation or its initializer, and infers none from its later writes. |
 | An imported interface its module declares more than once | The declaration reader resolves an import to one declaration; the merge of an interface declared twice is read for the checked file's own declarations ([interface merging](PROGRAM-TYPING.md)). |
 | A closure parameter without an annotation that TypeScript types by an object type written nowhere by name | The parameter's annotation is TypeScript's contextual type, which the parser writes only through primitives, literals, arrays, type parameters and declarations by name. |
-| `unknown` used as an array after `Array.isArray` or `instanceof Array` | The array invariant is stated of record and dictionary members; `unknown`, which a handler binds a thrown value at, carries none ([next steps](WORK.md#next-steps)). |
+| `unknown` used as an array after `Array.isArray` or `instanceof Array` | The array invariant is stated of record and dictionary members; `unknown`, which a handler binds a thrown value at, carries none ([next steps](../WORK.md#next-steps)). |
 | `Object.assign` onto an array | The copy takes the target's fields but its store, so its result would be no array. |
 | `\|\|=` or `&&=` on a target other than a Boolean | The lowering tests the value read as a Boolean. |
 | A source key spelling one the model keeps for itself (`"[]"`, a name in double brackets) | The model holds an array's store and an object's prototype under those keys: an object owning one would be read otherwise than JavaScript reads it. |

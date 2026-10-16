@@ -350,7 +350,7 @@ trust surface; checked by review and `#guard` tests against node, not proved.
 [SOURCE-ELABORATION: patterns](SOURCE-ELABORATION.md#patterns),
 [SOURCE-CONTRACTS: classes](SOURCE-CONTRACTS.md#classes),
 [CALLABLES](CALLABLES.md), [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md),
-[the callable examples](pipeline/examples/callables/README.md).
+[the callable examples](../pipeline/examples/callables/README.md).
 
 ### JISET and ESMeta
 

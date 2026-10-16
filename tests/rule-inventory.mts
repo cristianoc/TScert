@@ -29,7 +29,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const LEAN = "lean/Verification";
-const DOCS = ".";
+const DOCS = "docs";
 
 /** A rule-bearing inductive: the acceptance language the docs describe. */
 const DECLARATIONS: readonly { type: string; file: string; what: string }[] = [
@@ -196,13 +196,15 @@ for (const name of documented)
     report(`${PROTOCOL} lists \`${name}\`, which \`Rule\` does not declare`);
 
 /* 2. Every rule must be named somewhere. */
-const corpus = fs
-  .readdirSync(DOCS)
-  .filter((f) => f.endsWith(".md"))
-  .map((f) => ({
-    file: f,
-    lines: fs.readFileSync(path.join(DOCS, f), "utf8").split("\n"),
-  }));
+const corpus = [".", DOCS].flatMap((dir) =>
+  fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => ({
+      file: path.join(dir, f),
+      lines: fs.readFileSync(path.join(dir, f), "utf8").split("\n"),
+    })),
+);
 /** Every place `name`, or a qualified `HasTy.name`, is written as code. A
  * constructor whose name is an ordinary word can be matched by prose about
  * something else, so the inventory prints all of them rather than the first. */
@@ -243,7 +245,7 @@ const snapshot =
         .map((c) => `  ${c.signature}`)
         .join("\n"),
   ).join("\n\n") + "\n";
-const SNAP = path.join(DOCS, "tests", "rule-inventory.snap");
+const SNAP = path.join("tests", "rule-inventory.snap");
 console.log();
 if (process.env.UPDATE_EXPECT === "1") {
   fs.writeFileSync(SNAP, snapshot);

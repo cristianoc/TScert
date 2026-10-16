@@ -6,7 +6,7 @@ against its derivation certificate. This is a consumer boundary for extracted
 programs; it does not certify TypeScript text by itself.
 
 This document owns the request/evidence formats, the verifier's command line;
-[FRAGMENT](FRAGMENT.md) owns the source AST encoding. [SOURCE-CLAIMS](SOURCE-CLAIMS.md) owns the
+[FRAGMENT](FRAGMENT-FORMAT.md) owns the source AST encoding. [SOURCE-CLAIMS](SOURCE-CLAIMS.md) owns the
 producer-independent claim schemas;
 [diagnostics](OBLIGATION-DIAGNOSTICS.md) owns failure metadata.
 
@@ -243,7 +243,7 @@ Tests are `isNul`, `isUndef`, `isNullish`, `isBool`, `isRef` and `isFun`.
 `isNullish` accepts null and undefined; false takes its negative branch. A location never appears
 in a supplied program: it arises only during execution. These are Lean's derived
 codecs, so the field names are the constructor's own; they live in
-[RequestJson.lean](lean/Verification/Source/RequestJson.lean), the JSON boundary of the stateful consumer.
+[RequestJson.lean](../lean/Verification/Source/RequestJson.lean), the JSON boundary of the stateful consumer.
 
 A request may add `"codes"`: the graph code its program creates, one
 `{"entry": {"arity","exprs","conts","start","captures","row","store"}, "claims": [...]}`
@@ -544,9 +544,9 @@ claims and root judgments must agree exactly with those reconstructed requests.
 The order of functions in the producer's claims document does not determine
 this evidence order.
 
-[SourceRequests.Bundle](lean/Verification/Source/SourceRequests.lean) declares
+[SourceRequests.Bundle](../lean/Verification/Source/SourceRequests.lean) declares
 this envelope and checks its graph interfaces and expression obligations.
-[SourceClaimJson.checkJson](lean/Verification/Source/SourceClaimJson.lean)
+[SourceClaimJson.checkJson](../lean/Verification/Source/SourceClaimJson.lean)
 reconstructs the plans from Fragment and SourceClaims, strictly decodes the
 bundle and checks every certified request. Its `checkJson_safe` theorem ties
 that exact acceptance condition to modeled safety. The checking command

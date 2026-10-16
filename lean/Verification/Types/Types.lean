@@ -351,7 +351,7 @@ agrees with `A` below the level, so a write of an `A` value to it keeps every
 alias's guarantee. Like the view, it has no prototype and says nothing of an
 absent key. The calculus adds no key to an existing object; that TypeScript
 lets code holding the dictionary add keys at `A` is the trust boundary
-([Source index signatures](../../../SOURCE-CONTRACTS.md#index-signatures)). -/
+([Source index signatures](../../../docs/SOURCE-CONTRACTS.md#index-signatures)). -/
 def dictCellT (K : IndexKeys) (A : Fam) : Fam := fun k W v =>
   ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
     flds.lookup CallArguments.protoField = none ∧

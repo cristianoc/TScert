@@ -42,15 +42,15 @@ Expression and statement objects use `k` to identify their constructor and
 These identities locate obligations and associate claims with source syntax;
 the execution point distinguishes repeated uses of one source span in a plan.
 
-The exact constructor union is declared in [fragment.mts](tools/fragment.mts).
-[declaration-types.mts](tools/declaration-types.mts) declares source type terms,
+The exact constructor union is declared in [fragment.mts](../tools/fragment.mts).
+[declaration-types.mts](../tools/declaration-types.mts) declares source type terms,
 declaration documents and property keys. A property key is a string or
 `{"symbol":i}`, where `i` identifies a unique-symbol declaration in the
 declaration document. A symbol key is distinct from every string key.
 
-The parser [fragment-parse.mts](tools/fragment-parse.mts) writes these forms;
-Lean's [Fragment decoder](lean/Verification/Source/Fragment.lean) checks their
-shapes. The [field-name check](tests/json-field-names.mts) compares wire readers
+The parser [fragment-parse.mts](../tools/fragment-parse.mts) writes these forms;
+Lean's [Fragment decoder](../lean/Verification/Source/Fragment.lean) checks their
+shapes. The [field-name check](../tests/json-field-names.mts) compares wire readers
 and writers. It checks spelling agreement, not preservation of source semantics.
 
 ## Statements and bindings

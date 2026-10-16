@@ -451,7 +451,7 @@ attempt remains exhausted. Member instances are validated once, and their
 outcomes serve both guarded coverage and the enclosing comparison's outcome.
 Its acceptance theorem covers only established inclusion. The
 command-line protocol for resource outcomes is tracked in
-[WORK](WORK.md#status).
+[WORK](../WORK.md#status).
 
 ### 4.5 Example
 
@@ -585,7 +585,7 @@ repeated operands; row construction also removes repeated clause lists from
 differently named operands. The intersection wrapper remains for a single operand,
 since an intersection contains values only and its operand may also denote
 argument lists. `Equations.meetOf_denote` in
-[EquationMeets.lean](lean/Verification/Types/EquationMeets.lean) proves that this
+[EquationMeets.lean](../lean/Verification/Types/EquationMeets.lean) proves that this
 normalization preserves the intersection's value meaning; `meet_noArguments`
 proves its exclusion of argument lists.
 
@@ -598,18 +598,18 @@ to parameters and quantified variables by position.
 
 | Concept | Lean |
 | --- | --- |
-| Definitions, types and unfolding (2) | [Types/EquationGraphs.lean](lean/Verification/Types/EquationGraphs.lean) |
-| A meet label means the intersection of its parts (2, 3.3) | [Types/EquationMeets.lean](lean/Verification/Types/EquationMeets.lean) |
-| Lemma 1, support | [Types/EquationSupport.lean](lean/Verification/Types/EquationSupport.lean) |
-| Lemma 2, congruence of applications | [Types/EquationCongruence.lean](lean/Verification/Types/EquationCongruence.lean) |
-| Lemma 3, substitution | [Types/EquationSubstitution.lean](lean/Verification/Types/EquationSubstitution.lean) |
-| Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](lean/Verification/Types/EquationCertificates.lean) |
+| Definitions, types and unfolding (2) | [Types/EquationGraphs.lean](../lean/Verification/Types/EquationGraphs.lean) |
+| A meet label means the intersection of its parts (2, 3.3) | [Types/EquationMeets.lean](../lean/Verification/Types/EquationMeets.lean) |
+| Lemma 1, support | [Types/EquationSupport.lean](../lean/Verification/Types/EquationSupport.lean) |
+| Lemma 2, congruence of applications | [Types/EquationCongruence.lean](../lean/Verification/Types/EquationCongruence.lean) |
+| Lemma 3, substitution | [Types/EquationSubstitution.lean](../lean/Verification/Types/EquationSubstitution.lean) |
+| Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](../lean/Verification/Types/EquationCertificates.lean) |
 | Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
 | Comparison and instance bounds over the equations (4.2–4.4) | `Types/PositiveCertificates.lean` (`compareUsingCore_sound`, `compareInstArrsState_sound`, `compareStructural_sound`) |
-| Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](lean/Verification/Types/EquationFamilies.lean) |
-| Well-formedness of equations | [Types/EquationValidator.lean](lean/Verification/Types/EquationValidator.lean) |
-| Term spelling of trees | [Types/EquationJson.lean](lean/Verification/Types/EquationJson.lean) |
-| Lowering source declarations (5) | [Source/EquationLowering.lean](lean/Verification/Source/EquationLowering.lean) |
+| Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](../lean/Verification/Types/EquationFamilies.lean) |
+| Well-formedness of equations | [Types/EquationValidator.lean](../lean/Verification/Types/EquationValidator.lean) |
+| Term spelling of trees | [Types/EquationJson.lean](../lean/Verification/Types/EquationJson.lean) |
+| Lowering source declarations (5) | [Source/EquationLowering.lean](../lean/Verification/Source/EquationLowering.lean) |
 
 The pipeline cases `non-regular-alias` and `invalid-non-regular-alias` lower an
 alias applied to a longer tuple at each level to one invariant head.
@@ -620,4 +620,4 @@ accepted.
 
 The wire spellings are in [SOURCE-CLAIMS](SOURCE-CLAIMS.md#encoding) and
 [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md). Progress is recorded in
-[WORK](WORK.md#status).
+[WORK](../WORK.md#status).

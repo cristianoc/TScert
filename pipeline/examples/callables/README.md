@@ -68,9 +68,9 @@ Not supported, with the refusal each one meets:
 | Sloppy code reading `this` at a receiver type that may hold a non-object | a source refusal: the receiver conversion has no step in the model |
 
 Refusal reasons are defined in
-[obligation diagnostics](../../../OBLIGATION-DIAGNOSTICS.md); the encoding and its
+[obligation diagnostics](../../../docs/OBLIGATION-DIAGNOSTICS.md); the encoding and its
 restrictions belong to the
-[protocol](../../../FRAGMENT.md#expression-closures-and-calls).
+[protocol](../../../docs/FRAGMENT-FORMAT.md#expression-closures-and-calls).
 
 The hole-spread witness writes past the end of a Boolean array, leaving a
 hole. Spreading it would materialize `undefined` in a `boolean[]`. TypeScript
@@ -106,7 +106,7 @@ safety of the resulting term, not equivalence to a formal JavaScript semantics.
 ### Rests and spreads
 
 Fixed and variadic signatures share the
-[common function equation](../../../SEMANTICS.md#one-meaning-for-callable-contracts).
+[common function equation](../../../docs/SEMANTICS.md#one-meaning-for-callable-contracts).
 Code collecting a rest allocates the store of the
 further actuals before its run (`graphEntry`), and `restsT_of_graphRest` lifts
 the code's check at each variadic signature to the variadic contract; over a
@@ -125,7 +125,7 @@ contract; potentially sparse arrays need an element contract admitting
 `undefined`.
 
 Restrictions on generic body forms and nested quantification are stated in
-[SOURCE-CLAIMS](../../../SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations).
+[SOURCE-CLAIMS](../../../docs/SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations).
 
 ### Receivers
 
@@ -135,10 +135,10 @@ the first argument for `.call` and `.apply`. An arrow's `this` is a capture of
 the enclosing ordinary function's receiver. `.bind` allocates a forwarding
 descriptor whose receiver a later `.bind` or `.call` cannot replace; `.apply`
 reads its list's `length` and each index in order before invoking.
-[SOURCE-MODEL](../../../SOURCE-MODEL.md#receivers) owns the receiver rules,
-[FRAGMENT](../../../FRAGMENT.md#receivers) their encoding, and the call order
+[SOURCE-MODEL](../../../docs/SOURCE-MODEL.md#receivers) owns the receiver rules,
+[FRAGMENT](../../../docs/FRAGMENT-FORMAT.md#receivers) their encoding, and the call order
 follows ECMA-262's EvaluateCall and OrdinaryCallBindThis
-([ECMA-262](../../../REFERENCES.md#ecma-262)).
+([ECMA-262](../../../docs/REFERENCES.md#ecma-262)).
 
 ## Examples
 
@@ -235,5 +235,5 @@ value is ignored.
 
 `make cases P=callables/` runs these examples. The
 [test index](../../../tests/README.md) describes suite ownership, and the
-[protocol](../../../FRAGMENT.md#expression-closures-and-calls) owns callable
+[protocol](../../../docs/FRAGMENT-FORMAT.md#expression-closures-and-calls) owns callable
 signature restrictions.

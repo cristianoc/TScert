@@ -21,19 +21,19 @@ source integration, and tests. Declarations live under the `Verification`
 namespace; module paths identify their topic. These folders aid navigation,
 not an enforced dependency order: some derived semantic lemmas depend on
 program rules.
-[DESIGN.md](DESIGN.md) describes the architecture and trust surface;
-[REFERENCES.md](REFERENCES.md) collects the works it draws on.
+[DESIGN.md](docs/DESIGN.md) describes the architecture and trust surface;
+[REFERENCES.md](docs/REFERENCES.md) collects the works it draws on.
 
-Start with [the architecture](DESIGN.md#architecture) for the full data flow
-and [the language map](LANGUAGES.md) for the representations exchanged between
-components. The formal definitions live in [SEMANTICS](SEMANTICS.md), which
-defines execution and safety, [POSITIVE-TYPES](POSITIVE-TYPES.md), which defines
-types and state assertions, and [PROGRAM-TYPING](PROGRAM-TYPING.md), which
+Start with [the architecture](docs/DESIGN.md#architecture) for the full data flow
+and [the language map](docs/LANGUAGES.md) for the representations exchanged between
+components. The formal definitions live in [SEMANTICS](docs/SEMANTICS.md), which
+defines execution and safety, [POSITIVE-TYPES](docs/POSITIVE-TYPES.md), which defines
+types and state assertions, and [PROGRAM-TYPING](docs/PROGRAM-TYPING.md), which
 defines the rules used to check programs.
 
 The TypeScript the pipeline reads is summarised under
 [current source fragment](#current-source-fragment); the
-[fragment boundary](SOURCE-FRAGMENT.md#fragment-boundary) lists what it refuses and why.
+[fragment boundary](docs/SOURCE-FRAGMENT.md#fragment-boundary) lists what it refuses and why.
 
 ## Run
 
@@ -86,11 +86,11 @@ colors.
 
 The *fragment* is the subset of TypeScript the verifier accepts; a *Fragment*
 document is the parser's tree of one source in it
-([LANGUAGES](LANGUAGES.md#the-languages)).
+([LANGUAGES](docs/LANGUAGES.md#the-languages)).
 
 A source file is a module, checked per code unit: each function, and the
 module's initialization, which runs its constants, classes, enums and
-top-level statements ([modules and code units](DESIGN.md#modules-and-code-units)).
+top-level statements ([modules and code units](docs/DESIGN.md#modules-and-code-units)).
 In outline, the parser admits:
 
 - **Statements**: `const` and `let` bindings, annotated or not (a `let`
@@ -98,30 +98,30 @@ In outline, the parser admits:
   holes and rests; `if`, `switch`, `while`, `for`, `for...of` over arrays,
   `for...in`, labeled blocks, `break` and `continue`; `throw` and
   `try`/`catch`/`finally`, a throw being an outcome
-  ([statement forms](SOURCE-CONTRACTS.md#statement-forms),
-  [patterns](SOURCE-ELABORATION.md#patterns), [throws](SOURCE-MODEL.md#throws)).
+  ([statement forms](docs/SOURCE-CONTRACTS.md#statement-forms),
+  [patterns](docs/SOURCE-ELABORATION.md#patterns), [throws](docs/SOURCE-MODEL.md#throws)).
 - **Values and operators**: `null`, `undefined`, Booleans, numbers, bigints,
   strings and symbols, with literal types; arithmetic, relational comparison
   of operands in their primitive order, string `+` and template literals,
   compound and logical assignment; `typeof`, `in`, `instanceof`,
   truthiness, strict equality, and supported loose-equality comparisons
-  ([values](SOURCE-MODEL.md#values), [guards](SOURCE-MODEL.md#guards)).
+  ([values](docs/SOURCE-MODEL.md#values), [guards](docs/SOURCE-MODEL.md#guards)).
 - **Objects and arrays**: object literals with spreads, records, index
   signatures, dense arrays and tuples, optional chaining, enums, and classes
   with fields, methods, statics, parameter properties and a base class of the
-  file ([objects and prototypes](SOURCE-MODEL.md#objects-and-prototypes),
-  [classes](SOURCE-CONTRACTS.md#classes)).
+  file ([objects and prototypes](docs/SOURCE-MODEL.md#objects-and-prototypes),
+  [classes](docs/SOURCE-CONTRACTS.md#classes)).
 - **Functions**: declarations, function expressions and arrows with
   optional, default and rest parameters, closures as graph code, methods whose contracts depend on their receiver, `.call`, `.apply` and `.bind`; generic functions and
   classes certified at every instantiation; `async` functions and `await`
-  of promises of primitives ([calls](SOURCE-MODEL.md#calls),
-  [generic bodies](DESIGN.md#generic-bodies),
-  [async and iteration](SOURCE-MODEL.md#async-and-iteration)).
+  of promises of primitives ([calls](docs/SOURCE-MODEL.md#calls),
+  [generic bodies](docs/DESIGN.md#generic-bodies),
+  [async and iteration](docs/SOURCE-MODEL.md#async-and-iteration)).
 - **Types**: what TypeScript's declarations state, read by the declaration
   reader: aliases, interfaces, unions, intersections, computed types and
   library types through reviewed overlays; imports, ambient declarations and
   globals are assumptions at their declared types
-  ([trust surface](DESIGN.md#trust-surface)).
+  ([trust surface](docs/DESIGN.md#trust-surface)).
 
 A type assertion (`e as T`, `e satisfies T`, `e!`) decides nothing: `T` is one
 more type the operand must meet, so an assertion never establishes what a
@@ -133,10 +133,10 @@ than the calculus, and the parser can represent syntax the Lean adapter then
 rejects: such a rejection is a limitation, never evidence that a producer
 claim is false.
 
-[The fragment boundary](SOURCE-FRAGMENT.md) owns what is refused and why.
-[Source contracts](SOURCE-CONTRACTS.md) explains how declarations are read;
-[Fragment](FRAGMENT.md) owns the syntax encoding, and
-[the request protocol](REQUEST-PROTOCOL.md) owns the verifier commands and
+[The fragment boundary](docs/SOURCE-FRAGMENT.md) owns what is refused and why.
+[Source contracts](docs/SOURCE-CONTRACTS.md) explains how declarations are read;
+[Fragment](docs/FRAGMENT-FORMAT.md) owns the syntax encoding, and
+[the request protocol](docs/REQUEST-PROTOCOL.md) owns the verifier commands and
 calculus request/evidence encoding. Worked examples of each construct are the
 [pipeline cases](tests/README.md), including the
 [callable examples](pipeline/examples/callables/README.md); the
@@ -166,26 +166,26 @@ owner; other documents link to them and give only the context their readers need
 | Document | Owns |
 | --- | --- |
 | This README | Commands, a concise supported-fragment overview, and navigation. |
-| [DESIGN](DESIGN.md) | Principles, architecture, trust surface and lasting decisions. |
-| [SOURCE-MODEL](SOURCE-MODEL.md) | How source values and operations map to the calculus and its host assumptions. |
-| [SOURCE-FRAGMENT](SOURCE-FRAGMENT.md) | Enforced source restrictions and translation limits. |
+| [DESIGN](docs/DESIGN.md) | Principles, architecture, trust surface and lasting decisions. |
+| [SOURCE-MODEL](docs/SOURCE-MODEL.md) | How source values and operations map to the calculus and its host assumptions. |
+| [SOURCE-FRAGMENT](docs/SOURCE-FRAGMENT.md) | Enforced source restrictions and translation limits. |
 | [WORK](WORK.md) | Open work, its reasons and completion conditions. |
-| [SEMANTICS](SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
-| [POSITIVE-TYPES](POSITIVE-TYPES.md) | Types as positive formulas (clauses under union and intersection, no negation): type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
-| [RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering, wire format and acceptance statement. |
-| [PROGRAM-TYPING](PROGRAM-TYPING.md) | Core expression, graph and state typing rules, their side conditions and soundness scope. |
-| [SOURCE-ELABORATION](SOURCE-ELABORATION.md) | Evidence search and source compilation obligations, including bindings, closures and parameter initialization. |
-| [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md) | Source declarations, library contracts and the interpretation of annotations. |
-| [CALLABLES](CALLABLES.md) | The proved callable fragment and the proposed broader callable rules, with their distinct proof scopes. |
-| [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) | Request/evidence JSON and the verifier CLI. |
-| [FRAGMENT](FRAGMENT.md) | Source syntax wire format and its relation to execution plans and claims. |
-| [SOURCE-CLAIMS](SOURCE-CLAIMS.md) | The independent claims document schemas and source identity. |
-| [LANGUAGES](LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
-| [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
-| [CLAIM-LANGUAGE](CLAIM-LANGUAGE.md) | The claim text language diagnostics print: its two typed representations. |
+| [SEMANTICS](docs/SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
+| [POSITIVE-TYPES](docs/POSITIVE-TYPES.md) | Types as positive formulas (clauses under union and intersection, no negation): type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
+| [RECURSIVE-EQUATIONS](docs/RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering, wire format and acceptance statement. |
+| [PROGRAM-TYPING](docs/PROGRAM-TYPING.md) | Core expression, graph and state typing rules, their side conditions and soundness scope. |
+| [SOURCE-ELABORATION](docs/SOURCE-ELABORATION.md) | Evidence search and source compilation obligations, including bindings, closures and parameter initialization. |
+| [SOURCE-CONTRACTS](docs/SOURCE-CONTRACTS.md) | Source declarations, library contracts and the interpretation of annotations. |
+| [CALLABLES](docs/CALLABLES.md) | The proved callable fragment and the proposed broader callable rules, with their distinct proof scopes. |
+| [REQUEST-PROTOCOL](docs/REQUEST-PROTOCOL.md) | Request/evidence JSON and the verifier CLI. |
+| [FRAGMENT-FORMAT](docs/FRAGMENT-FORMAT.md) | Source syntax wire format and its relation to execution plans and claims. |
+| [SOURCE-CLAIMS](docs/SOURCE-CLAIMS.md) | The independent claims document schemas and source identity. |
+| [LANGUAGES](docs/LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
+| [OBLIGATION-DIAGNOSTICS](docs/OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
+| [CLAIM-LANGUAGE](docs/CLAIM-LANGUAGE.md) | The claim text language diagnostics print: its two typed representations. |
 | [Test index](tests/README.md) and the [callable examples](pipeline/examples/callables/README.md) | Regression coverage, the pipeline cases and their runnable witnesses. |
-| [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
-| [TRUST-REDUCTION](TRUST-REDUCTION.md) | The bridges between source and theorem that rest on review, the options for narrowing or proving each, and host lemmas against a mechanized ECMA-262. |
+| [REFERENCES](docs/REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
+| [TRUST-REDUCTION](docs/TRUST-REDUCTION.md) | The bridges between source and theorem that rest on review, the options for narrowing or proving each, and host lemmas against a mechanized ECMA-262. |
 
 When adding a rule, put its mathematical statement and proof scope in
 `PROGRAM-TYPING` (or `POSITIVE-TYPES` for subtyping). New semantic predicates go
@@ -270,4 +270,4 @@ Claims documents preserve current-content assertions such as
 `{ value: boolean = (true) }`, separately from the storage invariant. Supplied
 observations are checked obligations: every incoming edge, including loop
 backedges, must establish the assertions claimed at a statement entry. See
-[Current-content assertions](SOURCE-MODEL.md#current-content-assertions).
+[Current-content assertions](docs/SOURCE-MODEL.md#current-content-assertions).

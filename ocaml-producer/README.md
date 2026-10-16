@@ -36,7 +36,7 @@ through that project's source files, package exports, workspace symlinks and
 the imported examples.
 
 The command prints an outcome, one of those
-[the pipeline entry point](../DESIGN.md#the-pipeline-entry-point) lists, and an
+[the pipeline entry point](../docs/DESIGN.md#the-pipeline-entry-point) lists, and an
 artifact directory. The directory holds the source snapshot, `fragment.json`,
 `flow.json`, `claims.json` when proposed, `evidence.json` when produced, and
 diagnostic logs. Only `verified` exits successfully. `unverified` is not a disproof of the
@@ -66,8 +66,8 @@ A program has three relevant representations:
 2. **Execution plans** specify control flow, evaluation order and binding order.
 3. **SourceClaims** proposes types and environments at points in those plans.
 
-The [languages index](../LANGUAGES.md) identifies their definitions, and the
-[claims protocol](../SOURCE-CLAIMS.md) defines their wire format.
+The [languages index](../docs/LANGUAGES.md) identifies their definitions, and the
+[claims protocol](../docs/SOURCE-CLAIMS.md) defines their wire format.
 
 Lean constructs the execution plans from Fragment before reading claims. A
 statement graph supplies successors, lexical scopes and exception handlers.
@@ -130,7 +130,7 @@ for type-directed operations. It reconstructs plans from Fragment when checking
 a proposal. Acceptance depends on the source, claims and certificates; a digest
 of the producer's input graph is not an acceptance premise. Source-to-model
 correspondence remains a review obligation, described in
-[the trust boundary](../DESIGN.md#trust-surface).
+[the trust boundary](../docs/DESIGN.md#trust-surface).
 
 ## Values, storage and facts
 
@@ -168,8 +168,8 @@ and presence: dense, readable or sparse. Source `T[]` requires readable elements
 in `T`; holes are compatible only when `T` admits `undefined`. A readonly view
 is a capability restriction, not a guarantee that another alias cannot mutate
 the array. The semantic rules for those distinctions belong to
-[positive types](../POSITIVE-TYPES.md) and
-[program typing](../PROGRAM-TYPING.md).
+[positive types](../docs/POSITIVE-TYPES.md) and
+[program typing](../docs/PROGRAM-TYPING.md).
 
 ## Generic-call inference
 
@@ -260,8 +260,8 @@ can use it. Native array overloads can consume certified effects, for example
 to establish an array result's presence. Preservation concerns normal return;
 exceptional edges require their own state treatment. Composition has an
 explicit admitted scope in the
-[effect design](../SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)
-and [effect typing rules](../SOURCE-ELABORATION.md#certifying-inferred-call-effects).
+[effect design](../docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)
+and [effect typing rules](../docs/SOURCE-ELABORATION.md#certifying-inferred-call-effects).
 
 ## Implementation map
 
@@ -333,8 +333,8 @@ consumer and the theorem `SourceClaimJson.checkJson_safe` for every accepted
 function plan. That theorem concerns the modeled program. The parser,
 source-to-model correspondence, native specifications, executable toolchain
 and runner have separate trust obligations. The model's restrictions and
-external-library assumptions are stated in [DESIGN](../DESIGN.md) and
-[program typing](../PROGRAM-TYPING.md).
+external-library assumptions are stated in [DESIGN](../docs/DESIGN.md) and
+[program typing](../docs/PROGRAM-TYPING.md).
 
 The admitted source language is a subset of TypeScript. Proposal limits include
 unsupported mixed value/pack binders, certain spreads and pattern types,

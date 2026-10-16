@@ -1,8 +1,8 @@
 # Verification work
 
 This is the work ledger for the independent verifier: open work, the reason
-each item is open and when it closes. [DESIGN](DESIGN.md) states the
-architecture and decisions; [the source boundary](SOURCE-FRAGMENT.md) owns
+each item is open and when it closes. [DESIGN](docs/DESIGN.md) states the
+architecture and decisions; [the source boundary](docs/SOURCE-FRAGMENT.md) owns
 supported-fragment restrictions.
 
 ## Next steps
@@ -34,7 +34,7 @@ design, not its progress.
 **A connection to ECMA-262.** Proving the host's stated types as lemmas of a
 mechanized specification would turn the ECMA rows of the trust surface into
 theorems; the lemmas and their cost are in
-[TRUST-REDUCTION](TRUST-REDUCTION.md#the-host).
+[TRUST-REDUCTION](docs/TRUST-REDUCTION.md#the-host).
 
 <a id="constructor-rests"></a>
 **Constructor rests.** A constructor's rest parameter is refused: `new`
@@ -57,20 +57,20 @@ expect.
 the member's binder row is named by its bound, which the parser does not
 spell for the closure (`class-generic-method-bounded-refused`). Members of
 two declarations, or of two instances of one, binding as many binders relate
-up to renaming ([generic methods](SOURCE-CONTRACTS.md#generic-methods)); two
+up to renaming ([generic methods](docs/SOURCE-CONTRACTS.md#generic-methods)); two
 binding different numbers of binders (`m<U, V>` at `m<W>`), which TypeScript
 relates by instantiating the source at the target's binders, need an instance
 table naming each source signature's image at the target's binders, inside
 the family entry's table. A binder a member's result accumulates
 (`catch`'s `Promise<T | TResult>`) grows its family by one binder per call:
 each is an application of the one equation, unfolded only when read
-([RECURSIVE-EQUATIONS](RECURSIVE-EQUATIONS.md)), never truncated.
+([RECURSIVE-EQUATIONS](docs/RECURSIVE-EQUATIONS.md)), never truncated.
 
 <a id="restoring-completeness"></a>
 **Contract completeness.** Array presence, callback effects and conversion
 contracts impose separate obligations. Their current designs are stated under
-[arrays](SOURCE-MODEL.md#arrays), [native contracts](SOURCE-MODEL.md#exact-contracts-and-native-effects) and
-[effect certification](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification).
+[arrays](docs/SOURCE-MODEL.md#arrays), [native contracts](docs/SOURCE-MODEL.md#exact-contracts-and-native-effects) and
+[effect certification](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification).
 A future inference improvement must preserve these distinctions: density is
 stronger than readable elements; readonly aliases do not prevent callback
 mutation; and a written callback annotation cannot silently acquire a stronger
@@ -169,4 +169,4 @@ JavaScript is tested against node, not proved: the target is fixed, so
 testing converges without a mechanized specification. A rewrite chosen by a
 type (`%Iterate:K%`, `%ElementAt%`) is correct under that typing premise.
 The reading of declared types and the host remain trusted; the remaining
-options are in [TRUST-REDUCTION](TRUST-REDUCTION.md).
+options are in [TRUST-REDUCTION](docs/TRUST-REDUCTION.md).

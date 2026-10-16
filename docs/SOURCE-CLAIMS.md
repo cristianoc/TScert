@@ -175,7 +175,7 @@ with one `undefined` parameter uses `[[3]]` in the illustrative table above.
 Optional row fields describe variadic signatures, optional fields, host-relative
 methods, and own-key bounds. The full native clause field definitions are in
 [Request fields](REQUEST-PROTOCOL.md#request-fields), shared by graph requests
-and this document; [type-graph.mts](tools/type-graph.mts) declares their wire types.
+and this document; [type-graph.mts](../tools/type-graph.mts) declares their wire types.
 The reader validates label references even in unused candidates. A label is a
 name, not a guarantee that the value at a source site has that type.
 
@@ -196,7 +196,7 @@ primitive table above, so the receiver accepts any value. Its claim is:
 
 Every shown scheme field is required. `bound` is `null` or a claim type; a
 type parameter may also carry `resolution`, `null` or
-`{"observation": o, "result": r}` as in the [Fragment](FRAGMENT.md), which
+`{"observation": o, "result": r}` as in the [Fragment](FRAGMENT-FORMAT.md), which
 makes `o` and `r` binders of the same scheme;
 `this` is the required receiver type, `params` is the fixed parameter list,
 and `rest` is `null` or the surplus-element type. Binder names resolve
@@ -241,8 +241,8 @@ own binder-based certification.
 
 The execution document describes the order of runtime operations independently
 of proposed types. `verifier --lower-control-flow ast.json` emits an array of executable-body
-graphs. [source-flow.mts](tools/source-flow.mts) declares and decodes the wire;
-[FlowJson.lean](lean/Verification/Source/FlowJson.lean) writes it.
+graphs. [source-flow.mts](../tools/source-flow.mts) declares and decodes the wire;
+[FlowJson.lean](../lean/Verification/Source/FlowJson.lean) writes it.
 Each graph has `owner` (its source span), `bodySpans` (the body's statement
 spans), `entry` (a local node ID), `prologue` and `nodes`. Each node has `id`, `point`,
 `source`, `scope`, `handler`, `action`, `executions` and `bindingPlan`. The graph owner is the function name span, the nested body span, or `[0,0]`

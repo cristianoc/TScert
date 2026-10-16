@@ -2,7 +2,7 @@
 
 The bridges between a TypeScript program and the proved theorem that rest on
 review rather than proof, the ways each could be narrowed or proved, and how
-they compose. The options [WORK](WORK.md#next-steps) takes are (2) and
+they compose. The options [WORK](../WORK.md#next-steps) takes are (2) and
 (3), with the Fragment semantics read as JavaScript directly and tested
 against node.
 

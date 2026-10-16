@@ -41,7 +41,7 @@ allocation step, and the shared semantic proofs `make_fields_rule` and
 `makeFn_rule`. `isFun` recognizes function objects and
 `isRef` recognizes plain objects, both independently of the heap.
 
-[CallableObjects.lean](lean/Verification/Programs/CallableObjects.lean) proves that a callable object's fields are read and written as a record's.
+[CallableObjects.lean](../lean/Verification/Programs/CallableObjects.lean) proves that a callable object's fields are read and written as a record's.
 `bagT P` describes an object's writable fields independently of its call code,
 read and written as a record's (`bag_read`, `bag_write`); the call contracts
 (`callsT`, `restsT`) hold of the same value. `EnvOk.prepend` extends environments with ordered
@@ -122,7 +122,7 @@ input and a fallback before invocation. Both distinct return contracts survive
 export and verification. Producer and consumer regressions reject a discarded
 fallback alternative, a narrowed result, reuse of the nullish input as the
 fallback, a null fallback, and an incompatible argument.
-These sources are the [callable examples](pipeline/examples/callables/README.md),
+These sources are the [callable examples](../pipeline/examples/callables/README.md),
 each a pipeline case.
 The `andGuardedCallable` and `orGuardedCallable` examples exercise short-circuit
 calls with singleton call results. Their full expression results also include
@@ -441,7 +441,7 @@ obligations:
 
 They are **not** assertions that a writable internal cell has two different
 invariant content types. This is the law
-[`CallEffects.callsT_append`](lean/Verification/Semantics/CallEffects.lean)
+[`CallEffects.callsT_append`](../lean/Verification/Semantics/CallEffects.lean)
 proves for `callsT`.
 
 Consequently, placing the implementation in the heap does not itself damage
@@ -1094,7 +1094,7 @@ is.
 **Generic bodies.** A generic function's body is a graph request whose
 binders are parameter rows $`\vec p`$: rows the graph's assignment interprets,
 which no rule reads (a type holding one has no expansion). Acceptance does not
-read the assignment (`accept_reassign` in [Parametricity.lean](lean/Verification/Programs/Parametricity.lean)), so the rule
+read the assignment (`accept_reassign` in [Parametricity.lean](../lean/Verification/Programs/Parametricity.lean)), so the rule
 **Generic-Body** is the ordinary safety theorem at every reassignment:
 
 ```math
