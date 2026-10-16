@@ -168,17 +168,33 @@ def checkPointSites (graphs : List SourceFlow.Graph)
       throw "storage contract names no mutable declaration of the unit"
 
 /-- A module constant holds no value until its declaration runs. Walking the
-top-level code in order, a step may reach a module function, directly or
-through the functions that one mentions, only when every module constant those
-functions mention already holds its value. Mentions over-approximate calls, so
-this refuses some safe orders and admits no unsafe one. -/
+top-level code in order, a step may reach a module function or a module
+constant holding a closure, directly or through the code that one mentions,
+only when every module constant that code mentions already holds its value.
+Creating a closure runs none of its code, so the declaration of a constant
+the source names whose initializer is a closure reaches nothing; the closure's code is reached where
+its name is mentioned, which precedes every call of it, through the name or
+any value holding it. Mentions over-approximate calls, so this refuses some
+safe orders and admits no unsafe one. -/
 def checkInitializationOrder (T : EquationStore.State)
     (fns : List (Fragment.Fn × List Fragment.TypeParam)) (init : List Fragment.Stmt) :
     Except String Unit := do
   let constants := init.flatMap fun
     | .constants _ bs => bs.map (·.name)
     | _ => []
-  let bodies := fns.map fun (g, _) => (g.name, g.body.flatMap stmtNames)
+  -- A name the source spells; the parser's names for a class's parts
+  -- (`static C.m`) hold closures the class value holds, and stay mentions.
+  let spelled (n : String) := !n.isEmpty && n.all fun c => c.isAlphanum || c == '_' || c == '$'
+  let closure (b : Fragment.Binding) := spelled b.name && match b.init with
+    | .lambda .. => true
+    | _ => false
+  let closures := init.flatMap fun
+    | .constants _ bs => (bs.filter closure).map fun b => (b.name, b.init.freeNames)
+    | _ => []
+  let stepNames : Fragment.Stmt → List String
+    | .constants _ bs => (bs.filter (!closure ·)).flatMap (·.init.freeNames)
+    | s => stmtNames s
+  let bodies := fns.map (fun (g, _) => (g.name, g.body.flatMap stmtNames)) ++ closures
   let isFunction (n : String) := bodies.any (·.1 == n)
   let reach (start : List String) : List String := Id.run do
     let mut seen := start.filter isFunction |>.eraseDups
@@ -188,7 +204,7 @@ def checkInitializationOrder (T : EquationStore.State)
     return seen
   let mut ready : List String := []
   for s in init do
-    let reached := reach (stmtNames s)
+    let reached := reach (stepNames s)
     let read := reached.flatMap (fun g => (bodies.lookup g).getD []) |>.filter constants.contains
     if let some c := read.find? (fun c => !ready.contains c) then
       throw (sourceRefusal T s.pos .initializationOrder

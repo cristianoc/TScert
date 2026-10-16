@@ -87,7 +87,22 @@ its parameters and discards the rest; the second signature is a claim its
 body is checked at (`arrow-constant-callback`), never a widening of the
 first. The
 initialization unit refuses a call, direct or through module functions, that
-can read a constant not yet initialized (`checkInitializationOrder`).
+can read a constant not yet initialized (`checkInitializationOrder`). Walking
+the steps in order, with $`\mathrm{ready}_k`$ the constants the steps before
+step $`k`$ declare, $`\mathrm{code}`$ the module functions and the constants
+the source names holding a closure, $`\mathrm{names}(c)`$ the names code $`c`$ mentions, and
+$`\mathrm{step}(k)`$ the names step $`k`$ mentions outside the closure a constant's
+declaration holds:
+
+```math
+\frac{R_k=\mathrm{reach}(\mathrm{step}(k)\cap\mathrm{code})\qquad
+       \forall c\in R_k.\ \mathrm{names}(c)\cap\mathrm{constants}\subseteq\mathrm{ready}_k}
+     {\text{step}\ k\ \text{is admitted}}\ \textsf{initialization-order}
+```
+
+where $`\mathrm{reach}`$ closes a set of code under the code its names mention.
+Creating a closure runs none of its code, and every call of it follows a
+mention of its name, so its code is reached there.
 
 **Claims against annotations.** A claimed type $`C`$ is within the
 annotation's $`A`$ (`within`) when

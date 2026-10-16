@@ -19,6 +19,9 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // The step calling the closure constant reads `LIMIT` before it holds a value.
+  assert.throws(() => runExample("invalid-initialization-closure-call", "scaled(1)"), /before initialization/,
+    "invalid-initialization-closure-call: the module throws a ReferenceError while it initializes");
   // The callback's `set` writes the map it captures.
   assert.equal(runExample("invalid-map-collection-write-callback",
     `(() => { const counts = new Map(); seen(["a", "a"], counts); return counts.get("a"); })()`), 2,
