@@ -803,9 +803,9 @@ export function collectDeclarations(file: string, options: {
           // An alias TypeScript computes from its parameters is the type it
           // computes at this reference's arguments.
           if (computedAlias(targetNode, aliasOf)) return computedType(computedContext, part, pos, read);
-          const parameters = targetNode.typeParameters ?? [];
+          const parameters = mergedParameters(targetNode, partners);
           const args = part.typeArguments ?? [];
-          if (args.length < parameters.filter(p => !p.defaultType).length || args.length > parameters.length)
+          if (args.length < parameters.filter(p => !p.default).length || args.length > parameters.length)
             throw Error(`type argument arity: ${identityOf(targetNode).module}#${name.text}`);
           valueStarts.push(targetNode);
           return { k: "reference", reference: { name: name.text, span: pos,
@@ -2006,6 +2006,23 @@ function boundedArguments(call: ts.CallExpression, stated: Stated, what: string)
  * it, or, outside the standard library, as declared. A global read only
  * through tests, `Array.isArray(e)`, is no value at all (null).
  */
+/** A declaration's type parameters by position, as TypeScript merges an
+ * interface's declarations: each position's parameter in the declaration
+ * binding the longest list, and its bound and default with the declaration
+ * stating them, in whose scope they are read. TypeScript requires the
+ * declarations stating a position's bound, or its default, to agree. */
+function mergedParameters(node: TypeDeclaration,
+    partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>) {
+  const parts = partners.get(node) ?? [node];
+  return (node.typeParameters ?? []).map((parameter, index) => {
+    const stated = parts.flatMap(part => {
+      const at = part.typeParameters?.[index];
+      return at ? [{ part, at }] : [];
+    });
+    return { parameter, bound: stated.find(s => s.at.constraint), default: stated.find(s => s.at.defaultType) };
+  });
+}
+
 /** A namespace declaring only types, directly or in namespaces of its own:
  * TypeScript makes no value of it, so in a value position the name means
  * only its other declarations (`console`, a variable and a namespace of
@@ -2507,8 +2524,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // computes at this reference's arguments.
       if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
       const target = identityOf(targetNode);
-      const targetParameters = targetNode.typeParameters ?? [];
-      const required = targetParameters.filter(p => !p.defaultType).length;
+      const targetParameters = mergedParameters(targetNode, partners);
+      const required = targetParameters.filter(p => !p.default).length;
       if (arguments_.length < required || arguments_.length > targetParameters.length)
         throw Error(`type argument arity: ${target.module}#${target.name}`);
       const edge: Reference = { name: identifier.text, span: pos,
@@ -2553,20 +2570,23 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       },
     });
     const scope = scopeOf(source);
-    const parse = (part: TypeNode): TypeTerm => typeTerm(scope, part);
-    let sawDefault = false;
-    const parameters = parameterNodes.map(parameter => {
-      if (sawDefault && !parameter.defaultType)
-        throw Error(`required type parameter after default in ${identity.module}#${identity.name}`);
-      sawDefault ||= !!parameter.defaultType;
-      const parameterSpan: Span = [parameter.getStart(source), parameter.end];
-      return { name: parameter.name.text, span: parameterSpan,
-        bound: parameter.constraint ? parse(parameter.constraint) : null,
-        default: parameter.defaultType ? parse(parameter.defaultType) : null };
-    });
     const parts = partners.get(node) ?? [node];
     const partScope = (part: TypeDeclaration): TermScope =>
       scopeOf(part.getSourceFile(), (part.typeParameters ?? []).map(parameter => parameter.name.text));
+    // A bound or default is read in the scope of the declaration stating it.
+    const statedIn = (at: { part: TypeDeclaration; type: TypeNode | undefined }): TypeTerm | null =>
+      at.type ? typeTerm(partScope(at.part), at.type) : null;
+    let sawDefault = false;
+    const parameters = mergedParameters(node, partners).map(merged => {
+      const parameter = merged.parameter;
+      if (sawDefault && !merged.default)
+        throw Error(`required type parameter after default in ${identity.module}#${identity.name}`);
+      sawDefault ||= !!merged.default;
+      const parameterSpan: Span = [parameter.getStart(source), parameter.end];
+      return { name: parameter.name.text, span: parameterSpan,
+        bound: merged.bound ? statedIn({ part: merged.bound.part, type: merged.bound.at.constraint }) : null,
+        default: merged.default ? statedIn({ part: merged.default.part, type: merged.default.at.defaultType }) : null };
+    });
     // A standard library interface read through the overlay: only its listed
     // members, and no base.
     const overlaid = ts.isInterfaceDeclaration(node) && Object.hasOwn(interfaceOverlay, node.name.text) &&
@@ -2584,7 +2604,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       continue;
     }
     let expression = ts.isTypeAliasDeclaration(node)
-      ? parse(node.type)
+      ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
         ? classInstance(scope, node, [node.getStart(source), node.end])
         : mergeMembers(parts.map(part => {

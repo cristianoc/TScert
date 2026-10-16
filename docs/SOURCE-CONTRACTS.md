@@ -219,7 +219,10 @@ its own type. Its type parameters are positional: each declaration binds a
 prefix of the longest list under the same names (TypeScript requires the
 others to have defaults), and its members are read with the parameters it
 binds, so a name it does not bind is what that name denotes there. The first
-declaration binding the longest list is its identity. The declarations name
+declaration binding the longest list is its identity. A position's bound and
+default are those a declaration states there, read in its scope (TypeScript
+requires declarations stating one to agree; `interface-merge-parameter-defaults`).
+The declarations name
 no member twice and state at most one index signature of each key kind, or
 the interface is refused:
 

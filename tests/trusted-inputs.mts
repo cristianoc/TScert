@@ -100,6 +100,19 @@ function fixtureProject(files: Record<string, string>) {
 }
 
 {
+  // A merged interface's parameter keeps the bound and the default its
+  // shorter declaration states, read in that declaration's scope.
+  const project = fixtureProject({});
+  const doc = project.parse("interface J<T extends string = \"a\"> { key: T; }\n" +
+    "interface J<T, U = boolean> { flag: U; }\n" +
+    "export function key(j: J): string { return j.key; }\n").declarations;
+  const merged = must(doc.definitions.find((d) => d.declaration.name === "J"), "J");
+  assert.deepEqual(merged.parameters.map((p) => [p.name, p.bound?.k ?? null, p.default?.k ?? null]),
+    [["T", "atom", "literal"], ["U", null, "atom"]]);
+  process.stdout.write("merged interface parameters: bounds and defaults of every declaration\n");
+}
+
+{
   // An import the overlay of library modules lists is read through it only
   // where TypeScript binds it to Node's declarations: a module the project
   // maps to its own file under Node's name is refused.

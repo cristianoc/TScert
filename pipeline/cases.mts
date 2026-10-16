@@ -1187,6 +1187,7 @@ export const cases: Case[] = [
   negative("invalid-tuple-union-rest", "no tuple of the union admits the argument"),
   positive("merged-interface", "an interface declared twice has both declarations' members"),
   negative("invalid-merged-interface", "each merged member keeps its own type"),
+  positive("interface-merge-parameter-defaults", "a merged interface's parameter takes its default and its bound from the declaration stating them, though another binds the longer list"),
   positive("interface-merge-prefix-parameters", "an interface merged from declarations binding a prefix of its type parameters: each declaration's members read with the parameters it binds, a name it does not bind read as what it names there"),
   positive("bigint-symbol", "bigint and symbol values at their types"),
   negative("invalid-bigint", "a bigint is not a number"),
