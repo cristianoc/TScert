@@ -355,13 +355,16 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   /-- **A bound function.** `.bind` saved its target, receiver and prefix in
   slots; allocation stores those values, as they are, in a forwarding
   descriptor with no fields. The result takes the positions the target's
-  selected signature has after the prefix, with any receiver: the one it is
-  later called with is dropped for the saved one. -/
-  | bindE {effect : Effect} {Γ : List (Ty ι)} {F T Rt R Rc : Ty ι} {t r : Nat} {slots : List Nat}
-      {Ps Ds : List (Ty ι)} :
-      Γ[t]? = some T → ⟨Rt, Ps ++ Ds, R, effect⟩ ∈ callSigs G T →
-      Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some → effect.keeps slots.length = true →
-      Represents G F (.arrs [⟨Rc, Ds, R, effect.drop slots.length⟩] []) →
+  selected signatures have after the prefix, with any receiver: the one it is
+  later called with is dropped for the saved one. Each keeps its effect, a
+  promise about a parameter past the prefix shifted onto the positions left. -/
+  | bindE {Γ : List (Ty ι)} {F T Rt : Ty ι} {t r : Nat} {slots : List Nat}
+      {Ps : List (Ty ι)} {L : List (Arrow (Ty ι))} :
+      Γ[t]? = some T → Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some → L ≠ [] →
+      (∀ a ∈ L, ∃ s ∈ callSigs G T, s.receiver = Rt ∧ s.arguments = Ps ++ a.arguments ∧
+        s.result = a.result ∧ s.effect.keeps slots.length = true ∧
+        s.effect.drop slots.length = a.effect) →
+      Represents G F (.arrs L []) →
       HasTyWith G images subtyping Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   /-- **A bound variadic function.** As `bindE`, for a variadic signature of
   the target whose rest is an element rest: the prefix takes its first fixed
@@ -1775,25 +1778,39 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hA
           exact ihu q hq j U heap ρ (he.transfer j hj U hxU) hu' hok
       · exact hparts.elim
-  | @bindE effect Γ F T Rt R Rc t r saved Ps Ds ht hsig hr hpre hkeeps hF =>
+  | @bindE Γ F T Rt t r saved Ps L ht hr hpre hne hL hF =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
       Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
     cases n with
     | zero => trivial
     | succ m =>
-      have hcall := callsT_of_callSigs hsig (he.2 t T ht)
-      simp only [Arrow.map, Contract.map, List.map_append] at hcall
       have hpv := ArgsT_slots he hpre
       apply make_empty_rule (meaning_adm G F) (m + 1) W h _ hw hh
       intro oid
-      have hbound := CallEffects.callsT_bound (Rc := meaning G Rc) (fs := []) (oid := oid)
-        (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
-        (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
-        (by simpa using hkeeps) hcall (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv
-        (ArgsT_values (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q) hpv)
-        (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
-      exact (represents_back hF (m + 1) _ _) ⟨by simpa [Arrow.map, RestArrow.mapWith, Contract.map] using hbound, hbound.1, by simp⟩
+      have hone : ∀ a ∈ L, CallEffects.callsT (excOf G) [a.map (meaning G)] (m + 1) W
+          (.objAt [] (.bound (ρ t) (ρ r) (saved.map ρ)) oid) := by
+        intro a ha
+        obtain ⟨⟨Rt', args, R, eff⟩, hsig, h1, h2, h3, hk, hd⟩ := hL a ha
+        rcases a with ⟨Rc, Ds, Ra, ea⟩
+        simp only at h1 h2 h3 hk hd
+        subst h1 h2 h3 hd
+        have hcall := callsT_of_callSigs hsig (he.2 t T ht)
+        simp only [Arrow.map, Contract.map, List.map_append] at hcall
+        have hbound := CallEffects.callsT_bound (Rc := meaning G Rc) (fs := []) (oid := oid)
+          (meaning_adm G Rt') (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
+          (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
+          (by simpa using hk) hcall (meaning_value (he.2 r Rt' hr)).1 (he.1 r) (he.2 r Rt' hr) hpv
+          (ArgsT_values (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q) hpv)
+          (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
+        simpa [Arrow.map, Contract.map, List.length_map] using hbound
+      obtain ⟨a₀, ha₀⟩ := List.exists_mem_of_ne_nil L hne
+      have hinv := (hone a₀ ha₀).1
+      exact (represents_back hF (m + 1) _ _)
+        ⟨CallEffects.callsT_of_signatures hinv (by
+          intro p hp
+          obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hp
+          exact hone a ha), hinv, by simp⟩
   | @bindRestE effect Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hpre hQs hkeeps hF =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,

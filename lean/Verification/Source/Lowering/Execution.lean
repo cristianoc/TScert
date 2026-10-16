@@ -592,7 +592,10 @@ prepared predicate without replaying an effectful source operand. -/
       let original := fun (n : String) => match saved.lookup n with
         | some (.var _ o) => o
         | _ => n
-      let after := match promiseNarrowing (SourceTypes.graph (← table)) scope after true origin original with
+      let called := match operation with
+        | .invokeSaved source _ _ _ => source
+        | _ => origin
+      let after := match promiseNarrowing (SourceTypes.graph (← table)) scope after true called original with
         | some (j, T) => after.set j T
         | none => after
       -- A rebound slot no longer holds what an alias saved of it.

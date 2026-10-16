@@ -1231,3 +1231,27 @@ for (const [file, arity, accepted] of [
   assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, ast), /obligation|evidence|claim/);
   process.stdout.write("unpromised guard call: its qualified read refused\n");
 }
+
+{
+  // A closure's written promise is proved whatever the claims offer: with
+  // the promise signature removed from the arrow constant `isNumber`'s claim,
+  // and its body's claims for that signature, the closure is refused.
+  const artifacts = run("type-guards");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("(v: unknown): v is number =>");
+  const init = must(claims.init, "the module's claims");
+  const arrow = must(init.arrows?.find((a) => a.pos[0] === at), "isNumber's arrow claims");
+  const claim = must(init.expressions.find((e) => e.pos[0] === at && e.pos[1] === arrow.pos[1]), "isNumber's claim");
+  const label = Array.isArray(claim.type) && claim.type.length === 1 ? claim.type[0] : undefined;
+  assert.ok(typeof label === "number", "isNumber is claimed at one row");
+  const clause = must(claims.types[label]?.[0], "isNumber's row");
+  assert.ok(typeof clause === "object" && "arrs" in clause, "isNumber is claimed at arrows");
+  const kept = clause.arrs.arrows.map((a) => typeof a.effect !== "object");
+  assert.ok(kept.includes(false), "isNumber's claim offers its promise");
+  clause.arrs.arrows = clause.arrs.arrows.filter((_, i) => kept[i]);
+  arrow.rows = arrow.rows.filter((_, i) => kept[i]);
+  const forged = writeClaims(artifacts, "forged-unoffered-promise", claims);
+  refusedAt(artifacts, forged, "forged-unoffered-promise", "a guard closure's claim must offer its written promise");
+  process.stdout.write("guard closure claimed without its promise: refused\n");
+}

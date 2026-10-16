@@ -1906,9 +1906,12 @@ refines $`\Gamma`$ itself (`if (s.kind === "circle") return true;`). A return
 is claimed at its value's own type, so a `return false` answers `false`
 alone.
 
-A call consumes the promise. Where the callee's type holds a promise
-signature its actuals meet, the call's `true` result, or its normal return,
-leaves the promised actual $`a`$ a $`T`$:
+A call consumes the promise. The callee is any expression whose type holds
+a promise signature its actuals meet: a name, a method or a field of an
+object, a bound function. Of an overloaded callee's promise signatures, the
+call narrows by one whose parameters admit its actuals. The call's `true`
+result, or its normal return, leaves the promised actual $`a`$, a name, a
+$`T`$:
 
 ```math
 \frac{\Gamma\vdash g : (\vec A)\to T\,[\mathsf{guards}\ p]\quad \Gamma\vdash \vec a : \vec A\quad
@@ -1923,6 +1926,12 @@ leaves the promised actual $`a`$ a $`T`$:
 A `false` outcome narrows nothing: the promise states nothing of it
 (`invalid-type-guard-false-branch`). Passing a guard where a plain predicate
 is expected forgets its promise signature, as an intersection's operand.
+Binding a prefix of a guard's actuals (`g.bind(r, …)`) keeps a promise about
+an actual past the prefix, at its new position.
+
+A closure's written promise is proved whatever its claim offers: one of the
+signatures its code is checked at states that promise, at a type within the
+written one, or the closure is refused.
 
 An imported guard is read at its declared type, both signatures; its promise
 is the import assumption of [the trust surface](DESIGN.md#trust-surface),
@@ -1934,9 +1943,11 @@ check at a return; [PromiseCalls.lean](../lean/Verification/Programs/PromiseCall
 holds the yields of a returned value (`yieldFollows_sound`) and the promise
 call (`promiseCall_sound`); `Lowering.Control.promiseNarrowing` places the
 narrowed claim after a call, which the edge check verifies. Pipeline cases:
-`type-guards`, `type-guard-objects` and `type-guard-value-import` verify;
+`type-guards`, `type-guard-objects`, `type-guard-methods`,
+`type-guard-value-import` and `type-guard-overload-value-import` verify;
 `invalid-type-guard-promise`, `invalid-type-guard-undefined`,
-`invalid-type-guard-default`, `invalid-type-guard-object` and
+`invalid-type-guard-default`, `invalid-type-guard-object`,
+`invalid-type-guard-method` and
 `invalid-assertion-promise` are refused at the return where the argument is
 not a $`T`$, each run under Node by `node-runs.mts`.
 

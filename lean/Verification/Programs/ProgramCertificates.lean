@@ -1111,18 +1111,19 @@ declared bounds. -/
       ⟨jr.type, ((jas.take k).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type ∧
       effect.plain = true
     | _, _ => False
-  -- `.bind`'s saved slots, with no premises: the target's selected signature
-  -- starts with the prefix slots' contracts, and the result takes the rest at
-  -- the one receiver it states, whatever that is.
+  -- `.bind`'s saved slots, with no premises: each of the target's selected
+  -- signatures starts with the prefix slots' contracts, and the result takes
+  -- the rest of each at the receiver it states, whatever that is.
   | .bindE =>
     match j.term, ps with
     | .makeAt (.bound (.var t) (.var r) pre) ns inits, [] =>
       ns = [] ∧ inits = [] ∧
       match varSlots pre, j.context[t]?, j.context[r]?, expand G j.type with
-      | some saved, some T, some Rt, [.arrs [⟨_, Ds, R, effect⟩] []] =>
-        saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
-        ∃ s ∈ callSigs G T, s.receiver = Rt ∧ s.arguments = saved.filterMap (j.context[·]?) ++ Ds ∧
-          s.result = R ∧ s.effect.keeps saved.length = true ∧ s.effect.drop saved.length = effect
+      | some saved, some T, some Rt, [.arrs L []] =>
+        saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧ L ≠ [] ∧
+        ∀ a ∈ L, ∃ s ∈ callSigs G T, s.receiver = Rt ∧
+          s.arguments = saved.filterMap (j.context[·]?) ++ a.arguments ∧
+          s.result = a.result ∧ s.effect.keeps saved.length = true ∧ s.effect.drop saved.length = a.effect
       | _, _, _, _ => False
     | _, _ => False
   -- As `bindE`, for a variadic signature of the target with an element rest:
@@ -2137,11 +2138,9 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
   · obtain ⟨rfl, rfl, hl⟩ := hl
     split at hl
     · rename_i hsaved hT hRt hF
-      obtain ⟨hmap, ⟨Rt', args', R', ef⟩, hmem, h1, h2, h3, hk, hd⟩ := hl
-      simp only at h1 h2 h3 hk hd
-      subst h1 h2 h3 hd
+      obtain ⟨hmap, hne, hL⟩ := hl
       rw [varSlots_eq hsaved]
-      exact HasTyUsing.bindE hT hmem hRt hmap hk hF
+      exact HasTyUsing.bindE hT hRt hmap hne hL hF
     · contradiction
   · obtain ⟨rfl, rfl, hl⟩ := hl
     split at hl

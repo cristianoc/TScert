@@ -118,13 +118,13 @@ as a pack and as an array value (`...args: T`, `args: T`): a binder whose instan
 arrays or tuples of required positions, its pack meaning that tuple contract's lists, so an
 entry collects the fresh store at it and a spread of its value gives a list in the pack. Explicit type arguments on an element call,
 which reach an element only as a generic closure's quantified claim.
-User guards beyond a called name: a generic guard, which needs a
-quantified promise signature in the producer's encoding, and a method guard
-called through its object (`o.isWord(v)`), whose promise the producer and
-the lowering would read off the method's type at the member read. A guard
-returning a test of its argument's field (`return s.kind === "circle"`),
-which needs the promise check to refine an object through the read link
-from its field to the tested slot, as a branch's edge does. A static
+User guards: a generic guard, which needs a quantified promise signature in
+the producer's encoding; a promise about a property (`isWord(node.name)`),
+which needs the guard to promise also that it writes nothing, and a typed
+current-content fact for the property; a guard returning a test of its
+argument's field (`return s.kind === "circle"`), which needs the promise
+check to refine an object through the read link from its field to the
+tested slot, as a branch's edge does. A static
 initializer calling a static method reading its class, or constructing it
 where construction reads an earlier static field, which runs the class's code
 before the class value exists (a construction reading a later one reads

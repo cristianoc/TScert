@@ -171,6 +171,14 @@ def decodeTypeParams (raw : List Json) : Except String (List TypeParam) := do
   ResolutionWire.validateOwnership (parameters.map fun p => (p.name, p.resolution))
   return parameters
 
+/-- A user-defined guard's promise (`x is T`, `asserts x is T`), written in
+its result annotation: the actual it is about, by position among a call's
+actuals, whether it is an assertion function's, and `T`'s annotation. -/
+structure Guard where
+  param : Nat
+  asserts : Bool
+  type : Json
+
 mutual
 inductive Expr where
   | var (pos : Span) (name : String)
@@ -268,7 +276,7 @@ inductive Expr where
   `call` for any other (`Invoke`). -/
   | lambda (pos : Span) (receiver : Option (Json × Invoke)) (typeParams : List TypeParam)
       (params : List (String × Json)) (defaults : List (Nat × Expr)) (rest : Bool)
-      (result : Option Json) (body : Expr)
+      (result : Option Json) (guard : Option Guard) (body : Expr)
   /-- A class value: its constructor `lambda` as construct-only code, and its
   static fields, each the binding its initializer bound, in member order. -/
   | ctor (pos : Span) (lam : Expr) (statics : List (PropKey × Expr))
@@ -390,7 +398,7 @@ executable source form cannot bypass parameter-initialization checks. -/
 partial def Expr.freeNames : Expr → List String
   | .var _ n => [n]
   | .lit .. => []
-  | .lambda _ receiver _ ps ds _ _ b =>
+  | .lambda _ receiver _ ps ds _ _ _ b =>
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
@@ -424,7 +432,7 @@ span, the name, as `freeNames` binds names, and the explicit type arguments
 written on the call. -/
 partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .var .. | .lit .. => []
-  | .lambda _ _ _ ps ds _ _ b =>
+  | .lambda _ _ _ ps ds _ _ _ b =>
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2.1)
   -- A read off a name instantiates it, as a call does, where it is a
@@ -557,7 +565,7 @@ def Expr.span : Expr → Span
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
   | .arrayLit p _ _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
 
 /-- What evaluating an assignment target's reference evaluates: a field's
 receiver, then its key; nothing for a local. -/
@@ -592,14 +600,6 @@ structure Param where
   /-- A rest parameter stands for the required positions of its tuple
   contract, and binds the array its arguments are collected into. -/
   rest : Bool := false
-/-- A user-defined guard's promise (`x is T`, `asserts x is T`): the actual
-it is about, by position among a call's actuals, whether it is an assertion
-function's, and `T`'s annotation. -/
-structure Guard where
-  param : Nat
-  asserts : Bool
-  type : Json
-
 structure Fn where
   name : String
   namePos : Span
@@ -708,6 +708,14 @@ def decodeLabel (j : Json) : Except String (Option String) := do
   match ← jField j "label" with
   | .null => pure none
   | l => some <$> jStr l
+
+/-- A guard's promise as the Fragment states it, or none. -/
+def decodeGuard : Json → Except String (Option Guard)
+  | .null => pure none
+  | g => do
+    fieldsExactly g ["param", "asserts", "type", "span"]
+    let some param := (← jField g "param").getNat?.toOption | throw "a guard's parameter is a position"
+    return some ⟨param, ← (← jField g "asserts").getBool?, ← jField g "type"⟩
 
 mutual
 partial def decodeExpr (j : Json) : Except String Expr := do
@@ -925,7 +933,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- whose constructor this one's code is (`decodeBindings`).
     let lam ← decodeExpr (← jField j "lambda")
     match lam with
-    | .lambda _ none [] _ [] false _ _ | .var .. => pure ()
+    | .lambda _ none [] _ [] false _ _ _ | .var .. => pure ()
     | _ => throw "a class value is a constructor lambda with plain parameters"
     -- Its static fields, each read from the binding its initializer bound,
     -- under a name a source property spells; the list is left out when
@@ -997,8 +1005,11 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- A result the source does not annotate is null: the producer's claim
     -- at the closure proposes it, and every claimed arrow's body is checked.
     let result ← jField j "result"
+    let guard ← match (j.getObjVal? "guard").toOption with
+      | some g => decodeGuard g
+      | none => pure none
     return .lambda p receiver typeParams params defaults (!restAt.isEmpty)
-      (if result == .null then none else some result) body
+      (if result == .null then none else some result) guard body
   | "conditional" =>
     return .ifBody p (← decodeExpr (← jField j "cond"))
       (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
@@ -1126,14 +1137,6 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
   | _ => throw "statement outside the stateful fragment"
 end
 
-
-/-- A guard's promise as the Fragment states it, or none. -/
-def decodeGuard : Json → Except String (Option Guard)
-  | .null => pure none
-  | g => do
-    fieldsExactly g ["param", "asserts", "type", "span"]
-    let some param := (← jField g "param").getNat?.toOption | throw "a guard's parameter is a position"
-    return some ⟨param, ← (← jField g "asserts").getBool?, ← jField g "type"⟩
 
 def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
   fieldsExactly j ["name", "namePos", "typeParams", "params", "retType", "guard", "body", "strict"]

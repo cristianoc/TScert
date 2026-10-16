@@ -3,7 +3,8 @@
 // literals, of primitive kinds and of `null`, in a statement, a ternary, a
 // conjunction and a negated early return; a module constant's arrow guard; a
 // guard closure; a guard catching its own exception; an assertion function;
-// a guard passed as a plain predicate.
+// a guard passed as a plain predicate; a guard bound with `.bind`, which keeps
+// its promise about an actual it does not bind.
 export type Presence = "dense" | "readable" | "sparse";
 
 export function isPresence(value: unknown): value is Presence {
@@ -69,4 +70,13 @@ export function isWord(x: unknown): x is string {
 
 export function wordLength(v: unknown): number {
   return isWord(v) ? v.length : 0;
+}
+
+function isLabel(x: unknown): x is string {
+  return typeof x === "string";
+}
+
+export function boundLength(x: unknown): number {
+  const guard = isLabel.bind(undefined);
+  return guard(x) ? x.length : 0;
 }

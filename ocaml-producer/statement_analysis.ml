@@ -312,7 +312,8 @@ let transfer (expr:Analysis_state.expression_infer) =
       end else env
     | Effect e -> ignore (expr env e);
       (* An assertion function's call leaves its actual at the promise's type. *)
-      Refinement.promise_refine (fun name -> try Some (resolve env name) with Json.Error _ -> None)
+      Refinement.promise_refine ~claimed:latest_claim
+        (fun name -> try Some (resolve env name) with Json.Error _ -> None)
         declarations (after e env) e true
     | If _ | While _ | Block _ | ForOf _ | Try _ | Closing _ | Break _ | Continue ->
       Json.fail "a structured statement occurs as an atomic flow operation"

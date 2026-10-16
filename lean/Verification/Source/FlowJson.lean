@@ -157,7 +157,7 @@ private partial def defaultPrologues : Json → Except String (List (Span × Lis
     let own ← if (raw.getObjValAs? String "k").toOption == some "lambda" then do
       let expression ← decodeExpr raw
       match expression with
-      | .lambda origin _ _ params defaults variadic _ body =>
+      | .lambda origin _ _ params defaults variadic _ _ body =>
         match body with
         | .block .. => pure []
         | _ =>

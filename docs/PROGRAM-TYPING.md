@@ -523,12 +523,13 @@ result takes the rest, at any receiver, since invoking it drops the receiver it
 is given (`CallCode.bound`, `callsT_bound`):
 
 ```math
-\frac{\Gamma(f)=F\quad(R,\vec P\,\vec D,B)\in\mathrm{callSigs}_G(F)
-      \quad\Gamma(r)=R\quad\Gamma(\vec p)=\vec P}
-     {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec D\to B)}
+\frac{\Gamma(f)=F\quad\Gamma(r)=R\quad\Gamma(\vec p)=\vec P\quad
+      \forall i.\ (R,\vec P\,\vec D_i,B_i,\epsilon_i)\in\mathrm{callSigs}_G(F)}
+     {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):\textstyle\bigwedge_i (Q_i;\vec D_i\to B_i)\,[\epsilon_i\!\downarrow_{|\vec p|}]}
 ```
 
-The bound function keeps the selected signature's effect. A promise about
+The bound function meets each of the selected signatures, one or more, and
+keeps each one's effect. A promise about
 the $`p`$-th parameter (`guards p`, `asserts p`) survives only where
 $`p\ge|\vec p|`$, and is then about parameter $`p-|\vec p|`$ (`Effect.keeps`,
 `Effect.drop`). A call rule (`app`, `callCallable`, `callRest`,
