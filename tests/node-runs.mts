@@ -1,7 +1,7 @@
 // Examples and native-contract counterexamples run under Node: each result is
 // what the case's outcome and the contracts it relies on say. No build needed.
 import assert from "node:assert/strict";
-import { runEmitted, runExample, runImporting } from "./run-example.mts";
+import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mts";
 
 {
   for (const [file, call] of [

@@ -98,10 +98,10 @@ run_test "JSON field names agree (TS, Lean, OCaml)" node tests/json-field-names.
 run_test "Assertions carry their reasons" node tools/unchecked.mts
 # tests/docs.mts checks every document's links, anchors and math.
 run_test "Documents: links, math" node tests/docs.mts
-# pipeline/node-runs.mts runs examples and native-contract counterexamples under Node.
-run_test "Examples run under Node" node pipeline/node-runs.mts
-# pipeline/trusted-inputs.mts checks the front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay.
-run_test "Trusted inputs" node pipeline/trusted-inputs.mts
+# tests/node-runs.mts runs examples and native-contract counterexamples under Node.
+run_test "Examples run under Node" node tests/node-runs.mts
+# tests/trusted-inputs.mts checks the front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay.
+run_test "Trusted inputs" node tests/trusted-inputs.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node tests/rule-inventory.mts
 

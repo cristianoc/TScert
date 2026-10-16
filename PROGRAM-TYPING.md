@@ -647,7 +647,7 @@ fields (`codeOf`, [allocation from parts](SEMANTICS.md#operational-language)):
      {\Gamma\vdash_G a.f:A}\ (\texttt{readBagView})
 ```
 
-A plain call of a class throws in JavaScript: `pipeline/node-runs.mts` runs
+A plain call of a class throws in JavaScript: `tests/node-runs.mts` runs
 `invalid-class-as-function` under Node beside the pipeline's refusal of it.
 [ExecutionModelTests.lean](lean/Verification/Tests/ExecutionModelTests.lean) shows the model's `new` running no call-only code, as JavaScript's `new`
 of an arrow throws.

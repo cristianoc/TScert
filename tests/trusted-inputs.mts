@@ -9,8 +9,8 @@ import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { collectDeclarations, tsconfigOf } from "../tools/declaration-graph.mts";
 import { overlay as arrayOverlay } from "../tools/array-prototype.mts";
-const here = import.meta.dirname;
-const libraryConfig = tsconfigOf(resolve(here, "library-project"));
+const pipelineDir = resolve(import.meta.dirname, "../pipeline");
+const libraryConfig = tsconfigOf(resolve(pipelineDir, "library-project"));
 
 function must<T>(value: T | null | undefined, message: string): T {
   assert.ok(value !== null && value !== undefined, message);
@@ -46,8 +46,8 @@ function fixtureProject(files: Record<string, string>) {
   // version library-project/package.json pins (`npm ci --prefix pipeline/library-project`).
   // `process` and the members those examples read are declared in these two files.
   const nodeSha = (path: string) =>
-    createHash("sha256").update(readFileSync(resolve(here, "library-project/node_modules/@types/node", path))).digest("hex");
-  const nodeTypes: unknown = JSON.parse(readFileSync(resolve(here,
+    createHash("sha256").update(readFileSync(resolve(pipelineDir, "library-project/node_modules/@types/node", path))).digest("hex");
+  const nodeTypes: unknown = JSON.parse(readFileSync(resolve(pipelineDir,
     "library-project/node_modules/@types/node/package.json"), "utf8"));
   assert.ok(nodeTypes && typeof nodeTypes === "object" && "version" in nodeTypes &&
     nodeTypes.version === "22.10.7", "run `npm ci --prefix pipeline/library-project`");
@@ -59,7 +59,7 @@ function fixtureProject(files: Record<string, string>) {
 }
 
 {
-  const jsonPath = resolve(here, "examples/collections-json.ts");
+  const jsonPath = resolve(pipelineDir, "examples/collections-json.ts");
   const changedCopy = join(mkdtempSync(join(tmpdir(), "tscert-copy-")), "client.ts");
   writeFileSync(changedCopy, readFileSync(jsonPath, "utf8").replace("value, null", "null, value"));
   assert.throws(() => parseFile(changedCopy, false, libraryConfig, jsonPath),
@@ -100,7 +100,7 @@ function fixtureProject(files: Record<string, string>) {
 }
 
 {
-  const arrays = join(here, "examples", "values.ts");
+  const arrays = join(pipelineDir, "examples", "values.ts");
   const doc = collectDeclarations(arrays, { arrays: [0, 0] });
   const proto = doc.definitions.find(d => d.declaration.module === "tscert/array-prototype");
   assert(proto && proto.expression.k === "object");

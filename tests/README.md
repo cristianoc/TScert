@@ -27,6 +27,8 @@ This directory holds the suites that check the repository around the pipeline:
 | --- | --- |
 | [`docs.mts`](docs.mts) | Documents: links, anchors and math GitHub renders. |
 | [`json-field-names.mts`](json-field-names.mts) | TypeScript, Lean and OCaml use the same JSON field names. |
+| [`node-runs.mts`](node-runs.mts) | The examples and native-contract counterexamples run under Node with the outcomes the cases state. |
+| [`trusted-inputs.mts`](trusted-inputs.mts) | The front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay. |
 | [`rule-inventory.mts`](rule-inventory.mts) / `rule-inventory.snap` | The rules REQUEST-PROTOCOL documents are the rules Lean declares. |
 
 ## Adding a case
