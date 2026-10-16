@@ -143,9 +143,6 @@ node dev/commit-records.mts --out review.html <base>..<tip>...
   depends) and the files more than one range changes.
 - `--fragment` omits the document skeleton, for publishing with the Artifact
   tool. The page uses no script and no external data.
-- A note on `refs/notes/records` overrides the commit message's record. Use
-  it only for what is added after a commit exists; the record itself belongs
-  in the commit message.
 
 ## When to produce a review
 

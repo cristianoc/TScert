@@ -1,11 +1,11 @@
 /* Renders commit records as a review page: one card per commit, and for
  * branch ranges a summary of what each branch changes and where branches
- * overlap. A record is a commit message (or a note on refs/notes/records,
- * which takes precedence) in the format the `review` skill states: a subject,
- * prose sections ("Example:", "Rule:", indented blocks) and git trailers.
+ * overlap. A record is a commit message in the format the `review` skill
+ * states: a subject, prose sections ("Example:", "Rule:", indented blocks)
+ * and git trailers.
  *
- *   node tools/commit-records.mts --out review.html bb180be19
- *   node tools/commit-records.mts --out review.html cf3fbb3c1..branch-a cf3fbb3c1..branch-b
+ *   node dev/commit-records.mts --out review.html bb180be19
+ *   node dev/commit-records.mts --out review.html cf3fbb3c1..branch-a cf3fbb3c1..branch-b
  *   --fragment omits the document skeleton (for an Artifact publish).
  */
 import { execFileSync } from "node:child_process";
@@ -45,18 +45,15 @@ function examplesOf(rev: string, text: string): Map<string, Example> {
   return found;
 }
 
-/** The record of one commit: its note if it has one, else its message. */
+/** The record of one commit: its message. */
 function readRecord(rev: string): CommitRecord {
-  let text = "";
-  try { text = git(["notes", "--ref=records", "show", rev]); } catch { /* no note */ }
   const message = git(["show", "-s", "--format=%B", rev]);
-  if (!text.trim()) text = message;
-  return parseRecord(text, {
+  return parseRecord(message, {
     sha: git(["rev-parse", "--short=9", rev]).trim(),
     author: git(["show", "-s", "--format=%an · %ad", "--date=format:%b %d, %H:%M", rev]).trim(),
     stat: git(["show", "--stat", "--format=", rev]).trimEnd().split("\n").filter(Boolean),
     message,
-    examples: examplesOf(rev, text),
+    examples: examplesOf(rev, message),
   });
 }
 
