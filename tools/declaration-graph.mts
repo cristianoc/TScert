@@ -1712,6 +1712,48 @@ export function collectDeclarations(file: string, options: {
           return { name: name.text, span: [name.getStart(source), name.end],
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(node) };
         },
+        resolve: name => {
+          type Resolved = NonNullable<ReturnType<typeof targetOf>>;
+          const follow = (symbol: Resolved | undefined): Resolved | undefined =>
+            symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+          const declarationsOf = (symbol: Resolved | undefined): Node[] | null =>
+            !symbol || checker.isUnknownSymbol(symbol) ? null
+              : symbol.declarations.map(d => d.resolve()).filter((d): d is Node => !!d);
+          // The members named `key` of what a declaration's annotation names:
+          // a type literal's, or those of the interfaces, classes and type
+          // literal aliases a reference names.
+          const membersNamed = (declaration: Node, key: string): Node[] => {
+            const annotation = ts.isVariableDeclaration(declaration) || ts.isPropertyDeclaration(declaration) ||
+              ts.isPropertySignatureDeclaration(declaration) ? declaration.type : undefined;
+            const holders: Node[] = !annotation ? []
+              : ts.isTypeLiteralNode(annotation) ? [annotation]
+              : ts.isTypeReferenceNode(annotation) && ts.isIdentifier(annotation.typeName)
+                ? (declarationsOf(follow(checker.getSymbolAtLocation(annotation.typeName))) ?? [])
+                  .map(d => ts.isTypeAliasDeclaration(d) ? d.type : d)
+                : [];
+            return holders.flatMap((holder): Node[] =>
+              ts.isTypeLiteralNode(holder) || ts.isInterfaceDeclaration(holder) || ts.isClassDeclaration(holder)
+                ? [...holder.members] : [])
+              .filter(m => {
+                const named = nameOf(m);
+                return !!named && ts.isIdentifier(named) && named.text === key;
+              });
+          };
+          // The declarations a name denotes: TypeScript's symbol's at its
+          // location, or, for a step of a member path, the members of that
+          // name of what the step before it denotes.
+          const resolved = (at: Identifier): Node[] | null => {
+            const direct = declarationsOf(follow(checker.getSymbolAtLocation(at)));
+            if (direct) return direct;
+            const path = at.parent;
+            if (!path || !ts.isQualifiedName(path) || path.right !== at) return null;
+            const left = ts.isIdentifier(path.left) ? path.left : path.left.right;
+            const owners = ts.isIdentifier(left) ? resolved(left) : null;
+            const members = owners?.flatMap(owner => membersNamed(owner, at.text)) ?? [];
+            return members.length ? members : null;
+          };
+          return resolved(name);
+        },
         members: (object, key) => {
           const type = checker.getTypeFromTypeNode(object);
           if (!type) return [];
@@ -1720,14 +1762,11 @@ export function collectDeclarations(file: string, options: {
           const literals = parts.length && parts.every(p => p.isStringLiteralType() || p.isNumberLiteralType())
             ? parts.map(p => p.isStringLiteralType() ? p.value : p.isNumberLiteralType() ? String(p.value) : "") : null;
           const properties = literals ? literals.map(k => checker.getPropertyOfType(type, k)) : checker.getPropertiesOfType(type);
-          // Each member's top-level declaration, swept with its scope.
-          const top = (node: Node): Node => {
-            let at = node;
-            while (at.parent && !ts.isSourceFile(at.parent) && !ts.isModuleBlock(at.parent)) at = at.parent;
-            return at;
-          };
-          return properties.flatMap(p => (p?.declarations ?? []).map(d => d.resolve())
-            .filter((d): d is Node => !!d).map(top));
+          // A re-exported member is its target's.
+          return properties.flatMap(p => {
+            const target = p && p.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(p) : p;
+            return (target?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
+          });
         },
         computed: node => ts.isTypeAliasDeclaration(node) && computedAlias(node, aliasOf),
         module: file => idOf(file),

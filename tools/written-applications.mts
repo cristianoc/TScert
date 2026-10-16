@@ -15,6 +15,10 @@ export type SweepContext = {
   /** The declarations TypeScript binds a written name to (empty when it
    * binds none). */
   declarationsOf(name: ts.Identifier): readonly Node[];
+  /** The declarations of the symbol a written name denotes, aliases
+   * (re-exports, renames, type-only imports, `export =`) followed to their
+   * target; null where it denotes no symbol. */
+  resolve(name: ts.Identifier): readonly Node[] | null;
   /** The type declaration a written name denotes, with its merged parts
    * (the first part identifies it), when it denotes an alias, an interface
    * or a class outside the standard library, or a library type with a
@@ -67,10 +71,12 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   const listed = new Set<Node>();
   const swept = new Set<Node>();
   const queue: Node[] = [];
-  // The client file's code is swept as a root; its interfaces and aliases
-  // where something names them.
+  // Each declaration reached is swept from its top-level declaration, with
+  // the binders of its enclosing declarations in scope. The client file's
+  // code is swept as a root; its interfaces and aliases where something
+  // names them.
   const reach = (nodes: readonly Node[]): void => {
-    for (const node of nodes)
+    for (const node of nodes.map(topLevel))
       if (!context.library(node) && !swept.has(node) && (node.getSourceFile() !== context.client ||
           ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node))) {
         swept.add(node);
@@ -148,10 +154,20 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     // (`admitted`); any other is refused before a type holding it is
     // replaced, whatever node holds it.
     // A declaration's name is no expression, a private name `#x` included.
-    const named = !!node.parent && "name" in node.parent && node.parent.name === node;
+    const named = !!node.parent && "name" in node.parent && node.parent.name === node &&
+      !ts.isPropertyAccessExpression(node.parent);
     if (ts.isExpression(node) && !named && erased(node, context.client) && !admitted(node))
       throw refusal(node, "an expression in a type or a declared module names a constant (an identifier, a " +
         "property of one read by name) or is a literal: another is erased, and nothing checks what it applies");
+    // Every name in erased syntax, each step of a member path included,
+    // resolves to the declarations of the symbol it denotes, which are swept.
+    if (ts.isIdentifier(node) && !named && erased(node, context.client)) {
+      const declarations = context.resolve(node);
+      if (!declarations)
+        throw refusal(node, "a name in a type or a declared module that TypeScript resolves to no symbol: the " +
+          "declarations its meaning depends on are unknown");
+      reach(declarations);
+    }
     // Every form naming a type with arguments: a type reference, simple or
     // qualified (`ns.B<σ>`, `globalThis.Record<K, V>`), an import type
     // (`import("m").B<σ>`), a heritage clause (`extends ns.Base<σ>`); and the
@@ -306,6 +322,15 @@ function insideType(node: Node): boolean {
  * the client's, where no code the client runs evaluates it. */
 function erased(node: Node, client: ts.SourceFile): boolean {
   return node.getSourceFile() !== client || insideType(node);
+}
+
+/** The declaration statement holding `node`: the outermost declaration
+ * below its module or namespace block, which holds every binder in scope at
+ * `node`. */
+function topLevel(node: Node): Node {
+  let at = node;
+  while (at.parent && !ts.isSourceFile(at.parent) && !ts.isModuleBlock(at.parent)) at = at.parent;
+  return at;
 }
 
 /** A declaration's or signature's own type parameters. */

@@ -1167,14 +1167,19 @@ the key its value names. In the client's code a
 heritage expression is code, swept whole. Swept are the client file's
 code, with every type node outside its interfaces and aliases; the declared
 types of the values the client reads; and, closed under dependency, every
-declaration whose annotation a swept type's meaning depends on, with all its
-merged parts, generic or not, each part's parameters its own binders: one
-it names (a reference, an import type, a heritage clause, `typeof`), and one
-holding a member it selects (an indexed access at its keys' members, every
-member where its keys are no literals; a computed alias's application at
-every member of its arguments, which its equation may select), resolved
-through TypeScript's symbol for that member and swept from its top-level
-declaration. The standard library's declarations are not
+declaration a swept type's meaning depends on, generic or not, with all its
+merged parts. Every name in swept type syntax (a type reference's, a
+qualified name's or a member path's every step, a `typeof` query's, an
+import type's qualifier, a heritage clause's, a computed key's) resolves
+through TypeScript's symbol, aliases followed to their target (re-exports,
+renames, type-only imports, `export =`), to all that symbol's declarations;
+a member path's step TypeScript gives no symbol resolves to the members of
+that name of what the step before it denotes. A member selection depends on
+the members it selects: an indexed access on its keys' members (every member
+where its keys are no literals), a computed alias's application on every
+member of its arguments. Each declaration reached is swept from its
+top-level declaration, with the binders of its enclosing declarations,
+whatever path reached it; a name resolving to nothing is refused. The standard library's declarations are not
 swept: the applications inside them belong to the reviewed library
 declarations. A call's type arguments are swept for the applications written
 in them; whether they meet the callee's binder bounds is the instantiation of

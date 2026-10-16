@@ -164,3 +164,14 @@ export class Private {
   #x: number = 1;
   a: number = this.#x;
 }
+
+// A constant a client reads as a type-only imported key
+// (`invalid-written-imported-key-value-import`).
+export const k: keyof { a: Bounded<any> } = "a";
+
+// A constant whose interface's member a client selects by `typeof`
+// (`written-member-path-value-import`).
+interface Keyed<T extends string> {
+  x: keyof { a: Bounded<T> };
+}
+export const keyed: Keyed<string> = { x: "a" };
