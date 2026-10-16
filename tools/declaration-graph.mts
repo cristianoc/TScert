@@ -26,7 +26,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
-import { SweepError, writtenApplications } from "./written-applications.mts";
+import { SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -1685,6 +1685,52 @@ export function collectDeclarations(file: string, options: {
         return base.named(part, pos, read);
       } };
     };
+    // What a symbol denotes for the sweep (`Entity`): its declarations, an
+    // alias followed to its target, and the symbols its type exposes as
+    // members, as the checker has them: a class's instance and static
+    // members, a module's or namespace's exports, `export =` and a default
+    // export included.
+    type Symbolic = NonNullable<ReturnType<typeof targetOf>>;
+    const follow = (symbol: Symbolic | undefined): Symbolic | undefined =>
+      symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+    const exportsOf = (symbol: Symbolic): Symbolic[] => {
+      const found = new Map<number, Symbolic>();
+      if (symbol.flags & (SymbolFlags.ValueModule | SymbolFlags.NamespaceModule)) {
+        for (const e of checker.getExportsOfModule(symbol)) found.set(e.id, e);
+        for (const [key, e] of symbol.getExports()) if (key === "export=" || key === "default") found.set(e.id, e);
+      }
+      if (symbol.flags & SymbolFlags.Class) {
+        for (const e of symbol.getMembers().values()) found.set(e.id, e);
+        for (const [key, e] of symbol.getExports()) if (key !== "prototype") found.set(e.id, e);
+      }
+      return [...found.values()];
+    };
+    const entityOf = (symbol: Symbolic | undefined): Entity | null => {
+      const target = follow(symbol);
+      if (!target || checker.isUnknownSymbol(target)) return null;
+      return { declarations: target.declarations.map(d => d.resolve()).filter((d): d is Node => !!d),
+        members: () => exportsOf(target).flatMap(e => entityOf(e) ?? []) };
+    };
+    // The members named `key` of what a declaration's annotation names: a
+    // type literal's, or those of the interfaces, classes and type literal
+    // aliases a reference names.
+    const membersNamed = (declaration: Node, key: string): Node[] => {
+      const annotation = ts.isVariableDeclaration(declaration) || ts.isPropertyDeclaration(declaration) ||
+        ts.isPropertySignatureDeclaration(declaration) ? declaration.type : undefined;
+      const holders: Node[] = !annotation ? []
+        : ts.isTypeLiteralNode(annotation) ? [annotation]
+        : ts.isTypeReferenceNode(annotation) && ts.isIdentifier(annotation.typeName)
+          ? (entityOf(checker.getSymbolAtLocation(annotation.typeName))?.declarations ?? [])
+            .map(d => ts.isTypeAliasDeclaration(d) ? d.type : d)
+          : [];
+      return holders.flatMap((holder): Node[] =>
+        ts.isTypeLiteralNode(holder) || ts.isInterfaceDeclaration(holder) || ts.isClassDeclaration(holder)
+          ? [...holder.members] : [])
+        .filter(m => {
+          const named = nameOf(m);
+          return !!named && ts.isIdentifier(named) && named.text === key;
+        });
+    };
     const boundOnly = new Set<Node>();
     const targets = new Map<string, TypeDeclaration>();
     let applications: WrittenApplication[];
@@ -1694,11 +1740,8 @@ export function collectDeclarations(file: string, options: {
         declaration: name => {
           const nodes = typeDeclarationsOf(name);
           if (!nodes.some(isTypeDeclaration)) return null;
-          // A library declaration is not swept: it matters only as the target
-          // of an application, where it has a bounded parameter.
-          if (nodes.every(n => isLibraryModule(idOf(n.getSourceFile()))) &&
-              !nodes.some(n => isTypeDeclaration(n) && n.typeParameters?.some(p => p.constraint)))
-            return null;
+          // A target matters only where it has a bounded parameter.
+          if (!nodes.some(n => isTypeDeclaration(n) && n.typeParameters?.some(p => p.constraint))) return null;
           const node = lookup(name, name.text);
           return partners.get(node) ?? [node];
         },
@@ -1713,59 +1756,29 @@ export function collectDeclarations(file: string, options: {
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(node) };
         },
         resolve: name => {
-          type Resolved = NonNullable<ReturnType<typeof targetOf>>;
-          const follow = (symbol: Resolved | undefined): Resolved | undefined =>
-            symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
-          const declarationsOf = (symbol: Resolved | undefined): Node[] | null =>
-            !symbol || checker.isUnknownSymbol(symbol) ? null
-              : symbol.declarations.map(d => d.resolve()).filter((d): d is Node => !!d);
-          // The members named `key` of what a declaration's annotation names:
-          // a type literal's, or those of the interfaces, classes and type
-          // literal aliases a reference names.
-          const membersNamed = (declaration: Node, key: string): Node[] => {
-            const annotation = ts.isVariableDeclaration(declaration) || ts.isPropertyDeclaration(declaration) ||
-              ts.isPropertySignatureDeclaration(declaration) ? declaration.type : undefined;
-            const holders: Node[] = !annotation ? []
-              : ts.isTypeLiteralNode(annotation) ? [annotation]
-              : ts.isTypeReferenceNode(annotation) && ts.isIdentifier(annotation.typeName)
-                ? (declarationsOf(follow(checker.getSymbolAtLocation(annotation.typeName))) ?? [])
-                  .map(d => ts.isTypeAliasDeclaration(d) ? d.type : d)
-                : [];
-            return holders.flatMap((holder): Node[] =>
-              ts.isTypeLiteralNode(holder) || ts.isInterfaceDeclaration(holder) || ts.isClassDeclaration(holder)
-                ? [...holder.members] : [])
-              .filter(m => {
-                const named = nameOf(m);
-                return !!named && ts.isIdentifier(named) && named.text === key;
-              });
-          };
-          // The declarations a name denotes: TypeScript's symbol's at its
-          // location, or, for a step of a member path, the members of that
-          // name of what the step before it denotes.
-          const resolved = (at: Identifier): Node[] | null => {
-            const direct = declarationsOf(follow(checker.getSymbolAtLocation(at)));
-            if (direct) return direct;
+          // The declarations a name denotes: TypeScript's symbol at its
+          // location, or, for a step of a member path TypeScript gives no
+          // symbol, the member of that name of what the step before it
+          // denotes: a module's or namespace's export, else the members of
+          // that name of what its declarations' annotations name.
+          const resolved = (at: Identifier): { symbol: Symbolic | null; entity: Entity } | null => {
+            const direct = follow(checker.getSymbolAtLocation(at));
+            const entity = entityOf(direct);
+            if (direct && entity) return { symbol: direct, entity };
             const path = at.parent;
             if (!path || !ts.isQualifiedName(path) || path.right !== at) return null;
             const left = ts.isIdentifier(path.left) ? path.left : path.left.right;
-            // A module's or namespace's member is its export of that name.
-            const module = ts.isIdentifier(left) ? follow(checker.getSymbolAtLocation(left)) : undefined;
-            if (module && module.flags & (SymbolFlags.ValueModule | SymbolFlags.NamespaceModule)) {
-              const exported = checker.getExportsOfModule(module).find(e => e.name === at.text);
-              return declarationsOf(follow(exported));
-            }
-            const owners = ts.isIdentifier(left) ? resolved(left) : null;
-            const members = owners?.flatMap(owner => membersNamed(owner, at.text)) ?? [];
-            return members.length ? members : null;
+            const owner = ts.isIdentifier(left) ? resolved(left) : null;
+            if (!owner) return null;
+            const exported = owner.symbol ? follow(exportsOf(owner.symbol).find(e => e.name === at.text)) : undefined;
+            const selected = entityOf(exported);
+            if (exported && selected) return { symbol: exported, entity: selected };
+            const members = owner.entity.declarations.flatMap(d => membersNamed(d, at.text));
+            return members.length ? { symbol: null, entity: { declarations: members, members: () => [] } } : null;
           };
-          return resolved(name);
+          return resolved(name)?.entity ?? null;
         },
-        moduleOf: specifier => {
-          const symbol = checker.getSymbolAtLocation(specifier);
-          const target = symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
-          return !target || checker.isUnknownSymbol(target) ? null
-            : target.declarations.map(d => d.resolve()).filter((d): d is Node => !!d);
-        },
+        moduleOf: specifier => entityOf(checker.getSymbolAtLocation(specifier)),
         members: (object, key) => {
           const type = checker.getTypeFromTypeNode(object);
           if (!type) return [];
@@ -1774,11 +1787,7 @@ export function collectDeclarations(file: string, options: {
           const literals = parts.length && parts.every(p => p.isStringLiteralType() || p.isNumberLiteralType())
             ? parts.map(p => p.isStringLiteralType() ? p.value : p.isNumberLiteralType() ? String(p.value) : "") : null;
           const properties = literals ? literals.map(k => checker.getPropertyOfType(type, k)) : checker.getPropertiesOfType(type);
-          // A re-exported member is its target's.
-          return properties.flatMap(p => {
-            const target = p && p.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(p) : p;
-            return (target?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
-          });
+          return properties.flatMap(p => entityOf(p) ?? []);
         },
         computed: node => ts.isTypeAliasDeclaration(node) && computedAlias(node, aliasOf),
         module: file => idOf(file),

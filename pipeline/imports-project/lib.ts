@@ -228,10 +228,14 @@ export const arrowed = {
       return 1;
     })(),
 };
-export const asserted = "a" as keyof { a: Bounded<any> };
+export const asserted: keyof { a: Bounded<any> } = "a" as keyof {
+  a: Bounded<any>;
+};
 const shortValue: keyof { a: Bounded<any> } = "a";
-export const shorthand = { shortValue };
-export const assigned = { m: shortValue };
+export const shorthand: { shortValue: keyof { a: Bounded<any> } } = {
+  shortValue,
+};
+export const assigned: { m: keyof { a: Bounded<any> } } = { m: shortValue };
 
 // A method whose result type its body determines
 // (`written-initializer-inferred-result-refused-value-import`).

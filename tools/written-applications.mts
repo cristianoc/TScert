@@ -11,15 +11,25 @@ import type { SourceTypeParameter, TypeTerm, WrittenApplication } from "./declar
 import { visitType } from "./type-term.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
 
+/** What a name or a selection denotes, as TypeScript's checker has it: one
+ * symbol's declarations (an overload set's, an accessor pair's, a merged
+ * entity's), and the symbols its type exposes as members: a class's
+ * instance and static members, each its own symbol; a module's or a
+ * namespace's exports, `export =` and a default export included. */
+export type Entity = {
+  declarations: readonly Node[];
+  members(): readonly Entity[];
+};
+
 /** What the sweep needs from the declaration graph. */
 export type SweepContext = {
   /** The declarations TypeScript binds a written name to (empty when it
    * binds none). */
   declarationsOf(name: ts.Identifier): readonly Node[];
-  /** The declarations of the symbol a written name denotes, aliases
-   * (re-exports, renames, type-only imports, `export =`) followed to their
-   * target; null where it denotes no symbol. */
-  resolve(name: ts.Identifier): readonly Node[] | null;
+  /** The symbol a written name denotes, aliases (re-exports, renames,
+   * type-only imports, `export =`) followed to their target; null where it
+   * denotes none. */
+  resolve(name: ts.Identifier): Entity | null;
   /** The type declaration a written name denotes, with its merged parts
    * (the first part identifies it), when it denotes an alias, an interface
    * or a class outside the standard library, or a library type with a
@@ -36,12 +46,12 @@ export type SweepContext = {
   /** The declarations a member selection depends on: the top-level
    * declarations holding the members of `object`'s type at `key`'s literal
    * keys, or at every key where `key` is null or not a union of literals. */
-  members(object: TypeNode, key: TypeNode | null): readonly Node[];
+  members(object: TypeNode, key: TypeNode | null): readonly Entity[];
   /** Whether a declaration is an alias TypeScript computes from its
    * parameters, whose equation may select members of its arguments. */
   computed(declaration: Node): boolean;
-  /** The declarations of the module a specifier names; null where none. */
-  moduleOf(specifier: ts.StringLiteral): readonly Node[] | null;
+  /** The module a specifier names; null where none. */
+  moduleOf(specifier: ts.StringLiteral): Entity | null;
   /** The module a file is, as identities name it. */
   module(file: ts.SourceFile): string;
   /** The client file, whose spans the verifier reports. */
@@ -81,12 +91,9 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   // only the members a further step selects. The client file's code is
   // swept as a root; its interfaces and aliases, and their members, where
   // something reaches them.
-  const reach = (nodes: readonly Node[], use: Node): void => {
-    for (const node of nodes) {
-      if (context.library(node) || (node.getSourceFile() === context.client && !withinTypeDeclaration(node) &&
-          !ts.isSourceFile(node)))
-        continue;
-      const determined = determining(node);
+  const reach = (entities: readonly Entity[], use: Node): void => {
+    for (const entity of entities) {
+      const determined = determining(entity);
       // Its type is its written annotations: one inferred from its code is
       // not read.
       if ("inferred" in determined) {
@@ -102,9 +109,11 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
         }
     }
   };
-  // The written annotations that determine a declaration's exposed type
-  // (SOURCE-FRAGMENT.md, refused on principle), by its kind; the
-  // declaration whose type is inferred where there are none.
+  // The written annotations that determine an entity's exposed type
+  // (SOURCE-FRAGMENT.md, types stated by annotations): the union over its
+  // declarations, each by its kind, with an overload set's and an accessor
+  // pair's declarations taken together, and the members its type exposes;
+  // the declaration whose type is inferred where there are none.
   type Determined = { nodes: Node[] } | { inferred: Node };
   const all = (parts: readonly Determined[]): Determined => {
     const nodes: Node[] = [];
@@ -114,97 +123,113 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     }
     return { nodes };
   };
-  const seenModules = new Set<Node>();
-  const determining = (d: Node): Determined => {
+  const seen = new Set<Node>();
+  const determining = (entity: Entity): Determined => {
+    const declarations = entity.declarations.filter(d => !context.library(d) &&
+      (d.getSourceFile() !== context.client || withinTypeDeclaration(d)));
+    const [first] = entity.declarations;
+    if (first && seen.has(first)) return { nodes: [] };
+    if (first) seen.add(first);
+    const parts: Determined[] = [];
+    // An overload set: its signatures; an implementation beside them adds
+    // only a constructor's parameter properties.
+    const functions = declarations.filter(isFunctionLike);
+    const signatures = functions.filter(d => !("body" in d && d.body));
+    for (const d of functions) {
+      if (signatures.length && "body" in d && d.body) {
+        if (ts.isConstructorDeclaration(d)) parts.push(parameterProperties(d));
+        continue;
+      }
+      parts.push(signature(d));
+    }
+    // An accessor pair: the getter's result or the setter's parameter.
+    const accessors = declarations.filter(d => ts.isGetAccessorDeclaration(d) || ts.isSetAccessorDeclaration(d));
+    if (accessors.length) {
+      const typed = accessors.map(a => ts.isGetAccessorDeclaration(a) ? a.type
+        : ts.isSetAccessorDeclaration(a) ? a.parameters[0]?.type : undefined).filter((t): t is TypeNode => !!t);
+      parts.push(typed.length ? { nodes: typed } : { inferred: accessors[0] ?? entity.declarations[0] ?? at(entity) });
+    }
+    for (const d of declarations)
+      if (!isFunctionLike(d) && !ts.isGetAccessorDeclaration(d) && !ts.isSetAccessorDeclaration(d)) parts.push(single(d));
+    // Computed member names name entities of their own.
+    for (const d of declarations) {
+      const name = nameOf(d);
+      if (name && ts.isComputedPropertyName(name)) parts.push({ nodes: [name] });
+    }
+    // A class's, a namespace's or a module's members, each by its symbol;
+    // a class member under a computed name, which the checker binds late,
+    // by its declaration.
+    if (entity.declarations.some(d => ts.isClassDeclaration(d) || ts.isClassExpression(d) || ts.isModuleDeclaration(d) ||
+        ts.isSourceFile(d)))
+      parts.push(...entity.members().map(determining));
+    for (const d of declarations)
+      if (ts.isClassDeclaration(d) || ts.isClassExpression(d))
+        for (const member of d.members) {
+          const name = nameOf(member);
+          if (name && ts.isComputedPropertyName(name)) parts.push(determining({ declarations: [member], members: () => [] }));
+        }
+    return all(parts);
+  };
+  const at = (entity: Entity): Node => entity.declarations[0] ?? context.client;
+  // One declaration's written annotations, by its kind.
+  const single = (d: Node): Determined => {
     const none: Determined = { nodes: [] };
     // A type's declaration is type syntax throughout; a type parameter's
     // bound is its owner's.
-    if (ts.isInterfaceDeclaration(d) || ts.isTypeAliasDeclaration(d)) return { nodes: [d] };
-    if (ts.isTypeParameterDeclaration(d)) return { nodes: [d] };
-    // An enum member's type is its value.
-    if (ts.isEnumDeclaration(d) || ts.isEnumMember(d)) return none;
+    if (ts.isInterfaceDeclaration(d) || ts.isTypeAliasDeclaration(d) || ts.isTypeParameterDeclaration(d) ||
+        ts.isIndexSignatureDeclaration(d))
+      return { nodes: [d] };
+    // An enum member's type is its value; a namespace or a module is its
+    // members.
+    if (ts.isEnumDeclaration(d) || ts.isEnumMember(d) || ts.isModuleDeclaration(d) || ts.isSourceFile(d)) return none;
+    // A class: its type parameters and heritage, its members each by its
+    // symbol.
+    if (ts.isClassDeclaration(d) || ts.isClassExpression(d))
+      return { nodes: [...(d.typeParameters ?? []), ...(d.heritageClauses ?? [])] };
     // A variable or a binding element: its own annotation, or its enclosing
-    // pattern's; a `const` initialized by a literal naming nothing.
+    // pattern's; a `const` initialized by a literal naming nothing, each
+    // default on the way literal too.
     if (ts.isVariableDeclaration(d) || ts.isBindingElement(d) || ts.isParameterDeclaration(d)) {
       let at: Node | undefined = d;
-      while (at && ts.isBindingElement(at)) at = at.parent?.parent;
+      let defaults = true;
+      while (at && ts.isBindingElement(at)) {
+        if (at.initializer && !literal(at.initializer)) defaults = false;
+        at = at.parent?.parent;
+      }
       if (at && (ts.isVariableDeclaration(at) || ts.isParameterDeclaration(at)) && at.type) return { nodes: [at.type] };
-      if (at && ts.isVariableDeclaration(at) && at.initializer && constant(at) && literal(at.initializer)) return none;
+      if (defaults && at && ts.isVariableDeclaration(at) && at.initializer && constant(at) && literal(at.initializer))
+        return none;
       return { inferred: d };
     }
     if (ts.isPropertyDeclaration(d) || ts.isPropertySignatureDeclaration(d))
       return d.type ? { nodes: [d.type] } : { inferred: d };
-    // A property assignment: the annotations of its value.
+    // A property assignment or a default export: the annotations of its
+    // value.
     if (ts.isPropertyAssignment(d)) return value(d.initializer, d);
-    if (ts.isShorthandPropertyAssignment(d)) return { inferred: d };
-    // An accessor: the getter's result or the setter's parameter, either
-    // supplying the pair's type.
-    if (ts.isGetAccessorDeclaration(d) || ts.isSetAccessorDeclaration(d)) {
-      const typed = [d, ...pairOf(d)].map(a => ts.isGetAccessorDeclaration(a) ? a.type
-        : ts.isSetAccessorDeclaration(a) ? a.parameters[0]?.type : undefined).find((t): t is TypeNode => !!t);
-      return typed ? { nodes: [typed] } : { inferred: d };
-    }
-    // A function: its overload signatures if it has any (each a declaration
-    // of its own), else its parameters' and its result's annotations.
-    if (ts.isFunctionDeclaration(d) || ts.isMethodDeclaration(d) || ts.isFunctionExpression(d) ||
-        ts.isArrowFunction(d) || ts.isMethodSignatureDeclaration(d) || ts.isCallSignatureDeclaration(d) ||
-        ts.isConstructSignatureDeclaration(d)) {
-      if ("body" in d && d.body && overloaded(d)) return none;
-      return signature(d);
-    }
-    if (ts.isConstructorDeclaration(d))
-      return overloaded(d) && d.body ? none : d.parameters.every(p => !!p.type) ? { nodes: [...d.parameters] } : { inferred: d };
-    if (ts.isIndexSignatureDeclaration(d)) return { nodes: [d] };
-    // A class: its heritage, its type parameters and every member by its
-    // kind; a static block is code.
-    if (ts.isClassDeclaration(d) || ts.isClassExpression(d))
-      return all([{ nodes: [...(d.typeParameters ?? []), ...(d.heritageClauses ?? [])] },
-        ...d.members.filter(m => !ts.isClassStaticBlockDeclaration(m) && !ts.isSemicolonClassElement(m)).map(determining)]);
-    // A namespace or a module: every exported member, `export =` meaning its
-    // target.
-    if (ts.isSourceFile(d) || ts.isModuleDeclaration(d)) {
-      if (seenModules.has(d)) return none;
-      seenModules.add(d);
-      return all(exportsOf(d).map(determining));
-    }
+    if (ts.isExportAssignment(d)) return value(d.expression, d);
     return { inferred: d };
   };
   const signature = (d: Node): Determined => {
     const parameters = "parameters" in d && Array.isArray(d.parameters) ? d.parameters : [];
-    const typed = "type" in d && !!d.type;
+    const typed = ts.isConstructorDeclaration(d) || ("type" in d && !!d.type);
     if (!typed || !parameters.every(p => ts.isParameterDeclaration(p) && !!p.type)) return { inferred: d };
     return { nodes: [d] };
   };
+  // A constructor implementation's parameter properties, members of its
+  // instances whatever its overloads.
+  const parameterProperties = (d: ts.ConstructorDeclaration): Determined =>
+    all(d.parameters.filter(p => childrenOf(p, "modifiers").length).map(p => p.type ? { nodes: [p.type] } : { inferred: p }));
   // A property's value: a literal naming nothing; a function's signature;
   // an object literal's properties, each by its kind; an assertion's type.
   const value = (e: Node, d: Node): Determined => {
     if (literal(e)) return { nodes: [] };
     if (ts.isParenthesizedExpression(e)) return value(e.expression, d);
     if (ts.isFunctionExpression(e) || ts.isArrowFunction(e)) return signature(e);
-    if ((ts.isAsExpression(e) || ts.isSatisfiesExpression(e)) && !ts.isSatisfiesExpression(e)) return { nodes: [e.type] };
-    if (ts.isObjectLiteralExpression(e)) return all(e.properties.map(determining));
+    if (ts.isAsExpression(e) || ts.isTypeAssertion(e)) return { nodes: [e.type] };
+    if (ts.isObjectLiteralExpression(e))
+      return all(e.properties.map(p => isFunctionLike(p) || ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p)
+        ? determining({ declarations: [p, ...pairOf(p)], members: () => [] }) : single(p)));
     return { inferred: d };
-  };
-  const exportsOf = (d: ts.SourceFile | ts.ModuleDeclaration): Node[] => {
-    const statements = ts.isSourceFile(d) ? d.statements
-      : d.body && ts.isModuleBlock(d.body) ? d.body.statements : [];
-    const found: Node[] = [];
-    for (const statement of statements) {
-      const exported = childrenOf(statement, "modifiers").some(m => m.kind === ts.SyntaxKind.ExportKeyword);
-      if (ts.isExportAssignment(statement) && ts.isIdentifier(statement.expression))
-        found.push(...(context.resolve(statement.expression) ?? [statement]));
-      else if (ts.isExportDeclaration(statement)) {
-        const clause = statement.exportClause;
-        if (clause && ts.isNamedExports(clause))
-          for (const specifier of clause.elements)
-            found.push(...(ts.isIdentifier(specifier.name) ? context.resolve(specifier.name) ?? [specifier] : [specifier]));
-        else if (statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier))
-          found.push(...(context.moduleOf(statement.moduleSpecifier) ?? [statement]));
-      } else if (exported && ts.isVariableStatement(statement))
-        found.push(...statement.declarationList.declarations);
-      else if (exported) found.push(statement);
-    }
-    return found.filter(n => !context.library(n));
   };
   const fresh = (node: ts.TypeParameterDeclaration, suffix = ""): string => {
     const file = node.getSourceFile();
@@ -235,7 +260,8 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   const application = (node: Node, name: ts.Identifier, args: readonly TypeNode[], env: Env): void => {
     const target = context.declaration(name);
     if (!target) return;
-    reach(target, node);
+    const entity = context.resolve(name);
+    if (entity) reach([entity], node);
     if (listed.has(node)) return;
     listed.add(node);
     const [first] = target;
@@ -290,17 +316,17 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     // itself, only that member; a whole module's type, `typeof import("m")`,
     // contributes its exports.
     if (ts.isIdentifier(node) && !named && erased(node, context.client)) {
-      const declarations = context.resolve(node);
-      if (!declarations)
+      const entity = context.resolve(node);
+      if (!entity)
         throw refusal(node, "a name in a type or a declared module that TypeScript resolves to no symbol: the " +
           "declarations its meaning depends on are unknown");
-      if (!selectedFrom(node)) reach(declarations, node);
+      if (!selectedFrom(node)) reach([entity], node);
     }
     if (ts.isImportTypeNode(node) && !node.qualifier && !selected(node) &&
         ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
       const module = context.moduleOf(node.argument.literal);
       if (!module) throw refusal(node, "an import type naming no module TypeScript resolves");
-      reach(module, node);
+      reach([module], node);
     }
     // Every form naming a type with arguments: a type reference, simple or
     // qualified (`ns.B<σ>`, `globalThis.Record<K, V>`), an import type
@@ -316,7 +342,8 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
           `the instantiation ${node.getText(file)} in ${site(node)}: a value's type arguments are checked ` +
           "against its binders' bounds only at a call");
       }
-      if (form.name) reach(context.declarationsOf(form.name), node);
+      const entity = form.name && context.resolve(form.name);
+      if (entity) reach([entity], node);
     } else if (form?.name && !context.declarationsOf(form.name).some(d => env.names.has(d))) {
       application(node, form.name, form.args, env);
     }
@@ -527,27 +554,23 @@ function selected(node: Node): boolean {
   return !!at.parent && ts.isIndexedAccessTypeNode(at.parent) && at.parent.objectType === at;
 }
 
-/** The other accessor of the pair `d` belongs to, if any. */
-function pairOf(d: ts.GetAccessorDeclaration | ts.SetAccessorDeclaration): Node[] {
+/** The other accessors of an object literal's accessor's pair, if any (an
+ * object literal has no symbols of its own here, and no static side). */
+function pairOf(d: Node): Node[] {
   const owner = d.parent;
-  const members: readonly Node[] = owner && (ts.isClassDeclaration(owner) || ts.isClassExpression(owner) ||
-    ts.isObjectLiteralExpression(owner) || ts.isInterfaceDeclaration(owner) || ts.isTypeLiteralNode(owner))
-    ? ts.isObjectLiteralExpression(owner) ? owner.properties : owner.members : [];
+  if (!(ts.isGetAccessorDeclaration(d) || ts.isSetAccessorDeclaration(d)) || !owner ||
+      !ts.isObjectLiteralExpression(owner))
+    return [];
   const name = d.name.getText(d.getSourceFile());
-  return members.filter(m => m !== d && (ts.isGetAccessorDeclaration(m) || ts.isSetAccessorDeclaration(m)) &&
+  return owner.properties.filter(m => m !== d && (ts.isGetAccessorDeclaration(m) || ts.isSetAccessorDeclaration(m)) &&
     m.name.getText(m.getSourceFile()) === name);
 }
 
-/** Whether a function's body has overload signatures beside it, the
- * declarations of the same name without a body. */
-function overloaded(d: Node): boolean {
-  const owner = d.parent;
-  const written = (n: Node): string | null => nameOf(n)?.getText(n.getSourceFile()) ?? null;
-  const name = written(d);
-  const siblings: readonly Node[] = !owner ? [] : ts.isSourceFile(owner) || ts.isModuleBlock(owner) || ts.isBlock(owner)
-    ? owner.statements : ts.isClassDeclaration(owner) || ts.isClassExpression(owner) ? owner.members : [];
-  return siblings.some(s => s !== d && s.kind === d.kind && !("body" in s && s.body) &&
-    (ts.isConstructorDeclaration(d) || written(s) === name));
+/** Whether `node` is a function, method, signature or constructor. */
+function isFunctionLike(node: Node): boolean {
+  return ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node) || ts.isMethodSignatureDeclaration(node) ||
+    ts.isFunctionExpression(node) || ts.isArrowFunction(node) || ts.isCallSignatureDeclaration(node) ||
+    ts.isConstructSignatureDeclaration(node) || ts.isConstructorDeclaration(node);
 }
 
 /** Whether `node` is or is in an interface or a type alias. */

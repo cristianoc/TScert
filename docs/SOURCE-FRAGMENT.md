@@ -73,19 +73,26 @@ obstacle named. A search failure is neither.
 The written annotations that determine a declaration's exposed type, by its
 kind. These, and only these, are read for a declaration a type reaches; no
 function body, initializer's code or static block is read. A declaration
-without them is refused (above).
+without them is refused (above). The structure is the checker's symbols, not
+syntax: what a name or a selection denotes is one symbol, its annotations
+the union over its declarations (an overload set's, an accessor pair's, a
+merged entity's); a class's members are its instance and static member
+symbols, apart; a module's or namespace's are its exported symbols,
+`export =`, a default export and ambient members included. A member under
+a computed name, which the checker binds late, counts by its declaration,
+and its name's entity is swept.
 
 | Declaration | Determined by |
 | --- | --- |
 | Interface, type alias | Its whole syntax |
-| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not) |
+| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too |
 | Property declaration or signature | Its annotation |
-| Property assignment | Its value's: a literal naming nothing; a function's parameter and result annotations; a nested object literal's properties, each by its kind; an assertion's type |
-| Function, method, signature | Its overload signatures if it has any, else its parameter and result annotations |
-| Accessor | The getter's result or the setter's parameter, either for the pair |
-| Constructor | Its parameter annotations, or its overloads' |
-| Class | Its type parameters, its heritage, and every member by its kind |
-| Namespace, module | Every exported member, `export =` meaning its target |
+| Property assignment, default export | Its value's: a literal naming nothing; a function's parameter and result annotations; a nested object literal's properties, each by its kind; an assertion's type (`as` or angle-bracket) |
+| Function, method, signature | The symbol's overload signatures if it has any, else its parameter and result annotations |
+| Accessor | The symbol's getter result or setter parameter, either for the pair |
+| Constructor | Its parameter annotations, or its overloads' with the implementation's parameter properties |
+| Class | Its type parameters, its heritage, and every instance and static member symbol |
+| Namespace, module | Every exported symbol, `export =` and a default export included |
 | Enum, enum member | Its value |
 
 ### Model limits

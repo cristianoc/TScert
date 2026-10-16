@@ -11,13 +11,15 @@
     "paths": {
       "@fixture/lib": ["./lib.ts"],
       "@fixture/relay": ["./relay.ts"],
-      "@fixture/whole": ["./whole.ts"]
+      "@fixture/whole": ["./whole.ts", "./defaulted.ts"],
+      "@fixture/defaulted": ["./defaulted.ts"]
     }
   },
   "include": [
     "../examples/*value-import*.ts",
     "./lib.ts",
     "./relay.ts",
-    "./whole.ts"
+    "./whole.ts",
+    "./defaulted.ts"
   ]
 }

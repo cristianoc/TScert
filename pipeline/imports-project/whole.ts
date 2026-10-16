@@ -38,3 +38,39 @@ export const { lm } = { lm: 1 };
 // prettier-ignore
 export const paren = (1);
 export const plus = +1;
+
+// Members the checker's symbols expose (`invalid-written-symbols-*` cases).
+export declare namespace Ambient {
+  const m: keyof { a: B<any> };
+}
+export namespace Dotted.inner {
+  export const m: keyof { a: B<any> } = "a";
+}
+export const { dd = "a" as keyof { a: B<any> } } = {};
+const key: keyof { a: B<any> } = "a";
+export class ComputedName {
+  [key]: number = 1;
+}
+export class Ctor {
+  constructor(m: "a");
+  constructor(public m: keyof { a: B<any> }) {}
+}
+export abstract class StaticMethod {
+  abstract m(): number;
+  static m() {
+    return "a" as keyof { a: B<any> };
+  }
+}
+export class StaticGetter {
+  get m(): number {
+    return 1;
+  }
+  static get m() {
+    return "a" as keyof { a: B<any> };
+  }
+}
+export const angled = { m: <number>1 };
+export class Merged {}
+export interface Merged {
+  m: number;
+}
