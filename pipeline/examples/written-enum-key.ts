@@ -1,4 +1,5 @@
-// An enum member with a literal value is a key at that value.
+// A key named by an enum member is that member, not its value: TypeScript's
+// `keyof` keeps `E.A`, which the fragment states no literal for.
 enum E {
   A = "a",
 }

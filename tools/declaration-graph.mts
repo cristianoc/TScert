@@ -26,7 +26,8 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
-import { SweepError, writtenApplications, type Entity, type WrittenArgument } from "./written-applications.mts";
+import { SweepError, writtenApplications, type Entity } from "./written-applications.mts";
+import { makeProbe, type ProbeProgram } from "./type-probe.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -104,10 +105,38 @@ export function tsconfigOf(path: string): string {
 
 /** Open `file` in its configured TypeScript project, which must be strict:
  * `tsconfigPath` when given, otherwise the project that owns the file. The
- * compiler reads the files on disk; nothing here overrides their text. */
+ * compiler reads the files on disk; only a probe program (`type-probe.mts`)
+ * reads some of them with text of its own, in a snapshot of its own. */
 function withProject<T>(file: string, tsconfigPath: string | undefined,
-  use: (checker: Checker, client: SourceFile, root: string, program: Program) => T): T {
-  const api = new API({ cwd: dirname(file) });
+  use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
+  const overlay = new Map<string, string>();
+  const api = new API({ cwd: dirname(file), fs: {
+    readFile: name => overlay.get(name),
+    fileExists: name => (overlay.has(name) ? true : undefined),
+  } });
+  // The files the last probe replaced, read from disk again by the next. The
+  // compiler keeps an open file's text over its changes: the client, open
+  // for the graph's program, is closed for the probes'.
+  let replaced: string[] = [];
+  let opened = true;
+  let config = "";
+  // A probe's snapshot is released when the next one is made: the next
+  // takes its unchanged files over from it.
+  let previous: { dispose(): void } | null = null;
+  const probe: ProbeProgram = (files, read) => {
+    overlay.clear();
+    for (const [name, text] of files) overlay.set(name, text);
+    const snapshot = api.updateSnapshot({ ...(opened ? { closeFiles: [file] } : {}),
+      openProjects: [config],
+      fileChanges: { changed: [...new Set([...replaced, ...files.keys()])] } });
+    opened = false;
+    replaced = [...files.keys()];
+    previous?.dispose();
+    previous = snapshot;
+    const project = snapshot.getProject(config);
+    if (!project) throw Error("TypeScript did not load the probe program");
+    return read(project.program, project.checker);
+  };
   try {
     const snapshot = api.updateSnapshot({ openFiles: [file],
       ...(tsconfigPath ? { openProjects: [tsconfigPath] } : {}) });
@@ -122,7 +151,8 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     // `types: ["node"]`, that is not installed leaves its globals undeclared.
     const broken = project.program.getProgramDiagnostics().find(d => d.category === DiagnosticCategory.Error);
     if (broken) throw new DeclarationError([0, 0], `TypeScript reports an error in the project: ${broken.text}`);
-    return use(project.checker, client, dirname(project.configFileName), project.program);
+    config = project.configFileName;
+    return use(project.checker, client, dirname(project.configFileName), project.program, probe);
   } finally {
     api.close();
   }
@@ -457,7 +487,7 @@ export function collectDeclarations(file: string, options: {
   seen?: (diagnostic: SeenDiagnostic) => void;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
-  return withProject(clientFile, options.tsconfigPath, (checker, client, root, program) => {
+  return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
     const idOf = moduleIds(clientFile, root);
@@ -788,12 +818,12 @@ export function collectDeclarations(file: string, options: {
           // computes at this reference's arguments.
           if (computedAlias(targetNode, aliasOf)) return computedType(computedContext, part, pos, read);
           const args = part.typeArguments ?? [];
-          const completed = completeArguments(targetNode, args.map(arg => ({ term: read(arg), node: arg })),
+          const completed = completeArguments(targetNode, args.map(read), part,
             `${identityOf(targetNode).module}#${name.text}`);
           valueStarts.push(targetNode);
           return { k: "reference", reference: { name: name.text, span: pos,
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(targetNode) },
-            args: completed.map(a => a.term), span: pos };
+            args: completed, span: pos };
         },
       };
     };
@@ -901,19 +931,7 @@ export function collectDeclarations(file: string, options: {
       },
       value: (nodes, what) => valueOf(nodes, what),
       alias: aliasOf,
-      applied: (alias, args) => {
-        const what = `${idOf(alias.getSourceFile())}#${alias.name.text}`;
-        const parameters = (alias.typeParameters ?? []).map(p => p.name.text);
-        const outer = valueScope(alias, what);
-        const scope: TermScope = { ...outer, named: (part, pos, read) => {
-          const index = ts.isIdentifier(part.typeName) ? parameters.indexOf(part.typeName.text) : -1;
-          const argument = args[index];
-          if (index < 0 || !argument) return outer.named(part, pos, read);
-          if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${part.typeName.getText(alias.getSourceFile())}`);
-          return argument;
-        } };
-        return node => typeTerm(scope, node, alias);
-      },
+      applied: (alias, args, use) => instantiateAt(alias, args, use),
       equation: reference => valueScope(client, "an alias's equation").equation?.(reference) ?? null,
       // A `unique symbol` type is the type of the one constant or readonly
       // property declaring it (`Symbol.iterator`'s is `SymbolConstructor`'s
@@ -932,208 +950,56 @@ export function collectDeclarations(file: string, options: {
     const values: ValueRoot[] = [];
     const typeDeclarationsOf = (name: Identifier): Node[] =>
       (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
-    // `keyof` of a concrete type, from the checker's answer for each member:
-    // a public member's key type, the type TypeScript gives its name (a
-    // string, a number, a unique symbol; an enum member's is refused, the
-    // fragment stating no enum literal); each index's key type; every key
-    // for `never` and `any`; an intersection's operands' keys; a union's
-    // keys common to every member. A member TypeScript synthesises (a mapped
-    // type's) takes its key from the mapping its alias declares, over a
-    // parameter (`[P in K]`) or homomorphic (`[P in keyof T]`). Anything else
-    // is refused: its keys are not stated exactly.
-    const everyKey = (span: Span): TypeTerm => ({ k: "union", span, parts: [{ k: "atom", name: "string", span },
-      { k: "atom", name: "number", span }, { k: "atom", name: "symbol", span }] });
-    const keysUnion = (parts: TypeTerm[], span: Span): TypeTerm => {
-      const [only] = parts;
-      return !only ? { k: "atom", name: "never", span } : parts.length === 1 ? only : { k: "union", parts, span };
-    };
-    type Keys = { literals: Map<string, TypeTerm>; atoms: Set<"string" | "number" | "symbol"> };
-    const keysTerm = (keys: Keys, span: Span): TypeTerm => keysUnion([...keys.literals.values(),
-      ...[...keys.atoms].map((name): TypeTerm => ({ k: "atom", name, span }))], span);
-    const keysOfType = (type: Type | undefined, span: Span, what: string): TypeTerm =>
-      keysTerm(keySet(type, span, what), span);
-    const keySet = (type: Type | undefined, span: Span, what: string): Keys => {
-      const refuse = (why: string): never => { throw Error(`keyof ${what} ${why}: its keys are not stated exactly`); };
-      const keys: Keys = { literals: new Map(), atoms: new Set() };
-      const add = (term: TypeTerm): void => {
-        if (term.k === "atom" && (term.name === "string" || term.name === "number" || term.name === "symbol")) keys.atoms.add(term.name);
-        else keys.literals.set(JSON.stringify({ ...term, span: [0, 0] }), term);
+    // TypeScript's evaluation of a form in a declaration's parameter list at
+    // an application (`type-probe.mts`).
+    const probe = makeProbe({ program, checker }, probeProgram, name => symbolOf(name));
+    // A declaration's bound or default read at an application's arguments:
+    // each parameter its argument; a computed form naming the parameters,
+    // or a computed alias's application naming them, what TypeScript
+    // computes for it at the application `use`; any other computed form
+    // what TypeScript computes for it where it is written.
+    const instantiateAt = (declaration: Node, args: readonly TypeTerm[], use: Node | null): (node: TypeNode) => TypeTerm => {
+      const source = declaration.getSourceFile();
+      const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
+      const parameters = childrenOf(declaration, "typeParameters").filter(ts.isTypeParameterDeclaration)
+        .map(p => p.name.text);
+      const argumentOf = (part: Node): TypeTerm | undefined => {
+        const index = ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && !part.typeArguments?.length
+          ? parameters.indexOf(part.typeName.text) : -1;
+        return index < 0 ? undefined : args[index];
       };
-      if (!type) return refuse("has no type");
-      if (type.flags & (TypeFlags.Never | TypeFlags.Any)) {
-        keys.atoms.add("string"); keys.atoms.add("number"); keys.atoms.add("symbol");
-        return keys;
-      }
-      if (type.flags & TypeFlags.Unknown) return keys;
-      if (type.isUnionType()) {
-        const [first, ...rest] = type.getTypes().map(t => keySet(t, span, what));
-        if (!first) return keys;
-        // A key every member has: a literal both state, or one a member's
-        // index covers; an index key type every member has.
-        const covers = (k: Keys, term: TypeTerm): boolean => term.k === "literal"
-          ? (term.name === "string" && k.atoms.has("string")) || (term.name === "number" && k.atoms.has("number"))
-          : term.k === "unique" && k.atoms.has("symbol");
-        for (const [key, term] of [...first.literals, ...rest.flatMap(r => [...r.literals])])
-          if ([first, ...rest].every(k => k.literals.has(key) || covers(k, term))) keys.literals.set(key, term);
-        for (const atom of first.atoms) if (rest.every(k => k.atoms.has(atom))) keys.atoms.add(atom);
-        return keys;
-      }
-      if (type.isIntersectionType()) {
-        for (const part of type.getTypes()) {
-          const k = keySet(part, span, what);
-          k.literals.forEach(t => add(t));
-          k.atoms.forEach(a => keys.atoms.add(a));
-        }
-        return keys;
-      }
-      if (type.isTypeParameter() || !(type.flags & TypeFlags.Object)) return refuse("is over a type parameter or a primitive");
-      for (const property of checker.getPropertiesOfType(type)) {
-        const declared = property.declarations[0]?.resolve();
-        if (!declared) {
-          synthesised(type, span, what).forEach(add);
-          continue;
-        }
-        const name = nameOf(declared);
-        // keyof states only public members.
-        if (name && ts.isPrivateIdentifier(name)) continue;
-        if (childrenOf(declared, "modifiers").some(m => m.kind === ts.SyntaxKind.PrivateKeyword ||
-            m.kind === ts.SyntaxKind.ProtectedKeyword))
-          continue;
-        if (name && (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name)))
-          add({ k: "literal", name: "string", text: property.name, span });
-        else if (name && ts.isNumericLiteral(name)) add({ k: "literal", name: "number", text: numericKey(name.text), span });
-        else if (name && ts.isComputedPropertyName(name)) {
-          const keyType = checker.getTypeAtLocation(name.expression);
-          if (!keyType || keyType.flags & TypeFlags.EnumLiteral)
-            return refuse(`has a member keyed by an enum member, ${name.getText(declared.getSourceFile())}`);
-          const term = literalUnion(keyType, span, computedContext.unique);
-          if (!term || term.k === "union") return refuse(`has a member under a computed name of no one key type`);
-          add(term);
-        } else return refuse(`has a member ${property.name} under a name of no key type`);
-      }
-      for (const info of checker.getIndexInfosOfType(type)) {
-        const key = info.keyType.flags;
-        if (key & TypeFlags.String) { keys.atoms.add("string"); keys.atoms.add("number"); }
-        else if (key & TypeFlags.Number) keys.atoms.add("number");
-        else if (key & TypeFlags.ESSymbol) keys.atoms.add("symbol");
-        else refuse("has an index signature over a pattern");
-      }
-      return keys;
+      const namesParameter = (n: Node): boolean =>
+        (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && parameters.includes(n.typeName.text)) ||
+        (n.forEachChild(c => namesParameter(c) || undefined) ?? false);
+      const outer = valueScope(declaration, what);
+      const evaluate: NonNullable<TermScope["computed"]> = (part, pos, read) => {
+        if (!namesParameter(part)) return computedType(computedContext, part, pos, read);
+        if (!use) throw Error(`${what}: ${part.getText(source)} names the declaration's parameters, ` +
+          "and is evaluated only at an application written in source");
+        return probe({ declaration, form: part, use, span: pos, what });
+      };
+      const scope: TermScope = { ...outer,
+        named: (part, pos, read) => {
+          const argument = argumentOf(part);
+          if (argument) return argument;
+          const alias = aliasOf(part);
+          if (alias && computedAlias(alias, aliasOf) && namesParameter(part)) return evaluate(part, pos, read);
+          return outer.named(part, pos, read);
+        },
+        computed: evaluate };
+      return node => typeTerm(scope, node, declaration);
     };
-    // The keys of a mapped type's synthesised members: those its alias's
-    // mapping states, `[P in K]` at K's argument, `[P in keyof T]` at T's.
-    const synthesised = (type: Type, span: Span, what: string): TypeTerm[] => {
-      const refuse = (): never => { throw Error(`keyof ${what} has a member TypeScript synthesises whose key it does not state`); };
-      const alias = type.getAliasSymbol();
-      const declaration = alias?.declarations[0]?.resolve();
-      if (!declaration || !ts.isTypeAliasDeclaration(declaration)) return refuse();
-      let body: TypeNode = declaration.type;
-      while (ts.isParenthesizedTypeNode(body)) body = body.type;
-      if (!ts.isMappedTypeNode(body) || body.nameType || !body.typeParameter.constraint) return refuse();
-      const parameters = (declaration.typeParameters ?? []).map(p => p.name.text);
-      const args = type.getAliasTypeArguments();
-      const at = (n: Node): Type | undefined => ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && !n.typeArguments?.length
-        ? args[parameters.indexOf(n.typeName.text)] : undefined;
-      const constraint = body.typeParameter.constraint;
-      const direct = at(constraint);
-      if (direct) {
-        const term = literalUnion(direct, span, computedContext.unique);
-        if (!term || direct.flags & TypeFlags.EnumLiteral) return refuse();
-        return term.k === "union" ? term.parts : [term];
-      }
-      const homomorphic = ts.isTypeOperatorNode(constraint) && constraint.operator === ts.SyntaxKind.KeyOfKeyword
-        ? at(constraint.type) : undefined;
-      if (homomorphic) {
-        const term = keysOfType(homomorphic, span, what);
-        return term.k === "union" ? term.parts : [term];
-      }
-      return refuse();
-    };
-    // `keyof` of a term read at the arguments: a record's field names (a
-    // name that may be numeric is refused, the term no longer telling its
-    // kind), its indexes' key types; `never`, every key; an intersection, its
-    // operands' keys. Any other term is refused.
-    const keysOfTerm = (term: TypeTerm, span: Span): TypeTerm => {
-      const refuse = (): never => { throw Error("keyof of a type read at the arguments that states no exact keys"); };
-      if (term.k === "atom" && term.name === "never") return everyKey(span);
-      if (term.k === "intersection") return keysUnion(term.parts.map(p => keysOfTerm(p, span)), span);
-      if (term.k !== "object" || term.calls.length || term.prototype) return refuse();
-      const parts: TypeTerm[] = term.fields.map(f => typeof f.name !== "string" || numericKey(f.name) === f.name
-        ? refuse() : { k: "literal", name: "string", text: f.name, span });
-      if (term.stringIndex) parts.push({ k: "atom", name: "string", span }, { k: "atom", name: "number", span });
-      if (term.numberIndex) parts.push({ k: "atom", name: "number", span });
-      if (term.symbolIndex) parts.push({ k: "atom", name: "symbol", span });
-      return keysUnion(parts, span);
-    };
-    // A declaration's type syntax read at an application's arguments: each
-    // parameter its argument, and each computed form evaluated there.
-    const instantiateAt = (declaration: Node, args: readonly WrittenArgument[]): (node: TypeNode) => TypeTerm => {
-        const source = declaration.getSourceFile();
-        const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
-        const parameters = childrenOf(declaration, "typeParameters").filter(ts.isTypeParameterDeclaration)
-          .map(p => p.name.text);
-        const argumentOf = (part: Node): { term: TypeTerm; node: TypeNode | null } | undefined => {
-          const index = ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && !part.typeArguments?.length
-            ? parameters.indexOf(part.typeName.text) : -1;
-          return index < 0 ? undefined : args[index];
-        };
-        const outer = valueScope(declaration, what);
-        const scope: TermScope = { ...outer,
-          named: (part, pos, read) => argumentOf(part)?.term ?? outer.named(part, pos, read),
-          computed: (part, pos, read) => {
-            // A template literal type at the arguments: each hole's term,
-            // a union of literals, spelled into every combination.
-            if (ts.isTemplateLiteralTypeNode(part)) {
-              let texts = [part.head.text];
-              for (const span of part.templateSpans) {
-                const term = read(span.type);
-                const parts = term.k === "union" ? term.parts : [term];
-                const spelled = parts.map(t => t.k === "literal" ? t.text : null);
-                if (spelled.some(t => t === null))
-                  throw Error(`the template literal type ${part.getText(source)} at the arguments has a hole of no literal`);
-                texts = texts.flatMap(prefix => spelled.map(t => `${prefix}${t}${span.literal.text}`));
-              }
-              return keysUnion(texts.map((text): TypeTerm => ({ k: "literal", name: "string", text, span: pos })), pos);
-            }
-            if (!(ts.isTypeOperatorNode(part) && part.operator === ts.SyntaxKind.KeyOfKeyword))
-              return computedType(computedContext, part, pos, read);
-            // `keyof X` at the instance: of a parameter whose argument is
-            // written, the keys TypeScript computes for that argument's
-            // type; of any other operand, the keys of its term read at the
-            // arguments. Each exactly, or refused.
-            // A node naming a type parameter has keys only at an instance.
-            const symbolic = (n: Node): boolean => (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) &&
-              typeDeclarationsOf(n.typeName).some(ts.isTypeParameterDeclaration)) || (n.forEachChild(symbolic) ?? false);
-            const argument = argumentOf(part.type);
-            if (argument?.node) {
-              const node = argument.node;
-              const text = node.getText(node.getSourceFile());
-              if (symbolic(node))
-                throw Error(`keyof ${text} is over a type parameter of the use site: its keys are computed only at an instance`);
-              return keysOfType(checker.getTypeFromTypeNode(node), pos, text);
-            }
-            // An operand naming no parameter is concrete: TypeScript's keys.
-            if (!symbolic(part.type))
-              return keysOfType(checker.getTypeFromTypeNode(part.type), pos, part.type.getText(source));
-            return keysOfTerm(read(part.type), pos);
-          } };
-        return node => typeTerm(scope, node, declaration);
-    };
-    // The arguments of an application of `declaration`: those written, then
-    // each omitted one its parameter's default read at the arguments before
-    // it. A default naming an earlier parameter alone keeps that argument's
-    // node, so TypeScript can still answer for it.
-    const completeArguments = (declaration: Node, written: readonly WrittenArgument[], what: string): WrittenArgument[] => {
+    // The arguments of an application `use` of `declaration`: those written,
+    // then each omitted one its parameter's default read at the arguments
+    // before it (`instantiateAt`).
+    const completeArguments = (declaration: Node, written: readonly TypeTerm[], use: Node | null,
+        what: string): TypeTerm[] => {
       const parameters = childrenOf(declaration, "typeParameters").filter(ts.isTypeParameterDeclaration);
       if (written.length > parameters.length) throw Error(`${what} applied to too many type arguments`);
       const completed = [...written];
       for (const parameter of parameters.slice(written.length)) {
-        const named = parameter.defaultType;
-        if (!named) throw Error(`${what}'s ${parameter.name.text} has neither an argument nor a default`);
-        const earlier = ts.isTypeReferenceNode(named) && ts.isIdentifier(named.typeName) && !named.typeArguments?.length
-          ? parameters.findIndex(p => ts.isIdentifier(named.typeName) && p.name.text === named.typeName.text) : -1;
-        completed.push({ node: earlier >= 0 && earlier < completed.length ? completed[earlier]?.node ?? null : null,
-          term: instantiateAt(declaration, completed)(named) });
+        if (!parameter.defaultType) throw Error(`${what}'s ${parameter.name.text} has neither an argument nor a default`);
+        completed.push(instantiateAt(declaration, completed, use)(parameter.defaultType));
       }
       return completed;
     };
@@ -1259,7 +1125,7 @@ export function collectDeclarations(file: string, options: {
       valueStarts.push(node);
       const target = identityOf(node);
       return { k: "reference", reference: { name, span: [0, 0], arguments: args.map((): Span => [0, 0]), target },
-        args: completeArguments(node, args.map(term => ({ term, node: null })), name).map(a => a.term), span: [0, 0] };
+        args: completeArguments(node, args, null, name), span: [0, 0] };
     };
     const overlayLibrary: OverlayLibrary = {
       symbol: symbolOf,
@@ -1284,7 +1150,7 @@ export function collectDeclarations(file: string, options: {
         valueStarts.push(node);
         const target = identityOf(node);
         return { k: "reference", reference: { name: target.name, span, arguments: args.map(() => span),
-          target }, args: completeArguments(node, args.map(term => ({ term, node: null })), target.name).map(a => a.term), span };
+          target }, args: completeArguments(node, args, null, target.name), span };
       },
     };
     let arrayProto: TypeDefinition[] = [];
@@ -1892,9 +1758,8 @@ export function collectDeclarations(file: string, options: {
             const target = lookup(name, name.text);
             if (!computedAlias(target, aliasOf)) {
               const scope = valueScope(node, `${idOf(client)}#${node.getText(client)}`, enclosingBinders(node));
-              const completed = completeArguments(target,
-                written.map(arg => ({ term: typeTerm(scope, arg), node: arg })), name.text);
-              options.completion?.(span, completed.slice(written.length).map(a => a.term));
+              const completed = completeArguments(target, written.map(arg => typeTerm(scope, arg)), node, name.text);
+              options.completion?.(span, completed.slice(written.length));
             }
           } catch (error) {
             if (error instanceof DeclarationError) throw error;
@@ -2638,7 +2503,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   /** A mapped type's keys as TypeScript computes them. */
   keys: NonNullable<TermScope["keys"]>;
   /** An application's arguments completed with its defaults. */
-  complete: (declaration: Node, written: readonly WrittenArgument[], what: string) => WrittenArgument[];
+  complete: (declaration: Node, written: readonly TypeTerm[], use: Node | null, what: string) => TypeTerm[];
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -2679,12 +2544,12 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // computes at this reference's arguments.
       if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
       const target = identityOf(targetNode);
-      const completed = context.complete(targetNode, arguments_.map(arg => ({ term: read(arg), node: arg })),
+      const completed = context.complete(targetNode, arguments_.map(read), written ?? null,
         `${target.module}#${target.name}`);
       const edge: Reference = { name: identifier.text, span: pos,
         arguments: arguments_.map(arg => [arg.getStart(source), arg.end]), target };
       queue.push(targetNode);
-      return { k: "reference", reference: edge, args: completed.map(a => a.term), span: pos };
+      return { k: "reference", reference: edge, args: completed, span: pos };
     };
     // Each declaration part is read in its own file, which its spans index.
     let body: TypeNode | undefined;
@@ -2752,7 +2617,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           const target = context.libraryInterface(name);
           queue.push(target);
           return (args: TypeTerm[]): TypeTerm => ({ k: "reference", span,
-            args: context.complete(target, args.map(term => ({ term, node: null })), name).map(a => a.term),
+            args: context.complete(target, args, null, name),
             reference: { name, span, arguments: args.map(() => span), target: identityOf(target) } });
         }) });
       continue;

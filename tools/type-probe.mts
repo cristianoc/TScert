@@ -1,0 +1,248 @@
+/* TypeScript's evaluation of a declaration's computed type syntax at one
+ * application (SOURCE-CONTRACTS.md, "Written applications").
+ *
+ * A form in a declaration's parameter list, `keyof U` in
+ * `type G<T, U = T, K extends keyof U = keyof U>`, names the declaration's
+ * parameters; what it denotes at an application `G<σ⃗>` is what TypeScript
+ * computes for it with the parameters bound to the arguments, the omitted
+ * ones to their defaults. The checker answers that for a type node in its
+ * program, and has no operation instantiating a declaration's syntax. So the
+ * question is asked in a probe program: the project's files, two of them
+ * with a declaration added,
+ *
+ *   type P<the declaration's parameter list, verbatim> = <the form>;
+ *   type U = P<the application's written arguments, verbatim>;
+ *
+ * `P` where the declaration stands (beside it, in a global augmentation of
+ * its module) or, where that file cannot be read again (a standard library
+ * file), beside `U`; `U` at the end of the statement list holding the
+ * application. TypeScript completes the omitted arguments with the defaults,
+ * substitutes and evaluates the form: `U`'s type is the answer.
+ *
+ * A copy means what the original means only where every name in it resolves
+ * to what it resolves to where it is written. Each name in the copied
+ * parameter list, form and arguments is checked: its symbol's declarations
+ * in the probe program, mapped back to the original files, must be its
+ * symbol's declarations in the original program. A name declared inside the
+ * copied text (a parameter, a mapped type's key) maps to the original copy.
+ * Any difference, a `this` type, or an application in a file that cannot be
+ * read again refuses the evaluation. The answer is read from the checker's
+ * type objects: a union of literals and primitives, unique symbols mapped
+ * back to their original declarations; anything else is refused.
+ */
+import { existsSync } from "node:fs";
+import { TypeFlags, type Checker, type Program, type Symbol, type Type } from "typescript/unstable/sync";
+import * as ts from "typescript/unstable/ast";
+import type { Identifier, Node, SourceFile, TypeNode } from "typescript/unstable/ast";
+import { literalUnion } from "./computed-types.mts";
+import type { TypeTerm } from "./declaration-types.mts";
+import type { Span } from "./span.mts";
+import { childrenOf } from "./syntax.mts";
+
+/** A symbol of the checker. */
+type Symbolic = Symbol;
+
+/** A program over the project's files with some of them replaced. */
+export type ProbeProgram = <T>(files: ReadonlyMap<string, string>,
+  read: (program: Program, checker: Checker) => T) => T;
+
+/** One evaluation: `form`, written in `declaration`'s parameter list, at the
+ * application `use` (a node whose `typeArguments` are its written
+ * arguments). */
+export type ProbeRequest = { declaration: Node; form: TypeNode; use: Node; span: Span; what: string };
+
+/** Original text copied into the probe: `[start, end)` of `file`. */
+type Copy = { file: string; start: number; end: number };
+/** A piece of inserted text: a copy, or text of its own. */
+type Piece = { text: string; copy?: Copy };
+/** Pieces inserted at offset `at` of a file. */
+type Edit = { at: number; pieces: Piece[] };
+
+/** The end offset of a statement list a declaration can be added to, in its
+ * file's text; null for a node that is no such list. */
+function listEnd(list: Node): number | null {
+  if (ts.isSourceFile(list)) return list.end;
+  if (ts.isBlock(list) || ts.isModuleBlock(list)) return list.end - 1;
+  if (ts.isCaseClause(list) || ts.isDefaultClause(list)) return list.end;
+  return null;
+}
+
+/** The type arguments written at an application. */
+function argumentsOf(use: Node): readonly TypeNode[] {
+  const value: unknown = Reflect.get(use, "typeArguments");
+  return Array.isArray(value) ? value.filter((n): n is TypeNode => !!n && typeof n === "object" && "kind" in n) : [];
+}
+
+/** Every identifier under `node`, `node` included. */
+function identifiers(node: Node): Identifier[] {
+  const found: Identifier[] = [];
+  const visit = (n: Node): void => {
+    if (ts.isIdentifier(n)) found.push(n);
+    n.forEachChild(visit);
+  };
+  visit(node);
+  return found;
+}
+
+/** Whether `node` is or holds a `this` type. */
+const holdsThis = (node: Node): boolean =>
+  node.kind === ts.SyntaxKind.ThisType || (node.forEachChild(c => holdsThis(c) || undefined) ?? false);
+
+/** The node passing `test` that spans exactly `[start, end)` of `file`. */
+function nodeAt<N extends Node>(file: SourceFile, start: number, end: number, test: (n: Node) => n is N): N | undefined {
+  let found: N | undefined;
+  const visit = (n: Node): void => {
+    if (found || n.end < start || n.pos > end) return;
+    if (test(n) && n.getStart(file) === start && n.end === end) found = n;
+    else n.forEachChild(visit);
+  };
+  visit(file);
+  return found;
+}
+
+export function makeProbe(original: { program: Program; checker: Checker }, probeProgram: ProbeProgram,
+    unique: (name: Identifier) => number): (request: ProbeRequest) => TypeTerm {
+  let count = 0;
+  return ({ declaration, form, use, span, what }) => {
+    const refuse = (why: string): never => {
+      throw Error(`${what}: ${form.getText(form.getSourceFile())} at the application: ${why}`);
+    };
+    const k = count++;
+    const probeName = `__TScertProbe${k}`, useName = `__TScertUse${k}`;
+    const declarationFile = declaration.getSourceFile();
+    const useFile = use.getSourceFile();
+    const parameters = childrenOf(declaration, "typeParameters").filter(ts.isTypeParameterDeclaration);
+    const args = argumentsOf(use);
+    const copied: Node[] = [...parameters, form, ...args];
+    if (copied.some(holdsThis)) refuse("a `this` type means what it means where it is written");
+    // The statement list holding the application.
+    let list: Node | undefined = use.parent;
+    while (list && listEnd(list) === null) list = list.parent;
+    if (!list || !existsSync(useFile.fileName)) return refuse("its file cannot be read again with the probe beside it");
+    const useEnd = listEnd(list) ?? useFile.end;
+    const copy = (n: Node): Piece => {
+      const file = n.getSourceFile();
+      const start = n.getStart(file);
+      return { text: file.text.slice(start, n.end), copy: { file: file.fileName, start, end: n.end } };
+    };
+    const listed = (nodes: readonly Node[]): Piece[] =>
+      nodes.flatMap((n, i) => i ? [{ text: ", " }, copy(n)] : [copy(n)]);
+    // `type P<the parameters> = form;` and `type U = P<the arguments>;`
+    const probe: Piece[] = [{ text: `type ${probeName}<` }, ...listed(parameters), { text: "> = " }, copy(form),
+      { text: ";" }];
+    const application: Piece[] = [{ text: `\ntype ${useName} = ${probeName}` },
+      ...(args.length ? [{ text: "<" }, ...listed(args), { text: ">" }] : []), { text: ";\n" }];
+    // The probe stands beside the declaration, at its module's top level,
+    // where its file can be read again; otherwise beside the application.
+    const edits = new Map<SourceFile, Edit[]>();
+    const insert = (file: SourceFile, at: number, pieces: Piece[]): void => {
+      edits.set(file, [...(edits.get(file) ?? []), { at, pieces }]);
+    };
+    if (ts.isSourceFile(declaration.parent) && existsSync(declarationFile.fileName)) {
+      const module = declarationFile.externalModuleIndicator !== undefined;
+      insert(declarationFile, declarationFile.end, [{ text: module ? "\ndeclare global {\n" : "\n" }, ...probe,
+        { text: module ? "\n}\n" : "\n" }]);
+      insert(useFile, useEnd, application);
+    } else insert(useFile, useEnd, [{ text: "\n" }, ...probe, ...application]);
+    // The edited texts, each copy's offset in them, and each insertion's.
+    const files = new Map<string, string>();
+    const placed: { copy: Copy; into: string; at: number }[] = [];
+    const inserted = new Map<string, { start: number; end: number }[]>();
+    for (const [file, list] of edits) {
+      const sorted = [...list].sort((a, b) => a.at - b.at);
+      let out = "", last = 0;
+      const ranges: { start: number; end: number }[] = [];
+      for (const edit of sorted) {
+        out += file.text.slice(last, edit.at);
+        last = edit.at;
+        const start = out.length;
+        for (const piece of edit.pieces) {
+          if (piece.copy) placed.push({ copy: piece.copy, into: file.fileName, at: out.length });
+          out += piece.text;
+        }
+        ranges.push({ start, end: out.length });
+      }
+      files.set(file.fileName, out + file.text.slice(last));
+      inserted.set(file.fileName, ranges);
+    }
+    // An offset of an edited text: the original offset it stands for, inside
+    // a copy the offset it copies, inside other inserted text none.
+    const back = (file: string, offset: number): { file: string; offset: number } | null => {
+      for (const p of placed)
+        if (p.into === file && offset >= p.at && offset <= p.at + p.copy.end - p.copy.start)
+          return { file: p.copy.file, offset: p.copy.start + offset - p.at };
+      let at = offset;
+      for (const range of inserted.get(file) ?? []) {
+        if (offset >= range.start && offset < range.end) return null;
+        if (range.end <= offset) at -= range.end - range.start;
+      }
+      return { file, offset: at };
+    };
+    return probeProgram(files, (program, checker) => {
+      const where = (node: Node, map: boolean): unknown => {
+        const file = node.getSourceFile();
+        const start = node.getStart(file);
+        if (!map) return [file.fileName, start, node.end];
+        const from = back(file.fileName, start), to = back(file.fileName, node.end);
+        return from && to && from.file === to.file ? [from.file, from.offset, to.offset] : "the probe";
+      };
+      const declarationsOf = (symbol: Symbolic | undefined, map: boolean): string =>
+        JSON.stringify((symbol?.declarations ?? []).map(d => {
+          const node = d.resolve();
+          return node ? where(node, map) : null;
+        }).map(d => JSON.stringify(d)).sort());
+      // Each copied name resolves to what it resolves to where it is written.
+      for (const p of placed) {
+        const into = program.getSourceFile(p.into);
+        const source = copied.find(n => n.getSourceFile().fileName === p.copy.file &&
+          n.getStart(n.getSourceFile()) === p.copy.start && n.end === p.copy.end);
+        if (!into || !source) return refuse("the probe program lost a copied part");
+        const file = source.getSourceFile();
+        for (const name of identifiers(source)) {
+          const start = p.at + name.getStart(file) - p.copy.start;
+          const twin = nodeAt(into, start, start + name.end - name.getStart(file), ts.isIdentifier);
+          if (!twin) return refuse(`the copy of ${name.text} is not where it was placed`);
+          const symbol = original.checker.getSymbolAtLocation(name);
+          if (declarationsOf(symbol, false) !== declarationsOf(checker.getSymbolAtLocation(twin), true))
+            return refuse((symbol?.declarations ?? []).some(d => {
+              const node = d.resolve();
+              return !!node && ts.isTypeParameterDeclaration(node) && !copied.includes(node);
+            }) ? `${name.text} is a type parameter of the application's scope: the form is computed only at an instance`
+              : `${name.text} does not resolve there to what it names where it is written`);
+        }
+      }
+      const probed = program.getSourceFile(useFile.fileName);
+      let alias: ts.TypeAliasDeclaration | undefined;
+      const visit = (n: Node): void => {
+        if (alias) return;
+        if (ts.isTypeAliasDeclaration(n) && n.name.text === useName) alias = n;
+        else n.forEachChild(visit);
+      };
+      if (probed) visit(probed);
+      if (!alias) return refuse("the probe program lost the probe");
+      const type: Type | undefined = checker.getTypeAtLocation(alias.name);
+      if (!type || type.isErrorType()) return refuse("TypeScript computes no type for it");
+      const term = literalUnion(type, span, part => {
+        const nodes = (part.getSymbol()?.declarations ?? []).map(d => d.resolve());
+        const [node, ...more] = nodes;
+        const name = node && (ts.isVariableDeclaration(node) || ts.isPropertySignatureDeclaration(node)) &&
+          node.name && ts.isIdentifier(node.name) ? node.name : null;
+        if (!name || more.length)
+          return refuse(`the unique symbol ${checker.typeToString(part)} is declared by no one constant`);
+        const file = name.getSourceFile();
+        const from = back(file.fileName, name.getStart(file)), to = back(file.fileName, name.end);
+        const source = from && to ? original.program.getSourceFile(from.file) : undefined;
+        const mapped = from && to && source ? nodeAt(source, from.offset, to.offset, ts.isIdentifier) : undefined;
+        if (!mapped) return refuse(`the unique symbol ${checker.typeToString(part)} is declared in the probe`);
+        return unique(mapped);
+      });
+      if (!term) {
+        const parts = type.isUnionType() ? type.getTypes() : [type];
+        return refuse(`TypeScript computes ${checker.typeToString(type)}, ` +
+          (parts.some(t => t.flags & TypeFlags.EnumLiteral) ? "whose part is an enum member, outside the fragment"
+            : "which is not a union of literals and primitives"));
+      }
+      return term;
+    });
+  };
+}

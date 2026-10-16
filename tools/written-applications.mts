@@ -25,10 +25,6 @@ export type Entity = {
 };
 
 /** What the sweep needs from the declaration graph. */
-/** An application's argument: its term, and the type node it is written as,
- * if any, for TypeScript to answer about. */
-export type WrittenArgument = { term: TypeTerm; node: TypeNode | null };
-
 export type SweepContext = {
   /** The declarations TypeScript binds a written name to (empty when it
    * binds none). */
@@ -48,16 +44,14 @@ export type SweepContext = {
   /** The term of `node` read where it is written, a type parameter read as
    * `binder` names it (undefined for one not in scope). */
   read(node: TypeNode, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TypeTerm;
-  /** The reader of a declaration's syntax at an application: its type
-   * parameters read as the arguments' terms, and `keyof P` of one, `P`'s
-   * argument a concrete type, as the keys TypeScript computes for that
-   * argument; a bound or default naming a parameter is read so, at the
-   * instance. */
-  instantiate(declaration: Node, args: readonly WrittenArgument[]): (node: TypeNode) => TypeTerm;
+  /** The reader of a declaration's bounds and defaults at the application
+   * `use`: its type parameters read as the arguments' terms, a computed form
+   * naming them as TypeScript computes it at `use` (`type-probe.mts`). */
+  instantiate(declaration: Node, args: readonly TypeTerm[], use: Node): (node: TypeNode) => TypeTerm;
   /** The application's arguments, the written ones completed with the
    * defaults at them; the one completion every reader of an application
    * shares. */
-  complete(declaration: Node, written: readonly WrittenArgument[], what: string): WrittenArgument[];
+  complete(declaration: Node, written: readonly TypeTerm[], use: Node, what: string): TypeTerm[];
   /** The written reference's edge to the declaration it names. */
   reference(name: ts.Identifier, args: readonly TypeNode[]): WrittenApplication["reference"];
   /** The declarations a member selection depends on: the top-level
@@ -297,14 +291,12 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     try {
       // Each argument, written or the default at the earlier ones; each
       // bound at all of them.
-      const written = args.map(arg => ({ node: ts.isInferTypeNode(arg) ? null : arg, term: ts.isInferTypeNode(arg)
-        ? { k: "binder" as const, name: env.names.get(arg.typeParameter) ?? fresh(arg.typeParameter),
-            span: spanOf(arg) }
-        : context.read(arg, read) }));
-      const completed = context.complete(first, written, name.text);
-      const instance = context.instantiate(first, completed);
+      const written = args.map((arg): TypeTerm => ts.isInferTypeNode(arg)
+        ? { k: "binder", name: env.names.get(arg.typeParameter) ?? fresh(arg.typeParameter), span: spanOf(arg) }
+        : context.read(arg, read));
+      const terms = context.complete(first, written, node, name.text);
+      const instance = context.instantiate(first, terms, node);
       const bounds = parameters.map(p => p.constraint ? instance(p.constraint) : null);
-      const terms = completed.map(c => c.term);
       found.push({ scope: pruned(env, [...terms, ...bounds.filter((b): b is TypeTerm => !!b)]),
         reference: context.reference(name, args),
         parameters: parameters.map(p => ({ name: p.name.text, span: spanOf(p) })),

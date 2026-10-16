@@ -29,9 +29,10 @@ export type ComputedContext = {
   /** The type alias a reference names, as TypeScript resolves it, if it
    * names one. */
   alias(reference: TypeReferenceNode): TypeAliasDeclaration | null;
-  /** The reader of type syntax inside `alias`'s equation with its parameters
-   * read as `args`, in the alias's own scope. */
-  applied(alias: TypeAliasDeclaration, args: readonly TypeTerm[]): (node: TypeNode) => TypeTerm;
+  /** The reader of type syntax inside `alias`'s declaration with its
+   * parameters read as `args`, in the alias's own scope, a computed form
+   * naming them evaluated by TypeScript at the application `use`. */
+  applied(alias: TypeAliasDeclaration, args: readonly TypeTerm[], use: Node): (node: TypeNode) => TypeTerm;
   /** A generic alias's equation at a reference's arguments, when it is an
    * array, a tuple or another alias's application; null otherwise. */
   equation(reference: Extract<TypeTerm, { k: "reference" }>): TypeTerm | null;
@@ -126,12 +127,6 @@ export function computedType(context: ComputedContext, node: TypeNode, span: Spa
   if (ts.isTypeReferenceNode(node)) return aliasApplication(context, node, span, read, computed);
   if (ts.isTypeQueryNode(node)) return typeQuery(context, node, type, span);
   if (ts.isIndexedAccessTypeNode(node)) return indexedAccess(context, node, type, span, read);
-  // `keyof` of the type literal its operand reads as, where TypeScript
-  // defers it over a type parameter (an alias's, read at its argument).
-  if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.KeyOfKeyword) {
-    const keys = keysOf(read(node.type), span);
-    if (keys) return keys;
-  }
   if (ts.isTemplateLiteralTypeNode(node) || type.isTemplateLiteralType() || type.isStringMappingType())
     throw Error(`the template literal type ${computed} is a string pattern: it holds infinitely many ` +
       "strings, not a union of literals, and the fragment has no string-pattern type");
@@ -157,7 +152,7 @@ function aliasApplication(context: ComputedContext, node: TypeReferenceNode, spa
   let body = alias.type;
   while (ts.isParenthesizedTypeNode(body)) body = body.type;
   if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, computed, applied.members);
-  return computedType(context, body, span, context.applied(alias, applied.args));
+  return computedType(context, body, span, context.applied(alias, applied.args, node));
 }
 
 /** A union member as written: its type node, the reader of the scope it
@@ -174,7 +169,7 @@ function parameterMembers(context: ComputedContext, alias: TypeAliasDeclaration,
   for (const [i, parameter] of (alias.typeParameters ?? []).entries()) {
     const written = reference.typeArguments?.[i];
     const member: Member | null = written ? { node: written, read, params }
-      : parameter.defaultType ? { node: parameter.defaultType, read: context.applied(alias, [...args]), params: new Map(members) }
+      : parameter.defaultType ? { node: parameter.defaultType, read: context.applied(alias, [...args], reference), params: new Map(members) }
       : null;
     if (!member) return null;
     args.push(member.read(member.node));
@@ -204,7 +199,7 @@ function unionMembers(context: ComputedContext, node: TypeNode, read: (node: Typ
     return [{ node, read, params }];
   const applied = parameterMembers(context, alias, node, read, params);
   if (!applied) return [{ node, read, params }];
-  return unionMembers(context, alias.type, context.applied(alias, applied.args), new Set([...seen, alias]), applied.members);
+  return unionMembers(context, alias.type, context.applied(alias, applied.args, node), new Set([...seen, alias]), applied.members);
 }
 
 /** An application of an alias whose equation is a conditional type
@@ -250,26 +245,6 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
   const [only] = terms;
   if (!only) return { k: "atom", name: "never", span };
   return terms.length === 1 ? only : { k: "union", parts: terms, span };
-}
-
-/** `keyof` of a type literal: the union of its property names' string
- * literals, as TypeScript computes it; null where the keys are not only such
- * names (an index signature, a symbol or numeric key, a type that is not a
- * literal). */
-function keysOf(object: TypeTerm, span: Span): TypeTerm | null {
-  if (object.k !== "object" || object.stringIndex || object.numberIndex || object.symbolIndex || object.prototype)
-    return null;
-  const parts: TypeTerm[] = [];
-  for (const field of object.fields) {
-    if (typeof field.name !== "string") return null;
-    // A numeric name's key is its literal as written, `1` or `"1"`, which
-    // the term no longer tells apart.
-    if (numericKey(field.name) === field.name) return null;
-    parts.push({ k: "literal", name: "string", text: field.name, span });
-  }
-  const [only] = parts;
-  if (!only) return { k: "atom", name: "never", span };
-  return parts.length === 1 ? only : { k: "union", parts, span };
 }
 
 /** Why `type` is not a union of literals and primitives: its first part that

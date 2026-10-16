@@ -1228,23 +1228,35 @@ arity.
 An entry states, per parameter, its completed argument and its bound read at
 the arguments, $`\beta_i[\vec X:=\vec\sigma]`$: the front end reads the
 bound's syntax, as a default's, with the parameters as the arguments' terms,
-so `Pick`'s `K extends keyof T` is read at `T`'s argument. A computed form is
-evaluated there: a template literal type whose holes are unions of literals
-is the union of its spellings (`` `x${T}` `` at `"a"` is `"xa"`), and `keyof X`
-is read exactly or refused. Of a parameter whose argument is written (a
-default naming an earlier parameter alone standing for that one's), or of an
-operand naming no parameter, `keyof` is the keys TypeScript's checker gives
-that concrete type: each public member's key, the literal type of its name
-as the checker gives it (`"0"` a string; `0`, and `[n]` with `n: 0`, a
-number; a unique symbol), private, protected and `#x` members excluded; each
-index signature's key type; every key for `never` and `any`; none for
-`unknown`; an intersection's operands' keys; a union's keys common to all
-its members; for a member TypeScript synthesises, the keys its alias's
-mapping declares (`[P in K]`, or homomorphic `[P in keyof T]`). A key named
-by an enum member is refused, the fragment stating no enum literal, as is a
-type over a binder of the use site or a type parameter. Of any other
-operand, `keyof` is the keys of its term read at the arguments, a name that
-may be numeric refused. A
+so `Pick`'s `K extends keyof T` is read at `T`'s argument. A computed form
+there (`keyof`, a conditional, a template literal, an indexed access, a
+computed alias's application) naming no parameter is what TypeScript computes
+for it where it is written; one naming a parameter is what TypeScript
+computes for it at the application. The checker instantiates no declaration's
+syntax, so the question is asked in a probe program (`type-probe.mts`): the
+project with two declarations added,
+
+```ts
+type P</* the declaration's parameter list, verbatim */> = /* the form */;
+type U = P</* the application's written arguments, verbatim */>;
+```
+
+`P` beside the declaration (in a global augmentation of its module) or, where
+that file cannot be read again (a standard library file), beside `U`; `U` at
+the end of the statement list holding the application. TypeScript completes
+the omitted arguments with the defaults, substitutes and evaluates: `U`'s
+type is the answer. Each name in the copied parameter list, form and
+arguments must resolve in the probe to the declarations it resolves to where
+it is written, a name declared inside a copy to its original; otherwise the
+evaluation is refused, as it is for a `this` type and for a name of the
+application's scope that is a type parameter (the form is then computed only
+at an instance). The answer is read from the checker's type objects: a union
+of literals and primitives (`keyof Record<string, number>` is `string`, of
+`{ 0: number }` the number `0`, of a class its public members' keys), each
+unique symbol mapped to the constant declaring it in the original program;
+an enum member, whose identity the fragment has no literal for, and any
+other type are refused. A computed alias applied in an annotation reads its
+defaults and equation the same way, at that application. A
 declaration's definition states no bound: bounds are read only here. The
 verifier binds
 each entry's groups as a unit's binders (`bindNames`), lowers each argument
