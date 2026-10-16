@@ -16,7 +16,7 @@ export type CommitRecord = {
 };
 /** A pipeline case an Effect line names: its program at the commit, its kind
  * in `pipeline/cases.mts`, and the source span its expected diagnostic names. */
-export type Example = { source: string; kind?: string; span?: [number, number] };
+export type Example = { source: string; kind?: string | undefined; span?: [number, number] };
 
 export type Group = { name: string; range?: string; records: CommitRecord[]; files: string[] };
 

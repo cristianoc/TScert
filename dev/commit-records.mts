@@ -39,7 +39,7 @@ function examplesOf(rev: string, text: string): Map<string, Example> {
       const entry = i < 0 ? "" : cases.slice(i, next < 0 ? undefined : i + 1 + next);
       const kind = /(positive|negative|gap)$/.exec(cases.slice(Math.max(0, i - 10), i))?.[1];
       const span = /\\\[(\d+),(\d+)\\\)/.exec(entry);
-      found.set(name, { source, kind, span: span ? [Number(span[1]), Number(span[2])] : undefined });
+      found.set(name, span ? { source, kind, span: [Number(span[1]), Number(span[2])] } : { source, kind });
       break;
     }
   }

@@ -28,7 +28,7 @@ design, not its progress.
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 267 verify in `tools/`, 5 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 267 verify in `tools/`, 7 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -200,13 +200,13 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 5 verify; the first blockers there are a callback writing only
+dump, 7 verify; the first blockers there are a callback writing only
 locations it allocated, a `let` cell or a fresh regex's `lastIndex`, which
 the effect checker does not certify (see [contract
 completeness](#restoring-completeness); 7: effects, tests, math, mathRoles,
 lowering, rules and section, through `esc`, `highlight` and
-`afterRelation`), a value of `undefined` written to an optional field (3:
-examplesOf, and readRecord and group through it), an element read a length
+`afterRelation`), a `map` callback running a child process, whose effect
+no contract bounds to locations other than the source's (group), an element read a length
 guards (`paragraphs[paragraphs.length - 1]`, `guarded-element-read-refused`,
 2: parseTrailers, parseRecord), a conditional type over a type parameter, `KeysOf<T>` (2,
 lowering-dump), a dictionary read at a key that may name an
