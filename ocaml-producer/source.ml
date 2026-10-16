@@ -306,12 +306,6 @@ let rec source_type ctx j =
     (match ctx.owner,args,List.assoc_opt id ctx.symbolic with
     | None,[arg],Some (parameter,body) -> Inference.substitute [parameter,ValueArgument arg] body
     | _ -> Atoms [Named (id,args)])
-  (* An application a reader replaced by the type it denotes: that type. Its
-     arguments' bounds are the verifier's to check. *)
-  | "applied" ->
-    let id = identity (field "target" (field "reference" j)) in
-    if not (List.mem_assoc id ctx.arity) then fail ("reference lacks a declaration " ^ id);
-    recur (field "value" j)
   | "parameter" ->
     let index = match field "index" j with
       | Number n -> (match int_of_string_opt n with
@@ -878,8 +872,7 @@ let decode ast =
      defaults=List.map (fun p -> match field "default" p with
        | Null -> None | j -> Some (body j)) (items "parameters" definition);
      bases=List.map body (items "bases" definition);
-     (* An alias TypeScript computes has no equation: its applications state
-        their values. *)
+     (* A definition stated for its bounds only has no equation. *)
      expression=(match field "expression" definition with Null -> None | e -> Some (body e))})
     (items "definitions" document) in
   let locals = List.map (fun root ->

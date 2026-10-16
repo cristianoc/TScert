@@ -504,8 +504,8 @@ Lowering turns the parser's declarations into definitions:
   [PROGRAM-TYPING](PROGRAM-TYPING.md#packed-binders).
 
 A written type application must satisfy each declaration's bound at its
-completed arguments, including one a reader replaces by a term it does not
-read from it ([replaced applications](SOURCE-CONTRACTS.md#replaced-applications)).
+completed arguments, read from the written syntax whatever term a reader
+states for it ([written applications](SOURCE-CONTRACTS.md#written-applications)).
 These subtype obligations are checked over the compacted
 equations with the same execution budget as later comparisons. Their
 [diagnostics](OBLIGATION-DIAGNOSTICS.md#direct-obligations) retain the compared

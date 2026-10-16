@@ -214,10 +214,6 @@ structure Ctx where
   /-- The declared bounds of the placeholders in scope (`arg i`, `local j`),
   read when a bound obligation inside the template is checked (§8.2). -/
   bounds : List (Tree × Union) := []
-  /-- Whether an application's declared bounds are checked here: where the
-  source writes it. A claim's are not: a claim is a proposal the program is
-  checked against, and bounds carry no meaning (§8.2). -/
-  checkBounds : Bool := true
   deriving Inhabited
 
 

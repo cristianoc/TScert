@@ -152,7 +152,7 @@ private def genericOf (name : String) (pos : Nat × Nat) (path : String) (node :
   let bounds ← tps.toList.mapM fun p => do
     let n ← (str p "name" : Except String String)
     let b := p.getObjValD "bound"
-    let ctx : Ctx := { binders := scope, site := s!"{path}: the bound of {n}", checkBounds := false }
+    let ctx : Ctx := { binders := scope, site := s!"{path}: the bound of {n}" }
     if (scope.lookup n).any (·.pack) then
       if b == .null then throw s!"{path}: an argument pack needs its bound"
       return (n, some (← packBound ctx b))
@@ -183,6 +183,9 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
   let proto ← protoLabel
   modify fun s => { s with proto := match proto with | .app h _ => some h | _ => none }
   drain
+  -- Every written application's bound obligations.
+  for entry in ← arr (ast.getObjValD "declarations") "applications" do
+    writtenObligations entry
   let functionTrees := (ast.getObjValAs? (Array Json) "functions").toOption.getD #[]
   let annotations ← walk "/functions" [] [] (.arr (functionTrees.map restView))
   -- Generic module functions: their binders, and their types at them.
@@ -199,7 +202,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
     generics := generics ++ [← genericOf name pos path f tps fun scope => do
       -- Its signature by its parameters' annotations: a rest's element, the
       -- claim of a rest being its element's (`Fragment.callableType`).
-      let ctx : Ctx := { binders := scope, site := path, checkBounds := false }
+      let ctx : Ctx := { binders := scope, site := path }
       -- A rest typed by its own type parameter is that parameter as an
       -- argument pack, which each call instantiates.
       if (packRest f).isSome then
@@ -266,7 +269,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
         let u := binderUse n (b.getObjValD "annot")
         if u.pack && u.value then some n else none
       generics := generics ++ [← genericOf name pos path ctor tps (packed := packed) fun scope => do
-        genericType { binders := scope, site := s!"{path}/annot", checkBounds := false } (← field b "annot")]
+        genericType { binders := scope, site := s!"{path}/annot" } (← field b "annot")]
   -- Imported values: a generic one is instantiated at each call.
   let mut values := []
   let document := ast.getObjValD "declarations"
@@ -293,7 +296,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
       let _ ← enterUnit path [] v tps
       units := units ++ [(path, (((← get).unitBinders.lookup path).getD []))]
       let generic ← genericOf name span path v tps (packed := packed) fun scope => do
-        genericType { binders := scope, site := path, checkBounds := false } (← field v "type")
+        genericType { binders := scope, site := path } (← field v "type")
       generics := generics ++ [generic]
   -- The stable non-thenable family resolution descriptors are relative to:
   -- the intrinsic module's `%Stable%`, by its declaration identity.

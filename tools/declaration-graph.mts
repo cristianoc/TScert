@@ -24,8 +24,9 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
-import { computedType, enclosingBinders, inferredTerm, kept, literalUnion, type ComputedContext } from "./computed-types.mts";
-import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
+import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
+import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
+import { SweepError, writtenApplications } from "./written-applications.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -82,14 +83,14 @@ type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
  * parameter, the keys `keys` computes where it can (an alias of literals is
  * its literals), otherwise each argument as `read` reads it. */
 export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => TypeTerm,
-    keys?: (node: TypeNode, read: (node: TypeNode) => TypeTerm) => TypeTerm | null): TypeTerm[] {
+    keys?: (node: TypeNode) => TypeTerm | null): TypeTerm[] {
   const named: number[] = [];
   const mentions = (t: TypeTerm): void => {
     if (t.k === "parameter") named.push(t.index);
     else if (t.k === "union") t.parts.forEach(mentions);
   };
   if (library.k === "mapped") mentions(library.template.key);
-  return nodes.map((node, i) => (named.includes(i) ? keys?.(node, read) : null) ?? read(node));
+  return nodes.map((node, i) => (named.includes(i) ? keys?.(node) : null) ?? read(node));
 }
 
 const isLibraryModule = (module: string): boolean => module.startsWith("typescript/lib/");
@@ -621,17 +622,10 @@ export function collectDeclarations(file: string, options: {
     // A computed key names a `unique symbol` constant. Each such declaration
     // is listed once, and its position in the list is the symbol's identity.
     // A mapped type's keys as TypeScript computes them, where they are a
-    // union of literals and primitives, keeping the applications written in
-    // them. Where those are not read, the keys are read as written.
-    const keyTypeOf = (node: TypeNode, read: (node: TypeNode) => TypeTerm): TypeTerm | null => {
+    // union of literals and primitives.
+    const keyTypeOf = (node: TypeNode): TypeTerm | null => {
       const type = checker.getTypeFromTypeNode(node);
-      const span: Span = [node.getStart(node.getSourceFile()), node.end];
-      const keys = type ? literalUnion(type, span) : null;
-      try {
-        return keys && kept(computedContext, node, read, keys, span);
-      } catch {
-        return null;
-      }
+      return type ? literalUnion(type, [node.getStart(node.getSourceFile()), node.end]) : null;
     };
     // Whether a name denotes a standard library value, such as `Symbol`.
     const isLibraryValue = (name: Identifier): boolean => {
@@ -725,11 +719,9 @@ export function collectDeclarations(file: string, options: {
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
-    // The declarations of the applications computed types replace
-    // (`computedType`), collected as they are met, each refused at the client
-    // span being read when it was met.
-    const appliedStarts: { node: TypeDeclaration; span: Span }[] = [];
-    let collecting: Span | null = null;
+    // The declarations of the values read, whose declared types are swept for
+    // their written applications.
+    const valueDeclarations: Node[] = [];
     const valueScope = (node: Node, what: string, binders: string[] = []): TermScope => {
       const source = node.getSourceFile();
       return {
@@ -809,6 +801,7 @@ export function collectDeclarations(file: string, options: {
     // which a value reference does not denote.
     const valueOf = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
       const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !ts.isTypeAliasDeclaration(n));
+      valueDeclarations.push(...nodes);
       const [node] = nodes;
       if (!node) throw Error(`unresolved value ${what}`);
       const source = node.getSourceFile();
@@ -891,20 +884,6 @@ export function collectDeclarations(file: string, options: {
       },
       value: (nodes, what) => valueOf(nodes, what),
       alias: aliasOf,
-      // The declaration an application names joins the graph, where its
-      // parameters' bounds are stated.
-      application: (reference, args, value, span) => {
-        const name = reference.typeName;
-        const source = reference.getSourceFile();
-        if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${idOf(source)}`);
-        const what = `${idOf(source)}#${name.text}`;
-        if (library(name, what)) return value;
-        const target = lookup(name, what);
-        appliedStarts.push({ node: target, span: collecting ?? span });
-        return { k: "applied", reference: { name: name.text, span,
-          arguments: (reference.typeArguments ?? []).map((arg): Span => [arg.getStart(source), arg.end]),
-          target: identityOf(target) }, args, value, span };
-      },
       applied: (alias, args) => {
         const what = `${idOf(alias.getSourceFile())}#${alias.name.text}`;
         const parameters = (alias.typeParameters ?? []).map(p => p.name.text);
@@ -1640,8 +1619,7 @@ export function collectDeclarations(file: string, options: {
     }
     for (const span of options.keyTypes ?? []) {
       const node = typeNodeAt(client, span);
-      options.keyType?.(span, node ? keyTypeOf(node, part =>
-        typeTerm(valueScope(node, `${idOf(client)}#${node.getText(client)}`, enclosingBinders(node)), part)) : null);
+      options.keyType?.(span, node ? keyTypeOf(node) : null);
     }
     for (const span of options.symbolNames ?? []) {
       const node = expressionAt(client, span);
@@ -1673,6 +1651,64 @@ export function collectDeclarations(file: string, options: {
         options.computedType?.(span, { refused: error instanceof Error ? error.message : String(error) });
       }
     }
+    // The applications written in the client file and in the declarations it
+    // reaches (`written-applications.mts`), each target joining the graph for
+    // its bounds; a library one is stated for its bounds only.
+    const typeDeclarationsOf = (name: Identifier): Node[] =>
+      (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
+    const sweepScope = (at: Node, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TermScope => {
+      const what = `${idOf(at.getSourceFile())}#${at.getText(at.getSourceFile())}`;
+      const base = valueScope(at, what);
+      return { ...base, named: (part, pos, read) => {
+        const [declaration] = ts.isIdentifier(part.typeName) ? typeDeclarationsOf(part.typeName) : [];
+        if (declaration && ts.isTypeParameterDeclaration(declaration)) {
+          const name = binder(declaration);
+          if (!name || part.typeArguments?.length)
+            throw Error(`the type parameter ${declaration.name.text} in ${what} is not one the written application's scope binds`);
+          return { k: "binder", name, span: pos };
+        }
+        return base.named(part, pos, read);
+      } };
+    };
+    const boundOnly = new Set<Node>();
+    const targets = new Map<string, TypeDeclaration>();
+    let applications: WrittenApplication[];
+    try {
+      applications = writtenApplications({
+        declarationsOf: typeDeclarationsOf,
+        declaration: name => {
+          const nodes = typeDeclarationsOf(name);
+          if (!nodes.some(isTypeDeclaration)) return null;
+          // A library declaration is not swept: it matters only as the target
+          // of an application, where it has a bounded parameter.
+          if (nodes.every(n => isLibraryModule(idOf(n.getSourceFile()))) &&
+              !nodes.some(n => isTypeDeclaration(n) && n.typeParameters?.some(p => p.constraint)))
+            return null;
+          const node = lookup(name, name.text);
+          return partners.get(node) ?? [node];
+        },
+        library: node => isLibraryModule(idOf(node.getSourceFile())),
+        read: (node, binder) => typeTerm(sweepScope(node, binder), node),
+        reference: (name, args) => {
+          const node = lookup(name, name.text);
+          const source = name.getSourceFile();
+          if (isLibraryModule(idOf(node.getSourceFile()))) boundOnly.add(node);
+          targets.set(JSON.stringify(identityOf(node)), node);
+          return { name: name.text, span: [name.getStart(source), name.end],
+            arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(node) };
+        },
+        module: file => idOf(file),
+        client,
+      }, [client, ...valueDeclarations]);
+    } catch (error) {
+      if (error instanceof DeclarationError) throw error;
+      throw new DeclarationError(error instanceof SweepError ? error.span ?? [0, 0] : [0, 0],
+        error instanceof Error ? error.message : String(error));
+    }
+    const appliedTargets = applications.flatMap(a => {
+      const node = targets.get(JSON.stringify(a.reference.target));
+      return node ? [{ node, span: a.span ?? [0, 0] }] : [];
+    });
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
     const starts = [
@@ -1681,21 +1717,16 @@ export function collectDeclarations(file: string, options: {
         ({ node, span: values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0] })),
       ...contextualStarts,
     ];
-    const collectFrom = (start: TypeDeclaration, span: Span): void => {
-      collecting = span;
+    // The targets of written applications last: one the graph reads
+    // otherwise is collected already.
+    for (const { node: start, span } of [...starts, ...appliedTargets]) {
       try {
         collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
-          keys: keyTypeOf, alias: aliasOf, awaited });
+          keys: keyTypeOf, alias: aliasOf, awaited, boundOnly: node => boundOnly.has(node) });
       } catch (error) {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
-    };
-    for (const { node: start, span } of starts) collectFrom(start, span);
-    // Collecting may compute more types, and meet more applications.
-    for (let cursor = 0; cursor < appliedStarts.length; cursor++) {
-      const start = appliedStarts[cursor];
-      if (start) collectFrom(start.node, start.span);
     }
     definitions.push(...selections, ...primitiveProtos, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
@@ -1711,7 +1742,7 @@ export function collectDeclarations(file: string, options: {
       { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
     const trustedDefinitions = definitions.map(d => d.declaration.module === clientModule ? d :
       { ...d, expression: d.expression && promisedMethods(d.expression) });
-    return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols };
+    return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
   });
 }
 
@@ -1739,7 +1770,6 @@ function promisedNames(type: TypeTerm): Set<string> {
         for (const a of t.args) visit(a, inside || promise);
         return;
       }
-      case "applied": for (const a of t.args) visit(a, inside); visit(t.value, inside); return;
       case "union": case "intersection": for (const p of t.parts) visit(p, inside); return;
       case "array": visit(t.element, inside); return;
       case "tuple": for (const p of [...t.required, ...t.optional, ...(t.rest ? [t.rest] : [])]) visit(p, inside); return;
@@ -1778,7 +1808,6 @@ function promisedMethods(type: TypeTerm): TypeTerm {
     return { ...type, fields: type.fields.map(f => ({ ...f, type: promisedMethods(f.type) })),
       ...(type.prototype ? { prototype: promisedMethods(type.prototype) } : {}) };
   if (type.k === "scheme") return { ...type, binders: promisedBinders(type.binders, type) };
-  if (type.k === "applied") return { ...type, value: promisedMethods(type.value) };
   if (type.k === "union" || type.k === "intersection") return { ...type, parts: type.parts.map(promisedMethods) };
   return type;
 }
@@ -2273,6 +2302,9 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   awaited: NonNullable<TermScope["awaited"]>;
   /** A mapped type's keys as TypeScript computes them. */
   keys: NonNullable<TermScope["keys"]>;
+  /** Whether a declaration is stated for its bounds only: a library type a
+   * written application names that nothing else reads. */
+  boundOnly: (node: TypeDeclaration) => boolean;
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -2368,10 +2400,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         bound: parameter.constraint ? parse(parameter.constraint) : null,
         default: parameter.defaultType ? parse(parameter.defaultType) : null };
     });
-    // An alias TypeScript computes from its parameters has no equation: each
-    // application states its value (`applied`), and the bounds stated here.
+    // An alias TypeScript computes from its parameters has no equation: its
+    // definition states its parameters, their bounds and defaults, which its
+    // written applications are checked against.
     // (A predicate's false branch would narrow `node` to no alias.)
-    const computedEquation: boolean = computedAlias(node, context.alias);
+    const computedEquation: boolean = computedAlias(node, context.alias) || context.boundOnly(node);
     if (computedEquation) {
       definitions.push({ declaration: identity, parameters, bases: [], expression: null });
       continue;

@@ -174,7 +174,6 @@ def liftedCtx (ctx : Ctx) (items : List Item) (h : Nat) : Ctx :=
     owner := some h
     site := ctx.site
     source := ctx.source
-    checkBounds := ctx.checkBounds
     bounds := ctx.bounds.filterMap fun (p, U) => do
       let (_, j) ← indexed.find? fun (it, _) => (ctxValue ctx it).toOption == some [p]
       let moved (q : Tree) : Option Union :=
@@ -363,8 +362,7 @@ def schemeBinders (site : String) (term : Json) : Except String (List String × 
     ResolutionWire.groups parameters)
 
 def referenceIndex (term : Json) : M Nat := do
-  fieldsExactly term (if kindOf term == some "applied" then ["k", "reference", "args", "value", "span"]
-    else ["k", "reference", "args", "span"])
+  fieldsExactly term ["k", "reference", "args", "span"]
   let target ← field (← field term "reference") "target"
   let ds := (← get).doc
   match (List.range ds.size).filter fun i => ds[i]!.identity == target with

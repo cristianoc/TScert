@@ -1097,7 +1097,7 @@ and a result at it promises none.
 
 Each rule above gives what a computed type denotes. That replaces the
 applications written in it, which keep their obligations by
-[replaced applications](#replaced-applications): `ElementOf<number[]>` with
+[written applications](#written-applications): `ElementOf<number[]>` with
 `type ElementOf<T extends readonly string[]> = T[number]` is refused although
 TypeScript computes `number` for it, as are `keyof Box<number>` with
 `interface Box<T extends string>` and `P<number>` with
@@ -1121,49 +1121,91 @@ TypeScript infers another type for (a `let`, a method, a `const` assertion);
 `typeof C` of a class with a static method or a private static, bindings of
 their own that no member of the class value's type states.
 
-## Replaced applications
+## Written applications
 
-A written type application $`D\langle\sigma_1,\ldots,\sigma_n\rangle`$
-obliges its arguments to meet the declaration's bounds
-([from source](RECURSIVE-EQUATIONS.md#5-from-source)), whatever term the
-reader states for it. A reader that replaces written type syntax $`\tau`$ by
-a term $`S`$ it does not read from that syntax keeps those obligations. With
-$`\mathsf{apps}(\tau)`$ the outermost applications written in $`\tau`$
-($`\tau`$ itself if it is one; outside one another's arguments) and
-$`\beta_{D,i}`$ the declared bound of $`D`$'s $`i`$-th parameter,
-$`\mathsf{top}`$ where it declares none:
+A type application written in source syntax,
+$`D\langle\sigma_1,\ldots,\sigma_k\rangle`$ with $`D\langle X_1,\ldots,X_n\rangle`$
+an alias, interface or class, $`k\le n`$, its arguments completed with the
+defaults $`\delta_j`$ ($`\sigma_j=\delta_j[\vec X:=\vec\sigma]`$, $`j>k`$), in a
+lexical scope $`\Gamma`$ of type parameters with their assumptions,
+obliges
 
 ```math
-\frac{\tau\ \text{replaced by}\ S\quad
-      \forall D\langle\vec\sigma\rangle\in\mathsf{apps}(\tau).\ \forall i.\
-      ⟦\sigma_i⟧\le⟦\beta_{D,i}⟧_{\vec X:=⟦\vec\sigma⟧}}
-     {⟦\tau⟧=S}\ \textsf{kept}
+\Gamma\ \vdash\ ⟦\sigma_i⟧\le⟦\beta_i⟧_{\vec X:=⟦\vec\sigma⟧}\qquad(1\le i\le n)
 ```
 
-Each $`\sigma_i`$ is read where it is written, so the applications inside it
-keep theirs. The term stating this is `applied`: it denotes $`S`$ and carries
-the application's arguments, which the verifier checks against the bounds as
-it checks a reference's. A computed alias has no equation; the declaration
-graph states its parameters and their bounds. The readers that replace
-syntax, each stating its result by $`\textsf{kept}`$:
+with $`\beta_i`$ the declared bound of $`X_i`$ ($`\mathsf{top}`$ where none):
+the inclusion holds at every assignment of $`\Gamma`$'s parameters meeting
+its assumptions. The obligation is a function of the syntax and its scope,
+whatever term a reader states for the type it is written in (a computed
+type's evaluation, a mapped type's expansion, a rest's alias read through its
+equation). An application of a declaration with no bounded parameter obliges
+only $`\sigma_i\le\mathsf{top}`$, which every type meets.
 
-- a [computed type](#computed-types), by what TypeScript computes for it;
-- a mapped type's keys, and a library mapped type's key argument
-  (`Record<K, V>`), by the literals TypeScript computes for them, the mapped
-  type's expansion keeping the obligations;
-- a rest parameter typed by an alias, declared or in a function type, by the
-  alias's equation at its arguments, through each alias of a chain; in a
-  function type the obligations are kept on its result.
+The front end reads the obligations from the syntax
+(`written-applications.mts`): every `TypeReference` naming an alias,
+interface or class, at every depth, written with or without arguments, and
+every heritage clause (`extends`, `implements`). Swept are the client file's
+code, with every type node outside its interfaces and aliases; the declared
+types of the values the client reads; and, closed under naming (a reference,
+a heritage clause, `typeof`), every declaration they reach with all its
+merged parts, generic or not. The standard library's declarations are not
+swept: the applications inside them belong to the reviewed library
+declarations. A call's type arguments are swept for the applications written
+in them; whether they meet the callee's binder bounds is the instantiation of
+a quantified signature, checked at the call.
 
-An application under a binder that $`\tau`$ introduces (a generic signature's
-type parameter, a mapped type's key, an `infer`) is read where $`\tau`$ is,
-its scope too unless it names that binder. Refused: an application naming
-such a binder, whose obligation holds only under it; an index signature's key
-that replaces an application, whose key kinds have no term to keep it. A
-library mapped type read at its meaning (`Record`, `Partial`) is outside the
-graph, and its own application keeps no obligation: `Record`'s one bound,
-`keyof any`, holds for every key its reading admits, a string or a string
-literal.
+The scope is binder groups from the outermost, each binder named freshly per
+declaration, so that distinct type parameters of one spelling are distinct
+variables. A group is simultaneous: all its names are in scope in all its
+bounds (`<T, U extends T>`, `<T extends Node<T>>`). The assumptions:
+
+- a function's, method's, closure's, class's, declaration's or generic
+  signature's type parameter: its declared bound;
+- a mapped type's key `[K in Q]`: `Q`;
+- `infer U`, in its extends type and the true branch: its explicit
+  constraint, else none;
+- in a conditional's true branch with a naked check type `T`: a fresh `T'`
+  bounded by `T & X`, `X` the extends type, as TypeScript narrows `T` there,
+  except where `X` holds `infer`.
+
+An entry keeps the binders its arguments name, closed under those their
+bounds name; dropping a binder's assumption enlarges the assignments the
+obligation must hold for, so it only strengthens the check. A declaration's
+entries are checked once, under its parameters' bounds; a use obliges its
+arguments to meet them, and an instance is one assignment meeting them.
+
+The verifier binds each entry's groups as a unit's binders (`bindNames`),
+lowers the arguments there, and records one obligation per parameter at the
+arguments completed with the defaults (`application`), checked by the subtype
+comparison after closing (`closeObligation`): each bounded placeholder $`p`$
+on the actual side becomes $`p\wedge B_p`$, its bound's placeholders closed
+in turn up to a cycle, and on the upper side stays $`p`$.
+
+**Closing lemma** (proved here, not mechanized). For an assignment $`\eta`$
+with $`\eta(p)\subseteq⟦B_p⟧_\eta`$ for each recorded $`(p,B_p)`$, closing
+keeps both sides' meanings: $`⟦\mathsf{close}(A)⟧_\eta=⟦A⟧_\eta`$. By
+induction on the closing's fuel: a placeholder cut at a cycle or at fuel
+$`0`$ is itself; otherwise
+$`⟦p\wedge B_p[\mathsf{close}]⟧_\eta=\eta(p)\cap⟦B_p⟧_\eta=\eta(p)`$, by the
+hypothesis on $`B_p`$'s placeholders and the assumption. The upper side is
+unchanged. With `comparisonUsing_sound`,
+$`\forall\eta.\ ⟦\mathsf{close}(A)⟧_\eta\subseteq⟦B⟧_\eta`$, so the obligation
+holds at every assignment meeting the recorded bounds.
+
+Lean checks every supplied entry; that the entries are exactly the
+applications written in the swept syntax, read faithfully, is the front
+end's (the declared-types bridge of [TRUST-REDUCTION](TRUST-REDUCTION.md#the-bridges)).
+A declaration reached only for its bounds, a computed alias or a library
+type read at its meaning (`Record`), is stated with its parameters, bounds
+and defaults and no equation. `any` in a user declaration reads as
+`unknown`, so `Box<any>` with a bounded `Box` is refused.
+
+Refused, each a limit of the mechanism: an argument computed over a binder,
+`B<T["k"]>` in a generic body, which has no term there; `infer U` at a
+bounded position, whose implied constraint is not modelled; a narrowing other
+than a naked check type's; an obligation whose comparison exhausts its
+budget; an argument outside the fragment.
 
 ## Index signatures
 

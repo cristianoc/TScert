@@ -191,6 +191,36 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   });
   assert.equal(unguarded.status, 1);
   assert.match(unguarded.detail, /unguarded alias cycle through Box: a recursive alias must reach itself through an object, array, tuple or function type/);
+  // A written application's obligation is what the document states: the
+  // verifier checks each supplied entry at its arguments, its target's
+  // bounds and its scope's assumptions (the front end supplies every one).
+  const forgeDocument = (artifacts: string, file: string, change: (fragment: Ast) => void) => {
+    const fragment: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+    change(fragment);
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    const searched = produceWith(artifacts, join(artifacts, "claims.json"), file, path);
+    return { status: searched.status, detail: searched.stdout + searched.stderr };
+  };
+  const scopes = run("written-scopes");
+  const dependent = (fragment: Ast) => must(fragment.declarations.applications.find(a =>
+    a.site.endsWith("#dependent")), "dependent's B<U>");
+  const widened = forgeDocument(scopes, "forged-written-argument", fragment => {
+    const entry = dependent(fragment);
+    entry.args = [{ k: "atom", name: "number", span }];
+  });
+  assert.equal(widened.status, 1, widened.detail);
+  assert.match(widened.detail, /a written application: the type argument for B's "T" .*does not establish its declared bound: number ≤ string/);
+  const weakened = forgeDocument(scopes, "forged-written-scope", fragment => {
+    const entry = dependent(fragment);
+    for (const level of entry.scope) for (const binder of level) binder.bound = null;
+  });
+  assert.equal(weakened.status, 1, weakened.detail);
+  assert.match(weakened.detail, /a written application: the type argument for B's "T" .*does not establish its declared bound/);
+  const relaxed = forgeDefinition(run("invalid-computed-bound-typeof"), "BoxOf", "forged-written-bound", d => {
+    for (const parameter of d.parameters) parameter.bound = null;
+  });
+  assert.equal(relaxed.status, 0, relaxed.detail);
 }
 {
   // An array literal's spread is copied before a later element that runs

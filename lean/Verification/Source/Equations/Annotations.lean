@@ -53,8 +53,7 @@ partial def binderPacked (n : String) (node : Json) : M Bool := do
   if u.value && u.pack then return true
   let rec scan : Json → M Bool
     | .obj fields => do
-      if fields.toList.lookup "k" == some (.str "reference") ||
-          fields.toList.lookup "k" == some (.str "applied") then
+      if fields.toList.lookup "k" == some (.str "reference") then
         let j := Json.obj fields
         if let .ok args := j.getObjValAs? (Array Json) "args" then
           let i ← tryCatch (some <$> referenceIndex j) fun _ => pure none
@@ -153,8 +152,31 @@ def bindNames (scope : List (String × Binding)) (bounds : List (Tree × Union))
     if let [q] := b.value then out := (q, B) :: out
   return (inner, out)
 
+/-- A written application's bound obligations (SOURCE-CONTRACTS.md, "Written
+applications"): its scope's binder groups bound in order, each binder's
+fresh name a placeholder bounded by its assumption, its arguments lowered
+there, and each parameter's bound, at the arguments completed with the
+defaults, recorded where the application is written (`application`). -/
+def writtenObligations (entry : Json) : M Unit := do
+  fieldsExactly entry ["scope", "reference", "args", "span", "site"]
+  let site ← str entry "site"
+  let mut scope : List (String × Binding) := []
+  let mut bounds : List (Tree × Union) := []
+  for level in ← arr entry "scope" do
+    let .arr tps := level | throw s!"{site}: a written application's scope is a list of binder groups"
+    (scope, bounds) ← bindNames scope bounds entry tps
+  let reference ← field entry "reference"
+  let i ← referenceIndex (Json.mkObj [("k", "reference"), ("reference", reference),
+    ("args", ← field entry "args"), ("span", ← field reference "span")])
+  let ctx : Ctx := { binders := scope, bounds, site := s!"{site}: a written application", source := true }
+  let args ← (← arr entry "args").toList.mapM (lowerType ctx)
+  let pos : Option Span := match entry.getObjValD "span" with
+    | .null => none
+    | s => (fromJson? s).toOption
+  let _ ← application ctx i args pos (record := true)
+
 /-- An array or tuple type's parts. -/
-partial def arrayParts (ctx : Ctx) (term : Json) : M (Option ArrayParts) := do
+def arrayParts (ctx : Ctx) (term : Json) : M (Option ArrayParts) := do
   match kindOf term with
   | some "array" =>
     let element ← lowerType ctx (← field term "element")
@@ -165,9 +187,6 @@ partial def arrayParts (ctx : Ctx) (term : Json) : M (Option ArrayParts) := do
     let restTerm ← field term "rest"
     let rest ← if restTerm == .null then pure none else some <$> lowerType ctx restTerm
     return some ⟨required, optional, rest, ← bool term "readonly", ← field term "presence"⟩
-  -- An application its equation replaced (a rest's alias): the equation's
-  -- parts; the annotation's lowering checks the application.
-  | some "applied" => arrayParts ctx (← field term "value")
   | _ => return none
 
 /-- Every annotation of the function tree lowered in its scope, keyed by its

@@ -107,23 +107,31 @@ export type TypeTerm =
    * annotation, or a generic method's, in its scheme. A declaration's own
    * parameters are positional. */
   | { k: "binder"; name: string; span: Span }
-  /** An application of a declaration to its arguments, each within its
-   * parameter's bound. */
-  | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span }
-  /** An application a reader replaced by the type it denotes, `value`: the
-   * evaluation of an alias TypeScript computes from its parameters, or a
-   * type read from one. It denotes `value`, under the obligation that each
-   * argument meets its parameter's bound, as the reference's would. */
-  | { k: "applied"; reference: Reference; args: TypeTerm[]; value: TypeTerm; span: Span };
+  | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
 export type TypeDefinition = {
   declaration: DeclarationIdentity;
   parameters: { name: string; span: Span; bound: TypeTerm | null;
     default: TypeTerm | null }[];
   /** Interface heritage remains a source edge; consumers derive its members. */
   bases: TypeTerm[];
-  /** The equation; null for an alias TypeScript computes from its
-   * parameters, whose applications carry their values. */
+  /** The equation; null where none is read: an alias TypeScript computes
+   * from its parameters, or a library type read at its meaning, stated for
+   * its parameters' bounds and defaults. */
   expression: TypeTerm | null;
+};
+/** A type application written in source syntax, `D<σ⃗>`, which obliges
+ * each argument, completed with the defaults, to meet its parameter's
+ * bound, in `scope`: binder groups from the outermost, each binder named
+ * freshly (`name@module:offset`) and bounded by its assumption, the
+ * arguments naming them by that name (`written-applications.mts`). */
+export type WrittenApplication = {
+  scope: SourceTypeParameter<TypeTerm>[][];
+  reference: Reference;
+  args: TypeTerm[];
+  /** Where it is written in the client file, or null elsewhere. */
+  span: Span | null;
+  /** The module and declaration it is written in, for diagnostics. */
+  site: string;
 };
 /** Every declaration reachable from the roots, each once. References live in
  * the expression, parameter bounds/defaults and heritage edges, not in a second list. */
@@ -150,4 +158,8 @@ export type DeclarationDocument = {
   /** The `unique symbol` constants the definitions use as property keys, each
    * once: distinct declarations are distinct symbols, as TypeScript assumes. */
   symbols: DeclarationIdentity[];
+  /** Every type application written in the swept syntax whose target has a
+   * bounded parameter: the client file's, and that of every user
+   * declaration it reaches. */
+  applications: WrittenApplication[];
 };

@@ -30,7 +30,6 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
       return b.value
     | none => throw s!"{ctx.site}: the type parameter {n} is not in scope"
   | "reference" => reference ctx term
-  | "applied" => applied ctx term
   | "array" | "tuple" =>
     let readonly ← bool term "readonly"
     let store ← occurrence ctx "store" term (job := fun h c => .store h c term)
@@ -102,17 +101,6 @@ partial def reference (ctx : Ctx) (term : Json) : M Union := do
     | _, _ => return U
   instantiateDecl ctx i values
 
-/-- An application a reader replaced by the type it denotes (`value`): that
-type, with the application's arguments checked against their bounds where
-it is written, as a reference's are (`application`). -/
-partial def applied (ctx : Ctx) (term : Json) : M Union := do
-  let i ← referenceIndex term
-  let supplied ← (← arr term "args").toList.mapM (lowerType ctx)
-  let span : Span ← fromJson? (← field term "span")
-  let pos := if ctx.source && ctx.decl.isNone then some span else none
-  let _ ← application ctx i supplied pos
-  lowerType ctx (← field term "value")
-
 /-- The argument lists an argument of a packed parameter adds to it: an
 array's or a tuple's, the lists a call collects into one of its arrays; none
 for a packed binder or an enclosing declaration's packed parameter, whose
@@ -139,9 +127,10 @@ partial def packOf (ctx : Ctx) (term : Json) : M Union := do
   | _ => throw refuse
 
 /-- Complete an application's arguments with its defaults, which may mention
-earlier parameters, and record its bound obligations. -/
+earlier parameters, and, for a written application (`record`), record its
+bound obligations (`writtenObligations`). -/
 partial def application (ctx : Ctx) (i : Nat) (supplied : List Union)
-    (pos : Option Span := none) : M (List Union) := do
+    (pos : Option Span := none) (record : Bool := false) : M (List Union) := do
   let d := (← get).doc[i]!
   if supplied.length > d.parameters.size then throw s!"{ctx.site}: {d.name} applied to too many type arguments"
   let mut values := supplied.toArray
@@ -153,7 +142,7 @@ partial def application (ctx : Ctx) (i : Nat) (supplied : List Union)
   for index in [:d.parameters.size] do
     let p := d.parameters[index]!
     let bound ← field p "bound"
-    if ctx.checkBounds then
+    if record then
       let upper ← if bound == .null then pure [← ground "source" sourceValueClauses]
         else lowerType { ctx with decl := some i, params := values, self := none, binders := [] } bound
       modify fun s => { s with obligations := s.obligations ++ [⟨values[index]!, upper, ctx.bounds,
@@ -170,10 +159,7 @@ partial def instantiateDecl (ctx : Ctx) (i : Nat) (values : List Union) : M Unio
   if ctx.aliases.contains i then
     throw s!"{ctx.site}: unguarded alias cycle through {d.name}: a recursive alias must reach itself through an object, array, tuple or function type"
   let inner := { ctx with decl := some i, params := values.toArray, self := none }
-  -- The alias's own bounds are checked where it is applied (`application`);
-  -- its body's applications are its declaration's, well formed at every
-  -- argument within those bounds, as TypeScript checks the declaration.
-  lowerType { inner with binders := [], aliases := i :: ctx.aliases, checkBounds := false } d.expression
+  lowerType { inner with binders := [], aliases := i :: ctx.aliases } d.expression
 
 /-- An intersection: meet labels over the product of the operands' unions
 (§3.3). On ground rows only, where TypeScript reads a record met with a
@@ -623,7 +609,7 @@ partial def claimLabel (scope : List (String × Binding)) (j : Json) : M Union :
       let args ← spelled.mapM (claimUnion scope)
       if args.length != ds[i]!.parameters.size then
         throw s!"source claims: a declaration's label has one argument per parameter: {ds[i]!.name} has {ds[i]!.parameters.size}, given {args.length}"
-      let ctx : Ctx := { binders := scope, site := "source claims", checkBounds := false }
+      let ctx : Ctx := { binders := scope, site := "source claims" }
       let values ← application ctx i args
       instantiateDecl ctx i values
     else if let some ps := get? "meet" then

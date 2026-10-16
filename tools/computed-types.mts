@@ -32,12 +32,6 @@ export type ComputedContext = {
   /** The reader of type syntax inside `alias`'s equation with its parameters
    * read as `args`, in the alias's own scope. */
   applied(alias: TypeAliasDeclaration, args: readonly TypeTerm[]): (node: TypeNode) => TypeTerm;
-  /** The application `reference` writes, at its arguments `args`, replaced
-   * by `value`, a type it denotes there or one read from it: an `applied`
-   * term, which keeps the obligation that each argument meets its
-   * parameter's bound, located at `span`. A library type read at its
-   * meaning states no bound, and its application is `value`. */
-  application(reference: TypeReferenceNode, args: TypeTerm[], value: TypeTerm, span: Span): TypeTerm;
   /** A generic alias's equation at a reference's arguments, when it is an
    * array, a tuple or another alias's application; null otherwise. */
   equation(reference: Extract<TypeTerm, { k: "reference" }>): TypeTerm | null;
@@ -119,74 +113,16 @@ export function enclosingBinders(node: Node): string[] {
 const describe = (checker: Checker, type: Type): string => checker.typeToString(type);
 
 /** The type term of a computed type `node` (`computedForm`), located at
- * `span`; `read` reads an operand in the scope `node` is written in: what
- * TypeScript computes for it, keeping the applications written in it
- * (`kept`). */
+ * `span`; `read` reads an operand in the scope `node` is written in. */
 export function computedType(context: ComputedContext, node: TypeNode, span: Span,
-    read: (node: TypeNode) => TypeTerm): TypeTerm {
-  return kept(context, node, read, evaluated(context, node, span, read), span);
-}
-
-/** `value`, a term that replaces the type `node` as written, with the
- * obligation of every application written in `node` that its arguments
- * meet their bounds: `applied` at each outermost one (`writtenApplications`),
- * its arguments read where they are written by `read`, so the applications
- * inside them keep theirs. Every reader that replaces written syntax by a
- * term it does not read from that syntax states its result through this. */
-export function kept(context: ComputedContext, node: TypeNode, read: (node: TypeNode) => TypeTerm,
-    value: TypeTerm, span: Span): TypeTerm {
-  return writtenApplications(node).reduceRight((term, reference) =>
-    context.application(reference, (reference.typeArguments ?? []).map(read), term, span), value);
-}
-
-/** The outermost applications written in `node`, `node` itself if it is one:
- * the type references with type arguments outside one another's arguments.
- * One under a binder `node` introduces (a generic signature's type
- * parameter, a mapped type's key, an `infer`) is read where `node` is, which
- * is its scope unless it names that binder; one naming it is refused, since
- * its obligation holds only under the binder. */
-function writtenApplications(node: Node): TypeReferenceNode[] {
-  const found: TypeReferenceNode[] = [];
-  const names = (part: Node, binders: readonly string[]): string | undefined =>
-    (ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && binders.includes(part.typeName.text)
-      ? part.typeName.text : undefined) ?? part.forEachChild(child => names(child, binders));
-  const visit = (part: Node, binders: readonly string[]): void => {
-    if (ts.isTypeReferenceNode(part) && part.typeArguments?.length) {
-      const binder = names(part, binders);
-      if (binder !== undefined)
-        throw Error(`the application ${part.getText(part.getSourceFile())} names the type parameter ${binder} of ` +
-          "a type its computation replaces: its bound obligation holds only under that binder");
-      found.push(part);
-      return;
-    }
-    const own = ts.isMappedTypeNode(part) ? [part.typeParameter]
-      : ts.isConditionalTypeNode(part) ? inferred(part.extendsType)
-      : childrenOf(part, "typeParameters").filter(ts.isTypeParameterDeclaration);
-    const inner = [...binders, ...own.map(p => p.name.text)];
-    part.forEachChild(child => { visit(child, inner); });
-  };
-  visit(node, []);
-  return found;
-}
-
-/** The type parameters `infer` declares in `node`. */
-function inferred(node: Node): ts.TypeParameterDeclaration[] {
-  if (ts.isInferTypeNode(node)) return [node.typeParameter];
-  const found: ts.TypeParameterDeclaration[] = [];
-  node.forEachChild(child => { found.push(...inferred(child)); });
-  return found;
-}
-
-/** What TypeScript computes for `node`, as `computedType` reads it. */
-function evaluated(context: ComputedContext, node: TypeNode, span: Span,
     read: (node: TypeNode) => TypeTerm): TypeTerm {
   const { checker } = context;
   const form = computedForm(node) ?? "a computed type";
   const type = checker.getTypeFromTypeNode(node);
   if (!type || type.isErrorType()) throw Error(`TypeScript computes no type for this ${form}: it is not valid TypeScript`);
-  const computed = describe(checker, type);
   const literals = literalUnion(type, span, context.unique);
   if (literals) return literals;
+  const computed = describe(checker, type);
   if (ts.isTypeReferenceNode(node)) return aliasApplication(context, node, span, read, computed);
   if (ts.isTypeQueryNode(node)) return typeQuery(context, node, type, span);
   if (ts.isIndexedAccessTypeNode(node)) return indexedAccess(context, node, type, span, read);
@@ -217,16 +153,18 @@ function aliasApplication(context: ComputedContext, node: TypeReferenceNode, spa
   // An omitted argument is its parameter's default, read at the earlier
   // arguments.
   const args: TypeTerm[] = [];
+  const members: Member[] = [];
   for (const [i, parameter] of (alias.typeParameters ?? []).entries()) {
     const written = node.typeArguments?.[i];
-    const value = written ? read(written)
-      : parameter.defaultType ? context.applied(alias, args)(parameter.defaultType) : null;
-    if (!value) throw Error(`${computed} omits the argument of ${alias.name.text}'s ${parameter.name.text}, which has no default`);
-    args.push(value);
+    const member: Member | null = written ? { node: written, read }
+      : parameter.defaultType ? { node: parameter.defaultType, read: context.applied(alias, [...args]) } : null;
+    if (!member) throw Error(`${computed} omits the argument of ${alias.name.text}'s ${parameter.name.text}, which has no default`);
+    args.push(member.read(member.node));
+    members.push(member);
   }
   let body = alias.type;
   while (ts.isParenthesizedTypeNode(body)) body = body.type;
-  if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, read, computed);
+  if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, computed, members);
   return computedType(context, body, span, context.applied(alias, args));
 }
 
@@ -237,9 +175,7 @@ type Member = { node: TypeNode; read: (node: TypeNode) => TypeTerm };
 /** The members of the union `node` is written as, in the order written: a
  * union's members, and those of the equation of an alias each names, read
  * where that alias is declared, with its parameters read as the reference's
- * arguments or their defaults. Any other type is one member. The obligations
- * of the applications written are kept where the computed type is
- * (`computedType`). */
+ * arguments or their defaults. Any other type is one member. */
 function unionMembers(context: ComputedContext, node: TypeNode, read: (node: TypeNode) => TypeTerm,
     seen: Set<Node> = new Set()): Member[] {
   while (ts.isParenthesizedTypeNode(node)) node = node.type;
@@ -267,7 +203,7 @@ function unionMembers(context: ComputedContext, node: TypeNode, read: (node: Typ
  * the union of those members, each read as written. Where TypeScript computes
  * a union of literals and primitives for it, that union was taken already. */
 function distributed(context: ComputedContext, node: TypeReferenceNode, alias: TypeAliasDeclaration,
-    body: ts.ConditionalTypeNode, span: Span, read: (node: TypeNode) => TypeTerm, computed: string): TypeTerm {
+    body: ts.ConditionalTypeNode, span: Span, computed: string, args: readonly Member[]): TypeTerm {
   const { checker } = context;
   const type = checker.getTypeFromTypeNode(node);
   if (!type || generic(type))
@@ -276,11 +212,12 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
   const index = ts.isTypeReferenceNode(check) && ts.isIdentifier(check.typeName) && !check.typeArguments?.length
     ? (alias.typeParameters ?? []).findIndex(p => ts.isIdentifier(check.typeName) && p.name.text === check.typeName.text)
     : -1;
-  const argument = node.typeArguments?.[index];
-  if (!argument)
+  const decided = args[index];
+  if (!decided)
     throw Error(`the conditional type ${alias.name.text} decides a type other than one of its parameters, ` +
       `${computed}: it distributes over no union`);
-  const members = unionMembers(context, argument, read);
+  const argument = decided.node;
+  const members = unionMembers(context, argument, decided.read);
   const results = type.isUnionType() ? type.getTypes() : [type];
   const ids = new Set(results.map(t => t.id));
   const covered = new Set<number>();
@@ -295,7 +232,7 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
   const other = results.find(t => !covered.has(t.id));
   if (other)
     throw Error(`${alias.name.text} at its arguments is ${computed}, whose part ${describe(checker, other)} is ` +
-      `no member of ${argument.getText(node.getSourceFile())} as written: it is no selection of that union's ` +
+      `no member of ${argument.getText(argument.getSourceFile())} as written: it is no selection of that union's ` +
       "members (a member naming a type parameter is another type at each instance)");
   const terms = kept.map(member => member.read(member.node));
   const [only] = terms;
@@ -308,11 +245,6 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
  * names (an index signature, a symbol or numeric key, a type that is not a
  * literal). */
 function keysOf(object: TypeTerm, span: Span): TypeTerm | null {
-  // An applied term's keys are its value's, under its obligation.
-  if (object.k === "applied") {
-    const keys = keysOf(object.value, span);
-    return keys && { ...object, value: keys };
-  }
   if (object.k !== "object" || object.stringIndex || object.numberIndex || object.symbolIndex || object.prototype)
     return null;
   const parts: TypeTerm[] = [];
@@ -520,8 +452,6 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
   };
   const project = (object: TypeTerm): TypeTerm => {
     switch (object.k) {
-      // An applied term's member is its value's, under its obligation.
-      case "applied": return { ...object, value: project(object.value) };
       case "union": return union(object.parts.map(project));
       // An intersection's member at a key is the meet of its operands'
       // members there: `(A[] & B[])[number]` is `A & B`.
