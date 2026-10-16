@@ -8,7 +8,16 @@
     "target": "ES2022",
     "verbatimModuleSyntax": true,
     "noEmit": true,
-    "paths": { "@fixture/lib": ["./lib.ts"], "@fixture/relay": ["./relay.ts"] }
+    "paths": {
+      "@fixture/lib": ["./lib.ts"],
+      "@fixture/relay": ["./relay.ts"],
+      "@fixture/whole": ["./whole.ts"]
+    }
   },
-  "include": ["../examples/*value-import*.ts", "./lib.ts", "./relay.ts"]
+  "include": [
+    "../examples/*value-import*.ts",
+    "./lib.ts",
+    "./relay.ts",
+    "./whole.ts"
+  ]
 }

@@ -55,7 +55,7 @@ obstacle named. A search failure is neither.
 | A class extending `Array` | Its instances' `constructor` is the subclass, so `map`, `filter` and `slice` construct their results through it (`ArraySpeciesCreate`), which [ordinary array construction](SOURCE-MODEL.md#arrays) excludes (`invalid-array-subclass`). |
 | A catch binding annotated other than `unknown`, or destructured | Anything may be thrown; TypeScript's alternative is `any`. |
 | TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |
-| A contract read through an unannotated declaration, whose type is inferred from its code: a constant, field, property, destructured binding or function a type reaches (`typeof`, a member selection, a named type) that states no annotation (a function no result or parameter annotation), except a `const` initialized by a literal naming nothing, `as const` or not | Its type is whatever TypeScript infers from code the reader does not read, which may depend on any code; the bound obligations written there would go unchecked (`invalid-written-unannotated-call-value-import`, `invalid-written-unannotated-destructured-value-import`, `invalid-written-initializer-arrow-property-value-import`). The client's own values carry annotations by the same requirement. |
+| A contract read through an unannotated declaration, whose type is inferred from its code: a declaration a type reaches (`typeof`, a member selection, a named type, a whole class, namespace or module) whose written annotations do not determine its exposed type ([the table below](#types-stated-by-annotations)) | Its type is whatever TypeScript infers from code the reader does not read, which may depend on any code; the bound obligations written there would go unchecked (`invalid-written-unannotated-call-value-import`, `invalid-written-whole-class-value-import`, `invalid-written-unannotated-field-value-import`). The client's own values carry annotations by the same requirement. |
 | A rest parameter typed by what is no array | TypeScript rejects it (TS2370). |
 | A rest parameter typed by an intersection (`...xs: T[] & (number[] \| string[])`) | Its declared contract can be empty at an instance TypeScript admits: at `T := boolean` no array is both a writable `boolean[]` and a `number[]`, writable storage being invariant, yet TypeScript accepts `f<boolean>()`, and a body writing through one operand's view returns a number as a `boolean` (`invalid-rest-intersection`, executed under Node by `node-runs.mts`). |
 | A type parameter typing a rest parameter and anything else, in a module function (`<T extends readonly string[]>(...args: T): T`, a parameter `mutator: (arr: T) => void`, `const x: T = args`) or in a generic function or constructor type (`<T extends [string, number]>(...args: T) => T`) | The array a call collects is fresh: it holds the actuals and none of `T`'s other members, so it is no value of `T`. TypeScript admits `T := string[] & { tag: string }`, inferred from a spread of a tagged array, at which a body returning `args` gives a value whose `tag` is `undefined` typed `string` (`invalid-rest-pack-value`). In a generic type the instance `T := X` gives the rest the element lists of `X`'s members, `[string, number] & { tag: string }` included. Admitting it would need the element lists related to arrays a world extension holds (an array-allocation lemma whose statement is open: an array's `[[proto]]` holds a member of the built-in prototype type, which the model never shows inhabited), linked binder positions, quantified subtyping across binder counts and rest-bound reasoning: substantial machinery for a form rarely useful in real programs. A declaration's or a class's own type parameter typing a rest and a value is a [packed binder](PROGRAM-TYPING.md#packed-binders), whose instances are array or tuple types with no other members. |
@@ -67,6 +67,26 @@ obstacle named. A search failure is neither.
 | An enum member initializer reading a member of its enum not yet initialized, or the enum itself, through a closure included; a call in one that can read the enum | JavaScript reads the member, or the partial object, before the emit writes it: `enum F { A = ((): number => F.B)(), B = 1 }` gives `F.A` undefined, typed `number` (`invalid-enum-computed-forward`, `invalid-enum-computed-call-order`). |
 | An enum member named `__proto__` | TypeScript's emit writes a member by assignment, which for `__proto__` runs the prototype's setter and creates no property: `enum P { "__proto__" = 1 }` makes `P.__proto__` `Object.prototype`, typed `1` (`invalid-enum-proto-member`). |
 | A member named `NaN` or `Infinity` in an enum with a member TypeScript computes no value for | That member's reverse mapping is written at its value's key, which may be the name: `enum Q { NaN = 1, X = "x".charCodeAt(1) }` makes `Q.NaN` `"X"`, typed `1` (`invalid-enum-computed-nan-name`). |
+
+#### Types stated by annotations
+
+The written annotations that determine a declaration's exposed type, by its
+kind. These, and only these, are read for a declaration a type reaches; no
+function body, initializer's code or static block is read. A declaration
+without them is refused (above).
+
+| Declaration | Determined by |
+| --- | --- |
+| Interface, type alias | Its whole syntax |
+| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not) |
+| Property declaration or signature | Its annotation |
+| Property assignment | Its value's: a literal naming nothing; a function's parameter and result annotations; a nested object literal's properties, each by its kind; an assertion's type |
+| Function, method, signature | Its overload signatures if it has any, else its parameter and result annotations |
+| Accessor | The getter's result or the setter's parameter, either for the pair |
+| Constructor | Its parameter annotations, or its overloads' |
+| Class | Its type parameters, its heritage, and every member by its kind |
+| Namespace, module | Every exported member, `export =` meaning its target |
+| Enum, enum member | Its value |
 
 ### Model limits
 

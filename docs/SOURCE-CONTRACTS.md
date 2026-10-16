@@ -1182,10 +1182,13 @@ of that name. The unit swept is exactly the declaration reached (a member, a
 property, a method, a variable's declarator, a type), its annotations and
 type syntax, with the binders of its enclosing declarations in scope,
 whatever path reached it; never its enclosing statement, its executable
-body or its initializer. A reached declaration's type is its annotation; one
-without, whose type TypeScript infers from its code, is refused at the use
-reaching it ([fragment boundary](SOURCE-FRAGMENT.md#refused-on-principle)),
-except a `const` initialized by a literal naming nothing, `as const` or not. A module or a namespace contributes nothing by itself,
+body or its initializer. What is swept of a reached declaration is the
+written annotations that determine its exposed type
+([types stated by annotations](SOURCE-FRAGMENT.md#types-stated-by-annotations));
+one they do not determine, whose type TypeScript infers from its code, is
+refused at the use reaching it. A name a further step selects a member of
+contributes only that member; a whole class, namespace or module
+(`typeof import("m")` included) contributes every member by its kind. A module or a namespace contributes nothing by itself,
 only the members a further step selects. A name resolving to nothing is
 refused. The standard library's declarations are not
 swept: the applications inside them belong to the reviewed library

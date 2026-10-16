@@ -203,10 +203,31 @@ export const nested = {
   inner: { m: (x: keyof { a: Bounded<any> }): number => x.length },
 };
 export class Fields {
-  f = (x: keyof { a: Bounded<any> }): number => x.length;
-  static g = (x: keyof { a: Bounded<any> }): number => x.length;
+  f: (x: keyof { a: Bounded<any> }) => number = (
+    x: keyof { a: Bounded<any> },
+  ): number => x.length;
+  static g: (x: keyof { a: Bounded<any> }) => number = (
+    x: keyof { a: Bounded<any> },
+  ): number => x.length;
 }
-export const arrow = (x: keyof { a: Bounded<any> }): number => x.length;
+export const arrow: (x: keyof { a: Bounded<any> }) => number = (
+  x: keyof { a: Bounded<any> },
+): number => x.length;
+export class Unannotated {
+  f = (x: number): number => x;
+}
+
+// Destructuring under an annotation
+// (`invalid-written-annotated-pattern-value-import`), and an arrow property
+// of an unannotated literal, typed by its own annotations
+// (`written-arrow-property-value-import`).
+export const { dm }: { dm: keyof { a: Bounded<any> } } = { dm: "a" };
+export const arrowed = {
+  m: (): number =>
+    (() => {
+      return 1;
+    })(),
+};
 export const asserted = "a" as keyof { a: Bounded<any> };
 const shortValue: keyof { a: Bounded<any> } = "a";
 export const shorthand = { shortValue };
