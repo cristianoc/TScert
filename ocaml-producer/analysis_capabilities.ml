@@ -46,6 +46,8 @@ module type Queries = sig
   val expression_hint : Json.t -> Source.expr option
   val claimed_type : Json.t -> ty option
   val latest_claim : Json.t -> ty option
+  (* The instance a call published of its callee read at a source, if any. *)
+  val latest_instance : Json.t -> ty option
   val instantiation_at : Json.t -> (string * type_argument) list option
   val evolved : Json.t -> ty
   val expected_result : unit -> ty option

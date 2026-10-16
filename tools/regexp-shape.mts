@@ -29,6 +29,8 @@ export type RegExpShape = {
   named: boolean;
   /** Whether the flags hold `g`. */
   global: boolean;
+  /** Whether the flags hold `y`. */
+  sticky: boolean;
 };
 
 type Group = { always: boolean; name: string | null };
@@ -182,7 +184,8 @@ export function regexpShape(pattern: string, flags: string): RegExpShape | null 
     const host = hostDescriptor(pattern, flags);
     const names = [...new Set(groups.flatMap(g => g.name === null ? [] : [g.name]))].sort();
     if (host.count !== groups.length || host.names.join("\u0000") !== names.join("\u0000")) return null;
-    return { always: groups.map(g => g.always), named: names.length > 0, global: flags.includes("g") };
+    return { always: groups.map(g => g.always), named: names.length > 0, global: flags.includes("g"),
+      sticky: flags.includes("y") };
   } catch (error) {
     if (error instanceof Decline) return null;
     throw error;

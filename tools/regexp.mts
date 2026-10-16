@@ -32,10 +32,12 @@ const maybeString = either(atom("string"), atom("undefined"));
 const record = (fields: Field[]): TypeTerm => ({ k: "object", fields, stringIndex: null, calls: [], span });
 const readonlyField = (name: Field["name"], type: TypeTerm): Field =>
   ({ name, optional: false, readonly: true, type, span });
-const method = (params: TypeTerm[], result: TypeTerm): Signature =>
-  ({ k: "function", effect: "unrestricted", receiver: { k: "self", span }, params, rest: null, result, span });
-const methodField = (name: Field["name"], params: TypeTerm[], result: TypeTerm): Field =>
-  ({ name, optional: false, readonly: false, type: method(params, result), span });
+type Effect = Signature["effect"];
+const method = (params: TypeTerm[], result: TypeTerm, effect: Effect): Signature =>
+  ({ k: "function", effect, receiver: { k: "self", span }, params, rest: null, result, span });
+const methodField = (name: Field["name"], params: TypeTerm[], result: TypeTerm,
+    effect: Effect = "unrestricted"): Field =>
+  ({ name, optional: false, readonly: false, type: method(params, result, effect), span });
 
 /** The synthetic symbols the marks are keyed by: no source declaration has
  * these identities, so no source type, literal or class states them. */
@@ -92,18 +94,32 @@ function splitResult(shape: RegExpShape | null): TypeTerm {
 /** The members of a regex of `shape` (`null`: the conservative shape). A
  * native one's `[Symbol.matchAll]` gives the native iterator; the structural
  * type states no `[Symbol.matchAll]`, which `matchAll` reaches only on a
- * native regex. */
+ * native regex.
+ *
+ * A native regex's standard members state `preservesInputHeap` where they
+ * run no client code and leave every existing location as it was: each reads
+ * the regex's pattern and flags, allocates only its result, and writes
+ * `lastIndex` only where the regex is global or sticky. `[Symbol.search]`
+ * restores the `lastIndex` it saved, `[Symbol.split]` and `[Symbol.matchAll]`
+ * step a fresh clone; `exec`, `test`, `[Symbol.match]` and
+ * `[Symbol.replace]` of a global or sticky regex leave `lastIndex` where its
+ * last match ended (0 after the last), so they state no effect there, nor at
+ * the conservative shape, whose flags are not read. A structural regex's
+ * members are any value's and state none. */
 function members(shape: RegExpShape | null, keys: RegExpKeys, native: boolean): Field[] {
   const exec = execResult(shape);
   const optionalNumber = either(atom("number"), atom("undefined"));
+  const restoring: Effect = native && shape !== null ? "preservesInputHeap" : "unrestricted";
+  const stateless: Effect = native && shape !== null && !shape.global && !shape.sticky
+    ? "preservesInputHeap" : "unrestricted";
   return [
-    methodField("exec", [atom("string")], either(exec, atom("null"))),
-    methodField("test", [atom("string")], atom("boolean")),
-    methodField({ symbol: keys.match }, [atom("string")], either(matchResult(shape), atom("null"))),
-    methodField({ symbol: keys.replace }, [atom("string"), atom("string")], atom("string")),
-    methodField({ symbol: keys.search }, [atom("string")], atom("number")),
-    methodField({ symbol: keys.split }, [atom("string"), optionalNumber], splitResult(shape)),
-    ...(native ? [methodField({ symbol: keys.matchAll }, [atom("string")], nativeIterator(exec))] : []),
+    methodField("exec", [atom("string")], either(exec, atom("null")), stateless),
+    methodField("test", [atom("string")], atom("boolean"), stateless),
+    methodField({ symbol: keys.match }, [atom("string")], either(matchResult(shape), atom("null")), stateless),
+    methodField({ symbol: keys.replace }, [atom("string"), atom("string")], atom("string"), stateless),
+    methodField({ symbol: keys.search }, [atom("string")], atom("number"), restoring),
+    methodField({ symbol: keys.split }, [atom("string"), optionalNumber], splitResult(shape), restoring),
+    ...(native ? [methodField({ symbol: keys.matchAll }, [atom("string")], nativeIterator(exec), restoring)] : []),
   ];
 }
 
@@ -155,9 +171,12 @@ export const dispatchName = (method: DispatchMethod): string => `%Dispatch:${met
  * `flags`, which only a native regex's standard members make free of client
  * code: their argument must be marked native (and they throw a `TypeError`
  * for a non-global one, an outcome). Evaluation is as written: `s`, `o`,
- * then `rest`. */
+ * then `rest`. Beside the member's call, the dispatch reads `o`'s members
+ * and converts only strings: it runs no other code and writes nothing, so a
+ * first signature, at an `o` whose member states `preservesInputHeap`,
+ * states it too; the second takes any `o`. */
 export function dispatchIntrinsic(method: DispatchMethod, keys: RegExpKeys):
-    { name: string; typeParams: { name: string; bound: null; resolution: null }[]; type: Signature } {
+    { name: string; typeParams: { name: string; bound: null; resolution: null }[]; type: TypeTerm } {
   const native = method === "matchAll" || method === "replaceAll";
   const mark = native ? [readonlyField({ symbol: keys.matcher }, atom("undefined"))] : [];
   const limit = either(atom("number"), atom("undefined"));
@@ -168,11 +187,12 @@ export function dispatchIntrinsic(method: DispatchMethod, keys: RegExpKeys):
     : method === "search" ? [keys.search, [atom("string")], [], x]
     : method === "split" ? [keys.split, [atom("string"), limit], [limit], x]
     : [keys.replace, [atom("string"), x], [x], atom("string")];
-  const target = record([methodField({ symbol: key }, memberParams, method === "replace" || method === "replaceAll"
-    ? atom("string") : x), ...mark]);
+  const memberResult = method === "replace" || method === "replaceAll" ? atom("string") : x;
+  const signature = (effect: Effect): Signature => ({ k: "function", effect, receiver: null,
+    params: [atom("string"), record([methodField({ symbol: key }, memberParams, memberResult, effect), ...mark]),
+      ...rest], rest: null, result, span });
   return { name: dispatchName(method), typeParams: [{ name: "X", bound: null, resolution: null }],
-    type: { k: "function", effect: "unrestricted", receiver: null, params: [atom("string"), target, ...rest],
-      rest: null, result, span } };
+    type: { k: "intersection", parts: [signature("preservesInputHeap"), signature("unrestricted")], span } };
 }
 
 /** The standard library's regex interfaces, as an annotation or a contextual
@@ -192,7 +212,7 @@ export function libraryRegExpTerm(name: string, keys: () => RegExpKeys): TypeTer
 export function regexpIntrinsicName(shape: RegExpShape | null): string {
   if (shape === null) return "%RegExp%";
   const groups = shape.always.map(a => a ? "1" : "0").join("");
-  return `%RegExp:${groups}${shape.named ? ":named" : ""}${shape.global ? ":g" : ""}%`;
+  return `%RegExp:${groups}${shape.named ? ":named" : ""}${shape.global ? ":g" : ""}${shape.sticky ? ":y" : ""}%`;
 }
 
 /** The declarations of the library's regex interfaces, as reviewed: the

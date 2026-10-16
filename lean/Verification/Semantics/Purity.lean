@@ -197,4 +197,128 @@ theorem read_step {h t h' t'} (hs : Step h t h' t') (hp : readTerm t = true)
   | elemStr => exact ⟨rfl, by unfold codeUnitAt; split <;> rfl⟩
   | _ => simp [readTerm, isVal] at hp
 
+/-- An operand already evaluated, or a slot holding one. -/
+def operandTerm : Tm → Bool
+  | .var _ => true
+  | t => isVal t
+
+/-- Computations that read the heap and only append to it: the pure forms,
+field, key and element reads, and allocations whose initializers are operands. A
+read gives the value its location holds; an allocation appends fresh
+locations. No step of one writes a location it did not allocate, nor runs
+code. -/
+def inspectTerm : Tm → Bool
+  | .var _ => true
+  | .letE a b => inspectTerm a && inspectTerm b
+  | .test _ a => inspectTerm a
+  | .ite c t e => inspectTerm c && inspectTerm t && inspectTerm e
+  | .arith _ a b => inspectTerm a && inspectTerm b
+  | .throw a => inspectTerm a
+  | .lenOf a => inspectTerm a
+  | .readAt _ a => inspectTerm a
+  | .indexAt a key => inspectTerm a && inspectTerm key
+  | .elemAt a i => inspectTerm a && inspectTerm i
+  | .makeAt _ _ inits => inits.all operandTerm
+  | .arrLit inits => inits.all operandTerm
+  | t => isVal t
+
+theorem inspect_value {v : Tm} (hv : isVal v = true) : inspectTerm v = true := by
+  cases v <;> simp_all [inspectTerm, isVal]
+
+theorem pure_inspect {t : Tm} (hp : pureTerm t = true) : inspectTerm t = true := by
+  induction t using Tm.induct <;> simp_all [pureTerm, inspectTerm, isVal]
+
+private theorem subst_value {v : Tm} (hv : isVal v = true) (j : Nat) (a : Tm) :
+    isVal (subst j a v) = true := by
+  cases v <;> simp_all [isVal, subst]
+  case objAt fs code oid => cases code <;> simp [subst]
+
+private theorem operand_subst {t a : Tm} {j : Nat} (ht : operandTerm t = true)
+    (ha : isVal a = true) : operandTerm (subst j a t) = true := by
+  cases t
+  case var i =>
+    simp only [subst]
+    split
+    · cases a <;> simp_all [operandTerm, isVal]
+    · split <;> rfl
+  all_goals
+    have hv := subst_value (j := j) (a := a) (by simpa [operandTerm] using ht)
+    revert hv
+    generalize subst j a _ = u
+    intro hv
+    cases u <;> simp_all [operandTerm]
+
+private theorem operands_subst {xs : List Tm} {a : Tm} {j : Nat}
+    (hx : xs.all operandTerm = true) (ha : isVal a = true) :
+    (xs.map (subst j a)).all operandTerm = true := by
+  simp only [List.all_eq_true, List.mem_map] at hx ⊢
+  rintro _ ⟨x, hm, rfl⟩
+  exact operand_subst (hx x hm) ha
+
+/-- Immutable binding substitutes a value without introducing an effect. -/
+theorem inspect_subst {t a : Tm} {j : Nat}
+    (ht : inspectTerm t = true) (ha : isVal a = true) :
+    inspectTerm (subst j a t) = true := by
+  have hop : ∀ (k : Nat) (x : Tm), operandTerm x = true → operandTerm (subst k a x) = true :=
+    fun _ _ hx => operand_subst hx ha
+  induction t using Tm.induct generalizing j
+  case var i =>
+    simp only [subst]
+    split
+    · exact inspect_value ha
+    · split <;> rfl
+  all_goals
+    simp only [inspectTerm, subst, substArgs_eq_map, List.all_eq_true, List.mem_map, Bool.and_eq_true] at ht ⊢
+  all_goals first
+    | (rintro _ ⟨x, hx, rfl⟩; exact hop _ x (ht x hx))
+    | (simp_all; done)
+    | simp [isVal] at ht ⊢
+
+theorem operand_no_step {a : Tm} (ho : operandTerm a = true) {h h' a'} : ¬ Step h a h' a' := by
+  intro st
+  cases a <;> simp only [operandTerm, isVal, Bool.false_eq_true] at ho <;>
+    first | cases st | exact value_no_step (by simp [isVal]) st
+
+/-- A step of an inspection keeps the heap as a prefix and leaves an
+inspection, when the heap holds only values: a read gives a stored value, an
+allocation stores operands already evaluated. -/
+theorem inspect_step {h t h' t'} (hs : Step h t h' t') (hp : inspectTerm t = true)
+    (hv : ∀ (l : Nat) (v : Tm), h[l]? = some v → isVal v = true) :
+    h.IsPrefix h' ∧ inspectTerm t' = true := by
+  induction hs
+  case letV hval => exact ⟨List.prefix_refl _, inspect_subst (by simp_all [inspectTerm]) hval⟩
+  case readField _ hl => exact ⟨List.prefix_refl _, inspect_value (hv _ _ hl)⟩
+  case readProto _ _ hl => exact ⟨List.prefix_refl _, by simpa [inspectTerm] using inspect_value (hv _ _ hl)⟩
+  case indexField _ _ hl => exact ⟨List.prefix_refl _, inspect_value (hv _ _ hl)⟩
+  case indexProto _ _ _ hl =>
+    exact ⟨List.prefix_refl _, by simp_all [inspectTerm, inspect_value (hv _ _ hl)]⟩
+  case elemRead _ hl => exact ⟨List.prefix_refl _, inspect_value (hv _ _ hl)⟩
+  case elemStr => exact ⟨List.prefix_refl _, by unfold codeUnitAt; split <;> rfl⟩
+  case testV => exact ⟨List.prefix_refl _, by split <;> rfl⟩
+  case arithV hb =>
+    refine ⟨List.prefix_refl _, ?_⟩
+    rcases (binop_result hb).2.2 with rfl | rfl | ⟨_, rfl⟩ | ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
+  case arithThrow => exact ⟨⟨[.nul], rfl⟩, rfl⟩
+  case makeFields => exact ⟨⟨_, (List.append_assoc _ _ _).symm⟩, rfl⟩
+  case arrAlloc => exact ⟨⟨_, rfl⟩, rfl⟩
+  case makeArg =>
+    rename_i hg _ st _
+    exact (operand_no_step (List.all_eq_true.mp (by simpa [inspectTerm] using hp) _
+      (List.mem_of_getElem? hg)) st).elim
+  case arrArg =>
+    rename_i hg _ st _
+    exact (operand_no_step (List.all_eq_true.mp (by simpa [inspectTerm] using hp) _
+      (List.mem_of_getElem? hg)) st).elim
+  case arrSpread heq _ _ =>
+    subst heq
+    simp [inspectTerm, operandTerm, isVal] at hp
+  all_goals first
+    | (simp only [inspectTerm, Bool.and_eq_true] at hp ⊢; done)
+    | (simp only [inspectTerm, isVal, Bool.false_eq_true] at hp; done)
+    | exact ⟨List.prefix_refl _, rfl⟩
+    | (refine ⟨List.prefix_refl _, ?_⟩; simp_all [inspectTerm]; done)
+    | (rename_i ih; simp only [inspectTerm, Bool.and_eq_true] at hp ⊢
+       obtain ⟨hpre, hq⟩ := ih (by simp_all) hv
+       exact ⟨hpre, by simp_all⟩)
+
 end Verification.Purity

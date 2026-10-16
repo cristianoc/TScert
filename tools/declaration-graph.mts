@@ -1390,7 +1390,8 @@ export function collectDeclarations(file: string, options: {
         try {
           values.push({ binding: { local: name, imported: name, specifier: intrinsicModule, span },
             declaration: { module: intrinsicModule, name, span: [0, 0] }, construct: false, typeParams: [],
-            type: { k: "function", effect: "unrestricted", receiver: null, params: [], rest: null,
+            // Evaluating a literal allocates the regex and runs no code.
+            type: { k: "function", effect: "preservesInputHeap", receiver: null, params: [], rest: null,
               result: nativeRegExp(shape, nativeMatches()), span: [0, 0] } });
         } catch (error) {
           throw new DeclarationError(span, error instanceof Error ? error.message : String(error));

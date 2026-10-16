@@ -163,6 +163,8 @@ module Access (S : sig val state : t end) = struct
     if x.point=current_point () && x.pos=source then Some x.type_ else None) (!local).expressions
   let latest_claim source = List.find_map (fun (x:expression) ->
     if x.pos=source then Some x.type_ else None) (!local).expressions
+  let latest_instance source = List.find_map (fun ((_,s),t) ->
+    if s=source then Some t else None) (!local).instances
   let instantiation_at source = List.assoc_opt (current_point (),source) (!local).instantiations
   let evolved key = Option.value (List.assoc_opt key state.assumed) ~default:(Atoms [])
   let expected_result () = !(state.block_result)

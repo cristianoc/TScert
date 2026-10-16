@@ -479,7 +479,10 @@ A member read on a primitive is read through the
 built-in wrapper prototype (`String.prototype`, `Number.prototype`,
 `BigInt.prototype`, `Boolean.prototype`) with the primitive as receiver; a
 string's `length` and indices are its own
-([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
+([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)). Each member
+those prototypes list states `preservesInputHeap`, so a call of one is a
+fixed qualified call, and the read itself an inspection
+([certification](SOURCE-ELABORATION.md#certifying-inferred-call-effects)).
 
 ### Receivers
 

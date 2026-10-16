@@ -7,6 +7,7 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   for (const [file, call] of [
     ["invalid-native-find-mutation", "wrong([1, 2], { value: 0 })"],
     ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
+    ["invalid-map-primitive-method-mutation", `wrong(["a", "b"])`],
     ["invalid-native-join-coercion", "wrong({ value: 0 })"],
     ["invalid-native-sort-coercion", "wrong({ value: 0 })"],
     // What `%Iterate:ForIn%`'s step read is not what a later read finds.
@@ -17,7 +18,11 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     ["invalid-spread-function-length", "arity((a, b) => a + b)"],
   ])
     assert.equal(runExample(file, call), undefined,
-      `${file}: the actual source returns undefined despite its number contract`);
+      `${file}: the actual source returns undefined despite its number or string contract`);
+  // `test` of a global regex leaves `lastIndex` where the match ended: the
+  // same line tests true, then false.
+  assert.equal(runExample("invalid-regexp-global-callback-effect", `marks(["ab", "ab"]).join()`), "true,false",
+    "invalid-regexp-global-callback-effect: the callback's call writes the regex it captures");
   // `Number` of an object calls its `valueOf`, which here writes `seen.value`.
   // A guard's promise, which TypeScript does not check: lying guards, of a
   // primitive, through a parameter's default and of an object, a lying

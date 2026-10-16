@@ -1154,13 +1154,19 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   }
 }
 
-for (const [file, arity, accepted] of [
-  ["closure-result-contract", 2, true], ["closure-graph-captured-cell", 0, false],
+// A heap-preservation claim forged onto a callback is certified only where
+// its body is: one reading its arguments is; one capturing a cell it writes,
+// or calling `pop`, a member stated unrestricted, on the source, beside a
+// string's `trim`, is refused at its own typing.
+for (const [file, marker, arity, accepted] of [
+  ["closure-result-contract", "(p: number", 2, true], ["closure-graph-captured-cell", "(): void", 0, false],
+  ["invalid-map-primitive-method-mutation", "(x: string)", 3, false],
+  ["invalid-regexp-global-callback-effect", "(l) => word", 3, false],
 ] as const) {
   const artifacts = run(file);
   const claims = readClaims(artifacts);
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  const at = source.indexOf(accepted ? "(p: number" : "(): void");
+  const at = source.indexOf(marker);
   const closure = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at),
     "the callback's source claim");
   assert.ok(Array.isArray(closure.type) && closure.type.length === 1);
@@ -1186,7 +1192,37 @@ for (const [file, arity, accepted] of [
     assert.ok(failure && failure.kind === "node-typing", "a failed effect must name the callable's typing obligation");
     assert.ok(failure.source?.sourceMap?.pos, "the failed callable must have a source location");
   }
-  process.stdout.write(`callback heap-preservation claim: ${accepted ? "certified" : "captured write refused"}\n`);
+  process.stdout.write(`callback heap-preservation claim, ${file}: ${accepted ? "certified" : "refused"}\n`);
+}
+
+{
+  // `%Dispatch:replace%` states heap preservation only at a target whose
+  // `[Symbol.replace]` states it. A global regex's does not: an instance of
+  // the dispatch claimed preserving at that target, with the callback
+  // claimed preserving through it, is refused at the callback's typing,
+  // whatever the producer proposes.
+  const artifacts = run("regexp-fresh-global-replace-refused");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const expressions = claims.functions.flatMap(f => f.expressions);
+  const arrowAt = (start: number, arity: number) => {
+    const claim = must(expressions.find(e => e.pos[0] === start && Array.isArray(e.type) && e.type.length === 1),
+      `the claim at ${start}`);
+    const label = Array.isArray(claim.type) ? claim.type[0] : undefined;
+    assert.ok(typeof label === "number");
+    const row = must(claims.types[label], `the type row at ${start}`);
+    return must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
+      .find(s => s.arguments.length === arity), `the contract at ${start}`);
+  };
+  arrowAt(source.indexOf("replace("), 3).effect = "preservesInputHeap";
+  arrowAt(source.indexOf("(l) =>"), 3).effect = "preservesInputHeap";
+  const input = writeClaims(artifacts, "forged-dispatch-effect", claims);
+  const produce = produceWith(artifacts, input, "forged-dispatch-effect");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  const failure = readDiagnostic(produce.stdout + produce.stderr);
+  assert.ok(failure && failure.kind === "node-typing", "a forged dispatch effect must fail at a node's typing");
+  process.stdout.write("forged dispatch effect: a global regex's replacement refused\n");
 }
 
 {

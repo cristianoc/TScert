@@ -61,8 +61,14 @@ export type OverlayEntry = {
   /** A reviewed replacement signature: restrict implicit client hooks (e.g.
    * split on strings only), or correct explicit callback arguments (find
    * visits missing positions with undefined). The receiver is the prototype's. */
-  stated?: { receiver?: TypeTerm; params: TypeTerm[]; result: TypeTerm }[];
+  stated?: { receiver?: TypeTerm; params: TypeTerm[]; result: TypeTerm; effect?: Effect }[];
+  /** The effect the member's signatures state, where reviewed: the member,
+   * called at them, runs no client code beyond callbacks whose own
+   * signatures state the same effect, and writes no location the call did not
+   * allocate. A stated signature's own effect overrides it. */
+  effect?: Effect;
 };
+type Effect = "unrestricted" | "preservesInputHeap";
 
 const at: [number, number] = [0, 0];
 const atomOf = (name: "string" | "number" | "undefined" | "unknown" | "boolean" | "null" | "bigint" | "symbol"): TypeTerm => ({ k: "atom", name, span: at });
@@ -106,7 +112,7 @@ export const overlay: readonly OverlayEntry[] = [
     // at visited positions. Both are ordinary per-signature call contracts.
     stated: [
       { receiver: arrayOf(element, true, "dense"), params: [callback(element, mappedElement, "preservesInputHeap")],
-        result: arrayOf(mappedElement, false) },
+        result: arrayOf(mappedElement, false), effect: "preservesInputHeap" },
       { params: [callback(element, mappedElement, "unrestricted")],
         result: arrayOf(mappedElement, false, "sparse") },
     ] },
@@ -147,25 +153,32 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "filter", from: "ReadonlyArray",
     signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
     drop: ["thisArg"] },
-  { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];" },
+  // The members below, through `at`, read the receiver's elements, convert
+  // only numbers (an index, a bound) and, for `join` and `toString`,
+  // elements meeting the standard conversion contract, compare by strict
+  // equality or SameValueZero, and allocate only their result: they run no
+  // client code and write no existing location.
+  { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];",
+    effect: "preservesInputHeap" },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
-    bounds: { T: stringConvertible } },
+    bounds: { T: stringConvertible }, effect: "preservesInputHeap" },
   { name: "toString", from: "ReadonlyArray", signature: "toString(): string;",
-    bounds: { T: stringConvertible } },
+    bounds: { T: stringConvertible }, effect: "preservesInputHeap" },
   { name: "indexOf", from: "ReadonlyArray",
-    signature: "indexOf(searchElement: T, fromIndex?: number): number;" },
+    signature: "indexOf(searchElement: T, fromIndex?: number): number;", effect: "preservesInputHeap" },
   { name: "lastIndexOf", from: "ReadonlyArray",
-    signature: "lastIndexOf(searchElement: T, fromIndex?: number): number;" },
+    signature: "lastIndexOf(searchElement: T, fromIndex?: number): number;", effect: "preservesInputHeap" },
   { name: "includes", from: "ReadonlyArray",
-    signature: "includes(searchElement: T, fromIndex?: number): boolean;" },
-  { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;" },
+    signature: "includes(searchElement: T, fromIndex?: number): boolean;", effect: "preservesInputHeap" },
+  { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;",
+    effect: "preservesInputHeap" },
   { name: "find", from: "ReadonlyArray",
     signature: "find(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): T | undefined;",
-    stated: [{ params: [preservingFind], result: maybeElement },
+    stated: [{ params: [preservingFind], result: maybeElement, effect: "preservesInputHeap" },
       { params: [findingCallback], result: maybeElement }] },
   { name: "findIndex", from: "ReadonlyArray",
     signature: "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;",
-    stated: [{ params: [preservingFind], result: atomOf("number") },
+    stated: [{ params: [preservingFind], result: atomOf("number"), effect: "preservesInputHeap" },
       { params: [findingCallback], result: atomOf("number") }] },
   // Mutators take a mutable array.
   { name: "sort", from: "Array",
@@ -191,7 +204,7 @@ export const overlay: readonly OverlayEntry[] = [
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
   { name: "[Symbol.iterator]", from: "ReadonlyArray",
-    signature: "[Symbol.iterator](): ArrayIterator<T>;", resultAs: "Iterator" },
+    signature: "[Symbol.iterator](): ArrayIterator<T>;", resultAs: "Iterator", effect: "preservesInputHeap" },
   // Not listed: `concat` names `ConcatArray`, and `values`, `keys` and
   // `entries` are not needed yet.
 ];
@@ -385,6 +398,11 @@ type Prototype = {
   binders: string[];
   receiver: (from: string) => TypeTerm;
   entries: readonly OverlayEntry[];
+  /** The effect a member's signatures state where its entry states none:
+   * `preservesInputHeap` where every listed member, at each signature the
+   * overlay reads, runs no client code and writes no location the call did
+   * not allocate. */
+  effect: Effect;
 };
 
 /** `ArrayProto` as a declaration: a record of readonly members, each a scheme
@@ -394,6 +412,7 @@ export function arrayPrototype(checker: Checker, at: Node, library: OverlayLibra
     entries: readonly OverlayEntry[] = overlay): TypeDefinition[] {
   const element: TypeTerm = { k: "binder", name: "T", span: [0, 0] };
   const result = prototype(checker, at, library, { identity: arrayProtoIdentity, binders: ["T"], entries,
+    effect: "unrestricted",
     receiver: from => ({ k: "array", presence: "readable", readonly: from === "ReadonlyArray", element, span: [0, 0] }) });
   if (!entries.some(e => ["join", "toString", "sort"].includes(e.name))) return [result];
   const hook = library.wellKnownSymbol("toPrimitive");
@@ -418,7 +437,7 @@ export function primitivePrototype(checker: Checker, at: Node, library: OverlayL
   const owned = entries.find(e => kind === "string" && (e.name === "length" || /^\d/.test(e.name)));
   if (owned) throw Error(`a string owns '${owned.name}'; String.prototype's does not answer for it`);
   return prototype(checker, at, library, { identity: primitiveProtoIdentity(kind), binders: [], entries,
-    receiver: () => ({ k: "atom", name: kind, span: [0, 0] }) });
+    effect: "preservesInputHeap", receiver: () => ({ k: "atom", name: kind, span: [0, 0] }) });
 }
 
 function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: Prototype): TypeDefinition {
@@ -481,10 +500,11 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
       ? library.reference(interfaceOf(entry.resultAs), [{ k: "binder", name: "T", span }], span)
       : entry.resultIsReceiver ? receiver : undefined);
     const forms = entry.stated
-      ? entry.stated.map(f => ({ k: "function", effect: "unrestricted", receiver: f.receiver ?? null,
+      ? entry.stated.map(f => ({ k: "function", effect: f.effect ?? entry.effect ?? proto.effect, receiver: f.receiver ?? null,
           params: f.params, rest: null, result: f.result,
           span } satisfies Extract<TypeTerm, { k: "function" }>))
-      : signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span, false, stated);
+      : signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span, false, stated)
+          .map(f => ({ ...f, effect: entry.effect ?? proto.effect }));
     const [first] = forms;
     if (!first || (!binders.length && forms.length !== 1))
       throw Error(`${entry.from}.${entry.name} requires a nonempty supported signature family`);

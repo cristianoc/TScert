@@ -220,17 +220,11 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | [] -> Proposal_diagnostics.unsupported "a rest parameter needs a parameter" in
       let values = List.filter_map (fun (name,b) -> match b with
         | Value _ | Local _ -> Some name | Storage _ -> None) inner @ module_names in
-      let readable (a:expr) key =
-        match latest_claim a.pos with
-        | Some t -> (match declared_head declarations [] t with
-          | Atoms [Shape shape] ->
-            (shape.elements <> None && key=Name "length") ||
-            List.exists (fun (f:field) -> f.name=key && not f.optional && not f.host) shape.fields
-          | Atoms [Exact fields] -> List.exists (fun (f:field) -> f.name=key && not f.optional) fields
-          | _ -> false)
-        | None -> false in
+      (* A call's callee is preserving where every signature it may take
+         states it: the one the call's instance projects from a value's
+         quantified overloads, else all of its type's. *)
       let callable (callee:expr) =
-        match latest_claim callee.pos with
+        match (match latest_instance callee.pos with Some t -> Some t | None -> latest_claim callee.pos) with
         | Some t -> (match declared_head declarations [] t with
           | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] -> calls <> [] &&
             List.for_all (fun (s:signature) -> s.call_effect=PreservesInputHeap &&
@@ -239,8 +233,8 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | None -> false in
       (* Rest entries have a separate wrapper; its signature transport remains
          conservative until that lowering carries the inferred effect too. *)
-      let call_effect = if not rest && heap_preserving_expr ~readable ~callable values body &&
-        List.for_all (fun (_,d) -> heap_preserving_expr ~readable ~callable values d) defaults
+      let call_effect = if not rest && heap_preserving_expr ~callable values body &&
+        List.for_all (fun (_,d) -> heap_preserving_expr ~callable values d) defaults
         then PreservesInputHeap else Unrestricted in
       let own = match element with
         | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result

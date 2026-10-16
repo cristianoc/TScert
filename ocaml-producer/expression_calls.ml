@@ -465,6 +465,27 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             match List.nth_opt s.params i with
             | Some p -> plausible_subtype t (at p) || offer_to arg (at p) <> None
             | None -> false) (List.combine args actuals)) in
+        (* A signature requiring an actual's member to state an effect is not
+           the call's where that member, as the actual's type states it, has a
+           signature without it (`%Dispatch:m%` at a regex whose member writes
+           its `lastIndex`). *)
+        let member_effects ((s:Semantic.signature),substitution,_) =
+          let calls_of (t:ty) = match declared_head declarations [] t with
+            | Atoms [Shape {calls;_}] -> calls
+            | _ -> [] in
+          List.for_all Fun.id (List.mapi (fun i (_,(t,_)) ->
+            match List.nth_opt s.params i,declared_head declarations [] t with
+            | Some p,Atoms [Shape actual] ->
+              (match declared_head declarations [] (Inference.substitute substitution p) with
+               | Atoms [Shape wanted] -> List.for_all (fun (w:Semantic.field) ->
+                   List.for_all (fun (c:Semantic.signature) -> c.call_effect<>PreservesInputHeap ||
+                     match List.find_opt (fun (a:Semantic.field) -> a.name=w.name) actual.fields with
+                     | Some a -> List.for_all (fun (d:Semantic.signature) ->
+                         d.call_effect=PreservesInputHeap) (calls_of a.read)
+                     | None -> true) (calls_of w.read)) wanted.fields
+               | _ -> true)
+            | _ -> true) (List.combine args actuals)) in
+        let proposals = List.filter member_effects proposals in
         let matching = List.filter matches_actuals proposals in
         let receiver_matches ((s:Semantic.signature),substitution,_) =
           plausible_subtype_with

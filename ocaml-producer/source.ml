@@ -600,6 +600,19 @@ let rec pattern_defaults = function
   | PArray (elems,rest) -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) elems
       @ (match rest with Some (_,_,_,t) -> pattern_defaults t | None -> [])
 
+(* The names a pattern binds, and whether it only reads: no rest, which
+   allocates. *)
+let rec pattern_names = function
+  | PName (n,_) -> [n]
+  | PObject (props,rest) -> List.concat_map (fun (_,t,_) -> pattern_names t) props @
+    (match rest with Some (_,t) -> pattern_names t | None -> [])
+  | PArray (elems,rest) -> List.concat_map (fun (_,t,_) -> pattern_names t) elems @
+    (match rest with Some (_,_,_,t) -> pattern_names t | None -> [])
+let rec pattern_reads = function
+  | PName _ -> true
+  | PObject (props,rest) -> rest=None && List.for_all (fun (_,t,_) -> pattern_reads t) props
+  | PArray (elems,rest) -> rest=None && List.for_all (fun (_,t,_) -> pattern_reads t) elems
+
 (* The immediate subexpressions of a form, and those of a closure body's
    statements. *)
 let rec children e = match e.node with
@@ -661,51 +674,63 @@ let rec assigns name s = match s.statement with
   | Closing (close,body) -> List.exists (assigns name) (body @ close)
   | Break _ | Continue -> false
 (* A definition-level proposal, never a call-site assumption. This first
-   analysis proposes pure operations, required field reads and fresh allocations.
+   analysis proposes pure operations, field and element reads and fresh
+   allocations.
    Creation does not execute a closure's code. Calls consume their inferred
    qualified contracts; Lean independently checks the selected call evidence.
    Every constructor is listed so extensions require a decision here. *)
-let rec heap_preserving_expr ?(inline=false) ~readable ~callable values (e:expr) =
-  let pure = heap_preserving_expr ~inline ~readable ~callable values in
+let rec heap_preserving_expr ~callable values (e:expr) =
+  let pure = heap_preserving_expr ~callable values in
   match e.node with
   | Id name -> List.mem name values
   | Literal _ -> true
   | Not a | TypeofTest (_,_,a) | Cast (_,_,a) -> pure a
   | Arith (_,a,b) | Comma (a,b) -> pure a && pure b
-  (* These forms currently lower to a nested let expression, rather than
-     separate graph nodes. Do not propose the wider graph effect rule for it. *)
-  | Logical (_,a,b) | Coalesce (a,b) ->
-    let pure = heap_preserving_expr ~inline:true ~readable ~callable values in pure a && pure b
+  | Logical (_,a,b) | Coalesce (a,b) -> pure a && pure b
   | Conditional (c,a,b) -> pure c && pure a && pure b
-  | Read (a,key) -> not inline && pure a && readable a key
-  | Alloc fields -> not inline && List.for_all (fun (_,e) -> pure e) fields
-  | ArrayLiteral (es,spreads) -> not inline && spreads=[] && List.for_all pure es
-  | Lambda _ -> not inline
-  | Call (callee,receiver,args,spreads,_) -> not inline && spreads=[] &&
+  (* A read changes no location: Lean's inspection rule admits any read of a
+     field or an element, ordinary safety supplying that it does not stick. *)
+  | Read (a,_) -> pure a
+  | Index (a,b) | Equality (_,a,b) -> pure a && pure b
+  | Alloc fields -> List.for_all (fun (_,e) -> pure e) fields
+  | ArrayLiteral (es,spreads) -> spreads=[] && List.for_all pure es
+  | Lambda _ -> true
+  | Call (callee,receiver,args,spreads,_) -> spreads=[] &&
     pure callee && Option.fold ~none:true ~some:pure receiver &&
     List.for_all pure args && callable callee
-  | BlockBody body -> heap_preserving_stmts ~readable ~callable values body
-  | Unary _ | HasKey _ | InstanceTest _ | Equality _ | Build _
+  (* A method call reads the member off its receiver (through a primitive's
+     prototype, for a primitive) and invokes it: preserving when the member's
+     signatures all state it. *)
+  | Invoke ({node=Read (o,_);_} as callee,args,spreads,_) -> spreads=[] &&
+    pure o && List.for_all pure args && callable callee
+  | BlockBody body -> heap_preserving_stmts ~callable values body
+  | Unary _ | HasKey _ | InstanceTest _ | Build _
   | Write _ | Assign _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _ | New _
-  | Optional _ | Index _ | IndexWrite _ | Bind _ | ObjectAssign _
+  | Optional _ | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> false
-and heap_preserving_stmts ~readable ~callable values = function
+and heap_preserving_stmts ~callable values = function
   | [] -> true
   | s::rest ->
-    let pure = heap_preserving_expr ~readable ~callable values in
-    let unchanged () = heap_preserving_stmts ~readable ~callable values rest in
+    let pure = heap_preserving_expr ~callable values in
+    let unchanged () = heap_preserving_stmts ~callable values rest in
     match s.statement with
     | Declare (false,bindings) ->
       let rec add values = function
-        | [] -> heap_preserving_stmts ~readable ~callable values rest
-        | (name,_,init)::more -> heap_preserving_expr ~readable ~callable values init && add (name::values) more in
+        | [] -> heap_preserving_stmts ~callable values rest
+        | (name,_,init)::more -> heap_preserving_expr ~callable values init && add (name::values) more in
       add values bindings
     | Return e | Effect e | Throw e -> pure e && unchanged ()
-    | If (c,a,b) -> pure c && heap_preserving_stmts ~readable ~callable values a &&
-        heap_preserving_stmts ~readable ~callable values b && unchanged ()
-    | Block (_,body) -> heap_preserving_stmts ~readable ~callable values body && unchanged ()
+    | If (c,a,b) -> pure c && heap_preserving_stmts ~callable values a &&
+        heap_preserving_stmts ~callable values b && unchanged ()
+    | Block (_,body) -> heap_preserving_stmts ~callable values body && unchanged ()
     | Break _ | Continue -> unchanged ()
+    (* A pattern without a rest reads fields and positions of its
+       initializer's value and binds them. *)
+    | Destructure (target,d,init) when pattern_reads target ->
+      pure init && Option.fold ~none:true ~some:pure d &&
+      List.for_all pure (pattern_defaults target) &&
+      heap_preserving_stmts ~callable (pattern_names target @ values) rest
     | Declare (true,_) | Destructure _ | While _ | ForOf _ | Try _ | Closing _ -> false
 
 let arithmetic = function
@@ -939,7 +964,7 @@ let decode ast =
     init=List.map (stmt {init_binders with value_packs=true}) (items "init" ast);
     init_quantified;
     values=List.mapi (fun index v ->
-      (* A generic value's binders quantify its one signature. *)
+      (* A generic value's binders quantify each of its signatures. *)
       let binders,quantified = quantify top (-1000-index) (items "typeParams" v) in
       (* A binder only a rest's argument list uses is a pack parameter,
          bounded by its bound's pack; one typing a value as well stays a value
@@ -962,8 +987,8 @@ let decode ast =
       text "local" (field "binding" v),
       (match source_type binders (field "type" v),quantified with
        | t,[] -> t
-       | Atoms [Shape ({calls=[call];_} as shape)],_ ->
-         Atoms [Shape {shape with calls=[{call with quantified}]}]
+       | Atoms [Shape ({calls=_ :: _ as calls;_} as shape)],_ ->
+         Atoms [Shape {shape with calls=List.map (fun (call:signature) -> {call with quantified}) calls}]
        | Atoms [Ctors ([signature],statics)],_ -> Atoms [Ctors ([{signature with quantified}],statics)]
        | _ -> unsupported "a generic imported value must be one callable"))
       (items "values" document);

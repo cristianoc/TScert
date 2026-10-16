@@ -18,113 +18,73 @@ theorem valueTerm_instantiate {G : NormalGraph ι} {Γ t ρ n W}
   case var i =>
     exact (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hc, rfl⟩))).1
 
-/-- A required named field, through either an invariant cell or a read view.
-The contents contract supplies valuehood; a heap is not assumed to contain
-values at every arbitrary, untyped location. -/
-def readable (G : NormalGraph ι) (Ref : Ty ι) (fld : PropKey) : Bool :=
-  match expand G Ref with
-  | [c] => match namedMembers c with
-    | some (fs, vs) => (fs ++ vs.filter (·.1 != lengthKey)).any (fun p => p.1 == fld)
-    | none => false
-  | _ => false
+private theorem operand_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
+    (ho : Purity.operandTerm t = true) (hc : checkScope (Γ.length + d) t = true)
+    (he : EnvOk G Γ ρ n W) : Purity.operandTerm (instantiate d ρ t) = true := by
+  cases t
+  case var i =>
+    simp only [instantiate]
+    split
+    · rfl
+    · have hi : i - d < Γ.length := by simp [checkScope] at hc; omega
+      have hv := (meaning_value (he.2 (i-d) Γ[i-d] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
+      cases h : ρ (i-d) <;> simp_all [Purity.operandTerm, isVal]
+  case objAt fs code oid => cases code <;> simp [instantiate, Purity.operandTerm, isVal]
+  all_goals simp_all [Purity.operandTerm, isVal, instantiate]
 
-theorem readable_value {G : NormalGraph ι} {Ref fld n W h v}
-    (hr : readable G Ref fld = true) (hv : meaning G Ref (n+1) W v)
-    (hh : HeapOk (n+1) W h) :
-    ∃ u, Step h (.readAt fld v) h u ∧ isVal u = true := by
-  unfold readable at hr
-  split at hr
-  · rename_i c hc
-    split at hr
-    · rename_i fs vs hm
-      obtain ⟨⟨f,A⟩, hf, heq⟩ := List.any_eq_true.mp hr
-      have heq : f = fld := by simpa using heq
-      subst f
-      have hfields := namedMembers_sem hc hm hv
-      rcases List.mem_append.mp hf with hf | hf
-      · obtain ⟨fields,l,ctr,oid',rfl,hfield,hlookup,hagree⟩ :=
-          recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A,hf,rfl⟩) hfields.1
-        obtain ⟨u,hu,ht⟩ := hh.2 l ctr hlookup
-        exact ⟨u,.readField hfield hu, meaning_valOnly G A 0 _ u
-          ((hagree 0 (by omega) _ u).mp (ht 0 (by omega)))⟩
-      · obtain ⟨hf, hfl⟩ := List.mem_filter.mp hf
-        obtain ⟨fields,l,ctr,oid',rfl,hfield,hlookup,hbound⟩ :=
-          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A,hf,rfl⟩) (by simpa using hfl) hfields.2
-        obtain ⟨u,hu,ht⟩ := hh.2 l ctr hlookup
-        exact ⟨u,.readField hfield hu, meaning_valOnly G A 0 _ u
-          (hbound 0 (by omega) _ u (ht 0 (by omega)))⟩
-    · contradiction
-  · contradiction
+/-- Substituting the environment's values for the free slots keeps an
+inspection: a slot becomes the value it holds. -/
+theorem inspect_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
+    (hp : Purity.inspectTerm t = true) (hc : checkScope (Γ.length + d) t = true)
+    (he : EnvOk G Γ ρ n W) : Purity.inspectTerm (instantiate d ρ t) = true := by
+  induction t using Tm.induct generalizing d
+  case var i =>
+    simp only [instantiate]
+    split
+    · rfl
+    · have hi : i - d < Γ.length := by simp [checkScope] at hc; omega
+      exact Purity.inspect_value
+        (meaning_value (he.2 (i-d) Γ[i-d] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
+  all_goals
+    simp only [Purity.inspectTerm, instantiate, instantiateArgs_eq_map, List.all_eq_true,
+      List.mem_map, Bool.and_eq_true, checkScope, checkScopes_iff] at hp hc ⊢
+  all_goals first
+    | (rintro _ ⟨x, hx, rfl⟩; exact operand_instantiate (hp x hx) (hc.2 x hx) he)
+    | (rintro _ ⟨x, hx, rfl⟩; exact operand_instantiate (hp x hx) (hc x hx) he)
+    | (simp [isVal] at hp ⊢; done)
+    | (simp_all [Nat.add_assoc]; done)
 
-/-- Pure computations, required-field reads, and allocations with evaluated
-initializers. Invocation requires a separate qualified-call derivation. -/
-def check (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : Bool :=
-  Purity.pureTerm t || match t with
-  | .readAt f (.var i) => (Γ[i]?).any (fun Ref => readable G Ref f)
-  | .makeAt _ _ xs | .arrLit xs => xs.all valueTerm
-  | _ => false
+/-- An inspection preserves the input heap on normal return: every step keeps
+the heap a prefix, reading from a heap that holds values, which every heap
+meeting an admissible world does (`heap_values`). Safety is supplied
+separately. -/
+theorem inspect_safe {T : Fam} {initial : Heap} : ∀ {n W h t},
+    initial.IsPrefix h → Purity.inspectTerm t = true → WorldAdm W → HeapOk n W h →
+    Safe Ξ T n W h t →
+    SafePost Ξ T (CallEffects.Effect.preservesInputHeap.post initial) n W h t := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hpre hp hw hh hs
+    rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh', hs⟩
+    · exact .inl (.inl ⟨hv, ht, hpre⟩)
+    · exact .inl (.inr hth)
+    · obtain ⟨hprefix, hp'⟩ := Purity.inspect_step step hp (HeapExpressionRules.heap_values hw hh)
+      exact .inr ⟨U, h', t', hx, hu, step, hh', ih (hpre.trans hprefix) hp' hu hh' hs⟩
 
-/-- A single allocation changes only freshly appended locations. -/
-theorem make_preserves {T n W h code fields xs}
-    (hv : ∀ v ∈ xs, isVal v = true)
-    (hs : Safe Ξ T n W h (.makeAt code fields xs)) :
-    SafePost Ξ T (CallEffects.Effect.preservesInputHeap.post h) n W h (.makeAt code fields xs) := by
-  cases n with
-  | zero => trivial
-  | succ n =>
-    rcases hs with (⟨hb,_⟩ | ⟨v,hr,_⟩) | ⟨U,h',t',hx,hu,st,hh,hs⟩
-    · contradiction
-    · cases hr with
-      | makeArg hg _ hr => exact False.elim (by
-          have := hv _ (List.mem_of_getElem? hg)
-          rw [raises_not_val hr] at this; contradiction)
-    · cases st with
-      | makeArg hg _ st => exact False.elim (value_no_step (hv _ (List.mem_of_getElem? hg)) st)
-      | makeFields hvs hlen =>
-        exact .inr ⟨U,_,_,hx,hu,.makeFields hvs hlen,hh,
-          refine_value rfl ⟨xs ++ [.nul], by simp⟩ hs⟩
-
-theorem array_preserves {T n W h xs}
-    (hv : ∀ v ∈ xs, isVal v = true)
-    (hs : Safe Ξ T n W h (.arrLit xs)) :
-    SafePost Ξ T (CallEffects.Effect.preservesInputHeap.post h) n W h (.arrLit xs) := by
-  apply one_step rfl rfl (.arrAlloc hv) ⟨xs,rfl⟩ hs
+/-- Reads, tests, arithmetic and allocations whose initializers are evaluated.
+Invocation requires a separate qualified-call derivation. -/
+def check (_G : NormalGraph ι) (_Γ : List (Ty ι)) (t : Tm) : Bool :=
+  Purity.inspectTerm t
 
 theorem sound {G : NormalGraph ι} {Γ t A ρ n W h}
     (hc : check G Γ t = true) (hscope : checkScope Γ.length t = true)
-    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : Safe (excOf G) (meaning G A) n W h (instantiate 0 ρ t)) :
     SafePost (excOf G) (meaning G A) (CallEffects.Effect.preservesInputHeap.post h)
-      n W h (instantiate 0 ρ t) := by
-  simp only [check, Bool.or_eq_true] at hc
-  rcases hc with hp | hc
-  · exact CallEffects.pure_safe (.term (HeapExpressionRules.pure_instantiate (d := 0) hp hscope he)) hs
-  · split at hc
-    · rename_i t fld i
-      simp only [Option.any_eq_true] at hc
-      obtain ⟨Ref,hi,hr⟩ := hc
-      cases n with
-      | zero => trivial
-      | succ n =>
-        obtain ⟨u,st,hval⟩ := readable_value hr (he.2 i Ref hi) hh
-        exact one_step rfl hval st ⟨[],by simp⟩ hs
-    · rename_i t code fields xs
-      have hscopes : ∀ a ∈ xs, checkScope Γ.length a = true := by
-        cases code <;> simp_all [checkScope, checkScopes_iff, List.all_eq_true]
-      have hvalues : ∀ v ∈ xs.map (instantiate 0 ρ), isVal v = true := by
-        intro v hv
-        obtain ⟨a,ha,rfl⟩ := List.mem_map.mp hv
-        exact valueTerm_instantiate (List.all_eq_true.mp hc a ha) (hscopes a ha) he
-      cases code <;> simp only [instantiate, instantiateArgs_eq_map] at hs ⊢ <;>
-        exact make_preserves hvalues hs
-    · rename_i t xs
-      simp only [checkScope, checkScopes_iff] at hscope
-      simp only [instantiate, instantiateArgs_eq_map] at hs ⊢
-      apply array_preserves _ hs
-      intro v hv
-      obtain ⟨a,ha,rfl⟩ := List.mem_map.mp hv
-      exact valueTerm_instantiate (List.all_eq_true.mp hc a ha) (hscope a ha) he
-    · contradiction
+      n W h (instantiate 0 ρ t) :=
+  inspect_safe (List.prefix_refl h) (inspect_instantiate (d := 0) hc hscope he) hw hh hs
 
 /-- Invocation consumes the selected signature's effect. All actual evaluation
 has already been lowered to earlier graph nodes; omitted arguments are the

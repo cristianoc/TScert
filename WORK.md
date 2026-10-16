@@ -28,7 +28,7 @@ design, not its progress.
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 26 of 266 verify in `tools/`, 6 of 25 in `dev/` (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 267 verify in `tools/`, 7 of 25 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -81,14 +81,16 @@ effect. A program with an arbitrary callback promising readable `U[]` for every
 
 Effect inference remains conservative for some rest wrappers, call forms and
 nested heap operations. Expression scheduling alone does not supply the missing
-effect derivation. A call of a member read off a primitive (`l.trim()`)
-changes no location, but neither the primitives' prototype contracts nor the
-body-effect checker states it, so a `map` callback making one takes the
-unrestricted overload and its result is sparse
-(`map-primitive-method-callback-refused`): the checker needs a member read
-off a primitive, through its built-in prototype, as a required read, and the
-prototype contracts the effect on each member. Keep the source targets and their negative controls when
-extending the body-effect checker.
+effect derivation. Code that writes only locations it allocated preserves the
+heap it was called with, but each node of its graph is checked preserving
+from its own entry heap: a write of a `let` cell the code allocated, a
+mutator called on an array it allocated, and a global regex literal's
+`[Symbol.replace]`, which writes the `lastIndex` of the regex just created
+(`regexp-fresh-global-replace-refused`), are refused. Certifying them needs
+the postcondition relative to the code's entry heap, the knowledge of which
+locations were allocated since, and call effects stating which locations a
+call may write (its receiver's own). Keep the source targets and their
+negative controls when extending the body-effect checker.
 
 <a id="keys-known-only-at-run-time"></a>
 **Keys known only at run time.** A write at a string key known only at run
@@ -198,11 +200,14 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 25 functions of `dev/`, the record tools and the lowering
-dump, 6 verify; the first blockers there are a `map` callback calling a
-string's method, whose result is then sparse
-(`map-primitive-method-callback-refused`, 10: dedent, effects, tests, math,
-mathRoles, mathTokens, lowering, and commit-records' examplesOf, readRecord
-and group, through examplesOf), an optional call through a `let` the loop
+dump, 7 verify; the first blockers there are a callback writing only
+locations it allocated, a `let` cell or a fresh regex's `lastIndex`, which
+the effect checker does not certify (see [contract
+completeness](#restoring-completeness); 5: effects, tests, math, mathRoles,
+lowering, through `esc`, `highlight` and `afterRelation`), a value of `undefined` written to an
+optional field (3: examplesOf, and readRecord and group through it), a
+nested conditional of literals whose type the producer widens (mathTokens),
+a guarded element read (mathRoles), an optional call through a `let` the loop
 assigns (`optional-call-loop-cell-refused`, 3: section, card, pageBody), a
 `for...of` binding destructured (2), a conditional type over a type
 parameter, `KeysOf<T>` (2, lowering-dump), a closure constant created before

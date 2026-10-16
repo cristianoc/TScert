@@ -280,8 +280,7 @@ theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : 
 @[simp] theorem compositionalChecked_reassign [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (η : MixedAssignment ι) (P : Program) (C : Certificate ι) :
     compositionalChecked (reassign G η) (images.reassign η) P C = compositionalChecked G images P C := by
-  simp only [compositionalChecked_eq, ExpressionEffects.check, ExpressionEffects.readable,
-    Parametricity.expand_reassign, Parametricity.checkTree_reassign]
+  simp only [compositionalChecked_eq, ExpressionEffects.check, Parametricity.checkTree_reassign]
 
 /-- Definition effects supplement, rather than replace, ordinary safety. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
@@ -404,7 +403,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       have hcases := hp.2
       simp only [Bool.or_eq_true] at hcases
       rcases hcases with hexpr | hcall
-      · exact ExpressionEffects.sound hexpr hp.1.2 henv hheap
+      · exact ExpressionEffects.sound hexpr hp.1.2 henv hworld hheap
           (HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
             (hterm j V h' ρ henv himp hknowledge hworld hheap)))
       · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall

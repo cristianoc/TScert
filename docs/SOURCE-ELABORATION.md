@@ -1189,10 +1189,33 @@ The semantic introduction and elimination rules are proved in
 together; a separate unqualified body check cannot introduce a qualified type.
 Rest-collecting entries retain their store contract in the checked frame, and
 the entry allocation preserves the input heap before the checked body runs.
-The effect algorithm ([ExpressionEffects.lean](../lean/Verification/Programs/ExpressionEffects.lean)) composes pure computations, required field reads through
-invariant cells or readonly views, and fresh object/array allocations. Reads use
-the field contract to establish valuehood; arbitrary heap entries are not assumed
-to be values. Allocations append locations. `ControlFlow.state_progress` is shared
+The effect algorithm ([ExpressionEffects.lean](../lean/Verification/Programs/ExpressionEffects.lean))
+admits a node whose expression is an **inspection**: a term built from slots,
+values, immutable lets, tests, conditionals, operators, throws, lengths, field
+and element reads, and allocations whose initializers are slots or values,
+
+```math
+\begin{aligned}
+o &::= x \mid v\\
+i &::= o \mid \mathsf{let}\ x=i\ \mathsf{in}\ i \mid \mathsf{test}_k(i) \mid \mathsf{if}\ i\ \mathsf{then}\ i\ \mathsf{else}\ i \mid i \oplus i \mid \mathsf{throw}\ i \mid \mathsf{len}(i) \mid i.f \mid i[i] \mid \mathsf{make}_c(\vec f;\vec o) \mid [\vec o]
+\end{aligned}
+```
+
+```math
+\frac{\Gamma\vdash i:B\qquad i\ \text{an inspection}}
+ {\Gamma\vdash i:B\;!\;\mathsf{preservesInputHeap}}\ \textsf{inspect}
+```
+
+with the premise the node's ordinary typing. No step of an inspection writes a
+location it did not allocate: a read gives the value its location holds and an
+allocation appends fresh locations, so from a heap holding values each step
+keeps the heap a prefix and leaves an inspection (`Purity.inspect_step`). Every
+heap meeting an admissible world holds values (`HeapExpressionRules.heap_values`),
+and the ordinary safety derivation supplies such a world at every step, so the
+rule's conclusion holds (`ExpressionEffects.inspect_safe`). A member read off a
+primitive is an inspection: the conditional on the primitive's shape, the fresh
+wrapper whose `[[proto]]` is the prototype slot, and the read through it.
+`ControlFlow.state_progress` is shared
 with ordinary safety, so the additional graph proof has no second set of edge or
 branch rules. During expression evaluation, `GraphCode.ReturnsPost` tracks the
 normal-return postcondition independently of the safety proof's evolving world.
@@ -1220,9 +1243,10 @@ This checker is wired into source acceptance, including
 `SourceClaimJson.checkJson_safe`. One contract record carries receiver,
 arguments, result and required effect through graphs, claims and certificates;
 subtyping checks effect implication and substitution preserves it. Ordinary
-source annotations remain unrestricted; OCaml proposes preservation for pure
-closure bodies, required field reads, fresh allocations and fixed calls to
-qualified callees, retaining it through symbolic claims and substitution.
+source annotations remain unrestricted; OCaml proposes preservation for
+closure bodies of reads, element reads, fresh allocations, patterns without a
+rest, and fixed calls and method calls whose callee's signatures all state it
+(`heap_preserving_expr`), retaining it through symbolic claims and substitution.
 Broader composition remains implementation work. Evidence production adds a
 code entry to its search table only after the complete body/effect check passes.
 A forged effect thus fails at the defining callable's located typing obligation.

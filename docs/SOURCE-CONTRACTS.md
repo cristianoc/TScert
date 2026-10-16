@@ -1173,10 +1173,29 @@ $`p`$, and $`R_j`$ its reviewed receiver (defaulting to $`p`$):
 
 ```math
 \frac{\omega\in\Omega_p\quad \omega.\mathit{text}=\mathsf{text}(m)\quad
-      \omega.\mathit{stated}=[(R_j,\vec P_j,Q_j)]_{j=1}^n\quad n>0}
+      \omega.\mathit{stated}=[(R_j,\vec P_j,Q_j,\epsilon_j)]_{j=1}^n\quad n>0}
      {⟦m⟧_\omega=\bigcap_{j=1}^n
-       (\mathsf{this}:R_j,\ \vec P_j)\Rightarrow Q_j}\ \textsf{proto-stated}
+       (\mathsf{this}:R_j,\ \vec P_j)\Rightarrow_{\epsilon_j} Q_j}\ \textsf{proto-stated}
 ```
+
+Each signature states an effect $`\epsilon_j`$: the entry's own, else its
+prototype's, `preservesInputHeap` for `StringProto`, `NumberProto`,
+`BigIntProto` and `BooleanProto` and `unrestricted` for `ArrayProto`. A
+signature states `preservesInputHeap` where the member, called at it, runs no
+client code but callbacks whose own signatures state the same, and writes no
+location the call did not allocate. Every primitive member listed meets this:
+its receiver is a primitive, it converts only primitives (a string search
+reads no `[Symbol.match]` of a primitive pattern, `split` and `replace` are
+stated at a string pattern), reads `locales` by index, and allocates only its
+result. Of `ArrayProto`, `slice`, `join`, `toString`, `indexOf`,
+`lastIndexOf`, `includes`, `at` and `[Symbol.iterator]` state it: they read
+the receiver, convert only numbers and elements meeting the conversion
+contract below, compare by strict equality or SameValueZero, and allocate
+only their result; so do the overloads of `map`, `find` and `findIndex` that
+take a preserving callback, which they call, the ordinary construction below
+allocating `map`'s result. The members that write their receiver (`sort`,
+`push`, `pop`, `shift`, `unshift`, `reverse`) and those that call an
+unrestricted callback do not.
 
 The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source
@@ -1543,7 +1562,7 @@ of host-relative methods
 P(\Sigma)=\{\ \mathtt{exec}\colon(\mathtt{string})\Rightarrow\mathsf{Exec}(\Sigma)\mid\mathtt{null};\ \mathtt{test}\colon(\mathtt{string})\Rightarrow\mathtt{boolean};\ [@@\mathrm{match}]\colon(\mathtt{string})\Rightarrow\mathsf{Match}(\Sigma)\mid\mathtt{null};\ [@@\mathrm{replace}]\colon(\mathtt{string},\mathtt{string})\Rightarrow\mathtt{string};\ [@@\mathrm{search}]\colon(\mathtt{string})\Rightarrow\mathtt{number};\ [@@\mathrm{split}]\colon(\mathtt{string},\mathtt{number}\mid\mathtt{undefined})\Rightarrow\mathsf{Split}(\Sigma)\ \}
 ```
 
-each unrestricted; the native and structural regexes are
+with each member's effect below; the native and structural regexes are
 
 ```math
 N(\Sigma)=P(\Sigma)\ \&\ \{[@@\mathrm{matchAll}]\colon(\mathtt{string})\Rightarrow I_N(\mathsf{Exec}(\Sigma));\ \mathtt{readonly}\ [\mu]\colon\mathtt{undefined}\}
@@ -1565,6 +1584,25 @@ a supertype of each declaration with its element type corrected, and an
 array pattern or loop over one steps it as an array. `RegExp`'s stated
 members are pinned to their declaration texts (`reviewedRegExpMembers`).
 
+**Effects.** A member of $`⟦\mathtt{RegExp}⟧`$, any value's, states no
+effect. A native regex's members run no client code, read its pattern and
+flags, and allocate only their result; what they write is `lastIndex`. With
+$`g`$ and $`y`$ whether the flags hold `g` and `y`,
+
+```math
+\epsilon_{N(\Sigma)}(m)=\begin{cases}
+\mathsf{preservesInputHeap} & m\in\{[@@\mathrm{search}],[@@\mathrm{split}],[@@\mathrm{matchAll}]\},\ \Sigma\ne\Sigma_\top\\
+\mathsf{preservesInputHeap} & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ \neg g,\ \neg y\\
+\mathsf{unrestricted} & \text{otherwise}
+\end{cases}
+```
+
+`[@@search]` restores the `lastIndex` it saved, `[@@split]` and
+`[@@matchAll]` step a fresh clone, and a regex neither global nor sticky
+writes no `lastIndex`; one that is leaves it where its last match ended
+(`invalid-regexp-global-callback-effect`). At $`\Sigma_\top`$ the flags are
+not read, and no member states the effect.
+
 **Literals and dispatch.** Each evaluation of a literal allocates a regex;
 a call of `String.prototype`'s `match`, `matchAll`, `replace`, `replaceAll`,
 `search` or `split` with an object first argument runs `GetMethod` on it and
@@ -1572,7 +1610,7 @@ returns what that method returns:
 
 ```math
 \frac{\Sigma=\mathsf{shape}(P,F)}
-     {⟦/P/F⟧=\%\mathrm{RegExp}{:}\Sigma\%()\qquad \%\mathrm{RegExp}{:}\Sigma\%\colon()\Rightarrow N(\Sigma)}\ \textsf{regexp-literal}
+     {⟦/P/F⟧=\%\mathrm{RegExp}{:}\Sigma\%()\qquad \%\mathrm{RegExp}{:}\Sigma\%\colon()\Rightarrow_{\mathsf{preservesInputHeap}} N(\Sigma)}\ \textsf{regexp-literal}
 ```
 
 ```math
@@ -1591,7 +1629,17 @@ as TypeScript types the receiver and the argument, evaluated as written, with
 ```
 
 and `match` and `search` as `split` without the limit, `replaceAll` as
-`replace` with the mark. `matchAll` and `replaceAll` first read
+`replace` with the mark. Each states two signatures over the same binder:
+the one above, unrestricted, and the same at a target whose member states
+$`\mathsf{preservesInputHeap}`$, stating it too. Beside that member's call, the
+dispatch reads `o`'s members and converts only strings, so it writes nothing
+the member does not:
+
+```math
+\frac{\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow Q\},\ \vec R)\Rightarrow S}
+     {\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow_{\mathsf{preservesInputHeap}} Q\},\ \vec R)\Rightarrow_{\mathsf{preservesInputHeap}} S}\ \textsf{dispatch-preserving}
+```
+ `matchAll` and `replaceAll` first read
 `o[@@match]` and `o.flags` and convert `flags` (ECMA-262,
 `String.prototype.matchAll`), client code for an object `flags`
 (`invalid-regexp-structural-matchall`): their argument must be native, whose
