@@ -120,7 +120,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const erased = run("invalid-generic-contract-erasure");
   const ast: Ast = JSON.parse(readFileSync(join(erased, "fragment.json"), "utf8"));
   const declaration = ast.declarations?.definitions.find(d => d.declaration.name === "Witness");
-  assert(declaration?.expression.k === "object");
+  assert(declaration?.expression?.k === "object");
   const member = declaration.expression.fields.find(f => f.name === "choose");
   assert(member?.type.k === "scheme");
   member.type = { k: "atom", name: "unknown", span: member.type.span };
@@ -172,7 +172,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     return { status: searched.status, detail: searched.stdout + searched.stderr };
   };
   const withRun = (inner: TypeTerm) => (d: TypeDefinition) => {
-    assert(d.expression.k === "object");
+    assert(d.expression?.k === "object");
     must(d.expression.fields[0], "Runner's method").type = runner(inner);
   };
   const schemeHost = run("scheme-binder-roles");
@@ -184,7 +184,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.equal(mixed.status, 1);
   assert.match(mixed.detail, /Runner: generic contract at \[0,0\]: a binder used as both a value and an argument pack is not represented/);
   const unguarded = forgeDefinition(run("non-regular-alias"), "Box", "forged-unguarded-alias", (d) => {
-    assert(d.expression.k === "object");
+    assert(d.expression?.k === "object");
     const next = must(d.expression.fields.find((f) => f.name === "next"), "Box's next").type;
     assert(next.k === "union");
     d.expression = { k: "union", parts: [{ k: "parameter", index: 0, span }, must(next.parts[0], "Box<[T]>")], span };
@@ -1037,7 +1037,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   const promise = must(weakAst.declarations.definitions.find(d =>
     d.declaration.name === "Promise" && d.declaration.module.startsWith("typescript/lib/")),
     "the native Promise declaration");
-  assert(promise.expression.k === "object" && promise.expression.prototype?.k === "object");
+  assert(promise.expression?.k === "object" && promise.expression.prototype?.k === "object");
   promise.expression.prototype.fields = promise.expression.prototype.fields.filter(f => f.name !== "constructor");
   promise.expression.fields.push({ name: "constructor", optional: false, readonly: false,
     type: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] });
@@ -1080,7 +1080,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   const ast: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
   const target = must(ast.declarations.definitions.find(d => d.declaration.name === "NumericUnknownWrapper"),
     "the result-widened generic wrapper declaration").expression;
-  assert.ok(target.k === "scheme" && target.binders.length === 1);
+  assert.ok(target?.k === "scheme" && target.binders.length === 1);
   must(target.binders[0], "the retained numeric input binder").bound = null;
   const forged = join(artifacts, "forged-generic-input-bound.json");
   writeFileSync(forged, JSON.stringify(ast));

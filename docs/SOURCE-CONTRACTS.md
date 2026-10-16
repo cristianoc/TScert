@@ -1068,10 +1068,8 @@ A conditional type is read through an alias distributing over a parameter,
 `type Extract<T, U> = T extends U ? T : never`, as `Extract`, `Exclude` and a
 user alias of that shape are. With $`\mathsf{members}(\sigma)`$ the members of
 the union $`\sigma`$ is written as, a union's members and those of the
-equation of an alias without bounded parameters it names, each alias's
-parameters read as the reference's arguments or their defaults, an
-application of an alias with a bounded parameter being one member read as
-written, with its bound obligation, an application TypeScript decides
+equation of an alias it names, each alias's parameters read as the
+reference's arguments or their defaults, an application TypeScript decides
 member by member, whose result is a union of the types of whole members, is
 the union of those members, each read where it is written:
 
@@ -1097,10 +1095,40 @@ which TypeScript keeps, read where it is written by the declaration reader as
 `unknown` (`any` constrains nothing): a parameter at it accepts every value,
 and a result at it promises none.
 
+Each rule above gives the type a computed type denotes, its evaluation,
+which replaces the applications written in it. Each keeps the obligation
+every written application has: that its arguments meet the declaration's
+bounds ([from source](RECURSIVE-EQUATIONS.md#5-from-source)). With
+$`\mathsf{apps}(\tau)`$ the outermost applications written in $`\tau`$
+($`\tau`$ itself if it is one: type references with arguments, outside one
+another's arguments and outside a scope binding type parameters of its
+own), $`⟦\tau⟧_{\mathsf{ev}}`$ its evaluation by the rules above, and
+$`\beta_{D,i}`$ the declared bound of the $`i`$-th parameter of
+$`D\langle\vec X\rangle`$, $`\mathsf{top}`$ where it declares none:
+
+```math
+\frac{⟦\tau⟧_{\mathsf{ev}}=S\quad
+      \forall D\langle\vec\sigma\rangle\in\mathsf{apps}(\tau).\ \forall i.\
+      ⟦\sigma_i⟧\le⟦\beta_{D,i}⟧_{\vec X:=⟦\vec\sigma⟧}}
+     {⟦\tau⟧=S}\ \textsf{applied}
+```
+
+The reader states it as an `applied` term at each outermost application,
+which denotes its value and keeps the application's arguments, checked where
+the computed type is written as a reference's are; the arguments are read as
+written, so the applications inside them keep theirs. A computed alias has no
+equation, and the declaration graph states its parameters and their bounds.
+So `ElementOf<number[]>` with `type ElementOf<T extends readonly string[]> =
+T[number]` is refused although TypeScript computes `number` for it, as are
+`keyof Box<number>` with `interface Box<T extends string>` and
+`P<number>` with `type P<T extends string> = T extends "a" ? T : never`,
+whose evaluation is `never`. A library mapped type read at its meaning
+(`Record`, `Partial`) is outside the graph, and its application keeps no
+obligation: `Record`'s one bound, `keyof any`, holds for every key its
+reading admits, a string or a string literal.
+
 Refused: a conditional type over a function's own type parameter, which
-TypeScript defers; an application of a conditional type alias with a bounded
-parameter, which what TypeScript computes for it would replace together with
-the obligation that its arguments meet their bounds; one whose result has a part that is no member of the
+TypeScript defers; one whose result has a part that is no member of the
 decided union as written (a branch other than the parameter, `T[]`, or a
 member naming a parameter of the alias declaring it, which is another type at
 each instance); a conditional type outside an alias distributing over a

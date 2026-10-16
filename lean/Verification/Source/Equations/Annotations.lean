@@ -53,7 +53,8 @@ partial def binderPacked (n : String) (node : Json) : M Bool := do
   if u.value && u.pack then return true
   let rec scan : Json → M Bool
     | .obj fields => do
-      if fields.toList.lookup "k" == some (.str "reference") then
+      if fields.toList.lookup "k" == some (.str "reference") ||
+          fields.toList.lookup "k" == some (.str "applied") then
         let j := Json.obj fields
         if let .ok args := j.getObjValAs? (Array Json) "args" then
           let i ← tryCatch (some <$> referenceIndex j) fun _ => pure none

@@ -104,7 +104,10 @@ let definition declarations id args =
               (Some (expand t)) ts with
       | Some merged -> merged
       | None -> Meet (t,ts) in
-    let body = Inference.substitute ~meet solution d.expression in
+    let expression = match d.expression with
+      | Some e -> e
+      | None -> unsupported ("a computed alias has no equation: " ^ id) in
+    let body = Inference.substitute ~meet solution expression in
     (* A base named through an alias of another declaration is that
        declaration, instantiated: its members are inherited by structure. *)
     let rec base_of seen t = match t with

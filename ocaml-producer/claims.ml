@@ -109,7 +109,7 @@ let encode (proposal : Proposal_types.t) =
           @ List.concat_map (fun (f:field) -> packed_uses f.read) statics
         | Named (id,args) ->
           let packed = match List.find_opt (fun (d:Source.declaration) -> d.id = id) declarations with
-            | Some d -> packed_rigids d.expression | None -> [] in
+            | Some { expression=Some e; _ } -> packed_rigids e | _ -> [] in
           let parameters = match List.find_opt (fun (d:Source.declaration) -> d.id = id) declarations with
             | Some d -> d.parameters | None -> [] in
           List.concat (List.mapi (fun i arg -> match List.nth_opt parameters i, arg with
@@ -401,7 +401,7 @@ let encode (proposal : Proposal_types.t) =
           | Some args ->
             (* A packed parameter's argument with its argument lists: those
                of its array's tuple contract, or a binder's own. *)
-            let packed = packed_rigids d.expression in
+            let packed = match d.expression with Some e -> packed_rigids e | None -> [] in
             [Decl (k,List.map2 (fun parameter arg ->
               if List.mem parameter packed then
                 List.sort_uniq compare (label_list arg @ pack_label_list

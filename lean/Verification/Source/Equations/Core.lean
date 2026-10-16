@@ -30,6 +30,7 @@ partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
       return b.value
     | none => throw s!"{ctx.site}: the type parameter {n} is not in scope"
   | "reference" => reference ctx term
+  | "applied" => applied ctx term
   | "array" | "tuple" =>
     let readonly ← bool term "readonly"
     let store ← occurrence ctx "store" term (job := fun h c => .store h c term)
@@ -101,6 +102,17 @@ partial def reference (ctx : Ctx) (term : Json) : M Union := do
     | _, _ => return U
   instantiateDecl ctx i values
 
+/-- An application a reader replaced by the type it denotes (`value`): that
+type, with the application's arguments checked against their bounds where
+it is written, as a reference's are (`application`). -/
+partial def applied (ctx : Ctx) (term : Json) : M Union := do
+  let i ← referenceIndex term
+  let supplied ← (← arr term "args").toList.mapM (lowerType ctx)
+  let span : Span ← fromJson? (← field term "span")
+  let pos := if ctx.source && ctx.decl.isNone then some span else none
+  let _ ← application ctx i supplied pos
+  lowerType ctx (← field term "value")
+
 /-- The argument lists an argument of a packed parameter adds to it: an
 array's or a tuple's, the lists a call collects into one of its arrays; none
 for a packed binder or an enclosing declaration's packed parameter, whose
@@ -152,6 +164,8 @@ partial def application (ctx : Ctx) (i : Nat) (supplied : List Union)
 alias met again before a constructor is an unguarded cycle (§8.3). -/
 partial def instantiateDecl (ctx : Ctx) (i : Nat) (values : List Union) : M Union := do
   let d := (← get).doc[i]!
+  if d.expression == .null then
+    throw s!"{ctx.site}: {d.name} has no equation: each application states the type it denotes"
   if d.isHead then return [mkApp (← declHead i) values]
   if ctx.aliases.contains i then
     throw s!"{ctx.site}: unguarded alias cycle through {d.name}: a recursive alias must reach itself through an object, array, tuple or function type"

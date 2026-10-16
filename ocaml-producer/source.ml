@@ -306,6 +306,12 @@ let rec source_type ctx j =
     (match ctx.owner,args,List.assoc_opt id ctx.symbolic with
     | None,[arg],Some (parameter,body) -> Inference.substitute [parameter,ValueArgument arg] body
     | _ -> Atoms [Named (id,args)])
+  (* An application a reader replaced by the type it denotes: that type. Its
+     arguments' bounds are the verifier's to check. *)
+  | "applied" ->
+    let id = identity (field "target" (field "reference" j)) in
+    if not (List.mem_assoc id ctx.arity) then fail ("reference lacks a declaration " ^ id);
+    recur (field "value" j)
   | "parameter" ->
     let index = match field "index" j with
       | Number n -> (match int_of_string_opt n with
@@ -558,7 +564,7 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
               sees. *)
            rest_pack: rigid option; result: ty; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;
-  defaults: ty option list; bases: ty list; expression: ty }
+  defaults: ty option list; bases: ty list; expression: ty option }
 (* `init` is the module's top-level code, run once after its function
    declarations exist. *)
 (* `values` are the client's value imports, at the types their declarations
@@ -872,7 +878,9 @@ let decode ast =
      defaults=List.map (fun p -> match field "default" p with
        | Null -> None | j -> Some (body j)) (items "parameters" definition);
      bases=List.map body (items "bases" definition);
-     expression=body (field "expression" definition)})
+     (* An alias TypeScript computes has no equation: its applications state
+        their values. *)
+     expression=(match field "expression" definition with Null -> None | e -> Some (body e))})
     (items "definitions" document) in
   let locals = List.map (fun root ->
     let id=identity (field "declaration" root) in
@@ -883,9 +891,9 @@ let decode ast =
     fail "duplicate declaration root name";
   let symbolic = List.filter_map (fun d ->
     match d.parameters,d.defaults,d.bases,d.expression with
-    | [parameter],[None],[],(Rigid identity as body) when identity=parameter ->
+    | [parameter],[None],[],Some (Rigid identity as body) when identity=parameter ->
       Some (d.id,(parameter,body))
-    | [parameter],[None],[],(Atoms [Shape shape] as body) ->
+    | [parameter],[None],[],Some (Atoms [Shape shape] as body) ->
       (match shape.fields,shape.indexes,shape.calls,shape.elements with
       | [{name=Name "value";optional=false;read=Rigid identity;
           write=Some (Rigid written);host=false;receivers=[]}],[],[],None

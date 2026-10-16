@@ -86,7 +86,7 @@ function fixtureProject(files: Record<string, string>) {
   // it: one equation with both declarations' members, identified by the first.
   const global = must(ast.declarations.definitions.find((d) => d.declaration.name === "GlobalBox"), "GlobalBox");
   assert.equal(global.declaration.module, "global.d.ts");
-  assert(global.expression.k === "object");
+  assert(global.expression?.k === "object");
   assert.deepEqual(global.expression.fields.map((f) => f.name), ["flag", "other"]);
   // Two star reexports of one name: TypeScript reports TS2308 on the barrel
   // (and would bind the first); the import is refused there.
@@ -103,7 +103,7 @@ function fixtureProject(files: Record<string, string>) {
   const arrays = join(pipelineDir, "examples", "values.ts");
   const doc = collectDeclarations(arrays, { arrays: [0, 0] });
   const proto = doc.definitions.find(d => d.declaration.module === "tscert/array-prototype");
-  assert(proto && proto.expression.k === "object");
+  assert(proto?.expression?.k === "object");
   // A computed key is the symbol it names: `[Symbol.iterator]` is `Symbol.iterator`.
   const keyText = (name: string | { symbol: number }) =>
     typeof name === "string" ? name : `[Symbol.${doc.symbols[name.symbol]?.name}]`;
@@ -134,7 +134,7 @@ function fixtureProject(files: Record<string, string>) {
   const absent = collectDeclarations(arrays, { arrays: [0, 0], arrayOverlay: [
     { name: "notDeclared", from: "ReadonlyArray", signature: "notDeclared(): T;" }] });
   const absentProto = absent.definitions.find(d => d.declaration.module === "tscert/array-prototype");
-  assert(absentProto?.expression.k === "object" && absentProto.expression.fields.length === 0);
+  assert(absentProto?.expression?.k === "object" && absentProto.expression.fields.length === 0);
   closeParser();
   process.stdout.write("array prototype: overlay members read from TypeScript's declarations\n");
 }

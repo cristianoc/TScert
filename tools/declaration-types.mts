@@ -107,14 +107,23 @@ export type TypeTerm =
    * annotation, or a generic method's, in its scheme. A declaration's own
    * parameters are positional. */
   | { k: "binder"; name: string; span: Span }
-  | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
+  /** An application of a declaration to its arguments, each within its
+   * parameter's bound. */
+  | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span }
+  /** An application a reader replaced by the type it denotes, `value`: the
+   * evaluation of an alias TypeScript computes from its parameters, or a
+   * type read from one. It denotes `value`, under the obligation that each
+   * argument meets its parameter's bound, as the reference's would. */
+  | { k: "applied"; reference: Reference; args: TypeTerm[]; value: TypeTerm; span: Span };
 export type TypeDefinition = {
   declaration: DeclarationIdentity;
   parameters: { name: string; span: Span; bound: TypeTerm | null;
     default: TypeTerm | null }[];
   /** Interface heritage remains a source edge; consumers derive its members. */
   bases: TypeTerm[];
-  expression: TypeTerm;
+  /** The equation; null for an alias TypeScript computes from its
+   * parameters, whose applications carry their values. */
+  expression: TypeTerm | null;
 };
 /** Every declaration reachable from the roots, each once. References live in
  * the expression, parameter bounds/defaults and heritage edges, not in a second list. */

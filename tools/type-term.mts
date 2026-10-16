@@ -50,6 +50,7 @@ export function visitType(term: TypeTerm, visit: (term: TypeTerm, bound: Readonl
       term.params.forEach(go); if (term.rest) go(term.rest); go(term.result); return;
     case "pack": go(term.of); return;
     case "reference": term.args.forEach(go); return;
+    case "applied": term.args.forEach(go); go(term.value); return;
     case "scheme": {
       const inner = new Set([...bound, ...term.binders.flatMap(binder => [binder.name,
         ...ownedSlots(binder.resolution)])]);
@@ -608,6 +609,7 @@ export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm 
       default: b.default && go(b.default) })), signatures: term.signatures.map(f => f.k === "function" ? fn(f)
         : { ...f, params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) }) };
     case "reference": return { ...term, args: term.args.map(go) };
+    case "applied": return { ...term, args: term.args.map(go), value: go(term.value) };
   }
 }
 

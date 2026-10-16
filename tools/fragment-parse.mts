@@ -1471,7 +1471,8 @@ export function parseFile(file: string, carriesContext = false,
         n.getStart(source) === root.binding.span[0]) ?? first;
       gate.registerDeclaredType(root.binding.local,
         definition.parameters.filter(p => p.default === null).length,
-        definition.parameters.length, identity, node, definition.expression);
+        definition.parameters.length, identity, node,
+        definition.expression ?? gate.fail(first, `a root without an equation: ${identity.module}#${identity.name}`));
     }
   }
   // Carried context skips aliases its old fragment could not state. Every

@@ -718,6 +718,11 @@ export function collectDeclarations(file: string, options: {
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
+    // The declarations of the applications computed types replace
+    // (`computedType`), collected as they are met, each refused at the client
+    // span being read when it was met.
+    const appliedStarts: { node: TypeDeclaration; span: Span }[] = [];
+    let collecting: Span | null = null;
     const valueScope = (node: Node, what: string, binders: string[] = []): TermScope => {
       const source = node.getSourceFile();
       return {
@@ -879,6 +884,20 @@ export function collectDeclarations(file: string, options: {
       },
       value: (nodes, what) => valueOf(nodes, what),
       alias: aliasOf,
+      // The declaration an application names joins the graph, where its
+      // parameters' bounds are stated.
+      application: (reference, args, value, span) => {
+        const name = reference.typeName;
+        const source = reference.getSourceFile();
+        if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${idOf(source)}`);
+        const what = `${idOf(source)}#${name.text}`;
+        if (library(name, what)) return value;
+        const target = lookup(name, what);
+        appliedStarts.push({ node: target, span: collecting ?? span });
+        return { k: "applied", reference: { name: name.text, span,
+          arguments: (reference.typeArguments ?? []).map((arg): Span => [arg.getStart(source), arg.end]),
+          target: identityOf(target) }, args, value, span };
+      },
       applied: (alias, args) => {
         const what = `${idOf(alias.getSourceFile())}#${alias.name.text}`;
         const parameters = (alias.typeParameters ?? []).map(p => p.name.text);
@@ -1654,7 +1673,8 @@ export function collectDeclarations(file: string, options: {
         ({ node, span: values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0] })),
       ...contextualStarts,
     ];
-    for (const { node: start, span } of starts) {
+    const collectFrom = (start: TypeDeclaration, span: Span): void => {
+      collecting = span;
       try {
         collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
@@ -1662,6 +1682,12 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
+    };
+    for (const { node: start, span } of starts) collectFrom(start, span);
+    // Collecting may compute more types, and meet more applications.
+    for (let cursor = 0; cursor < appliedStarts.length; cursor++) {
+      const start = appliedStarts[cursor];
+      if (start) collectFrom(start.node, start.span);
     }
     definitions.push(...selections, ...primitiveProtos, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
@@ -1676,7 +1702,7 @@ export function collectDeclarations(file: string, options: {
     const trustedValues = values.map(v => v.binding.specifier === intrinsicModule ? v :
       { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
     const trustedDefinitions = definitions.map(d => d.declaration.module === clientModule ? d :
-      { ...d, expression: promisedMethods(d.expression) });
+      { ...d, expression: d.expression && promisedMethods(d.expression) });
     return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols };
   });
 }
@@ -1705,6 +1731,7 @@ function promisedNames(type: TypeTerm): Set<string> {
         for (const a of t.args) visit(a, inside || promise);
         return;
       }
+      case "applied": for (const a of t.args) visit(a, inside); visit(t.value, inside); return;
       case "union": case "intersection": for (const p of t.parts) visit(p, inside); return;
       case "array": visit(t.element, inside); return;
       case "tuple": for (const p of [...t.required, ...t.optional, ...(t.rest ? [t.rest] : [])]) visit(p, inside); return;
@@ -1743,6 +1770,7 @@ function promisedMethods(type: TypeTerm): TypeTerm {
     return { ...type, fields: type.fields.map(f => ({ ...f, type: promisedMethods(f.type) })),
       ...(type.prototype ? { prototype: promisedMethods(type.prototype) } : {}) };
   if (type.k === "scheme") return { ...type, binders: promisedBinders(type.binders, type) };
+  if (type.k === "applied") return { ...type, value: promisedMethods(type.value) };
   if (type.k === "union" || type.k === "intersection") return { ...type, parts: type.parts.map(promisedMethods) };
   return type;
 }
@@ -2332,6 +2360,14 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         bound: parameter.constraint ? parse(parameter.constraint) : null,
         default: parameter.defaultType ? parse(parameter.defaultType) : null };
     });
+    // An alias TypeScript computes from its parameters has no equation: each
+    // application states its value (`applied`), and the bounds stated here.
+    // (A predicate's false branch would narrow `node` to no alias.)
+    const computedEquation: boolean = computedAlias(node, context.alias);
+    if (computedEquation) {
+      definitions.push({ declaration: identity, parameters, bases: [], expression: null });
+      continue;
+    }
     const parts = partners.get(node) ?? [node];
     // A standard library interface read through the overlay: only its listed
     // members, and no base.

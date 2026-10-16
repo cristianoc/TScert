@@ -363,7 +363,8 @@ def schemeBinders (site : String) (term : Json) : Except String (List String × 
     ResolutionWire.groups parameters)
 
 def referenceIndex (term : Json) : M Nat := do
-  fieldsExactly term ["k", "reference", "args", "span"]
+  fieldsExactly term (if kindOf term == some "applied" then ["k", "reference", "args", "value", "span"]
+    else ["k", "reference", "args", "span"])
   let target ← field (← field term "reference") "target"
   let ds := (← get).doc
   match (List.range ds.size).filter fun i => ds[i]!.identity == target with
