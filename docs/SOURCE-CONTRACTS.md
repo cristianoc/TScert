@@ -990,8 +990,8 @@ is refused rather than verified vacuously:
 
 ## Computed types
 
-`typeof x`, `keyof T`, `T[K]`, template literal types and intersections of
-primitives and literals mean the type TypeScript's checker computes
+`typeof x`, `keyof T`, `T[K]`, template literal types, conditional types and
+intersections of primitives and literals mean the type TypeScript's checker computes
 (`computed-types.mts`). With $`\mathit{ts}(\tau)`$ the checker's type of the
 node $`\tau`$ and $`\mathsf{lits}(t)`$ for $`t`$ as a union of literals,
 primitive families and unique symbols when it is exactly one. A unique symbol
@@ -1064,7 +1064,38 @@ from the checker (`inferredTerm`):
      {⟦\mathtt{typeof}\ x⟧=\{\overline{k_i\colon⟦t_i⟧};\ \overline{[\theta_j]\colon⟦u_j⟧}\}}\ \textsf{typeof-inferred}
 ```
 
-Refused: a template literal type with a `$`{string}` or ``${number}` hole; a
+A conditional type is read through an alias distributing over a parameter,
+`type Extract<T, U> = T extends U ? T : never`, as `Extract`, `Exclude` and a
+user alias of that shape are. With $`\mathsf{members}(\sigma)`$ the members of
+the union $`\sigma`$ is written as, a union's members and those of the
+equation of an alias it names, each alias's parameters read as the
+reference's arguments or their defaults, an application TypeScript decides
+member by member, whose result is a union of the types of whole members, is
+the union of those members, each read where it is written:
+
+```math
+\frac{A\langle\vec X\rangle=(X_i\ \mathtt{extends}\ \upsilon\ \mathtt{?}\ \tau_1\ \mathtt{:}\ \tau_2)\quad
+      \mathsf{members}(\sigma_i)=\overline{\mu_j}\quad
+      \mathit{ts}(A\langle\vec\sigma\rangle)=\textstyle\bigcup_{j\in J}\mathit{ts}(\mu_j)}
+     {⟦A\langle\vec\sigma\rangle⟧=\textstyle\bigcup_{j\in J}⟦\mu_j⟧}\ \textsf{distributed}
+```
+
+`Extract<Shape, { k: "a" }>` is the member of `Shape` tagged `"a"`, and
+`Exclude<Shape, { k: "a" }>` the others. A conditional type TypeScript
+computes to a union of literals and primitives is that union by
+$`\textsf{computed}`$: `KeysOf<Shape>` with
+`type KeysOf<T> = T extends unknown ? keyof T : never` is the union of the
+members' keys. The result's identity with the members' types is the premise:
+TypeScript's decision selects members, and each kept member's contract is
+its declaration's.
+
+Refused: a conditional type over a function's own type parameter, which
+TypeScript defers; one whose result has a part that is no member of the
+decided union as written (a branch other than the parameter, `T[]`, or a
+member naming a parameter of the alias declaring it, which is another type at
+each instance); a conditional type outside an alias distributing over a
+parameter that computes no union of literals and primitives; a template
+literal type with a `$`{string}` or ``${number}` hole; a
 form over a function's own type parameter (`keyof T`, `T[number]` with `T`
 the function's binder), which denotes a function of the type an instance
 names, not of the values a parameter row stands for; a unique symbol whose

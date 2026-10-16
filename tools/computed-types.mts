@@ -1,5 +1,5 @@
 /** Types TypeScript computes from other types: `typeof x`, `keyof T`, `T[K]`,
- * template literal types and applications of aliases computed from their
+ * template literal types, conditional types and applications of aliases computed from their
  * parameters (PROGRAM-TYPING.md, "Computed types"). Their meaning is the type
  * TypeScript computes, which the checker gives; this module states it as the
  * equivalent type term the fragment already has, or refuses it with the
@@ -156,7 +156,79 @@ function aliasApplication(context: ComputedContext, node: TypeReferenceNode, spa
     throw Error(`the computed type alias ${alias.name.text} is applied at a default type argument, outside the fragment`);
   let body = alias.type;
   while (ts.isParenthesizedTypeNode(body)) body = body.type;
+  if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, read, computed);
   return computedType(context, body, span, context.applied(alias, written.map(read)));
+}
+
+/** A union member as written: its type node and the reader of the scope it
+ * is written in. */
+type Member = { node: TypeNode; read: (node: TypeNode) => TypeTerm };
+
+/** The members of the union `node` is written as, in the order written: a
+ * union's members, and those of the equation of an alias each names, read
+ * where that alias is declared, with its parameters read as the reference's
+ * arguments or their defaults. Any other type is one member. */
+function unionMembers(context: ComputedContext, node: TypeNode, read: (node: TypeNode) => TypeTerm,
+    seen: Set<Node> = new Set()): Member[] {
+  while (ts.isParenthesizedTypeNode(node)) node = node.type;
+  if (ts.isUnionTypeNode(node)) return node.types.flatMap(t => unionMembers(context, t, read, seen));
+  const alias = ts.isTypeReferenceNode(node) ? context.alias(node) : null;
+  // A computed alias has no equation to read members from.
+  const computed = (n: Node): boolean => computedAlias(n, context.alias);
+  if (!alias || !ts.isTypeReferenceNode(node) || seen.has(alias) || enclosingBinders(alias).length || computed(alias))
+    return [{ node, read }];
+  const args: TypeTerm[] = [];
+  for (const [i, parameter] of (alias.typeParameters ?? []).entries()) {
+    const written = node.typeArguments?.[i];
+    const value = written ? read(written)
+      : parameter.defaultType ? context.applied(alias, args)(parameter.defaultType) : null;
+    if (!value) return [{ node, read }];
+    args.push(value);
+  }
+  return unionMembers(context, alias.type, context.applied(alias, args), new Set([...seen, alias]));
+}
+
+/** An application of an alias whose equation is a conditional type
+ * distributing over its parameter, `Extract<T, U>`, which is
+ * `T extends U ? T : never`: where TypeScript decides it for each member of
+ * the argument's union, and its result is a union of whole members, it is
+ * the union of those members, each read as written. Where TypeScript computes
+ * a union of literals and primitives for it, that union was taken already. */
+function distributed(context: ComputedContext, node: TypeReferenceNode, alias: TypeAliasDeclaration,
+    body: ts.ConditionalTypeNode, span: Span, read: (node: TypeNode) => TypeTerm, computed: string): TypeTerm {
+  const { checker } = context;
+  const type = checker.getTypeFromTypeNode(node);
+  if (!type || generic(type))
+    throw Error(`a conditional type over a type parameter, ${computed}, is computed only at an instance`);
+  const check = body.checkType;
+  const index = ts.isTypeReferenceNode(check) && ts.isIdentifier(check.typeName) && !check.typeArguments?.length
+    ? (alias.typeParameters ?? []).findIndex(p => ts.isIdentifier(check.typeName) && p.name.text === check.typeName.text)
+    : -1;
+  const argument = node.typeArguments?.[index];
+  if (!argument)
+    throw Error(`the conditional type ${alias.name.text} decides a type other than one of its parameters, ` +
+      `${computed}: it distributes over no union`);
+  const members = unionMembers(context, argument, read);
+  const results = type.isUnionType() ? type.getTypes() : [type];
+  const ids = new Set(results.map(t => t.id));
+  const covered = new Set<number>();
+  const kept = members.filter(member => {
+    const memberType = checker.getTypeFromTypeNode(member.node);
+    if (!memberType) return false;
+    const parts = memberType.isUnionType() ? memberType.getTypes() : [memberType];
+    if (!parts.every(p => ids.has(p.id))) return false;
+    parts.forEach(p => covered.add(p.id));
+    return true;
+  });
+  const other = results.find(t => !covered.has(t.id));
+  if (other)
+    throw Error(`${alias.name.text} at its arguments is ${computed}, whose part ${describe(checker, other)} is ` +
+      `no member of ${argument.getText(node.getSourceFile())} as written: it is no selection of that union's ` +
+      "members (a member naming a type parameter is another type at each instance)");
+  const terms = kept.map(member => member.read(member.node));
+  const [only] = terms;
+  if (!only) return { k: "atom", name: "never", span };
+  return terms.length === 1 ? only : { k: "union", parts: terms, span };
 }
 
 /** `keyof` of a type literal: the union of its property names' string

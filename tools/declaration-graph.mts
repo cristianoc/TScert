@@ -997,6 +997,9 @@ export function collectDeclarations(file: string, options: {
           continue;
         }
         const node = lookup(identifier, identifier.text);
+        // A global alias TypeScript computes from its parameters, as
+        // `Extract` is, has no equation: each application is a computed type.
+        if (computedAlias(node, aliasOf)) continue;
         roots.push({ node, root: { binding: { kind: "global", local: identifier.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
@@ -1631,6 +1634,9 @@ export function collectDeclarations(file: string, options: {
     for (const span of options.computed ?? []) {
       const node = computedAt(client, span);
       if (!node) throw new DeclarationError(span, "TypeScript computed type missing");
+      // A global type's application is computed when the alias it names is.
+      const alias = ts.isTypeReferenceNode(node) ? aliasOf(node) : null;
+      if (ts.isTypeReferenceNode(node) && !(alias && computedAlias(alias, aliasOf))) continue;
       const what = `${idOf(client)}#${node.getText(client)}`;
       const scope = valueScope(node, what, enclosingBinders(node));
       try {

@@ -1300,6 +1300,11 @@ export function parseFile(file: string, carriesContext = false,
       computedNodes.push(node);
       return;
     }
+    // An application of a global type is one where the alias it names is
+    // computed (`Extract<T, U>`), which the declaration graph decides.
+    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeArguments?.length &&
+        !rooted.has(node.typeName.text) && !enclosingBinders(node).includes(node.typeName.text))
+      computedNodes.push(node);
     // So does the computed key of a class method or an object literal's
     // property or method, `[Symbol.iterator]() { … }`.
     if (ts.isComputedPropertyName(node) && node.parent &&

@@ -246,6 +246,7 @@ export function computedForm(node: TypeNode): string | null {
   if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.KeyOfKeyword) return "keyof";
   if (ts.isIndexedAccessTypeNode(node)) return "an indexed access type";
   if (ts.isTemplateLiteralTypeNode(node)) return "a template literal type";
+  if (ts.isConditionalTypeNode(node)) return "a conditional type";
   // `number & string` is `never`, `string & "a"` is `"a"`: TypeScript
   // reduces an intersection of primitives and literals.
   if (ts.isIntersectionTypeNode(node) && intersectionOperands(node).every(t =>

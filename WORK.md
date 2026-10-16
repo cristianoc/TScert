@@ -27,7 +27,7 @@ design, not its progress.
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 5 of 239 verify (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 10 of 241 verify (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -175,21 +175,22 @@ options are in [TRUST-REDUCTION](docs/TRUST-REDUCTION.md).
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 239 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 241 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-16):
 
-- a namespace import, `import * as ts` (122);
-- the conditional type `Extract<T, U>`, which `Extract<TypeTerm, { k: … }>`
-  names (29), and conditional types elsewhere (4);
-- a user-defined type guard, `x is T`, or an assertion function (19);
-- a missing annotation (9);
+- a namespace import, `import * as ts` (124);
+- a user-defined type guard, `x is T`, or an assertion function (25);
+- a missing annotation (15);
 - the compiler API's own declarations, `SyntaxKind`, `TypeFlags`,
   `NodeFlags`, `SymbolFlags` (about 15);
-- module-level `let` and `var` (5), regular expression literals (4);
+- module-level `let` and `var` (5), regular expression literals (5);
 - library globals absent from the overlay: `Reflect`,
-  `Object.getOwnPropertyDescriptor` (3).
+  `Object.getOwnPropertyDescriptor`, `Array.from`, `Object.fromEntries` (5);
+- `Exclude<Clause, string>`, whose members name the alias's parameter `L` and
+  are another type at each instance (1).
 
-One slice reaches the producer and fails there. Three fail in search:
-`Array.isArray(v)` does not narrow an `unknown` `v` to `unknown[]` (two),
-and a closure whose claim is not derived (one).
+Three slices reach the producer and fail there, and twelve fail in search,
+among them `Array.isArray(v)` not narrowing an `unknown` `v` to
+`unknown[]` (two) and a `.map` result built where a union of records is
+expected (`emptyObject`).
