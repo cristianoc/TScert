@@ -1436,7 +1436,7 @@ Every edge is still checked by the independent consumer. -/
               | [] => []
         | none => pure ()
       k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
-        (k.links ++ required.links).eraseDups⟩
+        HeapLinks.dedup (k.links ++ required.links)⟩
       -- A handler target is entered by throws too, which carry no
       -- implication, and the argument slots the throwing nodes carry.
       if handlerTargets.contains l then

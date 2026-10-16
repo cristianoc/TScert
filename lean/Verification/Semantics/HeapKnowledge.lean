@@ -49,7 +49,8 @@ def meet : List Knowledge → Knowledge
           some { f with contents := (f.contents ++ others.flatten.flatMap (·.contents)).eraseDups }
         else none
     ⟨(joined (·.cells)).eraseDups, (joined (·.values)).eraseDups,
-     k.links.filter (fun g => ks.all (·.links.contains g))⟩
+     let others := ks.map fun o => (Std.HashSet.ofList o.links : Std.HashSet HeapLinks.Link)
+     k.links.filter (fun g => others.all (·.contains g))⟩
 
 def check (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
   HeapFacts.check a.cells b.cells m && (HeapFacts.check a.values b.values m && HeapLinks.check a.links b.links m)
@@ -122,8 +123,11 @@ def projectFacts (facts : Facts) (m : PointClaims.Mapping) (count : Nat) : Facts
     (facts.filter fun f => f.slot == PointClaims.slot m i).map fun f => { f with slot := i }
 
 def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge :=
+  -- The target slots each source slot is mapped to, in increasing order.
+  let preimages : Std.HashMap Nat (List Nat) := (List.range count).foldr
+    (fun j acc => acc.alter (PointClaims.slot m j) fun js => some (j :: js.getD [])) ∅
   ⟨projectFacts k.cells m count,projectFacts k.values m count,
-    HeapLinks.pull k.links (fun i => (List.range count).filter fun j => PointClaims.slot m j == i)⟩
+    HeapLinks.pull k.links (fun i => preimages.getD i [])⟩
 
 /-- Every live property-read link transfers the observed result predicate,
 including observations admitting undefined. -/

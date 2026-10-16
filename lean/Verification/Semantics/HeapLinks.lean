@@ -1,10 +1,14 @@
 import Verification.Semantics.HeapFacts
+import Std.Data.HashSet.Lemmas
 
 /-! A read-to-cell relation is a current-heap fact, not a timeless alias of an
 immutable value. It survives pure slot transfers and allocation, but is discarded
 on writes and calls. This is the witness needed to refine a cell from a guard. -/
 namespace Verification.HeapLinks
 open ProgramTyping
+
+instance : Hashable PropKey where
+  hash | .str s => mixHash 0 (hash s) | .sym n => mixHash 1 (hash n)
 
 /-- A read link names the field it was read through; an alias link relates two
 slots holding the same value and ignores it. A distinct link relates a field of
@@ -22,7 +26,7 @@ structure Link where
   distinct : Bool := false
   other : PropKey := valueField
   optional : Bool := false
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Hashable, Repr
 
 export HeapFacts (ReadGave)
 
@@ -51,28 +55,47 @@ theorem pull_holds {ls pre ρ τ h} (hh : Holds ls ρ h)
   obtain ⟨v,hv,rfl⟩ := List.mem_map.mp hg
   simpa [he _ _ hc,he _ _ hv] using hh a ha
 
-/-- A distinct link is symmetric, so either orientation of the source justifies it. -/
+/-- The two fields a distinct link relates, in its own orientation. -/
+def apartKey (f : Link) : Option (Nat × Nat × PropKey × PropKey) :=
+  if f.distinct then some (f.cell, f.value, f.field, f.other) else none
+
+/-- Each target link must be a source link under the mapping. A distinct link
+is symmetric, so either orientation of the source justifies it. The source
+links are hashed once, so the check is linear in the two lists. -/
 def check (a b : Links) (m : PointClaims.Mapping) : Bool :=
-  b.all fun g => a.any fun f =>
-    (f.cell == PointClaims.slot m g.cell &&
-      (f.value == PointClaims.slot m g.value && (f.field == g.field && (f.alias == g.alias &&
-        (f.distinct == g.distinct && (f.other == g.other && f.optional == g.optional)))))) ||
-    (g.distinct && f.distinct && (f.cell == PointClaims.slot m g.value &&
-      (f.value == PointClaims.slot m g.cell && (f.field == g.other && f.other == g.field))))
+  let same : Std.HashSet Link := Std.HashSet.ofList a
+  let apart : Std.HashSet (Nat × Nat × PropKey × PropKey) := Std.HashSet.ofList (a.filterMap apartKey)
+  b.all fun g =>
+    let c := PointClaims.slot m g.cell
+    let v := PointClaims.slot m g.value
+    same.contains ⟨c, v, g.alias, g.field, g.distinct, g.other, g.optional⟩ ||
+      (g.distinct && apart.contains (v, c, g.other, g.field))
 
 theorem check_sound {a b m ρ h} (hc : check a b m = true) (hh : Holds a ρ h) :
     Holds b (PointClaims.mapEnv m ρ) h := by
   intro g hg
-  obtain ⟨f,hf,hfg⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc g hg)
-  simp only [Bool.or_eq_true,Bool.and_eq_true,beq_iff_eq] at hfg
-  rcases hfg with hfg | ⟨⟨hgd,hfd⟩,h1,h2,h3,h4⟩
-  · simpa [PointClaims.mapEnv,← hfg.1,← hfg.2.1,← hfg.2.2.1,← hfg.2.2.2.1,← hfg.2.2.2.2.1,
-      ← hfg.2.2.2.2.2.1,← hfg.2.2.2.2.2.2] using hh f hf
-  · have hf := hh f hf
-    simp only [hfd,ite_true] at hf
-    simp only [hgd,ite_true,PointClaims.mapEnv,← h1,← h2,← h3,← h4]
-    intro flds c oid l flds' c' oid' l' e1 e2 e3 e4 heq
-    exact hf flds' c' oid' l' flds c oid l e3 e4 e1 e2 heq.symm
+  have hcg := List.all_eq_true.mp hc g hg
+  simp only [Std.HashSet.contains_ofList, Bool.or_eq_true, Bool.and_eq_true,
+    List.contains_iff_mem] at hcg
+  rcases hcg with hf | ⟨hgd, hk⟩
+  · simpa [PointClaims.mapEnv] using hh _ hf
+  · obtain ⟨f, hf, hsel⟩ := List.mem_filterMap.mp hk
+    simp only [apartKey] at hsel
+    split at hsel
+    · rename_i hfd
+      simp only [Option.some.injEq, Prod.mk.injEq] at hsel
+      obtain ⟨h1, h2, h3, h4⟩ := hsel
+      have hf := hh f hf
+      simp only [hfd, ite_true] at hf
+      simp only [hgd, ite_true, PointClaims.mapEnv, ← h1, ← h2, ← h3, ← h4]
+      intro flds c oid l flds' c' oid' l' e1 e2 e3 e4 heq
+      exact hf flds' c' oid' l' flds c oid l e3 e4 e1 e2 heq.symm
+    · contradiction
+
+/-- The links without repetitions, each at its first occurrence. -/
+def dedup (ls : Links) : Links :=
+  (ls.foldl (fun (acc : Std.HashSet Link × Links) g =>
+    if acc.1.contains g then acc else (acc.1.insert g, g :: acc.2)) (∅, [])).2.reverse
 
 theorem alloc_frames {ls ρ h} (vs : List Val) (hh : Holds ls ρ h) : Holds ls ρ (h ++ vs) := by
   intro g hg

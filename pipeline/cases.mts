@@ -52,6 +52,7 @@ export const cases: Case[] = [
   negative("invalid-constructor-tuple-spread", "A spread element must meet its constructor parameter", /source expression obligation at \[218,234\): evidence search failed/),
   positive("array-literal-spread", "Array literal spreads: a store of each part in order at the claim's element type, a spread before an element that runs code copied where it is written; readonly, host-iterable, generic and undefined-admitting elements"),
   negative("invalid-array-literal-spread", "A spread's elements must meet the literal's element type", /no derivation of its node-typing claim/),
+  positive("many-fresh-objects", "Fifty-six object literals in one expression, whose points carry links quadratic in the literals: search and check finish within the step limit"),
   positive("constructor-rest-spread", "`new` at a variadic construct signature: spreads of arrays and plain actuals past the fixed parameters, a spread copied before a later actual that runs code; a class value offered the signature, its code checked binding each further position at the element or `undefined`"),
   negative("invalid-constructor-rest-class", "A class binding a required position a variadic construct signature may leave out is refused at that signature, though TypeScript accepts it", /construct signature claim is outside the source annotation/),
   positive("class-tuple-pack-offer", "A class where a construct signature whose rest is an exact tuple is expected: its fixed signature covers the pack, and no variadic signature is offered"),

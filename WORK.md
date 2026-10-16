@@ -28,7 +28,7 @@ design, not its progress.
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 21 of 263 verify in `tools/`, 2 of 23 in `dev/` (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 25 of 263 verify in `tools/`, 2 of 23 in `dev/` (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -188,10 +188,7 @@ The first blockers, by the number of slices each stops (2026-10-16):
   `parseInt` (3), `Reflect` (2, [refused](docs/SOURCE-FRAGMENT.md)),
   `Array.from`, `Object.fromEntries`, `new RegExp` (1 each);
 - a type reference to the parser's `EnumMember` (5), module-level `let` and
-  `var` (5), a mapped type whose value names its key (3);
-- claim production past 30 s on four functions of `regexp.mts` (`members`
-  and the three that call it), a measurement whose cause is not
-  established.
+  `var` (5), a mapped type whose value names its key (3).
 
 Seven slices reach the producer and fail there, and twenty-one fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
