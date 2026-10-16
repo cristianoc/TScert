@@ -1,4 +1,4 @@
-import Verification.Types.PositiveRules
+import Verification.Types.PairFamilies
 
 /-! Executable certificates for PositiveRules. Completeness concerns existence
 of accepted evidence for a declarative derivation, not semantic completeness or

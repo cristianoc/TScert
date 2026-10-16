@@ -1585,6 +1585,8 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`).
 - [Types/PositiveNormalization.lean](../lean/Verification/Types/PositiveNormalization.lean): the clause language and the clause meet
 - [Types/PositiveGraphs.lean](../lean/Verification/Types/PositiveGraphs.lean): normal graphs and the rows' denotation
 - [Types/PositiveRules.lean](../lean/Verification/Types/PositiveRules.lean): the declarative subtyping rules and their soundness
+- [Types/SchemeInstances.lean](../lean/Verification/Types/SchemeInstances.lean): instances of a scheme row, their tables and the compiled table check
+- [Types/PairFamilies.lean](../lean/Verification/Types/PairFamilies.lean): families of pairs, their entries and soundness (`pairs_sound`, `family_sound`)
 - [Types/PositiveCertificates.lean](../lean/Verification/Types/PositiveCertificates.lean): the certificate checker and its soundness
 - [Types/GraphRows.lean](../lean/Verification/Types/GraphRows.lean): the label-independent row representation
 - `Types/EquationGraphs.lean`, `Types/EquationSupport.lean`, `Types/EquationCongruence.lean`

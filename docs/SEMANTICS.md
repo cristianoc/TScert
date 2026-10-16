@@ -1105,7 +1105,8 @@ the operation and composition rules using this predicate;
   steps.
 - `PositiveNormalization.lean` proves the clause meet sound (`meet_sound`).
 - `PositiveRules.lean` defines declarative subtype rules and proves their
-  semantic soundness.
+  semantic soundness; `SchemeInstances.lean` adds instances of a scheme row and
+  `PairFamilies.lean` families of pairs.
 - `PositiveCertificates.lean` proves checker soundness for those rules
   (`checkUsing_sound`) and transports accepted subtyping to value
   subsumption (`acceptedUsing`).

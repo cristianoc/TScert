@@ -1,4 +1,4 @@
-import Verification.Types.PositiveRules
+import Verification.Types.PairFamilies
 
 /-! A native Promise application is separated from the stable bound by one
 world and value: an object that owns exactly the Promise row's view keys, the

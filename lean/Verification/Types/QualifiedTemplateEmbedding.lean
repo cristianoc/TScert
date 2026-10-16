@@ -1,5 +1,5 @@
 import Verification.Types.PositiveGraphs
-import Verification.Types.PositiveRules
+import Verification.Types.PairFamilies
 
 /- A syntax-preserving import of a closed normal graph. The correspondence is
    proved from mapped production rows, including quantified callable rows and

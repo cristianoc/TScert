@@ -604,7 +604,7 @@ to parameters and quantified variables by position.
 | Lemma 2, congruence of applications | [Types/EquationCongruence.lean](../lean/Verification/Types/EquationCongruence.lean) |
 | Lemma 3, substitution | [Types/EquationSubstitution.lean](../lean/Verification/Types/EquationSubstitution.lean) |
 | Instantiation by substitution in the subtyping checker | [Types/EquationCertificates.lean](../lean/Verification/Types/EquationCertificates.lean) |
-| Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/PositiveCertificates.lean` |
+| Quantified signatures (4.1), assumptions and Theorem 1 (4.2) | `Types/PositiveRules.lean`, `Types/SchemeInstances.lean`, `Types/PairFamilies.lean`, `Types/PositiveCertificates.lean` |
 | Comparison and instance bounds over the equations (4.2–4.4) | `Types/PositiveCertificates.lean` (`compareUsingCore_sound`, `compareInstArrsState_sound`, `compareStructural_sound`) |
 | Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](../lean/Verification/Types/EquationFamilies.lean) |
 | Well-formedness of equations | [Types/EquationValidator.lean](../lean/Verification/Types/EquationValidator.lean) |

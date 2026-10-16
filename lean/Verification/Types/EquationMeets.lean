@@ -1,5 +1,5 @@
 import Verification.Types.EquationGraphs
-import Verification.Types.PositiveRules
+import Verification.Types.PairFamilies
 
 /-! Meet labels mean exactly the intersection of their parts' values
 (RECURSIVE-EQUATIONS §3.3). A meet's row is computed from its parts' rows;
