@@ -222,6 +222,25 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     entry.bounds = entry.bounds.map(() => null);
   });
   assert.equal(relaxed.status, 0, relaxed.detail);
+  // A reference carries every argument, the omitted ones completed where it
+  // is read: one left short, for the checker to complete with a default, is
+  // refused.
+  const short = forgeDocument(run("written-dependent-default"), "forged-short-reference", fragment => {
+    const found: unknown[] = [];
+    const walk = (value: unknown): void => {
+      if (Array.isArray(value)) value.forEach(walk);
+      else if (value && typeof value === "object") {
+        if ("k" in value && value.k === "reference" && "args" in value && Array.isArray(value.args) &&
+            "reference" in value && JSON.stringify(value.reference).includes('"name":"Keys"')) found.push(value.args);
+        Object.values(value).forEach(walk);
+      }
+    };
+    walk(fragment.functions);
+    for (const args of found) if (Array.isArray(args)) args.pop();
+    assert.ok(found.length, "a reference to Keys");
+  });
+  assert.equal(short.status, 1, short.detail);
+  assert.match(short.detail, /Keys applied to 1 type arguments of 2/);
   // A written obligation whose comparison runs out of rounds is refused as
   // exhausted, at the application (`Node<Leaf>`), not verified.
   const exhausted = check(join(here, "examples", "written-recursive-bound.ts"), undefined, false, 0);

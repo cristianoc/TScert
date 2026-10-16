@@ -1216,18 +1216,35 @@ obligation must hold for, so it only strengthens the check. A declaration's
 entries are checked once, under its parameters' bounds; a use obliges its
 arguments to meet them, and an instance is one assignment meeting them.
 
-An entry states, per parameter, its argument (the written one, or the
-default read at the earlier arguments) and its bound read at the arguments,
-$`\beta_i[\vec X:=\vec\sigma]`$: the front end reads the bound's syntax with
-the parameters as the arguments' terms, so `Pick`'s `K extends keyof T` is
-read at `T`'s argument. `keyof X` is read exactly or refused: of a
-parameter whose argument is written (a default naming an earlier parameter
-alone standing for that one's), or of an operand naming no parameter, the
-keys TypeScript computes for that concrete type, each of the kind its
-declaration's name has (`"0"` a string, `0` a number), every key for `never`
-and `any`, an intersection's operands' keys; of any other operand, the keys
-of its term read at the arguments, a name that may be numeric refused; a
-type over a binder of the use site, a union or a primitive is refused. A
+An application's arguments are completed once, by the one reader every
+consumer shares: the written ones, then each omitted parameter's default
+read at the arguments before it, $`\sigma_j=\delta_j[\vec X:=\vec\sigma]`$. A
+reference in a declaration's equation, in the client's annotations, in a
+library overlay and in each entry carries every argument so completed; a
+definition states only whether each parameter has a default, and the
+verifier and the producer read a reference at exactly its declaration's
+arity.
+
+An entry states, per parameter, its completed argument and its bound read at
+the arguments, $`\beta_i[\vec X:=\vec\sigma]`$: the front end reads the
+bound's syntax, as a default's, with the parameters as the arguments' terms,
+so `Pick`'s `K extends keyof T` is read at `T`'s argument. A computed form is
+evaluated there: a template literal type whose holes are unions of literals
+is the union of its spellings (`` `x${T}` `` at `"a"` is `"xa"`), and `keyof X`
+is read exactly or refused. Of a parameter whose argument is written (a
+default naming an earlier parameter alone standing for that one's), or of an
+operand naming no parameter, `keyof` is the keys TypeScript's checker gives
+that concrete type: each public member's key, the literal type of its name
+as the checker gives it (`"0"` a string; `0`, and `[n]` with `n: 0`, a
+number; a unique symbol), private, protected and `#x` members excluded; each
+index signature's key type; every key for `never` and `any`; none for
+`unknown`; an intersection's operands' keys; a union's keys common to all
+its members; for a member TypeScript synthesises, the keys its alias's
+mapping declares (`[P in K]`, or homomorphic `[P in keyof T]`). A key named
+by an enum member is refused, the fragment stating no enum literal, as is a
+type over a binder of the use site or a type parameter. Of any other
+operand, `keyof` is the keys of its term read at the arguments, a name that
+may be numeric refused. A
 declaration's definition states no bound: bounds are read only here. The
 verifier binds
 each entry's groups as a unit's binders (`bindNames`), lowers each argument

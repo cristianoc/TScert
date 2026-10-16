@@ -25,6 +25,10 @@ export type Entity = {
 };
 
 /** What the sweep needs from the declaration graph. */
+/** An application's argument: its term, and the type node it is written as,
+ * if any, for TypeScript to answer about. */
+export type WrittenArgument = { term: TypeTerm; node: TypeNode | null };
+
 export type SweepContext = {
   /** The declarations TypeScript binds a written name to (empty when it
    * binds none). */
@@ -49,7 +53,11 @@ export type SweepContext = {
    * argument a concrete type, as the keys TypeScript computes for that
    * argument; a bound or default naming a parameter is read so, at the
    * instance. */
-  instantiate(declaration: Node, args: readonly { term: TypeTerm; node: TypeNode | null }[]): (node: TypeNode) => TypeTerm;
+  instantiate(declaration: Node, args: readonly WrittenArgument[]): (node: TypeNode) => TypeTerm;
+  /** The application's arguments, the written ones completed with the
+   * defaults at them; the one completion every reader of an application
+   * shares. */
+  complete(declaration: Node, written: readonly WrittenArgument[], what: string): WrittenArgument[];
   /** The written reference's edge to the declaration it names. */
   reference(name: ts.Identifier, args: readonly TypeNode[]): WrittenApplication["reference"];
   /** The declarations a member selection depends on: the top-level
@@ -293,18 +301,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
         ? { k: "binder" as const, name: env.names.get(arg.typeParameter) ?? fresh(arg.typeParameter),
             span: spanOf(arg) }
         : context.read(arg, read) }));
-      const completed: { node: TypeNode | null; term: TypeTerm }[] = [...written];
-      for (const parameter of parameters.slice(written.length)) {
-        if (!parameter.defaultType)
-          throw Error(`${name.text}'s ${parameter.name.text} has neither an argument nor a default`);
-        // A default naming an earlier parameter alone stands for that
-        // parameter's argument; any other has no written node.
-        const named = parameter.defaultType;
-        const earlier = ts.isTypeReferenceNode(named) && ts.isIdentifier(named.typeName) && !named.typeArguments?.length
-          ? parameters.findIndex(p => p.name.text === named.typeName.getText(named.getSourceFile())) : -1;
-        completed.push({ node: earlier >= 0 && earlier < completed.length ? completed[earlier]?.node ?? null : null,
-          term: context.instantiate(first, completed)(named) });
-      }
+      const completed = context.complete(first, written, name.text);
       const instance = context.instantiate(first, completed);
       const bounds = parameters.map(p => p.constraint ? instance(p.constraint) : null);
       const terms = completed.map(c => c.term);

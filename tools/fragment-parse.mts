@@ -174,6 +174,10 @@ export class Gate {
    * the term TypeScript's evaluation denotes, or the reason it has none
    * (`computed-types.mts`). */
   readonly computedTypes = new Map<string, TypeTerm | { refused: string }>();
+  /** The omitted arguments of the file's references to declarations, by
+   * span: each the parameter's default at the arguments before it, or the
+   * reason it has none. */
+  readonly completions = new Map<string, TypeTerm[] | { refused: string }>();
   /** The computed keys of the file's annotations' type literals, by span of
    * the key expression: the `unique symbol` each names, as the declaration
    * document lists it, or the reason it names none. */
@@ -620,9 +624,12 @@ export class Gate {
               : `${declared.required} to ${declared.total}`;
             this.fail(node, `type '${name}' needs ${count} type argument(s)`);
           }
+          const omitted = args.length < declared.total ? this.completions.get(`${span[0]}:${span[1]}`) : [];
+          if (!omitted) return this.fail(node, `type '${name}' has no completion of its omitted arguments`);
+          if ("refused" in omitted) return this.fail(node, omitted.refused);
           return { k: "reference", reference: { name, span,
             arguments: args.map(arg => this.span(arg)), target: declared.declaration },
-            args: args.map(read), span };
+            args: [...args.map(read), ...omitted], span };
         }
         if (node.typeArguments?.length) this.fail(node, "unknown type alias");
         if (!this.hasTypeParam(name)) this.fail(node, "unknown type parameter");
@@ -1412,6 +1419,7 @@ export function parseFile(file: string, carriesContext = false,
         restSlice: ([start, end]) => gate.slices.add(`${start}:${end}`),
         computed: computedNodes.map(node => gate.span(node)),
         computedType: ([start, end], result) => gate.computedTypes.set(`${start}:${end}`, result),
+        completion: ([start, end], result) => gate.completions.set(`${start}:${end}`, result),
         symbolNames: symbolNameNodes.map(node => gate.span(node)),
         keyTypes: keyTypeNodes.map(node => gate.span(node)),
         keyType: ([start, end], keys) => gate.keyTypes.set(`${start}:${end}`, keys),
@@ -1475,7 +1483,7 @@ export function parseFile(file: string, carriesContext = false,
       const node = [...importNodes, ...localNodes, ...globalNodes].find(n =>
         n.getStart(source) === root.binding.span[0]) ?? first;
       gate.registerDeclaredType(root.binding.local,
-        definition.parameters.filter(p => p.default === null).length,
+        definition.parameters.filter(p => !p.defaulted).length,
         definition.parameters.length, identity, node,
         definition.expression ?? gate.fail(first, `a root without an equation: ${identity.module}#${identity.name}`));
     }

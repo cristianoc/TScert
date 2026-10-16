@@ -83,7 +83,7 @@ partial def declHead (i : Nat) : M Nat := do
   alloc s!"decl|{i}" { name := d.name, kind, kinds := List.replicate d.parameters.size .value }
     fun h => some (.declaration h i)
 
-/-- A reference: its arguments, with defaults completed, applied to the
+/-- A reference: its arguments, one per parameter, applied to the
 declaration's head or inlined into its alias. Its bounds are its written
 application's (`writtenObligations`). -/
 partial def reference (ctx : Ctx) (term : Json) : M Union := do
@@ -125,19 +125,15 @@ partial def packOf (ctx : Ctx) (term : Json) : M Union := do
     | none => throw refuse
   | _ => throw refuse
 
-/-- Complete an application's arguments with its defaults, which may mention
-earlier parameters. Its bound obligations are the written application's
+/-- An application's arguments: one per parameter. A reference carries
+every argument, the omitted ones completed with the defaults where the
+reference is read; its bound obligations are the written application's
 (`writtenObligations`). -/
 partial def application (ctx : Ctx) (i : Nat) (supplied : List Union) : M (List Union) := do
   let d := (← get).doc[i]!
-  if supplied.length > d.parameters.size then throw s!"{ctx.site}: {d.name} applied to too many type arguments"
-  let mut values := supplied.toArray
-  for p in d.parameters.toList.drop supplied.length do
-    fieldsExactly p ["name", "span", "default"]
-    let default ← field p "default"
-    if default == .null then throw s!"{ctx.site}: {d.name} applied without its required argument {← str p "name"}"
-    values := values.push (← lowerType { ctx with decl := some i, params := values, self := none, binders := [] } default)
-  return values.toList
+  if supplied.length != d.parameters.size then
+    throw s!"{ctx.site}: {d.name} applied to {supplied.length} type arguments of {d.parameters.size}"
+  return supplied
 
 /-- A declaration at arguments: its head applied, or its alias inlined. An
 alias met again before a constructor is an unguarded cycle (§8.3). -/

@@ -375,10 +375,10 @@ let encode (proposal : Proposal_types.t) =
         "optional",Array (List.map labels sequence.optional_elements);
         "rest",(match sequence.rest with None -> Null | Some t -> labels t);
         "readonly",Bool false;"presence",String "dense"];"rest",Array []]]]))]
-  (* An application names its declaration by position, with every argument:
-     one left to its default is that default, at the earlier arguments, so
-     `IteratorResult<number>` and `IteratorResult<number, unknown>` are one
-     label. A nullary declaration's label has no arguments. *)
+  (* An application names its declaration by position, with every argument,
+     as each reference carries them: the omitted ones completed with the
+     defaults where the reference is read. A nullary declaration's label has
+     no arguments. *)
   and declaration_labels id args =
     let rec find k = function
       | [] -> unsupported ("unknown declaration " ^ id)
@@ -386,18 +386,7 @@ let encode (proposal : Proposal_types.t) =
         if d.id<>id then find (k + 1) rest
         else if d.parameters=[] && args=[] then [Decl (k,[])]
         else begin
-          let rec complete previous supplied parameters defaults = match parameters,defaults with
-            | parameter::more,default::others ->
-              (match supplied,default with
-               | value::tail,_ -> complete ((parameter,Semantic.ValueArgument value)::previous) tail more others
-               | [],Some value ->
-                 let value = Inference.substitute (List.rev previous) value in
-                 complete ((parameter,Semantic.ValueArgument value)::previous) [] more others
-               | [],None -> None)
-            | [],[] when supplied=[] -> Some (List.rev_map (fun (_,a) -> match a with
-                | Semantic.ValueArgument t -> t | _ -> assert false) previous)
-            | _ -> None in
-          match complete [] args d.parameters d.defaults with
+          match if List.length args = List.length d.parameters then Some args else None with
           | Some args ->
             (* A packed parameter's argument with its argument lists: those
                of its array's tuple contract, or a binder's own. *)

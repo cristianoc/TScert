@@ -24,7 +24,12 @@ def definitions (document : Json) : Except String (Array Definition) := do
   (← arr document "definitions").mapM fun j => do
     fieldsExactly j ["declaration", "parameters", "bases", "expression"]
     let identity ← field j "declaration"
-    return ⟨identity, ← str identity "name", ← arr j "parameters", ← arr j "bases", ← field j "expression"⟩
+    let parameters ← arr j "parameters"
+    for p in parameters do
+      fieldsExactly p ["name", "span", "defaulted"]
+      let _ ← str p "name"
+      let _ ← bool p "defaulted"
+    return ⟨identity, ← str identity "name", parameters, ← arr j "bases", ← field j "expression"⟩
 
 /-- `ArrayProto`'s identity, the synthetic declaration array types name. -/
 def arrayProtoIdentity : Json :=
