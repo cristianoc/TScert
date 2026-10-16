@@ -120,14 +120,22 @@ export type TypeDefinition = {
   expression: TypeTerm | null;
 };
 /** A type application written in source syntax, `D<σ⃗>`, which obliges
- * each argument, completed with the defaults, to meet its parameter's
- * bound, in `scope`: binder groups from the outermost, each binder named
- * freshly (`name@module:offset`) and bounded by its assumption, the
- * arguments naming them by that name (`written-applications.mts`). */
+ * each argument, completed with the defaults, to meet its parameter's bound
+ * at those arguments, in `scope`: binder groups from the outermost, each
+ * binder named freshly (`name@module:offset`) and bounded by its assumption,
+ * the arguments and bounds naming them by that name
+ * (`written-applications.mts`). */
 export type WrittenApplication = {
   scope: SourceTypeParameter<TypeTerm>[][];
   reference: Reference;
+  /** The target's parameters, for diagnostics. */
+  parameters: { name: string; span: Span }[];
+  /** One per parameter: the argument written, or the default at the
+   * earlier arguments. */
   args: TypeTerm[];
+  /** One per parameter: its declared bound at the arguments (`B[X⃗ := σ⃗]`),
+   * or null where it declares none. */
+  bounds: (TypeTerm | null)[];
   /** Where it is written in the client file, or null elsewhere. */
   span: Span | null;
   /** The module and declaration it is written in, for diagnostics. */

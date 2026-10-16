@@ -1216,9 +1216,15 @@ obligation must hold for, so it only strengthens the check. A declaration's
 entries are checked once, under its parameters' bounds; a use obliges its
 arguments to meet them, and an instance is one assignment meeting them.
 
-The verifier binds each entry's groups as a unit's binders (`bindNames`),
-lowers the arguments there, and records one obligation per parameter at the
-arguments completed with the defaults (`application`), checked by the subtype
+An entry states, per parameter, its argument (the written one, or the
+default read at the earlier arguments) and its bound read at the arguments,
+$`\beta_i[\vec X:=\vec\sigma]`$: the front end reads the bound's syntax with
+the parameters as the arguments' terms, and `keyof X` of a parameter as the
+keys TypeScript computes for its concrete argument, so `Pick`'s
+`K extends keyof T` is read at `T`'s argument; one whose argument is a binder
+of the use site is refused, computed only at an instance. The verifier binds
+each entry's groups as a unit's binders (`bindNames`), lowers each argument
+and bound there, and records one obligation per parameter, checked by the subtype
 comparison after closing (`closeObligation`): each bounded placeholder $`p`$
 on the actual side becomes $`p\wedge B_p`$, its bound's placeholders closed
 in turn up to a cycle, and on the upper side stays $`p`$.
@@ -1237,9 +1243,7 @@ holds at every assignment meeting the recorded bounds.
 Lean checks every supplied entry; that the entries are exactly the
 applications written in the swept syntax, read faithfully, is the front
 end's (the declared-types bridge of [TRUST-REDUCTION](TRUST-REDUCTION.md#the-bridges)).
-A declaration reached only for its bounds, a computed alias or a library
-type read at its meaning (`Record`), is stated with its parameters, bounds
-and defaults and no equation. `any` in a user declaration reads as
+`any` in a user declaration reads as
 `unknown`, so `Box<any>` with a bounded `Box` is refused.
 
 Refused, each a limit of the mechanism: an argument computed over a binder,

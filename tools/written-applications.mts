@@ -44,6 +44,12 @@ export type SweepContext = {
   /** The term of `node` read where it is written, a type parameter read as
    * `binder` names it (undefined for one not in scope). */
   read(node: TypeNode, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TypeTerm;
+  /** The reader of a declaration's syntax at an application: its type
+   * parameters read as the arguments' terms, and `keyof P` of one, `P`'s
+   * argument a concrete type, as the keys TypeScript computes for that
+   * argument; a bound or default naming a parameter is read so, at the
+   * instance. */
+  instantiate(declaration: Node, args: readonly { term: TypeTerm; node: TypeNode }[]): (node: TypeNode) => TypeTerm;
   /** The written reference's edge to the declaration it names. */
   reference(name: ts.Identifier, args: readonly TypeNode[]): WrittenApplication["reference"];
   /** The declarations a member selection depends on: the top-level
@@ -274,19 +280,32 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (entity) reach([entity], node);
     if (listed.has(node)) return;
     listed.add(node);
-    const [first] = target;
-    const parameters = first && "typeParameters" in first ? childParameters(first) : [];
-    if (!parameters.some(p => p.constraint)) return;
+    const first = target.find(t => childParameters(t).length);
+    const parameters = first ? childParameters(first) : [];
+    if (!first || !parameters.some(p => p.constraint)) return;
     const read = resolve(env);
     const file = node.getSourceFile();
     const span: Span | null = file === context.client ? [node.getStart(file), node.end] : null;
     try {
-      const terms = args.map(arg => ts.isInferTypeNode(arg)
+      // Each argument, written or the default at the earlier ones; each
+      // bound at all of them.
+      const written = args.map(arg => ({ node: arg, term: ts.isInferTypeNode(arg)
         ? { k: "binder" as const, name: env.names.get(arg.typeParameter) ?? fresh(arg.typeParameter),
             span: spanOf(arg) }
-        : context.read(arg, read));
-      found.push({ scope: pruned(env, terms), reference: context.reference(name, args), args: terms, span,
-        site: site(node) });
+        : context.read(arg, read) }));
+      const completed = [...written];
+      for (const parameter of parameters.slice(written.length)) {
+        if (!parameter.defaultType)
+          throw Error(`${name.text}'s ${parameter.name.text} has neither an argument nor a default`);
+        completed.push({ node: parameter.defaultType, term: context.instantiate(first, completed)(parameter.defaultType) });
+      }
+      const instance = context.instantiate(first, completed);
+      const bounds = parameters.map(p => p.constraint ? instance(p.constraint) : null);
+      const terms = completed.map(c => c.term);
+      found.push({ scope: pruned(env, [...terms, ...bounds.filter((b): b is TypeTerm => !!b)]),
+        reference: context.reference(name, args),
+        parameters: parameters.map(p => ({ name: p.name.text, span: spanOf(p) })),
+        args: terms, bounds, span, site: site(node) });
     } catch (error) {
       if (error instanceof SweepError) throw error;
       throw new SweepError(span, `the written application ${node.getText(file)} in ${site(node)}: ` +

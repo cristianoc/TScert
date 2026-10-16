@@ -83,15 +83,14 @@ partial def declHead (i : Nat) : M Nat := do
   alloc s!"decl|{i}" { name := d.name, kind, kinds := List.replicate d.parameters.size .value }
     fun h => some (.declaration h i)
 
-/-- A reference: its arguments, with defaults completed and bounds checked,
-applied to the declaration's head or inlined into its alias. -/
+/-- A reference: its arguments, with defaults completed, applied to the
+declaration's head or inlined into its alias. Its bounds are its written
+application's (`writtenObligations`). -/
 partial def reference (ctx : Ctx) (term : Json) : M Union := do
   let i ← referenceIndex term
   let argTerms := (← arr term "args").toList
   let supplied ← argTerms.mapM (lowerType ctx)
-  let span : Span ← fromJson? (← field term "span")
-  let pos := if ctx.source && ctx.decl.isNone then some span else none
-  let values ← application ctx i supplied pos
+  let values ← application ctx i supplied
   -- A packed parameter's argument, its bound checked, is completed with its
   -- argument lists.
   let packed := (packedParameters (← get).doc[i]!.expression).eraseDups
@@ -127,10 +126,9 @@ partial def packOf (ctx : Ctx) (term : Json) : M Union := do
   | _ => throw refuse
 
 /-- Complete an application's arguments with its defaults, which may mention
-earlier parameters, and, for a written application (`record`), record its
-bound obligations (`writtenObligations`). -/
-partial def application (ctx : Ctx) (i : Nat) (supplied : List Union)
-    (pos : Option Span := none) (record : Bool := false) : M (List Union) := do
+earlier parameters. Its bound obligations are the written application's
+(`writtenObligations`). -/
+partial def application (ctx : Ctx) (i : Nat) (supplied : List Union) : M (List Union) := do
   let d := (← get).doc[i]!
   if supplied.length > d.parameters.size then throw s!"{ctx.site}: {d.name} applied to too many type arguments"
   let mut values := supplied.toArray
@@ -139,14 +137,6 @@ partial def application (ctx : Ctx) (i : Nat) (supplied : List Union)
     let default ← field p "default"
     if default == .null then throw s!"{ctx.site}: {d.name} applied without its required argument {← str p "name"}"
     values := values.push (← lowerType { ctx with decl := some i, params := values, self := none, binders := [] } default)
-  for index in [:d.parameters.size] do
-    let p := d.parameters[index]!
-    let bound ← field p "bound"
-    if record then
-      let upper ← if bound == .null then pure [← ground "source" sourceValueClauses]
-        else lowerType { ctx with decl := some i, params := values, self := none, binders := [] } bound
-      modify fun s => { s with obligations := s.obligations ++ [⟨values[index]!, upper, ctx.bounds,
-        s!"{ctx.site}: the type argument for {d.name}'s {p.getObjValD "name" |>.compress} at {(p.getObjValD "span").compress}", pos⟩] }
   return values.toList
 
 /-- A declaration at arguments: its head applied, or its alias inlined. An

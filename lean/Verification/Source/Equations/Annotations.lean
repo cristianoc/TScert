@@ -154,26 +154,33 @@ def bindNames (scope : List (String × Binding)) (bounds : List (Tree × Union))
 
 /-- A written application's bound obligations (SOURCE-CONTRACTS.md, "Written
 applications"): its scope's binder groups bound in order, each binder's
-fresh name a placeholder bounded by its assumption, its arguments lowered
-there, and each parameter's bound, at the arguments completed with the
-defaults, recorded where the application is written (`application`). -/
+fresh name a placeholder bounded by its assumption, and each argument (the
+written one or the default) within its parameter's bound at the arguments,
+both lowered there, recorded where the application is written. -/
 def writtenObligations (entry : Json) : M Unit := do
-  fieldsExactly entry ["scope", "reference", "args", "span", "site"]
+  fieldsExactly entry ["scope", "reference", "parameters", "args", "bounds", "span", "site"]
   let site ← str entry "site"
   let mut scope : List (String × Binding) := []
   let mut bounds : List (Tree × Union) := []
   for level in ← arr entry "scope" do
     let .arr tps := level | throw s!"{site}: a written application's scope is a list of binder groups"
     (scope, bounds) ← bindNames scope bounds entry tps
-  let reference ← field entry "reference"
-  let i ← referenceIndex (Json.mkObj [("k", "reference"), ("reference", reference),
-    ("args", ← field entry "args"), ("span", ← field reference "span")])
+  let name ← str (← field entry "reference") "name"
+  let parameters ← arr entry "parameters"
+  let args ← arr entry "args"
+  let uppers ← arr entry "bounds"
+  if args.size != parameters.size || uppers.size != parameters.size then
+    throw s!"{site}: a written application states one argument and one bound per parameter"
   let ctx : Ctx := { binders := scope, bounds, site := s!"{site}: a written application", source := true }
-  let args ← (← arr entry "args").toList.mapM (lowerType ctx)
   let pos : Option Span := match entry.getObjValD "span" with
     | .null => none
     | s => (fromJson? s).toOption
-  let _ ← application ctx i args pos (record := true)
+  for ((p, a), b) in (parameters.zip args).zip uppers do
+    fieldsExactly p ["name", "span"]
+    let actual ← lowerType ctx a
+    let upper ← if b == .null then pure [← ground "source" sourceValueClauses] else lowerType ctx b
+    modify fun s => { s with obligations := s.obligations ++ [⟨actual, upper, ctx.bounds,
+      s!"{ctx.site}: the type argument for {name}'s {p.getObjValD "name" |>.compress} at {(p.getObjValD "span").compress}", pos⟩] }
 
 /-- An array or tuple type's parts. -/
 def arrayParts (ctx : Ctx) (term : Json) : M (Option ArrayParts) := do

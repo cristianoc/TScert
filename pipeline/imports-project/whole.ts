@@ -119,3 +119,6 @@ export interface ByPropertyKey {
 }
 export type Keys<T> = keyof T;
 export declare const keyed: { [K in "a"]: number };
+
+// A `Pick` within its bound (`written-pick-value-import`).
+export declare const pickedOk: Pick<{ a: number; b: string }, "a">;

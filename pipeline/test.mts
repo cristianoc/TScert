@@ -217,8 +217,9 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   });
   assert.equal(weakened.status, 1, weakened.detail);
   assert.match(weakened.detail, /a written application: the type argument for B's "T" .*does not establish its declared bound/);
-  const relaxed = forgeDefinition(run("invalid-computed-bound-typeof"), "BoxOf", "forged-written-bound", d => {
-    for (const parameter of d.parameters) parameter.bound = null;
+  const relaxed = forgeDocument(run("invalid-computed-bound-typeof"), "forged-written-bound", fragment => {
+    const entry = must(fragment.declarations.applications.find(a => a.reference.name === "BoxOf"), "BoxOf<number>");
+    entry.bounds = entry.bounds.map(() => null);
   });
   assert.equal(relaxed.status, 0, relaxed.detail);
   // A written obligation whose comparison runs out of rounds is refused as

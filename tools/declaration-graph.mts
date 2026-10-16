@@ -16,7 +16,7 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 // intrinsics.mts declares the intrinsics this reader lists among the client's values: the trusted steps async functions, loops, spreads and patterns lower to.
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
-import { nameOf } from "./syntax.mts";
+import { childrenOf, nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
@@ -1672,6 +1672,27 @@ export function collectDeclarations(file: string, options: {
     // its bounds; a library one is stated for its bounds only.
     const typeDeclarationsOf = (name: Identifier): Node[] =>
       (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
+    // The keys of a concrete type, as `keyof` computes them: each property's
+    // name (a number literal for a canonical numeric one), each index's key
+    // type. A symbol-named property has no such key here.
+    const keysOfType = (type: Type, span: Span): TypeTerm => {
+      const parts: TypeTerm[] = [];
+      for (const property of checker.getPropertiesOfType(type)) {
+        const name = property.name;
+        if (name.startsWith("__@")) throw Error(`keyof of a type with a symbol-named member, ${name}, states no key here`);
+        parts.push(numericKey(name) === name
+          ? { k: "literal", name: "number", text: name, span } : { k: "literal", name: "string", text: name, span });
+      }
+      for (const info of checker.getIndexInfosOfType(type)) {
+        const key = info.keyType.flags;
+        if (key & TypeFlags.String) parts.push({ k: "atom", name: "string", span }, { k: "atom", name: "number", span });
+        else if (key & TypeFlags.Number) parts.push({ k: "atom", name: "number", span });
+        else if (key & TypeFlags.ESSymbol) parts.push({ k: "atom", name: "symbol", span });
+        else throw Error("keyof of a type with an index signature over a pattern states no key here");
+      }
+      const [only] = parts;
+      return !only ? { k: "atom", name: "never", span } : parts.length === 1 ? only : { k: "union", parts, span };
+    };
     const sweepScope = (at: Node, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TermScope => {
       const what = `${idOf(at.getSourceFile())}#${at.getText(at.getSourceFile())}`;
       const base = valueScope(at, what);
@@ -1719,8 +1740,6 @@ export function collectDeclarations(file: string, options: {
       return { declarations,
         members: () => exportsOf(target).map(e => entityOf(e) ?? { declarations: [], members: () => [] }) };
     };
-    const boundOnly = new Set<Node>();
-    const targets = new Map<string, TypeDeclaration>();
     let applications: WrittenApplication[];
     try {
       applications = writtenApplications({
@@ -1738,10 +1757,35 @@ export function collectDeclarations(file: string, options: {
         reference: (name, args) => {
           const node = lookup(name, name.text);
           const source = name.getSourceFile();
-          if (isLibraryModule(idOf(node.getSourceFile()))) boundOnly.add(node);
-          targets.set(JSON.stringify(identityOf(node)), node);
           return { name: name.text, span: [name.getStart(source), name.end],
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(node) };
+        },
+        instantiate: (declaration, args) => {
+          const source = declaration.getSourceFile();
+          const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
+          const parameters = childrenOf(declaration, "typeParameters").filter(ts.isTypeParameterDeclaration)
+            .map(p => p.name.text);
+          const argumentOf = (part: Node): { term: TypeTerm; node: TypeNode } | undefined => {
+            const index = ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && !part.typeArguments?.length
+              ? parameters.indexOf(part.typeName.text) : -1;
+            return index < 0 ? undefined : args[index];
+          };
+          const outer = valueScope(declaration, what);
+          const scope: TermScope = { ...outer,
+            named: (part, pos, read) => argumentOf(part)?.term ?? outer.named(part, pos, read),
+            computed: (part, pos, read) => {
+              // `keyof P`: the keys of P's argument as TypeScript computes
+              // them, for a concrete argument.
+              const argument = ts.isTypeOperatorNode(part) && part.operator === ts.SyntaxKind.KeyOfKeyword
+                ? argumentOf(part.type) : undefined;
+              if (!argument) return computedType(computedContext, part, pos, read);
+              const type = checker.getTypeFromTypeNode(argument.node);
+              if (!type || type.isTypeParameter() || (type.isUnionType() && type.getTypes().some(t => t.isTypeParameter())))
+                throw Error(`keyof over the type parameter ${argument.node.getText(argument.node.getSourceFile())} ` +
+                  "at a use site is computed only at an instance");
+              return keysOfType(type, pos);
+            } };
+          return node => typeTerm(scope, node, declaration);
         },
         resolve: name => {
           // The declarations a name denotes: TypeScript's symbol at its
@@ -1788,10 +1832,6 @@ export function collectDeclarations(file: string, options: {
       throw new DeclarationError(error instanceof SweepError ? error.span ?? [0, 0] : [0, 0],
         error instanceof Error ? error.message : String(error));
     }
-    const appliedTargets = applications.flatMap(a => {
-      const node = targets.get(JSON.stringify(a.reference.target));
-      return node ? [{ node, span: a.span ?? [0, 0] }] : [];
-    });
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
     const starts = [
@@ -1800,13 +1840,11 @@ export function collectDeclarations(file: string, options: {
         ({ node, span: values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0] })),
       ...contextualStarts,
     ];
-    // The targets of written applications last: one the graph reads
-    // otherwise is collected already.
-    for (const { node: start, span } of [...starts, ...appliedTargets]) {
+    for (const { node: start, span } of starts) {
       try {
         collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
-          keys: keyTypeOf, alias: aliasOf, awaited, boundOnly: node => boundOnly.has(node) });
+          keys: keyTypeOf, alias: aliasOf, awaited });
       } catch (error) {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
@@ -2410,9 +2448,6 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   awaited: NonNullable<TermScope["awaited"]>;
   /** A mapped type's keys as TypeScript computes them. */
   keys: NonNullable<TermScope["keys"]>;
-  /** Whether a declaration is stated for its bounds only: a library type a
-   * written application names that nothing else reads. */
-  boundOnly: (node: TypeDeclaration) => boolean;
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -2513,7 +2548,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // definition states its parameters, their bounds and defaults, which its
     // written applications are checked against.
     // (A predicate's false branch would narrow `node` to no alias.)
-    const computedEquation: boolean = computedAlias(node, context.alias) || context.boundOnly(node);
+    const computedEquation: boolean = computedAlias(node, context.alias);
     if (computedEquation) {
       definitions.push({ declaration: identity, parameters, bases: [], expression: null });
       continue;
