@@ -1672,7 +1672,7 @@ the declaration after them; the operand's name is written nowhere in the
 outermost function holding the loop (the file, at the top level), and a
 chain of reads is read from a body that runs no code and writes no
 property, so each read finds the object the loop enumerates and the value
-the step read (`forInEntryReads` in `tools/fragment-parse.mts`). A read
+the step read (`forInEntryReads` in `tools/fragment-support.mts`). A read
 after a call is the dictionary's read, `V | undefined`: the call may have
 removed the key. `try B catch (e) C finally
 F` names $`C`$'s entry as the handler of $`B`$'s nodes that may throw, with `e`

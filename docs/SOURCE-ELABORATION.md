@@ -283,7 +283,7 @@ signatures ([generic methods](SOURCE-CONTRACTS.md#generic-methods)), and its clo
 generic closure, checked once at a scheme received by the instance
 (`funScheme`), which the prototype holds. The parser names the closure's
 binder $`k`$ by the member's key and the position (`"m"#k`,
-`fragment-parse`'s `lambda`), and the producer's scheme row for the
+the parser's `lambda` in `fragment-expressions.mts`), and the producer's scheme row for the
 prototype's field binds those names; the member's scheme binds the
 declaration's. The prototype's scheme covers the member bound to the
 instance up to renaming the member's binders to its own
