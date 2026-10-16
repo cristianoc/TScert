@@ -256,7 +256,11 @@ type constructors and declaration references; separate modules own
 [Construction state](lean/Verification/Source/Equations/State.lean) carries pending
 rows and bound obligations through those stages.
 
-The main Lean entry points are:
+The Lean directories group modules by subject: `Semantics`, `Types`,
+`Programs` and `Source`, the source boundary's `Lowering`, `Equations` and
+`Claims` families in subdirectories of `Source`. Imports cross these
+directories in both directions, so a module's directory does not bound what it
+may import. The main Lean entry points are:
 
 | Area | Entry points |
 | --- | --- |
@@ -264,7 +268,7 @@ The main Lean entry points are:
 | Semantic families and graph types | [Types](lean/Verification/Types/Types.lean), [PositiveGraphs](lean/Verification/Types/PositiveGraphs.lean), [PositiveRules](lean/Verification/Types/PositiveRules.lean) |
 | Program typing and checked evidence | [ProgramTyping](lean/Verification/Programs/ProgramTyping.lean), [ProgramCertificates](lean/Verification/Programs/ProgramCertificates.lean), [CertificateProducer](lean/Verification/Programs/CertificateProducer.lean) |
 | Source boundary and CLI | [Fragment](lean/Verification/Source/Fragment.lean), [SourceExtraction](lean/Verification/Source/SourceExtraction.lean), [SourceClaimJson](lean/Verification/Source/Claims/Json.lean), [RequestCli](lean/Verification/Source/RequestCli.lean) |
-| Other code and tests | [OCaml producer](ocaml-producer/README.md), [Node tools](tools/), [regression index](tests/README.md) |
+| Other code and tests | [OCaml producer](ocaml-producer/README.md), [trusted Node front end](tools/), [development tools](dev/), [regression index](tests/README.md) |
 
 Claims documents preserve current-content assertions such as
 `{ value: boolean = (true) }`, separately from the storage invariant. Supplied
