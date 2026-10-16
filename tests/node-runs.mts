@@ -55,6 +55,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-own-property-descriptor-key-object: the actual source returns 1 despite its 0 contract");
   assert.equal(runExample("invalid-own-property-descriptor-value", `first({ a: "x" })`), "x",
     "invalid-own-property-descriptor-value: the descriptor's value is a string returned at number");
+  assert.equal(runExample("invalid-record-index-named-key", "classOf([], 0)"), undefined,
+    "invalid-record-index-named-key: the element past the end is undefined, whose member is undefined at string");
   // The further actual a rest of strings takes is a number.
   assert.equal(runExample("invalid-rest-function-longer-signature", `wrong()("s", 1)`), 1,
     "invalid-rest-function-longer-signature: the number is returned at string");
