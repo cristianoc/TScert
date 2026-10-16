@@ -145,6 +145,15 @@ export function expr(this: Gate, node: Expression): Expr {
       lit: { a: "booleanlit", v: "false" },
     };
 
+  // `/P/F` allocates a regex each time it is evaluated: a call of the
+  // intrinsic of its shape (`regexp.mts`): the call at the literal, the
+  // intrinsic read at its opening slash.
+  if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) {
+    const intrinsic = gate.regexps.get(gate.span(node).join(":"));
+    if (!intrinsic) gate.fail(node, "a regular expression literal the declaration graph did not read");
+    const start = node.getStart(gate.file);
+    return gate.intrinsic(intrinsic, gate.span(node), [start, start + 1], []);
+  }
   if (ts.isStringLiteral(node))
     // `text` is the DECODED value, which is what a literal type denotes.
     return {
@@ -603,6 +612,16 @@ export function expr(this: Gate, node: Expression): Expr {
     // which a static initializer has not yet.
     if (staticOwner !== undefined && !isStatic && gate.staticInitOf(target)?.cls === staticOwner)
       gate.fail(node, STATIC_INIT_CLASS);
+    // `s.m(o, …)`, a string method dispatching to its object argument's
+    // well-known-symbol method: `%Dispatch:m%(s, o, …)`, evaluated as
+    // written (`regexp.mts`), the intrinsic read at the member's name.
+    const dispatch = gate.dispatches.get(gate.span(node).join(":"));
+    if (dispatch && ts.isPropertyAccessExpression(target)) {
+      if (node.arguments.some((arg) => ts.isSpreadElement(arg)) || node.typeArguments?.length)
+        gate.fail(node, "a string method dispatching to a regex takes ordinary arguments");
+      return gate.intrinsic(dispatch, gate.span(node), gate.span(target.name),
+        [gate.expr(target.expression), ...node.arguments.map((arg) => gate.expr(arg))]);
+    }
     if (
       (ts.isPropertyAccessExpression(target) && !isStatic) ||
       ts.isElementAccessExpression(target)

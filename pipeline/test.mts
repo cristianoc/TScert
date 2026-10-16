@@ -1277,3 +1277,22 @@ for (const [file, arity, accepted] of [
   refusedAt(artifacts, forged, "forged-narrowed-promise", "a guard closure's claim must offer its written promise over its annotated parameters");
   process.stdout.write("guard closure's promise claimed over a narrower parameter: refused\n");
 }
+{
+  // A regex literal's shape is the declared type of the intrinsic its call
+  // names (`%RegExp:Σ%`, `regexp.mts`), which the front end lists from the
+  // literal's pattern. A parser document naming at a literal a shape no
+  // declaration lists (three groups always matched, where `/(\w+):/` has one)
+  // is refused at both verifier entry points.
+  const artifacts = run("regexp-structural");
+  const text = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  const call = /"callee":\{"k":"id","pos":\[\d+,\d+\],"name":"%RegExp:1%"\}/.exec(text)?.[0];
+  assert.ok(call, "a literal's call names its shape");
+  const ast = join(artifacts, "forged-regexp-shape.json");
+  writeFileSync(ast, text.replace(call, call.replace("%RegExp:1%", "%RegExp:111%")));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-regexp-shape", ast);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /%RegExp:111%/);
+  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, ast),
+    /%RegExp:111%/);
+  process.stdout.write("forged regex shape: a literal naming a shape no declaration lists refused\n");
+}

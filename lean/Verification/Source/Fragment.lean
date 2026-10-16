@@ -66,7 +66,13 @@ def inKeyRefusal (key : String) : Option String :=
     "flatMap", "map", "every", "some", "reduce", "reduceRight", "toReversed", "toSorted",
     "toSpliced", "with"]
   let functionKeys := ["name", "prototype", "apply", "bind", "call", "arguments", "caller"]
+  -- A regular expression owns `lastIndex` and inherits the rest from
+  -- `RegExp.prototype`; the model's regex states methods and no property.
+  let regexpKeys := ["lastIndex", "source", "flags", "global", "ignoreCase", "multiline", "sticky",
+    "unicode", "unicodeSets", "dotAll", "hasIndices", "exec", "test", "compile"]
   if reservedSourceKey key then some "the model reserves this key"
+  else if regexpKeys.contains key then
+    some "a regular expression owns it or inherits it from RegExp.prototype"
   else if objectKeys.contains key then some "every object inherits it from Object.prototype"
   else if arrayKeys.contains key then some "an array owns it or inherits it from Array.prototype"
   else if functionKeys.contains key then some "a function owns it or inherits it from Function.prototype"
@@ -381,12 +387,14 @@ def iterateName : String := "%Iterate%"
 
 /-- The iteration intrinsics, one per kind of host iterable (`intrinsics.mts`):
 an array's, a string's (by code point), a `Set`'s, a `Map`'s, a host
-collection iterator's, and the entries a `for...in` over a dictionary visits.
+collection iterator's, a native regex's match iterator, and the entries a
+`for...in` over a dictionary visits.
 Each is `() => { readonly value: E } | null` of the iterable at its
 signature; none has a `return`, so an early exit calls nothing. A loop names
 one of them and no other value. -/
 def iterateNames : List String :=
-  [iterateName, "%Iterate:string%", "%Iterate:Set%", "%Iterate:Map%", "%Iterate:Iterator%", "%Iterate:ForIn%"]
+  [iterateName, "%Iterate:string%", "%Iterate:Set%", "%Iterate:Map%", "%Iterate:Iterator%",
+    "%Iterate:RegExpString%", "%Iterate:ForIn%"]
 
 /-- The name an optional chain's body reads its saved receiver by: no source
 identifier is spelled so. -/

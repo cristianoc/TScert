@@ -35,6 +35,7 @@ import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, t
   type SeenDiagnostic }
   from "./declaration-graph.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, forInName, iterateForInName, iterateName, literalTerm } from "./intrinsics.mts";
+import { isDispatchMethod } from "./regexp.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writtenElement } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
 import * as expressions from "./fragment-expressions.mts";
@@ -209,6 +210,11 @@ export class Gate {
   readonly methodTargets = new Set<string>();
   /** The element reads `%ElementAt%` answers. */
   readonly hostElements = new Set<string>();
+  /** Each regular expression literal's intrinsic, `%RegExp:Σ%`, by span. */
+  readonly regexps = new Map<string, string>();
+  /** Each string method call dispatching to its object argument's
+   * well-known-symbol method, by the call's span: `%Dispatch:m%`. */
+  readonly dispatches = new Map<string, string>();
   /** The reads `for...in` bodies start with at their keys
    * (`forInEntryReads`), by span: the hidden name of the entry the loop's
    * step yields. */
@@ -1070,8 +1076,10 @@ export function parseFile(file: string, carriesContext = false,
     if (firstArray) return;
     const arrayReference = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) &&
       (node.typeName.text === "Array" || node.typeName.text === "ReadonlyArray");
+    // A regex's matches and splits are arrays.
     if (ts.isArrayTypeNode(node) || ts.isTupleTypeNode(node) || ts.isArrayLiteralExpression(node) || arrayReference ||
-        ts.isForOfStatement(node) || (ts.isParameterDeclaration(node) && !!node.dotDotDotToken)) {
+        ts.isForOfStatement(node) || (ts.isParameterDeclaration(node) && !!node.dotDotDotToken) ||
+        node.kind === ts.SyntaxKind.RegularExpressionLiteral) {
       firstArray = node;
       return;
     }
@@ -1131,6 +1139,25 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findElementReads);
   };
   if (!carriesContext) findElementReads(source);
+  // Regular expression literals: each is a call of the intrinsic its shape
+  // names, which the declaration graph lists.
+  const regexpNodes: Node[] = [];
+  const findRegExps = (node: Node): void => {
+    if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) regexpNodes.push(node);
+    node.forEachChild(findRegExps);
+  };
+  if (!carriesContext) findRegExps(source);
+  // Calls of the string methods that dispatch to an object argument: their
+  // types decide whether the call is `%Dispatch:m%`.
+  const dispatchNodes: Node[] = [];
+  const findDispatches = (node: Node): void => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+        isDispatchMethod(node.expression.name.text) && node.arguments.length > 0 && !node.questionDotToken &&
+        !node.expression.questionDotToken)
+      dispatchNodes.push(node);
+    node.forEachChild(findDispatches);
+  };
+  if (!carriesContext) findDispatches(source);
   // An identifier as an element key, `e[k]`, may name a `unique symbol`
   // constant, and `e[S.k]` a `unique symbol` property, such as the
   // well-known `Symbol.iterator`: TypeScript decides, and such a key joins
@@ -1329,12 +1356,14 @@ export function parseFile(file: string, carriesContext = false,
       staticTypeNodes.length ||
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || elementReadNodes.length) {
+      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || elementReadNodes.length ||
+      regexpNodes.length || dispatchNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? elementReadNodes[0];
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? elementReadNodes[0] ??
+      regexpNodes[0] ?? dispatchNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
@@ -1406,6 +1435,10 @@ export function parseFile(file: string, carriesContext = false,
         methodTarget: ([start, end]) => gate.methodTargets.add(`${start}:${end}`),
         elementReads: elementReadNodes.map(node => gate.span(node)),
         hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
+        regexps: regexpNodes.map(node => gate.span(node)),
+        regexp: ([start, end], intrinsic) => gate.regexps.set(`${start}:${end}`, intrinsic),
+        dispatchCalls: dispatchNodes.map(node => gate.span(node)),
+        dispatch: ([start, end], intrinsic) => gate.dispatches.set(`${start}:${end}`, intrinsic),
         restTargets: restTargets.map(({ node, index }) => ({ span: gate.span(node), index })),
         restSlice: ([start, end]) => gate.slices.add(`${start}:${end}`),
         computed: computedNodes.map(node => gate.span(node)),

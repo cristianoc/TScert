@@ -551,3 +551,33 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("class-rest-binder", "paired"), 7);
   assert.throws(() => runExample("invalid-class-rest-binder-set", "lost"), /reading 'toFixed'/);
 }
+{
+  // Regular expressions: what the refused programs return under Node, each
+  // against the type TypeScript gives it.
+  // A capture under an alternative, after a `[^]` class, or after a `\k`
+  // that is a letter outside Unicode mode, is `undefined`, typed `string`.
+  assert.equal(runExample("invalid-regexp-unmatched-group", `first("b")`), undefined);
+  assert.equal(runExample("invalid-regexp-class-alternative", `first("z")`), undefined);
+  assert.equal(runExample("invalid-regexp-legacy-escape", `first("k<a")`), undefined);
+  assert.equal(runExample("invalid-regexp-structural-capture", `key(/(a)|b/, "b")`), undefined);
+  // A split splices an unmatched capture in as `undefined`, typed `string`.
+  assert.equal(runExample("invalid-regexp-split-captures", `parts("a1b")[2]`), undefined);
+  // `lastIndex` is a regex's own property, not enumerable: `in` finds it, a
+  // copy lacks it.
+  assert.equal(runExample("invalid-regexp-lastindex-in", "hasState(/a/)"), true);
+  assert.equal(runExample("invalid-regexp-lastindex-view", "viewed()"), undefined);
+  // `matchAll` converts its argument's `flags` before dispatching: client
+  // code runs on a structural regex.
+  assert.equal(runExample("invalid-regexp-structural-matchall", `const seen = { ran: false };
+    count({ [Symbol.match]: true, flags: { toString() { seen.ran = true; return "g"; } },
+      [Symbol.matchAll]: () => [][Symbol.iterator]() }, "x");
+    seen.ran`), true);
+  // `compile` gives an existing regex another pattern: one group fewer.
+  assert.equal(runExample("invalid-regexp-compile", `recompiled().exec("c").length`), 1);
+  // A subclass's `exec` is what `replace` calls: no match is replaced.
+  assert.equal(runExample("invalid-regexp-subclass", "make()"), "ab");
+  // The positive cases run as their types say.
+  assert.equal(JSON.stringify(runExample("regexp-literals", `[assignment("k=v"), digits("-"), escape("<\`a\`>"),
+    words(" a b "), tokens("ab 12"), count("a1b22")]`)),
+    JSON.stringify([["k", "v"], "none", "&lt;<code>a</code>>", ["a", "b"], "<w>ab</w>12@3", 3]));
+}

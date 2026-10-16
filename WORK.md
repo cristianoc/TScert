@@ -27,7 +27,8 @@ design, not its progress.
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 14 of 245 verify (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
+| [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 20 of 261 verify in `tools/`, 2 of 23 in `dev/` (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -118,11 +119,15 @@ as a pack and as an array value (`...args: T`, `args: T`): a binder whose instan
 arrays or tuples of required positions, its pack meaning that tuple contract's lists, so an
 entry collects the fresh store at it and a spread of its value gives a list in the pack. Explicit type arguments on an element call,
 which reach an element only as a generic closure's quantified claim.
-User guards: a generic guard, which needs a quantified promise signature in
-the producer's encoding; a promise about a property (`isWord(node.name)`),
-which needs a no-write effect beside the promise, proved from a source
-guard's body or, for a declared library guard, derived from its source by the
-compiler-API contract, and a typed current-content fact for the property. A static
+User guards and assertion functions: the promise is a contract a
+conjunction of arrows states, `(x: A) => boolean` with
+`(x: Exclude<A, T>) => false` (an assertion function's `=> never`), which the
+body is checked at, as a closure at each of its signatures; a caller narrows
+through a fact the call leaves tying its result slot to its argument slot,
+"an argument in `Exclude<A, T>` gave `false`", which the branch on the
+result turns into a slice of the argument. Such a fact is about a type's
+meaning, world- and level-indexed, where current-content facts are not; it
+needs its own place in the knowledge a statement entry states. A static
 initializer calling a static method reading its class, or constructing it
 where construction reads an earlier static field, which runs the class's code
 before the class value exists (a construction reading a later one reads
@@ -171,25 +176,24 @@ options are in [TRUST-REDUCTION](docs/TRUST-REDUCTION.md).
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 245 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 261 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-16):
 
 - a namespace import, `import * as ts` (126);
-- a missing annotation (19), an unannotated closure parameter typed `any` by
-  its context (5);
+- a missing annotation, or a value TypeScript types `any` (35);
 - the compiler API's own declarations, `SyntaxKind`, `TypeFlags`,
-  `NodeFlags`, `SymbolFlags` (12), and other unannotated declared values (9);
-- regular expression literals (8), module-level `let` and `var` (5);
-- library globals absent from the overlay: `Reflect`,
-  `Object.getOwnPropertyDescriptor`, `Array.from`, `Object.fromEntries` (5);
-- `Exclude<Clause, string>`, whose members name the alias's parameter `L` and
-  are another type at each instance (1).
+  `NodeFlags`, `SymbolFlags` (13);
+- library globals absent from the overlay: `filter(Boolean)`, `Reflect`,
+  `String.fromCodePoint`, `Object.getOwnPropertyDescriptor` (14);
+- a type reference to the parser's `EnumMember` (5), module-level `let` and
+  `var` (5), a mapped type whose value names its key (3), `new RegExp` (1).
 
-Four slices reach the producer and fail there, and twenty fail in search,
-among them three guards whose promise `v is Record<string, unknown>` (or a
-list of such) rests on `typeof v === "object"` or `Array.isArray(v)`, which
-leave an `unknown` `v` without a narrower type.
+Seven slices reach the producer and fail there, and twenty-one fail in
+search. Of the 23 functions of `dev/`, the record tools and the lowering
+dump, 2 verify; the first blockers there are `filter(Boolean)` (6),
+`Math.max` and `Math.min` (5), destructuring (2) and a closure claim not
+derived (2).
 
 The goal is every function of the repository's own TypeScript verified:
 `tools/`, `pipeline/`, `tests/` and `dev/`, about 21,000 lines (the sources
@@ -208,13 +212,26 @@ against the fragment (2026-10-16) gives the work, each item its own design:
   326. Its enums are literal unions, its flag sets (`NodeFlags`, `TypeFlags`,
   `SymbolFlags`) numbers tested by bit, and its node methods
   (`forEachChild`, `getText`, `getStart`) contracts with their callbacks.
+  The guards need guard signatures, the next item, to cross modules.
+- **Guard signatures.** A guard's promise is part of its function type,
+  proved at its definition and consumed at a call, for any promised type
+  and across modules.
 - **Bounds of every alias application.** An alias with a bounded parameter
   keeps the obligation that its arguments meet their bounds, whatever its
   body.
-- **Regular expressions.** 633 literals (most in `pipeline/cases.mts`) and
-  `test`, `exec`, `match`, `matchAll`, `replace` and `split` with them: a
-  `RegExp` object, the `lastIndex` state of a global or sticky one, and match
-  arrays whose unmatched groups are `undefined`.
+- <a id="regular-expressions-left"></a>**Regular expressions left.** A
+  literal, `exec`, `test` and the string methods dispatching to a regex are
+  admitted ([regular expressions](docs/SOURCE-CONTRACTS.md#regular-expressions)).
+  Left: a replacement callback, whose argument list follows the shape
+  (`(match, p₁ … pₙ, offset, input[, groups])`, every match collected before
+  the first call, its result a string); `new RegExp(p, f)` of strings, a
+  native regex of the conservative shape; a regex's properties, `lastIndex`
+  (own, not enumerable, a number) and the accessors `source` and `flags`,
+  read through reserved host-relative members so that no record view states
+  them, with `in`, patterns and computed reads of their keys accounted for;
+  a loop over a structural iterator TypeScript types `RegExpStringIterator`,
+  through the iterator protocol; and the same native mark on `SetIterator`
+  and `MapIterator`, whose loops are chosen by TypeScript's type alone.
 - **The library globals left.** `Array.prototype.flatMap` (79 calls) and
   `flat`, `String.prototype.match`, `matchAll`, `padEnd`, `padStart` and
   `search`, `Object.fromEntries`, `hasOwn`, `getOwnPropertyDescriptor` and
