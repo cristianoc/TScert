@@ -77,7 +77,7 @@ export function parseRecord(text: string, commit: { sha: string; author: string;
 
 
 function pushProse(sections: Section[]): Section {
-  const s = { name: "", text: [], block: [] };
+  const s: Section = { name: "", text: [], block: [] };
   sections.push(s);
   return s;
 }
@@ -390,7 +390,7 @@ function card(r: CommitRecord): string {
       : k === "Tests" && /(^|\s)([+-]|forged:)/.test(v) ? tests(v)
       : k === "Trust" ? `<span class="${v === "none" ? "none" : "trust"}">${esc(v)}</span>`
       : inline(v.replace(/; /g, " · "));
-    return `<dt>${k}</dt><dd>${shown}</dd>`;
+    return [`<dt>${k}</dt><dd>${shown}</dd>`];
   });
   if (facts.length) out.push(`<dl class="facts">${facts.join("")}</dl>`);
   const total = r.stat.at(-1);
