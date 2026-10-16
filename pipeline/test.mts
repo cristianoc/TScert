@@ -1198,6 +1198,26 @@ for (const [file, marker, arity, accepted] of [
 }
 
 {
+  // An optional call's body is claimed at no value only where its receiver
+  // is only nullish. The loop's receiver holds the array from the second
+  // iteration on: the body's member read and call forged to no value are
+  // refused, whatever the producer proposes.
+  const artifacts = run("optional-call-loop-cell");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const start = source.indexOf("?.push");
+  const forged = claims.functions.flatMap(f => f.expressions).filter(e => e.pos[0] === start);
+  assert.ok(forged.length > 0, "the optional body's claims");
+  // The empty union: no value.
+  for (const e of forged) e.type = [];
+  const input = writeClaims(artifacts, "forged-dead-optional-body", claims);
+  const produce = produceWith(artifacts, input, "forged-dead-optional-body");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  process.stdout.write("forged dead optional body: refused where the receiver may be present\n");
+}
+
+{
   // A module constant's arrow is claimed at its signature extended by a rest
   // of `unknown`, which Lean checks against the arrow itself: the extension
   // forged to take `unknown` at the arrow's `string` parameter is refused

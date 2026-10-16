@@ -204,15 +204,15 @@ dump, 5 verify; the first blockers there are a callback writing only
 locations it allocated, a `let` cell or a fresh regex's `lastIndex`, which
 the effect checker does not certify (see [contract
 completeness](#restoring-completeness); 5: effects, tests, math, mathRoles,
-lowering, through `esc`, `highlight` and `afterRelation`), a value of `undefined` written to an
-optional field (3: examplesOf, and readRecord and group through it), a
-nested conditional of literals whose type the producer widens (mathTokens),
-a guarded element read (mathRoles), an optional call through a `let` the loop
-assigns (`optional-call-loop-cell-refused`, 3: section, card, pageBody), a
-`for...of` binding destructured (2), a conditional type over a type
-parameter, `KeysOf<T>` (2, lowering-dump), a closure constant created before
-a constant its code reads (`initialization-closure-constant-refused`, 1:
-rules), and an array literal spreading a `Set` and a map's keys (1: summary).
+lowering, through `esc`, `highlight` and `afterRelation`), a closure
+constant created before a constant its code reads
+(`initialization-closure-constant-refused`, 3: rules, section, card), a
+value of `undefined` written to an optional field (3: examplesOf, and
+readRecord and group through it), a `for...of` binding destructured (2), a
+conditional type over a type parameter, `KeysOf<T>` (2, lowering-dump), an
+array literal spreading a `Set` and a map's keys (2: summary, pageBody), and
+a nested conditional of literals whose type the producer widens
+(mathTokens).
 
 Two forms of the record tools are rewritten for a verifier limit, not
 for a departure from the fragment; each rewrite is reverted when its limit

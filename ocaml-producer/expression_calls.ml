@@ -554,6 +554,11 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | Json.Array [Json.Number first;Json.Number last] -> "[" ^ first ^ "," ^ last ^ ")"
           | _ -> Proposal_diagnostics.unsupported "call has an invalid source span" in
         Proposal_diagnostics.unsupported ("call at " ^ location ^ ": value has no admitted call signature")
+      (* A callee of no value, as an optional call's on a receiver a pass
+         finds only nullish: the call is never reached, and gives no value.
+         A loop's later pass, where the receiver may be present, types it;
+         Lean checks the claims of the last. *)
+      | Atoms [] when spreads = [] -> List.iter (fun a -> ignore (expr env a)) args; Atoms []
       | _ -> Proposal_diagnostics.unsupported "call requires a single arrow the arguments can call"))
     | _ -> Json.fail "expression dispatched to the wrong typing family"
 end
