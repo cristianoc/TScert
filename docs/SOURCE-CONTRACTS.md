@@ -1177,9 +1177,14 @@ a member path's step TypeScript gives no symbol resolves to the members of
 that name of what the step before it denotes. A member selection depends on
 the members it selects: an indexed access on its keys' members (every member
 where its keys are no literals), a computed alias's application on every
-member of its arguments. Each declaration reached is swept from its
-top-level declaration, with the binders of its enclosing declarations,
-whatever path reached it; a name resolving to nothing is refused. The standard library's declarations are not
+member of its arguments; a module's or a namespace's member is its export
+of that name. The unit swept is exactly the declaration reached (a member, a
+property, a method, a variable's declarator, a type), its annotations and
+type syntax, with the binders of its enclosing declarations in scope,
+whatever path reached it; never its enclosing statement, its executable body
+or its initializer. A module or a namespace contributes nothing by itself,
+only the members a further step selects. A name resolving to nothing is
+refused. The standard library's declarations are not
 swept: the applications inside them belong to the reviewed library
 declarations. A call's type arguments are swept for the applications written
 in them; whether they meet the callee's binder bounds is the instantiation of

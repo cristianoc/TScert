@@ -71,14 +71,17 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   const listed = new Set<Node>();
   const swept = new Set<Node>();
   const queue: Node[] = [];
-  // Each declaration reached is swept from its top-level declaration, with
-  // the binders of its enclosing declarations in scope. The client file's
-  // code is swept as a root; its interfaces and aliases where something
-  // names them.
+  // Each declaration reached is swept itself (a member, a property, a
+  // method, a variable's declarator, a type), its annotations and type
+  // syntax, with the binders of its enclosing declarations in scope
+  // (`enclosing`); a module or a namespace contributes nothing by itself,
+  // only the members a further step selects. The client file's code is
+  // swept as a root; its interfaces and aliases, and their members, where
+  // something reaches them.
   const reach = (nodes: readonly Node[]): void => {
-    for (const node of nodes.map(topLevel))
-      if (!context.library(node) && !swept.has(node) && (node.getSourceFile() !== context.client ||
-          ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node))) {
+    for (const node of nodes)
+      if (!ts.isSourceFile(node) && !ts.isModuleDeclaration(node) && !context.library(node) && !swept.has(node) &&
+          (node.getSourceFile() !== context.client || withinTypeDeclaration(node))) {
         swept.add(node);
         queue.push(node);
       }
@@ -265,9 +268,19 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   };
   const empty: Env = { names: new Map(), levels: [] };
   for (const root of roots) visit(root, empty, root.getSourceFile() === context.client);
+  // The binder groups of the declarations enclosing `node`, outermost
+  // first.
+  const enclosing = (node: Node): Env => {
+    const outer: Node[] = [];
+    for (let at = node.parent; at; at = at.parent) outer.unshift(at);
+    return outer.reduce((env, at) => {
+      const parameters = childParameters(at);
+      return parameters.length ? group(env, parameters) : env;
+    }, empty);
+  };
   for (let cursor = 0; cursor < queue.length; cursor++) {
     const node = queue[cursor];
-    if (node) visit(node, empty, false);
+    if (node) visit(node, enclosing(node), false);
   }
   return found;
 }
@@ -324,13 +337,11 @@ function erased(node: Node, client: ts.SourceFile): boolean {
   return node.getSourceFile() !== client || insideType(node);
 }
 
-/** The declaration statement holding `node`: the outermost declaration
- * below its module or namespace block, which holds every binder in scope at
- * `node`. */
-function topLevel(node: Node): Node {
-  let at = node;
-  while (at.parent && !ts.isSourceFile(at.parent) && !ts.isModuleBlock(at.parent)) at = at.parent;
-  return at;
+/** Whether `node` is or is in an interface or a type alias. */
+function withinTypeDeclaration(node: Node): boolean {
+  for (let at: Node | undefined = node; at; at = at.parent)
+    if (ts.isInterfaceDeclaration(at) || ts.isTypeAliasDeclaration(at)) return true;
+  return false;
 }
 
 /** A declaration's or signature's own type parameters. */

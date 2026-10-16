@@ -1748,6 +1748,12 @@ export function collectDeclarations(file: string, options: {
             const path = at.parent;
             if (!path || !ts.isQualifiedName(path) || path.right !== at) return null;
             const left = ts.isIdentifier(path.left) ? path.left : path.left.right;
+            // A module's or namespace's member is its export of that name.
+            const module = ts.isIdentifier(left) ? follow(checker.getSymbolAtLocation(left)) : undefined;
+            if (module && module.flags & (SymbolFlags.ValueModule | SymbolFlags.NamespaceModule)) {
+              const exported = checker.getExportsOfModule(module).find(e => e.name === at.text);
+              return declarationsOf(follow(exported));
+            }
             const owners = ts.isIdentifier(left) ? resolved(left) : null;
             const members = owners?.flatMap(owner => membersNamed(owner, at.text)) ?? [];
             return members.length ? members : null;

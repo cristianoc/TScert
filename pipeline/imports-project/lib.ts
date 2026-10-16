@@ -175,3 +175,18 @@ interface Keyed<T extends string> {
   x: keyof { a: Bounded<T> };
 }
 export const keyed: Keyed<string> = { x: "a" };
+
+// An object literal's method a client selects by `typeof`
+// (`invalid-written-method-value-import`).
+export const methods = {
+  m(): keyof { a: Bounded<any> } {
+    return "a";
+  },
+};
+
+// A member a client selects through the namespace re-export of this module
+// (`written-namespace-export-value-import`), beside code that runs when the
+// module loads, which that selection does not read.
+export const value: number = 1;
+let loads = 0;
+loads += 1;
