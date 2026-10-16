@@ -97,6 +97,7 @@ export const iterateStringName = "%Iterate:string%";
 export const iterateSetName = "%Iterate:Set%";
 export const iterateMapName = "%Iterate:Map%";
 export const iterateIteratorName = "%Iterate:Iterator%";
+export const iterateRegExpStringName = "%Iterate:RegExpString%";
 export const forInName = "%ForIn%";
 export const iterateForInName = "%Iterate:ForIn%";
 export const hasPropertyName = "%HasProperty%";
@@ -156,11 +157,19 @@ const step: Signature = stepOf(binder);
  * - A collection iterator is its own iterator (`%IteratorPrototype%`'s
  *   `[Symbol.iterator]` returns it) and steps its collection.
  *
+ * - A native regex's match iterator (`%Iterate:RegExpString%`), which
+ *   `[Symbol.matchAll]` of a native regex returns, marked as such
+ *   (`regexp.mts`): it steps a private clone of the regex with the standard
+ *   `exec`, yielding each match. A structural iterator meets no marked type,
+ *   so it is never stepped as this one.
+ *
  * A spread form, `%Spread:K%` for `%Iterate:K%` (`spreadName`), takes the
  * same parameter and gives the fresh array of what the step yields.
- * `library` gives a reference to a standard library interface at arguments.
+ * `library` gives a reference to a standard library interface at arguments,
+ * `nativeMatches` the native match iterator of an element type.
  * Each is listed only for a file that iterates such a value. */
-export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" | "Iterator", args: TypeTerm[]) => TypeTerm):
+export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" | "Iterator", args: TypeTerm[]) => TypeTerm,
+    nativeMatches: (element: TypeTerm) => TypeTerm):
     { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
   const spread = name.startsWith(spreadPrefix);
   const kind = spread ? iteratePrefix + name.slice(spreadPrefix.length) : name;
@@ -173,6 +182,7 @@ export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" |
     : kind === iterateMapName ? [[{ name: "K", bound: null, resolution: null }, { name: "V", bound: null, resolution: null }], library("Map", [key, value]),
       { k: "tuple", presence: "dense", readonly: false, required: [key, value], optional: [], rest: null, span }]
     : kind === iterateIteratorName ? [t, library("Iterator", [binder]), binder]
+    : kind === iterateRegExpStringName ? [t, nativeMatches(binder), binder]
     : (() => { throw Error(`no iteration intrinsic ${name}`); })();
   // The step, or, for a spread, the fresh array of what the step yields until
   // it yields `null`, as `...` collects it.

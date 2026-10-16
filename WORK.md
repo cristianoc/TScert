@@ -27,7 +27,8 @@ design, not its progress.
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 14 of 252 verify (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
+| [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 20 of 268 verify (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -175,7 +176,7 @@ options are in [TRUST-REDUCTION](docs/TRUST-REDUCTION.md).
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 252 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 268 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-16):
 
@@ -186,13 +187,13 @@ The first blockers, by the number of slices each stops (2026-10-16):
 - a missing annotation (16);
 - the compiler API's own declarations, `SyntaxKind`, `TypeFlags`,
   `NodeFlags`, `SymbolFlags` (13);
-- module-level `let` and `var` (5), regular expression literals (4);
+- module-level `let` and `var` (5), `new RegExp` (1);
 - library globals absent from the overlay: `Reflect`,
   `Object.getOwnPropertyDescriptor`, `Array.from`, `Object.fromEntries` (6);
 - `Exclude<Clause, string>`, whose members name the alias's parameter `L` and
   are another type at each instance (1).
 
-Three slices reach the producer and fail there, and twelve fail in search,
+Five slices reach the producer and fail there, and twelve fail in search,
 among them `Array.isArray(v)` not narrowing an `unknown` `v` to
 `unknown[]` (two) and a `.map` result built where a union of records is
 expected (`emptyObject`).
@@ -221,10 +222,19 @@ against the fragment (2026-10-16) gives the work, each item its own design:
 - **Bounds of every alias application.** An alias with a bounded parameter
   keeps the obligation that its arguments meet their bounds, whatever its
   body.
-- **Regular expressions.** 633 literals (most in `pipeline/cases.mts`) and
-  `test`, `exec`, `match`, `matchAll`, `replace` and `split` with them: a
-  `RegExp` object, the `lastIndex` state of a global or sticky one, and match
-  arrays whose unmatched groups are `undefined`.
+- <a id="regular-expressions-left"></a>**Regular expressions left.** A
+  literal, `exec`, `test` and the string methods dispatching to a regex are
+  admitted ([regular expressions](docs/SOURCE-CONTRACTS.md#regular-expressions)).
+  Left: a replacement callback, whose argument list follows the shape
+  (`(match, p₁ … pₙ, offset, input[, groups])`, every match collected before
+  the first call, its result a string); `new RegExp(p, f)` of strings, a
+  native regex of the conservative shape; a regex's properties, `lastIndex`
+  (own, not enumerable, a number) and the accessors `source` and `flags`,
+  read through reserved host-relative members so that no record view states
+  them, with `in`, patterns and computed reads of their keys accounted for;
+  a loop over a structural iterator TypeScript types `RegExpStringIterator`,
+  through the iterator protocol; and the same native mark on `SetIterator`
+  and `MapIterator`, whose loops are chosen by TypeScript's type alone.
 - **The library globals left.** `Array.prototype.flatMap` (79 calls) and
   `flat`, `String.prototype.match`, `matchAll`, `padEnd`, `padStart` and
   `search`, `Object.fromEntries`, `hasOwn`, `getOwnPropertyDescriptor` and

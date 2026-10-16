@@ -21,9 +21,13 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, membe
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
-import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
+import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
+import { literalParts, regexpShape } from "./regexp-shape.mts";
+import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
+  nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
+  type RegExpKeys } from "./regexp.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
@@ -380,6 +384,19 @@ export function collectDeclarations(file: string, options: {
    * `%ElementAt%`, which reads it, join the values. */
   elementReads?: readonly Span[];
   hostElement?: (span: Span) => void;
+  /** The client's regular expression literals: each is reported to
+   * `regexp` with the intrinsic it is a call of, `%RegExp:Σ%` for its shape
+   * Σ (`regexp-shape.mts`), which joins the values at `() => N(Σ)`
+   * (`regexp.mts`). */
+  regexps?: readonly Span[];
+  regexp?: (span: Span, intrinsic: string) => void;
+  /** The client's calls `s.m(o, …)` of a `String.prototype` method that
+   * dispatches to its argument (`dispatchMethods`): each whose receiver
+   * TypeScript types as a string and whose first argument as an object is
+   * reported to `dispatch` with `%Dispatch:m%`, which joins the values
+   * (`dispatchIntrinsic`). */
+  dispatchCalls?: readonly Span[];
+  dispatch?: (span: Span, intrinsic: string) => void;
   /** Identifiers of the client that may name one of its local bindings: each
    * that TypeScript binds to a value declaration in the client is reported
    * to `bindingRead` with the span of that declaration's name. A shorthand
@@ -614,9 +631,22 @@ export function collectDeclarations(file: string, options: {
     const equation = (node: TypeDeclaration): TypeTerm | null => {
       const source = node.getSourceFile();
       const parts = partners.get(node) ?? [node];
-      return ts.isInterfaceDeclaration(node) && node.name.text === "Function" && !node.typeParameters?.length &&
-        parts.every(part => isLibraryModule(idOf(part.getSourceFile())))
-        ? { k: "callable", span: [node.getStart(source), node.end] } : null;
+      const library = ts.isInterfaceDeclaration(node) && !node.typeParameters?.length &&
+        parts.every(part => isLibraryModule(idOf(part.getSourceFile())));
+      if (library && node.name.text === "Function") return { k: "callable", span: [node.getStart(source), node.end] };
+      return library ? libraryRegExp(node.name.text, parts) : null;
+    };
+    // The library's `RegExp`, `RegExpExecArray` and `RegExpMatchArray`, read
+    // as `regexp.mts` states them; `RegExp`'s members it states must be
+    // declared as reviewed.
+    const libraryRegExp = (name: string, parts: readonly TypeDeclaration[]): TypeTerm | null => {
+      if (name === "RegExp") {
+        const members = parts.flatMap(part => ts.isInterfaceDeclaration(part)
+          ? part.members.map(m => m.getText(part.getSourceFile()).trim()) : []);
+        for (const { name: member, text } of reviewedRegExpMembers)
+          if (!members.includes(text)) throw Error(`RegExp.${member} is not declared as reviewed: ${text}`);
+      }
+      return libraryRegExpTerm(name, () => regexpKeys());
     };
     // A computed key names a `unique symbol` constant. Each such declaration
     // is listed once, and its position in the list is the symbol's identity.
@@ -1057,6 +1087,43 @@ export function collectDeclarations(file: string, options: {
           target }, args, span };
       },
     };
+    // The keys a regex's type states (`regexp.mts`): the well-known symbols
+    // its methods are keyed by, and the marks, synthetic symbols no source
+    // declaration has.
+    const markOf = (identity: DeclarationIdentity): number => {
+      const key = `mark ${identity.module}#${identity.name}`;
+      let index = symbolIndex.get(key);
+      if (index === undefined) {
+        index = symbols.length;
+        symbols.push(identity);
+        symbolIndex.set(key, index);
+      }
+      return index;
+    };
+    // Read once; the native match iterator's declaration joins the
+    // definitions with them.
+    let keysRead: RegExpKeys | undefined;
+    const regexpDefinitions: TypeDefinition[] = [];
+    const regexpKeys = (): RegExpKeys => {
+      if (keysRead) return keysRead;
+      const known = (name: string): number => {
+        const symbol = overlayLibrary.wellKnownSymbol(name);
+        if (symbol === null) throw Error(`the standard library declares no Symbol.${name}, which a regex's methods are keyed by`);
+        return symbol;
+      };
+      keysRead = { match: known("match"), matchAll: known("matchAll"), replace: known("replace"),
+        search: known("search"), split: known("split"), matcher: markOf(marks.matcher),
+        stringIterator: markOf(marks.stringIterator), iterator: element => libraryReference("Iterator", [element]) };
+      return keysRead;
+    };
+    // The native match iterator's declaration, which names the library's
+    // `Iterator`: listed where a native regex or its iteration is, before
+    // the graph is collected.
+    const nativeMatches = (): RegExpKeys => {
+      const keys = regexpKeys();
+      if (!regexpDefinitions.length) regexpDefinitions.push(nativeIteratorDefinition(keys));
+      return keys;
+    };
     let arrayProto: TypeDefinition[] = [];
     if (options.arrays) {
       try {
@@ -1096,15 +1163,20 @@ export function collectDeclarations(file: string, options: {
     // `[Symbol.iterator]` of none of these kinds is a program's iterable,
     // which runs the iterator protocol (`protocolForOf` in the parser).
     const collections: Record<string, string> = { Set: iterateSetName, Map: iterateMapName,
-      SetIterator: iterateIteratorName, MapIterator: iterateIteratorName };
+      SetIterator: iterateIteratorName, MapIterator: iterateIteratorName,
+      RegExpStringIterator: iterateRegExpStringName };
     const iterationKind = (part: Type): string => {
       if (checker.isArrayType(part) || checker.isTupleType(part)) return "array";
       if (part.flags & TypeFlags.StringLike) return iterateStringName;
       const symbol = part.getSymbol();
       const named = symbol && Object.hasOwn(collections, symbol.name) ? collections[symbol.name] : undefined;
-      if (named && symbol?.declarations.length &&
-          symbol?.declarations.every(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client))))
-        return named;
+      const library = !!symbol?.declarations.length &&
+        symbol.declarations.every(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client)));
+      if (named && library) return named;
+      // A match array is an array (`regexp.mts` reads `RegExpExecArray` and
+      // `RegExpMatchArray` as tuple views), which the host builds with
+      // `ArrayCreate`: iterated as one.
+      if (library && (symbol?.name === "RegExpExecArray" || symbol?.name === "RegExpMatchArray")) return "array";
       if (part.flags & TypeFlags.Object) {
         const method = checker.getPropertiesOfType(part).find(p => p.name.startsWith("__@iterator@"));
         if (method) {
@@ -1163,7 +1235,8 @@ export function collectDeclarations(file: string, options: {
       if (!program && !listedIterations.has(listed)) {
         listedIterations.add(listed);
         try {
-          const intrinsic = iterationIntrinsic(listed, (name, args) => libraryReference(name, args));
+          const intrinsic = iterationIntrinsic(listed, (name, args) => libraryReference(name, args),
+            element => { nativeMatches(); return nativeIterator(element); });
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
             specifier: intrinsicModule, span },
             declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
@@ -1265,6 +1338,55 @@ export function collectDeclarations(file: string, options: {
         listIntrinsics(span, [elementAtName]);
         options.hostElement?.(span);
       }
+    }
+    // A regular expression literal is a call of the intrinsic of its shape,
+    // listed once per shape at the first literal of it.
+    for (const span of options.regexps ?? []) {
+      const literal = expressionAt(client, span);
+      if (!literal || literal.kind !== ts.SyntaxKind.RegularExpressionLiteral)
+        throw new DeclarationError(span, "TypeScript regular expression literal missing");
+      const { pattern, flags } = literalParts(literal.getText(client));
+      const shape = regexpShape(pattern, flags);
+      const name = regexpIntrinsicName(shape);
+      if (!intrinsicsListed.has(name)) {
+        try {
+          values.push({ binding: { local: name, imported: name, specifier: intrinsicModule, span },
+            declaration: { module: intrinsicModule, name, span: [0, 0] }, construct: false, typeParams: [],
+            type: { k: "function", effect: "unrestricted", receiver: null, params: [], rest: null,
+              result: nativeRegExp(shape, nativeMatches()), span: [0, 0] } });
+        } catch (error) {
+          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        }
+        intrinsicsListed.add(name);
+      }
+      options.regexp?.(span, name);
+    }
+    for (const span of options.dispatchCalls ?? []) {
+      const call = expressionAt(client, span);
+      if (!call || !ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression))
+        throw new DeclarationError(span, "TypeScript string method call missing");
+      const method = call.expression.name.text;
+      const [argument] = call.arguments;
+      if (!isDispatchMethod(method) || !argument) continue;
+      const partsOf = (type: Type | undefined): readonly Type[] => type && isUnionType(type) ? type.getTypes() : type ? [type] : [];
+      const receivers = partsOf(checker.getTypeAtLocation(call.expression.expression));
+      const objects = partsOf(checker.getTypeAtLocation(argument));
+      if (!receivers.length || !receivers.every(t => !!(t.flags & TypeFlags.StringLike)) ||
+          !objects.length || !objects.every(t => !!(t.flags & (TypeFlags.Object | TypeFlags.NonPrimitive | TypeFlags.Intersection))))
+        continue;
+      const name = dispatchName(method);
+      if (!intrinsicsListed.has(name)) {
+        try {
+          const intrinsic = dispatchIntrinsic(method, regexpKeys());
+          values.push({ binding: { local: name, imported: name, specifier: intrinsicModule, span },
+            declaration: { module: intrinsicModule, name, span: [0, 0] }, construct: false,
+            typeParams: intrinsic.typeParams, type: intrinsic.type });
+        } catch (error) {
+          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        }
+        intrinsicsListed.add(name);
+      }
+      options.dispatch?.(span, name);
     }
     for (const span of options.receiverTargets ?? []) {
       const name = identifierAt(client, span);
@@ -1465,6 +1587,14 @@ export function collectDeclarations(file: string, options: {
         return { k: "reference", reference: { name: node.name.text, span, arguments: args.map(() => span), target: identityOf(node) },
           args, span };
       }
+      // A library regex type (`RegExpExecArray` for a match's callback), as
+      // `regexp.mts` reads it.
+      const library = nodes.filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+      if (symbol && library.length && library.length === nodes.length &&
+          library.every(n => isLibraryModule(idOf(n.getSourceFile())))) {
+        const stated = libraryRegExp(symbol.name, library);
+        if (stated) return stated;
+      }
       throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, which is ` +
         "not stated by primitives, literals, unions, intersections, arrays, type parameters and declarations by name");
     };
@@ -1663,7 +1793,7 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
     }
-    definitions.push(...selections, ...primitiveProtos, ...(stableListed ? [stableDefinition] : []));
+    definitions.push(...selections, ...primitiveProtos, ...regexpDefinitions, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
     definitions.unshift(...arrayProto);
     // Trusted generic promise results have a stable non-thenable payload

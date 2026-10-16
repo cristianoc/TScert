@@ -1354,6 +1354,125 @@ So two constants made by `Symbol.for` of one string name one key, and a
 type naming both names that key twice, which is refused, though TypeScript
 types each constant a distinct `unique symbol`.
 
+## Regular expressions
+
+A regex is an object of host-relative methods (`regexp.mts`), read in two
+forms: the **native** regex a literal evaluates to, which states its
+literal's capture shape and a mark only the host's construction gives, and
+the **structural** regex a `RegExp` annotation states, a behavioural
+contract any value may meet. Neither states a property: a regex's
+`lastIndex`, `source` and flags are read through no type.
+
+**Shapes.** A literal's shape $`\Sigma=(A,\nu,g)`$ lists, for each capture
+group $`k`$ in order, whether it takes part in every successful match
+($`k\in A`$), whether a group is named ($`\nu`$), and whether the flags hold
+`g` (`regexp-shape.mts`). On the pattern's tree under ECMA-262's grammar
+([ECMA-262](REFERENCES.md#ecma-262), "Patterns", with Annex B outside
+Unicode mode),
+
+```math
+k\in A\iff \text{no ancestor of group}\ k\ \text{is a disjunction of two or more alternatives, a quantifier with minimum}\ 0,\ \text{or a lookaround}
+```
+
+A quantifier with minimum at least 1 keeps its atom's groups: on success its
+last iteration matched the whole atom (`RepeatMatcher` rejects an empty
+iteration beyond the minimum). Escapes are read by mode: in Unicode mode
+`\p{…}`, `\u{…}` and `\k<…>` are single escapes; outside it `\p` is the
+letter, `\u` takes four hex digits or is the letter, `\k<…>` is a back
+reference only in a pattern naming a group, and `[]` and `[^]` are complete
+classes. A pattern the reading leaves out (the `v` flag, modifier groups), or
+whose group count or names differ from the host's own compilation of it,
+has the conservative shape $`\Sigma_\top`$, every group maybe unmatched.
+
+**Types.** With $`G_k`$ `string` where $`k\in A`$ and `string | undefined`
+otherwise,
+
+```math
+\begin{aligned}
+\mathsf{Exec}(\Sigma)&=\mathtt{readonly}\ [\mathtt{string},G_1,\ldots,G_n]\ \&\ \{\mathtt{readonly\ index}\colon\mathtt{number};\ \mathtt{readonly\ input}\colon\mathtt{string};\ \mathtt{readonly\ groups}\colon\Gamma\}\\
+\mathsf{Match}(\Sigma)&=\mathtt{readonly}\ [\mathtt{string},\ \ldots\mathtt{string}[\,]]\ \text{if}\ g,\ \text{else}\ \mathsf{Exec}(\Sigma)\\
+\mathsf{Split}(\Sigma)&=\mathtt{string}[\,]\ \text{if}\ A=\{1,\ldots,n\},\ \text{else}\ (\mathtt{string}\mid\mathtt{undefined})[\,]
+\end{aligned}
+```
+
+with $`\Gamma`$ `undefined` where no group is named and else a readonly
+dictionary of `string | undefined`. At $`\Sigma_\top`$ the tuple is
+`readonly [string, ...(string | undefined)[]]`, $`\Gamma`$ either, a match
+that tuple, and a split the readonly view `readonly (string | undefined)[]`,
+which both writable splits meet. The regex of shape $`\Sigma`$ is the record
+of host-relative methods
+
+```math
+P(\Sigma)=\{\ \mathtt{exec}\colon(\mathtt{string})\Rightarrow\mathsf{Exec}(\Sigma)\mid\mathtt{null};\ \mathtt{test}\colon(\mathtt{string})\Rightarrow\mathtt{boolean};\ [@@\mathrm{match}]\colon(\mathtt{string})\Rightarrow\mathsf{Match}(\Sigma)\mid\mathtt{null};\ [@@\mathrm{replace}]\colon(\mathtt{string},\mathtt{string})\Rightarrow\mathtt{string};\ [@@\mathrm{search}]\colon(\mathtt{string})\Rightarrow\mathtt{number};\ [@@\mathrm{split}]\colon(\mathtt{string},\mathtt{number}\mid\mathtt{undefined})\Rightarrow\mathsf{Split}(\Sigma)\ \}
+```
+
+each unrestricted; the native and structural regexes are
+
+```math
+N(\Sigma)=P(\Sigma)\ \&\ \{[@@\mathrm{matchAll}]\colon(\mathtt{string})\Rightarrow I_N(\mathsf{Exec}(\Sigma));\ \mathtt{readonly}\ [\mu]\colon\mathtt{undefined}\}
+\qquad
+⟦\mathtt{RegExp}⟧=P(\Sigma_\top)
+```
+
+where $`\mu`$ is the synthetic symbol `RegExpMatcher` (`tscert/regexp`), the
+model's reading of the native `[[RegExpMatcher]]` slot, and
+$`I_N(T)=\mathtt{Iterator}\langle T\rangle\ \&\ \{\mathtt{readonly}\ [\mu_I]\colon\mathtt{undefined}\}`$
+the native match iterator, $`\mu_I`$ the synthetic `RegExpStringIterator`. No
+source declaration has a synthetic symbol's identity, so no source type,
+literal or class states $`\mu`$ or $`\mu_I`$; a source `unique symbol` of the
+same name is a key of its own (`invalid-regexp-forged-mark`).
+$`N(\Sigma)\le⟦\mathtt{RegExp}⟧`$: results widen by readonly covariance and the
+mark and `[@@matchAll]` are left out. TypeScript's `RegExpExecArray` and
+`RegExpMatchArray` are $`\mathsf{Exec}(\Sigma_\top)`$ and $`\mathsf{Match}(\Sigma_\top)`$,
+a supertype of each declaration with its element type corrected, and an
+array pattern or loop over one steps it as an array. `RegExp`'s stated
+members are pinned to their declaration texts (`reviewedRegExpMembers`).
+
+**Literals and dispatch.** Each evaluation of a literal allocates a regex;
+a call of `String.prototype`'s `match`, `matchAll`, `replace`, `replaceAll`,
+`search` or `split` with an object first argument runs `GetMethod` on it and
+returns what that method returns:
+
+```math
+\frac{\Sigma=\mathsf{shape}(P,F)}
+     {⟦/P/F⟧=\%\mathrm{RegExp}{:}\Sigma\%()\qquad \%\mathrm{RegExp}{:}\Sigma\%\colon()\Rightarrow N(\Sigma)}\ \textsf{regexp-literal}
+```
+
+```math
+\frac{s\ \text{a string}\quad o\ \text{an object}\quad m\in\{\mathtt{match},\mathtt{search},\mathtt{split},\mathtt{replace},\mathtt{matchAll},\mathtt{replaceAll}\}}
+     {⟦s.m(o,\vec e)⟧=\%\mathrm{Dispatch}{:}m\%(⟦s⟧,⟦o⟧,⟦\vec e⟧)}\ \textsf{regexp-dispatch}
+```
+
+as TypeScript types the receiver and the argument, evaluated as written, with
+
+```math
+\begin{aligned}
+\%\mathrm{Dispatch}{:}\mathtt{split}\%&\colon\forall X.\ (\mathtt{string},\ \{[@@\mathrm{split}]\colon(\mathtt{string},\mathtt{number}\mid\mathtt{undefined})\Rightarrow X\},\ \mathtt{number}\mid\mathtt{undefined})\Rightarrow X\\
+\%\mathrm{Dispatch}{:}\mathtt{replace}\%&\colon\forall X.\ (\mathtt{string},\ \{[@@\mathrm{replace}]\colon(\mathtt{string},X)\Rightarrow\mathtt{string}\},\ X)\Rightarrow\mathtt{string}\\
+\%\mathrm{Dispatch}{:}\mathtt{matchAll}\%&\colon\forall X.\ (\mathtt{string},\ \{[@@\mathrm{matchAll}]\colon(\mathtt{string})\Rightarrow X;\ \mathtt{readonly}\ [\mu]\colon\mathtt{undefined}\})\Rightarrow X
+\end{aligned}
+```
+
+and `match` and `search` as `split` without the limit, `replaceAll` as
+`replace` with the mark. `matchAll` and `replaceAll` first read
+`o[@@match]` and `o.flags` and convert `flags` (ECMA-262,
+`String.prototype.matchAll`), client code for an object `flags`
+(`invalid-regexp-structural-matchall`): their argument must be native, whose
+standard `flags` is a string. A non-global native regex makes them throw, an
+outcome. A loop or spread over what TypeScript types `RegExpStringIterator`
+steps `%Iterate:RegExpString%`, whose parameter is $`I_N(T)`$: a structural
+iterator meets it not, and is refused there.
+
+**What is refused.** A property of a regex is no member of either type:
+`re.lastIndex`, `re.source`, `re.flags` are refused at the read, a regex meets
+no view stating one (a copy would lack the non-enumerable `lastIndex`,
+`invalid-regexp-lastindex-view`), and `in` with a key a regex owns or
+inherits from `RegExp.prototype` is refused whatever the operand
+(`inKeyRefusal`, `invalid-regexp-lastindex-in`). `compile`, which replaces a
+regex's pattern and so its shape, is no member (`invalid-regexp-compile`); a
+library class is no base (`invalid-regexp-subclass`). A replacement callback
+and `new RegExp` are not stated. Match results are readonly views.
+
 ## Async functions and await
 
 The parser writes each async form as a call of an intrinsic, a value named
