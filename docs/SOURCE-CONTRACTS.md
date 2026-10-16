@@ -1222,9 +1222,23 @@ result. Of `ArrayProto`, `slice`, `join`, `toString`, `indexOf`,
 `lastIndexOf`, `includes`, `at` and `[Symbol.iterator]` state it: they read
 the receiver, convert only numbers and elements meeting the conversion
 contract below, compare by strict equality or SameValueZero, and allocate
-only their result; so do the overloads of `map`, `find` and `findIndex` that
-take a preserving callback, which they call, the ordinary construction below
-allocating `map`'s result. The members that write their receiver (`sort`,
+only their result; so do the overloads of `map`, `find`, `findIndex`,
+`filter`, `some`, `every` and `forEach` that take a preserving callback,
+which they call, the ordinary construction below allocating `map`'s and
+`filter`'s results. Each of these members reads the length once and the
+receiver's own numeric keys, data properties (`numericOwn`), so beside the
+callback it runs no client code; each has a second signature at an
+unrestricted callback, stating no effect (`array-preserving-callbacks`,
+`invalid-filter-writing-callback`):
+
+```math
+\frac{m\in\{\mathsf{filter},\mathsf{some},\mathsf{every},\mathsf{forEach}\}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\mathsf{preservesInputHeap}}\mathtt{unknown}}
+     {\mathit{xs}.m(f):R_m\;!\;\mathsf{preservesInputHeap}}\ \textsf{native-preserving-callback}
+```
+
+with $`R_m`$ the member's result: $`T[\,]`$, `boolean`, `boolean`,
+`undefined`. `Boolean` read as a value is such a callback
+([library globals](#library-globals)). The members that write their receiver (`sort`,
 `push`, `pop`, `shift`, `unshift`, `reverse`) and those that call an
 unrestricted callback do not.
 
@@ -1397,8 +1411,8 @@ client code and writes no location it did not allocate:
 ```
 
 `String` and `Number` of a primitive, `Number.isFinite`, `Number.isInteger`,
-`Number.isSafeInteger` and `Object.is` state it: each converts only a
-primitive, or nothing, and reads and writes no location
+`Number.isSafeInteger`, `Object.is` and `Boolean` state it: each converts
+only a primitive, or nothing, and reads and writes no location
 (`library-preserving-callback`, `library-preserving-tests`). An object
 argument, whose conversion runs its methods, is outside the stated
 parameter (`invalid-number-object`).

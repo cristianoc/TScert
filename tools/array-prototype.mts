@@ -101,9 +101,14 @@ const preservingFind = callback(element, atomOf("unknown"), "preservesInputHeap"
 const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
 
 export const overlay: readonly OverlayEntry[] = [
+  // At a callback preserving the input heap, `forEach` does, as `every`
+  // below: it reads the length once and the present elements, data
+  // properties, and writes nothing.
   { name: "forEach", from: "ReadonlyArray",
     signature: "forEach(callbackfn: (value: T, index: number, array: readonly T[]) => void, thisArg?: any): void;",
-    drop: ["thisArg"] },
+    stated: [{ params: [callback(element, atomOf("unknown"), "preservesInputHeap")], result: atomOf("undefined"),
+        effect: "preservesInputHeap" },
+      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: atomOf("undefined") }] },
   { name: "map", from: "ReadonlyArray",
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
     // Under ordinary construction, a callback preserving the input heap
@@ -144,15 +149,24 @@ export const overlay: readonly OverlayEntry[] = [
     signature: "reduceRight<U>(callbackfn: (previousValue: U, currentValue: T, currentIndex: number, array: readonly T[]) => U, initialValue: U): U;" },
   // These callbacks run only for properties still present when visited.
   // find/findIndex below instead visit every index in the original range.
+  // Beside each callback's call, the member reads the length once, tests and
+  // reads the receiver's own numeric keys, data properties (`numericOwn`),
+  // and `filter` defines the kept elements on a fresh array (ordinary
+  // construction): it runs no other client code and writes no existing
+  // location. So at a callback preserving the input heap the member does,
+  // a signature of its own beside the declared one; `thisArg` is not stated.
   { name: "every", from: "ReadonlyArray",
     signature: "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
-    drop: ["thisArg"] },
+    stated: [{ params: [preservingFind], result: atomOf("boolean"), effect: "preservesInputHeap" },
+      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: atomOf("boolean") }] },
   { name: "some", from: "ReadonlyArray",
     signature: "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
-    drop: ["thisArg"] },
+    stated: [{ params: [preservingFind], result: atomOf("boolean"), effect: "preservesInputHeap" },
+      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: atomOf("boolean") }] },
   { name: "filter", from: "ReadonlyArray",
     signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
-    drop: ["thisArg"] },
+    stated: [{ params: [preservingFind], result: arrayOf(element, false), effect: "preservesInputHeap" },
+      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: arrayOf(element, false) }] },
   // The members below, through `at`, read the receiver's elements, convert
   // only numbers (an index, a bound) and, for `join` and `toString`,
   // elements meeting the standard conversion contract, compare by strict

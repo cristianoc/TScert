@@ -29,6 +29,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("invalid-map-collection-write-callback",
     `(() => { const counts = new Map(); seen(["a", "a"], counts); return counts.get("a"); })()`), 2,
     "invalid-map-collection-write-callback: the callback's call writes the map");
+  // The `filter` callback's `push` writes the array it captures.
+  assert.equal(runExample("invalid-filter-writing-callback",
+    `(() => { const kept = []; words(["a b", "c"], kept); return kept.join(); })()`), "a,b,c",
+    "invalid-filter-writing-callback: the callback's call writes the array it captures");
   // `map` passes the index to the constant's second parameter, whose `tag`
   // is undefined.
   assert.equal(runExample("invalid-annotated-constant-callback", `tags(["a"])[0]`), undefined,

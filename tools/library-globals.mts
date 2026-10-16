@@ -168,8 +168,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // as a value (`xs.filter(Boolean)`), the callable
   // `(value: unknown, ...rest: unknown[]) => boolean`. The declaration
   // promises no narrowing, and none is stated: its result is a Boolean, which
-  // a guard's promise is not.
-  { global: "Boolean", signature: "<T>(value?: T): boolean;", value: true,
+  // a guard's promise is not. It writes nothing: heap preservation.
+  { global: "Boolean", signature: "<T>(value?: T): boolean;", value: true, effect: "preservesInputHeap",
     stated: { binders: [], params: [atom("unknown")], rest: atom("unknown"), result: atom("boolean") } },
   // `Math.max(...vs)` and `Math.min(...vs)` convert every argument with
   // ToNumber before comparing: a primitive without running code (`undefined`
