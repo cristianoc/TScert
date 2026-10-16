@@ -1196,6 +1196,39 @@ for (const [file, marker, arity, accepted] of [
 }
 
 {
+  // A module constant's arrow is claimed at its signature extended by a rest
+  // of `unknown`, which Lean checks against the arrow itself: the extension
+  // forged to take `unknown` at the arrow's `string` parameter is refused
+  // where the arrow is created.
+  const artifacts = run("arrow-constant-callback");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const init = must(claims.init, "the initialization unit's claims");
+  const closure = must(init.expressions.find(e => e.pos[0] === source.indexOf("(s: string): string => s.toUpperCase")),
+    "the constant's arrow claim");
+  const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
+  assert.ok(typeof label === "number");
+  const row = must(claims.types[label], "the arrow's type row");
+  const extended = must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.variadic ?? [] : [])[0],
+    "the extended signature");
+  const unknown = claims.types.findIndex(r => JSON.stringify(r) === JSON.stringify(["source"]));
+  assert.ok(unknown >= 0, "a row of unknown");
+  extended.arguments = [[[unknown]], must(extended.arguments[1], "the extended signature's rest")];
+  const input = writeClaims(artifacts, "forged-constant-extension", claims);
+  const produce = produceWith(artifacts, input, "forged-constant-extension");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  // The row is shared by both constants of that signature, `shout` and
+  // `quoted`: the first checked is refused.
+  const refused = /direct obligation at \[(\d+),\d+\): closure signature claim is outside the source annotation/
+    .exec(produce.stdout + produce.stderr);
+  assert.ok(refused, produce.stdout + produce.stderr);
+  assert.ok([source.indexOf("(s: string): string => s.toUpperCase"), source.indexOf("function (s: string)")]
+    .includes(Number(refused[1])), "refused at a constant's closure");
+  process.stdout.write("forged constant extension: refused where the arrow is created\n");
+}
+
+{
   // `%Dispatch:replace%` states heap preservation only at a target whose
   // `[Symbol.replace]` states it. A global regex's does not: an instance of
   // the dispatch claimed preserving at that target, with the callback

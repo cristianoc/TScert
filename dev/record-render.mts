@@ -3,13 +3,10 @@
  * skill's: a subject, sections ("Why:", "Rule added (name):", indented
  * blocks) and trailers. */
 
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
+const esc = (s: string): string =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-function inline(s: string): string {
-  return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
-}
+const inline = (s: string): string => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
 
 type Section = { name: string; text: string[]; block: string[] };
 export type CommitRecord = {

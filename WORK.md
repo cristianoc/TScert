@@ -28,7 +28,7 @@ design, not its progress.
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 267 verify in `tools/`, 7 of 25 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 267 verify in `tools/`, 5 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -199,8 +199,8 @@ The first blockers, by the number of slices each stops (2026-10-16):
   `var` (5), a mapped type whose value names its key (3).
 
 Seven slices reach the producer and fail there, and twenty-two fail in
-search. Of the 25 functions of `dev/`, the record tools and the lowering
-dump, 7 verify; the first blockers there are a callback writing only
+search. Of the 23 functions of `dev/`, the record tools and the lowering
+dump, 5 verify; the first blockers there are a callback writing only
 locations it allocated, a `let` cell or a fresh regex's `lastIndex`, which
 the effect checker does not certify (see [contract
 completeness](#restoring-completeness); 5: effects, tests, math, mathRoles,
@@ -214,14 +214,12 @@ parameter, `KeysOf<T>` (2, lowering-dump), a closure constant created before
 a constant its code reads (`initialization-closure-constant-refused`, 1:
 rules), and an array literal spreading a `Set` and a map's keys (1: summary).
 
-Four forms of the record tools were rewritten for a verifier limit, not
+Three forms of the record tools are rewritten for a verifier limit, not
 for a departure from the fragment; each rewrite is reverted when its limit
-lifts. A module constant holding an arrow passed as a callback binding more
-parameters (`esc` and `inline` became functions;
-`arrow-constant-callback-refused`); tuples built with `as const` and
-destructured by callbacks (`summary`; `contextual-tuple-callback-refused`);
-element reads the code already guards, by a length or a test of the same
-element (`dedent`, `effects`, `mathRoles`' `afterRelation` and `textWord`;
+lifts: tuples built with `as const` and destructured by callbacks
+(`summary`; `contextual-tuple-callback-refused`); element reads the code
+already guards, by a length or a test of the same element (`dedent`,
+`effects`, `mathRoles`' `afterRelation` and `textWord`;
 `guarded-element-read-refused`); and a `flatMap` callback returning a
 string (`card`; `flat-map-scalar-result-refused`).
 

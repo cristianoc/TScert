@@ -250,7 +250,9 @@ their own code checks.
 A module function is available at its source signature and, without a rest
 parameter and without type parameters, also at that signature extended by a
 rest of `unknown`: its code discards further actuals. A module constant is
-available at its annotation or its checked initializer claim. Initialization
+available at its annotation or its checked initializer claim, and an
+unannotated one holding a closure without a rest, binders, defaults or a
+guard also at that closure's signature extended so. Initialization
 refuses calls that could read a constant before it is initialized. Imports,
 ambient declarations and globals enter at assumed declared types.
 [Module rules](SOURCE-CONTRACTS.md#modules-and-code-units) specify these interfaces.

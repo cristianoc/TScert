@@ -69,7 +69,23 @@ that type writing a second actual of another type is not safe.
 
 A module constant is read at its annotation or at the
 initialization unit's claim for its initializer
-([module constants](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)). The
+([module constants](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)).
+An unannotated constant whose initializer is a closure without a rest
+parameter, binders, defaults or a guard, with a written result, is claimed
+where it is created at its signature and at that signature extended by a
+rest of `unknown` elements, the closure's body checked at each, as a module
+function's slot holds both:
+
+```math
+\frac{c = \lambda(\vec x{:}\vec A).\,b\ \text{no rest, binders, defaults or guard}\quad
+       \Gamma_c\vdash b:B\ \text{at}\ (R;\vec A\to B)\ \text{and at}\ (R;\vec A,\ldots\top\to B)}
+     {\Gamma_I\vdash c:⟦(R;\vec A\to B)\land(R;\vec A,\ldots\top\to B)⟧}\ \textsf{constant-closure}
+```
+
+The closure code collects no rest, so a call writing further actuals binds
+its parameters and discards the rest; the second signature is a claim its
+body is checked at (`arrow-constant-callback`), never a widening of the
+first. The
 initialization unit refuses a call, direct or through module functions, that
 can read a constant not yet initialized (`checkInitializationOrder`).
 

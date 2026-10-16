@@ -19,6 +19,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // `map` passes the index to the constant's second parameter, whose `tag`
+  // is undefined.
+  assert.equal(runExample("invalid-annotated-constant-callback", `tags(["a"])[0]`), undefined,
+    "invalid-annotated-constant-callback: the actual source returns undefined at string");
   // `test` of a global regex leaves `lastIndex` where the match ended: the
   // same line tests true, then false.
   assert.equal(runExample("invalid-regexp-global-callback-effect", `marks(["ab", "ab"]).join()`), "true,false",

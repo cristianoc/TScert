@@ -10,7 +10,7 @@ open Module_contract
 (* A named closure's claim is fixed where it is created, before the calls that
    offer it more parameters are reached: a first pass finds those offers, and
    the second states them at the creation. *)
-let infer_function state flows declarations arities module_functions (f:Source.fn) =
+let infer_function ?(offers=[]) state flows declarations arities module_functions (f:Source.fn) =
   (* A value bound retains its parameters: `T extends Ref<U>` reads a
      member through Ref<U>; `U extends T` reads through T's bound. *)
   let bounds = List.filter_map (fun (q:Semantic.quantifier) -> match q.bound with
@@ -44,10 +44,11 @@ let infer_function state flows declarations arities module_functions (f:Source.f
       let assumed = List.fold_left (fun acc (key,t) ->
         (key,union (evolved key) t) :: List.remove_assoc key acc) assumed grown in
       settled offered (rounds - 1) assumed in
-  let (claim,requests),assumed = settled [] 4 [] in
+  let (claim,requests),assumed = settled offers 4 [] in
   if requests = [] then claim else
-  let offered = List.map (fun pos -> pos,List.filter_map (fun (p,s) ->
-    if p = pos then Some s else None) requests)
+  let requests = List.concat_map (fun (p,ss) -> List.map (fun s -> p,s) ss) offers @ requests in
+  let offered = List.map (fun pos -> pos,List.sort_uniq compare (List.filter_map (fun (p,s) ->
+    if p = pos then Some s else None) requests))
     (List.sort_uniq compare (List.map fst requests)) in
   let (claim,_),_ = settled offered 4 assumed in
   claim
@@ -69,9 +70,27 @@ let infer ?(state = Proposal_diagnostics.create ()) flows program =
           Some (n ^ ".[[self]]",lazy t)
         | _ -> None) bindings
     | _ -> []) program.Source.init in
+  (* A module constant holding a closure without a rest, binders, defaults
+     or a guard, whose result is written, is claimed where it is created at its
+     signature extended by a rest of `unknown` elements too, as a module
+     function's slot is: its code discards the actuals past its parameters,
+     and Lean checks its body at that signature. A unit passing it where a
+     signature binding more parameters is expected meets that one. *)
+  (* A name the source spells, not one the parser makes for a class's parts. *)
+  let source_name n = n <> "" && String.for_all (fun c ->
+    c = '_' || c = '$' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9')) n in
+  let discarding = List.concat_map (fun (s:Source.stmt) -> match s.statement with
+    | Declare (false,bindings) -> List.filter_map (fun (name,written,(e:expr)) -> match written,e.node with
+        | None,Lambda (receiver,[],ps,[],false,Some result,None,_) when source_name name ->
+          Some (e.pos,[{quantified=[];receiver=Option.value receiver ~default:top;
+            params=List.map snd ps;variadic=Some top;
+            rest_pack=None;result;call_effect=Unrestricted}])
+        | _ -> None) bindings
+    | _ -> []) program.Source.init in
   let init = match program.Source.init with
     | [] -> None
-    | body -> Some (infer_with (module_functions @ class_selves)
+    | body -> Some (infer_function ~offers:discarding state flows program.Source.declarations arities
+        (module_functions @ class_selves)
         {quantified=program.Source.init_quantified;name="";name_pos=Json.Null;params=[];rest=false;rest_pack=None;
          result=Atoms [Undef];guard=None;body}) in
   (* The initialization unit checks both initializer and annotation. Use the
