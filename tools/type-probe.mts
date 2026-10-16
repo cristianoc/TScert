@@ -37,7 +37,7 @@ import type { Identifier, Node, SourceFile, TypeNode } from "typescript/unstable
 import { literalUnion } from "./computed-types.mts";
 import type { TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
-import { childrenOf } from "./syntax.mts";
+import { childrenOf, nameOf } from "./syntax.mts";
 
 /** A symbol of the checker. */
 type Symbolic = Symbol;
@@ -53,8 +53,10 @@ export type ProbeRequest = { declaration: Node; form: TypeNode; use: Node; span:
 
 /** Original text copied into the probe: `[start, end)` of `file`. */
 type Copy = { file: string; start: number; end: number };
-/** A piece of inserted text: a copy, or text of its own. */
-type Piece = { text: string; copy?: Copy };
+/** A piece of inserted text: a copy, or text of its own; `mark` names the
+ * generated declaration or reference it starts. */
+type Mark = "probe" | "use" | "reference";
+type Piece = { text: string; copy?: Copy; mark?: Mark };
 /** Pieces inserted at offset `at` of a file. */
 type Edit = { at: number; pieces: Piece[] };
 
@@ -107,10 +109,13 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
     const refuse = (why: string): never => {
       throw Error(`${what}: ${form.getText(form.getSourceFile())} at the application: ${why}`);
     };
-    const k = count++;
-    const probeName = `__TScertProbe${k}`, useName = `__TScertUse${k}`;
     const declarationFile = declaration.getSourceFile();
     const useFile = use.getSourceFile();
+    // Names neither file spells; what binds them is checked in the probe.
+    let k = count++;
+    while ([declarationFile, useFile].some(f => f.text.includes(`__TScertProbe${k}`) || f.text.includes(`__TScertUse${k}`)))
+      k = count++;
+    const probeName = `__TScertProbe${k}`, useName = `__TScertUse${k}`;
     const parameters = childrenOf(declaration, "typeParameters").filter(ts.isTypeParameterDeclaration);
     const args = argumentsOf(use);
     const copied: Node[] = [...parameters, form, ...args];
@@ -128,9 +133,10 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
     const listed = (nodes: readonly Node[]): Piece[] =>
       nodes.flatMap((n, i) => i ? [{ text: ", " }, copy(n)] : [copy(n)]);
     // `type P<the parameters> = form;` and `type U = P<the arguments>;`
-    const probe: Piece[] = [{ text: `type ${probeName}<` }, ...listed(parameters), { text: "> = " }, copy(form),
-      { text: ";" }];
-    const application: Piece[] = [{ text: `\ntype ${useName} = ${probeName}` },
+    const probe: Piece[] = [{ text: `type ${probeName}<`, mark: "probe" }, ...listed(parameters), { text: "> = " },
+      copy(form), { text: ";" }];
+    const application: Piece[] = [{ text: "\n" }, { text: `type ${useName} = `, mark: "use" },
+      { text: probeName, mark: "reference" },
       ...(args.length ? [{ text: "<" }, ...listed(args), { text: ">" }] : []), { text: ";\n" }];
     // The probe stands beside the declaration, at its module's top level,
     // where its file can be read again; otherwise beside the application.
@@ -147,6 +153,7 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
     // The edited texts, each copy's offset in them, and each insertion's.
     const files = new Map<string, string>();
     const placed: { copy: Copy; into: string; at: number }[] = [];
+    const marks = new Map<Mark, { file: string; at: number }>();
     const inserted = new Map<string, { start: number; end: number }[]>();
     for (const [file, list] of edits) {
       const sorted = [...list].sort((a, b) => a.at - b.at);
@@ -158,6 +165,7 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
         const start = out.length;
         for (const piece of edit.pieces) {
           if (piece.copy) placed.push({ copy: piece.copy, into: file.fileName, at: out.length });
+          if (piece.mark) marks.set(piece.mark, { file: file.fileName, at: out.length });
           out += piece.text;
         }
         ranges.push({ start, end: out.length });
@@ -191,6 +199,55 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
           const node = d.resolve();
           return node ? where(node, map) : null;
         }).map(d => JSON.stringify(d)).sort());
+      // The generated declarations, where they were placed; the generated
+      // reference binds to the inserted probe, and `U` is the one declaration
+      // of its name.
+      const marked = <N extends Node>(mark: Mark, test: (n: Node) => n is N): N | undefined => {
+        const at = marks.get(mark);
+        const file = at && program.getSourceFile(at.file);
+        if (!at || !file) return undefined;
+        let found: N | undefined;
+        const visit = (n: Node): void => {
+          if (found || n.end <= at.at || n.pos > at.at) return;
+          if (test(n) && n.getStart(file) === at.at) found = n;
+          else n.forEachChild(visit);
+        };
+        visit(file);
+        return found;
+      };
+      const probeAlias = marked("probe", ts.isTypeAliasDeclaration);
+      const alias = marked("use", ts.isTypeAliasDeclaration);
+      const reference = marked("reference", ts.isIdentifier);
+      if (!probeAlias || probeAlias.name.text !== probeName || !alias || alias.name.text !== useName ||
+          !reference || reference.text !== probeName)
+        return refuse("the probe program does not hold the generated declarations where they were placed");
+      const only = (symbol: Symbolic | undefined, node: Node): boolean => {
+        const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
+        return nodes.length === 1 && !!nodes[0] && nodes[0].getSourceFile().fileName === node.getSourceFile().fileName &&
+          nodes[0].getStart(nodes[0].getSourceFile()) === node.getStart(node.getSourceFile()) && nodes[0].end === node.end;
+      };
+      if (!only(checker.getSymbolAtLocation(reference), probeAlias) || !only(checker.getSymbolAtLocation(alias.name), alias))
+        return refuse("a generated name binds to a declaration other than the generated one");
+      // A type parameter of the declaration, merged parts included, by its
+      // position in their parameter lists.
+      const declarationSymbol = (() => {
+        const name = nameOf(declaration);
+        return name ? declarationsOf(original.checker.getSymbolAtLocation(name), false) : null;
+      })();
+      const parameterIndex = (symbol: Symbolic | undefined): number | null => {
+        const indexes = new Set<number>();
+        for (const d of symbol?.declarations ?? []) {
+          const node = d.resolve();
+          if (!node || !ts.isTypeParameterDeclaration(node)) return null;
+          const owner = node.parent;
+          const name = nameOf(owner);
+          if (!name || declarationSymbol === null ||
+              declarationsOf(original.checker.getSymbolAtLocation(name), false) !== declarationSymbol) return null;
+          indexes.add(childrenOf(owner, "typeParameters").indexOf(node));
+        }
+        const [index] = indexes;
+        return indexes.size === 1 && index !== undefined && index >= 0 ? index : null;
+      };
       // Each copied name resolves to what it resolves to where it is written.
       for (const p of placed) {
         const into = program.getSourceFile(p.into);
@@ -203,23 +260,18 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
           const twin = nodeAt(into, start, start + name.end - name.getStart(file), ts.isIdentifier);
           if (!twin) return refuse(`the copy of ${name.text} is not where it was placed`);
           const symbol = original.checker.getSymbolAtLocation(name);
-          if (declarationsOf(symbol, false) !== declarationsOf(checker.getSymbolAtLocation(twin), true))
+          const resolved = checker.getSymbolAtLocation(twin);
+          const index = parameterIndex(symbol);
+          const parameter = index === null ? undefined : probeAlias.typeParameters?.[index];
+          if (index !== null ? !parameter || !only(resolved, parameter)
+              : declarationsOf(symbol, false) !== declarationsOf(resolved, true))
             return refuse((symbol?.declarations ?? []).some(d => {
               const node = d.resolve();
-              return !!node && ts.isTypeParameterDeclaration(node) && !copied.includes(node);
+              return !!node && ts.isTypeParameterDeclaration(node) && index === null;
             }) ? `${name.text} is a type parameter of the application's scope: the form is computed only at an instance`
               : `${name.text} does not resolve there to what it names where it is written`);
         }
       }
-      const probed = program.getSourceFile(useFile.fileName);
-      let alias: ts.TypeAliasDeclaration | undefined;
-      const visit = (n: Node): void => {
-        if (alias) return;
-        if (ts.isTypeAliasDeclaration(n) && n.name.text === useName) alias = n;
-        else n.forEachChild(visit);
-      };
-      if (probed) visit(probed);
-      if (!alias) return refuse("the probe program lost the probe");
       const type: Type | undefined = checker.getTypeAtLocation(alias.name);
       if (!type || type.isErrorType()) return refuse("TypeScript computes no type for it");
       const term = literalUnion(type, span, part => {

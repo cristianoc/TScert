@@ -1243,12 +1243,16 @@ type U = P</* the application's written arguments, verbatim */>;
 
 `P` beside the declaration (in a global augmentation of its module) or, where
 that file cannot be read again (a standard library file), beside `U`; `U` at
-the end of the statement list holding the application. TypeScript completes
+the end of the statement list holding the application, under names neither
+file spells. TypeScript completes
 the omitted arguments with the defaults, substitutes and evaluates: `U`'s
 type is the answer. Each name in the copied parameter list, form and
 arguments must resolve in the probe to the declarations it resolves to where
-it is written, a name declared inside a copy to its original; otherwise the
-evaluation is refused, as it is for a `this` type and for a name of the
+it is written, a name declared inside a copy to its original, a parameter of
+the declaration (its merged parts included) to `P`'s parameter at its
+position; `P` and `U` must be the declarations found where they were placed,
+the reference to `P` binding to that `P`, and `U` the one declaration of its
+name; otherwise the evaluation is refused, as it is for a `this` type and for a name of the
 application's scope that is a type parameter (the form is then computed only
 at an instance). The answer is read from the checker's type objects: a union
 of literals and primitives (`keyof Record<string, number>` is `string`, of
