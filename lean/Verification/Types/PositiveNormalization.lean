@@ -963,10 +963,6 @@ def Clause.map (f : α → β) : Clause α → Clause β
       (mapFields f vs)
   | .pack a bs => .pack (a.map f) (bs.map (·.map f))
 
-/-- Renaming operands keeps a clause a record's or not. -/
-@[simp] theorem Clause.record_map (f : α → β) (c : Clause α) : (c.map f).record = c.record := by
-  cases c <;> rfl
-
 theorem Clause.carriesInvariant_of_record {c : Clause α} (h : c.record = true) : c.carriesInvariant = true := by
   cases c <;> simp_all [Clause.record, Clause.carriesInvariant]
 

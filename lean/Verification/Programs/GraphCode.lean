@@ -304,11 +304,6 @@ theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instanc
     simp only [effectChecked, effectCheckedResult, h, ProgramCertificates.CheckResult.accepted_orElse,
       ProgramCertificates.CheckResult.accepted_ofBool, compositionalChecked] <;> rfl
 
-@[simp] theorem effectChecked_reassign [DecidableEq ι] (G : NormalGraph ι)
-    (images : InstanceImageCheck G) (η : MixedAssignment ι) (c : CodeEntry ι) (C : Certificate ι) :
-    effectChecked (reassign G η) (images.reassign η) c C = effectChecked G images c C := by
-  simp only [effectChecked_eq, compositionalChecked_reassign]
-
 /-- One code entry, checked at its signature from the frame the signature
 describes, against an earlier table. -/
 @[nospecialize] def codeCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)

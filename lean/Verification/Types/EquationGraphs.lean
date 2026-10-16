@@ -738,23 +738,12 @@ def Equations.row (equations : Equations) (label : Label equations.signature) :
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
   NormalGraph.ofRowMap equations.row equations.builtins equations.domain
 
-/-- Unfolding an application substitutes into its one finite template. -/
-@[simp] theorem Equations.row_application (equations : Equations) (scope : Scope equations.signature) :
-    equations.row scope.label = (equations.body scope.head).instantiate scope := by
-  simp [row, baseRow]
-
 /-- A bound parameter has the kind declared at its own lexical owner. -/
 @[simp] theorem Equations.kind_bound (equations : Equations) (scope : Scope equations.signature)
     (slot : Fin equations.signature[scope.head].binders.length) :
     equations.graph.parameterKinds (scope.bound slot) =
       some equations.signature[scope.head].binders[slot].kind := by
   simp [graph, NormalGraph.ofRowMap, row, baseRow]
-
-/-- A family variable is a parameter row of the kind it carries. -/
-@[simp] theorem Equations.kind_familyVar (equations : Equations) (owner slot : Nat)
-    (kind : ParameterKind) :
-    equations.graph.parameterKinds (Label.familyVar owner slot kind) = some kind := by
-  simp [graph, NormalGraph.ofRowMap, row, baseRow, Label.view, Label.familyVar]
 
 /- An application's free parameter names are those carried by its arguments.
 A parameter name is atomic: its owner identifies it, but changing an assignment

@@ -1085,12 +1085,6 @@ def slots (base : Nat) : List PropKey → List (PropKey × Nat)
   | [] => []
   | f :: fs => (f, base) :: slots (base + 1) fs
 
-@[simp] theorem slots_value (base : Nat) : slots base [valueField] = [(valueField, base)] := rfl
-
-@[simp] theorem slots_length (base : Nat) (ns : List PropKey) :
-    (slots base ns).length = ns.length := by
-  induction ns generalizing base <;> simp_all [slots]
-
 /-- A field of a fresh object stands for the location its position was given.
 Distinct names are what makes the map a map: with a repeat, only the first
 occurrence is ever found. -/
@@ -1379,9 +1373,6 @@ end
 @[simp] theorem substArgs_eq_map (j : Nat) (a : Tm) (args : List Tm) :
     substArgs j a args = args.map (subst j a) := by
   induction args <;> simp_all [substArgs]
-
-@[simp] theorem subst_app (j : Nat) (a f x : Tm) :
-    subst j a (.app f x) = .app (subst j a f) (subst j a x) := rfl
 
 namespace CallArguments
 

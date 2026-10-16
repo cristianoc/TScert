@@ -806,9 +806,6 @@ instance : StoreView (Checked E p) (CheckedLabel E p) where
     { rows := pr.rows, position := fun l => pr.position l.tree, names := pr.names }
   images c := eitherImages (finiteInstanceImages E.graph) (imagesUpTo E c.variances c.heads.subtypeBudget)
 
-@[simp] theorem Checked.graph_eq (c : Checked E p) :
-    (StoreView.graph c : NormalGraph (CheckedLabel E p)) = E.graph := rfl
-
 end
 
 /-- Extracted heads, frozen: their validated equations and the store over

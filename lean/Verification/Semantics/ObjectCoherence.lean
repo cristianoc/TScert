@@ -32,9 +32,5 @@ def sourceArgs : List Tm → Bool
   | a :: args => sourceTerm a && sourceArgs args
 end
 
-@[simp] theorem sourceArgs_iff (args : List Tm) :
-    sourceArgs args = true ↔ ∀ a ∈ args, sourceTerm a = true := by
-  induction args <;> simp_all [sourceArgs]
-
 
 end Verification.ObjectCoherence

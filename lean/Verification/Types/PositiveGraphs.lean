@@ -132,8 +132,6 @@ def MixedFamily.ofValue (A : ValueFamily) : MixedFamily :=
         | inl v => exact A.2.2 n W v h
         | inr vs => exact h.elim⟩⟩
 
-@[simp] theorem MixedFamily.value_ofValue (A : ValueFamily) : (ofValue A).value = A := rfl
-
 def ParameterAssignment.empty (k : ParameterSpace) : ParameterAssignment k ι :=
   ⟨fun _ _ _ _ => False,
     fun _ => ⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ _ h => h.elim⟩⟩
@@ -180,15 +178,6 @@ theorem selectParameter_agree (kind : Option ParameterKind) {A B : WorldFamily P
 @[simp] theorem selectParameter_value {A : WorldFamily ParameterSpace.mixed.Carrier} {n W v} :
     selectParameter (some .value) A n W (.inl v) ↔ A n W (.inl v) := by
   simp [selectParameter]
-
-@[simp] theorem selectParameter_idempotent (kind : Option ParameterKind)
-    (A : WorldFamily ParameterSpace.mixed.Carrier) :
-    selectParameter kind (selectParameter kind A) = selectParameter kind A := by
-  funext n W x
-  cases x with
-  | inr vs => simp [selectParameter]
-  | inl v =>
-    rcases kind with _ | (_ | _ | _) <;> simp [selectParameter]
 
 /-- Positions of a retained resolution input, literal observation and associated
 result among a scheme's binders. An observation-only group (`Awaitable`) has no
