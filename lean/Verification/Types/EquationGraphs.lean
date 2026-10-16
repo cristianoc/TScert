@@ -657,25 +657,6 @@ theorem Label.cases {P : Label sig → Prop} (label : Label sig)
   | argument i => simp [Tree.scoped] at valid
   | «local» i => simp [Tree.scoped] at valid
 
-/-- A finite list of templates presents every application at its arguments.
-There is no depth, colour or unfolding budget in the graph definition. -/
-structure Equations where
-  signature : Signature
-  body : (head : Fin signature.length) → Template signature head
-  builtins : Option (ArrayBuiltins (Label signature)) := none
-  domain : SchemeDomain (Label signature) .mixed := .ordinary
-
-/-- The row of a label that is not a meet. -/
-def Equations.baseRow (equations : Equations) (label : Label equations.signature) :
-    GraphRow (Label equations.signature) :=
-  match label.view with
-  | .application scope => (equations.body scope.head).instantiate scope
-  | .parameter scope slot =>
-    let b := equations.signature[scope.head].binders[slot]
-    .param label b.name b.kind
-  | .familyVar _ _ kind => .param label "var" kind
-  | .meet _ => .clauses []
-
 /-- Whether a clause can hold a value: an argument-list clause cannot. -/
 def Clause.isValue : Clause α → Bool
   | .pack .. => false
@@ -727,6 +708,51 @@ def meetRowOf [DecidableEq ι] (parts : List (ι × GraphRow ι)) : GraphRow ι 
   | [] => .clauses ((meetAll ((meetClauseLists parts).eraseDups)).filter Clause.isValue)
   | p :: ps => .meet p (meetAll ((meetClauseLists parts).eraseDups)) ps
 
+/-- The row of a label that is not a meet, from a signature's templates
+(`Equations.baseRow`). -/
+def baseRowFrom (sig : Signature) (body : (head : Fin sig.length) → Template sig head)
+    (label : Label sig) : GraphRow (Label sig) :=
+  match label.view with
+  | .application scope => (body scope.head).instantiate scope
+  | .parameter scope slot =>
+    let b := sig[scope.head].binders[slot]
+    .param label b.name b.kind
+  | .familyVar _ _ kind => .param label "var" kind
+  | .meet _ => .clauses []
+
+/-- A label's row from a signature's templates (`Equations.row`). -/
+def rowFrom (sig : Signature) (body : (head : Fin sig.length) → Template sig head)
+    (label : Label sig) : GraphRow (Label sig) :=
+  match label.view with
+  | .meet parts => meetRowOf (parts.map fun q => (q, baseRowFrom sig body q))
+  | _ => baseRowFrom sig body label
+
+/-- A finite list of templates presents every application at its arguments.
+There is no depth, colour or unfolding budget in the graph definition. -/
+structure Equations where
+  signature : Signature
+  body : (head : Fin signature.length) → Template signature head
+  builtins : Option (ArrayBuiltins (Label signature)) := none
+  domain : SchemeDomain (Label signature) .mixed := .ordinary
+  /-- Rows computed once (`Equations.memo`). A cached row is the label's row
+  (`cached_row`); the compiler reads rows through the cache
+  (`Equations.row_eq_cached`). -/
+  cached : Label signature → Option (GraphRow (Label signature)) := fun _ => none
+  cached_row : ∀ l r, cached l = some r → r = rowFrom signature body l := by
+    intro l r h
+    simp at h
+
+/-- The row of a label that is not a meet. -/
+def Equations.baseRow (equations : Equations) (label : Label equations.signature) :
+    GraphRow (Label equations.signature) :=
+  match label.view with
+  | .application scope => (equations.body scope.head).instantiate scope
+  | .parameter scope slot =>
+    let b := equations.signature[scope.head].binders[slot]
+    .param label b.name b.kind
+  | .familyVar _ _ kind => .param label "var" kind
+  | .meet _ => .clauses []
+
 /-- A label's row: a meet's is computed from its parts' rows, read at the
 same level; no part is a meet, so this is one step, not a recursion. -/
 def Equations.row (equations : Equations) (label : Label equations.signature) :
@@ -734,6 +760,29 @@ def Equations.row (equations : Equations) (label : Label equations.signature) :
   match label.view with
   | .meet parts => meetRowOf (parts.map fun q => (q, equations.baseRow q))
   | _ => equations.baseRow label
+
+/-- A label's row, read from the cache where it holds one. -/
+def Equations.rowCached (equations : Equations) (label : Label equations.signature) :
+    GraphRow (Label equations.signature) :=
+  match equations.cached label with
+  | some r => r
+  | none => rowFrom equations.signature equations.body label
+
+theorem Equations.row_eq_rowFrom (equations : Equations) (label : Label equations.signature) :
+    equations.row label = rowFrom equations.signature equations.body label := by
+  have hb : ∀ q, equations.baseRow q = baseRowFrom equations.signature equations.body q := by
+    intro q
+    unfold Equations.baseRow baseRowFrom
+    split <;> simp_all
+  unfold Equations.row rowFrom
+  split <;> simp_all
+
+@[csimp] theorem Equations.row_eq_cached : @Equations.row = @Equations.rowCached := by
+  funext E l
+  unfold Equations.rowCached
+  split
+  · next r h => rw [E.cached_row l r h, E.row_eq_rowFrom]
+  · exact E.row_eq_rowFrom l
 
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
   NormalGraph.ofRowMap equations.row equations.builtins equations.domain

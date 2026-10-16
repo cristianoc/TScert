@@ -191,14 +191,40 @@ def Equations.ofRaw (heads : List RawHead) : Except String Equations :=
       .ok { signature := sig, body := fun i => (templateOf? sig i (raw i)).toOption.get (hall i) }
     else .error "equations: a head is not a template"
 
-/-- The same equations, each template read once: `Equations.ofRaw` states
-a head's template as the validator's result at that head, which reading a
-row would otherwise recompute. -/
+/-- The same equations, each template read once and each nullary head's row
+computed once: `Equations.ofRaw` states a head's template as the validator's
+result at that head, which reading a row would otherwise recompute, and
+checking reads the rows of named types at every step. -/
 def Equations.memo (E : Equations) : Equations :=
   let templates : Array ((h : Fin E.signature.length) × Template E.signature h) :=
     (List.finRange E.signature.length).toArray.map fun h => ⟨h, E.body h⟩
-  { E with body := fun h => match templates[h.val]? with
-      | some ⟨g, t⟩ => if e : g = h then e ▸ t else E.body h
-      | none => E.body h }
+  let body : (h : Fin E.signature.length) → Template E.signature h := fun h =>
+    match templates[h.val]? with
+    | some ⟨g, t⟩ => if e : g = h then e ▸ t else E.body h
+    | none => E.body h
+  let rows : Array (Option { p : Label E.signature × GraphRow (Label E.signature) //
+      p.2 = rowFrom E.signature body p.1 }) :=
+    (List.range E.signature.length).toArray.map fun h =>
+      if hs : (Tree.app h .nil).scoped E.signature 0 0 = true then
+        some ⟨(⟨.app h .nil, hs⟩, rowFrom E.signature body ⟨.app h .nil, hs⟩), rfl⟩
+      else none
+  { signature := E.signature, body, builtins := E.builtins, domain := E.domain
+    cached := fun l => match l.1 with
+      | .app h .nil => match rows[h]? with
+        | some (some p) => if l = p.1.1 then some p.1.2 else none
+        | _ => none
+      | _ => none
+    cached_row := by
+      intro l r h
+      split at h
+      · split at h
+        · next p _ =>
+          split at h
+          · next hl =>
+            simp only [Option.some.injEq] at h
+            rw [← h, p.2, ← hl]
+          · contradiction
+        · contradiction
+      · contradiction }
 
 end Verification.EquationGraphs
