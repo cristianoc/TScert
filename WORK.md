@@ -204,15 +204,11 @@ against the fragment (2026-10-16) gives the work, each item its own design:
 
 - **The compiler API.** About 120 functions read TypeScript's syntax tree
   through `typescript/unstable/ast` and its checker through
-  `typescript/unstable/sync`. The API is a host library, so it gets a
-  contract like the library globals': audited, collected by use, and
-  checked against the declarations. Its 326 guards `isX(node): node is X`
-  are `node.kind === SyntaxKind.X`; with one stated invariant, that a node's
-  shape is the interface its kind names, they are one assumption rather than
-  326. Its enums are literal unions, its flag sets (`NodeFlags`, `TypeFlags`,
-  `SymbolFlags`) numbers tested by bit, and its node methods
-  (`forEachChild`, `getText`, `getStart`) contracts with their callbacks.
-  The guards need guard signatures, the next item, to cross modules.
+  `typescript/unstable/sync`; [the compiler API](docs/COMPILER-API.md)
+  specifies the contract they are verified under. Its implementation waits
+  on immutable fields and foreign arrays in the calculus, a compact
+  representation of kind sets in claims and evidence, and guard signatures
+  for the sync API's type guards.
 - **Guard signatures.** A guard's promise is part of its function type,
   proved at its definition and consumed at a call, for any promised type
   and across modules.
