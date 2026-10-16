@@ -145,3 +145,12 @@ export interface Merge {
 
 // A bounded alias an import type applies (`invalid-written-import-type-value-import`).
 export type Bounded<T extends string> = T;
+
+// A class whose heritage calls a generic function
+// (`invalid-written-heritage-call-value-import`).
+function made<T>(): { new (): { n: number } } {
+  return class {
+    n = 1;
+  };
+}
+export class Made extends made<Bounded<any>>() {}

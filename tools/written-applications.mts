@@ -121,6 +121,11 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
         (error instanceof Error ? error.message : String(error)));
     }
   };
+  const refusal = (node: Node, message: string): SweepError => {
+    const file = node.getSourceFile();
+    return new SweepError(file === context.client ? spanOf(node) : null,
+      `${node.getText(file)} in ${site(node)}: ${message}`);
+  };
   const visit = (node: Node, env: Env, client: boolean): void => {
     // A client's interface or alias is swept where something names it.
     if (client && node.parent && (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) &&
@@ -131,6 +136,24 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (!client && (ts.isBlock(node) || (node.parent && "initializer" in node.parent && node.parent.initializer === node &&
         !ts.isTypeNode(node))))
       return;
+    // An expression inside a type, or in another module's declarations, is
+    // erased: no code runs it, so a call's or a construction's bounds there
+    // are checked nowhere. A computed key there names an entity or is a
+    // literal, as TypeScript requires of a type's key; a heritage clause
+    // there names an entity. Any other expression is refused before a type
+    // holding it is replaced. In the client's code a heritage expression is
+    // code, swept whole.
+    if (ts.isComputedPropertyName(node) && erased(node, context.client) && !keyEntity(node.expression))
+      throw refusal(node, "a computed key in a type names a constant (an identifier or a qualified name) or is a " +
+        "literal: another expression there is erased, and nothing checks what it applies");
+    if (ts.isExpressionWithTypeArguments(node) && node.parent && ts.isHeritageClause(node.parent) &&
+        !entity(node.expression)) {
+      if (erased(node, context.client))
+        throw refusal(node, "a heritage clause in a type or a declared module names a class or an interface: " +
+          "another expression there is erased, and nothing checks what it applies");
+      node.forEachChild(child => { visit(child, env, client); });
+      return;
+    }
     // Every form naming a type with arguments: a type reference, simple or
     // qualified (`ns.B<σ>`, `globalThis.Record<K, V>`), an import type
     // (`import("m").B<σ>`), a heritage clause (`extends ns.Base<σ>`); and the
@@ -248,6 +271,26 @@ function applicationForm(node: Node): { name: ts.Identifier | null; args: readon
     return { name: rightmost(node.expression), args: node.typeArguments ?? [],
       instantiation: !(node.parent && ts.isHeritageClause(node.parent)) };
   return null;
+}
+
+/** Whether an expression names an entity: an identifier, or a property of
+ * one read by name. */
+function entity(node: Node): boolean {
+  return ts.isIdentifier(node) || (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name) && entity(node.expression));
+}
+
+/** Whether a computed key names an entity or is a string or number literal. */
+function keyEntity(node: Node): boolean {
+  return entity(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
+}
+
+/** Whether `node` is erased: in another module than the client's, or inside
+ * a type or an interface, where no code runs it. */
+function erased(node: Node, client: ts.SourceFile): boolean {
+  if (node.getSourceFile() !== client) return true;
+  for (let at = node.parent; at; at = at.parent)
+    if ((ts.isTypeNode(at) && !ts.isExpressionWithTypeArguments(at)) || ts.isInterfaceDeclaration(at)) return true;
+  return false;
 }
 
 /** A declaration's or signature's own type parameters. */

@@ -1151,7 +1151,13 @@ simple or qualified (`ns.B<σ>`, `globalThis.Record<K, V>`), an import type
 (`import("m").B<σ>`), and a heritage clause (`extends`, `implements`,
 qualified or not). A form instantiating a value's generic signature,
 `typeof f<σ>` or `f<σ>` as an expression, is refused: its binders' bounds
-are checked only at a call. Swept are the client file's
+are checked only at a call. An expression inside a type, or in a declared
+module, is erased: no code runs it, so nothing checks what a call,
+construction, tagged template, JSX element or decorator there applies. There
+a computed key names a constant (an identifier or a qualified name) or is a
+literal, as TypeScript requires of a type's key, and a heritage clause names
+a class or an interface; any other expression is refused. In the client's
+code a heritage expression is code, swept whole. Swept are the client file's
 code, with every type node outside its interfaces and aliases; the declared
 types of the values the client reads; and, closed under naming (a reference,
 an import type, a heritage clause, `typeof`), every declaration they reach

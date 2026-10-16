@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { producerExecutable, verifier } from "./verify-source.mts";
+import { check, producerExecutable, verifier } from "./verify-source.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
@@ -221,6 +221,12 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     for (const parameter of d.parameters) parameter.bound = null;
   });
   assert.equal(relaxed.status, 0, relaxed.detail);
+  // A written obligation whose comparison runs out of rounds is refused as
+  // exhausted, at the application (`Node<Leaf>`), not verified.
+  const exhausted = check(join(here, "examples", "written-recursive-bound.ts"), undefined, false, 0);
+  assert.equal(exhausted.status, "exhausted", JSON.stringify(exhausted));
+  assert("detail" in exhausted);
+  assert.match(exhausted.detail, /source direct obligation at \[202,212\): subtype search exhausted/);
 }
 {
   // An array literal's spread is copied before a later element that runs
