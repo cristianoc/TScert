@@ -1219,10 +1219,17 @@ arguments to meet them, and an instance is one assignment meeting them.
 An entry states, per parameter, its argument (the written one, or the
 default read at the earlier arguments) and its bound read at the arguments,
 $`\beta_i[\vec X:=\vec\sigma]`$: the front end reads the bound's syntax with
-the parameters as the arguments' terms, and `keyof X` of a parameter as the
-keys TypeScript computes for its concrete argument, so `Pick`'s
-`K extends keyof T` is read at `T`'s argument; one whose argument is a binder
-of the use site is refused, computed only at an instance. The verifier binds
+the parameters as the arguments' terms, so `Pick`'s `K extends keyof T` is
+read at `T`'s argument. `keyof X` is read exactly or refused: of a
+parameter whose argument is written (a default naming an earlier parameter
+alone standing for that one's), or of an operand naming no parameter, the
+keys TypeScript computes for that concrete type, each of the kind its
+declaration's name has (`"0"` a string, `0` a number), every key for `never`
+and `any`, an intersection's operands' keys; of any other operand, the keys
+of its term read at the arguments, a name that may be numeric refused; a
+type over a binder of the use site, a union or a primitive is refused. A
+declaration's definition states no bound: bounds are read only here. The
+verifier binds
 each entry's groups as a unit's binders (`bindNames`), lowers each argument
 and bound there, and records one obligation per parameter, checked by the subtype
 comparison after closing (`closeObligation`): each bounded placeholder $`p`$

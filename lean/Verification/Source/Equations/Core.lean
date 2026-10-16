@@ -133,7 +133,7 @@ partial def application (ctx : Ctx) (i : Nat) (supplied : List Union) : M (List 
   if supplied.length > d.parameters.size then throw s!"{ctx.site}: {d.name} applied to too many type arguments"
   let mut values := supplied.toArray
   for p in d.parameters.toList.drop supplied.length do
-    fieldsExactly p ["name", "span", "bound", "default"]
+    fieldsExactly p ["name", "span", "default"]
     let default ← field p "default"
     if default == .null then throw s!"{ctx.site}: {d.name} applied without its required argument {← str p "name"}"
     values := values.push (← lowerType { ctx with decl := some i, params := values, self := none, binders := [] } default)
@@ -459,11 +459,6 @@ partial def declarationRow (h i : Nat) : M (GraphRow Tree (List Tree)) := do
   let ctx : Ctx :=
     { decl := some i, params := args.toArray, self := some [mkApp h args], owner := some h,
       site := d.name }
-  let bounds ← d.parameters.toList.zipIdx.filterMapM fun (p, k) => do
-    let b ← field p "bound"
-    if b == .null then pure (some (Tree.argument k, [← ground "source" sourceValueClauses]))
-    else pure (some (Tree.argument k, ← lowerType ctx b))
-  let ctx := { ctx with bounds }
   let own := d.expression
   let empty := kindOf own == some "object" &&
     ((own.getObjValAs? (Array Json) "fields").toOption.getD #[1]).isEmpty &&

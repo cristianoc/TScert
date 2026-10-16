@@ -1672,26 +1672,59 @@ export function collectDeclarations(file: string, options: {
     // its bounds; a library one is stated for its bounds only.
     const typeDeclarationsOf = (name: Identifier): Node[] =>
       (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
-    // The keys of a concrete type, as `keyof` computes them: each property's
-    // name (a number literal for a canonical numeric one), each index's key
-    // type. A symbol-named property has no such key here.
-    const keysOfType = (type: Type, span: Span): TypeTerm => {
+    // `keyof` of a concrete type, as TypeScript computes it: each property's
+    // name, of the kind its declaration's name has (`"0"` a string, `0` a
+    // number); each index's key type; for `never` and `any`, every key; for
+    // an intersection, its operands' keys. A type over a type parameter, a
+    // union, a primitive, or a member whose key kind is unknown is refused.
+    const everyKey = (span: Span): TypeTerm => ({ k: "union", span, parts: [{ k: "atom", name: "string", span },
+      { k: "atom", name: "number", span }, { k: "atom", name: "symbol", span }] });
+    const keysUnion = (parts: TypeTerm[], span: Span): TypeTerm => {
+      const [only] = parts;
+      return !only ? { k: "atom", name: "never", span } : parts.length === 1 ? only : { k: "union", parts, span };
+    };
+    const keysOfType = (type: Type | undefined, span: Span, what: string): TypeTerm => {
+      const refuse = (why: string): never => { throw Error(`keyof ${what} ${why}: its keys are computed only at an instance or not exactly`); };
+      if (!type) return refuse("has no type");
+      if (type.flags & (TypeFlags.Never | TypeFlags.Any)) return everyKey(span);
+      if (type.flags & TypeFlags.Unknown) return { k: "atom", name: "never", span };
+      if (type.isTypeParameter() || type.isUnionType() || !(type.flags & (TypeFlags.Object | TypeFlags.Intersection)))
+        return refuse("is over a type parameter, a union or a primitive");
+      if (type.isIntersectionType()) return keysUnion(type.getTypes().map(t => keysOfType(t, span, what)), span);
       const parts: TypeTerm[] = [];
       for (const property of checker.getPropertiesOfType(type)) {
         const name = property.name;
-        if (name.startsWith("__@")) throw Error(`keyof of a type with a symbol-named member, ${name}, states no key here`);
-        parts.push(numericKey(name) === name
-          ? { k: "literal", name: "number", text: name, span } : { k: "literal", name: "string", text: name, span });
+        if (name.startsWith("__@")) refuse(`names a symbol-keyed member, ${name}`);
+        const declared = property.declarations[0]?.resolve();
+        const written = declared ? nameOf(declared) : undefined;
+        const numeric = written ? ts.isNumericLiteral(written) : numericKey(name) === name ? refuse(`has the member ${name} of unknown key kind`) : false;
+        parts.push(numeric ? { k: "literal", name: "number", text: numericKey(name), span }
+          : { k: "literal", name: "string", text: name, span });
       }
       for (const info of checker.getIndexInfosOfType(type)) {
         const key = info.keyType.flags;
         if (key & TypeFlags.String) parts.push({ k: "atom", name: "string", span }, { k: "atom", name: "number", span });
         else if (key & TypeFlags.Number) parts.push({ k: "atom", name: "number", span });
         else if (key & TypeFlags.ESSymbol) parts.push({ k: "atom", name: "symbol", span });
-        else throw Error("keyof of a type with an index signature over a pattern states no key here");
+        else refuse("has an index signature over a pattern");
       }
-      const [only] = parts;
-      return !only ? { k: "atom", name: "never", span } : parts.length === 1 ? only : { k: "union", parts, span };
+      return keysUnion(parts, span);
+    };
+    // `keyof` of a term read at the arguments: a record's field names (a
+    // name that may be numeric is refused, the term no longer telling its
+    // kind), its indexes' key types; `never`, every key; an intersection, its
+    // operands' keys. Any other term is refused.
+    const keysOfTerm = (term: TypeTerm, span: Span): TypeTerm => {
+      const refuse = (): never => { throw Error("keyof of a type read at the arguments that states no exact keys"); };
+      if (term.k === "atom" && term.name === "never") return everyKey(span);
+      if (term.k === "intersection") return keysUnion(term.parts.map(p => keysOfTerm(p, span)), span);
+      if (term.k !== "object" || term.calls.length || term.prototype) return refuse();
+      const parts: TypeTerm[] = term.fields.map(f => typeof f.name !== "string" || numericKey(f.name) === f.name
+        ? refuse() : { k: "literal", name: "string", text: f.name, span });
+      if (term.stringIndex) parts.push({ k: "atom", name: "string", span }, { k: "atom", name: "number", span });
+      if (term.numberIndex) parts.push({ k: "atom", name: "number", span });
+      if (term.symbolIndex) parts.push({ k: "atom", name: "symbol", span });
+      return keysUnion(parts, span);
     };
     const sweepScope = (at: Node, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TermScope => {
       const what = `${idOf(at.getSourceFile())}#${at.getText(at.getSourceFile())}`;
@@ -1765,7 +1798,7 @@ export function collectDeclarations(file: string, options: {
           const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
           const parameters = childrenOf(declaration, "typeParameters").filter(ts.isTypeParameterDeclaration)
             .map(p => p.name.text);
-          const argumentOf = (part: Node): { term: TypeTerm; node: TypeNode } | undefined => {
+          const argumentOf = (part: Node): { term: TypeTerm; node: TypeNode | null } | undefined => {
             const index = ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && !part.typeArguments?.length
               ? parameters.indexOf(part.typeName.text) : -1;
             return index < 0 ? undefined : args[index];
@@ -1774,16 +1807,27 @@ export function collectDeclarations(file: string, options: {
           const scope: TermScope = { ...outer,
             named: (part, pos, read) => argumentOf(part)?.term ?? outer.named(part, pos, read),
             computed: (part, pos, read) => {
-              // `keyof P`: the keys of P's argument as TypeScript computes
-              // them, for a concrete argument.
-              const argument = ts.isTypeOperatorNode(part) && part.operator === ts.SyntaxKind.KeyOfKeyword
-                ? argumentOf(part.type) : undefined;
-              if (!argument) return computedType(computedContext, part, pos, read);
-              const type = checker.getTypeFromTypeNode(argument.node);
-              if (!type || type.isTypeParameter() || (type.isUnionType() && type.getTypes().some(t => t.isTypeParameter())))
-                throw Error(`keyof over the type parameter ${argument.node.getText(argument.node.getSourceFile())} ` +
-                  "at a use site is computed only at an instance");
-              return keysOfType(type, pos);
+              if (!(ts.isTypeOperatorNode(part) && part.operator === ts.SyntaxKind.KeyOfKeyword))
+                return computedType(computedContext, part, pos, read);
+              // `keyof X` at the instance: of a parameter whose argument is
+              // written, the keys TypeScript computes for that argument's
+              // type; of any other operand, the keys of its term read at the
+              // arguments. Each exactly, or refused.
+              // A node naming a type parameter has keys only at an instance.
+              const symbolic = (n: Node): boolean => (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) &&
+                typeDeclarationsOf(n.typeName).some(ts.isTypeParameterDeclaration)) || (n.forEachChild(symbolic) ?? false);
+              const argument = argumentOf(part.type);
+              if (argument?.node) {
+                const node = argument.node;
+                const text = node.getText(node.getSourceFile());
+                if (symbolic(node))
+                  throw Error(`keyof ${text} is over a type parameter of the use site: its keys are computed only at an instance`);
+                return keysOfType(checker.getTypeFromTypeNode(node), pos, text);
+              }
+              // An operand naming no parameter is concrete: TypeScript's keys.
+              if (!symbolic(part.type))
+                return keysOfType(checker.getTypeFromTypeNode(part.type), pos, part.type.getText(source));
+              return keysOfTerm(read(part.type), pos);
             } };
           return node => typeTerm(scope, node, declaration);
         },
@@ -2341,10 +2385,9 @@ function mergeMembers(parts: TypeTerm[], fail: (at: Node, message: string) => ne
 /** A class's instance contract merged with its interfaces' members, as
  * TypeScript merges them: a property both declare is one, of the one type
  * TypeScript requires of both; a method both declare would be overloads,
- * outside the fragment. An interface's heritage is refused by the caller's
- * reading of bases. Construction establishes the whole contract where the
- * class's code runs, so a member only the interface states is refused
- * there. */
+ * outside the fragment. The class's constructor must establish the whole
+ * contract, checked where the class is defined in the checked module; an
+ * imported class's constructor is a trusted declaration. */
 function mergedClass(instance: TypeTerm, interfaces: TypeTerm[], fail: (at: Node, message: string) => never,
     at: Node): TypeTerm {
   if (!interfaces.length) return instance;
@@ -2540,13 +2583,23 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         throw Error(`required type parameter after default in ${identity.module}#${identity.name}`);
       sawDefault ||= !!parameter.defaultType;
       const parameterSpan: Span = [parameter.getStart(source), parameter.end];
+      // A default the reader states over the parameters completes a
+      // reference that omits the argument; one it cannot (a computation over
+      // another parameter, `keyof U`) completes none, and a reference
+      // omitting it is refused where it is read. A written application's
+      // own completion reads every default at its arguments.
+      const stated = (node: TypeNode): TypeTerm | null => {
+        try {
+          return parse(node);
+        } catch {
+          return null;
+        }
+      };
       return { name: parameter.name.text, span: parameterSpan,
-        bound: parameter.constraint ? parse(parameter.constraint) : null,
-        default: parameter.defaultType ? parse(parameter.defaultType) : null };
+        default: parameter.defaultType ? stated(parameter.defaultType) : null };
     });
     // An alias TypeScript computes from its parameters has no equation: its
-    // definition states its parameters, their bounds and defaults, which its
-    // written applications are checked against.
+    // definition states its parameters and defaults.
     // (A predicate's false branch would narrow `node` to no alias.)
     const computedEquation: boolean = computedAlias(node, context.alias);
     if (computedEquation) {

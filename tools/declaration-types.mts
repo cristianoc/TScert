@@ -110,8 +110,9 @@ export type TypeTerm =
   | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
 export type TypeDefinition = {
   declaration: DeclarationIdentity;
-  parameters: { name: string; span: Span; bound: TypeTerm | null;
-    default: TypeTerm | null }[];
+  /** Its type parameters, each with its default. A parameter's bound is
+   * read at each written application (`WrittenApplication`). */
+  parameters: { name: string; span: Span; default: TypeTerm | null }[];
   /** Interface heritage remains a source edge; consumers derive its members. */
   bases: TypeTerm[];
   /** The equation; null where none is read: an alias TypeScript computes

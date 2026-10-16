@@ -49,7 +49,7 @@ export type SweepContext = {
    * argument a concrete type, as the keys TypeScript computes for that
    * argument; a bound or default naming a parameter is read so, at the
    * instance. */
-  instantiate(declaration: Node, args: readonly { term: TypeTerm; node: TypeNode }[]): (node: TypeNode) => TypeTerm;
+  instantiate(declaration: Node, args: readonly { term: TypeTerm; node: TypeNode | null }[]): (node: TypeNode) => TypeTerm;
   /** The written reference's edge to the declaration it names. */
   reference(name: ts.Identifier, args: readonly TypeNode[]): WrittenApplication["reference"];
   /** The declarations a member selection depends on: the top-level
@@ -289,15 +289,21 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     try {
       // Each argument, written or the default at the earlier ones; each
       // bound at all of them.
-      const written = args.map(arg => ({ node: arg, term: ts.isInferTypeNode(arg)
+      const written = args.map(arg => ({ node: ts.isInferTypeNode(arg) ? null : arg, term: ts.isInferTypeNode(arg)
         ? { k: "binder" as const, name: env.names.get(arg.typeParameter) ?? fresh(arg.typeParameter),
             span: spanOf(arg) }
         : context.read(arg, read) }));
-      const completed = [...written];
+      const completed: { node: TypeNode | null; term: TypeTerm }[] = [...written];
       for (const parameter of parameters.slice(written.length)) {
         if (!parameter.defaultType)
           throw Error(`${name.text}'s ${parameter.name.text} has neither an argument nor a default`);
-        completed.push({ node: parameter.defaultType, term: context.instantiate(first, completed)(parameter.defaultType) });
+        // A default naming an earlier parameter alone stands for that
+        // parameter's argument; any other has no written node.
+        const named = parameter.defaultType;
+        const earlier = ts.isTypeReferenceNode(named) && ts.isIdentifier(named.typeName) && !named.typeArguments?.length
+          ? parameters.findIndex(p => p.name.text === named.typeName.getText(named.getSourceFile())) : -1;
+        completed.push({ node: earlier >= 0 && earlier < completed.length ? completed[earlier]?.node ?? null : null,
+          term: context.instantiate(first, completed)(named) });
       }
       const instance = context.instantiate(first, completed);
       const bounds = parameters.map(p => p.constraint ? instance(p.constraint) : null);
