@@ -1015,7 +1015,6 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     haveI : Decidable (a4 = b4) := tmDecEq a4 b4
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4 ∧ a5 = b5 ∧ a6 = b6)
       (by simp only [Tm.frame.injEq])
-termination_by sizeOf a
 
 def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
   cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
@@ -1031,7 +1030,6 @@ def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
     haveI : Decidable (a4 = b4) := argsDecEq a4 b4
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4 ∧ a5 = b5 ∧ a6 = b6)
       (by simp only [CallCode.graph.injEq])
-termination_by sizeOf a
 def argsDecEq (a b : List Tm) : Decidable (a = b) := by
   cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
   case nil.nil => exact isTrue rfl
@@ -1039,7 +1037,6 @@ def argsDecEq (a b : List Tm) : Decidable (a = b) := by
     haveI : Decidable (a = b) := tmDecEq a b
     haveI : Decidable (as = bs) := argsDecEq as bs
     exact decidable_of_iff (a = b ∧ as = bs) (by simp only [List.cons.injEq])
-termination_by sizeOf a
 end
 
 instance : DecidableEq Tm := tmDecEq
