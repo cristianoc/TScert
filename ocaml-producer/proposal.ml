@@ -71,7 +71,8 @@ let infer ?(state = Proposal_diagnostics.create ()) flows program =
         | _ -> None) bindings
     | _ -> []) program.Source.init in
   (* A module constant holding a closure without a rest, binders, defaults
-     or a guard, whose result is written, is claimed where it is created at its
+     or a guard, whose result is written, and read as a value somewhere
+     (called alone, it is called at its own arity), is claimed where it is created at its
      signature extended by a rest of `unknown` elements too, as a module
      function's slot is: its code discards the actuals past its parameters,
      and Lean checks its body at that signature. A unit passing it where a
@@ -79,9 +80,17 @@ let infer ?(state = Proposal_diagnostics.create ()) flows program =
   (* A name the source spells, not one the parser makes for a class's parts. *)
   let source_name n = n <> "" && String.for_all (fun c ->
     c = '_' || c = '$' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9')) n in
+  (* The names the module reads as values: anywhere but as a called callee. *)
+  let rec valued (e:expr) = match e.node with
+    | Call ({node=Id _;_},r,args,_,_) -> List.concat_map valued (Option.to_list r @ args)
+    | Id n -> [n]
+    | _ -> List.concat_map valued (children e) in
+  let read_as_values = List.concat_map valued (List.concat_map statement_children
+    (program.Source.init @ List.concat_map (fun (g:Source.fn) -> g.body) program.Source.functions)) in
   let discarding = List.concat_map (fun (s:Source.stmt) -> match s.statement with
     | Declare (false,bindings) -> List.filter_map (fun (name,written,(e:expr)) -> match written,e.node with
-        | None,Lambda (receiver,[],ps,[],false,Some result,None,_) when source_name name ->
+        | None,Lambda (receiver,[],ps,[],false,Some result,None,_)
+          when source_name name && List.mem name read_as_values ->
           Some (e.pos,[{quantified=[];receiver=Option.value receiver ~default:top;
             params=List.map snd ps;variadic=Some top;
             rest_pack=None;result;call_effect=Unrestricted}])

@@ -89,7 +89,10 @@ mutator called on an array it allocated, and a global regex literal's
 (`regexp-fresh-global-replace-refused`), are refused. Certifying them needs
 the postcondition relative to the code's entry heap, the knowledge of which
 locations were allocated since, and call effects stating which locations a
-call may write (its receiver's own). Keep the source targets and their
+call may write (its receiver's own). A call of a value holding a fixed
+signature and its variadic extension, a module constant read as a value
+elsewhere, is not certified preserving: the selected call's evidence is no
+qualified application at the fixed signature. Keep the source targets and their
 negative controls when extending the body-effect checker.
 
 <a id="keys-known-only-at-run-time"></a>
@@ -167,7 +170,20 @@ a vacuity escape for contradictory reference conjunctions
 producer's arrow search builds no nested `combine`. An element read keeps no
 heap fact: it reads the heap only, but the value it finds is a value only
 where the store's contract says so, which the frame rule would have to take
-from the read's typing (a length is a number, and keeps them).
+from the read's typing (a length is a number, and keeps them). An element
+read the code guards is read at the element type or `undefined`
+(`guarded-element-read-refused`): `out[out.length - 1]` under a nonzero
+length needs the index and the length related by arithmetic the typing does
+not decide, and `xs[0] !== undefined && known.has(xs[0])` needs a
+current-content fact about an element location, kept from the test to the
+second read, as a field path would need one (`o.a !== undefined &&
+f(o.a)` is refused the same way). A `flatMap` callback returning a
+primitive or an array of primitives (`flat-map-scalar-result-refused`)
+needs a second signature quantifying a binder bounded by the primitives,
+which the first does not use: neither the producer's instance of a member
+read nor Lean's search for one assigns a binder no parameter of the
+selected signature names. The design question is per-signature binders, or
+bounds, in a prototype member's scheme.
 
 <a id="a-semantics-of-the-fragment"></a>
 **A semantics of the Fragment.** The parser's rewrites and extraction rest
