@@ -163,19 +163,22 @@ declaration in a type position.
 A value name the module neither imports nor binds is a **global** when
 TypeScript binds it to a global variable. A global is read only at the
 members and call signatures the module's references select (`selectGlobal`):
-every reference reads a member by name or is called; a method's reference
-must be called; a `this` result is the selection itself; a generic, optional
-or modified method, and a member of a generic base interface, are refused.
-With $`I`$ the annotated interface, $`M`$ the names read, $`O_m`$ the overloads
-TypeScript resolves the calls of method $`m`$ to, and $`C`$ the call signatures
-it resolves the calls $`x(\ldots)`$ to:
+every reference reads a member by name, is called, or is read as a value; a
+method's reference must be called; a `this` result is the selection itself; a
+generic, optional or modified method, and a member of a generic base
+interface, are refused. With $`I`$ the annotated interface, $`M`$ the names
+read, $`O_m`$ the overloads TypeScript resolves the calls of method $`m`$ to,
+and $`C`$ the call signatures it resolves the calls $`x(\ldots)`$ to, joined
+by all of $`\mathsf{calls}_I`$ where a reference reads $`x`$ as a value, which
+whoever receives it may call at any of them:
 
 ```math
 \frac{x\ \text{a global variable annotated}\ I\qquad
       M=\{m\mid x.m\ \text{occurs}\}\qquad
-      \text{every occurrence of}\ x\ \text{is some}\ x.m\ \text{or a callee}\qquad
+      \text{every occurrence of}\ x\ \text{is some}\ x.m,\ \text{a callee or a value}\qquad
       O_m\subseteq\mathsf{overloads}_I(m)\qquad
-      C\subseteq\mathsf{calls}_I}
+      C\subseteq\mathsf{calls}_I\qquad
+      (x\ \text{read as a value}\Rightarrow C=\mathsf{calls}_I\neq\emptyset)}
      {\Gamma(x)=⟦\mathsf{sel}_{M,O,C}(I)⟧}\ \textsf{global}
 \qquad
 ⟦I⟧\subseteq⟦\mathsf{sel}_{M,O,C}(I)⟧ .
@@ -186,7 +189,8 @@ says nothing of keys it does not name, a method's receiver is its host, and a
 `this` result is the host. A declaration's `any` is read as `unknown`. A
 global both called and read through a method, or both constructed and read
 through members, has no clause and is refused, unless the overlay reads those
-members as intrinsics. A standard library global is
+members as intrinsics. A global both read as a value and constructed is
+refused too. A standard library global is
 read through the reviewed overlay ([Library globals](#library-globals)).
 
 ## One equation per declaration
@@ -1283,6 +1287,67 @@ the global's construct signatures:
       |\vec a|\le|\vec P|\ \text{for each}\ x.m(\vec a)\ \text{selecting}\ s}
      {⟦s⟧_\Omega=\forall\vec X.\ (\mathsf{this}:\mathsf{self},\ \vec P)\Rightarrow R}\ \textsf{library-stated}
 ```
+
+A statement may end in a rest whose element $`E`$ every further argument
+meets, a spread's elements included, and may state a call signature of the
+global, read at each call $`x(\vec a)`$ as a member's is:
+
+```math
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{stated}\ (\vec P,\ \ldots E)\Rightarrow R)\quad
+      \text{no spread among the first}\ |\vec P|\ \text{actuals of each}\ x.m(\vec a)}
+     {⟦s⟧_\Omega=(\mathsf{this}:\mathsf{self},\ \vec P,\ \ldots E)\Rightarrow R}\ \textsf{library-stated-rest}
+```
+
+A standard library global is read as a value only where the overlay marks
+each of its call signatures for one (`value`): whoever receives the value may
+call it with any receiver and any arguments its type admits, so the entry
+states what the host does at every one of them.
+
+```math
+\frac{\mathit{lib}(x)\quad x\ \text{read as a value}\quad
+      \forall s\in\mathsf{calls}_I.\ \exists\omega\in\Omega.\ \omega=(x,\ \cdot,\ \mathsf{text}(s),\ \mathsf{value})}
+     {\Gamma(x)=⟦\mathsf{sel}_{M,O,\mathsf{calls}_I}(I)⟧_\Omega}\ \textsf{library-value}
+```
+
+The entries, each with the code its restriction keeps from running:
+
+- `Boolean(v, …)` is ToBoolean of its first argument, which runs no code and
+  reads no property, and ignores the rest: $`(\mathtt{unknown},\ \ldots\mathtt{unknown})\Rightarrow\mathtt{boolean}`$,
+  a value too (`xs.filter(Boolean)`). It is stated with no promise about its
+  argument: its declaration, `<T>(value?: T): boolean`, states none, so
+  `filter(Boolean)` keeps its receiver's element type, as TypeScript keeps it
+  (`invalid-boolean-filter-narrowing`).
+- `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
+  `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
+  object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,
+  $`\mathsf{Prim}=\mathtt{null}\mid\mathtt{undefined}\mid\mathtt{boolean}\mid\mathtt{number}\mid\mathtt{string}\mid\mathtt{bigint}\mid\mathtt{symbol}`$,
+  so a hole a spread reads is admitted and an object is not
+  (`invalid-math-max-object`, `invalid-math-min-spread-object`,
+  `invalid-from-code-point-object`, `invalid-from-char-code-object`):
+  $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{number}`$ and
+  $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{string}`$. A symbol or a bigint
+  throws a TypeError and an invalid code point a RangeError, outcomes; the
+  number may be `NaN`, `Infinity` or `-Infinity`.
+- `Object.getOwnPropertyDescriptor(o, k)` converts `o` by ToObject (a
+  TypeError of `null` or `undefined`) and `k` by ToPropertyKey, which runs an
+  object's `toString` (`invalid-own-property-descriptor-key-object`), then
+  looks the key up by `o`'s [[GetOwnProperty]], which calls no getter. That
+  lookup runs no code on the objects a program holds, none of which is a
+  proxy ([trust surface](DESIGN.md#trust-surface)). The result is
+  `undefined` or a fresh descriptor, nothing known of what it holds
+  (`invalid-own-property-descriptor-value`):
+
+```math
+\mathtt{getOwnPropertyDescriptor}:(\mathtt{unknown},\ \mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol})\Rightarrow\mathsf{Desc}\mid\mathtt{undefined}
+```
+
+```math
+\mathsf{Desc}=\{\mathtt{readonly}\ \mathit{configurable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{enumerable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{value}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{writable}?:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{get}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{set}?:\mathtt{unknown}\}
+```
+
+`Reflect` is a namespace, whose functions are no annotated variable's
+members, and `Reflect.get(o, k)` runs [[Get]], which calls an accessor's
+getter, code no type of `o` states: it is refused.
 
 Overloads stated alike are one signature. A statement may name a library
 interface (`Set<T>`, read through [its overlay](#prototype-contracts)) or a

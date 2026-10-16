@@ -1908,6 +1908,29 @@ type SelectionContext = {
   library: (name: string, args: TypeTerm[]) => TypeTerm;
 };
 
+/** Whether a reference is written: an assignment's target or an update's
+ * operand. */
+function isWritten(use: Identifier): boolean {
+  const parent = use.parent;
+  if (ts.isBinaryExpression(parent) && parent.left === use)
+    return parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
+  return (ts.isPrefixUnaryExpression(parent) || ts.isPostfixUnaryExpression(parent)) &&
+    (parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken);
+}
+
+/** A call at a stated signature passes no argument past its parameters but
+ * to its rest, the only one a spread may reach. */
+function boundedArguments(call: ts.CallExpression, stated: Stated, what: string): void {
+  if (stated.rest) {
+    if (call.arguments.slice(0, stated.params.length).some(ts.isSpreadElement))
+      throw Error(`${what} is read with spreads past its ${stated.params.length} parameter(s) only`);
+    return;
+  }
+  if (call.arguments.length > stated.params.length || call.arguments.some(ts.isSpreadElement))
+    throw Error(`${what} is read with at most ${stated.params.length} argument(s)`);
+}
+
 /**
  * A global variable, such as Node's `process` or the standard library's
  * `BigInt`, read at the members and call signatures the client's references
@@ -1926,7 +1949,10 @@ type SelectionContext = {
  *   each a host-relative member (so its reference must be called), and a
  *   `this` result is the definition itself, the host;
  * - a property is its signature as declared, read like any declaration's;
- * - a call signature is read as a method's is, with no receiver.
+ * - a call signature is read as a method's is, with no receiver;
+ * - a reference read as a value, `xs.filter(Boolean)`, selects every call
+ *   signature, since whoever receives the value may call it at any; a
+ *   standard library global only where the overlay states each for a value.
  *
  * Leaving the other members and signatures out gives a supertype of the
  * declared type, since methods are host-relative; nothing else about the
@@ -2027,6 +2053,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const keys = new Map<string, ts.PropertyAccessExpression[]>();
   const calls: ts.CallExpression[] = [];
   const constructs: ts.NewExpression[] = [];
+  // References reading the global as a value, `xs.filter(Boolean)`.
+  const valueUses: Identifier[] = [];
   for (const use of uses) {
     const parent = use.parent;
     if (ts.isPropertyAccessExpression(parent) && parent.expression === use && !parent.questionDotToken &&
@@ -2044,7 +2072,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       if (!entry?.test) throw Error(`${name} is not read as an instanceof test`);
       context.test(spanOf(parent), entry.test);
     }
-    else throw Error(`${name} is read only through its members, each by name, called or constructed`);
+    else if (isWritten(use)) throw Error(`the global ${name} is written, which the module may not do`);
+    else valueUses.push(use);
   }
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
   for (const [key, accesses] of keys) {
@@ -2091,12 +2120,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         // parameters bound the arguments, as for a construct.
         if (entry?.stated) {
           const stated = entry.stated;
-          for (const call of calls)
-            if (call.arguments.length > stated.params.length || call.arguments.some(ts.isSpreadElement))
-              throw Error(`${what} is read with at most ${stated.params.length} argument(s)`);
+          for (const call of calls) boundedArguments(call, stated, what);
           const at = spanOf(overload);
           const form: FunctionTerm = { k: "function", effect: "unrestricted", receiver: { k: "self", span: at }, params: stated.params,
-            rest: null, result: stated.result, span: at };
+            rest: stated.rest ?? null, result: stated.result, span: at };
           // A generic statement is a scheme over its binders, as a generic
           // interface method is.
           return [stated.binders.length
@@ -2137,6 +2164,17 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     if (!signature) throw Error(`TypeScript resolves the call of ${name} to no call signature it declares`);
     chosen.set(signature, [...chosen.get(signature) ?? [], call]);
   }
+  // A value is every call signature: whoever receives it may call any. A
+  // standard library global is read as one only where the overlay states
+  // each for it (`value`).
+  if (valueUses.length) {
+    if (!declared.length) throw Error(`${name} is read as a value, which declares no call signature`);
+    for (const signature of declared) {
+      if (library && !reviewed(undefined, signature, `${name} as a value`)?.value)
+        throw Error(`${name} is read as a value only where the overlay states its call signatures for one`);
+      if (!chosen.has(signature)) chosen.set(signature, []);
+    }
+  }
   const what = `${name}(…)`;
   // A call the overlay reads as the global's construct, `Error(m)`: each is
   // reported, and its statement joins the construct signatures.
@@ -2154,6 +2192,16 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       calledConstructs.push({ binders: stated.binders, type: { k: "constructor", params: stated.params, rest: null,
         result: stated.result, span: spanOf(signature) } });
       return [];
+    }
+    // A call signature the overlay states instead of the declared one, as a
+    // member's: its parameters bound the arguments.
+    if (entry?.stated) {
+      const stated = entry.stated;
+      if (stated.binders.length) throw Error(`${what} is stated with binders, which a call signature cannot hold`);
+      for (const call of calls) boundedArguments(call, stated, what);
+      const at = spanOf(signature);
+      return [{ k: "function", effect: "unrestricted", receiver: null, params: stated.params,
+        rest: stated.rest ?? null, result: stated.result, span: at } satisfies FunctionTerm];
     }
     return forms(signature, name, what, entry).map(form => {
       if (form.receiver) throw Error(`${what} states its receiver`);
@@ -2205,6 +2253,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           type: { k: "constructor", params: form.params, rest: form.rest, result: form.result, span } satisfies TypeTerm };
       });
   })];
+  if (valueUses.length && constructForms.length)
+    throw Error(`${name} is both constructed and read as a value`);
   const source = declaration.getSourceFile();
   const identity: DeclarationIdentity = { module: context.identityOf(source), name,
     span: [declaration.getStart(source), declaration.end] };

@@ -41,6 +41,20 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("invalid-number-object", `const seen = { value: 0 };
     wrong({ a: 1, valueOf() { seen.value = 1; return 1; } }, seen)`), 1,
     "invalid-number-object: the actual source returns 1 despite its 0 contract");
+  // `Math.max`, `Math.min`, `String.fromCodePoint` and `String.fromCharCode`
+  // convert an object argument, a spread's elements included, by its own
+  // `valueOf`, and `Object.getOwnPropertyDescriptor` its key by its own
+  // `toString`.
+  for (const [file, argument] of [["invalid-math-max-object", "o"], ["invalid-math-min-spread-object", "[o]"],
+    ["invalid-from-code-point-object", "o"], ["invalid-from-char-code-object", "o"]])
+    assert.equal(runExample(file, `const seen = { value: 0 };
+      const o = { valueOf() { seen.value = 1; return 1; } };
+      wrong(${argument}, seen)`), 1, `${file}: the actual source returns 1 despite its 0 contract`);
+  assert.equal(runExample("invalid-own-property-descriptor-key-object", `const seen = { value: 0 };
+    wrong({}, { toString() { seen.value = 1; return "a"; } }, seen)`), 1,
+    "invalid-own-property-descriptor-key-object: the actual source returns 1 despite its 0 contract");
+  assert.equal(runExample("invalid-own-property-descriptor-value", `first({ a: "x" })`), "x",
+    "invalid-own-property-descriptor-value: the descriptor's value is a string returned at number");
   // The further actual a rest of strings takes is a number.
   assert.equal(runExample("invalid-rest-function-longer-signature", `wrong()("s", 1)`), 1,
     "invalid-rest-function-longer-signature: the number is returned at string");
