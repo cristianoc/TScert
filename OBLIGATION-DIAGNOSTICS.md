@@ -1,0 +1,290 @@
+# Obligation diagnostics
+
+This is explanatory metadata about an unsuccessful verification attempt, not
+proof evidence and not a judgement that a source claim is false. It plays no
+part in certificate checking.
+
+## Transport and identity
+
+On a structured failure, the verifier emits its human-readable error,
+then one line on stderr:
+
+```text
+obligation-diagnostic: {"phase":"proof-search","outcome":{"kind":"not-established"},...}
+```
+
+The human sentence of a failed graph search names the obligation: `source
+expression obligation at [s,e): evidence search failed: no derivation of its
+<role> claim` for a node, `source incoming edge obligation at [s,e): … the
+edge from node N does not establish the claims at this point` for an edge.
+`verify-source.mts` then adds one line, `obligation: <summary>`, the
+source-term account of the record below (which claim was available and what
+was required, or, for a term that is not a slot, its form and the claims of
+the slots it reads), so a refusal read in a log or a coverage row says why
+without opening the record.
+
+### A failed search refused by name
+
+Where the cause of a failed search is known, `verify-source.mts` puts it first, as a
+line `reject: <reason>` before the verifier's own, which follow unchanged.
+The outcome stays the unverified search Lean decided on the ordinary
+proposal; the line only names why it found no derivation. Two sources give
+it, in this order:
+
+- The producer's explanation: `producer --explain fragment.json` runs the
+  ordinary inference and prints, instead of claims, the forms it met whose
+  failure has a stated reason, each at its source span
+  (`Proposal.explain`). The one whose span meets the failed obligation's,
+  the innermost, names it. The forms and their reasons: a `for...of` loop
+  or a spread over a union of iterable kinds, an arm of which is no array
+  (one host kind's iteration is stated, `%Iterate:K%`, where the whole
+  iterable is of it; an iterable the program defines, or a union with one,
+  runs the iterator protocol); an open record or `unknown` that
+  `Array.isArray` or `instanceof Array` found an array, used as one (the
+  object owns an array's store, not a proven array of `Array.prototype`);
+  an array used as a record naming `length`, a mutable tuple's `length` at
+  its arity; where a signature binding more parameters is expected, a
+  function value known only by its type, a module function with a rest
+  parameter, or a generic one; a named function where a signature
+  indifferent to the receiver it requires is expected (its type is its
+  annotated signature); an instance of a declaration with
+  generic methods at an instance of another declaring them otherwise
+  (quantified signatures are related binding the same rows); a record at
+  an index signature (TypeScript's implicit index signature); a mutable array or a writable field at a wider one
+  (invariance); a `typeof` test, `??` or strict
+  equality on a value of a type parameter or `unknown`; a cell read at its
+  contract (contents are stated only for primitives, and forgotten across a
+  step that may write them); a write adding a dictionary's key, a spread of
+  a dictionary, a read of a key `in` found in a dictionary; an optional key
+  found `undefined` read at `undefined`; a non-null assertion on a read at
+  a `for...in` key.
+- With `verify-source.mts --typescript-errors` (it loads the project again), for code TypeScript refuses, the TypeScript error
+  nearest the failed obligation: `reject: TypeScript refuses this code too
+  (line L, col C: <message>); the pipeline follows TypeScript's types`. A refusal of the parser's gate or of the producer, which names no
+  obligation, is named the same way by the file's first TypeScript error.
+
+Neither is a premise of anything: the explanation run's claims are
+discarded, and a failure no source names keeps the verifier's lines alone.
+
+`tools/diagnostic.mts` reads the record without parsing the
+human sentence. A record it cannot decode field by field, and a duplicate
+record, are not interpreted: the reader requires the fields below and refuses
+what it does not recognize, so a record it accepts is one of exactly this
+shape. Every `not-established` result has a `location`. A generic value's
+instance outside its bound carries the `direct-obligation` record described below;
+source-conversion refusals use their typed source location. A verifier failure
+that supplies neither is an internal protocol error.
+Absence of a structured record never changes a failure into success.
+
+IDs (`node:L`, `edge:L:I`, `expression:I`) are local to one function and
+attempt. A saved diagnostic is untrusted display data; it cannot establish
+verification status.
+
+## Common fields
+
+| Field | Meaning |
+|---|---|
+| `kind` | `node-typing`, `edge-coverage`, `expression-claim`, `direct-obligation`, `source-refusal`, or `production-failure`. |
+| `phase` | `proof-search`, `certificate-check`, or `request-validation`. |
+| `outcome` | `{ "kind": "not-established" }` or `{ "kind": "exhausted", "resource": { "kind": "subtype-frontier", "limit": N, "rounds": N, "visited": N } }`. |
+| `fuel` | Search depth used for this attempt, not a semantic bound or a diagnosis of exhaustion. |
+| `types` | Finite table of rows, the store's projection onto the labels the record mentions (below); type lists in the record index this table. |
+| `names` | `[[row, spelling], …]`: a source-like spelling of each row that stands for an application, such as `Promise<number \| R>`, in row order, each row once. Absent when no row is named. |
+| `requiredResult` | Whole-function result type on graph diagnostics; absent on standalone expression obligations. |
+| `id` | Local obligation identity, where available. |
+
+An exhausted subtype comparison is inconclusive. Generic module-call bound
+checks report this outcome in `request-validation`, at the call's span.
+Annotation application bounds use that phase and `binding-annotation`, with
+the two compared types under the compacted equations. A source-written
+application uses its span; a bound originating in an imported declaration is
+located at the requesting unit. `limit` is the requested
+frontier-round budget, `rounds` is the number of rounds consumed, and `visited`
+is the number of comparison dependencies visited. The runner reports
+`exhausted`, and the presentation's `searchOutcome` states these counts.
+Source signature comparisons use this same record with `entry-claim`,
+`return-contract` or `binding-annotation`. Equality requires two sequential
+inclusions; a failure carries the direction being checked. Explicit instance
+arguments use `scheme-elimination`. Both source spans in the record are derived
+from the located comparison by `SourceExtraction.subtypeFailure`.
+
+Coverage measurements count exhausted attempts separately. Proposal search
+retains this outcome through failed alternatives; an established alternative
+supplies the requested derivation.
+
+### The label projection
+
+A record does not embed the label store; it embeds what the store's projection
+shows of the labels the record mentions (`StoreView.project`, `Projection` in
+[Source/LabelStore.lean](lean/Verification/Source/LabelStore.lean), the label and store interfaces of the source path).
+A projection is a finite table of rows over its own
+positions, the position each mentioned label is shown at, and the `names`
+entries. The record's type lists are those positions, so a reader renders
+every record the same way, whatever store built it:
+
+```math
+\mathrm{project}(S, M, d) = (\mathit{rows}, \mathit{position} : M \to \mathbb{N}, \mathit{names})
+```
+
+for a store $`S`$, the labels $`M`$ the record mentions and the depth bound
+$`d`$ (`Projection.depth`, 3). The rows hold $`M`$ and what their rows name, to
+$`d`$ row references below $`M`$. An application past the bound is an opaque
+named reference: a `names` entry whose row has no clauses. A reader shows a
+named row by its name and never expands it.
+
+- **The finite table.** Its labels are row positions already, so the
+  projection is the identity: every row, in order, positions unchanged, and no
+  `names`. A sub-table would renumber rows.
+- **Equation labels** ([RECURSIVE-EQUATIONS](REQUEST-PROTOCOL.md)).
+  A label is a tree over infinitely many applications, so the projection
+  chooses positions for $`M`$ and for the rows below them up to $`d`$, and
+  names each application.
+
+A `source-refusal` mentions no label. A closure `expression-claim` record's
+table shows each row's clauses alone: a parameter, scheme or meet row as no
+clauses.
+
+The exact calculus term and type graph use the encodings in
+[REQUEST-PROTOCOL](REQUEST-PROTOCOL.md). Sequents have `context`, `term`, and `type`.
+Context entries are de Bruijn slots, most recent first, and may include anonymous
+saved results. They are not necessarily a source statement environment.
+
+## Direct obligations
+
+A call of a generic module value names its instance before any graph request
+exists, and each type argument must lie within its binder's bound. A failure is
+a `direct-obligation` record, with mandatory `sourceMap` and a closed,
+structured `judgment`. There is no prose field. The judgment is
+`{"kind": "subtyping", "subject": span, "actual": labels, "expected": labels}`:
+the source span and the two compared types under the record's type equations.
+Generic call bounds use the role `scheme-elimination`; exhausted expression
+or edge comparisons use the source obligation's role. They must not be disguised as graph sequents. Lean
+diagnostics render ground types only through `SourceTypes.render`; numeric
+labels remain references inside the graph document and never become type names
+in user-facing judgments.
+
+[DirectObligation.lean](lean/Verification/Programs/DirectObligation.lean) represents this closed judgment form, with no prose field.
+
+The decoder checks the record rather than trusting it: the labels lie in the
+record's graph, and the source map has exactly the judgment's span and no
+context. An unknown judgment variant is rejected. Displayed text, including the
+turnstile, is derived by one printer from the structured sides; no producer or
+call site can store arbitrary prose as a judgment. Unsupported source remains a
+separate `source-refusal`, with a mandatory source map and reason, and cannot be
+rendered as a failed semantic obligation or with a turnstile.
+
+Source extraction constructs one explicit plan for every decoded function, a
+graph request. There is no optional request and no filtering step, so adding a
+source function cannot silently omit it from validation. A direct check that
+fails stops request construction through the located diagnostic channel.
+
+## Node and expression obligations
+
+A `node-typing` record has:
+
+- `source`: `{label, sourceMap, node, claim}`. `node` includes the expression and
+  continuation; `claim` includes its entry context and required expression type.
+- `sequent`: the exact judgement attempted at that node.
+
+An `expression-claim` record has `sourceMap` and `sequent` directly. Its role may
+be an expression claim, closure entry check, local annotation or closure result.
+The kind identifies the obligation collection, not a claim of semantic blame.
+
+`sourceMap` is this node's entry in the graph's **source map**: how to describe
+the node, and each of its context bindings, in the words of the source it was
+lowered from. It is nullable. When present, it contains:
+
+- `pos`: source span, in the parser's UTF-16 offsets.
+- `role`: assigned where extraction creates the obligation.
+- `environmentStart`: optional source statement-entry offset, only where known.
+- `context`: one descriptor per context binding, in context order.
+
+A descriptor has `name`, the source binding this one is addressable by, and
+`span`, the source expression whose value it holds; at least one is present.
+Lowering is the only pass that knows both the source and the graph, so it is the
+only pass that can record this, and it fails rather than emit a context it
+cannot describe. **A reader therefore never has to show a position.** Render a
+`name` as itself and a `span` as the source text it covers.
+
+Source maps are explanatory in the strict sense: the structure has no decoder,
+never reaches a request or a certificate, and cannot affect acceptance. A wrong
+descriptor mislabels a message and nothing else. The rule that keeps this clean:
+anything travelling back toward a reader carries source descriptors, anything
+staying inside the calculus carries positions. `sequent.context`,
+`transfer.available` and `target.mapping` are the calculus's own words and stay
+positional; a reader joins them to the descriptors by index.
+
+The roles are `tag-dispatch`, `node-typing`, `return-contract`, `binding-annotation`,
+`expression-claim`, `closure-entry`, `closure-result`, and `heap-observation`. The generic
+`node-typing` role does not guess a more specific source purpose.
+Unknown roles should display a generic obligation, not a guessed explanation.
+The span for a closure result may be the lambda span, rather than its body span.
+
+At a top-level return, expression typing and result-contract checking are
+separate nodes that can have the same span. For example, a saved `boolean` result
+cannot establish a declared `true` result even when the source expression's claim
+is itself valid. The `return-contract` sequent shows the saved result in slot 0
+and the required function result as its conclusion. `environmentStart` links to
+the original return entry; it does not mean its environment equals the entire
+node context (which includes the saved result).
+
+## Edge obligations
+
+An `edge-coverage` record includes `source` and `destination` node records,
+`edgeIndex` (0 for the first edge, 1 for the second), and `transfer`:
+
+- `available`: the context before applying the destination map, including any
+  result pushed by bind or Boolean dispatch.
+- `target`: exact destination label and slot mapping.
+- `booleanObservation`: true/false for a result-binding Boolean branch; otherwise
+  null. The observed slot is 0. This is the premise of that edge, **not** a claim
+  that execution has actually taken the edge.
+
+- `tagObservation`: `{test, answer, slot: 0}` for tag dispatch; otherwise null.
+  Like Boolean observations, this describes the selected edge's premise, not an
+  assertion that runtime took it. It uses the tag encoding of the request protocol.
+
+The destination requirement is `destination.claim.context`. Both branch edges
+can have the same destination label and different maps; `edgeIndex` identifies
+which obligation failed. Refinement must be interpreted together with the
+observation, not as ordinary subtyping of `available` alone.
+
+Current-content assertions in the supported cell profile reach checked
+obligations. Graph failures use `edge-coverage`, with destination `sourceMap` role
+`heap-observation`; `requiredKnowledge` at the destination identifies the actual
+cell facts. Ordinary closure/compositional proofs use `expression-claim` with the
+same role for uniform invariant justification. These are proof failures,
+not exporter refusals. [Program typing](PROGRAM-TYPING.md#source-observation-checkpoints)
+owns their interpretation.
+
+## Scope of a record
+
+No recursive proof-search trace, minimal failing premise, or complete dependency
+graph is promised. Extraction, type-decoding and missing-claim failures use typed
+source locations. An independent certificate rejection is an internal error,
+because the producer just emitted evidence that its consumer rejects. A source map entry
+does not identify every contributing source claim or prove any premise separately.
+There are no retained mutable-heap observations. A form with obligations of its
+own, as generics and overloads have, gets its own obligation roles rather than
+an `in / claim / out` triple or a role inferred by a reader.
+
+## Presentation
+
+`tools/diagnostic-view.mts` turns a decoded record into a typed presentation
+(`presentObligation`). Its `judgement` has only structured `assumptions` and
+`conclusion`. Node and expression failures use the recorded sequent. Edge
+failures state the available slots, branch premise, target mapping, and heap
+requirements explicitly; a transfer is not reduced to plain subtyping. A
+production failure without a goal has no invented sequent. The `summary` leads
+with a source-named comparison, for example `cell.value` with available type
+`boolean` and required return type `true`: the goal term's variable slot is
+resolved through the source map, never assumed to be slot zero, and no
+available type is invented for a compound term. `searchOutcome` states whether
+the search was not established or exhausted, with the budget.
+
+Every graph row is shown once in `graph`, with labels in the judgement referring
+to these definitions. Cycles and overloads are preserved without recursive
+unfolding or a depth limit. This graph legend and the native term in the
+judgement give the exact language; see [CLAIM-LANGUAGE](CLAIM-LANGUAGE.md) for
+the typed codecs. The presentation describes the failed requirement, not a
+counterexample; search failure means not established, not refuted.

@@ -1,0 +1,19 @@
+name = "verification"
+defaultTargets = ["verifier", "Verification"]
+
+[[lean_lib]]
+name = "Verification"
+globs = [
+  "Verification.Semantics.+",
+  "Verification.Types.+",
+  "Verification.Programs.+",
+  "Verification.Source.+",
+  "Verification.Tests.+",
+]
+# A warning fails the build: the development keeps none.
+leanOptions = { warningAsError = true }
+
+[[lean_exe]]
+name = "verifier"
+root = "Main"
+leanOptions = { warningAsError = true }

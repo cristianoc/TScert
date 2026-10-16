@@ -1,0 +1,9 @@
+{
+  "name": "library-project",
+  "private": true,
+  "type": "module",
+  "description": "Node's declarations, pinned, for the examples that read `process`.",
+  "devDependencies": {
+    "@types/node": "22.10.7"
+  }
+}

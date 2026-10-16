@@ -1,0 +1,25 @@
+(env
+ (_
+  (flags (:standard -w +a-4-42-45-70 -warn-error -a+8))))
+
+(library
+ (name producer_core)
+ (wrapped false)
+ (modules
+  json semantic environment execution flow
+  source inference type_queries proposal_types proposal_diagnostics
+  refinement object_spread module_contract analysis_capabilities analysis_state closure_offers
+  execution_analysis claim_collection analysis_context expression_support expression_values
+  expression_objects expression_properties expression_closures expression_calls expression_typing
+  binding_analysis proposal_flow statement_analysis analysis_pass proposal
+  claims))
+
+(executable
+ (name producer)
+ (modules producer)
+ (libraries producer_core))
+
+(test
+ (name speculation_tests)
+ (modules speculation_tests)
+ (libraries producer_core))

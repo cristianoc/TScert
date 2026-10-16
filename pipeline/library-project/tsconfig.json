@@ -1,0 +1,32 @@
+{
+  // A typed library the library examples import through `paths`, assumed at
+  // its declared types, with Node's declarations (package.json pins them;
+  // `npm ci` installs them).
+  "compilerOptions": {
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+    "exactOptionalPropertyTypes": false,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "strict": true,
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "target": "ES2021",
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "types": ["node"],
+    "typeRoots": ["./node_modules/@types"],
+    "paths": { "@fixture/collections": ["./collections.ts"] }
+  },
+  "include": [
+    "../examples/collections-*.ts",
+    "../examples/invalid-collections-*.ts",
+    "./collections.ts"
+  ]
+}

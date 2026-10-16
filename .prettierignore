@@ -1,0 +1,12 @@
+# ignore everything except files with selected extensions
+*
+!/**/
+!*.*
+**/*.*
+!**/*.json
+!**/*.ts
+*-prettier-ignore.*
+
+# lake regenerates this on every build; leave its formatting alone
+lean/lake-manifest.json
+

@@ -1,0 +1,5 @@
+{
+  "compilerOptions": { "strict": true, "noEmit": true, "target": "es2022" },
+  "include": ["*.ts"],
+  "files": ["../../tools/resolvable.d.ts"]
+}

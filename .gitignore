@@ -1,0 +1,7 @@
+lean/lake-manifest.json
+lean/.lake/
+node_modules
+_build/
+/.claude/settings.local.json
+.DS_Store
+*.swp

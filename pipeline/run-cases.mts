@@ -1,0 +1,77 @@
+// Fast iteration: check only the inventory cases whose file names match, each
+// against its expected outcome, phase and diagnostic.
+//   node pipeline/run-cases.mts module- generic-rest
+// With no pattern, every case, several at once. This is the loop `test.mts`
+// runs first; the rest of `test.mts` (pinned imports, tampering controls) is
+// not run here.
+import assert from "node:assert/strict";
+import { availableParallelism } from "node:os";
+import { join, resolve } from "node:path";
+import { checkApart, type Outcome } from "./verify-source.mts";
+// cases.mts is the inventory this runner judges: each case's source, project and expected status, phase and diagnostic.
+import { cases, type Case } from "./cases.mts";
+
+const here = import.meta.dirname;
+
+/** Run one case's pipeline in its own process, as `verify-source.mts` does from the
+ * command line, so that several cases run at once. */
+export function runCase(test: Case): Promise<Outcome> {
+  return checkApart(join(here, "examples", `${test.file}.ts`),
+    test.project ? resolve(here, "..", test.project) : undefined, test.typescriptErrors)
+    .catch((error: unknown) => { throw new Error(`${test.file}: ${error instanceof Error ? error.message : String(error)}`); });
+}
+
+/** Map over `items` with at most `width` in flight, keeping their order. */
+export async function pooled<T, R>(items: readonly T[], work: (item: T) => Promise<R>,
+    width = availableParallelism()): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        results[i] = { status: "fulfilled", value: await work(items[i]) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(width, items.length) }, worker));
+  return results;
+}
+
+/** Require a case's expected outcome. */
+export function expectOutcome(test: Case, result: Outcome): Outcome {
+  assert.equal(result.status, test.status, `${test.file}: ${JSON.stringify(result)}`);
+  assert.equal(result.phase, test.phase, `${test.file}: wrong boundary`);
+  if (test.diagnostic) {
+    assert.notEqual(result.status, "verified");
+    if (result.status !== "verified")
+      assert.match(result.detail, test.diagnostic, `${test.file}: wrong failure`);
+  }
+  return result;
+}
+
+if (import.meta.filename === resolve(process.argv[1] ?? "")) {
+  const patterns = process.argv.slice(2);
+  const selected = cases.filter((c) => !patterns.length || patterns.some((p) => c.file.includes(p)));
+  if (!selected.length) {
+    process.stderr.write(`no case matches ${patterns.join(" ")}\n`);
+    process.exit(2);
+  }
+  let failed = 0;
+  const outcomes = await pooled(selected, runCase);
+  for (const [i, test] of selected.entries()) {
+    try {
+      const settled = outcomes[i];
+      if (settled.status === "rejected") throw settled.reason;
+      const result = expectOutcome(test, settled.value);
+      process.stdout.write(`${test.file}: ${result.status} (${result.phase}, ${test.kind})\n`);
+    } catch (error) {
+      failed++;
+      process.stdout.write(`${test.file}: FAILED ${error instanceof Error ? error.message.split("\n")[0] : error}\n`);
+    }
+  }
+  process.stdout.write(`${selected.length - failed} of ${selected.length} cases as expected\n`);
+  process.exitCode = failed ? 1 : 0;
+}
