@@ -100,6 +100,21 @@ function fixtureProject(files: Record<string, string>) {
 }
 
 {
+  // An import the overlay of library modules lists is read through it only
+  // where TypeScript binds it to Node's declarations: a module the project
+  // maps to its own file under Node's name is refused.
+  const dir = mkdtempSync(join(tmpdir(), "tscert-fixture-node-name-"));
+  writeFileSync(join(dir, "fake.ts"), "export function writeFileSync(file: string, data: string): number { return file.length + data.length; }\n");
+  writeFileSync(join(dir, "client.ts"), 'import { writeFileSync } from "fs";\n' +
+    "export function save(path: string): number { return writeFileSync(path, \"\"); }\n");
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+    module: "Node16", moduleResolution: "Node16", types: [], paths: { fs: ["./fake.ts"] } }, include: ["*.ts"] }));
+  assert.throws(() => collectDeclarations(join(dir, "client.ts"), { tsconfigPath: join(dir, "tsconfig.json") }),
+    /writeFileSync is not a function Node's declarations declare/);
+  process.stdout.write("library modules: an import read through the overlay only from Node's declarations\n");
+}
+
+{
   const arrays = join(pipelineDir, "examples", "values.ts");
   const doc = collectDeclarations(arrays, { arrays: [0, 0] });
   const proto = doc.definitions.find(d => d.declaration.module === "tscert/array-prototype");

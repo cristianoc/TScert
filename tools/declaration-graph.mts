@@ -24,6 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
+import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
@@ -905,6 +906,30 @@ export function collectDeclarations(file: string, options: {
       }
       throw Error(`${what} is not an annotated constant, function or class`);
     };
+    // A Node module function the reviewed overlay lists (`library-modules.mts`):
+    // the declarations TypeScript binds the import to are overloads in Node's
+    // declarations, each entry's among them exactly as reviewed. The value is
+    // the entries' statements; the declarations' types are not read.
+    const moduleValue = (declared: readonly Node[], entries: readonly ModuleEntry[], what: string):
+        Omit<ValueRoot, "binding"> => {
+      const overloads = declared.filter((n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && !n.body);
+      if (!overloads.length || overloads.length !== declared.length ||
+          overloads.some(o => !idOf(o.getSourceFile()).includes("@types/node/")))
+        throw Error(`${what} is not a function Node's declarations declare, as the reviewed overlay of library modules states it`);
+      const forms = entries.map(entry => {
+        const match = overloads.find(o => reviewedText(o.getText(o.getSourceFile())) === entry.signature);
+        if (!match) throw Error(`${what} is not declared as reviewed: ${entry.signature}`);
+        const source = match.getSourceFile();
+        const span: Span = [match.getStart(source), match.end];
+        const term: Extract<TypeTerm, { k: "function" }> = { k: "function", effect: "unrestricted", receiver: null,
+          params: entry.stated.params, rest: entry.stated.rest ?? null, result: entry.stated.result, span };
+        return { module: idOf(source), span, term };
+      });
+      const [first] = forms;
+      if (!first) throw Error(`${what} has no reviewed overload`);
+      return { declaration: { module: first.module, name: what, span: first.span }, construct: false, typeParams: [],
+        type: oneTerm(forms.map(f => f.term), first.span) };
+    };
     // Computed types (`computed-types.mts`): an annotation they reach is read
     // where it is declared, as an imported value's is, and must be clean.
     const computedContext: ComputedContext = {
@@ -950,6 +975,12 @@ export function collectDeclarations(file: string, options: {
         // A function with overloads is its several declarations; any other
         // name must have one.
         const nodes = resolveDeclarations(binding.local, binding.local.text);
+        const reviewed = moduleEntries(binding.specifier, binding.imported);
+        if (!binding.typeOnly && reviewed.length) {
+          values.push({ binding: { local: binding.local.text, imported: binding.imported,
+            specifier: binding.specifier, span: binding.span }, ...moduleValue(nodes, reviewed, binding.local.text) });
+          continue;
+        }
         const [node] = nodes;
         if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration)))
           throw Error(`TypeScript found ${nodes.length} declarations for ${binding.local.text}`);

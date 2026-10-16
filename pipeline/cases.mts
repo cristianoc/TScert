@@ -1625,6 +1625,11 @@ export const cases: Case[] = [
     /source expression obligation at \[546,547\): evidence search failed: no derivation of its binding-annotation claim/),
   positive("scheme-binder-roles", "generic methods `test.mts` writes into the parser's document: a pack binder `P` beside a nested method binding its own `P`, and a nested method using the outer `P` as a value"),
   // Node's modules and globals, as library-project's pinned declarations state them.
+  { ...positive("node-exec-file-sync", "`execFileSync` at a text encoding with standard output piped, and `writeFileSync` of a string, read through the reviewed overlay of library modules"),
+    project: "pipeline/library-project" },
+  { ...negative("invalid-node-exec-stdout-ignored", "`execFileSync` with standard output not piped returns `null`, though its declaration says `string`",
+    /source expression obligation at \[341,369\): evidence search failed: no derivation of its node-typing claim/),
+    project: "pipeline/library-project" },
   { ...positive("node-console", "`console`, which Node declares as a variable and a namespace of interfaces, is the variable"),
     project: "pipeline/library-project" },
   // A typed library of reactive collections (library-project/collections.ts),

@@ -194,7 +194,9 @@ global both called and read through a method, or both constructed and read
 through members, has no clause and is refused, unless the overlay reads those
 members as intrinsics. A global both read as a value and constructed is
 refused too. A standard library global is
-read through the reviewed overlay ([Library globals](#library-globals)).
+read through the reviewed overlay ([Library globals](#library-globals)), and
+a function of Node's modules an overlay entry lists, through the overlay of
+library modules ([Library modules](#library-modules)).
 
 ## One equation per declaration
 
@@ -1427,6 +1429,49 @@ the symbol it holds not being known:
 So two constants made by `Symbol.for` of one string name one key, and a
 type naming both names that key twice, which is refused, though TypeScript
 types each constant a distinct `unique symbol`.
+
+## Library modules
+
+A function a client imports from one of Node's modules (`node:fs`, or `fs`)
+is read through the reviewed overlay of library modules
+(`library-modules.mts`) where an entry lists it, and otherwise as an
+imported value ([imported values](#imported-ambient-and-global-values)).
+An entry names one overload of the function's declaration in Node's
+declarations, with exactly the text it was reviewed against (white space
+collapsed), and states the signature the host meets at the arguments it
+admits, $`(\vec P)\Rightarrow R`$. With $`\Omega_m`$ the overlay, $`f`$
+imported from module $`\mu`$ and $`O_f`$ the overloads TypeScript binds it to:
+
+```math
+\frac{\{\omega\in\Omega_m\mid \omega.\mathit{module}=\mu,\ \omega.\mathit{name}=f\}=\{\omega_1\ldots\omega_n\}\neq\emptyset\quad
+      \forall i.\ \exists s\in O_f.\ \omega_i.\mathit{text}=\mathsf{text}(s)\quad
+      \omega_i.\mathit{stated}=(\vec P_i)\Rightarrow R_i}
+     {\Gamma(f)=\bigwedge_{i}(\vec P_i)\Rightarrow R_i}\ \textsf{library-module}
+```
+
+The declaration's types are not read, and neither are the types they name
+(`Buffer`, `URL`, streams). Each statement is an assumption a result is
+relative to, as an import's declared type is, and each says what the host
+does at its parameters, where the declaration may say otherwise. A call is
+unrestricted in its effect. The entries:
+
+- `execFileSync(file, args, options)` runs `file` and returns its standard
+  output when it exits with status 0; a failure to run, a nonzero status, a
+  signal, a timeout and output past `maxBuffer` throw. The output is a
+  string at a text encoding and `null` where standard output is not piped to
+  the parent, though the declaration says `string` at every text encoding
+  (`invalid-node-exec-stdout-ignored`). It is stated at the options the
+  host returns a string under: $`(\mathtt{string},\ \mathtt{readonly\ string[]},\ O)\Rightarrow\mathtt{string}`$ with
+
+  `O = { encoding: "utf8"; input?: string; maxBuffer?: number; stdio?: readonly [S, "pipe", S] }`,
+  `S = "pipe" | "ignore" | "inherit"`.
+
+  The host validates the other options it reads, throwing on a type it does
+  not accept, and reads `encoding` and `stdio` before it converts the values
+  of `env` to strings, the one place it runs code of the client's.
+- `writeFileSync(file, data)` with a path and a string writes the string to
+  the file as UTF-8 and returns `undefined`; a path it cannot write throws:
+  $`(\mathtt{string},\ \mathtt{string})\Rightarrow\mathtt{undefined}`$.
 
 ## Regular expressions
 

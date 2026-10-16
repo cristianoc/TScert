@@ -57,6 +57,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-own-property-descriptor-value: the descriptor's value is a string returned at number");
   assert.equal(runExample("invalid-record-index-named-key", "classOf([], 0)"), undefined,
     "invalid-record-index-named-key: the element past the end is undefined, whose member is undefined at string");
+  assert.equal(runImporting("invalid-node-exec-stdout-ignored", `run(["-e", ""])`), null,
+    "invalid-node-exec-stdout-ignored: standard output not piped, the result is null at string");
   // The further actual a rest of strings takes is a number.
   assert.equal(runExample("invalid-rest-function-longer-signature", `wrong()("s", 1)`), 1,
     "invalid-rest-function-longer-signature: the number is returned at string");
