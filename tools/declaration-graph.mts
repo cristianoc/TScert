@@ -1975,6 +1975,18 @@ function boundedArguments(call: ts.CallExpression, stated: Stated, what: string)
  * it, or, outside the standard library, as declared. A global read only
  * through tests, `Array.isArray(e)`, is no value at all (null).
  */
+/** A namespace declaring only types, directly or in namespaces of its own:
+ * TypeScript makes no value of it, so in a value position the name means
+ * only its other declarations (`console`, a variable and a namespace of
+ * interfaces). */
+function typesOnly(node: Node): boolean {
+  if (!ts.isModuleDeclaration(node) || !node.body) return false;
+  const body = node.body;
+  return ts.isModuleBlock(body)
+    ? body.statements.every(s => ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s) || typesOnly(s))
+    : typesOnly(body);
+}
+
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
     { definition: TypeDefinition } |
     { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm } } |
@@ -1987,7 +1999,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     !!d && ts.isVariableDeclaration(d) && !!d.type && ts.isIdentifier(d.name));
   const [declaration] = variables;
   if (!declaration || declarations.some(d => !d ||
-      (!ts.isInterfaceDeclaration(d) && !variables.some(v => v === d))))
+      (!ts.isInterfaceDeclaration(d) && !typesOnly(d) && !variables.some(v => v === d))))
     throw Error(`the global ${name} is not an annotated variable`);
   const where = (node: Node, key: string) => `${context.identityOf(node.getSourceFile())}#${key}`;
   for (const variable of variables) context.clean(variable, where(variable, name));

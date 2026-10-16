@@ -27,6 +27,8 @@
   "include": [
     "../examples/collections-*.ts",
     "../examples/invalid-collections-*.ts",
+    "../examples/node-*.ts",
+    "../examples/invalid-node-*.ts",
     "./collections.ts"
   ]
 }

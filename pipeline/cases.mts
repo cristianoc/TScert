@@ -1624,6 +1624,9 @@ export const cases: Case[] = [
   negative("invalid-recursive-callable", "a view of the recursive bag that also admits `true` is no `R`: its field is invariant",
     /source expression obligation at \[546,547\): evidence search failed: no derivation of its binding-annotation claim/),
   positive("scheme-binder-roles", "generic methods `test.mts` writes into the parser's document: a pack binder `P` beside a nested method binding its own `P`, and a nested method using the outer `P` as a value"),
+  // Node's modules and globals, as library-project's pinned declarations state them.
+  { ...positive("node-console", "`console`, which Node declares as a variable and a namespace of interfaces, is the variable"),
+    project: "pipeline/library-project" },
   // A typed library of reactive collections (library-project/collections.ts),
   // imported at its declared types, and Node's declarations for `process`.
   { ...positive("collections-values-tuple", "Library tuple values sort through the recursive standard-conversion contract"),

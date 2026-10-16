@@ -161,7 +161,10 @@ interface or alias denotes the value in a value position and the other
 declaration in a type position.
 
 A value name the module neither imports nor binds is a **global** when
-TypeScript binds it to a global variable. A global is read only at the
+TypeScript binds it to a global variable. A namespace of the same name
+declaring only types (interfaces, aliases and such namespaces) makes no
+value, so the name's value is the variable's (`node-console`: Node declares
+`console` as both). A global is read only at the
 members and call signatures the module's references select (`selectGlobal`):
 every reference reads a member by name, is called, or is read as a value; a
 method's reference must be called; a `this` result is the selection itself; a
