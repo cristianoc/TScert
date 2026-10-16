@@ -28,7 +28,7 @@ design, not its progress.
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 25 of 263 verify in `tools/`, 2 of 23 in `dev/` (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 26 of 266 verify in `tools/`, 6 of 25 in `dev/` (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -81,7 +81,13 @@ effect. A program with an arbitrary callback promising readable `U[]` for every
 
 Effect inference remains conservative for some rest wrappers, call forms and
 nested heap operations. Expression scheduling alone does not supply the missing
-effect derivation. Keep the source targets and their negative controls when
+effect derivation. A call of a member read off a primitive (`l.trim()`)
+changes no location, but neither the primitives' prototype contracts nor the
+body-effect checker states it, so a `map` callback making one takes the
+unrestricted overload and its result is sparse
+(`map-primitive-method-callback-refused`): the checker needs a member read
+off a primitive, through its built-in prototype, as a required read, and the
+prototype contracts the effect on each member. Keep the source targets and their negative controls when
 extending the body-effect checker.
 
 <a id="keys-known-only-at-run-time"></a>
@@ -176,7 +182,7 @@ options are in [TRUST-REDUCTION](docs/TRUST-REDUCTION.md).
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 263 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 266 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-16):
 
@@ -190,14 +196,18 @@ The first blockers, by the number of slices each stops (2026-10-16):
 - a type reference to the parser's `EnumMember` (5), module-level `let` and
   `var` (5), a mapped type whose value names its key (3).
 
-Seven slices reach the producer and fail there, and twenty-one fail in
-search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 2 verify; the first blockers there are a missing annotation (5),
-`@types/node`'s merged `Buffer` declarations binding different type
-parameters (4), a method read on an element at a computed index
-(`out[out.length - 1].trim()`, 4), destructuring (2), a closure claim not
-derived (2), and `console`, which `@types/node` declares as a variable and
-a namespace (1).
+Seven slices reach the producer and fail there, and twenty-two fail in
+search. Of the 25 functions of `dev/`, the record tools and the lowering
+dump, 6 verify; the first blockers there are a `map` callback calling a
+string's method, whose result is then sparse
+(`map-primitive-method-callback-refused`, 10: dedent, effects, tests, math,
+mathRoles, mathTokens, lowering, and commit-records' examplesOf, readRecord
+and group, through examplesOf), an optional call through a `let` the loop
+assigns (`optional-call-loop-cell-refused`, 3: section, card, pageBody), a
+`for...of` binding destructured (2), a conditional type over a type
+parameter, `KeysOf<T>` (2, lowering-dump), a closure constant created before
+a constant its code reads (`initialization-closure-constant-refused`, 1:
+rules), and an array literal spreading a `Set` and a map's keys (1: summary).
 
 The goal is every function of the repository's own TypeScript verified:
 `tools/`, `pipeline/`, `tests/` and `dev/`, about 21,000 lines (the sources
