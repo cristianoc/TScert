@@ -17,3 +17,8 @@ leanOptions = { warningAsError = true }
 name = "verifier"
 root = "Main"
 leanOptions = { warningAsError = true }
+# Startup initializes the Lean runtime only (c/runtime_init.c). Lake passes
+# these arguments before the Lean libraries; the path is relative to this
+# directory, where Lake runs. Lake traces the arguments, not the file: after
+# editing the C file, remove .lake/build/bin/verifier to relink.
+moreLinkArgs = ["c/runtime_init.c"]
