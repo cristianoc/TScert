@@ -39,6 +39,9 @@ export type SweepContext = {
   /** Whether a declaration is an alias TypeScript computes from its
    * parameters, whose equation may select members of its arguments. */
   computed(declaration: Node): boolean;
+  /** The declarations of the binding a shorthand property `{ m }` takes
+   * its value from; null where it resolves to none. */
+  shorthand(node: ts.ShorthandPropertyAssignment): readonly Node[] | null;
   /** The module a file is, as identities name it. */
   module(file: ts.SourceFile): string;
   /** The client file, whose spans the verifier reports. */
@@ -142,24 +145,47 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     return new SweepError(file === context.client ? spanOf(node) : null,
       `${node.getText(file)} in ${site(node)}: ${message}`);
   };
-  const visit = (node: Node, env: Env, client: boolean): void => {
+  const visit = (node: Node, env: Env, client: boolean, determining = false): void => {
     // A client's interface or alias is swept where something names it.
     if (client && node.parent && (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) &&
         node.getSourceFile() === context.client) {
       return;
     }
-    // Another module's code is not its declared types: its bodies, its
-    // decorators and the initializers of its bindings run there.
-    if (!client && (ts.isBlock(node) || ts.isDecorator(node) ||
-        (node.parent && "initializer" in node.parent && node.parent.initializer === node && !insideType(node.parent))))
-      return;
+    // Another module's code is not its declared types: its bodies and its
+    // decorators run there, and so do its bindings' initializers, which
+    // determine no type where the binding is annotated. An unannotated
+    // binding's type is its initializer's: that initializer determines it,
+    // its type syntax and the values whose types flow into it.
+    if (!client) {
+      if (ts.isDecorator(node)) return;
+      if (ts.isBlock(node)) {
+        const owner = node.parent;
+        if (determining && owner && isFunctionLike(owner) && !("type" in owner && owner.type))
+          throw refusal(owner, "a function whose result type its body determines, in a declaration a client's " +
+            "type depends on: the types that body's code produces are not read");
+        return;
+      }
+      const owner = node.parent;
+      if (owner && "initializer" in owner && owner.initializer === node && !insideType(owner)) {
+        if ("type" in owner && owner.type) return;
+        determining = true;
+      }
+    }
+    // A shorthand property's value is the binding of its name.
+    if (determining && ts.isShorthandPropertyAssignment(node)) {
+      const declarations = context.shorthand(node);
+      if (!declarations)
+        throw refusal(node, "a shorthand property whose value TypeScript resolves to no binding");
+      reach(declarations);
+    }
     // Every expression in erased syntax is an entity name or a literal key
     // (`admitted`); any other is refused before a type holding it is
-    // replaced, whatever node holds it.
+    // replaced, whatever node holds it. Code that determines a declaration's
+    // type runs; its type syntax and its values are swept instead.
     // A declaration's name is no expression, a private name `#x` included.
     const named = !!node.parent && "name" in node.parent && node.parent.name === node &&
       !ts.isPropertyAccessExpression(node.parent);
-    if (ts.isExpression(node) && !named && erased(node, context.client) && !admitted(node))
+    if (!determining && ts.isExpression(node) && !named && erased(node, context.client) && !admitted(node))
       throw refusal(node, "an expression in a type or a declared module names a constant (an identifier, a " +
         "property of one read by name) or is a literal: another is erased, and nothing checks what it applies");
     // Every name in erased syntax, each step of a member path included,
@@ -196,7 +222,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (form?.name && !form.instantiation && context.declarationsOf(form.name).some(d => context.computed(d)))
       for (const arg of form.args) reach(context.members(arg, null));
     // Every child is visited, in the scope it is in.
-    node.forEachChild(child => { visit(child, scopeOf(node, child, env), client); });
+    node.forEachChild(child => { visit(child, scopeOf(node, child, env), client, determining); });
   };
   // The scope a child of `node` is in: a mapped type's key is in scope past
   // its constraint, `infer` binders in the extends type and the true branch,
@@ -335,6 +361,13 @@ function insideType(node: Node): boolean {
  * the client's, where no code the client runs evaluates it. */
 function erased(node: Node, client: ts.SourceFile): boolean {
   return node.getSourceFile() !== client || insideType(node);
+}
+
+/** Whether `node` is a function, method, getter or arrow, whose result
+ * type its body determines where it states none. */
+function isFunctionLike(node: Node): boolean {
+  return ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node);
 }
 
 /** Whether `node` is or is in an interface or a type alias. */

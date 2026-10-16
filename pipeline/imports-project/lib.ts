@@ -190,3 +190,32 @@ export const methods = {
 export const value: number = 1;
 let loads = 0;
 loads += 1;
+
+// Unannotated declarations whose types their initializers determine, which
+// clients select (`invalid-written-initializer-*-value-import`).
+export const arrows = { m: (x: keyof { a: Bounded<any> }): number => x.length };
+export const functions = {
+  m: function (x: keyof { a: Bounded<any> }): number {
+    return x.length;
+  },
+};
+export const nested = {
+  inner: { m: (x: keyof { a: Bounded<any> }): number => x.length },
+};
+export class Fields {
+  f = (x: keyof { a: Bounded<any> }): number => x.length;
+  static g = (x: keyof { a: Bounded<any> }): number => x.length;
+}
+export const arrow = (x: keyof { a: Bounded<any> }): number => x.length;
+export const asserted = "a" as keyof { a: Bounded<any> };
+const shortValue: keyof { a: Bounded<any> } = "a";
+export const shorthand = { shortValue };
+export const assigned = { m: shortValue };
+
+// A method whose result type its body determines
+// (`written-initializer-inferred-result-refused-value-import`).
+export const inferred = {
+  m() {
+    return 1;
+  },
+};

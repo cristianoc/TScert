@@ -1181,8 +1181,14 @@ member of its arguments; a module's or a namespace's member is its export
 of that name. The unit swept is exactly the declaration reached (a member, a
 property, a method, a variable's declarator, a type), its annotations and
 type syntax, with the binders of its enclosing declarations in scope,
-whatever path reached it; never its enclosing statement, its executable body
-or its initializer. A module or a namespace contributes nothing by itself,
+whatever path reached it; never its enclosing statement or its executable
+body. An annotated declaration's initializer determines no type and is not
+swept; an unannotated declaration's type is its initializer's, which is
+swept as what determines it: its type syntax (parameter and result
+annotations, assertions, `satisfies`, type arguments), and every value
+reference in it, a shorthand property's included, resolved by the same rule
+to the declaration supplying it. A function there whose result type its
+block body determines is refused: the types that code produces are not read. A module or a namespace contributes nothing by itself,
 only the members a further step selects. A name resolving to nothing is
 refused. The standard library's declarations are not
 swept: the applications inside them belong to the reviewed library
