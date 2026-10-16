@@ -1,6 +1,7 @@
 import Verification.Source.SourceClaimWire
 import Verification.Source.SourceClaimSchemes
 import Verification.Source.SourceClaimDiagnostics
+import Verification.Source.FragmentTypes
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore

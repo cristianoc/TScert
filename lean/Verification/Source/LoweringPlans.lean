@@ -1,6 +1,7 @@
 import Verification.Source.LoweringState
 import Verification.Source.LoweringTypes
 import Verification.Source.LoweringObservations
+import Verification.Source.FragmentTypes
 
 /-! Builds direct proof plans for values, predicates and members. -/
 namespace Verification.SourceExtraction

@@ -1,5 +1,6 @@
 import Verification.Source.LoweringExecution
 import Verification.Source.LoweringControl
+import Verification.Source.FragmentTypes
 
 namespace Verification.SourceExtraction
 open CallEffects (Arrow RestArrow Contract Effect)

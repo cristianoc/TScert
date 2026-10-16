@@ -1,4 +1,5 @@
 import Verification.Source.LoweringState
+import Verification.Source.FragmentTypes
 
 /-! Resolves source claims and type-directed expression operations. -/
 namespace Verification.SourceExtraction

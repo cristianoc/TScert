@@ -3,6 +3,7 @@ import Verification.Source.SourceClaimSites
 import Verification.Source.SourceClaimPlans
 import Verification.Source.SourceExtraction
 import Verification.Source.FlowJson
+import Verification.Source.FragmentTypes
 
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore

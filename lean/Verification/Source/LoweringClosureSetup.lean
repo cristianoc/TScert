@@ -2,6 +2,7 @@ import Verification.Source.LoweringState
 import Verification.Source.LoweringTypes
 import Verification.Source.LoweringObservations
 import Verification.Source.LoweringPlans
+import Verification.Source.FragmentTypes
 
 /-! Prepares closure signatures, parameters and captures. -/
 namespace Verification.SourceExtraction

@@ -75,6 +75,7 @@ const equationReaders = [
 {
   const ts = declared(["tools/fragment.mts", "tools/declaration-types.mts", "tools/claim.mts"]);
   const leanNames = new Set([...lean(["lean/Verification/Source/Fragment.lean",
+    "lean/Verification/Source/FragmentTypes.lean",
     ...equationReaders]), ...lean(["lean/Verification/Source/ResolutionWire.lean"], false, "inductive Certificate")]);
   expectSubset("Lean reads of the Fragment", leanNames, ts, {
     binder: "a source-claims label, read by equation lowering",
@@ -104,7 +105,7 @@ const equationReaders = [
 // The claim-independent source execution graphs.
 {
   const ts = declared(["tools/source-flow.mts"], "const invalid");
-  const keys = read("lean/Verification/Source/RequestJson.lean")
+  const keys = read("lean/Verification/Types/Claim.lean")
     .match(/instance : ToJson PropKey where[\s\S]*?(?=instance : FromJson PropKey)/)?.[0] ?? "";
   const writes = new Set([...(read("lean/Verification/Source/FlowJson.lean") +
     read("lean/Verification/Source/ExpressionPlan.lean") + keys)

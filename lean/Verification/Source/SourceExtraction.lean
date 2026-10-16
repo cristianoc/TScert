@@ -38,6 +38,7 @@ import Verification.Source.ExpressionPlan
 -- BindingPlan.lean owns persistent bindings and the conditional execution of pattern and parameter defaults.
 import Verification.Source.BindingPlan
 import Verification.Source.SourceClaims
+import Verification.Source.FragmentTypes
 
 /-! Source extraction for the stateful consumer: it lowers a unit of the
 Fragment AST (`Fragment`) to a calculus program with its point claims. Names

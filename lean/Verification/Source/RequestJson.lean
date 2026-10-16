@@ -15,30 +15,6 @@ open ProgramCertificates PointClaims ControlFlow CertificateProducer
 open CallEffects (Arrow RestArrow Contract Effect)
 open LabelStore
 
-/-- A string key is its JSON string, so a document naming only string keys
-reads as it always has; a symbol key is `{"symbol": id}`. -/
-instance : ToJson PropKey where
-  toJson
-    | .str name => .str name
-    | .sym id => Json.mkObj [("symbol", toJson id)]
-
-instance : FromJson PropKey where
-  fromJson?
-    | .str name => .ok (.str name)
-    | j => do
-      let fields ← j.getObj?
-      if fields.size != 1 then throw "a symbol key has exactly the field 'symbol'"
-      return .sym (← (← j.getObjVal? "symbol").getNat?)
-
-/-- A field name: a string key as its JSON string, a symbol key as
-`{"symbol": id}`. -/
-def _root_.Verification.PropKey.decode (j : Json) : Except String PropKey :=
-  match j with
-  | .str name => .ok (.str name)
-  | j => do
-    fieldsExactly j ["symbol"]
-    return .sym (← (← jField j "symbol").getNat?)
-
 deriving instance ToJson, FromJson for Tag
 deriving instance ToJson, FromJson for Arith
 deriving instance ToJson, FromJson for Invoke
