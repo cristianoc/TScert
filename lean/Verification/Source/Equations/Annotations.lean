@@ -154,7 +154,7 @@ def bindNames (scope : List (String × Binding)) (bounds : List (Tree × Union))
   return (inner, out)
 
 /-- An array or tuple type's parts. -/
-def arrayParts (ctx : Ctx) (term : Json) : M (Option ArrayParts) := do
+partial def arrayParts (ctx : Ctx) (term : Json) : M (Option ArrayParts) := do
   match kindOf term with
   | some "array" =>
     let element ← lowerType ctx (← field term "element")
@@ -165,6 +165,9 @@ def arrayParts (ctx : Ctx) (term : Json) : M (Option ArrayParts) := do
     let restTerm ← field term "rest"
     let rest ← if restTerm == .null then pure none else some <$> lowerType ctx restTerm
     return some ⟨required, optional, rest, ← bool term "readonly", ← field term "presence"⟩
+  -- An application its equation replaced (a rest's alias): the equation's
+  -- parts; the annotation's lowering checks the application.
+  | some "applied" => arrayParts ctx (← field term "value")
   | _ => return none
 
 /-- Every annotation of the function tree lowered in its scope, keyed by its

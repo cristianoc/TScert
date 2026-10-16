@@ -158,20 +158,31 @@ export const REST_PACK_BOUND =
 
 /** A rest parameter's type, a declared alias read through its equation at
  * the reference's arguments, as TypeScript reads one: the array a call
- * collects is viewed at that equation. */
-export function restTerm(scope: TermScope, type: TypeTerm): TypeTerm {
-  for (let seen = 0; type.k === "reference" && seen < 16; seen++) {
-    const equation = scope.equation?.(type);
-    if (!equation) break;
-    type = equation;
-  }
-  return type;
+ * collects is viewed at that equation, and the application, replaced by it,
+ * is `applied`, keeping its bound obligation. */
+export function restTerm(scope: TermScope, type: TypeTerm, depth = 0): TypeTerm {
+  if (type.k !== "reference" || depth >= 16) return type;
+  const equation = scope.equation?.(type);
+  if (!equation) return type;
+  return { k: "applied", reference: type.reference, args: type.args, value: restTerm(scope, equation, depth + 1),
+    span: type.span };
+}
+
+/** The type a chain of `applied` terms denotes, and the chain wrapped around
+ * another term: where a reader takes a part of the type, `wrap` keeps the
+ * obligations on what it builds from it. */
+export function appliedChain(type: TypeTerm): { inner: TypeTerm; wrap: (term: TypeTerm) => TypeTerm } {
+  if (type.k !== "applied") return { inner: type, wrap: term => term };
+  const { inner, wrap } = appliedChain(type.value);
+  return { inner, wrap: term => ({ ...type, value: wrap(term) }) };
 }
 
 /** Why a rest parameter's type is no contract for the array a call
  * collects, by its form. */
 export function restRefusal(type: TypeTerm): string {
   switch (type.k) {
+    case "applied":
+      return restRefusal(type.value);
     case "parameter":
       return `${REST_CONTRACT}: one typed by a declaration's type parameter inside the declaration types its ` +
         "argument lists by a value type parameter's elements, which the heap holds, where an argument pack's " +
@@ -230,9 +241,10 @@ export type TermScope = {
   computed?(node: TypeNode, span: Span, read: (node: TypeNode) => TypeTerm): TypeTerm;
   /** A mapped type's keys, or a library mapped type's key argument
    * (`Record<K, V>`), as the union of literals and primitives TypeScript
-   * computes for it, `"a" | "b"` for an alias of those, or null. A scope
-   * without it reads the keys as written. */
-  keys?(node: TypeNode): TypeTerm | null;
+   * computes for it, `"a" | "b"` for an alias of those, keeping the
+   * applications written in it (`kept`), or null; `read` reads an operand in
+   * this scope. A scope without it reads the keys as written. */
+  keys?(node: TypeNode, read: (node: TypeNode) => TypeTerm): TypeTerm | null;
   /** A reference to a declared type alias of an array, a tuple or another
    * alias: its equation at the reference's arguments, or null. A scope
    * without it reads no rest parameter through an alias. */
@@ -309,6 +321,8 @@ export function optionalTerm(type: TypeTerm, span: Span): TypeTerm {
  * or readonly, any number of them. Anything else has no reading as a
  * signature. */
 export function restPositions(type: TypeTerm): { positions: TypeTerm[] } | { element: TypeTerm } | null {
+  // The positions of an application's equation (`restTerm`).
+  if (type.k === "applied") return restPositions(type.value);
   // The array a call collects is fresh: it is an array of its element, and
   // viewing it as `readonly` gives up only writes.
   if (type.k === "array") return { element: type.element };
@@ -527,7 +541,7 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
   if (!node.type || names(node.type)) scope.fail(node, "a mapped type's value names its key");
   const plus = (token: Node | undefined, keyword: ts.SyntaxKind) =>
     !!token && (token.kind === keyword || token.kind === ts.SyntaxKind.PlusToken);
-  const key = parameter.constraint && scope.keys?.(parameter.constraint);
+  const key = parameter.constraint && scope.keys?.(parameter.constraint, part => typeTerm(scope, part));
   return { key: key ?? typeTerm(scope, parameter.constraint, parameter), value: typeTerm(scope, node.type),
     optional: plus(node.questionToken, ts.SyntaxKind.QuestionToken),
     readonly: plus(node.readonlyToken, ts.SyntaxKind.ReadonlyKeyword) };
@@ -540,6 +554,8 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
  * `symbol`, a symbol index. Its value does not name the key, so every field
  * and index has the one value type. A type parameter is refused. */
 export function expandMapped(m: Mapped, span: Span, fail: (message: string) => never): TypeTerm {
+  // Keys replacing an application: the expansion keeps its obligation.
+  if (m.key.k === "applied") return { ...m.key, value: expandMapped({ ...m, key: m.key.value }, span, fail) };
   const keys: TypeTerm[] = [];
   const flatten = (t: TypeTerm): void => {
     if (t.k === "union") t.parts.forEach(flatten);
@@ -737,6 +753,15 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
   const params: TypeTerm[] = [];
   let rest: TypeTerm | null = null;
   let alternatives: TypeTerm[][] | null = null;
+  // The obligations of the applications a rest's positions replace
+  // (`restTerm`), kept on the result.
+  let keep = (term: TypeTerm): TypeTerm => term;
+  const kept = (type: TypeTerm): TypeTerm => {
+    const chain = appliedChain(type);
+    const outer = keep;
+    keep = term => outer(chain.wrap(term));
+    return chain.inner;
+  };
   for (const [index, p] of ordinary.entries()) {
     const pattern = !declared && !!p.dotDotDotToken && ts.isArrayBindingPattern(p.name);
     if (!(ts.isIdentifier(p.name) || pattern) || (ts.isIdentifier(p.name) && p.name.text === "this") ||
@@ -744,11 +769,11 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
       scope.fail(p, "expected an ordinary parameter");
     if (p.dotDotDotToken) {
       if (index !== ordinary.length - 1) scope.fail(p, "a rest parameter must be the last one");
-      const type = restTerm(scope, typeTerm(scope, p.type, p));
+      const type = kept(restTerm(scope, typeTerm(scope, p.type, p)));
       // A union of tuples is one signature per tuple.
       if (type.k === "union") {
         alternatives = type.parts.map(part => {
-          const contract = restPositions(restTerm(scope, part));
+          const contract = restPositions(kept(restTerm(scope, part)));
           if (!contract || !("positions" in contract)) return scope.fail(p, restRefusal(part));
           return contract.positions;
         });
@@ -776,7 +801,7 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
       params.push(optional(p) ? optionalTerm(type, spanOf(scope, p)) : type);
     }
   }
-  const resultTerm = given ?? typeTerm(scope, result, at);
+  const resultTerm = keep(given ?? typeTerm(scope, result, at));
   return (alternatives ?? [[]]).map(positions =>
     ({ k: "function", effect: "unrestricted", receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
 }
@@ -965,9 +990,11 @@ function indexKinds(scope: TermScope, node: TypeNode): ("string" | "number" | "s
   const add = (t: TypeTerm): void => {
     if (t.k === "union") t.parts.forEach(add);
     else if (t.k === "atom" && (t.name === "string" || t.name === "number" || t.name === "symbol")) kinds.push(t.name);
+    else if (t.k === "applied")
+      scope.fail(node, "an index signature's key replacing an application has nowhere to keep its bound obligation");
     else scope.fail(node, "an index signature's key is string, number or symbol");
   };
-  add(scope.keys?.(node) ?? typeTerm(scope, node));
+  add(scope.keys?.(node, part => typeTerm(scope, part)) ?? typeTerm(scope, node));
   return kinds;
 }
 

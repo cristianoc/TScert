@@ -24,7 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
-import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
+import { computedType, enclosingBinders, inferredTerm, kept, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
@@ -82,14 +82,14 @@ type FunctionTerm = Extract<TypeTerm, { k: "function" }>;
  * parameter, the keys `keys` computes where it can (an alias of literals is
  * its literals), otherwise each argument as `read` reads it. */
 export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[], read: (node: TypeNode) => TypeTerm,
-    keys?: (node: TypeNode) => TypeTerm | null): TypeTerm[] {
+    keys?: (node: TypeNode, read: (node: TypeNode) => TypeTerm) => TypeTerm | null): TypeTerm[] {
   const named: number[] = [];
   const mentions = (t: TypeTerm): void => {
     if (t.k === "parameter") named.push(t.index);
     else if (t.k === "union") t.parts.forEach(mentions);
   };
   if (library.k === "mapped") mentions(library.template.key);
-  return nodes.map((node, i) => (named.includes(i) ? keys?.(node) : null) ?? read(node));
+  return nodes.map((node, i) => (named.includes(i) ? keys?.(node, read) : null) ?? read(node));
 }
 
 const isLibraryModule = (module: string): boolean => module.startsWith("typescript/lib/");
@@ -621,10 +621,17 @@ export function collectDeclarations(file: string, options: {
     // A computed key names a `unique symbol` constant. Each such declaration
     // is listed once, and its position in the list is the symbol's identity.
     // A mapped type's keys as TypeScript computes them, where they are a
-    // union of literals and primitives.
-    const keyTypeOf = (node: TypeNode): TypeTerm | null => {
+    // union of literals and primitives, keeping the applications written in
+    // them. Where those are not read, the keys are read as written.
+    const keyTypeOf = (node: TypeNode, read: (node: TypeNode) => TypeTerm): TypeTerm | null => {
       const type = checker.getTypeFromTypeNode(node);
-      return type ? literalUnion(type, [node.getStart(node.getSourceFile()), node.end]) : null;
+      const span: Span = [node.getStart(node.getSourceFile()), node.end];
+      const keys = type ? literalUnion(type, span) : null;
+      try {
+        return keys && kept(computedContext, node, read, keys, span);
+      } catch {
+        return null;
+      }
     };
     // Whether a name denotes a standard library value, such as `Symbol`.
     const isLibraryValue = (name: Identifier): boolean => {
@@ -1633,7 +1640,8 @@ export function collectDeclarations(file: string, options: {
     }
     for (const span of options.keyTypes ?? []) {
       const node = typeNodeAt(client, span);
-      options.keyType?.(span, node ? keyTypeOf(node) : null);
+      options.keyType?.(span, node ? keyTypeOf(node, part =>
+        typeTerm(valueScope(node, `${idOf(client)}#${node.getText(client)}`, enclosingBinders(node)), part)) : null);
     }
     for (const span of options.symbolNames ?? []) {
       const node = expressionAt(client, span);

@@ -27,7 +27,6 @@ design, not its progress.
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
-| [Rest alias bounds](#rest-alias-bounds) | open: unsound acceptance | a rest typed by a bounded alias's application keeps the obligation that its arguments meet their bounds |
 | [The front end's own functions](#the-front-ends-own-functions) | open: 10 of 241 verify (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
@@ -37,23 +36,6 @@ design, not its progress.
 mechanized specification would turn the ECMA rows of the trust surface into
 theorems; the lemmas and their cost are in
 [TRUST-REDUCTION](docs/TRUST-REDUCTION.md#the-host).
-
-<a id="rest-alias-bounds"></a>
-**Rest alias bounds.** A rest parameter's contract reads an alias through its
-equation at the reference's arguments (`restTerm`), which replaces the
-application and its bound obligation, so this verifies though TypeScript
-rejects `Args<number>`:
-
-```ts
-type Args<T extends string> = [T];
-export function f(...a: Args<number>): number {
-  return a[0];
-}
-```
-
-The rest's contract keeps the application as an `applied` term does in a
-[computed type](docs/SOURCE-CONTRACTS.md#computed-types), read through it
-where the verifier and the producer read a rest's positions.
 
 <a id="constructor-rests"></a>
 **Constructor rests.** A constructor's rest parameter is refused: `new`

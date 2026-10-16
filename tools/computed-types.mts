@@ -119,34 +119,61 @@ export function enclosingBinders(node: Node): string[] {
 const describe = (checker: Checker, type: Type): string => checker.typeToString(type);
 
 /** The type term of a computed type `node` (`computedForm`), located at
- * `span`; `read` reads an operand in the scope `node` is written in. Its
- * evaluation replaces every application written in it, and each keeps the
- * obligation that its arguments meet their bounds: the result is `applied`
- * at each outermost one (`writtenApplications`), whose arguments are read
- * where they are written and keep the obligations of the applications in
- * them. */
+ * `span`; `read` reads an operand in the scope `node` is written in: what
+ * TypeScript computes for it, keeping the applications written in it
+ * (`kept`). */
 export function computedType(context: ComputedContext, node: TypeNode, span: Span,
     read: (node: TypeNode) => TypeTerm): TypeTerm {
-  const value = evaluated(context, node, span, read);
+  return kept(context, node, read, evaluated(context, node, span, read), span);
+}
+
+/** `value`, a term that replaces the type `node` as written, with the
+ * obligation of every application written in `node` that its arguments
+ * meet their bounds: `applied` at each outermost one (`writtenApplications`),
+ * its arguments read where they are written by `read`, so the applications
+ * inside them keep theirs. Every reader that replaces written syntax by a
+ * term it does not read from that syntax states its result through this. */
+export function kept(context: ComputedContext, node: TypeNode, read: (node: TypeNode) => TypeTerm,
+    value: TypeTerm, span: Span): TypeTerm {
   return writtenApplications(node).reduceRight((term, reference) =>
     context.application(reference, (reference.typeArguments ?? []).map(read), term, span), value);
 }
 
 /** The outermost applications written in `node`, `node` itself if it is one:
- * the type references with type arguments outside one another's arguments
- * and outside a scope binding type parameters of its own (a generic
- * signature's, a mapped type's key, an `infer`). */
+ * the type references with type arguments outside one another's arguments.
+ * One under a binder `node` introduces (a generic signature's type
+ * parameter, a mapped type's key, an `infer`) is read where `node` is, which
+ * is its scope unless it names that binder; one naming it is refused, since
+ * its obligation holds only under the binder. */
 function writtenApplications(node: Node): TypeReferenceNode[] {
   const found: TypeReferenceNode[] = [];
-  const visit = (part: Node): void => {
+  const names = (part: Node, binders: readonly string[]): string | undefined =>
+    (ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && binders.includes(part.typeName.text)
+      ? part.typeName.text : undefined) ?? part.forEachChild(child => names(child, binders));
+  const visit = (part: Node, binders: readonly string[]): void => {
     if (ts.isTypeReferenceNode(part) && part.typeArguments?.length) {
+      const binder = names(part, binders);
+      if (binder !== undefined)
+        throw Error(`the application ${part.getText(part.getSourceFile())} names the type parameter ${binder} of ` +
+          "a type its computation replaces: its bound obligation holds only under that binder");
       found.push(part);
       return;
     }
-    if (ts.isMappedTypeNode(part) || ts.isInferTypeNode(part) || childrenOf(part, "typeParameters").length) return;
-    part.forEachChild(child => { visit(child); });
+    const own = ts.isMappedTypeNode(part) ? [part.typeParameter]
+      : ts.isConditionalTypeNode(part) ? inferred(part.extendsType)
+      : childrenOf(part, "typeParameters").filter(ts.isTypeParameterDeclaration);
+    const inner = [...binders, ...own.map(p => p.name.text)];
+    part.forEachChild(child => { visit(child, inner); });
   };
-  visit(node);
+  visit(node, []);
+  return found;
+}
+
+/** The type parameters `infer` declares in `node`. */
+function inferred(node: Node): ts.TypeParameterDeclaration[] {
+  if (ts.isInferTypeNode(node)) return [node.typeParameter];
+  const found: ts.TypeParameterDeclaration[] = [];
+  node.forEachChild(child => { found.push(...inferred(child)); });
   return found;
 }
 
@@ -187,14 +214,20 @@ function aliasApplication(context: ComputedContext, node: TypeReferenceNode, spa
   const alias = context.alias(node);
   if (!alias || !computedAlias(alias, context.alias))
     throw Error(`${computed} is not an application of a type alias TypeScript computes`);
-  const parameters = alias.typeParameters ?? [];
-  const written = node.typeArguments ?? [];
-  if (written.length !== parameters.length)
-    throw Error(`the computed type alias ${alias.name.text} is applied at a default type argument, outside the fragment`);
+  // An omitted argument is its parameter's default, read at the earlier
+  // arguments.
+  const args: TypeTerm[] = [];
+  for (const [i, parameter] of (alias.typeParameters ?? []).entries()) {
+    const written = node.typeArguments?.[i];
+    const value = written ? read(written)
+      : parameter.defaultType ? context.applied(alias, args)(parameter.defaultType) : null;
+    if (!value) throw Error(`${computed} omits the argument of ${alias.name.text}'s ${parameter.name.text}, which has no default`);
+    args.push(value);
+  }
   let body = alias.type;
   while (ts.isParenthesizedTypeNode(body)) body = body.type;
   if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, read, computed);
-  return computedType(context, body, span, context.applied(alias, written.map(read)));
+  return computedType(context, body, span, context.applied(alias, args));
 }
 
 /** A union member as written: its type node and the reader of the scope it

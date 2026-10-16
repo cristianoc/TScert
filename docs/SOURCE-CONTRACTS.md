@@ -1095,37 +1095,15 @@ which TypeScript keeps, read where it is written by the declaration reader as
 `unknown` (`any` constrains nothing): a parameter at it accepts every value,
 and a result at it promises none.
 
-Each rule above gives the type a computed type denotes, its evaluation,
-which replaces the applications written in it. Each keeps the obligation
-every written application has: that its arguments meet the declaration's
-bounds ([from source](RECURSIVE-EQUATIONS.md#5-from-source)). With
-$`\mathsf{apps}(\tau)`$ the outermost applications written in $`\tau`$
-($`\tau`$ itself if it is one: type references with arguments, outside one
-another's arguments and outside a scope binding type parameters of its
-own), $`⟦\tau⟧_{\mathsf{ev}}`$ its evaluation by the rules above, and
-$`\beta_{D,i}`$ the declared bound of the $`i`$-th parameter of
-$`D\langle\vec X\rangle`$, $`\mathsf{top}`$ where it declares none:
-
-```math
-\frac{⟦\tau⟧_{\mathsf{ev}}=S\quad
-      \forall D\langle\vec\sigma\rangle\in\mathsf{apps}(\tau).\ \forall i.\
-      ⟦\sigma_i⟧\le⟦\beta_{D,i}⟧_{\vec X:=⟦\vec\sigma⟧}}
-     {⟦\tau⟧=S}\ \textsf{applied}
-```
-
-The reader states it as an `applied` term at each outermost application,
-which denotes its value and keeps the application's arguments, checked where
-the computed type is written as a reference's are; the arguments are read as
-written, so the applications inside them keep theirs. A computed alias has no
-equation, and the declaration graph states its parameters and their bounds.
-So `ElementOf<number[]>` with `type ElementOf<T extends readonly string[]> =
-T[number]` is refused although TypeScript computes `number` for it, as are
-`keyof Box<number>` with `interface Box<T extends string>` and
-`P<number>` with `type P<T extends string> = T extends "a" ? T : never`,
-whose evaluation is `never`. A library mapped type read at its meaning
-(`Record`, `Partial`) is outside the graph, and its application keeps no
-obligation: `Record`'s one bound, `keyof any`, holds for every key its
-reading admits, a string or a string literal.
+Each rule above gives what a computed type denotes. That replaces the
+applications written in it, which keep their obligations by
+[replaced applications](#replaced-applications): `ElementOf<number[]>` with
+`type ElementOf<T extends readonly string[]> = T[number]` is refused although
+TypeScript computes `number` for it, as are `keyof Box<number>` with
+`interface Box<T extends string>` and `P<number>` with
+`type P<T extends string> = T extends "a" ? T : never`, whose evaluation is
+`never`. A computed alias applied without an argument reads its parameter's
+default there, at the earlier arguments.
 
 Refused: a conditional type over a function's own type parameter, which
 TypeScript defers; one whose result has a part that is no member of the
@@ -1142,6 +1120,50 @@ declaration names no symbol (a constant made neither by `Symbol()` nor by
 TypeScript infers another type for (a `let`, a method, a `const` assertion);
 `typeof C` of a class with a static method or a private static, bindings of
 their own that no member of the class value's type states.
+
+## Replaced applications
+
+A written type application $`D\langle\sigma_1,\ldots,\sigma_n\rangle`$
+obliges its arguments to meet the declaration's bounds
+([from source](RECURSIVE-EQUATIONS.md#5-from-source)), whatever term the
+reader states for it. A reader that replaces written type syntax $`\tau`$ by
+a term $`S`$ it does not read from that syntax keeps those obligations. With
+$`\mathsf{apps}(\tau)`$ the outermost applications written in $`\tau`$
+($`\tau`$ itself if it is one; outside one another's arguments) and
+$`\beta_{D,i}`$ the declared bound of $`D`$'s $`i`$-th parameter,
+$`\mathsf{top}`$ where it declares none:
+
+```math
+\frac{\tau\ \text{replaced by}\ S\quad
+      \forall D\langle\vec\sigma\rangle\in\mathsf{apps}(\tau).\ \forall i.\
+      ⟦\sigma_i⟧\le⟦\beta_{D,i}⟧_{\vec X:=⟦\vec\sigma⟧}}
+     {⟦\tau⟧=S}\ \textsf{kept}
+```
+
+Each $`\sigma_i`$ is read where it is written, so the applications inside it
+keep theirs. The term stating this is `applied`: it denotes $`S`$ and carries
+the application's arguments, which the verifier checks against the bounds as
+it checks a reference's. A computed alias has no equation; the declaration
+graph states its parameters and their bounds. The readers that replace
+syntax, each stating its result by $`\textsf{kept}`$:
+
+- a [computed type](#computed-types), by what TypeScript computes for it;
+- a mapped type's keys, and a library mapped type's key argument
+  (`Record<K, V>`), by the literals TypeScript computes for them, the mapped
+  type's expansion keeping the obligations;
+- a rest parameter typed by an alias, declared or in a function type, by the
+  alias's equation at its arguments, through each alias of a chain; in a
+  function type the obligations are kept on its result.
+
+An application under a binder that $`\tau`$ introduces (a generic signature's
+type parameter, a mapped type's key, an `infer`) is read where $`\tau`$ is,
+its scope too unless it names that binder. Refused: an application naming
+such a binder, whose obligation holds only under it; an index signature's key
+that replaces an application, whose key kinds have no term to keep it. A
+library mapped type read at its meaning (`Record`, `Partial`) is outside the
+graph, and its own application keeps no obligation: `Record`'s one bound,
+`keyof any`, holds for every key its reading admits, a string or a string
+literal.
 
 ## Index signatures
 
