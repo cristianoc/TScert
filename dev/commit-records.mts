@@ -1,31 +1,60 @@
 /* Renders commit records as a review page: one card per commit, and for
  * branch ranges a summary of what each branch changes and where branches
- * overlap. A record is a commit message (or a note on refs/notes/records,
- * which takes precedence) in the format the `review` skill states: a subject,
- * prose sections ("Example:", "Rule:", indented blocks) and git trailers.
+ * overlap. A record is a commit message in the format the `review` skill
+ * states: a subject, prose sections ("Example:", "Rule:", indented blocks)
+ * and git trailers.
  *
- *   node tools/commit-records.mts --out review.html bb180be19
- *   node tools/commit-records.mts --out review.html cf3fbb3c1..branch-a cf3fbb3c1..branch-b
+ *   node dev/commit-records.mts --out review.html bb180be19
+ *   node dev/commit-records.mts --out review.html cf3fbb3c1..branch-a cf3fbb3c1..branch-b
  *   --fragment omits the document skeleton (for an Artifact publish).
  */
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { parseRecord, pageBody, CSS, type CommitRecord, type Group } from "./record-render.mts";
+import { parseRecord, pageBody, CSS, type CommitRecord, type Example, type Group } from "./record-render.mts";
 
 const git = (args: string[], input?: string): string =>
-  execFileSync("git", args, { input, encoding: "utf8", maxBuffer: 64 << 20, stdio: ["pipe", "pipe", "ignore"] });
+  execFileSync("git", args, { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["pipe", "pipe", "ignore"] });
 
-/** The record of one commit: its note if it has one, else its message. */
+/** A file's text at a revision, or undefined where it has none. */
+function at(rev: string, path: string): string | undefined {
+  try { return git(["show", `${rev}:${path}`]); } catch { return undefined; }
+}
+
+/** The pipeline cases an Effect section names, as the commit has them (a
+ * removed case as its parent had it): the program, its kind, and the span its
+ * expected diagnostic names, from `pipeline/cases.mts`. */
+function examplesOf(rev: string, text: string): Map<string, Example> {
+  const found = new Map<string, Example>();
+  const effect = /^Effect:\s*\n((?: {2,}.*\n?|\s*\n)*)/m.exec(text);
+  if (!effect) return found;
+  // A line's first field, or "" for a line with none, which no name matches.
+  const names = effect[1].split("\n").map(l => l.trim().split(/\s{3,}/)[0] ?? "").filter(n => n && /^[\w/.-]+$/.test(n));
+  for (const name of names) {
+    for (const r of [rev, `${rev}^`]) {
+      const source = at(r, `pipeline/examples/${name}.ts`);
+      if (source === undefined) continue;
+      const cases = at(r, "pipeline/cases.mts") ?? "";
+      const i = cases.indexOf(`("${name}"`);
+      const next = i < 0 ? -1 : cases.slice(i + 1).search(/\n {2}(?:\{ \.\.\.)?(?:positive|negative|gap)\(/);
+      const entry = i < 0 ? "" : cases.slice(i, next < 0 ? undefined : i + 1 + next);
+      const kind = /(positive|negative|gap)$/.exec(cases.slice(Math.max(0, i - 10), i))?.[1];
+      const span = /\\\[(\d+),(\d+)\\\)/.exec(entry);
+      found.set(name, span ? { source, kind, span: [Number(span[1]), Number(span[2])] } : { source, kind });
+      break;
+    }
+  }
+  return found;
+}
+
+/** The record of one commit: its message. */
 function readRecord(rev: string): CommitRecord {
-  let text = "";
-  try { text = git(["notes", "--ref=records", "show", rev]); } catch { /* no note */ }
   const message = git(["show", "-s", "--format=%B", rev]);
-  if (!text.trim()) text = message;
-  return parseRecord(text, {
+  return parseRecord(message, {
     sha: git(["rev-parse", "--short=9", rev]).trim(),
     author: git(["show", "-s", "--format=%an · %ad", "--date=format:%b %d, %H:%M", rev]).trim(),
     stat: git(["show", "--stat", "--format=", rev]).trimEnd().split("\n").filter(Boolean),
     message,
+    examples: examplesOf(rev, message),
   });
 }
 

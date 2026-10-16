@@ -7,6 +7,7 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   for (const [file, call] of [
     ["invalid-native-find-mutation", "wrong([1, 2], { value: 0 })"],
     ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
+    ["invalid-map-primitive-method-mutation", `wrong(["a", "b"])`],
     ["invalid-native-join-coercion", "wrong({ value: 0 })"],
     ["invalid-native-sort-coercion", "wrong({ value: 0 })"],
     // What `%Iterate:ForIn%`'s step read is not what a later read finds.
@@ -17,11 +18,77 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     ["invalid-spread-function-length", "arity((a, b) => a + b)"],
   ])
     assert.equal(runExample(file, call), undefined,
-      `${file}: the actual source returns undefined despite its number contract`);
+      `${file}: the actual source returns undefined despite its number or string contract`);
+  // The pattern steps a string by code point: the first is the whole emoji.
+  assert.equal(runExample("invalid-for-of-pattern-string", `firsts(["\\u{1F600}b"])`), "\u{1F600}",
+    "invalid-for-of-pattern-string: the pattern binds a code point, not the first code unit");
+  // The step calling the closure constant reads `LIMIT` before it holds a value.
+  assert.throws(() => runExample("invalid-initialization-closure-call", "scaled(1)"), /before initialization/,
+    "invalid-initialization-closure-call: the module throws a ReferenceError while it initializes");
+  // The callback's `set` writes the map it captures.
+  assert.equal(runExample("invalid-map-collection-write-callback",
+    `(() => { const counts = new Map(); seen(["a", "a"], counts); return counts.get("a"); })()`), 2,
+    "invalid-map-collection-write-callback: the callback's call writes the map");
+  // `map` passes the index to the constant's second parameter, whose `tag`
+  // is undefined.
+  assert.equal(runExample("invalid-annotated-constant-callback", `tags(["a"])[0]`), undefined,
+    "invalid-annotated-constant-callback: the actual source returns undefined at string");
+  // `test` of a global regex leaves `lastIndex` where the match ended: the
+  // same line tests true, then false.
+  assert.equal(runExample("invalid-regexp-global-callback-effect", `marks(["ab", "ab"]).join()`), "true,false",
+    "invalid-regexp-global-callback-effect: the callback's call writes the regex it captures");
   // `Number` of an object calls its `valueOf`, which here writes `seen.value`.
+  // A guard's promise, which TypeScript does not check: lying guards, of a
+  // primitive, through a parameter's default and of an object, a lying
+  // assertion function, and a `false` outcome TypeScript narrows.
+  assert.throws(() => runExample("invalid-type-guard-promise", "shout(1)"), /toUpperCase is not a function/,
+    "invalid-type-guard-promise: the narrowed argument is a number");
+  assert.equal(runExample("invalid-type-guard-undefined", "label(undefined)"), undefined,
+    "invalid-type-guard-undefined: the narrowed argument is undefined, returned at string");
+  assert.equal(runExample("invalid-type-guard-default", "f(undefined)"), undefined,
+    "invalid-type-guard-default: the narrowed argument is undefined, returned at string");
+  assert.equal(runExample("invalid-type-guard-method", "size(new Box(), 1)"), undefined,
+    "invalid-type-guard-method: the narrowed argument is a number, whose length is undefined");
+  assert.equal(runExample("invalid-type-guard-field-test", `radius({ kind: "square", side: 1 })`), undefined,
+    "invalid-type-guard-field-test: the narrowed argument is a square, whose radius is undefined");
+  assert.equal(runExample("invalid-type-guard-object", `radius({ kind: "square", side: 1 })`), undefined,
+    "invalid-type-guard-object: the narrowed argument is a square, whose radius is undefined");
+  assert.equal(runExample("invalid-assertion-promise", "length(true)"), undefined,
+    "invalid-assertion-promise: the asserted argument is a Boolean, whose length is undefined");
+  assert.throws(() => runExample("invalid-type-guard-false-branch", "shout(-1)"), /toUpperCase is not a function/,
+    "invalid-type-guard-false-branch: the `false` outcome's argument is a number");
   assert.equal(runExample("invalid-number-object", `const seen = { value: 0 };
     wrong({ a: 1, valueOf() { seen.value = 1; return 1; } }, seen)`), 1,
     "invalid-number-object: the actual source returns 1 despite its 0 contract");
+  // `Math.max`, `Math.min`, `String.fromCodePoint` and `String.fromCharCode`
+  // convert an object argument, a spread's elements included, by its own
+  // `valueOf`, and `Object.getOwnPropertyDescriptor` its key by its own
+  // `toString`.
+  for (const [file, argument] of [["invalid-math-max-object", "o"], ["invalid-math-min-spread-object", "[o]"],
+    ["invalid-from-code-point-object", "o"], ["invalid-from-char-code-object", "o"]])
+    assert.equal(runExample(file, `const seen = { value: 0 };
+      const o = { valueOf() { seen.value = 1; return 1; } };
+      wrong(${argument}, seen)`), 1, `${file}: the actual source returns 1 despite its 0 contract`);
+  assert.equal(runExample("invalid-own-property-descriptor-key-object", `const seen = { value: 0 };
+    wrong({}, { toString() { seen.value = 1; return "a"; } }, seen)`), 1,
+    "invalid-own-property-descriptor-key-object: the actual source returns 1 despite its 0 contract");
+  assert.equal(runExample("invalid-own-property-descriptor-value", `first({ a: "x" })`), "x",
+    "invalid-own-property-descriptor-value: the descriptor's value is a string returned at number");
+  assert.equal(runExample("invalid-record-index-named-key", "classOf([], 0)"), undefined,
+    "invalid-record-index-named-key: the element past the end is undefined, whose member is undefined at string");
+  assert.equal(runImporting("invalid-node-exec-stdout-ignored", `run(["-e", ""])`), null,
+    "invalid-node-exec-stdout-ignored: standard output not piped, the result is null at string");
+  assert.equal(runExample("invalid-array-flat-map-value", "first()"), 1,
+    "invalid-array-flat-map-value: the flattened array's number is returned at number[]");
+  // An `env` value's `toString`, which the host runs before it reads `stdio`.
+  assert.equal(runImporting("invalid-node-exec-env-object", `(() => {
+    const stdio = ["pipe", "pipe", "ignore"];
+    const X = { toString() { stdio[1] = "ignore"; return "x"; } };
+    return run(["-e", ""], { encoding: "utf8", stdio, env: { PATH: process.env.PATH, X } });
+  })()`), null, "invalid-node-exec-env-object: standard output ignored by an env value's toString, null at string");
+  // The further actual a rest of strings takes is a number.
+  assert.equal(runExample("invalid-rest-function-longer-signature", `wrong()("s", 1)`), 1,
+    "invalid-rest-function-longer-signature: the number is returned at string");
   assert.equal(runExample("native-sort-contracts", "noCoercion({ value: 7 })"), 7,
     "an explicit comparator never invokes the element's invalid conversion method");
   // A spread copies an own enumerable symbol-keyed property, which a type
@@ -531,4 +598,34 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("class-rest-binder", "kept"), 52);
   assert.equal(runExample("class-rest-binder", "paired"), 7);
   assert.throws(() => runExample("invalid-class-rest-binder-set", "lost"), /reading 'toFixed'/);
+}
+{
+  // Regular expressions: what the refused programs return under Node, each
+  // against the type TypeScript gives it.
+  // A capture under an alternative, after a `[^]` class, or after a `\k`
+  // that is a letter outside Unicode mode, is `undefined`, typed `string`.
+  assert.equal(runExample("invalid-regexp-unmatched-group", `first("b")`), undefined);
+  assert.equal(runExample("invalid-regexp-class-alternative", `first("z")`), undefined);
+  assert.equal(runExample("invalid-regexp-legacy-escape", `first("k<a")`), undefined);
+  assert.equal(runExample("invalid-regexp-structural-capture", `key(/(a)|b/, "b")`), undefined);
+  // A split splices an unmatched capture in as `undefined`, typed `string`.
+  assert.equal(runExample("invalid-regexp-split-captures", `parts("a1b")[2]`), undefined);
+  // `lastIndex` is a regex's own property, not enumerable: `in` finds it, a
+  // copy lacks it.
+  assert.equal(runExample("invalid-regexp-lastindex-in", "hasState(/a/)"), true);
+  assert.equal(runExample("invalid-regexp-lastindex-view", "viewed()"), undefined);
+  // `matchAll` converts its argument's `flags` before dispatching: client
+  // code runs on a structural regex.
+  assert.equal(runExample("invalid-regexp-structural-matchall", `const seen = { ran: false };
+    count({ [Symbol.match]: true, flags: { toString() { seen.ran = true; return "g"; } },
+      [Symbol.matchAll]: () => [][Symbol.iterator]() }, "x");
+    seen.ran`), true);
+  // `compile` gives an existing regex another pattern: one group fewer.
+  assert.equal(runExample("invalid-regexp-compile", `recompiled().exec("c").length`), 1);
+  // A subclass's `exec` is what `replace` calls: no match is replaced.
+  assert.equal(runExample("invalid-regexp-subclass", "make()"), "ab");
+  // The positive cases run as their types say.
+  assert.equal(JSON.stringify(runExample("regexp-literals", `[assignment("k=v"), digits("-"), escape("<\`a\`>"),
+    words(" a b "), tokens("ab 12"), count("a1b22")]`)),
+    JSON.stringify([["k", "v"], "none", "&lt;<code>a</code>>", ["a", "b"], "<w>ab</w>12@3", 3]));
 }

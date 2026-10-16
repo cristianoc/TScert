@@ -62,6 +62,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | Some b -> declared_head declarations [] b
           | None -> Rigid r)
         | t -> t in
+      (* A promise signature states what a call promises of an actual, not
+         its result: the call is typed at the plain ones, and a condition
+         narrows by the promise (`Refinement.promise_refine`). *)
+      let callee = match callee with
+        | Atoms [Shape ({calls;_} as shape)]
+          when List.exists (fun (s:Semantic.signature) -> not (Semantic.plain_effect s.call_effect)) calls ->
+          Atoms [Shape {shape with calls=List.filter (fun (s:Semantic.signature) ->
+            Semantic.plain_effect s.call_effect) calls}]
+        | t -> t in
       (* The receiver the call passes: the `.call` operand, the object a
          method is read from, or `undefined`. A scheme infers from it too. *)
       let receiver_type = match receiver, target.node with
@@ -101,7 +110,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                     | Some _ -> List.length offered.params >= arity) -> Some (t,offered)
           | _ -> None in
         match arg.node with
-        | Lambda (_,[],ps,_,false,_,_) ->
+        | Lambda (_,[],ps,_,false,_,_,_) ->
           Option.map (fun (t,_) () -> publish_instance arg.pos t)
             (offered (List.length ps))
         | Id n when List.mem_assoc n (path_facts ()).Proposal_flow.closures ->
@@ -456,6 +465,27 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             match List.nth_opt s.params i with
             | Some p -> plausible_subtype t (at p) || offer_to arg (at p) <> None
             | None -> false) (List.combine args actuals)) in
+        (* A signature requiring an actual's member to state an effect is not
+           the call's where that member, as the actual's type states it, has a
+           signature without it (`%Dispatch:m%` at a regex whose member writes
+           its `lastIndex`). *)
+        let member_effects ((s:Semantic.signature),substitution,_) =
+          let calls_of (t:ty) = match declared_head declarations [] t with
+            | Atoms [Shape {calls;_}] -> calls
+            | _ -> [] in
+          List.for_all Fun.id (List.mapi (fun i (_,(t,_)) ->
+            match List.nth_opt s.params i,declared_head declarations [] t with
+            | Some p,Atoms [Shape actual] ->
+              (match declared_head declarations [] (Inference.substitute substitution p) with
+               | Atoms [Shape wanted] -> List.for_all (fun (w:Semantic.field) ->
+                   List.for_all (fun (c:Semantic.signature) -> c.call_effect<>PreservesInputHeap ||
+                     match List.find_opt (fun (a:Semantic.field) -> a.name=w.name) actual.fields with
+                     | Some a -> List.for_all (fun (d:Semantic.signature) ->
+                         d.call_effect=PreservesInputHeap) (calls_of a.read)
+                     | None -> true) (calls_of w.read)) wanted.fields
+               | _ -> true)
+            | _ -> true) (List.combine args actuals)) in
+        let proposals = List.filter member_effects proposals in
         let matching = List.filter matches_actuals proposals in
         let receiver_matches ((s:Semantic.signature),substitution,_) =
           plausible_subtype_with
@@ -524,6 +554,11 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | Json.Array [Json.Number first;Json.Number last] -> "[" ^ first ^ "," ^ last ^ ")"
           | _ -> Proposal_diagnostics.unsupported "call has an invalid source span" in
         Proposal_diagnostics.unsupported ("call at " ^ location ^ ": value has no admitted call signature")
+      (* A callee of no value, as an optional call's on a receiver a pass
+         finds only nullish: the call is never reached, and gives no value.
+         A loop's later pass, where the receiver may be present, types it;
+         Lean checks the claims of the last. *)
+      | Atoms [] when spreads = [] -> List.iter (fun a -> ignore (expr env a)) args; Atoms []
       | _ -> Proposal_diagnostics.unsupported "call requires a single arrow the arguments can call"))
     | _ -> Json.fail "expression dispatched to the wrong typing family"
 end

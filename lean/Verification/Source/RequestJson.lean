@@ -217,6 +217,8 @@ deriving instance ToJson, FromJson for HeapFacts.Fact
 deriving instance ToJson, FromJson for HeapLinks.Link
 deriving instance ToJson, FromJson for HeapKnowledge.Knowledge
 deriving instance ToJson, FromJson for HeapExpressionRules.StepEvidence
+deriving instance ToJson, FromJson for PromiseCalls.Implication
+deriving instance ToJson, FromJson for PromiseCalls.Yield
 deriving instance ToJson, FromJson for NodeEvidence
 deriving instance ToJson, FromJson for PointClaim
 deriving instance ToJson, FromJson for CodeEntry
@@ -240,7 +242,17 @@ structure Request (σ ι : Type) where
   inputs : List (Ty ι)
   /-- The graph code the program creates, each at each signature it offers. -/
   codes : List (CodeRequest ι) := []
+  /-- A guard's promise about the input in a slot: whether an assertion
+  function's, the slot, and the promise's type. -/
+  promise : Option (Bool × Nat × Ty ι) := none
   deriving ToJson, FromJson
+
+/-- What a request's returns establish: its result, or its promise. -/
+def Request.goal {σ ι : Type} (r : Request σ ι) : ControlFlow.Goal ι :=
+  match r.promise with
+  | none => .plain r.result
+  | some (false, slot, T) => .guards T slot
+  | some (true, slot, T) => .asserts T slot
 
 structure Response (ι : Type) where
   certificate : ControlFlow.Certificate ι
@@ -289,6 +301,7 @@ meaning for an invalid serialized type reference. -/
   let ok := StoreView.valid r.types
   StoreView.wellFormed r.types &&
   r.claims.all (validClaim ok) && validTy ok r.result &&
+  r.promise.all (fun (_, _, T) => validTy ok T) &&
   r.inputs.all (validTy ok) &&
   r.codes.all fun q => q.claims.all (validClaim ok) &&
     (q.entry.row.operands ++ q.entry.captures ++
@@ -430,7 +443,7 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
     ProgramCertificates.CheckResult ι (List (CodeEntry ι)) :=
   (ProgramCertificates.CheckResult.ofBool (validRequest r && validResponse r c)).bind fun _ =>
   (codeTableResult r c).bind fun table =>
-    (CertificateProducer.acceptResult (checker := checker) (graph r) (StoreView.images r.types) r.result r.program
+    (CertificateProducer.acceptResult (checker := checker) (graph r) (StoreView.images r.types) r.goal r.program
       r.claims c.certificate r.start r.inputs (GraphCode.admits table)).map fun _ => table
 
 /-- This check remains independent of the producer and its search settings. -/
@@ -444,7 +457,7 @@ theorem verify_eq (r : Request σ ι) (c : Response ι)
       HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types)) :
     verify r c (checker := checker) = (validRequest r && validResponse r c &&
       match codeTable r c with
-      | some table => CertificateProducer.acceptUsing (checker := checker) (graph r) (StoreView.images r.types) r.result r.program
+      | some table => CertificateProducer.acceptUsing (checker := checker) (graph r) (StoreView.images r.types) r.goal r.program
           r.claims c.certificate r.start r.inputs (GraphCode.admits table)
       | none => false) := by
   rw [verify, verifyResult, ProgramCertificates.CheckResult.accepted_bind,
@@ -460,7 +473,7 @@ theorem verifyResult_value_eq (r : Request σ ι) (c : Response ι)
     (verifyResult r c (checker := checker)).value =
       if validRequest r && validResponse r c then
         (codeTable r c).bind fun table =>
-          if CertificateProducer.acceptUsing (checker := checker) (graph r) (StoreView.images r.types) r.result r.program
+          if CertificateProducer.acceptUsing (checker := checker) (graph r) (StoreView.images r.types) r.goal r.program
               r.claims c.certificate r.start r.inputs (GraphCode.admits table) then some table else none
       else none := by
   rw [verifyResult, ProgramCertificates.CheckResult.value_bind_const,
@@ -562,6 +575,7 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
     | .exhaustedExpression label stop => mentionedAt label ++ stop.source ++ stop.target
     | .exhaustedEdge source destination _ stop => mentionedAt source ++ mentionedAt destination ++ stop.source ++ stop.target
     | .edge source destination _ => mentionedAt source ++ mentionedAt destination
+    | .promise label actual promised => mentionedAt label ++ actual ++ promised
     | .claimCount | .rejected => []
   let p := StoreView.projection r.types (r.result ++ mentioned).eraseDups
   let atNode := fun l => Json.mkObj [
@@ -571,11 +585,11 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
   let phase := phaseOverride.getD (match e with
     | .rejected => "certificate-check"
     | .claimCount => "request-validation"
-    | .expression .. | .edge .. | .exhaustedExpression .. | .exhaustedEdge .. => "proof-search")
+    | .expression .. | .edge .. | .exhaustedExpression .. | .exhaustedEdge .. | .promise .. => "proof-search")
   let outcome := match e with
     | .exhaustedExpression _ stop | .exhaustedEdge _ _ _ stop =>
       DiagnosticOutcome.exhausted stop.limit stop.rounds stop.visited
-    | .expression .. | .edge .. | .rejected | .claimCount => .notEstablished
+    | .expression .. | .edge .. | .promise .. | .rejected | .claimCount => .notEstablished
   let common := [("phase",toJson phase),("outcome",toJson outcome),
     ("fuel",toJson fuel),("requiredResult",toJson (p.shown r.result))] ++ p.fields
   match e with
@@ -612,6 +626,13 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
       ("sourceMap",toJson { (origin.getD (SourceMapEntry.mk subject "node-typing" none [])) with context := [] }),
       ("judgment",Json.mkObj [("kind",toJson "subtyping"),("subject",toJson subject),
         ("actual",toJson (p.shown stop.source)),("expected",toJson (p.shown stop.target))])]
+  | .promise label actual promised =>
+    let origin := (sourceMap[label]?).bind id
+    let subject := origin.map (·.pos) |>.getD (0, 0)
+    return common ++ [("kind",toJson "direct-obligation"),("id",toJson s!"promise:{label}"),
+      ("sourceMap",toJson { (origin.getD (SourceMapEntry.mk subject "node-typing" none [])) with context := [] }),
+      ("judgment",Json.mkObj [("kind",toJson "subtyping"),("subject",toJson subject),
+        ("actual",toJson (p.shown actual)),("expected",toJson (p.shown promised))])]
   | .claimCount | .rejected => return common ++ [("kind",toJson "production-failure"),("failure",toJson (reprStr e))]
 
 /-- A code request as a request of its own: its graph, from the frame its
@@ -629,14 +650,15 @@ table checked before it, not part of this request. -/
     (table : List (CodeEntry ι))
     (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
       HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types))
-    (aliases : List (ι × ι) := []) :
+    (aliases : List (ι × ι) := []) (goal : Option (ControlFlow.Goal ι) := none) :
     Except String (ControlFlow.Certificate ι) :=
-  match CertificateProducer.produceUsing (graph r) (StoreView.images r.types) labels fuel r.result r.program r.claims r.start [] r.inputs suggestions known
+  match CertificateProducer.produceUsing (graph r) (StoreView.images r.types) labels fuel (goal.getD r.goal)
+      r.program r.claims r.start [] r.inputs suggestions known
       requirements cuts (GraphCode.admits table) checker aliases with
   | .ok c => pure c
   | .error e =>
     let location := match e with
-      | .expression label | .exhaustedExpression label _ => match (sourceMap[label]?).bind id with
+      | .expression label | .exhaustedExpression label _ | .promise label .. => match (sourceMap[label]?).bind id with
         | some o => s!"source expression obligation at [{o.pos.1},{o.pos.2}): "
         | none => ""
       | .edge _ destination _ | .exhaustedEdge _ destination _ _ => match (sourceMap[destination]?).bind id with
@@ -650,6 +672,7 @@ table checked before it, not part of this request. -/
         | some o => s!"no derivation of its {o.role} claim"
         | none => s!"no derivation of the claim of node {label}"
       | .edge source _ _ | .exhaustedEdge source _ _ _ => s!"the edge from node {source} does not establish the claims at this point"
+      | .promise .. => "the promised argument is not within the promise at this return"
       | _ => reprStr e
     throw (withDiagnostic s!"{location}evidence search failed: {what}"
       (failureDiagnostic r fuel sourceMap e requirements))
@@ -694,7 +717,7 @@ part of the certified request. -/
   for (q, i) in r.codes.zipIdx do
     let hints := (codeHints[i]?).getD {}
     let C ← produceGraph (q.asRequest r) fuel labels suggestions known hints.sourceMap
-      hints.requirements hints.cuts table
+      hints.requirements hints.cuts table (goal := some q.entry.goal)
     certificates := certificates ++ [C]
     -- Search may use only definitions whose complete certificate checks,
     -- including their effect. Otherwise the defining expression must fail at
@@ -722,7 +745,8 @@ every instantiation of them. -/
 theorem verify_safe_at {r : Request σ ι} {c : Response ι} (hc : verify r c = true)
     (η : MixedAssignment ι) (n W h ρ)
     (he : EnvOk (reassign (graph r) η) r.inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafeGraph (excOf (reassign (graph r) η)) r.program (meaning (reassign (graph r) η) r.result) n W h (.at r.start ρ) := by
+    SafeGraph (excOf (reassign (graph r) η)) r.program (GoalHolds (reassign (graph r) η) r.goal (r.goal.argument ρ))
+      n W h (.at r.start ρ) := by
   simp only [verify_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
@@ -750,7 +774,8 @@ theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
     (n W h ρ)
     (he : EnvOk (reassign (graph r) (assign η source.binders As)) r.inputs ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafeGraph (excOf (reassign (graph r) (assign η source.binders As))) r.program (meaning (reassign (graph r) (assign η source.binders As)) r.result)
+    SafeGraph (excOf (reassign (graph r) (assign η source.binders As))) r.program
+      (GoalHolds (reassign (graph r) (assign η source.binders As)) r.goal (r.goal.argument ρ))
       n W h (.at r.start ρ) := by
   simp only [verify_eq, Bool.and_eq_true] at checked
   have accepted := checked.2
@@ -763,7 +788,7 @@ theorem verify_qualified_safe_at {r : Request σ ι} {c : Response ι}
     have same : body'.check = body.check := bodyCheck.symm
     have hc := (Parametricity.checkBodyEntry_reassign (graph r)
       (assign η source.binders As) (StoreView.images r.types) body body' same
-      r.result r.program c.certificate r.start r.inputs (GraphCode.admits table)).trans accepted.2
+      r.goal r.program c.certificate r.start r.inputs (GraphCode.admits table)).trans accepted.2
     exact ControlFlow.accepted_inputs_safe hc n W h ρ he hw hh
       (fun e he η' => codeTable_sound ht e he η')
   · contradiction

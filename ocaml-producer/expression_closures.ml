@@ -35,7 +35,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           | t -> t in
         {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) statics in
   match e.node with
-    | Ctor ({node=Lambda (None,[],ps,[],false,Some result,body);_},statics) ->
+    | Ctor ({node=Lambda (None,[],ps,[],false,Some result,_,body);_},statics) ->
       (* The constructor's body under its parameters; `new` passes it no
          receiver it reads, and runs it later, when a cell it captures holds
          what its contract admits. The class value's type is its construct
@@ -143,7 +143,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
             s.result
           | [] -> Proposal_diagnostics.unsupported "no construct signature takes this many arguments")
        | _ -> Proposal_diagnostics.unsupported "`new` needs a value with construct signatures"))
-    | Lambda (receiver,quantified,ps,defaults,rest,written,body) ->
+    | Lambda (receiver,quantified,ps,defaults,rest,written,guard,body) ->
       (* An ordinary function binds its own `this`, replacing an enclosing
          one; an arrow keeps the enclosing binding, as a capture. *)
       (* The body runs later, when any cell it captures holds whatever its
@@ -220,17 +220,11 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | [] -> Proposal_diagnostics.unsupported "a rest parameter needs a parameter" in
       let values = List.filter_map (fun (name,b) -> match b with
         | Value _ | Local _ -> Some name | Storage _ -> None) inner @ module_names in
-      let readable (a:expr) key =
-        match latest_claim a.pos with
-        | Some t -> (match declared_head declarations [] t with
-          | Atoms [Shape shape] ->
-            (shape.elements <> None && key=Name "length") ||
-            List.exists (fun (f:field) -> f.name=key && not f.optional && not f.host) shape.fields
-          | Atoms [Exact fields] -> List.exists (fun (f:field) -> f.name=key && not f.optional) fields
-          | _ -> false)
-        | None -> false in
+      (* A call's callee is preserving where every signature it may take
+         states it: the one the call's instance projects from a value's
+         quantified overloads, else all of its type's. *)
       let callable (callee:expr) =
-        match latest_claim callee.pos with
+        match (match latest_instance callee.pos with Some t -> Some t | None -> latest_claim callee.pos) with
         | Some t -> (match declared_head declarations [] t with
           | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] -> calls <> [] &&
             List.for_all (fun (s:signature) -> s.call_effect=PreservesInputHeap &&
@@ -239,8 +233,8 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | None -> false in
       (* Rest entries have a separate wrapper; its signature transport remains
          conservative until that lowering carries the inferred effect too. *)
-      let call_effect = if not rest && heap_preserving_expr ~readable ~callable values body &&
-        List.for_all (fun (_,d) -> heap_preserving_expr ~readable ~callable values d) defaults
+      let call_effect = if not rest && heap_preserving_expr ~callable values body &&
+        List.for_all (fun (_,d) -> heap_preserving_expr ~callable values d) defaults
         then PreservesInputHeap else Unrestricted in
       let own = match element with
         | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result
@@ -277,6 +271,18 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           Atoms [Shape {shape with calls=call :: List.filter (fun s -> s <> call)
             (List.sort_uniq compare (List.map (fun s -> {s with call_effect}) extra))}]
         | _ -> own in
+      (* A guard closure offers its promise beside its own signature, at the
+         same parameters, and its body is checked at each, returning its plain
+         result under both (Lean's `lambdaCode`). *)
+      let own = match guard,own with
+        | None,_ -> own
+        | Some (promise_effect,promised),Atoms [Shape ({calls=[call];_} as shape)]
+          when quantified=[] && element=None ->
+          let row () = collect_overload_row_claims (fun () ->
+            ignore (infer_closure_body ~expected:result inner)) in
+          publish_arrow e.pos [row (); row ()];
+          Atoms [Shape {shape with calls=[call;{call with call_effect=promise_effect;result=promised}]}]
+        | Some _,_ -> Proposal_diagnostics.unsupported "a guard closure with binders or a rest" in
       (* A contract advertising several signatures is implemented by this one
          closure. Propose that contract and state what the body claims under
          each signature; Lean checks every one of them. *)

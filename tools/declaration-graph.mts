@@ -21,9 +21,14 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, membe
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
-import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateMapName, iterateSetName, iterateStringName,
+import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
+import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
+import { literalParts, regexpShape } from "./regexp-shape.mts";
+import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
+  nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
+  type RegExpKeys } from "./regexp.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { SweepError, writtenApplications, type Entity } from "./written-applications.mts";
@@ -411,6 +416,19 @@ export function collectDeclarations(file: string, options: {
    * `%ElementAt%`, which reads it, join the values. */
   elementReads?: readonly Span[];
   hostElement?: (span: Span) => void;
+  /** The client's regular expression literals: each is reported to
+   * `regexp` with the intrinsic it is a call of, `%RegExp:Σ%` for its shape
+   * Σ (`regexp-shape.mts`), which joins the values at `() => N(Σ)`
+   * (`regexp.mts`). */
+  regexps?: readonly Span[];
+  regexp?: (span: Span, intrinsic: string) => void;
+  /** The client's calls `s.m(o, …)` of a `String.prototype` method that
+   * dispatches to its argument (`dispatchMethods`): each whose receiver
+   * TypeScript types as a string and whose first argument as an object is
+   * reported to `dispatch` with `%Dispatch:m%`, which joins the values
+   * (`dispatchIntrinsic`). */
+  dispatchCalls?: readonly Span[];
+  dispatch?: (span: Span, intrinsic: string) => void;
   /** Identifiers of the client that may name one of its local bindings: each
    * that TypeScript binds to a value declaration in the client is reported
    * to `bindingRead` with the span of that declaration's name. A shorthand
@@ -562,9 +580,13 @@ export function collectDeclarations(file: string, options: {
       return visit(node.type);
     };
     // An interface declared several times is one interface with every
-    // declaration's members, as TypeScript merges it; the first declaration is
-    // its identity. A same-named value declaration, a constant or a function,
-    // is the name's other meaning, which a type reference does not denote.
+    // declaration's members, as TypeScript merges it. Its type parameters are
+    // positional: each declaration binds a prefix of the longest list (the
+    // others have defaults, which TypeScript checks), under the same names,
+    // and its members are read with the binders it states. The first
+    // declaration stating the longest list is its identity. A same-named
+    // value declaration, a constant or a function, is the name's other
+    // meaning, which a type reference does not denote.
     const partners = new Map<TypeDeclaration, TypeDeclaration[]>();
     // The type aliases a name resolved to, by identity: a rest parameter
     // typed by one, and an indexed access into one's application, read it
@@ -575,19 +597,24 @@ export function collectDeclarations(file: string, options: {
     // A class merged with interfaces is one symbol too, the class its
     // identity, its instance contract every part's members (`collect`).
     const declarationOf = (nodes: readonly Node[], what: string): TypeDeclaration => {
-      const types = nodes.filter(isTypeDeclaration);
-      const classes = types.filter(ts.isClassDeclaration);
-      const node = classes[0] ?? types[0];
+      // A class merged with interfaces is the class; otherwise the
+      // declaration binding the longest parameter list is the identity.
+      const types0 = nodes.filter(isTypeDeclaration);
+      const classes = types0.filter(ts.isClassDeclaration);
+      const longest = Math.max(0, ...types0.map(n => n.typeParameters?.length ?? 0));
+      const node = classes[0] ?? types0.find(n => (n.typeParameters?.length ?? 0) === longest);
+      const types = node ? [node, ...types0.filter(n => n !== node)] : types0;
       if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n) &&
             !ts.isFunctionDeclaration(n)) ||
           (types.length > 1 && !types.every(t => ts.isInterfaceDeclaration(t) || (t === node && classes.length === 1))))
         throw Error(types.length > 1 || nodes.length > 1
           ? `TypeScript found ${nodes.length} declarations for ${what}`
           : `${what} is not one type alias, interface or class`);
-      const names = (n: TypeDeclaration) => (n.typeParameters ?? []).map(p => p.name.text).join(",");
+      const names = (n: TypeDeclaration) => (n.typeParameters ?? []).map(p => p.name.text);
       for (const part of types) {
         if (!part.name) throw Error(`${what} is not one type alias, interface or class`);
-        if (names(part) !== names(node))
+        const own = names(part), all = names(node);
+        if (own.length > all.length || own.some((n, i) => n !== all[i]))
           throw Error(`the merged declarations of ${what} have different type parameters`);
         clean(part, `${idOf(part.getSourceFile())}#${part.name.text}`);
       }
@@ -652,9 +679,22 @@ export function collectDeclarations(file: string, options: {
     const equation = (node: TypeDeclaration): TypeTerm | null => {
       const source = node.getSourceFile();
       const parts = partners.get(node) ?? [node];
-      return ts.isInterfaceDeclaration(node) && node.name.text === "Function" && !node.typeParameters?.length &&
-        parts.every(part => isLibraryModule(idOf(part.getSourceFile())))
-        ? { k: "callable", span: [node.getStart(source), node.end] } : null;
+      const library = ts.isInterfaceDeclaration(node) && !node.typeParameters?.length &&
+        parts.every(part => isLibraryModule(idOf(part.getSourceFile())));
+      if (library && node.name.text === "Function") return { k: "callable", span: [node.getStart(source), node.end] };
+      return library ? libraryRegExp(node.name.text, parts) : null;
+    };
+    // The library's `RegExp`, `RegExpExecArray` and `RegExpMatchArray`, read
+    // as `regexp.mts` states them; `RegExp`'s members it states must be
+    // declared as reviewed.
+    const libraryRegExp = (name: string, parts: readonly TypeDeclaration[]): TypeTerm | null => {
+      if (name === "RegExp") {
+        const members = parts.flatMap(part => ts.isInterfaceDeclaration(part)
+          ? part.members.map(m => m.getText(part.getSourceFile()).trim()) : []);
+        for (const { name: member, text } of reviewedRegExpMembers)
+          if (!members.includes(text)) throw Error(`RegExp.${member} is not declared as reviewed: ${text}`);
+      }
+      return libraryRegExpTerm(name, () => regexpKeys());
     };
     // A computed key names a `unique symbol` constant. Each such declaration
     // is listed once, and its position in the list is the symbol's identity.
@@ -878,7 +918,7 @@ export function collectDeclarations(file: string, options: {
           clean(part, `${idOf(source)}#${node.name.text}`);
         const { names, typeParams } = bindersOf(node.typeParameters, node, what);
         return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false, typeParams,
-          type: signature(valueScope(node, what, names), node.parameters, node.type, node, span, true) };
+          type: oneTerm(signature(valueScope(node, what, names), node.parameters, node.type, node, span, true), span) };
       }
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
         const list = node.parent;
@@ -920,6 +960,30 @@ export function collectDeclarations(file: string, options: {
       }
       throw Error(`${what} is not an annotated constant, function or class`);
     };
+    // A Node module function the reviewed overlay lists (`library-modules.mts`):
+    // the declarations TypeScript binds the import to are overloads in Node's
+    // declarations, each entry's among them exactly as reviewed. The value is
+    // the entries' statements; the declarations' types are not read.
+    const moduleValue = (declared: readonly Node[], entries: readonly ModuleEntry[], what: string):
+        Omit<ValueRoot, "binding"> => {
+      const overloads = declared.filter((n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && !n.body);
+      if (!overloads.length || overloads.length !== declared.length ||
+          overloads.some(o => !idOf(o.getSourceFile()).includes("@types/node/")))
+        throw Error(`${what} is not a function Node's declarations declare, as the reviewed overlay of library modules states it`);
+      const forms = entries.map(entry => {
+        const match = overloads.find(o => reviewedText(o.getText(o.getSourceFile())) === entry.signature);
+        if (!match) throw Error(`${what} is not declared as reviewed: ${entry.signature}`);
+        const source = match.getSourceFile();
+        const span: Span = [match.getStart(source), match.end];
+        const term: Extract<TypeTerm, { k: "function" }> = { k: "function", effect: "unrestricted", receiver: null,
+          params: entry.stated.params, rest: entry.stated.rest ?? null, result: entry.stated.result, span };
+        return { module: idOf(source), span, term };
+      });
+      const [first] = forms;
+      if (!first) throw Error(`${what} has no reviewed overload`);
+      return { declaration: { module: first.module, name: what, span: first.span }, construct: false, typeParams: [],
+        type: oneTerm(forms.map(f => f.term), first.span) };
+    };
     // Computed types (`computed-types.mts`): an annotation they reach is read
     // where it is declared, as an imported value's is, and must be clean.
     const computedContext: ComputedContext = {
@@ -957,18 +1021,12 @@ export function collectDeclarations(file: string, options: {
     // together, as TypeScript merges them: each position's name from the
     // declaration binding the longest list, its bound and default from a
     // declaration stating them (TypeScript requires those to agree).
-    const mergedParameters = (declaration: Node): MergedParameter[] => {
+    const parametersOf = (declaration: Node): MergedParameter[] => {
       const name = nameOf(declaration);
-      const parts = name && ts.isIdentifier(name)
-        ? typeDeclarationsOf(name).filter(isTypeDeclaration) : [];
-      const lists = (parts.length ? parts : [declaration]).map(part =>
-        childrenOf(part, "typeParameters").filter(ts.isTypeParameterDeclaration));
-      const longest = lists.reduce((a, b) => (b.length > a.length ? b : a), []);
-      return longest.map((parameter, index) => {
-        const stated = lists.flatMap(list => list[index] ? [list[index]] : []);
-        return { name: parameter.name, constraint: stated.find(p => p.constraint)?.constraint,
-          default: stated.find(p => p.defaultType)?.defaultType };
-      });
+      const parts = name && ts.isIdentifier(name) ? typeDeclarationsOf(name).filter(isTypeDeclaration) : [];
+      const own = isTypeDeclaration(declaration) ? [declaration] : [];
+      return mergedParameters(parts.length ? parts : own).map(merged => ({ name: merged.parameter.name,
+        constraint: merged.bound?.at.constraint, default: merged.default?.at.defaultType }));
     };
     // A declaration's bound or default read at an application's arguments:
     // each parameter its argument; a computed form naming the parameters,
@@ -978,7 +1036,7 @@ export function collectDeclarations(file: string, options: {
     const instantiateAt = (declaration: Node, args: readonly TypeTerm[], use: Node | null): (node: TypeNode) => TypeTerm => {
       const source = declaration.getSourceFile();
       const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
-      const merged = mergedParameters(declaration);
+      const merged = parametersOf(declaration);
       const parameters = merged.map(p => p.name.text);
       const argumentOf = (part: Node): TypeTerm | undefined => {
         const index = ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && !part.typeArguments?.length
@@ -1011,7 +1069,7 @@ export function collectDeclarations(file: string, options: {
     // before it (`instantiateAt`).
     const completeArguments = (declaration: Node, written: readonly TypeTerm[], use: Node | null,
         what: string): TypeTerm[] => {
-      const parameters = mergedParameters(declaration);
+      const parameters = parametersOf(declaration);
       if (written.length > parameters.length) throw Error(`${what} applied to too many type arguments`);
       const completed = [...written];
       for (const parameter of parameters.slice(written.length)) {
@@ -1025,6 +1083,12 @@ export function collectDeclarations(file: string, options: {
         // A function with overloads is its several declarations; any other
         // name must have one.
         const nodes = resolveDeclarations(binding.local, binding.local.text);
+        const reviewed = moduleEntries(binding.specifier, binding.imported);
+        if (!binding.typeOnly && reviewed.length) {
+          values.push({ binding: { local: binding.local.text, imported: binding.imported,
+            specifier: binding.specifier, span: binding.span }, ...moduleValue(nodes, reviewed, binding.local.text) });
+          continue;
+        }
         const [node] = nodes;
         // Merged type declarations are one, as `lookup` reads them.
         if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration) && !nodes.every(isTypeDeclaration)))
@@ -1170,6 +1234,43 @@ export function collectDeclarations(file: string, options: {
           target }, args: completeArguments(node, args, null, target.name), span };
       },
     };
+    // The keys a regex's type states (`regexp.mts`): the well-known symbols
+    // its methods are keyed by, and the marks, synthetic symbols no source
+    // declaration has.
+    const markOf = (identity: DeclarationIdentity): number => {
+      const key = `mark ${identity.module}#${identity.name}`;
+      let index = symbolIndex.get(key);
+      if (index === undefined) {
+        index = symbols.length;
+        symbols.push(identity);
+        symbolIndex.set(key, index);
+      }
+      return index;
+    };
+    // Read once; the native match iterator's declaration joins the
+    // definitions with them.
+    let keysRead: RegExpKeys | undefined;
+    const regexpDefinitions: TypeDefinition[] = [];
+    const regexpKeys = (): RegExpKeys => {
+      if (keysRead) return keysRead;
+      const known = (name: string): number => {
+        const symbol = overlayLibrary.wellKnownSymbol(name);
+        if (symbol === null) throw Error(`the standard library declares no Symbol.${name}, which a regex's methods are keyed by`);
+        return symbol;
+      };
+      keysRead = { match: known("match"), matchAll: known("matchAll"), replace: known("replace"),
+        search: known("search"), split: known("split"), matcher: markOf(marks.matcher),
+        stringIterator: markOf(marks.stringIterator), iterator: element => libraryReference("Iterator", [element]) };
+      return keysRead;
+    };
+    // The native match iterator's declaration, which names the library's
+    // `Iterator`: listed where a native regex or its iteration is, before
+    // the graph is collected.
+    const nativeMatches = (): RegExpKeys => {
+      const keys = regexpKeys();
+      if (!regexpDefinitions.length) regexpDefinitions.push(nativeIteratorDefinition(keys));
+      return keys;
+    };
     let arrayProto: TypeDefinition[] = [];
     if (options.arrays) {
       try {
@@ -1209,15 +1310,20 @@ export function collectDeclarations(file: string, options: {
     // `[Symbol.iterator]` of none of these kinds is a program's iterable,
     // which runs the iterator protocol (`protocolForOf` in the parser).
     const collections: Record<string, string> = { Set: iterateSetName, Map: iterateMapName,
-      SetIterator: iterateIteratorName, MapIterator: iterateIteratorName };
+      SetIterator: iterateIteratorName, MapIterator: iterateIteratorName,
+      RegExpStringIterator: iterateRegExpStringName };
     const iterationKind = (part: Type): string => {
       if (checker.isArrayType(part) || checker.isTupleType(part)) return "array";
       if (part.flags & TypeFlags.StringLike) return iterateStringName;
       const symbol = part.getSymbol();
       const named = symbol && Object.hasOwn(collections, symbol.name) ? collections[symbol.name] : undefined;
-      if (named && symbol?.declarations.length &&
-          symbol?.declarations.every(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client))))
-        return named;
+      const library = !!symbol?.declarations.length &&
+        symbol.declarations.every(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client)));
+      if (named && library) return named;
+      // A match array is an array (`regexp.mts` reads `RegExpExecArray` and
+      // `RegExpMatchArray` as tuple views), which the host builds with
+      // `ArrayCreate`: iterated as one.
+      if (library && (symbol?.name === "RegExpExecArray" || symbol?.name === "RegExpMatchArray")) return "array";
       if (part.flags & TypeFlags.Object) {
         const method = checker.getPropertiesOfType(part).find(p => p.name.startsWith("__@iterator@"));
         if (method) {
@@ -1276,7 +1382,8 @@ export function collectDeclarations(file: string, options: {
       if (!program && !listedIterations.has(listed)) {
         listedIterations.add(listed);
         try {
-          const intrinsic = iterationIntrinsic(listed, (name, args) => libraryReference(name, args));
+          const intrinsic = iterationIntrinsic(listed, (name, args) => libraryReference(name, args),
+            element => { nativeMatches(); return nativeIterator(element); });
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
             specifier: intrinsicModule, span },
             declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
@@ -1378,6 +1485,56 @@ export function collectDeclarations(file: string, options: {
         listIntrinsics(span, [elementAtName]);
         options.hostElement?.(span);
       }
+    }
+    // A regular expression literal is a call of the intrinsic of its shape,
+    // listed once per shape at the first literal of it.
+    for (const span of options.regexps ?? []) {
+      const literal = expressionAt(client, span);
+      if (!literal || literal.kind !== ts.SyntaxKind.RegularExpressionLiteral)
+        throw new DeclarationError(span, "TypeScript regular expression literal missing");
+      const { pattern, flags } = literalParts(literal.getText(client));
+      const shape = regexpShape(pattern, flags);
+      const name = regexpIntrinsicName(shape);
+      if (!intrinsicsListed.has(name)) {
+        try {
+          values.push({ binding: { local: name, imported: name, specifier: intrinsicModule, span },
+            declaration: { module: intrinsicModule, name, span: [0, 0] }, construct: false, typeParams: [],
+            // Evaluating a literal allocates the regex and runs no code.
+            type: { k: "function", effect: "preservesInputHeap", receiver: null, params: [], rest: null,
+              result: nativeRegExp(shape, nativeMatches()), span: [0, 0] } });
+        } catch (error) {
+          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        }
+        intrinsicsListed.add(name);
+      }
+      options.regexp?.(span, name);
+    }
+    for (const span of options.dispatchCalls ?? []) {
+      const call = expressionAt(client, span);
+      if (!call || !ts.isCallExpression(call) || !ts.isPropertyAccessExpression(call.expression))
+        throw new DeclarationError(span, "TypeScript string method call missing");
+      const method = call.expression.name.text;
+      const [argument] = call.arguments;
+      if (!isDispatchMethod(method) || !argument) continue;
+      const partsOf = (type: Type | undefined): readonly Type[] => type && isUnionType(type) ? type.getTypes() : type ? [type] : [];
+      const receivers = partsOf(checker.getTypeAtLocation(call.expression.expression));
+      const objects = partsOf(checker.getTypeAtLocation(argument));
+      if (!receivers.length || !receivers.every(t => !!(t.flags & TypeFlags.StringLike)) ||
+          !objects.length || !objects.every(t => !!(t.flags & (TypeFlags.Object | TypeFlags.NonPrimitive | TypeFlags.Intersection))))
+        continue;
+      const name = dispatchName(method);
+      if (!intrinsicsListed.has(name)) {
+        try {
+          const intrinsic = dispatchIntrinsic(method, regexpKeys());
+          values.push({ binding: { local: name, imported: name, specifier: intrinsicModule, span },
+            declaration: { module: intrinsicModule, name, span: [0, 0] }, construct: false,
+            typeParams: intrinsic.typeParams, type: intrinsic.type });
+        } catch (error) {
+          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        }
+        intrinsicsListed.add(name);
+      }
+      options.dispatch?.(span, name);
     }
     for (const span of options.receiverTargets ?? []) {
       const name = identifierAt(client, span);
@@ -1564,6 +1721,25 @@ export function collectDeclarations(file: string, options: {
         if (element) return { k: "array", presence: "readable", readonly: type.getSymbol()?.name === "ReadonlyArray",
           element: contextualTerm(element, span), span };
       }
+      // A tuple of required positions and a rest, as its annotation reads,
+      // readonly as TypeScript says. An optional position's type TypeScript
+      // gives with `undefined` whether or not it was written, so it is not
+      // read.
+      const tuple = checker.isTupleType(type) && isTypeReference(type) ? type.getTarget() : undefined;
+      if (tuple && isTupleType(tuple) && isTypeReference(type)) {
+        const elements = checker.getTypeArguments(type);
+        const required: TypeTerm[] = [];
+        let rest: TypeTerm | null = null;
+        for (const [i, flag] of tuple.elementFlags.entries()) {
+          const element = elements[i];
+          if (!element) throw Error(`the contextual tuple ${text()} states no type at position ${i}`);
+          if (flag === ElementFlags.Required && rest === null) required.push(contextualTerm(element, span));
+          else if (flag === ElementFlags.Rest && rest === null) rest = contextualTerm(element, span);
+          else throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, ` +
+            "a tuple with an optional or variadic position, which an annotation states");
+        }
+        return { k: "tuple", presence: "dense", readonly: tuple.readonly, required, optional: [], rest, span };
+      }
       const symbol = type.getAliasSymbol() ?? type.getSymbol();
       const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
       const [node] = nodes;
@@ -1578,8 +1754,16 @@ export function collectDeclarations(file: string, options: {
         return { k: "reference", reference: { name: node.name.text, span, arguments: args.map(() => span), target: identityOf(node) },
           args, span };
       }
+      // A library regex type (`RegExpExecArray` for a match's callback), as
+      // `regexp.mts` reads it.
+      const library = nodes.filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+      if (symbol && library.length && library.length === nodes.length &&
+          library.every(n => isLibraryModule(idOf(n.getSourceFile())))) {
+        const stated = libraryRegExp(symbol.name, library);
+        if (stated) return stated;
+      }
       throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, which is ` +
-        "not stated by primitives, literals, unions, intersections, arrays, type parameters and declarations by name");
+        "not stated by primitives, literals, unions, intersections, arrays, tuples, type parameters and declarations by name");
     };
     const parameterAt = (span: Span): ts.ParameterDeclaration | null => {
       const visit = (node: Node): ts.ParameterDeclaration | null => {
@@ -1858,7 +2042,7 @@ export function collectDeclarations(file: string, options: {
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(node) };
         },
         instantiate: instantiateAt,
-        parameters: mergedParameters,
+        parameters: parametersOf,
         complete: completeArguments,
         resolve: name => {
           // The declarations a name denotes: TypeScript's symbol at its
@@ -1915,14 +2099,14 @@ export function collectDeclarations(file: string, options: {
     ];
     for (const { node: start, span } of starts) {
       try {
-        collect(start, seen, definitions, { complete: completeArguments, parameters: mergedParameters, lookup, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+        collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
           keys: keyTypeOf, alias: aliasOf, awaited });
       } catch (error) {
         throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
       }
     }
-    definitions.push(...selections, ...primitiveProtos, ...(stableListed ? [stableDefinition] : []));
+    definitions.push(...selections, ...primitiveProtos, ...regexpDefinitions, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
     definitions.unshift(...arrayProto);
     // Trusted generic promise results have a stable non-thenable payload
@@ -2037,6 +2221,29 @@ type SelectionContext = {
   library: (name: string, args: TypeTerm[]) => TypeTerm;
 };
 
+/** Whether a reference is written: an assignment's target or an update's
+ * operand. */
+function isWritten(use: Identifier): boolean {
+  const parent = use.parent;
+  if (ts.isBinaryExpression(parent) && parent.left === use)
+    return parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment;
+  return (ts.isPrefixUnaryExpression(parent) || ts.isPostfixUnaryExpression(parent)) &&
+    (parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken);
+}
+
+/** A call at a stated signature passes no argument past its parameters but
+ * to its rest, the only one a spread may reach. */
+function boundedArguments(call: ts.CallExpression, stated: Stated, what: string): void {
+  if (stated.rest) {
+    if (call.arguments.slice(0, stated.params.length).some(ts.isSpreadElement))
+      throw Error(`${what} is read with spreads past its ${stated.params.length} parameter(s) only`);
+    return;
+  }
+  if (call.arguments.length > stated.params.length || call.arguments.some(ts.isSpreadElement))
+    throw Error(`${what} is read with at most ${stated.params.length} argument(s)`);
+}
+
 /**
  * A global variable, such as Node's `process` or the standard library's
  * `BigInt`, read at the members and call signatures the client's references
@@ -2055,7 +2262,10 @@ type SelectionContext = {
  *   each a host-relative member (so its reference must be called), and a
  *   `this` result is the definition itself, the host;
  * - a property is its signature as declared, read like any declaration's;
- * - a call signature is read as a method's is, with no receiver.
+ * - a call signature is read as a method's is, with no receiver;
+ * - a reference read as a value, `xs.filter(Boolean)`, selects every call
+ *   signature, since whoever receives the value may call it at any; a
+ *   standard library global only where the overlay states each for a value.
  *
  * Leaving the other members and signatures out gives a supertype of the
  * declared type, since methods are host-relative; nothing else about the
@@ -2071,6 +2281,35 @@ type SelectionContext = {
  * it, or, outside the standard library, as declared. A global read only
  * through tests, `Array.isArray(e)`, is no value at all (null).
  */
+/** A declaration's type parameters by position, as TypeScript merges its
+ * declarations `parts`: each position's parameter in the declaration
+ * binding the longest list, and its bound and default with the declaration
+ * stating them, in whose scope they are read. TypeScript requires the
+ * declarations stating a position's bound, or its default, to agree. */
+function mergedParameters(parts: readonly TypeDeclaration[]) {
+  const longest = parts.reduce<readonly ts.TypeParameterDeclaration[]>((list, part) =>
+    (part.typeParameters?.length ?? 0) > list.length ? part.typeParameters ?? [] : list, []);
+  return longest.map((parameter, index) => {
+    const stated = parts.flatMap(part => {
+      const at = part.typeParameters?.[index];
+      return at ? [{ part, at }] : [];
+    });
+    return { parameter, bound: stated.find(s => s.at.constraint), default: stated.find(s => s.at.defaultType) };
+  });
+}
+
+/** A namespace declaring only types, directly or in namespaces of its own:
+ * TypeScript makes no value of it, so in a value position the name means
+ * only its other declarations (`console`, a variable and a namespace of
+ * interfaces). */
+function typesOnly(node: Node): boolean {
+  if (!ts.isModuleDeclaration(node) || !node.body) return false;
+  const body = node.body;
+  return ts.isModuleBlock(body)
+    ? body.statements.every(s => ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s) || typesOnly(s))
+    : typesOnly(body);
+}
+
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
     { definition: TypeDefinition } |
     { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm } } |
@@ -2083,7 +2322,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     !!d && ts.isVariableDeclaration(d) && !!d.type && ts.isIdentifier(d.name));
   const [declaration] = variables;
   if (!declaration || declarations.some(d => !d ||
-      (!ts.isInterfaceDeclaration(d) && !variables.some(v => v === d))))
+      (!ts.isInterfaceDeclaration(d) && !typesOnly(d) && !variables.some(v => v === d))))
     throw Error(`the global ${name} is not an annotated variable`);
   const where = (node: Node, key: string) => `${context.identityOf(node.getSourceFile())}#${key}`;
   for (const variable of variables) context.clean(variable, where(variable, name));
@@ -2156,6 +2395,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const keys = new Map<string, ts.PropertyAccessExpression[]>();
   const calls: ts.CallExpression[] = [];
   const constructs: ts.NewExpression[] = [];
+  // References reading the global as a value, `xs.filter(Boolean)`.
+  const valueUses: Identifier[] = [];
   for (const use of uses) {
     const parent = use.parent;
     if (ts.isPropertyAccessExpression(parent) && parent.expression === use && !parent.questionDotToken &&
@@ -2173,7 +2414,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       if (!entry?.test) throw Error(`${name} is not read as an instanceof test`);
       context.test(spanOf(parent), entry.test);
     }
-    else throw Error(`${name} is read only through its members, each by name, called or constructed`);
+    else if (isWritten(use)) throw Error(`the global ${name} is written, which the module may not do`);
+    else valueUses.push(use);
   }
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
   for (const [key, accesses] of keys) {
@@ -2220,12 +2462,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         // parameters bound the arguments, as for a construct.
         if (entry?.stated) {
           const stated = entry.stated;
-          for (const call of calls)
-            if (call.arguments.length > stated.params.length || call.arguments.some(ts.isSpreadElement))
-              throw Error(`${what} is read with at most ${stated.params.length} argument(s)`);
+          for (const call of calls) boundedArguments(call, stated, what);
           const at = spanOf(overload);
           const form: FunctionTerm = { k: "function", effect: "unrestricted", receiver: { k: "self", span: at }, params: stated.params,
-            rest: null, result: stated.result, span: at };
+            rest: stated.rest ?? null, result: stated.result, span: at };
           // A generic statement is a scheme over its binders, as a generic
           // interface method is.
           return [stated.binders.length
@@ -2266,6 +2506,17 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     if (!signature) throw Error(`TypeScript resolves the call of ${name} to no call signature it declares`);
     chosen.set(signature, [...chosen.get(signature) ?? [], call]);
   }
+  // A value is every call signature: whoever receives it may call any. A
+  // standard library global is read as one only where the overlay states
+  // each for it (`value`).
+  if (valueUses.length) {
+    if (!declared.length) throw Error(`${name} is read as a value, which declares no call signature`);
+    for (const signature of declared) {
+      if (library && !reviewed(undefined, signature, `${name} as a value`)?.value)
+        throw Error(`${name} is read as a value only where the overlay states its call signatures for one`);
+      if (!chosen.has(signature)) chosen.set(signature, []);
+    }
+  }
   const what = `${name}(…)`;
   // A call the overlay reads as the global's construct, `Error(m)`: each is
   // reported, and its statement joins the construct signatures.
@@ -2283,6 +2534,16 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       calledConstructs.push({ binders: stated.binders, type: { k: "constructor", params: stated.params, rest: null,
         result: stated.result, span: spanOf(signature) } });
       return [];
+    }
+    // A call signature the overlay states instead of the declared one, as a
+    // member's: its parameters bound the arguments.
+    if (entry?.stated) {
+      const stated = entry.stated;
+      if (stated.binders.length) throw Error(`${what} is stated with binders, which a call signature cannot hold`);
+      for (const call of calls) boundedArguments(call, stated, what);
+      const at = spanOf(signature);
+      return [{ k: "function", effect: "unrestricted", receiver: null, params: stated.params,
+        rest: stated.rest ?? null, result: stated.result, span: at } satisfies FunctionTerm];
     }
     return forms(signature, name, what, entry).map(form => {
       if (form.receiver) throw Error(`${what} states its receiver`);
@@ -2334,6 +2595,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           type: { k: "constructor", params: form.params, rest: form.rest, result: form.result, span } satisfies TypeTerm };
       });
   })];
+  if (valueUses.length && constructForms.length)
+    throw Error(`${name} is both constructed and read as a value`);
   const source = declaration.getSourceFile();
   const identity: DeclarationIdentity = { module: context.identityOf(source), name,
     span: [declaration.getStart(source), declaration.end] };
@@ -2440,7 +2703,7 @@ function mergedClass(instance: TypeTerm, interfaces: TypeTerm[], fail: (at: Node
  * host-relative member and a property as declared. A member the project's
  * library does not declare is left out. */
 function overlaidInterface(node: InterfaceDeclaration, parts: readonly InterfaceDeclaration[],
-    entries: readonly OverlayEntry[], scopeOf: (source: SourceFile) => TermScope,
+    entries: readonly OverlayEntry[], scopeOf: (part: InterfaceDeclaration) => TermScope,
     identityOf: (node: TypeDeclaration) => DeclarationIdentity,
     symbol: (written: Identifier | ts.PropertyAccessExpression) => number,
     library: (name: string, span: Span) => (args: TypeTerm[]) => TypeTerm): TypeTerm {
@@ -2456,14 +2719,14 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
         .filter((m): m is ts.MethodSignatureDeclaration | ts.PropertySignatureDeclaration =>
           (ts.isMethodSignatureDeclaration(m) || ts.isPropertySignatureDeclaration(m)) &&
           keyText(m, source) === entry.name)
-        .map(member => ({ member, source }));
+        .map(member => ({ member, source, part }));
     });
     if (!named.length) continue;
     const found = named.filter(({ member, source }) => member.getText(source).trim() === entry.signature);
     const [only, ...more] = found;
     if (!only || more.length) throw Error(`${where}.${entry.name} is not declared as reviewed: ${entry.signature}`);
-    const { member, source } = only;
-    const scope = scopeOf(source);
+    const { member, source, part } = only;
+    const scope = scopeOf(part);
     const span: Span = [member.getStart(source), member.end];
     const name = member.name;
     const key: PropertyKey = ts.isComputedPropertyName(name) &&
@@ -2495,7 +2758,7 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
     const forms = signatures(scope, parameters, member.type, member, span, false, given);
     if (forms.some(f => f.receiver)) throw Error(`${where}.${entry.name} states its receiver`);
     fields.push({ name: key, optional: false, readonly: false, span,
-      type: oneTerm(forms.map(f => ({ ...f, receiver: { k: "self", span } })), span) });
+      type: oneTerm(forms.map(f => ({ ...f, receiver: { k: "self", span }, effect: entry.effect ?? f.effect })), span) });
   }
   return { k: "object", fields, stringIndex: null, calls: [], span: identityOf(node).span };
 }
@@ -2586,7 +2849,9 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         throw Error(`${computedForm(part) ?? "a computed alias"} reaches a function's type parameter in ${identity.module}#${identity.name}`);
       return term;
     };
-    const scopeOf = (source: SourceFile): TermScope => ({
+    // A part of a merged interface binds a prefix of the declaration's
+    // parameters, by position: its members are read with only those.
+    const scopeOf = (source: SourceFile, names: readonly string[] = parameterNames): TermScope => ({
       source,
       annotation: false,
       awaited: context.awaited,
@@ -2600,7 +2865,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       named: (part, pos, read) => {
         const name = part.typeName;
         if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${identity.module}#${identity.name}`);
-        const index = parameterNames.indexOf(name.text);
+        const index = names.indexOf(name.text);
         if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
         if (part.typeArguments?.length)
           throw Error(`type parameter applied as constructor: ${name.text}`);
@@ -2608,7 +2873,12 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       },
     });
     const scope = scopeOf(source);
-    const parse = (part: TypeNode): TypeTerm => typeTerm(scope, part);
+    const parts = partners.get(node) ?? [node];
+    const partScope = (part: TypeDeclaration): TermScope =>
+      scopeOf(part.getSourceFile(), (part.typeParameters ?? []).map(parameter => parameter.name.text));
+    // A bound or default is read in the scope of the declaration stating it.
+    const statedIn = (at: { part: TypeDeclaration; type: TypeNode | undefined }): TypeTerm | null =>
+      at.type ? typeTerm(partScope(at.part), at.type) : null;
     let sawDefault = false;
     const parameters = parameterNodes.map((parameter, index) => {
       if (sawDefault && !parameter.default)
@@ -2626,7 +2896,6 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       definitions.push({ declaration: identity, parameters, bases: [], expression: null });
       continue;
     }
-    const parts = partners.get(node) ?? [node];
     // A standard library interface read through the overlay: only its listed
     // members, and no base.
     const overlaid = ts.isInterfaceDeclaration(node) && Object.hasOwn(interfaceOverlay, node.name.text) &&
@@ -2634,7 +2903,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       ? interfaceOverlay[node.name.text] : undefined;
     if (overlaid && ts.isInterfaceDeclaration(node)) {
       definitions.push({ declaration: identity, parameters, bases: [],
-        expression: overlaidInterface(node, parts.filter(ts.isInterfaceDeclaration), overlaid, scopeOf,
+        expression: overlaidInterface(node, parts.filter(ts.isInterfaceDeclaration), overlaid, partScope,
           identityOf, symbol, (name, span) => {
           const target = context.libraryInterface(name);
           queue.push(target);
@@ -2645,7 +2914,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       continue;
     }
     let expression = ts.isTypeAliasDeclaration(node)
-      ? parse(node.type)
+      ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
         ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end]), parts.flatMap(part => {
             if (part === node || !ts.isInterfaceDeclaration(part)) return [];
@@ -2655,7 +2924,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         : mergeMembers(parts.map(part => {
             const file = part.getSourceFile();
             if (!ts.isInterfaceDeclaration(part)) return scope.fail(part, "a declaration merged with an interface is not one");
-            return members(scopeOf(file), part.members, part,
+            return members(partScope(part), part.members, part,
               [part.getStart(file), part.end], true);
           }), (at, message) => scope.fail(at, message), node);
     // Native promise observation uses PromiseResolve's constructor equality
@@ -2733,7 +3002,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const bases = parts.flatMap(part => {
       if (!ts.isInterfaceDeclaration(part) && !ts.isClassDeclaration(part)) return [];
       const file = part.getSourceFile();
-      const read = (t: TypeNode): TypeTerm => typeTerm(scopeOf(file), t);
+      const read = (t: TypeNode): TypeTerm => typeTerm(partScope(part), t);
       return (part.heritageClauses ?? []).filter(clause =>
           !(ts.isClassDeclaration(part) && clause.token === ts.SyntaxKind.ImplementsKeyword)).flatMap(clause => {
           if (clause.token !== ts.SyntaxKind.ExtendsKeyword)

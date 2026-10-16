@@ -7,6 +7,7 @@ import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, T
 import type { Span } from "./span.mts";
 import { childrenOf } from "./syntax.mts";
 import type { PropertyKey, ResolutionSlots, TypeTerm } from "./declaration-types.mts";
+import type { CallEffect } from "./type-graph.mts";
 
 /** The projections a qualified parameter owns: an awaitable one its
  * observation, a resolvable one also its result. */
@@ -483,13 +484,10 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
   }
   if (computedForm(node) !== null && scope.computed)
     return scope.computed(node, span, part => typeTerm(scope, part));
-  // `x is T` and `asserts x is T` promise a relation between an argument and
-  // the result or the completion, which no function type states: a caller
-  // narrowing by one needs a fact tying the call's result to its argument.
+  // `x is T` and `asserts x is T` are a signature's result only, which
+  // `signatures` reads as a promise signature beside the plain one.
   if (ts.isTypePredicateNode(node))
-    return scope.fail(node, node.assertsModifier
-      ? "an assertion function (`asserts x is T`) is outside the fragment: its promise, that a normal completion leaves the argument a `T`, relates the completion to the argument, which no function type states"
-      : "a user-defined type guard (`x is T`) is outside the fragment: its promise, that a `true` result leaves the argument a `T`, relates the result to the argument, which no function type states");
+    return scope.fail(node, "a type predicate (`x is T`) is a function's result, which states it as a promise about a parameter");
   return scope.fail(node, `type outside the fragment (${ts.SyntaxKind[node.kind]})`);
 }
 
@@ -670,10 +668,13 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
     result: TypeNode | undefined, at: Node, span: Span,
     // A declared function's defaulted parameter may be omitted: `undefined`
     // is what a short call binds there. Function types have no defaults.
-    declared = false): FunctionTerm {
-  const [only, ...more] = signatures(scope, parameters, result, at, span, declared);
-  if (!only || more.length) return scope.fail(at, "a rest parameter over several tuples is several signatures");
-  return only;
+    declared = false): FunctionTerm[] {
+  const forms = signatures(scope, parameters, result, at, span, declared);
+  // A guard's promise is a second form beside the plain one; any other second
+  // form is a rest over several tuples.
+  const plain = forms.filter((f) => f.effect === "unrestricted");
+  if (plain.length !== 1) return scope.fail(at, "a rest parameter over several tuples is several signatures");
+  return forms;
 }
 
 /** A generic signature's binders and forms: its own type parameters are
@@ -778,9 +779,41 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
       params.push(optional(p) ? optionalTerm(type, spanOf(scope, p)) : type);
     }
   }
-  const resultTerm = given ?? typeTerm(scope, result, at);
-  return (alternatives ?? [[]]).map(positions =>
+  // A guard's result, `x is T` (`asserts x is T`), is its plain result,
+  // `boolean` (`void`), and a promise about the parameter it names: a second
+  // signature at the same parameters, its result the promise's type.
+  const predicate = !given && result && ts.isTypePredicateNode(result)
+    ? promiseOf(scope, result, ordinary) : null;
+  const resultTerm = given ?? (predicate ? predicate.plain : typeTerm(scope, result, at));
+  const forms = (alternatives ?? [[]]).map((positions): FunctionTerm =>
     ({ k: "function", effect: "unrestricted", receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
+  return predicate
+    ? [...forms, ...forms.map((f): FunctionTerm => ({ ...f, effect: predicate.effect, result: predicate.type }))]
+    : forms;
+}
+
+/** A type predicate's plain result, its effect and its promise's type: `x
+ * is T` a type guard's, about the parameter `x`, `asserts x is T` an assertion
+ * function's. Refused: a predicate about the receiver (`this is T`), whose
+ * value is no actual; `asserts x` without a type, which promises the argument
+ * truthy, no type of the fragment. */
+export function promiseOf(scope: TermScope, node: ts.TypePredicateNode, ordinary: readonly ts.ParameterDeclaration[]):
+    { plain: TypeTerm; effect: CallEffect; type: TypeTerm } {
+  const name = node.parameterName;
+  if (!ts.isIdentifier(name))
+    return scope.fail(node, "a guard on `this` (`this is T`) is outside the fragment: its promise is about the receiver, which is no actual of the call");
+  if (!node.type)
+    return scope.fail(node, "`asserts x` without a type is outside the fragment: it promises the argument truthy, which is no type of the fragment");
+  const param = ordinary.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === name.text);
+  const declared = ordinary[param];
+  if (!declared || declared.dotDotDotToken)
+    return scope.fail(node, "a type predicate names a parameter other than a rest one");
+  const span = spanOf(scope, node);
+  return {
+    plain: { k: "atom", name: node.assertsModifier ? "void" : "boolean", span },
+    effect: node.assertsModifier ? { asserts: { param } } : { guards: { param } },
+    type: typeTerm(scope, node.type, node),
+  };
 }
 
 /** Several signatures as one term: their intersection, which a value meets by
@@ -1069,16 +1102,16 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
           default: p.defaultType ? typeTerm(inner, p.defaultType, p) : null,
           span: spanOf(scope, p),
         }));
-        const method = signature(inner, member.parameters, member.type, member, memberSpan);
-        if (method.receiver) scope.fail(member, GENERIC_METHOD_RECEIVER);
+        const forms = signature(inner, member.parameters, member.type, member, memberSpan);
+        if (forms.some((f) => f.receiver)) scope.fail(member, GENERIC_METHOD_RECEIVER);
         fields.push({ name, optional: false, readonly: true,
-          type: { k: "scheme", binders, signatures: [{ ...method, receiver: { k: "self", span: memberSpan } }],
+          type: { k: "scheme", binders, signatures: forms.map((f) => ({ ...f, receiver: { k: "self", span: memberSpan } })),
             span: memberSpan }, span: memberSpan });
         continue;
       }
-      const method = signature(scope, member.parameters, member.type, member, memberSpan);
+      const forms = signature(scope, member.parameters, member.type, member, memberSpan);
       fields.push({ name, optional: false, readonly: true,
-        type: { ...method, receiver: hostReceiver(method, memberSpan) }, span: memberSpan });
+        type: oneTerm(forms.map((f) => ({ ...f, receiver: hostReceiver(f, memberSpan) })), memberSpan), span: memberSpan });
     } else if (ts.isConstructorDeclaration(member)) {
       // A parameter property is a field the constructor assigns from its
       // parameter. Its visibility is TypeScript's alone; `readonly` is the

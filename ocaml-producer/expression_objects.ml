@@ -170,11 +170,17 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           Option.map (fun t -> {required=[];optional_elements=[];rest=Some t;readonly=true;presence=Readable})
             (iterated_hint declarations expected)
         | None,_ -> None in
-      let elements t = match (try declared_head declarations [] t with Json.Error _ -> t) with
+      let rec elements t = match (try declared_head declarations [] t with Json.Error _ -> t) with
         | Atoms [Shape {elements=Some s;_}] ->
           let held = combine (s.required @ s.optional_elements @ Option.to_list s.rest) in
           Some (if s.presence = Sparse then union held (Atoms [Undef]) else held)
-        | t -> iterated_hint declarations t in
+        (* A union of arrays, `xs ?? []`: the elements of each. *)
+        | Union (_ :: _ :: _ as parts) -> elements_of parts
+        | Atoms (_ :: _ :: _ as atoms) -> elements_of (List.map (fun a -> Atoms [a]) atoms)
+        | t -> iterated_hint declarations t
+      and elements_of parts =
+        let each = List.map elements parts in
+        if List.for_all Option.is_some each then Some (combine (List.filter_map Fun.id each)) else None in
       let types = List.mapi (fun i e ->
         let expected = Option.bind contract (fun s -> match List.nth_opt (s.required @ s.optional_elements) i with
           | Some t -> Some t | None -> s.rest) in

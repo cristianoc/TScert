@@ -68,26 +68,111 @@ def arrayTested : Fragment.Expr → Bool
   | .shapeTest _ .isArray _ _ => true
   | _ => false
 
+/-- What a call promises of its actual: a call whose callee's type holds a
+promise signature (a type guard's, `asserts` false; an assertion function's,
+`asserts` true), the callee a name, or a method or field of a name's object, of an
+actual that is an immutable name. Of several promise signatures (overloads),
+the first whose parameters hold the types of the actuals that are names. The
+actual's slot and the promise's type; the graph checker proves it from the
+callee's signature at the call (`PromiseCalls.promiseCall_sound`). -/
+@[nospecialize] def promiseNarrowing (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
+    (Γ : List (Ty ι)) (asserts : Bool) (e : Fragment.Expr) (original : String → String := id) :
+    Option (Nat × Ty ι) := do
+  let (callee, args) ← match e with
+    | .call _ callee args [] [] | .invoke _ callee args [] [] => some (callee, args)
+    | _ => none
+  let slotType := fun (name : String) => do
+    let i ← valueSlot scope (original name)
+    return (i, ← Γ[i]?)
+  -- The callee's signatures, as (parameters, result, effect).
+  let sigs : List (List (Ty ι) × Ty ι × Effect) ← match callee with
+    | .var _ f => do
+      let (_, F) ← slotType f
+      let [.arrs L _] := PositiveRules.expand G F | none
+      pure (L.map fun s => (s.arguments, s.result, s.effect))
+    | .read _ fld (.var _ o) => do
+      let (_, O) ← slotType o
+      match ProgramTyping.memberOf G O fld with
+      | some m => pure (m.calls.map fun s => (s.arguments, s.result, s.effect))
+      | none =>
+        let F ← fieldRow G O fld
+        let [.arrs L _] := PositiveRules.expand G F | none
+        pure (L.map fun s => (s.arguments, s.result, s.effect))
+    | _ => none
+  let holds := fun (Ds : List (Ty ι)) => (args.zip Ds).all fun (a, D) => match a with
+    | .var _ name => match slotType name with
+      | some (_, A) => A.all D.contains
+      | none => true
+    | _ => true
+  let promises := sigs.filterMap fun (Ds, T, effect) => match effect, asserts with
+    | .guards p, false | .asserts p, true => some (Ds, T, p)
+    | _, _ => none
+  let chosen := match promises with
+    | [one] => [one]
+    | _ => promises.filter fun (Ds, _, _) => holds Ds
+  let (_, T, p) ← chosen.head?
+  let .var _ name ← args[p]? | none
+  let (j, _) ← slotType name
+  return (j, T)
+
 /-- Facts justified on the path to a short-circuit operand. Only immutable
 source bindings are refined; every generated edge checks this candidate context.
 A true conjunction / false disjunction establishes both operand outcomes. The
-other outcomes deliberately retain the input context rather than compute a join. -/
+other outcome came from either operand: a slot both paths refine holds what
+either refined it to (`joinContexts`), and any other slot keeps its input
+type. A passed equality with a singleton `single` names (`conditionSingletons`)
+leaves its operand that value alone, which `tagMember` checks on the edge. -/
 @[nospecialize] def conditionContext (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
-    (cond : Fragment.Expr) (answer : Bool) (arrays : Option (Ty ι) := none) : List (Ty ι) :=
+    (cond : Fragment.Expr) (answer : Bool) (arrays : Option (Ty ι) := none)
+    (single : Tag → Option ι := fun _ => none) : List (Ty ι) :=
   match cond with
-  | .not _ e => conditionContext G scope Γ e (!answer) arrays
+  | .not _ e => conditionContext G scope Γ e (!answer) arrays single
   | .logical _ andOp left right =>
     if answer == andOp then
-      conditionContext G scope (conditionContext G scope Γ left answer arrays) right answer arrays
-    else Γ
+      conditionContext G scope (conditionContext G scope Γ left answer arrays single) right answer arrays single
+    else
+      joinContexts Γ (conditionContext G scope Γ left answer arrays single)
+        (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single) right answer arrays single)
   | _ =>
-    if let some (i, tag, equal) := conditionTag G scope Γ cond then
+    if let (true, some (j, T)) := (answer, promiseNarrowing G scope Γ false cond) then Γ.set j T
+    else if let some (i, tag, equal) := conditionTag G scope Γ cond then
       match tag, answer == equal, arrays with
       | .isArray, true, some R => Γ.set i (arrayRefine G (Γ[i]?.getD []) R)
-      | _, _, _ => Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag (answer == equal))
+      | _, holds, _ =>
+        let sliced := BranchRefinement.tagSlice G (Γ[i]?.getD []) tag holds
+        match (if holds && !sliced.isEmpty then single tag else none) with
+        | some l => Γ.set i [l]
+        | none => Γ.set i sliced
     else if let some i := testedSlot scope Γ cond then
       Γ.set i (if answer then [Labels.tru] else [Labels.fls])
     else Γ
+where
+  /-- Two paths' contexts over the same slots: a slot either path leaves at
+  its input type keeps it, and one both refine holds the labels of both. -/
+  joinContexts (Γ L R : List (Ty ι)) : List (Ty ι) :=
+    (List.range Γ.length).map fun j =>
+      let g := Γ[j]?.getD []
+      let l := L[j]?.getD g
+      let r := R[j]?.getD g
+      if l == g || r == g then g else l ++ r.filter fun a => !l.contains a
+
+/-- The singleton label of each strict equality a condition's leaves test
+whose passing leaves the operand that one value (`familyMember`): a string,
+or a number other than a zero. -/
+@[nospecialize] partial def conditionSingletons (G : PositiveGraphs.NormalGraph Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) : Fragment.Expr → Compiler (List (Tag × Tree))
+  | .not _ e => conditionSingletons G scope Γ e
+  | .logical _ _ l r => return (← conditionSingletons G scope Γ l) ++ (← conditionSingletons G scope Γ r)
+  | e => match conditionTag G scope Γ e with
+    | some (_, .strEq s, _) => return [(.strEq s, ← lower (SourceTypes.use (.strLit s)))]
+    | some (_, .numEq b, _) =>
+      if b &&& 0x7fffffffffffffff != 0 then return [(.numEq b, ← lower (SourceTypes.use (.numLit b)))]
+      else return []
+    | _ => return []
+
+/-- The lookup `conditionContext` reads singletons through. -/
+def singletonOf (singles : List (Tag × Tree)) (tag : Tag) : Option Tree :=
+  (singles.find? (·.1 == tag)).map (·.2)
 
 /-- The fresh array an array pattern's rest collects from the array at slot
 `obj` of `A`: the positions from `start` on, read into a store. They are a

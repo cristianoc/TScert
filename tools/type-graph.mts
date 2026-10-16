@@ -18,7 +18,20 @@ export function presencePrefix(value: ArrayPresence): string {
 export type Labels<L = number> = L[];
 /** A signature: the receiver a call may pass, then the parameters and the
  * result. A signature indifferent to its receiver names an unknown row. */
-export type CallEffect = "unrestricted" | "preservesInputHeap";
+/** What a signature guarantees beyond its contract: a heap effect, or a
+ * promise about the actual at `param`, whose type is then the signature's
+ * result (`CallEffects.Effect`). */
+export type CallEffect = "unrestricted" | "preservesInputHeap" | { guards: { param: number } } | { asserts: { param: number } };
+/** Whether a value is a call effect, as the wire states one. */
+export function isCallEffect(value: unknown): value is CallEffect {
+  if (value === "unrestricted" || value === "preservesInputHeap") return true;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  const promise: unknown = "guards" in value ? value.guards : "asserts" in value ? value.asserts : undefined;
+  return keys.length === 1 && typeof promise === "object" && promise !== null && !Array.isArray(promise) &&
+    Object.keys(promise).length === 1 && "param" in promise && typeof promise.param === "number" &&
+    Number.isInteger(promise.param) && promise.param >= 0;
+}
 /** One contract representation; every operand mapping must retain its effect. */
 type CallContract<Receiver, Arguments, L = number> = {
   receiver: Receiver;
@@ -244,8 +257,7 @@ export function decodeGraph(value: unknown): TypeGraph {
   const contract = (v: unknown, hosted: boolean, rest: boolean) => {
     const sig = obj(v, ["receiver", "arguments", "result", "effect"]);
     if (hosted) obj(sig.receiver, []); else labels(sig.receiver);
-    if (sig.effect !== "unrestricted" && sig.effect !== "preservesInputHeap")
-      throw Error("invalid callable effect");
+    if (!isCallEffect(sig.effect)) throw Error("invalid callable effect");
     labels(sig.result);
     if (rest) {
       const args = array(sig.arguments);

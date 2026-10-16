@@ -336,6 +336,20 @@ Language Specification* as of this writing). Sections relied on by name:
   (any object may be given any prototype, a class's included, without its
   constructor running): the array invariant and why no class invariant is
   assumed.
+- the bitwise operators of the compiler API's flag tests:
+  [binary bitwise operators](https://tc39.es/ecma262/#sec-binary-bitwise-operators),
+  [bitwise NOT](https://tc39.es/ecma262/#sec-bitwise-not-operator),
+  the [left shift](https://tc39.es/ecma262/#sec-left-shift-operator),
+  [signed right shift](https://tc39.es/ecma262/#sec-signed-right-shift-operator)
+  and [unsigned right shift](https://tc39.es/ecma262/#sec-unsigned-right-shift-operator)
+  operators, [ToInt32](https://tc39.es/ecma262/#sec-toint32) and
+  [ToUint32](https://tc39.es/ecma262/#sec-touint32); the array operations a
+  foreign array meets:
+  [IsConcatSpreadable](https://tc39.es/ecma262/#sec-isconcatspreadable),
+  [FlattenIntoArray](https://tc39.es/ecma262/#sec-flattenintoarray) and
+  [EnumerateObjectProperties](https://tc39.es/ecma262/#sec-enumerate-object-properties);
+  and [module namespace exotic objects](https://tc39.es/ecma262/#sec-module-namespace-exotic-objects)
+  (their members immutable bindings).
 
 **Used for** the meaning of every calculus step and every host row of the
 trust surface; checked by review and `#guard` tests against node, not proved.
@@ -350,6 +364,7 @@ trust surface; checked by review and `#guard` tests against node, not proved.
 [SOURCE-ELABORATION: patterns](SOURCE-ELABORATION.md#patterns),
 [SOURCE-CONTRACTS: classes](SOURCE-CONTRACTS.md#classes),
 [CALLABLES](CALLABLES.md), [REQUEST-PROTOCOL](REQUEST-PROTOCOL.md),
+[COMPILER-API](COMPILER-API.md),
 [the callable examples](../pipeline/examples/callables/README.md).
 
 ### JISET and ESMeta
@@ -498,7 +513,8 @@ states that call signatures, properties and construct signatures coexist in one
 object type. Its downlevel emit of a generator as a state machine is the
 lowering a generator would take.
 **Discussed in** [DESIGN: principles](DESIGN.md#principles),
-[DESIGN: trust surface](DESIGN.md#trust-surface), [CALLABLES](CALLABLES.md).
+[DESIGN: trust surface](DESIGN.md#trust-surface), [CALLABLES](CALLABLES.md),
+[COMPILER-API](COMPILER-API.md) (its compiler API as a host library).
 
 ### Lean 4
 

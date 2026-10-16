@@ -218,18 +218,67 @@ theorem checkStep_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : S
     checkStepUsing (reassign G η) (images.reassign η) j k e codes = checkStepUsing G images j k e codes := by
   cases e <;> simp only [checkStepUsing_eq, checkTree_reassign, check_fun_reassign] <;> rfl
 
+theorem carries_reassign (Γ : List (List ι)) (facts : HeapKnowledge.Knowledge) (xs : List (PromiseCalls.Implication ι))
+    (sources : List Nat) (t : Target) (c : NodeEvidence ι) :
+    carries (reassign G η) Γ facts xs sources t c = carries G Γ facts xs sources t c := rfl
+
 theorem checkTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι)) (t : Target)
-    (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) :
-    checkTargetUsing (reassign G η) (images.reassign η) P C Γ t p facts =
-      checkTargetUsing G images P C Γ t p facts := by
-  simp only [checkTargetUsing_eq, checkMapped_reassign]
+    (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) (xs : List (PromiseCalls.Implication ι))
+    (sources : List Nat) :
+    checkTargetUsing (reassign G η) (images.reassign η) P C Γ t p facts xs sources =
+      checkTargetUsing G images P C Γ t p facts xs sources := by
+  simp only [checkTargetUsing_eq, checkMapped_reassign, carries_reassign]
 
 theorem checkBranchTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι))
-    (o : Observation) (t : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) :
-    checkBranchTargetUsing (reassign G η) (images.reassign η) P C Γ o t p facts =
-      checkBranchTargetUsing G images P C Γ o t p facts := by
-  simp only [checkBranchTargetUsing_eq, checkObserved_reassign]
+    (o : Observation) (t : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge)
+    (xs : List (PromiseCalls.Implication ι)) (sources : List Nat) :
+    checkBranchTargetUsing (reassign G η) (images.reassign η) P C Γ o t p facts xs sources =
+      checkBranchTargetUsing G images P C Γ o t p facts xs sources := by
+  simp only [checkBranchTargetUsing_eq, checkObserved_reassign, carries_reassign]
   rfl
+
+theorem fieldYield_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (y : PromiseCalls.Yield ι)
+    (i : Nat) (tag : Tag) (q : Bool) :
+    PromiseCalls.fieldYield (reassign G η) (images.reassign η) Γ links y i tag q =
+      PromiseCalls.fieldYield G images Γ links y i tag q := by
+  unfold PromiseCalls.fieldYield
+  simp only [check_fun_reassign]
+  rfl
+
+theorem yieldFollows_reassign (Γ : List (List ι)) (xs : List (PromiseCalls.Implication ι))
+    (links : HeapLinks.Links) (t : Tm) :
+    PromiseCalls.yieldFollows (reassign G η) (images.reassign η) Γ xs links t =
+      PromiseCalls.yieldFollows G images Γ xs links t := by
+  funext y
+  unfold PromiseCalls.yieldFollows PromiseCalls.yieldFollows.observed
+  simp only [checkObservedSub_reassign, fieldYield_reassign]
+
+theorem promiseOf_reassign (e : ProgramCertificates.Evidence ι) :
+    PromiseCalls.promiseOf (reassign G η) e = PromiseCalls.promiseOf G e := rfl
+
+theorem checkYields_reassign (c : NodeEvidence ι) (codes : CodeEntry ι → Bool) :
+    checkYields (reassign G η) (images.reassign η) c codes = checkYields G images c codes := by
+  unfold checkYields
+  rw [promiseOf_reassign, yieldFollows_reassign]
+  simp only [checkTree_reassign]
+  rfl
+
+theorem checkReturn_reassign (goal : ControlFlow.Goal ι) (c : NodeEvidence ι) :
+    (checkReturnResult (reassign G η) (images.reassign η) goal c).accepted =
+      (checkReturnResult G images goal c).accepted := by
+  have within : ∀ facts T, (checkReturnResult.argumentWithin (reassign G η) (images.reassign η) c facts T).accepted =
+      (checkReturnResult.argumentWithin G images c facts T).accepted := by
+    intro facts T
+    unfold checkReturnResult.argumentWithin
+    split
+    · split
+      · split
+        · simp only [ProgramCertificates.checkSubtypeUsing_accepted, check_reassign]
+        · rfl
+      · rfl
+    · rfl
+  cases goal <;> simp only [checkReturnResult, CheckResult.accepted_bind, CheckResult.accepted_orElse,
+    CheckResult.accepted_ofBool, within] <;> rfl
 
 theorem checkHandler_reassign (P : Program) (C : ControlFlow.Certificate ι) (node : Node) (c : NodeEvidence ι) :
     checkHandlerUsing (reassign G η) (images.reassign η) P C node c =
@@ -257,18 +306,19 @@ theorem checkBodyStep_reassign (body : BodySubtyping G)
 
 theorem checkBodyNode_reassign (body : BodySubtyping G)
     (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
-    (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
+    (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool) :
     checkNodeUsing (reassign G η) (images.reassign η) Rty P C node c codes
       (Checker.withSubtyping (reassign G η) (images.reassign η) body') =
     checkNodeUsing G images Rty P C node c codes (Checker.withSubtyping G images body) := by
   simp only [checkNodeUsing_eq, checkBodyStep_reassign G η images body body' same,
-    checkHandler_reassign, checkTarget_reassign, checkBranchTarget_reassign]
+    checkHandler_reassign, checkTarget_reassign, checkBranchTarget_reassign, checkYields_reassign,
+    checkReturn_reassign]
   rfl
 
 theorem checkBodyGraph_reassign (body : BodySubtyping G)
     (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
-    (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι)
+    (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι)
     (codes : CodeEntry ι → Bool) :
     checkGraphUsing (reassign G η) (images.reassign η) Rty P C codes
       (Checker.withSubtyping (reassign G η) (images.reassign η) body') =
@@ -277,28 +327,28 @@ theorem checkBodyGraph_reassign (body : BodySubtyping G)
 
 theorem checkBodyEntry_reassign (body : BodySubtyping G)
     (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
-    (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
+    (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (List ι)) (codes : CodeEntry ι → Bool) :
     checkEntryUsing (reassign G η) (images.reassign η) Rty P C start inputs codes
       (Checker.withSubtyping (reassign G η) (images.reassign η) body') =
     checkEntryUsing G images Rty P C start inputs codes (Checker.withSubtyping G images body) := by
   simp only [checkEntryUsing_eq, checkBodyGraph_reassign G η images body body' same]
 
-theorem checkNode_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
+theorem checkNode_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) :
     checkNodeUsing (reassign G η) (images.reassign η) Rty P C node c codes =
       checkNodeUsing G images Rty P C node c codes := by
   simp only [checkNodeUsing_eq, Checker.ordinary, checkHandler_reassign, checkStepResult_value_reassign, checkTarget_reassign,
-    checkBranchTarget_reassign]
+    checkBranchTarget_reassign, checkYields_reassign, checkReturn_reassign]
   rfl
 
-theorem checkGraph_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι)
+theorem checkGraph_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι)
     (codes : CodeEntry ι → Bool := fun _ => false) :
     checkGraphUsing (reassign G η) (images.reassign η) Rty P C codes =
       checkGraphUsing G images Rty P C codes := by
   simp only [checkGraphUsing_eq, checkNode_reassign]
 
-theorem checkEntry_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
+theorem checkEntry_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (List ι)) (codes : CodeEntry ι → Bool := fun _ => false) :
     checkEntryUsing (reassign G η) (images.reassign η) Rty P C start inputs codes =
       checkEntryUsing G images Rty P C start inputs codes := by
@@ -307,7 +357,7 @@ theorem checkEntry_reassign (Rty : List ι) (P : Program) (C : ControlFlow.Certi
 /-- **Acceptance reads no assignment.** A graph's evidence is accepted exactly
 when it is accepted for every reassignment of the graph's parameter rows, by
 the same image checker. -/
-theorem accept_reassign (R : List ι) (P : Program) (claims : List (CertificateProducer.PointClaim ι))
+theorem accept_reassign (R : ControlFlow.Goal ι) (P : Program) (claims : List (CertificateProducer.PointClaim ι))
     (C : ControlFlow.Certificate ι) (start : Nat) (inputs : List (List ι))
     (codes : CodeEntry ι → Bool := fun _ => false) :
     CertificateProducer.acceptUsing (reassign G η) (images.reassign η) R P claims C start inputs codes =
@@ -317,14 +367,15 @@ theorem accept_reassign (R : List ι) (P : Program) (claims : List (CertificateP
 /-- **Parametricity.** Accepted evidence is safe at every assignment of the
 graph's parameter rows: every input environment meeting the inputs read at
 `η` runs safely to a result of the result type read at `η`. -/
-theorem accepted_at {G : NormalGraph ι} {images : InstanceImageCheck G} {R P claims C start inputs}
+theorem accepted_at {G : NormalGraph ι} {images : InstanceImageCheck G} {R : ControlFlow.Goal ι} {P claims C start inputs}
     {codes : CodeEntry ι → Bool}
     (hc : CertificateProducer.acceptUsing G images R P claims C start inputs codes = true)
     (η : MixedAssignment ι) (n W h ρ)
     (he : EnvOk (reassign G η) inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : CodesSound (reassign G η) codes := by exact Verification.ProgramCertificates.codesSound_none _) :
-    SafeGraph (excOf (reassign G η)) P (meaning (reassign G η) R) n W h (.at start ρ) :=
-  CertificateProducer.accepted_from_inputs
-    ((accept_reassign G η images R P claims C start inputs codes).trans hc) n W h ρ he hw hh hcodes
+    SafeGraph (excOf (reassign G η)) P (ControlFlow.GoalHolds (reassign G η) R (R.argument ρ)) n W h (.at start ρ) := by
+  have hc' := (accept_reassign G η images R P claims C start inputs codes).trans hc
+  simp only [CertificateProducer.acceptUsing_eq, Bool.and_eq_true] at hc'
+  exact ControlFlow.accepted_inputs_safe hc'.2 n W h ρ he hw hh hcodes
 
 end Verification.Parametricity

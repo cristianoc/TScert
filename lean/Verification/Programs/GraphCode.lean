@@ -103,13 +103,13 @@ theorem safe_of_sim {E K T} : ∀ (n : Nat) (W : WorldT n) (h : Heap) {ts s},
       exact Or.inr ⟨U, h', ts', hx, hu, st, hh, ih U h' hs' hg⟩
 
 /-- A graph run started at an entry the checker accepted is safe. -/
-theorem goto_safe {G : NormalGraph ι} [DecidableEq ι] {images : InstanceImageCheck G} {Rty : Ty ι}
+theorem goto_safe {G : NormalGraph ι} [DecidableEq ι] {images : InstanceImageCheck G} {Rty : Goal ι}
     {E K C start inputs} {codes : CodeEntry ι → Bool}
     (hc : checkEntryUsing G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h) :
-    Safe (excOf G) (meaning G Rty) n W h (.goto E K start L d) :=
+    Safe (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d))) n W h (.goto E K start L d) :=
   safe_of_sim n W h .goto (accepted_inputs_safe hc n W h (envOf L d) he hw hh hcodes)
 
 /-- A normal-return postcondition up to the current budget, independent of the
@@ -148,7 +148,7 @@ theorem ReturnsPost.value {Q n h v} (hp : ReturnsPost Q (n+1) h v)
 /-- An effect annotation on a checked graph node. The precondition is the same
 point context and knowledge that ordinary graph checking established. -/
 def NodePreserves [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) : Prop :=
-  ∀ n W h ρ, EnvOk G (entry c) ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
+  ∀ n W h ρ, EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
     WorldAdm W → HeapOk n W h →
     HeapObservations.SafePost (excOf G) (meaning G (result c))
       (CallEffects.Effect.preservesInputHeap.post h) n W h (instantiate 0 ρ t)
@@ -165,16 +165,17 @@ theorem preserving_step [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty ι} {P :
     (hnodes : ∀ (l : Nat) (node : Node) (c : NodeEvidence ι), P[l]? = some node → C[l]? = some c →
       node.handler = none ∧ NodePreserves G c node.expression)
     {initial n W h s h' s'} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
-    (hs : StateOk G Rty C (n+1) W h s) (hp : PreservingState initial (n+1) h s)
+    (hs : StateOk G Rty C .undef (n+1) W h s) (hp : PreservingState initial (n+1) h s)
     (st : Transition P h s h' s') : PreservingState initial n h' s' := by
   cases st with
   | enter hn =>
-    obtain ⟨c, hc, he, hf⟩ := hs
+    obtain ⟨c, hc, he, hi, -, hf⟩ := hs
     obtain ⟨hx, ht⟩ := hnodes _ _ c hn hc
     refine ⟨hx, ?_⟩
     apply returnsPost_of_safePost
     apply HeapObservations.weaken (fun _ _ hpost => hp.trans hpost)
-    exact ht n _ h _ (he.transfer n (Nat.le_succ n) _ (WExt_refl _)) hf
+    exact ht n _ h _ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
+      (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) hf
       (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
   | expr st => exact ⟨hp.1, hp.2.step st⟩
   | ret hv | bind hv | effect hv | tagBind hv => exact hp.2.value hv
@@ -191,7 +192,7 @@ theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : I
     (hnodes : ∀ (l : Nat) (node : Node) (c : NodeEvidence ι), (program E K)[l]? = some node → C[l]? = some c →
       node.handler = none ∧ NodePreserves G c node.expression) :
     ∀ n W h ts s initial, Sim E K ts s → WorldAdm W → HeapOk n W h →
-      StateOk G Rty C n W h s → PreservingState initial n h s →
+      StateOk G Rty C .undef n W h s → PreservingState initial n h s →
       HeapObservations.SafePost (excOf G) (meaning G Rty)
         (CallEffects.Effect.preservesInputHeap.post initial) n W h ts := by
   intro n
@@ -199,7 +200,7 @@ theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : I
   | zero => intros; trivial
   | succ n ih =>
     intro W h ts s initial sim hw hh hs hp
-    rcases state_progress hg hcodes hw hh hs with
+    rcases state_progress hg hcodes rfl hw hh hs with
       (⟨v, rfl, hv, ht⟩ | ⟨v, rfl, hsc⟩) | ⟨U, h', s', hx, hu, st, hok, hs'⟩
     · cases sim; exact .inl (.inl ⟨hv, ht, hp⟩)
     · cases sim with
@@ -224,11 +225,14 @@ theorem goto_preserving [DecidableEq ι] {G : NormalGraph ι} {images : Instance
   have hx := hc.2
   split at hx
   · rename_i c hstart
-    have hem : entry c = inputs ∧ c.knowledge = ⟨[],[],[]⟩ := of_decide_eq_true hx
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hx
+    obtain ⟨⟨hin, hk, himp, harg⟩, -⟩ := hx
     apply preserving_safe_of_sim hc.1 hcodes hnodes n W h _ _ h .goto hw hh
-    · refine ⟨c, hstart, ?_, ?_⟩
-      · simpa only [hem.1] using he
-      · rw [hem.2]; exact HeapKnowledge.empty _ h
+    · refine ⟨c, hstart, ?_, ?_, ?_, ?_⟩
+      · simpa only [hin] using he
+      · rw [himp]; exact PromiseCalls.ImpliesOk.nil G _ n W
+      · rw [harg]; intro p hp; cases hp
+      · rw [hk]; exact HeapKnowledge.empty _ h
     · exact ⟨[], by simp⟩
   · contradiction
 
@@ -276,8 +280,7 @@ theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : 
 @[simp] theorem compositionalChecked_reassign [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (η : MixedAssignment ι) (P : Program) (C : Certificate ι) :
     compositionalChecked (reassign G η) (images.reassign η) P C = compositionalChecked G images P C := by
-  simp only [compositionalChecked_eq, ExpressionEffects.check, ExpressionEffects.readable,
-    Parametricity.expand_reassign, Parametricity.checkTree_reassign]
+  simp only [compositionalChecked_eq, ExpressionEffects.check, Parametricity.checkTree_reassign]
 
 /-- Definition effects supplement, rather than replace, ordinary safety. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
@@ -287,6 +290,7 @@ theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : 
   | .preservesInputHeap =>
       (ProgramCertificates.CheckResult.ofBool (c.exprs.all Purity.pureTerm)).orElse fun _ =>
       compositionalCheckedResult G images (program c.exprs c.conts) C
+  | .guards _ | .asserts _ => pure ()
 
 @[nospecialize] def effectChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) : Bool :=
@@ -299,18 +303,29 @@ theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instanc
   | .unrestricted => true
   | .preservesInputHeap => c.exprs.all Purity.pureTerm ||
       compositionalChecked G images (program c.exprs c.conts) C
+  | .guards _ | .asserts _ => true
   ) := by
   cases h : c.row.effect <;>
     simp only [effectChecked, effectCheckedResult, h, ProgramCertificates.CheckResult.accepted_orElse,
       ProgramCertificates.CheckResult.accepted_ofBool, compositionalChecked] <;> rfl
 
+/-- What a code entry's graph is checked to return: its signature's result,
+or its signature's promise about the parameter it names, at that parameter's
+place in the frame. -/
+def _root_.Verification.ProgramTyping.CodeEntry.goal (c : CodeEntry ι) : Goal ι :=
+  match c.row.effect with
+  | .guards p => .guards c.row.result (frameOffset c.store + p)
+  | .asserts p => .asserts c.row.result (frameOffset c.store + p)
+  | _ => .plain c.row.result
+
 /-- One code entry, checked at its signature from the frame the signature
 describes, against an earlier table. -/
 @[nospecialize] def codeCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
-  (ProgramCertificates.CheckResult.ofBool (decide (c.arity ≤ c.row.arguments.length))).bind fun _ =>
+  (ProgramCertificates.CheckResult.ofBool (decide (c.arity ≤ c.row.arguments.length) &&
+    c.row.effect.below c.arity)).bind fun _ =>
   (effectCheckedResult G images c C).bind fun _ =>
-  checkEntryResult G images c.row.result (program c.exprs c.conts) C c.start
+  checkEntryResult G images c.goal (program c.exprs c.conts) C c.start
     (codeFrame c.arity c.row c.captures c.store) (admits table)
 
 @[nospecialize] def codeCheckedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
@@ -320,8 +335,8 @@ describes, against an earlier table. -/
 theorem codeCheckedUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) :
     codeCheckedUsing G images table c C = (
-  decide (c.arity ≤ c.row.arguments.length) && effectChecked G images c C &&
-    checkEntryUsing G images c.row.result (program c.exprs c.conts) C c.start
+  decide (c.arity ≤ c.row.arguments.length) && c.row.effect.below c.arity && effectChecked G images c C &&
+    checkEntryUsing G images c.goal (program c.exprs c.conts) C c.start
       (codeFrame c.arity c.row c.captures c.store) (admits table)
   ) := by
   simp only [codeCheckedUsing, codeCheckedResult, ProgramCertificates.CheckResult.accepted_bind,
@@ -334,25 +349,40 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
     (h : codeCheckedUsing G images table c C = true) : ∀ η, c.Spec (reassign G η) := by
   intro η
   simp only [codeCheckedUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at h
-  have hc : checkEntryUsing (reassign G η) (images.reassign η) c.row.result
+  obtain ⟨⟨⟨harity, hbelow⟩, heff⟩, hentry⟩ := h
+  have hc : checkEntryUsing (reassign G η) (images.reassign η) c.goal
       (program c.exprs c.conts) C c.start
       (codeFrame c.arity c.row c.captures c.store) (admits table) = true := by
-    exact (Parametricity.checkEntry_reassign G η images _ _ _ _ _ _).trans h.2
+    exact (Parametricity.checkEntry_reassign G η images _ _ _ _ _ _).trans hentry
   have ht : ProgramCertificates.CodesSound (reassign G η) (admits table) :=
     fun e he η' => htable e he η'
-  refine ⟨h.1.1, ?_⟩
+  refine ⟨harity, hbelow, ?_⟩
   intro n W heap L he hw hh hvalues
   have hs := goto_safe hc ht n W heap L .nul he hw hh
   cases heffect : c.row.effect with
+  | guards p =>
+    have hg : c.goal = .guards c.row.result (frameOffset c.store + p) := by
+      simp [CodeEntry.goal, heffect]
+    rw [hg] at hs
+    exact HeapObservations.forget hs
+  | asserts p =>
+    have hg : c.goal = .asserts c.row.result (frameOffset c.store + p) := by
+      simp [CodeEntry.goal, heffect]
+    rw [hg] at hs
+    exact HeapObservations.forget hs
   | unrestricted =>
-    simpa [heffect, CallEffects.Effect.post] using HeapObservations.forget hs
+    have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, heffect]
+    rw [hg] at hs
+    exact HeapObservations.forget hs
   | preservesInputHeap =>
+    have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, heffect]
+    rw [hg] at hs hc
     have hp : c.exprs.all Purity.pureTerm = true ∨
         compositionalChecked (reassign G η) (images.reassign η) (program c.exprs c.conts) C = true := by
-      simpa [effectChecked_eq, heffect, Bool.or_eq_true] using h.1.2
+      simpa [effectChecked_eq, heffect, Bool.or_eq_true] using heff
     rcases hp with hp | hp
     · have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp
-      simpa [heffect] using CallEffects.pure_safe (.goto hp hvalues rfl) hs
+      exact CallEffects.pure_safe (.goto hp hvalues rfl) hs
     · rw [compositionalChecked_eq] at hp
       apply goto_preserving hc ht _ n W heap L .nul he hw hh
       intro l node point hn hpoint
@@ -362,8 +392,8 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       have hp := List.all_eq_true.mp hp (node,point) hmem
       simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hp
       refine ⟨hp.1.1, ?_⟩
-      intro j V h' ρ henv hknowledge hworld hheap
-      have hgraph : checkGraphUsing (reassign G η) (images.reassign η) c.row.result
+      intro j V h' ρ henv himp hknowledge hworld hheap
+      have hgraph : checkGraphUsing (reassign G η) (images.reassign η) (Goal.plain c.row.result)
           (program c.exprs c.conts) C (admits table) = true := by
         have hchecked := hc
         simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
@@ -373,8 +403,9 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       have hcases := hp.2
       simp only [Bool.or_eq_true] at hcases
       rcases hcases with hexpr | hcall
-      · exact ExpressionEffects.sound hexpr hp.1.2 henv hheap
-          (HeapObservations.erase (hterm j V h' ρ henv hknowledge hworld hheap))
+      · exact ExpressionEffects.sound hexpr hp.1.2 henv hworld hheap
+          (HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
+            (hterm j V h' ρ henv himp hknowledge hworld hheap)))
       · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
         have hs := ExpressionEffects.selectedCall_sound point.expression hcall.1.2 hcall.2
           (ProgramCertificates.codesSound_none _) henv hworld hheap

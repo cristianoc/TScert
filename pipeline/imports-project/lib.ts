@@ -273,3 +273,14 @@ export const exprBody: { m: () => number } = {
       return 1;
     })(),
 };
+/** A type guard; the case type-guard-value-import imports it. */
+export function isWord(x: unknown): x is string {
+  return typeof x === "string";
+}
+/** An overloaded type guard, its promise chosen by the second actual; the
+ * case type-guard-overload-value-import imports it. */
+export function isKind(x: unknown, k: "string"): x is string;
+export function isKind(x: unknown, k: "number"): x is number;
+export function isKind(x: unknown, k: "string" | "number"): boolean {
+  return typeof x === k;
+}

@@ -25,7 +25,13 @@ open S
          publish_instance callee.pos instance
        | _ -> ())
     | Id n when not (is_local n) ->
-      (match module_type n with
+      (* Of a value's quantified plain overloads, the call's is the one
+         projected. *)
+      (match (match module_type n,declared with
+          | Some (Atoms [Shape {calls=_ :: _ :: _ as calls;_}]),Some projected
+            when List.for_all (fun (c:Semantic.signature) -> Semantic.plain_effect c.call_effect) calls ->
+            Some projected
+          | t,_ -> t) with
        | Some (Atoms [Shape ({calls=[signature];_} as shape)]) ->
          let instance = Inference.substitute substitution
            (Atoms [Shape {shape with calls=[{signature with quantified=[]}]}]) in

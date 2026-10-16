@@ -1210,13 +1210,21 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   }
 }
 
-for (const [file, arity, accepted] of [
-  ["closure-result-contract", 2, true], ["closure-graph-captured-cell", 0, false],
+// A heap-preservation claim forged onto a callback is certified only where
+// its body is: one reading its arguments is; one capturing a cell it writes,
+// or calling a member stated unrestricted (`pop` on the source beside a
+// string's `trim`, a global regex's `test`, a `Map`'s `set`), is refused at
+// its own typing.
+for (const [file, marker, arity, accepted] of [
+  ["closure-result-contract", "(p: number", 2, true], ["closure-graph-captured-cell", "(): void", 0, false],
+  ["invalid-map-primitive-method-mutation", "(x: string)", 3, false],
+  ["invalid-regexp-global-callback-effect", "(l) => word", 3, false],
+  ["invalid-map-collection-write-callback", "(name) =>", 3, false],
 ] as const) {
   const artifacts = run(file);
   const claims = readClaims(artifacts);
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  const at = source.indexOf(accepted ? "(p: number" : "(): void");
+  const at = source.indexOf(marker);
   const closure = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at),
     "the callback's source claim");
   assert.ok(Array.isArray(closure.type) && closure.type.length === 1);
@@ -1242,5 +1250,196 @@ for (const [file, arity, accepted] of [
     assert.ok(failure && failure.kind === "node-typing", "a failed effect must name the callable's typing obligation");
     assert.ok(failure.source?.sourceMap?.pos, "the failed callable must have a source location");
   }
-  process.stdout.write(`callback heap-preservation claim: ${accepted ? "certified" : "captured write refused"}\n`);
+  process.stdout.write(`callback heap-preservation claim, ${file}: ${accepted ? "certified" : "refused"}\n`);
+}
+
+{
+  // An optional call's body is claimed at no value only where its receiver
+  // is only nullish. The loop's receiver holds the array from the second
+  // iteration on: the body's member read and call forged to no value are
+  // refused, whatever the producer proposes.
+  const artifacts = run("optional-call-loop-cell");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const start = source.indexOf("?.push");
+  const forged = claims.functions.flatMap(f => f.expressions).filter(e => e.pos[0] === start);
+  assert.ok(forged.length > 0, "the optional body's claims");
+  // The empty union: no value.
+  for (const e of forged) e.type = [];
+  const input = writeClaims(artifacts, "forged-dead-optional-body", claims);
+  const produce = produceWith(artifacts, input, "forged-dead-optional-body");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  process.stdout.write("forged dead optional body: refused where the receiver may be present\n");
+}
+
+{
+  // A module constant's arrow is claimed at its signature extended by a rest
+  // of `unknown`, which Lean checks against the arrow itself: the extension
+  // forged to take `unknown` at the arrow's `string` parameter is refused
+  // where the arrow is created.
+  const artifacts = run("arrow-constant-callback");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const init = must(claims.init, "the initialization unit's claims");
+  const closure = must(init.expressions.find(e => e.pos[0] === source.indexOf("(s: string): string => s.toUpperCase")),
+    "the constant's arrow claim");
+  const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
+  assert.ok(typeof label === "number");
+  const row = must(claims.types[label], "the arrow's type row");
+  const extended = must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.variadic ?? [] : [])[0],
+    "the extended signature");
+  const unknown = claims.types.findIndex(r => JSON.stringify(r) === JSON.stringify(["source"]));
+  assert.ok(unknown >= 0, "a row of unknown");
+  extended.arguments = [[[unknown]], must(extended.arguments[1], "the extended signature's rest")];
+  const input = writeClaims(artifacts, "forged-constant-extension", claims);
+  const produce = produceWith(artifacts, input, "forged-constant-extension");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  // The row is shared by both constants of that signature, `shout` and
+  // `quoted`: the first checked is refused.
+  const refused = /direct obligation at \[(\d+),\d+\): closure signature claim is outside the source annotation/
+    .exec(produce.stdout + produce.stderr);
+  assert.ok(refused, produce.stdout + produce.stderr);
+  assert.ok([source.indexOf("(s: string): string => s.toUpperCase"), source.indexOf("function (s: string)")]
+    .includes(Number(refused[1])), "refused at a constant's closure");
+  process.stdout.write("forged constant extension: refused where the arrow is created\n");
+}
+
+{
+  // `%Dispatch:replace%` states heap preservation only at a target whose
+  // `[Symbol.replace]` states it. A global regex's does not: an instance of
+  // the dispatch claimed preserving at that target, with the callback
+  // claimed preserving through it, is refused at the callback's typing,
+  // whatever the producer proposes.
+  const artifacts = run("regexp-fresh-global-replace-refused");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const expressions = claims.functions.flatMap(f => f.expressions);
+  const arrowAt = (start: number, arity: number) => {
+    const claim = must(expressions.find(e => e.pos[0] === start && Array.isArray(e.type) && e.type.length === 1),
+      `the claim at ${start}`);
+    const label = Array.isArray(claim.type) ? claim.type[0] : undefined;
+    assert.ok(typeof label === "number");
+    const row = must(claims.types[label], `the type row at ${start}`);
+    return must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
+      .find(s => s.arguments.length === arity), `the contract at ${start}`);
+  };
+  arrowAt(source.indexOf("replace("), 3).effect = "preservesInputHeap";
+  arrowAt(source.indexOf("(l) =>"), 3).effect = "preservesInputHeap";
+  const input = writeClaims(artifacts, "forged-dispatch-effect", claims);
+  const produce = produceWith(artifacts, input, "forged-dispatch-effect");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  const failure = readDiagnostic(produce.stdout + produce.stderr);
+  assert.ok(failure && failure.kind === "node-typing", "a forged dispatch effect must fail at a node's typing");
+  process.stdout.write("forged dispatch effect: a global regex's replacement refused\n");
+}
+
+{
+  // A guard's promise is its function type's, checked at its body: the lying
+  // guard's claims forged to hold its argument at `string` throughout the
+  // body, and its answer at `true`, are refused at the edge into its
+  // return, which holds the argument at the parameter's `unknown`.
+  const artifacts = run("invalid-type-guard-promise");
+  const claims = readClaims(artifacts);
+  const guard = must(claims.functions.find((f) => f.name === "isString"), "the guard's claims");
+  const x = must(guard.params[0], "the guard's parameter");
+  const str = rowOf(claims, "str");
+  const tru = rowOf(claims, { boolLit: { value: true } });
+  for (const entry of guard.entries) for (const b of entry.bindings) if (b.name === x.name) b.type = [str];
+  const read = must(guard.expressions.find((e) => e.pos[1] - e.pos[0] === x.name.length), "the read of the argument");
+  for (const e of guard.expressions) e.type = e === read ? [str] : [tru];
+  const forged = writeClaims(artifacts, "forged-guard-promise", claims);
+  const searched = produceWith(artifacts, forged, "forged-guard-promise");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /source incoming edge obligation at \[271,300\): evidence search failed/);
+  process.stdout.write("forged guard promise: refused at the guard's body\n");
+}
+
+{
+  // A call narrows its argument by the promise the parser's document states
+  // of its callee, never by the producer's claims: with the promise removed
+  // from `isPresence`'s document, the producer's claims, which read
+  // `isPresence` at its qualified signature, are refused at that read.
+  const artifacts = run("type-guards");
+  const fragment: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  const isPresence = must(fragment.functions.find((f) => f.name === "isPresence"), "isPresence");
+  assert.ok(isPresence.guard, "isPresence states a promise");
+  isPresence.guard = null;
+  const ast = join(artifacts, "forged-unpromised-guard.json");
+  writeFileSync(ast, JSON.stringify(fragment));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-unpromised-guard", ast);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const call = source.indexOf("isPresence(v)");
+  assert.match(searched.stdout + searched.stderr,
+    new RegExp(`source expression obligation at \\[${call},${call + "isPresence".length}\\): evidence search failed`));
+  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, ast), /obligation|evidence|claim/);
+  process.stdout.write("unpromised guard call: its qualified read refused\n");
+}
+
+{
+  // A closure's written promise is proved whatever the claims offer: with
+  // the promise signature removed from the arrow constant `isNumber`'s claim,
+  // and its body's claims for that signature, the closure is refused.
+  const artifacts = run("type-guards");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("(v: unknown): v is number =>");
+  const init = must(claims.init, "the module's claims");
+  const arrow = must(init.arrows?.find((a) => a.pos[0] === at), "isNumber's arrow claims");
+  const claim = must(init.expressions.find((e) => e.pos[0] === at && e.pos[1] === arrow.pos[1]), "isNumber's claim");
+  const label = Array.isArray(claim.type) && claim.type.length === 1 ? claim.type[0] : undefined;
+  assert.ok(typeof label === "number", "isNumber is claimed at one row");
+  const clause = must(claims.types[label]?.[0], "isNumber's row");
+  assert.ok(typeof clause === "object" && "arrs" in clause, "isNumber is claimed at arrows");
+  const kept = clause.arrs.arrows.map((a) => typeof a.effect !== "object");
+  assert.ok(kept.includes(false), "isNumber's claim offers its promise");
+  clause.arrs.arrows = clause.arrs.arrows.filter((_, i) => kept[i]);
+  arrow.rows = arrow.rows.filter((_, i) => kept[i]);
+  const forged = writeClaims(artifacts, "forged-unoffered-promise", claims);
+  refusedAt(artifacts, forged, "forged-unoffered-promise", "a guard closure's claim must offer its written promise over its annotated parameters");
+  process.stdout.write("guard closure claimed without its promise: refused\n");
+}
+
+{
+  // A closure's written promise is about every input its annotation admits:
+  // with `isNumber`'s promise signature claimed at the parameter `number`,
+  // where it holds of every argument, the closure is refused.
+  const artifacts = run("type-guards");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("(v: unknown): v is number =>");
+  const init = must(claims.init, "the module's claims");
+  const arrow = must(init.arrows?.find((a) => a.pos[0] === at), "isNumber's arrow claims");
+  const claim = must(init.expressions.find((e) => e.pos[0] === at && e.pos[1] === arrow.pos[1]), "isNumber's claim");
+  const label = Array.isArray(claim.type) && claim.type.length === 1 ? claim.type[0] : undefined;
+  assert.ok(typeof label === "number", "isNumber is claimed at one row");
+  const clause = must(claims.types[label]?.[0], "isNumber's row");
+  assert.ok(typeof clause === "object" && "arrs" in clause, "isNumber is claimed at arrows");
+  const promise = must(clause.arrs.arrows.find((a) => typeof a.effect === "object"), "isNumber's promise signature");
+  promise.arguments = [promise.result];
+  const forged = writeClaims(artifacts, "forged-narrowed-promise", claims);
+  refusedAt(artifacts, forged, "forged-narrowed-promise", "a guard closure's claim must offer its written promise over its annotated parameters");
+  process.stdout.write("guard closure's promise claimed over a narrower parameter: refused\n");
+}
+{
+  // A regex literal's shape is the declared type of the intrinsic its call
+  // names (`%RegExp:Σ%`, `regexp.mts`), which the front end lists from the
+  // literal's pattern. A parser document naming at a literal a shape no
+  // declaration lists (three groups always matched, where `/(\w+):/` has one)
+  // is refused at both verifier entry points.
+  const artifacts = run("regexp-structural");
+  const text = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  const call = /"callee":\{"k":"id","pos":\[\d+,\d+\],"name":"%RegExp:1%"\}/.exec(text)?.[0];
+  assert.ok(call, "a literal's call names its shape");
+  const ast = join(artifacts, "forged-regexp-shape.json");
+  writeFileSync(ast, text.replace(call, call.replace("%RegExp:1%", "%RegExp:111%")));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-regexp-shape", ast);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /%RegExp:111%/);
+  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, ast),
+    /%RegExp:111%/);
+  process.stdout.write("forged regex shape: a literal naming a shape no declaration lists refused\n");
 }

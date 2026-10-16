@@ -27,10 +27,10 @@ open S
     | _ -> []
 
   let named_closure n written (init:expr) = match written,init.node with
-    | (None | Some (Atoms [Shape {calls=[_];fields=[];indexes=[];elements=None}])),Lambda (_,[],ps,_,false,_,_) ->
+    | (None | Some (Atoms [Shape {calls=[_];fields=[];indexes=[];elements=None}])),Lambda (_,[],ps,_,false,_,_,_) ->
       register_closure n init.pos (List.map snd ps)
     | None,Alloc fs -> register_object n fs
-    | Some _,Ctor ({node=Lambda (None,[],ps,[],false,Some instance,body);_},_) when allocated body <> None ->
+    | Some _,Ctor ({node=Lambda (None,[],ps,[],false,Some instance,_,body);_},_) when allocated body <> None ->
       let fs = Option.get (allocated body) in
       (* An instance's methods are its prototype chain's, the nearer first. *)
       let rec chain seen fs = match List.assoc_opt (Name proto_key) fs with

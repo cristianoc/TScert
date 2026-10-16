@@ -31,7 +31,7 @@ let rec plausible_subtype_with excludes actual expected =
       | NumLit _,Num | StrLit _,Str | BigintLit _,Bigint | SymbolLit _,Symbol -> true
       | Shape a,Shape b when a.fields=b.fields && a.indexes=b.indexes && plausible_elements excludes a.elements b.elements ->
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
-          (p.call_effect=q.call_effect || q.call_effect=Unrestricted) &&
+          (p.call_effect=q.call_effect || (q.call_effect=Unrestricted && Semantic.plain_effect p.call_effect)) &&
           {p with call_effect=q.call_effect}=q) a.calls) b.calls
       | _ -> false) ys) xs
   | Union parts,_ -> List.for_all (fun part -> plausible_subtype_with excludes part expected) parts
@@ -354,6 +354,24 @@ let slice_element declarations start t =
       @ Option.to_list s.rest
     | _ -> unsupported "an array pattern over a value that may not be an array: it would step that value's own \
         iterator, which is not modeled; only an array's positions are read") (arms [] t))
+(* A type's atoms through the declarations and unions that name them. *)
+let flat_atoms declarations t =
+  let rec go seen t = match t with
+    | Union ts -> List.concat_map (go seen) ts
+    | Atoms atoms -> List.concat_map (function
+        | Named (id,args) when not (List.mem id seen) ->
+          (match definition declarations id args with
+           | body -> go (id::seen) body
+           | exception Json.Error _ -> [Named (id,args)])
+        | a -> [a]) atoms
+    | Rigid _ | Meet _ -> [] in
+  go [] t
+(* A key whose type names string or number singletons, through the
+   declarations and unions that state them, is read as those singletons. *)
+let literal_key declarations key =
+  match (try flat_atoms declarations key with Json.Error _ -> []) with
+  | _::_ as ks when List.for_all (function StrLit _ | NumLit _ -> true | _ -> false) ks -> Atoms ks
+  | _ -> key
 (* A key of several string or number singletons (NaN, which no equality
    test finds, is none): Lean reads, per singleton, the member its key names. *)
 let key_singletons = function
@@ -363,6 +381,7 @@ let key_singletons = function
       | _ -> false) ks -> Some ks
   | _ -> None
 let rec index_type bounds declarations seen receiver key =
+  let key = literal_key declarations key in
   match key_singletons key with
   | Some ks -> combine (List.map (fun k -> index_type bounds declarations seen receiver (Atoms [k])) ks)
   | None -> match receiver with
@@ -539,11 +558,12 @@ let rec restrict ?declarations singleton equal t = match t with
         | Top,_ -> None
         | _,_ -> Some false in
       match known atom with Some result -> result=equal | None -> true) xs
-    (* Equal to one number other than a zero, or to one string: that value
-       (Lean's `observeAtom` and `tagMember`). *)
+    (* Equal to one number other than a zero, or to one string: that value,
+       whatever the operand was, `unknown` included (Lean's `observeAtom` and
+       `tagMember`). *)
     |> List.map (fun atom -> match atom,singleton with
-      | Num,NumLit b when equal && Int64.float_of_bits b <> 0.0 -> NumLit b
-      | Str,StrLit s when equal -> StrLit s
+      | (Num | Top),NumLit b when equal && Int64.float_of_bits b <> 0.0 -> NumLit b
+      | (Str | Top),StrLit s when equal -> StrLit s
       | _ -> atom))
   (* A union's arms each; an intersection's values are its principal's, so
      it goes where none of those can. *)
@@ -611,18 +631,6 @@ let assigned_arms declarations t (init:expr) = match t,init.node with
      | [] -> t
      | kept -> Atoms kept)
   | _ -> t
-(* A type's atoms through the declarations and unions that name them. *)
-let flat_atoms declarations t =
-  let rec go seen t = match t with
-    | Union ts -> List.concat_map (go seen) ts
-    | Atoms atoms -> List.concat_map (function
-        | Named (id,args) when not (List.mem id seen) ->
-          (match definition declarations id args with
-           | body -> go (id::seen) body
-           | exception Json.Error _ -> [Named (id,args)])
-        | a -> [a]) atoms
-    | Rigid _ | Meet _ -> [] in
-  go [] t
 (* What a slot holds after a write of a value of type [t] under [contract],
    as TypeScript narrows a declared type on assignment: a primitive value at
    its own type; any other at the contract's arms, those the written literal

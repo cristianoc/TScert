@@ -642,7 +642,23 @@ Q_{\mathsf{preservesInputHeap}}(h)(h',v)=(h\preceq h'),
 ```
 
 where $h\preceq h'$ means that $h'$ extends the heap list $h$ without changing
-any existing entry. Fresh allocation is allowed. This is a guarantee at normal
+any existing entry.
+
+Two further effects promise something of one actual, the $`p`$-th, written
+$`v_p`$ (`undefined` where the call passes fewer). Their heap postcondition is
+$`\mathsf{True}`$, and they replace the result family $`R`$ by one relating the
+result to $`v_p`$, with $`R`$ the promise's type:
+
+```math
+R^{\mathsf{guards}\,p}(v) = (v=\mathsf{true}\land v_p\in R)\lor v=\mathsf{false},\qquad
+R^{\mathsf{asserts}\,p}(v) = (v=\mathsf{undefined}\land v_p\in R).
+```
+
+Membership of $`v_p`$ is taken at the world and heap of the return. One
+signature covers another only at the same effect, and a conjunction of
+signatures meets two of the same result family. These effects state a type
+guard's and an assertion function's promise
+([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). Fresh allocation is allowed. This is a guarantee at normal
 return, not a ban on intermediate writes, a termination claim, or preservation
 on an exceptional exit. A caller catching an exception cannot recover entry
 heap facts from this effect. A callback that temporarily mutates and restores

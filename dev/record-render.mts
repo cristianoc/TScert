@@ -12,13 +12,17 @@ type Section = { name: string; text: string[]; block: string[] };
 export type CommitRecord = {
   sha: string; author: string; subject: string; sections: Section[];
   trailers: Map<string, string>; coauthors: string[]; stat: string[];
+  examples: Map<string, Example>;
 };
+/** A pipeline case an Effect line names: its program at the commit, its kind
+ * in `pipeline/cases.mts`, and the source span its expected diagnostic names. */
+export type Example = { source: string; kind?: string | undefined; span?: [number, number] };
 
 export type Group = { name: string; range?: string; records: CommitRecord[]; files: string[] };
 
-const OUTCOMES: { [k: string]: string } = {
-  verified: "ok", refused: "principled", gap: "gap", "no-behaviour-change": "neutral",
-};
+const OUTCOMES = new Map<string, string>([
+  ["verified", "ok"], ["refused", "principled"], ["gap", "gap"], ["no-behaviour-change", "neutral"],
+]);
 const FACTS = ["Parts", "Lean", "Wire", "Trust", "Depends", "Measured", "Tests"];
 
 /** The trailers of a message: its last paragraph, when every line of it is
@@ -39,7 +43,8 @@ function parseTrailers(text: string): Map<string, string> {
 }
 
 /** A commit's record from its text, with what git says of the commit. */
-export function parseRecord(text: string, commit: { sha: string; author: string; stat: string[]; message: string }): CommitRecord {
+export function parseRecord(text: string, commit: { sha: string; author: string; stat: string[]; message: string;
+    examples?: Map<string, Example> }): CommitRecord {
   const trailers = parseTrailers(text);
   const lines = text.trimEnd().split("\n");
   let end = lines.length;
@@ -63,13 +68,13 @@ export function parseRecord(text: string, commit: { sha: string; author: string;
     sha: commit.sha, author: commit.author, subject: lines[0], sections, trailers,
     coauthors: commit.message.split("\n").filter(l => l.startsWith("Co-Authored-By:"))
       .map(l => l.replace("Co-Authored-By:", "with").replace(/<[^>]*>/, "").trim()),
-    stat: commit.stat,
+    stat: commit.stat, examples: commit.examples ?? new Map(),
   };
 }
 
 
 function pushProse(sections: Section[]): Section {
-  const s = { name: "", text: [], block: [] };
+  const s: Section = { name: "", text: [], block: [] };
   sections.push(s);
   return s;
 }
@@ -114,23 +119,38 @@ function mathRoles(ts: MathToken[]): MathRole[] {
   // spaces, punctuation, quoted strings and code.
   const prose = new Set<number>();
   // A lone word just after a relation (`: bool`, `= number`) names a type.
-  const afterRelation = (k: number) => { let j = k - 1; while (ts[j]?.kind === "space") j--; return ts[j] !== undefined && RELATIONS.has(ts[j].text); };
-  const textWord = (k: number) => ts[k]?.kind === "word" && TEXT_WORD.test(ts[k].text) && !KEYWORDS.has(ts[k].text) && !LITERALS.has(ts[k].text)
-    && ts[k + 1]?.text !== "(" && ts[k + 1]?.kind !== "script";
+  const afterRelation = (k: number): boolean => {
+    let j = k - 1;
+    while (ts[j]?.kind === "space") j--;
+    const before = ts[j];
+    return before !== undefined && RELATIONS.has(before.text);
+  };
+  const textWord = (k: number): boolean => {
+    const t = ts[k];
+    return t !== undefined && t.kind === "word" && TEXT_WORD.test(t.text) && !KEYWORDS.has(t.text) && !LITERALS.has(t.text)
+      && ts[k + 1]?.text !== "(" && ts[k + 1]?.kind !== "script";
+  };
   // Inside a run a keyword is an ordinary word ("in double brackets").
-  const joins = (k: number) => ["space", "code", "str"].includes(ts[k].kind) || ",;()".includes(ts[k].text)
-    || (ts[k].kind === "word" && KEYWORDS.has(ts[k].text));
+  const joins = (k: number): boolean => {
+    const t = ts[k];
+    return t !== undefined && (["space", "code", "str"].includes(t.kind) || ",;()".includes(t.text)
+      || (t.kind === "word" && KEYWORDS.has(t.text)));
+  };
   for (let i = 0; i < ts.length; i++) {
-    if (!textWord(i)) continue;
-    const run = [i];
-    for (let k = i + 1; k < ts.length && (joins(k) || textWord(k)); k++) if (textWord(k)) run.push(k);
-    const last = run[run.length - 1];
-    if (run.length >= 2 || (/^[a-z]{3,}$/.test(ts[i].text) && !afterRelation(i))) {
+    const word = ts[i];
+    if (word === undefined || !textWord(i)) continue;
+    let count = 1, last = i;
+    for (let k = i + 1; k < ts.length && (joins(k) || textWord(k)); k++) if (textWord(k)) { count++; last = k; }
+    if (count >= 2 || (/^[a-z]{3,}$/.test(word.text) && !afterRelation(i))) {
       // A trailing closing parenthesis or string belongs to the run when the run holds its start.
       // An opening parenthesis just before the run belongs to it too.
       const start = ts[i - 1]?.text === "(" ? i - 1 : i;
       let end = last;
-      while (end + 1 < ts.length && (ts[end + 1].kind === "str" || (ts[end + 1].text === ")" && ts.slice(start, end + 1).some(t => t.text === "(")))) end++;
+      let after = ts[end + 1];
+      while (after !== undefined && (after.kind === "str" || (after.text === ")" && ts.slice(start, end + 1).some(t => t.text === "(")))) {
+        end++;
+        after = ts[end + 1];
+      }
       for (let k = start; k <= end; k++) prose.add(k);
       i = end;
     }
@@ -161,7 +181,8 @@ function math(text: string): string {
   const CLASS: { [R in MathRole]: string } = {
     text: "m-text", code: "", str: "", intr: "m-intr", lit: "m-lit", script: "", refused: "refused", kw: "m-kw", op: "m-op", var: "", con: "m-con", bind: "m-bind", rel: "m-rel", plain: "" };
   return ts.map((t, i) => {
-    const e = esc(t.text), r = roles[i];
+    // `roles` has one role per token.
+    const e = esc(t.text), r = roles[i] ?? "plain";
     const piece = r === "code" ? `<code class="m-code">${highlight(t.text.slice(1, -1))}</code>`
       : r === "str" ? `<code class="m-code"><span class="tk-s">${e}</span></code>`
       : r === "script" ? (() => {
@@ -185,20 +206,24 @@ const formulas = (lines: string[]): string =>
 /** A `Rule:` block: groups separated by blank lines; a group with a line of
  * `─` is an inference rule (premises above, conclusion below, the name after
  * the bar); any other group is a list of formulas. The text is the record's. */
-function rules(block: string[], kind = ""): string {
-  const groups: string[][] = [[]];
+function rules(block: string[], kind: string = ""): string {
+  let current: string[] = [];
+  const groups: string[][] = [current];
   for (const line of block) {
-    if (line.trim()) groups[groups.length - 1].push(line);
-    else if (groups[groups.length - 1].length) groups.push([]);
+    if (line.trim()) current.push(line);
+    else if (current.length) {
+      current = [];
+      groups.push(current);
+    }
   }
   return `<div class="rules">${groups.filter(g => g.length).map(g => {
-    const bar = g.findIndex(l => /^\s*─{3,}/.test(l));
-    if (bar < 0) return g.some(l => l.includes("⇝")) ? lowering(g, kind === "Typing") : formulas(g);
-    const name = /\(([^()]+)\)\s*$/.exec(g[bar])?.[1] ?? "";
+    const barLine = g.find(l => /^\s*─{3,}/.test(l));
+    if (barLine === undefined) return g.some(l => l.includes("⇝")) ? lowering(g, kind === "Typing") : formulas(g);
+    const bar = g.indexOf(barLine);
+    const name = /\(([^()]+)\)\s*$/.exec(barLine)?.[1] ?? "";
     // A definition ending in `=`, with its continuation, stays a formula above the rule.
-    let first = 0;
-    for (let i = 0; i < bar; i++) if (/=\s*$/.test(g[i])) first = i + 2;
-    first = Math.min(first, bar);
+    const ends = g.slice(0, bar).map((l, i) => (/=\s*$/.test(l) ? i + 2 : 0));
+    const first = Math.min(Math.max(0, ...ends), bar);
     const above = g.slice(0, first);
     const premises = g.slice(first, bar).flatMap(parts);
     const conclusion = g.slice(bar + 1);
@@ -214,7 +239,11 @@ function dedent(lines: string[]): string[] {
   const indents = lines.filter(l => l.trim()).map(l => /^ */.exec(l)?.[0].length ?? 0);
   const cut = indents.length ? Math.min(...indents) : 0;
   const out = lines.map(l => l.slice(cut));
-  while (out.length && !out[out.length - 1].trim()) out.pop();
+  let last = out.at(-1);
+  while (last !== undefined && !last.trim()) {
+    out.pop();
+    last = out.at(-1);
+  }
   return out;
 }
 
@@ -248,11 +277,13 @@ const codeBlock = (lines: string[], mark: "add" | "del" | "" = "", other: string
  * how its content is drawn (mathematics or code), Before/After shown side by side. */
 const MATH_KINDS = new Set(["Rule", "Rules", "Semantics", "Definition", "Definitions", "Type", "Typing", "Notation"]);
 const CODE_KINDS = new Set(["Example", "Counterexample", "Code"]);
+/** Kinds whose lines are drawn as written: commands, layouts, aligned columns. */
+const PLAIN_KINDS = new Set(["Tooling"]);
 
 /** A lowering: each `source ⇝ target` line is the TypeScript form (highlighted)
  * mapped to its term in the calculus (operations coloured); `label: …` lines
  * are side conditions; a trailing parenthesized remark is a note. */
-function lowering(lines: string[], typing = false): string {
+function lowering(lines: string[], typing: boolean = false): string {
   const term = (t: string): string =>
     math(t);
   const note = (t: string): [string, string] => {
@@ -275,7 +306,40 @@ function lowering(lines: string[], typing = false): string {
   }).join("")}</div>`;
 }
 
-function section(s: Section): string {
+/** The program of an example, the span its diagnostic names marked. */
+function program(e: Example): string {
+  const [from, to] = e.span && e.span[1] <= e.source.length ? e.span : [e.source.length, e.source.length];
+  const marked = highlight(e.source.slice(0, from)) +
+    (to > from ? `<mark>${highlight(e.source.slice(from, to))}</mark>` : "") + highlight(e.source.slice(to));
+  return `<pre class="code">${marked.trimEnd()}</pre>`;
+}
+
+/** An Effect line: `case   kind   old → new   reason`, three or more spaces
+ * apart; ⚠ after the old outcome marks it unsound. A line naming a pipeline
+ * case expands to the case's program at the commit. */
+function effects(lines: string[], examples: Map<string, Example>): string {
+  const KINDS = new Set(["positive", "negative", "gap", "control"]);
+  return `<ul class="effect">${lines.filter(l => l.trim()).map(l => {
+    // A line holds a word, so `parts` gives at least one.
+    const rest = parts(l);
+    const what = rest.shift() ?? "";
+    const example = examples.get(what);
+    const first = rest[0];
+    const kind = first !== undefined && KINDS.has(first) ? rest.shift() : example?.kind;
+    const next = rest[0];
+    const change = next !== undefined && next.includes("→") ? rest.shift() ?? "" : "";
+    const sides = change.split("→").map(x => x.trim());
+    const old = sides[0] ?? "", now = sides[1] ?? "";
+    const outcome = change
+      ? `<span class="was${old.includes("⚠") ? " unsound" : ""}">${inline(old)}</span> <span class="arrow">→</span> <span class="now">${inline(now)}</span>`
+      : "";
+    const line = `<code>${esc(what)}</code>${kind ? ` <span class="kind ${esc(kind)}">${esc(kind)}</span>` : ""}` +
+      (outcome ? ` ${outcome}` : "") + (rest.length ? ` <span class="why">${rest.map(inline).join(" ")}</span>` : "");
+    return `<li>${example ? `<details><summary>${line}</summary>${program(example)}</details>` : line}</li>`;
+  }).join("")}</ul>`;
+}
+
+function section(s: Section, examples: Map<string, Example> = new Map()): string {
   const m = /^([A-Z][A-Za-z]*)(?: (added|modified|removed|replaced))?(?: \(((?:[^()]|\([^()]*\))*)\))?$/.exec(s.name);
   const kind = m?.[1] ?? s.name, action = m?.[2] ?? "", target = m?.[3] ?? "";
   const lines = dedent(s.block);
@@ -284,15 +348,11 @@ function section(s: Section): string {
     : "";
   const text = s.text.length ? `<p>${inline(s.text.join(" "))}</p>` : "";
   if (!lines.length) return head + text;
-  if (kind === "Effect") {
-    return head + text + `<ul class="effect">${lines.filter(l => l.trim()).map(l => {
-      const [what, ...rest] = parts(l);
-      return `<li><code>${esc(what)}</code>${rest.length ? ": " : ""}${rest.map(x => inline(x).replace(/ → /g, ' <span class="arrow">→</span> ')).join(" ")}</li>`;
-    }).join("")}</ul>`;
-  }
+  if (kind === "Effect") return head + text + effects(lines, examples);
   const split = lines.findIndex(l => /^(Before|After):\s*$/.test(l.trim()));
   const draw = (body: string[], mark: "add" | "del" | "" = "", other: string[] = []): string =>
     kind === "Lowering" ? lowering(body) : MATH_KINDS.has(kind) ? rules(body, kind) : CODE_KINDS.has(kind) ? codeBlock(body, mark, other)
+    : PLAIN_KINDS.has(kind) ? `<pre class="code">${body.map(l => `<span class="ln">${esc(l) || " "}</span>`).join("")}</pre>`
     : `<div class="prose">${body.join("\n").split(/\n\s*\n/).map(p => `<p>${inline(p.replace(/\s+/g, " ").trim())}</p>`).join("")}</div>`;
   if (split < 0) return head + text + draw(lines);
   const before: string[] = [], after: string[] = [];
@@ -314,11 +374,11 @@ function card(r: CommitRecord): string {
   const out: string[] = [
     `<article class="card" id="c-${r.sha}"><header><div><div class="sha">${r.sha} · ${esc(r.author)}</div>` +
     `<h3>${inline(r.subject)}</h3></div>` +
-    (outcome ? `<span class="pill ${OUTCOMES[outcome] ?? "neutral"}">${esc(outcome)}</span>` : "") + `</header>`,
+    (outcome ? `<span class="pill ${OUTCOMES.get(outcome) ?? "neutral"}">${esc(outcome)}</span>` : "") + `</header>`,
   ];
   const units = words(r, "Units");
   if (units.length) out.push(`<div class="units">${units.map(u => `<span>${esc(u)}</span>`).join("")}</div>`);
-  for (const s of r.sections) out.push(section(s));
+  for (const s of r.sections) out.push(section(s, r.examples));
   const facts = FACTS.flatMap(k => {
     const v = r.trailers.get(k);
     if (v === undefined) return [];
@@ -327,7 +387,7 @@ function card(r: CommitRecord): string {
       : k === "Tests" && /(^|\s)([+-]|forged:)/.test(v) ? tests(v)
       : k === "Trust" ? `<span class="${v === "none" ? "none" : "trust"}">${esc(v)}</span>`
       : inline(v.replace(/; /g, " · "));
-    return `<dt>${k}</dt><dd>${shown}</dd>`;
+    return [`<dt>${k}</dt><dd>${shown}</dd>`];
   });
   if (facts.length) out.push(`<dl class="facts">${facts.join("")}</dl>`);
   const total = r.stat.at(-1);
@@ -346,7 +406,7 @@ function summary(groups: Group[]): string {
   const items = ranges.map(g => {
     const count = (o: string) => g.records.filter(r => r.trailers.get("Outcome") === o).flatMap(r => words(r, "Units")).length;
     const units = ["verified", "refused", "gap"].map(o => [o, count(o)] as const).filter(([, n]) => n).map(([o, n]) => `${n} ${o}`).join(", ");
-    const list = (key: string, skip = "") => [...new Set(g.records.map(r => r.trailers.get(key) ?? "").filter(v => v && v !== skip))];
+    const list = (key: string, skip: string = ""): string[] => [...new Set(g.records.map(r => r.trailers.get(key) ?? "").filter(v => v && v !== skip))];
     const parts = [...new Set(g.records.flatMap(r => words(r, "Parts")))];
     const facts = [
       `${g.records.length} commit${g.records.length === 1 ? "" : "s"}${units ? `, units ${units}` : ""}`,
@@ -359,9 +419,13 @@ function summary(groups: Group[]): string {
   });
   const owners = new Map<string, string[]>();
   for (const g of ranges) for (const f of g.files) owners.set(f, [...(owners.get(f) ?? []), g.name]);
-  const shared = [...owners].filter(([, gs]) => gs.length > 1).sort();
+  const groupsOf = (f: string): string[] => owners.get(f) ?? [];
+  // Ordered as the text `file,group,…`.
+  const order = (f: string): string => `${f},${groupsOf(f).join(",")}`;
+  const shared = [...owners.keys()].filter(f => groupsOf(f).length > 1)
+    .sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
   return `<section><h2>Branches</h2><ul class="summary">${items.join("")}</ul>` +
-    (shared.length ? `<h4>Files changed by more than one branch</h4><ul class="summary">${shared.map(([f, gs]) => `<li><code>${esc(f)}</code>: ${gs.map(esc).join(", ")}</li>`).join("")}</ul>` : "") +
+    (shared.length ? `<h4>Files changed by more than one branch</h4><ul class="summary">${shared.map(f => `<li><code>${esc(f)}</code>: ${groupsOf(f).map(esc).join(", ")}</li>`).join("")}</ul>` : "") +
     `</section>`;
 }
 
@@ -426,6 +490,11 @@ pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:va
 .prose p { margin:4px 0 }
 ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
 ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
 @media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
 .lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
 .lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }

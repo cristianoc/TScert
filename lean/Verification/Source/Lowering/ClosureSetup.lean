@@ -121,7 +121,7 @@ scheme row's variadic signatures. -/
 @[nospecialize] def lambdaSetup (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (lam : Fragment.Expr) (A : Ty Tree) (mode : CodeMode Tree) :
     Compiler (LambdaSetup Tree) := do
-  let .lambda pos receiverAnnot typeParams params defaults hasRest ret body := lam
+  let .lambda pos receiverAnnot typeParams params defaults hasRest ret guard body := lam
     | throw "internal extraction error: a closure's code is a lambda's"
   let G := SourceTypes.graph (← table)
   let paramNames := params.map Prod.fst
@@ -260,6 +260,20 @@ scheme row's variadic signatures. -/
     for R in Rsource :: rows.map (·.receiver) do
       if !ProgramTyping.kindOffers G .sloppy R then
         throw (locatedRefusal T pos .bindingAnnotation Fragment.sloppyReceiverReason)
+  -- A written promise is proved whatever the claim offers: some signature
+  -- the code is checked at states it over the annotation's whole domain,
+  -- every receiver and every argument the annotation admits, at a type
+  -- within the written one.
+  if let some g := guard then
+    let promised ← lower (Fragment.translate g.type)
+    let effect : CallEffects.Effect := if g.asserts then .asserts g.param else .guards g.param
+    let reason := "a guard closure's claim must offer its written promise over its annotated parameters"
+    let some row := rows.find? (fun r => r.effect == effect && r.arguments.length == arity)
+      | throw (locatedRefusal T pos .bindingAnnotation reason)
+    requireWithin T pos .bindingAnnotation Rsource row.receiver reason
+    for (D, B) in row.arguments.zip sourceDs do
+      requireWithin T pos .bindingAnnotation B D reason
+    requireWithin T pos .bindingAnnotation row.result promised reason
   if !overlays.isEmpty && overlays.length != rows.length then
     throw "per-arrow interior claims do not match the claimed arrows"
   -- The captures: the named bindings in scope the lambda reads (a class's

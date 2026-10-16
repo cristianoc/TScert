@@ -102,6 +102,8 @@ run_test "Documents: links, math" node tests/docs.mts
 run_test "Examples run under Node" node tests/node-runs.mts
 # tests/trusted-inputs.mts checks the front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay.
 run_test "Trusted inputs" node tests/trusted-inputs.mts
+# tests/regexp-shapes.mts checks the capture-shape reading of regex literals against the host.
+run_test "RegExp shapes" node tests/regexp-shapes.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node tests/rule-inventory.mts
 

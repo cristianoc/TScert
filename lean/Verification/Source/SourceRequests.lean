@@ -45,6 +45,7 @@ a coercion does not consider every unrelated signature in the table. The
 consumer still checks against the complete graph and the exact request. -/
 @[nospecialize] def SourceRequest.searchLabels (r : SourceRequest σ ι) : List ι :=
   let roots := ([Labels.nul,Labels.tru,Labels.fls,Labels.undef] ++ r.result ++ r.inputs.flatten ++ r.hints ++
+    r.promise.toList.flatMap (fun (p : Bool × Nat × Ty ι) => p.2.2) ++
     r.claims.flatMap (fun (c : PointClaim ι) => c.type ++ c.context.flatten) ++
     -- A closure's code is searched with the request's vocabulary: what its
     -- claims mention is part of it (a generic closure's binder rows).
@@ -196,7 +197,8 @@ theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)
     (η : PositiveGraphs.MixedAssignment ι) (admitted : r.Admits η) (n W heap ρ)
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs ρ n W) (hw : WorldAdm W)
     (hh : HeapOk n W heap) :
-    SafeGraph (excOf (reassign (RequestJson.graph r.toRequest) η)) r.program (meaning (reassign (RequestJson.graph r.toRequest) η) r.result) n W heap
+    SafeGraph (excOf (reassign (RequestJson.graph r.toRequest) η)) r.program
+      (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument ρ)) n W heap
       (.at r.start ρ) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   have checked := ((checkRequestResult_accepted_iff _ _ _).mp hunit).1
@@ -280,13 +282,14 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
               role := o.role, context := o.context } : ExpressionClaims.Required _)
   let claims ← relabel r.claims
   let result ← relabel r.result
+  let promise ← r.promise.mapM fun (asserts, slot, T) => do return (asserts, slot, ← relabel T)
   let inputs ← relabel r.inputs
   let codes ← relabel r.codes
   let hints ← relabel r.hints
   let nodePlans ← relabel r.nodePlans
   let request : RequestJson.Request (Checked F.equations F.primitive) (CheckedLabel F.equations F.primitive) :=
     { types := F.store, program := r.program, claims := claims, result := result, start := r.start,
-      inputs := inputs, codes := codes }
+      inputs := inputs, codes := codes, promise := promise }
   let qualification ← sourceScheme.mapM fun s => do
     let some context := F.store.resolution
       | throw "qualified source signature requires the native descriptor domain"

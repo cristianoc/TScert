@@ -27,7 +27,9 @@ design, not its progress.
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 10 of 241 verify (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
+| [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
+| [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/`, 7 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -80,8 +82,19 @@ effect. A program with an arbitrary callback promising readable `U[]` for every
 
 Effect inference remains conservative for some rest wrappers, call forms and
 nested heap operations. Expression scheduling alone does not supply the missing
-effect derivation. Keep the source targets and their negative controls when
-extending the body-effect checker.
+effect derivation. Code that writes only locations it allocated preserves the
+heap it was called with, but each node of its graph is checked preserving
+from its own entry heap: a write of a `let` cell the code allocated, a
+mutator called on an array it allocated, and a global regex literal's
+`[Symbol.replace]`, which writes the `lastIndex` of the regex just created
+(`regexp-fresh-global-replace-refused`), are refused. Certifying them needs
+the postcondition relative to the code's entry heap, the knowledge of which
+locations were allocated since, and call effects stating which locations a
+call may write (its receiver's own). A call of a value holding a fixed
+signature and its variadic extension, a module constant read as a value
+elsewhere, is not certified preserving: the selected call's evidence is no
+qualified application at the fixed signature. Keep the source targets and their
+negative controls when extending the body-effect checker.
 
 <a id="keys-known-only-at-run-time"></a>
 **Keys known only at run time.** A write at a string key known only at run
@@ -158,7 +171,20 @@ a vacuity escape for contradictory reference conjunctions
 producer's arrow search builds no nested `combine`. An element read keeps no
 heap fact: it reads the heap only, but the value it finds is a value only
 where the store's contract says so, which the frame rule would have to take
-from the read's typing (a length is a number, and keeps them).
+from the read's typing (a length is a number, and keeps them). An element
+read the code guards is read at the element type or `undefined`
+(`guarded-element-read-refused`): `out[out.length - 1]` under a nonzero
+length needs the index and the length related by arithmetic the typing does
+not decide, and `xs[0] !== undefined && known.has(xs[0])` needs a
+current-content fact about an element location, kept from the test to the
+second read, as a field path would need one (`o.a !== undefined &&
+f(o.a)` is refused the same way). A `flatMap` callback returning a
+primitive or an array of primitives (`flat-map-scalar-result-refused`)
+needs a second signature quantifying a binder bounded by the primitives,
+which the first does not use: neither the producer's instance of a member
+read nor Lean's search for one assigns a binder no parameter of the
+selected signature names. The design question is per-signature binders, or
+bounds, in a prototype member's scheme.
 
 <a id="a-semantics-of-the-fragment"></a>
 **A semantics of the Fragment.** The parser's rewrites and extraction rest
@@ -172,25 +198,115 @@ type (`%Iterate:K%`, `%ElementAt%`) is correct under that typing premise.
 The reading of declared types and the host remain trusted; the remaining
 options are in [TRUST-REDUCTION](docs/TRUST-REDUCTION.md).
 
+<a id="computed-types-evaluated-through-helper-declarations"></a>
+**Computed types evaluated through helper declarations.** A computed form
+naming a declaration's parameters (a bound, a default, an annotation's
+computed alias) is evaluated at an application by the pinned TypeScript,
+through helper declarations added to a probe program
+([written applications](docs/SOURCE-CONTRACTS.md#written-applications),
+`tools/type-probe.mts`): the checker offers no operation instantiating a
+declaration's syntax. This is a stopgap, to be either relaxed or checked.
+Relaxed: where TypeScript's API offers a direct checker endpoint for
+instantiation and `keyof` (a declaration, its arguments, a parameter's
+instantiated bound or default), it replaces the helper declarations and
+their resolution checks. Checked: a source-type elaborator whose reductions
+Lean checks, from declaration-linked bounds and completed arguments to the
+semantic types, so that the correspondence to TypeScript's computation is
+proved rather than trusted. Either retires the clause of the trust surface's
+TypeScript row stating that "a computed form naming a declaration's
+parameters, at an application, means what the checker computes for a probe
+declaration" ([trust surface](docs/DESIGN.md#trust-surface)); the checked
+form retires the computation's trust altogether, the relaxed one only the
+probe's correspondence to the application.
+
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 241 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 266 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-16):
 
-- a namespace import, `import * as ts` (124);
-- a user-defined type guard, `x is T`, or an assertion function (25);
-- a missing annotation (15);
+- a namespace import, `import * as ts` (126);
+- a missing annotation, or a value TypeScript types `any` (35);
 - the compiler API's own declarations, `SyntaxKind`, `TypeFlags`,
-  `NodeFlags`, `SymbolFlags` (about 15);
-- module-level `let` and `var` (5), regular expression literals (5);
-- library globals absent from the overlay: `Reflect`,
-  `Object.getOwnPropertyDescriptor`, `Array.from`, `Object.fromEntries` (5);
-- `Exclude<Clause, string>`, whose members name the alias's parameter `L` and
-  are another type at each instance (1).
+  `NodeFlags`, `SymbolFlags` (13);
+- library globals absent from the overlay or refused: the global function
+  `parseInt` (3), `Reflect` (2, [refused](docs/SOURCE-FRAGMENT.md)),
+  `Array.from`, `Object.fromEntries`, `new RegExp` (1 each);
+- a type reference to the parser's `EnumMember` (5), module-level `let` and
+  `var` (5), a mapped type whose value names its key (3).
 
-Three slices reach the producer and fail there, and twelve fail in search,
-among them `Array.isArray(v)` not narrowing an `unknown` `v` to
-`unknown[]` (two) and a `.map` result built where a union of records is
-expected (`emptyObject`).
+Seven slices reach the producer and fail there, and twenty-two fail in
+search. Of the 23 functions of `dev/`, the record tools and the lowering
+dump, 7 verify; the first blockers there are a callback writing only
+locations it allocated, a `let` cell or a fresh regex's `lastIndex`, which
+the effect checker does not certify (see [contract
+completeness](#restoring-completeness); 8: effects, tests, math, mathRoles,
+lowering, rules, section and card, through `esc`, `highlight` and
+`afterRelation`), a `map` callback running a child process, whose effect
+no contract bounds to locations other than the source's (group), an element read a length
+guards (`paragraphs[paragraphs.length - 1]`, `guarded-element-read-refused`,
+2: parseTrailers, parseRecord), a conditional type over a type parameter, `KeysOf<T>` (2,
+lowering-dump), a closure claimed outside its parameter's contextual
+annotation (2: summary, pageBody), and a nested conditional of
+literals whose type the producer widens (mathTokens).
+
+Two forms of the record tools are rewritten for a verifier limit, not
+for a departure from the fragment; each rewrite is reverted when its limit
+lifts: element reads the code already guards, by a length or a test of the
+same element (`dedent`, `effects`, `mathRoles`' `afterRelation` and
+`textWord`; `guarded-element-read-refused`); and a `flatMap` callback
+returning a string (`card`; `flat-map-scalar-result-refused`).
+
+The goal is every function of the repository's own TypeScript verified:
+`tools/`, `pipeline/`, `tests/` and `dev/`, about 21,000 lines (the sources
+under `pipeline/examples/` are the cases' inputs, many refused by design).
+Verification states safety, each function's annotated contract at every
+call, not that the parser reads TypeScript correctly. A scan of that code
+against the fragment (2026-10-16) gives the work, each item its own design:
+
+- **The compiler API.** About 120 functions read TypeScript's syntax tree
+  through `typescript/unstable/ast` and its checker through
+  `typescript/unstable/sync`; [the compiler API](docs/COMPILER-API.md)
+  specifies the contract they are verified under. Its implementation waits
+  on immutable fields and foreign arrays in the calculus, a compact
+  representation of kind sets in claims and evidence, and guard signatures
+  for the sync API's type guards.
+- **Guard signatures.** A guard's promise is part of its function type,
+  proved at its definition and consumed at a call, for any promised type
+  and across modules.
+- **Bounds of every alias application.** An alias with a bounded parameter
+  keeps the obligation that its arguments meet their bounds, whatever its
+  body.
+- <a id="regular-expressions-left"></a>**Regular expressions left.** A
+  literal, `exec`, `test` and the string methods dispatching to a regex are
+  admitted ([regular expressions](docs/SOURCE-CONTRACTS.md#regular-expressions)).
+  Left: a replacement callback, whose argument list follows the shape
+  (`(match, p₁ … pₙ, offset, input[, groups])`, every match collected before
+  the first call, its result a string); `new RegExp(p, f)` of strings, a
+  native regex of the conservative shape; a regex's properties, `lastIndex`
+  (own, not enumerable, a number) and the accessors `source` and `flags`,
+  read through reserved host-relative members so that no record view states
+  them, with `in`, patterns and computed reads of their keys accounted for;
+  a loop over a structural iterator TypeScript types `RegExpStringIterator`,
+  through the iterator protocol; and the same native mark on `SetIterator`
+  and `MapIterator`, whose loops are chosen by TypeScript's type alone.
+- **The library globals left.** `Array.prototype.flatMap` (79 calls) and
+  `flat`, `String.prototype.match`, `matchAll`, `padEnd`, `padStart` and
+  `search`, `Object.fromEntries`, `hasOwn` and `assign`, `Array.from`,
+  `Math` but `max` and `min`, `parseInt`, and `JSON.stringify` of an
+  object, whose `toJSON` runs client code.
+- **Node's modules.** `node:fs`, `path`, `child_process` (`spawnSync`,
+  `execFileSync`, `fork` and its messages), `os`, `crypto`, `vm`, `net`,
+  `module`, `assert/strict` (assertion functions) and `process`.
+- **Classes and `this` parameters.** The parser's `Gate` class, the functions
+  of `fragment-*.mts` declaring `this: Gate` (198 reads of `this`), and the
+  error classes extending `Error`.
+- **Imports between the repository's modules.** Namespace and default
+  imports, and a value imported from another module certified against its
+  signature, which [module composition](#module-composition) proves sound.
+- **The code's own departures from the fragment.** Downcasting `as`
+  assertions and module-level `let`: the code changes to meet the fragment.
+- **Proof precision.** Of the slices past the gate, about half fail in
+  proposal or search; each failure is a separate investigation.
+

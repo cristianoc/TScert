@@ -11,6 +11,7 @@ import { CHAIN } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { nameOf } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName } from "./intrinsics.mts";
+import { guardResult } from "./fragment-guards.mts";
 import { FORGED_PROMISE, GENERATOR, HAS_INSTANCE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 
@@ -144,6 +145,15 @@ export function expr(this: Gate, node: Expression): Expr {
       lit: { a: "booleanlit", v: "false" },
     };
 
+  // `/P/F` allocates a regex each time it is evaluated: a call of the
+  // intrinsic of its shape (`regexp.mts`): the call at the literal, the
+  // intrinsic read at its opening slash.
+  if (node.kind === ts.SyntaxKind.RegularExpressionLiteral) {
+    const intrinsic = gate.regexps.get(gate.span(node).join(":"));
+    if (!intrinsic) gate.fail(node, "a regular expression literal the declaration graph did not read");
+    const start = node.getStart(gate.file);
+    return gate.intrinsic(intrinsic, gate.span(node), [start, start + 1], []);
+  }
   if (ts.isStringLiteral(node))
     // `text` is the DECODED value, which is what a literal type denotes.
     return {
@@ -277,15 +287,14 @@ export function expr(this: Gate, node: Expression): Expr {
         if (gate.hoist?.spread !== only) gate.fail(only, SPREAD_POSITION);
         return gate.collect(only.expression);
       }
-      // Over a string, a `Set`, a `Map` or a host collection iterator, it
-      // is `%Spread:K%(e)`, the fresh array of what the host's iterator
-      // yields, as an argument spread's operand is (`spreadOperand`).
-      if (kind) return gate.spreadOperand(only);
     }
     if (node.elements.some((e) => ts.isOmittedExpression(e)))
       gate.fail(node, "array literal holes are outside the fragment");
-    // A spread among other elements stands for its operand's elements,
-    // read where it is written, as an argument spread's operand is.
+    // A spread stands for its operand's elements, read where it is written,
+    // as an argument spread's operand is (`spreadOperand`): over a string, a
+    // `Set`, a `Map` or a host collection iterator, those of `%Spread:K%(e)`,
+    // the fresh array of what the host's iterator yields. The literal is a
+    // fresh array of its own, whose contract its claim states.
     const spreads: number[] = [];
     const elems = node.elements.map((e, i) => {
       if (!ts.isSpreadElement(e)) return gate.expr(e);
@@ -602,6 +611,16 @@ export function expr(this: Gate, node: Expression): Expr {
     // which a static initializer has not yet.
     if (staticOwner !== undefined && !isStatic && gate.staticInitOf(target)?.cls === staticOwner)
       gate.fail(node, STATIC_INIT_CLASS);
+    // `s.m(o, …)`, a string method dispatching to its object argument's
+    // well-known-symbol method: `%Dispatch:m%(s, o, …)`, evaluated as
+    // written (`regexp.mts`), the intrinsic read at the member's name.
+    const dispatch = gate.dispatches.get(gate.span(node).join(":"));
+    if (dispatch && ts.isPropertyAccessExpression(target)) {
+      if (node.arguments.some((arg) => ts.isSpreadElement(arg)) || node.typeArguments?.length)
+        gate.fail(node, "a string method dispatching to a regex takes ordinary arguments");
+      return gate.intrinsic(dispatch, gate.span(node), gate.span(target.name),
+        [gate.expr(target.expression), ...node.arguments.map((arg) => gate.expr(arg))]);
+    }
     if (
       (ts.isPropertyAccessExpression(target) && !isStatic) ||
       ts.isElementAccessExpression(target)
@@ -1777,8 +1796,10 @@ export function lambda(this: Gate,
     // producer: the claim at the closure states it, and the body is checked
     // against that claim. A class method's result is its instance type's
     // member, which states it, so a method still needs the annotation.
-    const declaredResult: TypeTerm | null =
-      node.type || instance ? gate.typeOf(node.type, node) : null;
+    // A guard closure's annotation is its plain result and its promise.
+    const guard = gate.guardOf(node);
+    const declaredResult: TypeTerm | null = guard ? guardResult(guard)
+      : node.type || instance ? gate.typeOf(node.type, node) : null;
     const arrow = ts.isArrowFunction(node) ? gate.span(node.equalsGreaterThanToken) : null;
     const keyword = modifiers[0];
     const rest = (p: ts.ParameterDeclaration) => p.dotDotDotToken ? { rest: true as const } : {};
@@ -1845,6 +1866,7 @@ export function lambda(this: Gate,
         receiver,
         params,
         result: declaredResult,
+        guard,
         body: { k: "blockBody", pos: gate.span(body), body: [...bindings, ...statements] },
       };
     }
@@ -1870,6 +1892,7 @@ export function lambda(this: Gate,
         ...rest(p),
       })),
       result: declaredResult,
+      guard,
       body: inner,
     };
   } finally {

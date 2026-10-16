@@ -116,7 +116,7 @@ did not mention grow it, and the request carries the result. -/
   if !distinct (fc.points.map Prod.fst) || fc.points.any (fun (_, row) =>
       !distinct (row.envs.map Prod.fst) || !distinct (row.exprs.map Prod.fst)) then
     throw "duplicate execution point, statement or expression claim"
-  let ((inputs, R, entry), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) do
+  let ((inputs, R, entry, promise), built) ← runCompiler T (growSites classes f.body (module := f.name == "")) do
     -- One binding per source parameter, and one request input per position a
     -- caller writes: a rest parameter is one binding, and its tuple's required
     -- elements are the positions. The array itself is allocated at entry.
@@ -187,6 +187,12 @@ did not mention grow it, and the request carries the result. -/
     let claimedR ← SourceClaims.resolve (← table) fc.ret
     requireSameMeaning (← table) f.namePos .returnContract R claimedR
       "claimed return type differs from the source annotation"
+    -- A guard's promise is about the input its parameter takes; an assertion
+    -- function's returns are `undefined`, where they are checked.
+    let receiver := f.params.head?.any (·.name == "this")
+    let promise ← f.guard.mapM fun g => do
+      return (g.asserts, g.param + (if receiver then 1 else 0), ← lower (Fragment.translate g.type))
+    let returned := if f.guard.any (·.asserts) then [Labels.undef] else R
     let stmts := f.body
     let paramScope : List (ScopeBinding Tree) ← (scope.zip bindings).mapM fun (pair : ScopeBinding Tree × Ty Tree) => do
       let (b,contract) := pair
@@ -200,7 +206,8 @@ did not mention grow it, and the request carries the result. -/
     let bodyScope := paramScope ++ siblingScope
     let slotTypes := bindings ++ siblingTypes
     let fullScope := scope ++ siblingScope
-    let mut first ← body (if f.name.isEmpty then (0,0) else f.namePos) fc R bodyScope stmts
+    let mut first ← withAnswers (f.guard.any (!·.asserts))
+      (body (if f.name.isEmpty then (0,0) else f.namePos) fc returned bodyScope stmts)
     -- Each assigned parameter gets one fresh private cell at function entry.
     -- Replace its slot in place; the caller still supplies the original value
     -- and the function's public input contract does not mention these cells.
@@ -244,9 +251,9 @@ did not mention grow it, and the request carries the result. -/
         inputs S "rest-allocation" (scope := restScope)
       first := store
     let entry ← emit .nul (.effect first) inputs [Labels.nul]
-    return (inputs, R, entry)
+    return (inputs, R, entry, promise)
   return {
-    toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes⟩
+    toRequest := ⟨built.types, built.program, built.claims, R, entry.label, inputs, built.codes, promise⟩
     obligations := built.obligations
     sourceMap := built.source.sourceMap
     assertions := built.source.assertions

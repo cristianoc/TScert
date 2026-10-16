@@ -653,6 +653,17 @@ array runs after one of its steps and before a later one
 is not an array is refused; one over an iterable the program defines is the
 iterator protocol's steps ([loops](SOURCE-CONTRACTS.md#loops-and-spreads-over-iterables)).
 
+A pattern binding a `for...of` binds each element, then reads it, before the
+body, as JavaScript binds it per iteration:
+
+```math
+\mathtt{for}\ (\mathtt{const}\ p\ \mathtt{of}\ e)\ s\ \rightsquigarrow\ \mathtt{for}\ (\mathtt{const}\ \%e\ \mathtt{of}\ e)\ \{\ \mathtt{const}\ p = \%e;\ s\ \}
+```
+
+with $`\%e`$ a name no source spells and the inner declaration a `const`
+pattern's; a loop over an iterable the program defines takes no pattern
+(`for-of-pattern-binding`, `invalid-for-of-pattern-string`).
+
 A default replaces a read that is `undefined`, and only then runs. With
 $`R'`$ the read's labels told apart clause by clause (`byClause`: a label that
 is a union row, such as a declared alias, is replaced by one label per
@@ -958,7 +969,12 @@ for an arrow). The premise over $`L`$ is the creation rule's, so leaving the
 result out drops a requirement and no check: the result is the claim's, like
 any expression's. A parameter written without a type has for $`D_j`$ the type
 TypeScript gives it from its context, which the parser writes
-(`closureParamType`): a proposal like any claim, since the body is checked at
+(`closureParamType`) as an annotation of it would read: primitives,
+literals, unions, intersections, arrays, type parameters, declarations by
+name, and tuples of required positions and a rest, readonly as TypeScript
+types them. A tuple with an optional position is refused, since TypeScript
+gives that position's type with `undefined` whether or not an annotation
+wrote it (`invalid-contextual-optional-tuple`). It is a proposal like any claim, since the body is checked at
 $`A_j\sqsubseteq_G D_j`$ and the closure at $`\bigwedge L`$ wherever it goes, the
 call offering it included. A closure is **offered** each signature binding
 more parameters than it does that is expected where it flows: passed where
@@ -1189,10 +1205,33 @@ The semantic introduction and elimination rules are proved in
 together; a separate unqualified body check cannot introduce a qualified type.
 Rest-collecting entries retain their store contract in the checked frame, and
 the entry allocation preserves the input heap before the checked body runs.
-The effect algorithm ([ExpressionEffects.lean](../lean/Verification/Programs/ExpressionEffects.lean)) composes pure computations, required field reads through
-invariant cells or readonly views, and fresh object/array allocations. Reads use
-the field contract to establish valuehood; arbitrary heap entries are not assumed
-to be values. Allocations append locations. `ControlFlow.state_progress` is shared
+The effect algorithm ([ExpressionEffects.lean](../lean/Verification/Programs/ExpressionEffects.lean))
+admits a node whose expression is an **inspection**: a term built from slots,
+values, immutable lets, tests, conditionals, operators, throws, lengths, field
+and element reads, and allocations whose initializers are slots or values,
+
+```math
+\begin{aligned}
+o &::= x \mid v\\
+i &::= o \mid \mathsf{let}\ x=i\ \mathsf{in}\ i \mid \mathsf{test}_k(i) \mid \mathsf{if}\ i\ \mathsf{then}\ i\ \mathsf{else}\ i \mid i \oplus i \mid \mathsf{throw}\ i \mid \mathsf{len}(i) \mid i.f \mid i[i] \mid \mathsf{make}_c(\vec f;\vec o) \mid [\vec o]
+\end{aligned}
+```
+
+```math
+\frac{\Gamma\vdash i:B\qquad i\ \text{an inspection}}
+ {\Gamma\vdash i:B\;!\;\mathsf{preservesInputHeap}}\ \textsf{inspect}
+```
+
+with the premise the node's ordinary typing. No step of an inspection writes a
+location it did not allocate: a read gives the value its location holds and an
+allocation appends fresh locations, so from a heap holding values each step
+keeps the heap a prefix and leaves an inspection (`Purity.inspect_step`). Every
+heap meeting an admissible world holds values (`HeapExpressionRules.heap_values`),
+and the ordinary safety derivation supplies such a world at every step, so the
+rule's conclusion holds (`ExpressionEffects.inspect_safe`). A member read off a
+primitive is an inspection: the conditional on the primitive's shape, the fresh
+wrapper whose `[[proto]]` is the prototype slot, and the read through it.
+`ControlFlow.state_progress` is shared
 with ordinary safety, so the additional graph proof has no second set of edge or
 branch rules. During expression evaluation, `GraphCode.ReturnsPost` tracks the
 normal-return postcondition independently of the safety proof's evolving world.
@@ -1220,9 +1259,10 @@ This checker is wired into source acceptance, including
 `SourceClaimJson.checkJson_safe`. One contract record carries receiver,
 arguments, result and required effect through graphs, claims and certificates;
 subtyping checks effect implication and substitution preserves it. Ordinary
-source annotations remain unrestricted; OCaml proposes preservation for pure
-closure bodies, required field reads, fresh allocations and fixed calls to
-qualified callees, retaining it through symbolic claims and substitution.
+source annotations remain unrestricted; OCaml proposes preservation for
+closure bodies of reads, element reads, fresh allocations, patterns without a
+rest, and fixed calls and method calls whose callee's signatures all state it
+(`heap_preserving_expr`), retaining it through symbolic claims and substitution.
 Broader composition remains implementation work. Evidence production adds a
 code entry to its search table only after the complete body/effect check passes.
 A forged effect thus fails at the defining callable's located typing obligation.

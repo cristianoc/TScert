@@ -399,8 +399,13 @@ one for an increment), and the slot of the old value. -/
       return ← LoweringAtoms.compileAtom recursive fc scope Γ prepared checked
   let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
     (fun i => if i == 0 || copied == some (i-1) then 0 else i+1)
+  -- An assertion function's call leaves its actual at the promise's type
+  -- from its return on.
+  let returned := match promiseNarrowing (SourceTypes.graph (← table)) scope Γ true original with
+    | some (j, T) => Γ.set j T
+    | none => Γ
   let cast ← emitAt original.span (.var 0) (.bind ⟨next.label, some mapping⟩)
-    (B::Γ) A "expression-claim" (scope := held ⟨"",some original.span⟩ :: scope)
+    (B::returned) A "expression-claim" (scope := held ⟨"",some original.span⟩ :: scope)
   withPreparedAtom original do
     let prepared ← comparisonsExpr fc prepared
     LoweringAtoms.compileAtom recursive fc scope Γ prepared cast
@@ -581,6 +586,18 @@ prepared predicate without replaying an effectful source operand. -/
         | .evaluate _ prepared _ => comparisonsExpr fc prepared
         | _ => pure (Fragment.Expr.var source "")
       let after ← executionAfterContext fc scope Γ operation
+      -- An assertion function's call leaves its actual, the name its saved
+      -- operand was read from, at the promise's type from its return on.
+      let saved := (← executionBindings).origins
+      let original := fun (n : String) => match saved.lookup n with
+        | some (.var _ o) => o
+        | _ => n
+      let called := match operation with
+        | .invokeSaved source _ _ _ => source
+        | _ => origin
+      let after := match promiseNarrowing (SourceTypes.graph (← table)) scope after true called original with
+        | some (j, T) => after.set j T
+        | none => after
       -- A rebound slot no longer holds what an alias saved of it.
       withExecutionOrigins (if Γ != after || (rebound scope operation).isSome then [] else retained)
         (k (held ⟨"",some source⟩ :: scope) (A::after) origin)
@@ -626,8 +643,9 @@ prepared predicate without replaying an effectful source operand. -/
       let correlated := test == .truthy && !Y.isEmpty && !N.isEmpty &&
         BranchRefinement.onlyBoolean G A && readOnly origin && !origin.freeNames.contains ""
       let arrays ← if correlated && arrayTested origin then some <$> builtinArrayTy else pure none
+      let singles ← if correlated then conditionSingletons G scope' Δ origin else pure []
       let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) => do
-        let base := if correlated then conditionContext G scope' Δ origin truth arrays else
+        let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) else
           match alias with
           | some i => Δ.set i T
           | none => Δ

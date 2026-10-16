@@ -5,7 +5,7 @@
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, MethodDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { DeclarationIdentity, PropertyKey, TypeTerm } from "./declaration-types.mts";
-import { CLASS_ACCESS, classMemberRefusal, signature } from "./type-term.mts";
+import { CLASS_ACCESS, classMemberRefusal, oneTerm, signature } from "./type-term.mts";
 import type { BindingAst, Expr, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, isStatic, nameOf } from "./syntax.mts";
@@ -409,7 +409,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
           ? [...stmts, { k: "return", pos: brace, e: { k: "lit", pos: brace, lit: { a: "undefined" } } }]
           : stmts;
         const block: Expr = { k: "lambda", pos: gate.span(member.body), typeParams: [], receiver: null,
-          params: [], result: { k: "atom", name: "undefined", span: keyword },
+          params: [], result: { k: "atom", name: "undefined", span: keyword }, guard: null,
           body: { k: "blockBody", pos: gate.span(member.body), body } };
         statics.push({ name: staticName(name.text, `[[block@${start}]]`), namePos: keyword, annot: null,
           init: { k: "apply", pos: gate.span(member), callee: block, args: [] } });
@@ -444,7 +444,8 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
             gate.fail(member, "a static method that reads `this` is outside the fragment");
           if (member.body && readsSuper(member.body)) gate.fail(member, STATIC_SUPER);
           const annot = member.type && !member.typeParameters?.length
-            ? signature(gate.scope, member.parameters, member.type, member, gate.span(member), true) : null;
+            ? oneTerm(signature(gate.scope, member.parameters, member.type, member, gate.span(member), true), gate.span(member))
+            : null;
           staticMethods.push({ name: binding, namePos: gate.span(member.name), annot, init: gate.lambda(member) });
           // A static method keyed by a symbol is also an own property of
           // the class value, at its signature, which no copy takes, as no
@@ -709,7 +710,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
     });
     const constructorLambda: Expr = { k: "lambda", pos: gate.span(node),
       typeParams: [], receiver: null, params: params.map((p) => ({ name: p.name, type: p.type })),
-      result: instance, body: { k: "blockBody", pos: gate.span(constructor?.body ?? node),
+      result: instance, guard: null, body: { k: "blockBody", pos: gate.span(constructor?.body ?? node),
         body: [...params.flatMap((p) => p.binding ? [p.binding] : []),
           ...construct(body, fields, new Set(), prelude)] } };
     const lambda: Expr = { k: "ctor", pos: gate.span(node), ...(typeParams.length ? { typeParams } : {}),

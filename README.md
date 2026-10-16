@@ -177,6 +177,7 @@ owner; other documents link to them and give only the context their readers need
 | [SOURCE-ELABORATION](docs/SOURCE-ELABORATION.md) | Evidence search and source compilation obligations, including bindings, closures and parameter initialization. |
 | [SOURCE-CONTRACTS](docs/SOURCE-CONTRACTS.md) | Source declarations, library contracts and the interpretation of annotations. |
 | [CALLABLES](docs/CALLABLES.md) | The proved callable fragment and the proposed broader callable rules, with their distinct proof scopes. |
+| [COMPILER-API](docs/COMPILER-API.md) | The planned contract for verifying code that uses TypeScript's compiler API: host declarations, the node invariant, guards as kind tests, node lists as foreign arrays, its trust and restrictions. |
 | [REQUEST-PROTOCOL](docs/REQUEST-PROTOCOL.md) | Request/evidence JSON and the verifier CLI. |
 | [FRAGMENT-FORMAT](docs/FRAGMENT-FORMAT.md) | Source syntax wire format and its relation to execution plans and claims. |
 | [SOURCE-CLAIMS](docs/SOURCE-CLAIMS.md) | The independent claims document schemas and source identity. |

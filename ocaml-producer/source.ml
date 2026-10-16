@@ -3,6 +3,17 @@ open Semantic
 let unsupported s = fail ("unsupported: " ^ s)
 let text k j = str (field k j)
 let items k j = list (field k j)
+let natural j = match j with
+  | Number n -> (match int_of_string_opt n with Some i when i >= 0 -> i | _ -> fail "expected a natural number")
+  | _ -> fail "expected a natural number"
+(* A signature's effect, as the wire spells it: a heap effect's name, or a
+   promise naming its parameter. *)
+let effect_of = function
+  | String "unrestricted" -> Unrestricted
+  | String "preservesInputHeap" -> PreservesInputHeap
+  | Object [("guards",Object [("param",p)])] -> Guards (natural p)
+  | Object [("asserts",Object [("param",p)])] -> Asserts (natural p)
+  | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None
   | Object fields as slots ->
@@ -215,9 +226,7 @@ let rec source_type ctx j =
       | Null -> None,None
       | t when is_pack t -> None,Some (source_pack ctx (field "of" t))
       | t -> Some (recur t),None in
-    let call_effect = match text "effect" j with
-      | "unrestricted" -> Unrestricted | "preservesInputHeap" -> PreservesInputHeap
-      | _ -> unsupported "unknown callable effect" in
+    let call_effect = effect_of (field "effect" j) in
     let signature = {call_effect;quantified=[];receiver;
       params=List.map recur (items "params" j);
       variadic;rest_pack;
@@ -389,6 +398,14 @@ let literal j = match text "a" j with
   | "bigintlit" -> LBigint (text "v" j)
   | k -> unsupported ("literal " ^ k)
 let optional_type binders = function Null -> None | j -> Some (source_type binders j)
+(* A guard's promise as the Fragment states it: the parameter it is about, by
+   position among the actuals, and its type. *)
+let guard_of binders = function
+  | Null -> None
+  | j ->
+    let param = natural (field "param" j) in
+    Some ((if boolean (field "asserts" j) then Asserts param else Guards param),
+      source_type binders (field "type" j))
 let span_start j = match list j with
   | Number n :: _ -> int_of_string n
   | _ -> Json.fail "empty source span"
@@ -476,7 +493,10 @@ and expr_node =
      arrow, whose `this` is the enclosing one. *)
   (* The result is none where the source states no result annotation: the
      producer proposes it, and Lean checks the body against that claim. *)
-  | Lambda of ty option * quantifier list * (string * ty) list * (int * expr) list * bool * ty option * expr
+  (* A guard closure's promise, its result annotation `x is T` or `asserts x
+     is T`: the promise signature's effect and type, beside the plain result. *)
+  | Lambda of ty option * quantifier list * (string * ty) list * (int * expr) list * bool * ty option
+      * (call_effect * ty) option * expr
   (* The positions of the arguments written with `...`: each stands for the
      elements of its operand, read where it is written. The types are the
      explicit type arguments written on the call, if any. *)
@@ -556,7 +576,10 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
               parameter, an argument pack each call instantiates. The rest's
               type in [params] is the parameter's bound, the array the body
               sees. *)
-           rest_pack: rigid option; result: ty; body: stmt list }
+           rest_pack: rigid option; result: ty;
+           (* A guard's promise, beside its plain result: the promise
+              signature's effect and type. *)
+           guard: (call_effect * ty) option; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;
   bases: ty list; expression: ty option }
 (* `init` is the module's top-level code, run once after its function
@@ -577,6 +600,19 @@ let rec pattern_defaults = function
   | PArray (elems,rest) -> List.concat_map (fun (_,t,d) -> Option.to_list d @ pattern_defaults t) elems
       @ (match rest with Some (_,_,_,t) -> pattern_defaults t | None -> [])
 
+(* The names a pattern binds, and whether it only reads: no rest, which
+   allocates. *)
+let rec pattern_names = function
+  | PName (n,_) -> [n]
+  | PObject (props,rest) -> List.concat_map (fun (_,t,_) -> pattern_names t) props @
+    (match rest with Some (_,t) -> pattern_names t | None -> [])
+  | PArray (elems,rest) -> List.concat_map (fun (_,t,_) -> pattern_names t) elems @
+    (match rest with Some (_,_,_,t) -> pattern_names t | None -> [])
+let rec pattern_reads = function
+  | PName _ -> true
+  | PObject (props,rest) -> rest=None && List.for_all (fun (_,t,_) -> pattern_reads t) props
+  | PArray (elems,rest) -> rest=None && List.for_all (fun (_,t,_) -> pattern_reads t) elems
+
 (* The immediate subexpressions of a form, and those of a closure body's
    statements. *)
 let rec children e = match e.node with
@@ -596,7 +632,7 @@ let rec children e = match e.node with
   | Alloc fs -> List.map snd fs
   | Build parts -> List.map snd parts
   | ArrayLiteral (es,_) -> es
-  | Lambda (_,_,_,defaults,_,_,body) -> List.map snd defaults @ [body]
+  | Lambda (_,_,_,defaults,_,_,_,body) -> List.map snd defaults @ [body]
   | Call (f,r,args,_,_) -> f :: Option.to_list r @ args
   | Invoke (f,args,_,_) | New (f,_,args,_) -> f :: args
   | Apply (f,r,l) -> f :: r :: Option.to_list l
@@ -638,51 +674,63 @@ let rec assigns name s = match s.statement with
   | Closing (close,body) -> List.exists (assigns name) (body @ close)
   | Break _ | Continue -> false
 (* A definition-level proposal, never a call-site assumption. This first
-   analysis proposes pure operations, required field reads and fresh allocations.
+   analysis proposes pure operations, field and element reads and fresh
+   allocations.
    Creation does not execute a closure's code. Calls consume their inferred
    qualified contracts; Lean independently checks the selected call evidence.
    Every constructor is listed so extensions require a decision here. *)
-let rec heap_preserving_expr ?(inline=false) ~readable ~callable values (e:expr) =
-  let pure = heap_preserving_expr ~inline ~readable ~callable values in
+let rec heap_preserving_expr ~callable values (e:expr) =
+  let pure = heap_preserving_expr ~callable values in
   match e.node with
   | Id name -> List.mem name values
   | Literal _ -> true
   | Not a | TypeofTest (_,_,a) | Cast (_,_,a) -> pure a
   | Arith (_,a,b) | Comma (a,b) -> pure a && pure b
-  (* These forms currently lower to a nested let expression, rather than
-     separate graph nodes. Do not propose the wider graph effect rule for it. *)
-  | Logical (_,a,b) | Coalesce (a,b) ->
-    let pure = heap_preserving_expr ~inline:true ~readable ~callable values in pure a && pure b
+  | Logical (_,a,b) | Coalesce (a,b) -> pure a && pure b
   | Conditional (c,a,b) -> pure c && pure a && pure b
-  | Read (a,key) -> not inline && pure a && readable a key
-  | Alloc fields -> not inline && List.for_all (fun (_,e) -> pure e) fields
-  | ArrayLiteral (es,spreads) -> not inline && spreads=[] && List.for_all pure es
-  | Lambda _ -> not inline
-  | Call (callee,receiver,args,spreads,_) -> not inline && spreads=[] &&
+  (* A read changes no location: Lean's inspection rule admits any read of a
+     field or an element, ordinary safety supplying that it does not stick. *)
+  | Read (a,_) -> pure a
+  | Index (a,b) | Equality (_,a,b) -> pure a && pure b
+  | Alloc fields -> List.for_all (fun (_,e) -> pure e) fields
+  | ArrayLiteral (es,spreads) -> spreads=[] && List.for_all pure es
+  | Lambda _ -> true
+  | Call (callee,receiver,args,spreads,_) -> spreads=[] &&
     pure callee && Option.fold ~none:true ~some:pure receiver &&
     List.for_all pure args && callable callee
-  | BlockBody body -> heap_preserving_stmts ~readable ~callable values body
-  | Unary _ | HasKey _ | InstanceTest _ | Equality _ | Build _
+  (* A method call reads the member off its receiver (through a primitive's
+     prototype, for a primitive) and invokes it: preserving when the member's
+     signatures all state it. *)
+  | Invoke ({node=Read (o,_);_} as callee,args,spreads,_) -> spreads=[] &&
+    pure o && List.for_all pure args && callable callee
+  | BlockBody body -> heap_preserving_stmts ~callable values body
+  | Unary _ | HasKey _ | InstanceTest _ | Build _
   | Write _ | Assign _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _ | New _
-  | Optional _ | Index _ | IndexWrite _ | Bind _ | ObjectAssign _
+  | Optional _ | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> false
-and heap_preserving_stmts ~readable ~callable values = function
+and heap_preserving_stmts ~callable values = function
   | [] -> true
   | s::rest ->
-    let pure = heap_preserving_expr ~readable ~callable values in
-    let unchanged () = heap_preserving_stmts ~readable ~callable values rest in
+    let pure = heap_preserving_expr ~callable values in
+    let unchanged () = heap_preserving_stmts ~callable values rest in
     match s.statement with
     | Declare (false,bindings) ->
       let rec add values = function
-        | [] -> heap_preserving_stmts ~readable ~callable values rest
-        | (name,_,init)::more -> heap_preserving_expr ~readable ~callable values init && add (name::values) more in
+        | [] -> heap_preserving_stmts ~callable values rest
+        | (name,_,init)::more -> heap_preserving_expr ~callable values init && add (name::values) more in
       add values bindings
     | Return e | Effect e | Throw e -> pure e && unchanged ()
-    | If (c,a,b) -> pure c && heap_preserving_stmts ~readable ~callable values a &&
-        heap_preserving_stmts ~readable ~callable values b && unchanged ()
-    | Block (_,body) -> heap_preserving_stmts ~readable ~callable values body && unchanged ()
+    | If (c,a,b) -> pure c && heap_preserving_stmts ~callable values a &&
+        heap_preserving_stmts ~callable values b && unchanged ()
+    | Block (_,body) -> heap_preserving_stmts ~callable values body && unchanged ()
     | Break _ | Continue -> unchanged ()
+    (* A pattern without a rest reads fields and positions of its
+       initializer's value and binds them. *)
+    | Destructure (target,d,init) when pattern_reads target ->
+      pure init && Option.fold ~none:true ~some:pure d &&
+      List.for_all pure (pattern_defaults target) &&
+      heap_preserving_stmts ~callable (pattern_names target @ values) rest
     | Declare (true,_) | Destructure _ | While _ | ForOf _ | Try _ | Closing _ -> false
 
 let arithmetic = function
@@ -763,6 +811,7 @@ let rec expr binders j =
           (List.mapi (fun i p -> i,p) parameters),
         rest,
         optional_type inner (field "result" j),
+        guard_of inner (field "guard" j),
         expr inner (field "body" j))
   | "ctor" -> Ctor (sub "lambda",match List.assoc_opt "statics" (obj j) with
       | None -> []
@@ -915,7 +964,7 @@ let decode ast =
     init=List.map (stmt {init_binders with value_packs=true}) (items "init" ast);
     init_quantified;
     values=List.mapi (fun index v ->
-      (* A generic value's binders quantify its one signature. *)
+      (* A generic value's binders quantify each of its signatures. *)
       let binders,quantified = quantify top (-1000-index) (items "typeParams" v) in
       (* A binder only a rest's argument list uses is a pack parameter,
          bounded by its bound's pack; one typing a value as well stays a value
@@ -938,8 +987,8 @@ let decode ast =
       text "local" (field "binding" v),
       (match source_type binders (field "type" v),quantified with
        | t,[] -> t
-       | Atoms [Shape ({calls=[call];_} as shape)],_ ->
-         Atoms [Shape {shape with calls=[{call with quantified}]}]
+       | Atoms [Shape ({calls=_ :: _ as calls;_} as shape)],_ ->
+         Atoms [Shape {shape with calls=List.map (fun (call:signature) -> {call with quantified}) calls}]
        | Atoms [Ctors ([signature],statics)],_ -> Atoms [Ctors ([{signature with quantified}],statics)]
        | _ -> unsupported "a generic imported value must be one callable"))
       (items "values" document);
@@ -970,4 +1019,5 @@ let decode ast =
       params=List.map (fun p -> text "name" p,param_type p) (items "params" f);
       rest=List.exists (fun p -> List.mem_assoc "rest" (obj p)) (items "params" f);
       rest_pack=Option.map fst pack_rest;
-      result=source_type binders (field "retType" f);body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }
+      result=source_type binders (field "retType" f);guard=guard_of binders (field "guard" f);
+      body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

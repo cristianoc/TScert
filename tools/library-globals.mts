@@ -18,7 +18,8 @@
  *   parameter at which it misbehaves), the signature the host meets, stated
  *   instead (`stated`);
  * - a member whose call is a primitive of the calculus: a test (`test`) or
- *   a trusted step already stated as an intrinsic (`intrinsic`).
+ *   a trusted step already stated as an intrinsic (`intrinsic`);
+ * - a call signature that holds of the global read as a value (`value`).
  *
  * A global declared outside the standard library, such as Node's `process`,
  * is read as its declaration states, member by member (`selectGlobal`). */
@@ -28,8 +29,9 @@ import { asyncCompleteName, promiseResolveName, newPromiseName, promiseAllName, 
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
-/** A signature the overlay states: its binders, its parameters, its result. */
-export type Stated = { binders: string[]; params: TypeTerm[]; result: TypeTerm };
+/** A signature the overlay states: its binders, its parameters, the element
+ * type of its rest parameter where it has one, its result. */
+export type Stated = { binders: string[]; params: TypeTerm[]; rest?: TypeTerm; result: TypeTerm };
 /** A standard library interface applied to arguments, such as `Set<T>`. */
 type LibraryReference = (name: string, args: TypeTerm[]) => TypeTerm;
 
@@ -49,6 +51,12 @@ export type GlobalEntry = {
    * member, whose signature is the variable's declaration, reads
    * `e instanceof X` as the test. */
   test?: "isArray";
+  /** The call signature holds of the global read as a value: whoever
+   * receives the value may call it with any receiver and any arguments the
+   * signature admits, and the entry states what the host does at each. A
+   * global is read as a value only where every call signature's entry says
+   * so. */
+  value?: true;
   /** The call runs the global's construct steps: the parser writes `Error(m)`
    * as `new Error(m)`, and the call is read at `stated` as a construct
    * signature, joining the global's construct signatures. */
@@ -73,6 +81,19 @@ const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span: at });
 const optional = (type: TypeTerm): TypeTerm => ({ k: "union", parts: [type, atom("undefined")], span: at });
 const readonlyArray = (element: TypeTerm): TypeTerm => ({ k: "array", presence: "readable", readonly: true, element, span: at });
 const array = (element: TypeTerm): TypeTerm => ({ k: "array", presence: "readable", readonly: false, element, span: at });
+/** The primitives, which ToNumber and ToString convert without running code. */
+const primitive: TypeTerm = { k: "union", span: at,
+  parts: [atom("null"), atom("undefined"), atom("boolean"), atom("number"), atom("string"), atom("bigint"),
+    atom("symbol")] };
+/** A descriptor `FromPropertyDescriptor` makes of an own property: a data
+ * property's `value` and `writable` or an accessor's `get` and `set`, and
+ * both kinds' `enumerable` and `configurable`. */
+const descriptorField = (name: string, type: TypeTerm, isOptional: boolean) =>
+  ({ name, optional: isOptional, readonly: true, type, span: at });
+const propertyDescriptor: TypeTerm = { k: "object", stringIndex: null, calls: [], span: at, fields: [
+  descriptorField("configurable", atom("boolean"), false), descriptorField("enumerable", atom("boolean"), false),
+  descriptorField("value", atom("unknown"), true), descriptorField("writable", atom("boolean"), true),
+  descriptorField("get", atom("unknown"), true), descriptorField("set", atom("unknown"), true)] };
 const dictionary = (value: TypeTerm): TypeTerm =>
   ({ k: "object", fields: [], stringIndex: { readonly: true, value, span: at }, calls: [], span: at });
 
@@ -135,6 +156,35 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `toString`, client code, so the parameter is stated at the primitives.
   { global: "Number", signature: "(value?: any): number;",
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
+  // `Boolean(v)` is ToBoolean of its first argument, which reads no property
+  // and runs no code of any value's, and ignores every further argument;
+  // `Boolean()` is `false`; it reads no receiver. So the global may be read
+  // as a value (`xs.filter(Boolean)`), the callable
+  // `(value: unknown, ...rest: unknown[]) => boolean`. The declaration
+  // promises no narrowing, and none is stated: its result is a Boolean, which
+  // a guard's promise is not.
+  { global: "Boolean", signature: "<T>(value?: T): boolean;", value: true,
+    stated: { binders: [], params: [atom("unknown")], rest: atom("unknown"), result: atom("boolean") } },
+  // `Math.max(...vs)` and `Math.min(...vs)` convert every argument with
+  // ToNumber before comparing: a primitive without running code (`undefined`
+  // and a string that spells no number to `NaN`; a symbol and a bigint throw
+  // a TypeError, an outcome), an object by its own `Symbol.toPrimitive`,
+  // `valueOf` or `toString`, code of the client's. So each argument is
+  // stated at the primitives, a hole a spread reads (`undefined`) included.
+  // The result is a number: `NaN` if any argument converts to `NaN`, and
+  // `-Infinity` (`max`) or `Infinity` (`min`) of no argument.
+  ...["max", "min"].map((member): GlobalEntry => ({ global: "Math", member,
+    signature: `${member}(...values: number[]): number;`,
+    stated: { binders: [], params: [], rest: primitive, result: atom("number") } })),
+  // `String.fromCodePoint(...cs)` converts every argument with ToNumber, as
+  // `Math.max` does, and throws a RangeError where the number is no integer
+  // from 0 to 0x10FFFF, an outcome; otherwise its result is a string.
+  { global: "String", member: "fromCodePoint", signature: "fromCodePoint(...codePoints: number[]): string;",
+    stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
+  // `String.fromCharCode(...cs)` likewise, each number taken modulo 2^16 to a
+  // code unit, which never throws.
+  { global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;",
+    stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
   // Tests of a number that convert nothing: `false` for any argument that is
   // not a number, an object included, whose methods are never read.
   { global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;" },
@@ -155,6 +205,21 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // object's is assumed to return.
   { global: "Object", member: "values", signature: "values(o: {}): any[];" },
   { global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];" },
+  // `Object.getOwnPropertyDescriptor(o, k)`: ToObject of `o` (a TypeError of
+  // `null` or `undefined`, an outcome; a primitive's wrapper otherwise), then
+  // the key, which a string, number or symbol converts to without running
+  // code, then `o`'s own lookup of it, [[GetOwnProperty]], which calls no
+  // getter and runs no code on an ordinary or a built-in exotic object (a
+  // proxy's would run its handler's trap: assumed of every object a program
+  // holds, as `in` assumes it). The result is `undefined`, or a fresh
+  // descriptor: `configurable` and `enumerable` Booleans, and `value` and
+  // `writable`, or `get` and `set`. Nothing is known of `value`, a getter or
+  // a setter: each is `unknown`, and the fields are stated readonly.
+  { global: "Object", member: "getOwnPropertyDescriptor",
+    signature: "getOwnPropertyDescriptor(o: any, p: PropertyKey): PropertyDescriptor | undefined;",
+    stated: { binders: [], params: [atom("unknown"),
+      { k: "union", parts: [atom("string"), atom("number"), atom("symbol")], span: at }],
+      result: optional(propertyDescriptor) } },
   // The generic overloads, which TypeScript selects for a record type whose
   // keys it does not bound, promise a `T` of every key's value. That is
   // true of a dictionary, whose every own string key holds a `T`

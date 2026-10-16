@@ -71,7 +71,7 @@ changes only that domain; combining results states and checks both effects. -/
       checkArrowWith G R L S { q with result := b, effect := effect } left &&
       checkArrowWith G R L S { q with result := b', effect := other } right &&
       decide (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] q.result) &&
-      (effect.meet other).covers q.effect
+      effect.sameResult other && (effect.meet other).covers q.effect
 
 theorem checkArrowWith_sound [DecidableEq ι] {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R] {L S q cert}
     (h : checkArrowWith G R L S q cert = true) :
@@ -93,7 +93,7 @@ theorem checkArrowWith_sound [DecidableEq ι] {G : NormalGraph ι} {R : List ι 
     exact .recvUnion h.1.1 (ih h.1.2) (ih' h.2)
   | combine b b' effect other left right ih ih' =>
     simp only [checkArrowWith, Bool.and_eq_true, decide_eq_true_eq] at h
-    exact .combine (ih h.1.1.1) (ih' h.1.1.2) h.1.2 h.2
+    exact .combine (ih h.1.1.1.1) (ih' h.1.1.1.2) h.1.1.2 h.1.2 h.2
 
 abbrev Evidence (ι : Type) := List (Ops ι × ((Arrow (List ι)) × ArrowCert ι))
 
@@ -934,12 +934,14 @@ element. -/
     | some E => (t.arguments.1.drop s.arguments.1.length).map (·, E)
     | none => []
 
-/-- The pairs a variadic signature's coverage of a fixed one binding more
-parameters compares past `signaturePairs` (`RestFixed`): the target's further
-parameters against the source rest's element. -/
+/-- The pairs a variadic signature's coverage of a fixed one compares
+(`RestFixed`): receivers, the target's first parameters against the source's
+fixed ones, results, and the target's further parameters against the source
+rest's element. -/
 @[nospecialize] def restFixedPairs (G : NormalGraph ι) (source : List (RestArrow (List ι))) (target : List (Arrow (List ι))) :
     List (List ι × List ι) :=
   target.flatMap fun t => source.flatMap fun s =>
+    (t.receiver, s.receiver) :: (s.result, t.result) :: t.arguments.zip s.arguments.1 ++
     match PositiveRules.restElem G s.arguments.2 with
     | some E => (t.arguments.drop s.arguments.1.length).map (·, E)
     | none => []

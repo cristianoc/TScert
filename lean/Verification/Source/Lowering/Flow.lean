@@ -62,7 +62,7 @@ set_option maxHeartbeats 1000000
       else emitAt node.source .nul (.effect next) Γ [Labels.nul] (scope := scope)
     | .returnValue (.ret pos e) =>
       let A ← exprType fc e
-      let done ← emitAt e.span (.var 0) .ret (A::Γ) R "return-contract" (some pos.1)
+      let done ← emitAt e.span (.var 0) .ret (A::Γ) (← returnClaim A R) "return-contract" (some pos.1)
         (scope := held ⟨"",some e.span⟩ :: scope)
       LoweringExecution.compileExpr recursive fc scope Γ e done
     | .saveReturn (.ret _ e) descriptor next =>
@@ -72,16 +72,17 @@ set_option maxHeartbeats 1000000
       LoweringExecution.compileExpr recursive fc scope Γ e next
     | .returnHeld descriptor =>
       let some i := (sources scope).idxOf? descriptor | throw "internal flow error: lost return"
-      emitAt node.source (.var i) .ret Γ R "return-contract" (scope := scope)
+      emitAt node.source (.var i) .ret Γ (← returnClaim (Γ[i]?.getD R) R) "return-contract" (scope := scope)
     | .rethrow descriptor =>
       let some i := (sources scope).idxOf? descriptor | throw "internal flow error: lost thrown value"
-      emitAt node.source (.throw (.var i)) .ret Γ R "rethrow" (scope := scope)
+      emitAt node.source (.throw (.var i)) .ret Γ [] "rethrow" (scope := scope)
     | .discardThrow _ next =>
       let next ← successor next scope
       emitAt node.source .nul (.effect next) Γ [Labels.nul] "rethrow" (scope := scope)
     | .statement (.throw pos e) _ =>
       let A ← exprType fc e
-      let raise ← emitAt e.span (.throw (.var 0)) .ret (A::Γ) R "throw" (some pos.1)
+      -- A throw returns no value: its claim is the empty type.
+      let raise ← emitAt e.span (.throw (.var 0)) .ret (A::Γ) [] "throw" (some pos.1)
         (scope := held ⟨"",some e.span⟩ :: scope)
       LoweringExecution.compileExpr recursive fc scope Γ e raise
     | .declaration pos mutable binding next =>

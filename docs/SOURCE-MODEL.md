@@ -393,8 +393,10 @@ safety theorem does not prove. Intrinsics are collected on demand from the opera
 
 A call signature may state the effect `preservesInputHeap`: on normal return,
 the call leaves every previously allocated location's contents unchanged.
-It may allocate fresh storage. An **effect-qualified signature** is a signature
-carrying such a guarantee. `CallEffects.lean` defines its semantics; the
+It may allocate fresh storage. A type guard's and an assertion function's
+signatures state the effects `guards` and `asserts`, a promise about an actual
+([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). An
+**effect-qualified signature** is a signature carrying such a guarantee. `CallEffects.lean` defines its semantics; the
 [effect contract](SEMANTICS.md#effect-qualified-call-contracts) and
 [certification rules](SOURCE-ELABORATION.md#certifying-inferred-call-effects)
 state what a certificate must establish.
@@ -477,7 +479,10 @@ A member read on a primitive is read through the
 built-in wrapper prototype (`String.prototype`, `Number.prototype`,
 `BigInt.prototype`, `Boolean.prototype`) with the primitive as receiver; a
 string's `length` and indices are its own
-([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
+([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)). Each member
+those prototypes list states `preservesInputHeap`, so a call of one is a
+fixed qualified call, and the read itself an inspection
+([certification](SOURCE-ELABORATION.md#certifying-inferred-call-effects)).
 
 ### Receivers
 
@@ -557,7 +562,10 @@ keeps its keys. A test on a mutable cell refines the read, never the cell.
 tests; a chain of one of them reads right-nested, so each operand sees what
 every earlier one answered. `x instanceof C` of a class whose chain of bases
 holds a static `[Symbol.hasInstance]` is a call of that method, its result
-converted by `ToBoolean`, and narrows nothing.
+converted by `ToBoolean`, and narrows nothing. A user-defined guard's promise
+is a claim of a derived unit checked at the guard's body, and a call narrows
+its argument by testing it again
+([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)).
 
 ### Async and iteration
 

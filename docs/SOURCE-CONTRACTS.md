@@ -69,9 +69,40 @@ that type writing a second actual of another type is not safe.
 
 A module constant is read at its annotation or at the
 initialization unit's claim for its initializer
-([module constants](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)). The
+([module constants](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)).
+An unannotated constant whose initializer is a closure without a rest
+parameter, binders, defaults or a guard, with a written result, is claimed
+where it is created at its signature and at that signature extended by a
+rest of `unknown` elements, the closure's body checked at each, as a module
+function's slot holds both:
+
+```math
+\frac{c = \lambda(\vec x{:}\vec A).\,b\ \text{no rest, binders, defaults or guard}\quad
+       \Gamma_c\vdash b:B\ \text{at}\ (R;\vec A\to B)\ \text{and at}\ (R;\vec A,\ldots\top\to B)}
+     {\Gamma_I\vdash c:⟦(R;\vec A\to B)\land(R;\vec A,\ldots\top\to B)⟧}\ \textsf{constant-closure}
+```
+
+The closure code collects no rest, so a call writing further actuals binds
+its parameters and discards the rest; the second signature is a claim its
+body is checked at (`arrow-constant-callback`), never a widening of the
+first. The
 initialization unit refuses a call, direct or through module functions, that
-can read a constant not yet initialized (`checkInitializationOrder`).
+can read a constant not yet initialized (`checkInitializationOrder`). Walking
+the steps in order, with $`\mathrm{ready}_k`$ the constants the steps before
+step $`k`$ declare, $`\mathrm{code}`$ the module functions and the constants
+the source names holding a closure, $`\mathrm{names}(c)`$ the names code $`c`$ mentions, and
+$`\mathrm{step}(k)`$ the names step $`k`$ mentions outside the closure a constant's
+declaration holds:
+
+```math
+\frac{R_k=\mathrm{reach}(\mathrm{step}(k)\cap\mathrm{code})\qquad
+       \forall c\in R_k.\ \mathrm{names}(c)\cap\mathrm{constants}\subseteq\mathrm{ready}_k}
+     {\text{step}\ k\ \text{is admitted}}\ \textsf{initialization-order}
+```
+
+where $`\mathrm{reach}`$ closes a set of code under the code its names mention.
+Creating a closure runs none of its code, and every call of it follows a
+mention of its name, so its code is reached there.
 
 **Claims against annotations.** A claimed type $`C`$ is within the
 annotation's $`A`$ (`within`) when
@@ -161,21 +192,27 @@ interface or alias denotes the value in a value position and the other
 declaration in a type position.
 
 A value name the module neither imports nor binds is a **global** when
-TypeScript binds it to a global variable. A global is read only at the
+TypeScript binds it to a global variable. A namespace of the same name
+declaring only types (interfaces, aliases and such namespaces) makes no
+value, so the name's value is the variable's (`node-console`: Node declares
+`console` as both). A global is read only at the
 members and call signatures the module's references select (`selectGlobal`):
-every reference reads a member by name or is called; a method's reference
-must be called; a `this` result is the selection itself; a generic, optional
-or modified method, and a member of a generic base interface, are refused.
-With $`I`$ the annotated interface, $`M`$ the names read, $`O_m`$ the overloads
-TypeScript resolves the calls of method $`m`$ to, and $`C`$ the call signatures
-it resolves the calls $`x(\ldots)`$ to:
+every reference reads a member by name, is called, or is read as a value; a
+method's reference must be called; a `this` result is the selection itself; a
+generic, optional or modified method, and a member of a generic base
+interface, are refused. With $`I`$ the annotated interface, $`M`$ the names
+read, $`O_m`$ the overloads TypeScript resolves the calls of method $`m`$ to,
+and $`C`$ the call signatures it resolves the calls $`x(\ldots)`$ to, joined
+by all of $`\mathsf{calls}_I`$ where a reference reads $`x`$ as a value, which
+whoever receives it may call at any of them:
 
 ```math
 \frac{x\ \text{a global variable annotated}\ I\qquad
       M=\{m\mid x.m\ \text{occurs}\}\qquad
-      \text{every occurrence of}\ x\ \text{is some}\ x.m\ \text{or a callee}\qquad
+      \text{every occurrence of}\ x\ \text{is some}\ x.m,\ \text{a callee or a value}\qquad
       O_m\subseteq\mathsf{overloads}_I(m)\qquad
-      C\subseteq\mathsf{calls}_I}
+      C\subseteq\mathsf{calls}_I\qquad
+      (x\ \text{read as a value}\Rightarrow C=\mathsf{calls}_I\neq\emptyset)}
      {\Gamma(x)=⟦\mathsf{sel}_{M,O,C}(I)⟧}\ \textsf{global}
 \qquad
 ⟦I⟧\subseteq⟦\mathsf{sel}_{M,O,C}(I)⟧ .
@@ -186,8 +223,11 @@ says nothing of keys it does not name, a method's receiver is its host, and a
 `this` result is the host. A declaration's `any` is read as `unknown`. A
 global both called and read through a method, or both constructed and read
 through members, has no clause and is refused, unless the overlay reads those
-members as intrinsics. A standard library global is
-read through the reviewed overlay ([Library globals](#library-globals)).
+members as intrinsics. A global both read as a value and constructed is
+refused too. A standard library global is
+read through the reviewed overlay ([Library globals](#library-globals)), and
+a function of Node's modules an overlay entry lists, through the overlay of
+library modules ([Library modules](#library-modules)).
 
 ## One equation per declaration
 
@@ -205,19 +245,28 @@ a constructor is refused as unguarded, and everything else terminates
 because heads are keyed by source occurrence.
 
 An interface the checked file declares more than once, as TypeScript merges
-it, is one declaration: its first declaration is its identity, and its body holds every
-declaration's members, each at its own type. The declarations bind the same
-type parameters, name no member twice and state at most one index signature
-of each key kind, or the interface is refused:
+it, is one declaration: its body holds every declaration's members, each at
+its own type. Its type parameters are positional: each declaration binds a
+prefix of the longest list under the same names (TypeScript requires the
+others to have defaults), and its members are read with the parameters it
+binds, so a name it does not bind is what that name denotes there. The first
+declaration binding the longest list is its identity. A position's bound and
+default are those a declaration states there, read in its scope (TypeScript
+requires declarations stating one to agree; `interface-merge-parameter-defaults`).
+The declarations name
+no member twice and state at most one index signature of each key kind, or
+the interface is refused:
 
 ```math
-\frac{\mathtt{interface}\ I\langle\vec X\rangle\ \{\varphi_i;\ \vec\sigma_i\}\ \ (1\le i\le n)\quad
+\frac{\mathtt{interface}\ I\langle X_1\ldots X_{k_i}\rangle\ \{\varphi_i;\ \vec\sigma_i\}\ \ (1\le i\le n)\quad
+      k=\max_i k_i\quad
       \mathrm{names}(\varphi_i)\ \text{pairwise disjoint}}
-     {⟦I\langle\vec X\rangle⟧=⟦\{\varphi_1\cdots\varphi_n;\ \vec\sigma_1\cdots\vec\sigma_n\}⟧}\ \textsf{interface-merge}
+     {⟦I\langle X_1\ldots X_k\rangle⟧=⟦\{\varphi_1\cdots\varphi_n;\ \vec\sigma_1\cdots\vec\sigma_n\}⟧}\ \textsf{interface-merge}
 ```
 
 with $`\varphi_i`$ a declaration's fields, methods and index signatures and
-$`\vec\sigma_i`$ its call signatures.
+$`\vec\sigma_i`$ its call signatures, each read in the scope of
+$`X_1\ldots X_{k_i}`$ (`interface-merge-prefix-parameters`).
 
 The store a unit is extracted over is the lowering's heads, and extraction
 grows it ([Equations/Store.lean](../lean/Verification/Source/Equations/Store.lean)): a union of clauses, a scheme over a closure's
@@ -1341,10 +1390,29 @@ $`p`$, and $`R_j`$ its reviewed receiver (defaulting to $`p`$):
 
 ```math
 \frac{\omega\in\Omega_p\quad \omega.\mathit{text}=\mathsf{text}(m)\quad
-      \omega.\mathit{stated}=[(R_j,\vec P_j,Q_j)]_{j=1}^n\quad n>0}
+      \omega.\mathit{stated}=[(R_j,\vec P_j,Q_j,\epsilon_j)]_{j=1}^n\quad n>0}
      {⟦m⟧_\omega=\bigcap_{j=1}^n
-       (\mathsf{this}:R_j,\ \vec P_j)\Rightarrow Q_j}\ \textsf{proto-stated}
+       (\mathsf{this}:R_j,\ \vec P_j)\Rightarrow_{\epsilon_j} Q_j}\ \textsf{proto-stated}
 ```
+
+Each signature states an effect $`\epsilon_j`$: the entry's own, else its
+prototype's, `preservesInputHeap` for `StringProto`, `NumberProto`,
+`BigIntProto` and `BooleanProto` and `unrestricted` for `ArrayProto`. A
+signature states `preservesInputHeap` where the member, called at it, runs no
+client code but callbacks whose own signatures state the same, and writes no
+location the call did not allocate. Every primitive member listed meets this:
+its receiver is a primitive, it converts only primitives (a string search
+reads no `[Symbol.match]` of a primitive pattern, `split` and `replace` are
+stated at a string pattern), reads `locales` by index, and allocates only its
+result. Of `ArrayProto`, `slice`, `join`, `toString`, `indexOf`,
+`lastIndexOf`, `includes`, `at` and `[Symbol.iterator]` state it: they read
+the receiver, convert only numbers and elements meeting the conversion
+contract below, compare by strict equality or SameValueZero, and allocate
+only their result; so do the overloads of `map`, `find` and `findIndex` that
+take a preserving callback, which they call, the ordinary construction below
+allocating `map`'s result. The members that write their receiver (`sort`,
+`push`, `pop`, `shift`, `unshift`, `reverse`) and those that call an
+unrestricted callback do not.
 
 The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source
@@ -1355,6 +1423,16 @@ unrestricted `find`/`findIndex` callbacks receive `T | undefined`, and unrestric
 `preservesInputHeap` callback and respectively pass `T` or promise a dense result.
 Source `U[]` requires readability; the fresh qualified map result may choose that
 lifetime contract even when its initial contents are physically dense.
+`flatMap` appends the present elements of each array its callback returns,
+and appends any other result as it is: the declared `U | ReadonlyArray<U>`
+is unsound where `U` admits an array, since such a result is flattened
+(`invalid-array-flat-map-value`). It is stated at a callback returning an
+array, of which only present entries are read, with `thisArg` and its
+binder `This` dropped:
+
+```math
+\mathsf{flatMap}:\forall U.\ (\mathsf{this}:\mathsf{ReadonlyArray}(T),\ (T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow\mathsf{sparse\ ReadonlyArray}(U))\Rightarrow U[\,]
+```
 
 Native array results rely on the ordinary-construction invariant: an array owns
 neither `constructor` nor any key declared by `ArrayProto`; the host keeps the
@@ -1418,7 +1496,11 @@ other signature or its receiver condition from the declared scheme.
      {⟦I\langle\vec X\rangle⟧_\Omega=\{k_1:⟦m_1⟧_{\omega_1};\ \ldots;\ k_n:⟦m_n⟧_{\omega_n}\}}\ \textsf{library-interface}
 ```
 
-a supertype of the declared interface. $`⟦m⟧_\omega`$ drops
+a supertype of the declared interface. A member's signatures state the
+entry's effect: `preservesInputHeap` for the readers, `has`, `get`, `keys`,
+`values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`,
+`toString` and `toISOString`, none for the members that change the
+collection or the date or call a callback. $`⟦m⟧_\omega`$ drops
 `thisArg`, reads a `this` result as the receiver, and reads a declared
 iterator result as `Iterator<T>`, which it extends. A property is a readonly
 view. A string's own `length` and indices are the calculus's `lenStr` and
@@ -1469,6 +1551,67 @@ the global's construct signatures:
       |\vec a|\le|\vec P|\ \text{for each}\ x.m(\vec a)\ \text{selecting}\ s}
      {⟦s⟧_\Omega=\forall\vec X.\ (\mathsf{this}:\mathsf{self},\ \vec P)\Rightarrow R}\ \textsf{library-stated}
 ```
+
+A statement may end in a rest whose element $`E`$ every further argument
+meets, a spread's elements included, and may state a call signature of the
+global, read at each call $`x(\vec a)`$ as a member's is:
+
+```math
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{stated}\ (\vec P,\ \ldots E)\Rightarrow R)\quad
+      \text{no spread among the first}\ |\vec P|\ \text{actuals of each}\ x.m(\vec a)}
+     {⟦s⟧_\Omega=(\mathsf{this}:\mathsf{self},\ \vec P,\ \ldots E)\Rightarrow R}\ \textsf{library-stated-rest}
+```
+
+A standard library global is read as a value only where the overlay marks
+each of its call signatures for one (`value`): whoever receives the value may
+call it with any receiver and any arguments its type admits, so the entry
+states what the host does at every one of them.
+
+```math
+\frac{\mathit{lib}(x)\quad x\ \text{read as a value}\quad
+      \forall s\in\mathsf{calls}_I.\ \exists\omega\in\Omega.\ \omega=(x,\ \cdot,\ \mathsf{text}(s),\ \mathsf{value})}
+     {\Gamma(x)=⟦\mathsf{sel}_{M,O,\mathsf{calls}_I}(I)⟧_\Omega}\ \textsf{library-value}
+```
+
+The entries, each with the code its restriction keeps from running:
+
+- `Boolean(v, …)` is ToBoolean of its first argument, which runs no code and
+  reads no property, and ignores the rest: $`(\mathtt{unknown},\ \ldots\mathtt{unknown})\Rightarrow\mathtt{boolean}`$,
+  a value too (`xs.filter(Boolean)`). It is stated with no promise about its
+  argument: its declaration, `<T>(value?: T): boolean`, states none, so
+  `filter(Boolean)` keeps its receiver's element type, as TypeScript keeps it
+  (`invalid-boolean-filter-narrowing`).
+- `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
+  `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
+  object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,
+  $`\mathsf{Prim}=\mathtt{null}\mid\mathtt{undefined}\mid\mathtt{boolean}\mid\mathtt{number}\mid\mathtt{string}\mid\mathtt{bigint}\mid\mathtt{symbol}`$,
+  so a hole a spread reads is admitted and an object is not
+  (`invalid-math-max-object`, `invalid-math-min-spread-object`,
+  `invalid-from-code-point-object`, `invalid-from-char-code-object`):
+  $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{number}`$ and
+  $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{string}`$. A symbol or a bigint
+  throws a TypeError and an invalid code point a RangeError, outcomes; the
+  number may be `NaN`, `Infinity` or `-Infinity`.
+- `Object.getOwnPropertyDescriptor(o, k)` converts `o` by ToObject (a
+  TypeError of `null` or `undefined`) and `k` by ToPropertyKey, which runs an
+  object's `toString` (`invalid-own-property-descriptor-key-object`), then
+  looks the key up by `o`'s [[GetOwnProperty]], which calls no getter. That
+  lookup runs no code on the objects a program holds, none of which is a
+  proxy ([trust surface](DESIGN.md#trust-surface)). The result is
+  `undefined` or a fresh descriptor, nothing known of what it holds
+  (`invalid-own-property-descriptor-value`):
+
+```math
+\mathtt{getOwnPropertyDescriptor}:(\mathtt{unknown},\ \mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol})\Rightarrow\mathsf{Desc}\mid\mathtt{undefined}
+```
+
+```math
+\mathsf{Desc}=\{\mathtt{readonly}\ \mathit{configurable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{enumerable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{value}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{writable}?:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{get}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{set}?:\mathtt{unknown}\}
+```
+
+`Reflect` is a namespace, whose functions are no annotated variable's
+members, and `Reflect.get(o, k)` runs [[Get]], which calls an accessor's
+getter, code no type of `o` states: it is refused.
 
 Overloads stated alike are one signature. A statement may name a library
 interface (`Set<T>`, read through [its overlay](#prototype-contracts)) or a
@@ -1539,6 +1682,202 @@ the symbol it holds not being known:
 So two constants made by `Symbol.for` of one string name one key, and a
 type naming both names that key twice, which is refused, though TypeScript
 types each constant a distinct `unique symbol`.
+
+## Library modules
+
+A function a client imports from one of Node's modules (`node:fs`, or `fs`)
+is read through the reviewed overlay of library modules
+(`library-modules.mts`) where an entry lists it, and otherwise as an
+imported value ([imported values](#imported-ambient-and-global-values)).
+An entry names one overload of the function's declaration in Node's
+declarations, with exactly the text it was reviewed against (white space
+collapsed), and states the signature the host meets at the arguments it
+admits, $`(\vec P)\Rightarrow R`$. With $`\Omega_m`$ the overlay, $`f`$
+imported from module $`\mu`$ and $`O_f`$ the overloads TypeScript binds it to:
+
+```math
+\frac{\{\omega\in\Omega_m\mid \omega.\mathit{module}=\mu,\ \omega.\mathit{name}=f\}=\{\omega_1\ldots\omega_n\}\neq\emptyset\quad
+      \forall i.\ \exists s\in O_f.\ \omega_i.\mathit{text}=\mathsf{text}(s)\quad
+      \omega_i.\mathit{stated}=(\vec P_i)\Rightarrow R_i}
+     {\Gamma(f)=\bigwedge_{i}(\vec P_i)\Rightarrow R_i}\ \textsf{library-module}
+```
+
+The declaration's types are not read, and neither are the types they name
+(`Buffer`, `URL`, streams). Each statement is an assumption a result is
+relative to, as an import's declared type is, and each says what the host
+does at its parameters, where the declaration may say otherwise. A call is
+unrestricted in its effect. The entries:
+
+- `execFileSync(file, args, options)` runs `file` and returns its standard
+  output when it exits with status 0; a failure to run, a nonzero status, a
+  signal, a timeout and output past `maxBuffer` throw. The output is a
+  string at a text encoding and `null` where standard output is not piped to
+  the parent, though the declaration says `string` at every text encoding
+  (`invalid-node-exec-stdout-ignored`). It is stated at the options the
+  host returns a string under: $`(\mathtt{string},\ \mathtt{readonly\ string[]},\ O)\Rightarrow\mathtt{string}`$ with
+
+  `O = { encoding: "utf8"; input?: string; maxBuffer?: number; stdio?: readonly [S, "pipe", S]; env?: { readonly [k: string]: string | undefined } }`,
+  `S = "pipe" | "ignore" | "inherit"`.
+
+  The host copies the options' own properties and converts each value `env`
+  owns to a string before it reads the `stdio` array the copy shares; an
+  object value's `toString` may set `stdio[1]` to "ignore", and the result is
+  then `null` (`invalid-node-exec-env-object`). A record type states nothing
+  of the keys it does not name, so `env` is stated at strings. Every other
+  option the host reads it validates without converting, throwing on a type
+  it does not accept: an object at each such key ran no code of the client's
+  under Node 25.2.1.
+- `writeFileSync(file, data)` with a path and a string writes the string to
+  the file as UTF-8 and returns `undefined`; a path it cannot write throws:
+  $`(\mathtt{string},\ \mathtt{string})\Rightarrow\mathtt{undefined}`$.
+
+## Regular expressions
+
+A regex is an object of host-relative methods (`regexp.mts`), read in two
+forms: the **native** regex a literal evaluates to, which states its
+literal's capture shape and a mark only the host's construction gives, and
+the **structural** regex a `RegExp` annotation states, a behavioural
+contract any value may meet. Neither states a property: a regex's
+`lastIndex`, `source` and flags are read through no type.
+
+**Shapes.** A literal's shape $`\Sigma=(A,\nu,g)`$ lists, for each capture
+group $`k`$ in order, whether it takes part in every successful match
+($`k\in A`$), whether a group is named ($`\nu`$), and whether the flags hold
+`g` (`regexp-shape.mts`). On the pattern's tree under ECMA-262's grammar
+([ECMA-262](REFERENCES.md#ecma-262), "Patterns", with Annex B outside
+Unicode mode),
+
+```math
+k\in A\iff \text{no ancestor of group}\ k\ \text{is a disjunction of two or more alternatives, a quantifier with minimum}\ 0,\ \text{or a lookaround}
+```
+
+A quantifier with minimum at least 1 keeps its atom's groups: on success its
+last iteration matched the whole atom (`RepeatMatcher` rejects an empty
+iteration beyond the minimum). Escapes are read by mode: in Unicode mode
+`\p{…}`, `\u{…}` and `\k<…>` are single escapes; outside it `\p` is the
+letter, `\u` takes four hex digits or is the letter, `\k<…>` is a back
+reference only in a pattern naming a group, and `[]` and `[^]` are complete
+classes. A pattern the reading leaves out (the `v` flag, modifier groups), or
+whose group count or names differ from the host's own compilation of it,
+has the conservative shape $`\Sigma_\top`$, every group maybe unmatched.
+
+**Types.** With $`G_k`$ `string` where $`k\in A`$ and `string | undefined`
+otherwise,
+
+```math
+\begin{aligned}
+\mathsf{Exec}(\Sigma)&=\mathtt{readonly}\ [\mathtt{string},G_1,\ldots,G_n]\ \&\ \{\mathtt{readonly\ index}\colon\mathtt{number};\ \mathtt{readonly\ input}\colon\mathtt{string};\ \mathtt{readonly\ groups}\colon\Gamma\}\\
+\mathsf{Match}(\Sigma)&=\mathtt{readonly}\ [\mathtt{string},\ \ldots\mathtt{string}[\,]]\ \text{if}\ g,\ \text{else}\ \mathsf{Exec}(\Sigma)\\
+\mathsf{Split}(\Sigma)&=\mathtt{string}[\,]\ \text{if}\ A=\{1,\ldots,n\},\ \text{else}\ (\mathtt{string}\mid\mathtt{undefined})[\,]
+\end{aligned}
+```
+
+with $`\Gamma`$ `undefined` where no group is named and else a readonly
+dictionary of `string | undefined`. At $`\Sigma_\top`$ the tuple is
+`readonly [string, ...(string | undefined)[]]`, $`\Gamma`$ either, a match
+that tuple, and a split the readonly view `readonly (string | undefined)[]`,
+which both writable splits meet. The regex of shape $`\Sigma`$ is the record
+of host-relative methods
+
+```math
+P(\Sigma)=\{\ \mathtt{exec}\colon(\mathtt{string})\Rightarrow\mathsf{Exec}(\Sigma)\mid\mathtt{null};\ \mathtt{test}\colon(\mathtt{string})\Rightarrow\mathtt{boolean};\ [@@\mathrm{match}]\colon(\mathtt{string})\Rightarrow\mathsf{Match}(\Sigma)\mid\mathtt{null};\ [@@\mathrm{replace}]\colon(\mathtt{string},\mathtt{string})\Rightarrow\mathtt{string};\ [@@\mathrm{search}]\colon(\mathtt{string})\Rightarrow\mathtt{number};\ [@@\mathrm{split}]\colon(\mathtt{string},\mathtt{number}\mid\mathtt{undefined})\Rightarrow\mathsf{Split}(\Sigma)\ \}
+```
+
+with each member's effect below; the native and structural regexes are
+
+```math
+N(\Sigma)=P(\Sigma)\ \&\ \{[@@\mathrm{matchAll}]\colon(\mathtt{string})\Rightarrow I_N(\mathsf{Exec}(\Sigma));\ \mathtt{readonly}\ [\mu]\colon\mathtt{undefined}\}
+\qquad
+⟦\mathtt{RegExp}⟧=P(\Sigma_\top)
+```
+
+where $`\mu`$ is the synthetic symbol `RegExpMatcher` (`tscert/regexp`), the
+model's reading of the native `[[RegExpMatcher]]` slot, and
+$`I_N(T)=\mathtt{Iterator}\langle T\rangle\ \&\ \{\mathtt{readonly}\ [\mu_I]\colon\mathtt{undefined}\}`$
+the native match iterator, $`\mu_I`$ the synthetic `RegExpStringIterator`. No
+source declaration has a synthetic symbol's identity, so no source type,
+literal or class states $`\mu`$ or $`\mu_I`$; a source `unique symbol` of the
+same name is a key of its own (`invalid-regexp-forged-mark`).
+$`N(\Sigma)\le⟦\mathtt{RegExp}⟧`$: results widen by readonly covariance and the
+mark and `[@@matchAll]` are left out. TypeScript's `RegExpExecArray` and
+`RegExpMatchArray` are $`\mathsf{Exec}(\Sigma_\top)`$ and $`\mathsf{Match}(\Sigma_\top)`$,
+a supertype of each declaration with its element type corrected, and an
+array pattern or loop over one steps it as an array. `RegExp`'s stated
+members are pinned to their declaration texts (`reviewedRegExpMembers`).
+
+**Effects.** A member of $`⟦\mathtt{RegExp}⟧`$, any value's, states no
+effect. A native regex's members run no client code, read its pattern and
+flags, and allocate only their result; what they write is `lastIndex`. With
+$`g`$ and $`y`$ whether the flags hold `g` and `y`,
+
+```math
+\epsilon_{N(\Sigma)}(m)=\begin{cases}
+\mathsf{preservesInputHeap} & m\in\{[@@\mathrm{search}],[@@\mathrm{split}],[@@\mathrm{matchAll}]\},\ \Sigma\ne\Sigma_\top\\
+\mathsf{preservesInputHeap} & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ \neg g,\ \neg y\\
+\mathsf{unrestricted} & \text{otherwise}
+\end{cases}
+```
+
+`[@@search]` restores the `lastIndex` it saved, `[@@split]` and
+`[@@matchAll]` step a fresh clone, and a regex neither global nor sticky
+writes no `lastIndex`; one that is leaves it where its last match ended
+(`invalid-regexp-global-callback-effect`). At $`\Sigma_\top`$ the flags are
+not read, and no member states the effect.
+
+**Literals and dispatch.** Each evaluation of a literal allocates a regex;
+a call of `String.prototype`'s `match`, `matchAll`, `replace`, `replaceAll`,
+`search` or `split` with an object first argument runs `GetMethod` on it and
+returns what that method returns:
+
+```math
+\frac{\Sigma=\mathsf{shape}(P,F)}
+     {⟦/P/F⟧=\%\mathrm{RegExp}{:}\Sigma\%()\qquad \%\mathrm{RegExp}{:}\Sigma\%\colon()\Rightarrow_{\mathsf{preservesInputHeap}} N(\Sigma)}\ \textsf{regexp-literal}
+```
+
+```math
+\frac{s\ \text{a string}\quad o\ \text{an object}\quad m\in\{\mathtt{match},\mathtt{search},\mathtt{split},\mathtt{replace},\mathtt{matchAll},\mathtt{replaceAll}\}}
+     {⟦s.m(o,\vec e)⟧=\%\mathrm{Dispatch}{:}m\%(⟦s⟧,⟦o⟧,⟦\vec e⟧)}\ \textsf{regexp-dispatch}
+```
+
+as TypeScript types the receiver and the argument, evaluated as written, with
+
+```math
+\begin{aligned}
+\%\mathrm{Dispatch}{:}\mathtt{split}\%&\colon\forall X.\ (\mathtt{string},\ \{[@@\mathrm{split}]\colon(\mathtt{string},\mathtt{number}\mid\mathtt{undefined})\Rightarrow X\},\ \mathtt{number}\mid\mathtt{undefined})\Rightarrow X\\
+\%\mathrm{Dispatch}{:}\mathtt{replace}\%&\colon\forall X.\ (\mathtt{string},\ \{[@@\mathrm{replace}]\colon(\mathtt{string},X)\Rightarrow\mathtt{string}\},\ X)\Rightarrow\mathtt{string}\\
+\%\mathrm{Dispatch}{:}\mathtt{matchAll}\%&\colon\forall X.\ (\mathtt{string},\ \{[@@\mathrm{matchAll}]\colon(\mathtt{string})\Rightarrow X;\ \mathtt{readonly}\ [\mu]\colon\mathtt{undefined}\})\Rightarrow X
+\end{aligned}
+```
+
+and `match` and `search` as `split` without the limit, `replaceAll` as
+`replace` with the mark. Each states two signatures over the same binder:
+the one above, unrestricted, and the same at a target whose member states
+$`\mathsf{preservesInputHeap}`$, stating it too. Beside that member's call, the
+dispatch reads `o`'s members and converts only strings, so it writes nothing
+the member does not:
+
+```math
+\frac{\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow Q\},\ \vec R)\Rightarrow S}
+     {\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow_{\mathsf{preservesInputHeap}} Q\},\ \vec R)\Rightarrow_{\mathsf{preservesInputHeap}} S}\ \textsf{dispatch-preserving}
+```
+ `matchAll` and `replaceAll` first read
+`o[@@match]` and `o.flags` and convert `flags` (ECMA-262,
+`String.prototype.matchAll`), client code for an object `flags`
+(`invalid-regexp-structural-matchall`): their argument must be native, whose
+standard `flags` is a string. A non-global native regex makes them throw, an
+outcome. A loop or spread over what TypeScript types `RegExpStringIterator`
+steps `%Iterate:RegExpString%`, whose parameter is $`I_N(T)`$: a structural
+iterator meets it not, and is refused there.
+
+**What is refused.** A property of a regex is no member of either type:
+`re.lastIndex`, `re.source`, `re.flags` are refused at the read, a regex meets
+no view stating one (a copy would lack the non-enumerable `lastIndex`,
+`invalid-regexp-lastindex-view`), and `in` with a key a regex owns or
+inherits from `RegExp.prototype` is refused whatever the operand
+(`inKeyRefusal`, `invalid-regexp-lastindex-in`). `compile`, which replaces a
+regex's pattern and so its shape, is no member (`invalid-regexp-compile`); a
+library class is no base (`invalid-regexp-subclass`). A replacement callback
+and `new RegExp` are not stated. Match results are readonly views.
 
 ## Async functions and await
 
@@ -1840,11 +2179,13 @@ literal or an argument of a call of a name after names and literals the file
 never assigns, and the statement's value, is collected before the
 statement, where nothing the statement evaluates before the spread can be
 changed by the iterator's code: $`\mathsf{const}\ a=[\,],\ i,\ n;\ \mathsf{while}\ (\mathsf{true})\ \{\ \mathsf{const}\ r=n();\ \mathsf{if}\ (r.\mathit{done})\ \mathsf{break};\ a.\mathit{push}(r.\mathit{value})\ \}`$, then $`\ldots a`$ (or $`a`$ for the literal);
-a spread steps to the end and closes nothing. The one element of an array
-literal spreading a host iterable (a string, a `Set`, a `Map`, a host
-collection iterator) is its spread intrinsic's call, `[...e]` $`\equiv`$
-`%Spread:K%(e)`, the fresh array of what the host's iterator yields, as an
-argument spread of one is. An array pattern
+a spread steps to the end and closes nothing. An array literal's spread of
+a host iterable (a string, a `Set`, a `Map`, a host collection iterator)
+spreads its spread intrinsic's array, `[…, ...e, …]` $`\equiv`$
+`[…, ...%Spread:K%(e), …]`, the fresh array of what the host's iterator
+yields, as an argument spread of one is; the literal is a fresh array of its
+own, at the store contract its claim states, also where the spread is its
+one element (`array-literal-host-spread`). An array pattern
 `const [p₀, …, ...q] = e` over one (`protocolPattern`) steps once per element,
 a hole too, into cells $`v_j`$ starting `undefined`, leaves a labeled block when
 a step is done, collects the rest to the end, and without a rest closes the
@@ -1950,10 +2291,9 @@ a throw may leave after any part of the body ran.
 
 Every guard is a tag test ([SEMANTICS](SEMANTICS.md#operational-language)),
 refining a tested immutable binding by the tag slice $`T_q`$ of its type on
-each edge ([refinement](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)). A
-user-defined type guard (`x is T`) or assertion function (`asserts x is T`)
-is refused where its type is written: its promise ties the call's result, or
-its completion, to its argument, which no function type states:
+each edge ([refinement](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)).
+A call of a [user-defined guard](#user-defined-guards) narrows by such tests
+of its argument, run again after the call:
 
 ```math
 \frac{\Gamma(x)=A\quad\Gamma[x:T_{\mathsf{typeofObject}}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{typeofObject}}(A)]\vdash_R S_2}
@@ -2000,6 +2340,29 @@ dispatched on its truthiness:
      {\Gamma\vdash_R\ \mathsf{if}\ (o.f)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-field-truthy}
 ```
 
+Where the singleton $`c`$ is a string or a number other than a zero, a passed
+test leaves the operand $`c`$ alone, whatever its type was, `unknown`
+included: $`T_{\mathsf{eq}(c)}(A)=\{c\}`$ for every $`A`$ the test may pass
+on (`tagMember`). A disjunction's passed outcome came from either operand,
+and each slot holds what either path left it, a slot one path leaves at its
+input type keeping that type:
+
+```math
+\frac{\Gamma_1=\Gamma[a\mapsto\mathsf{true}]\quad
+      \Gamma_2=\Gamma[a\mapsto\mathsf{false}][b\mapsto\mathsf{true}]\quad
+      \Gamma_1\sqcup_\Gamma\Gamma_2\vdash_R S_1\quad
+      \Gamma[a\mapsto\mathsf{false}][b\mapsto\mathsf{false}]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (a\parallel b)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-or}
+\qquad
+(\Gamma_1\sqcup_\Gamma\Gamma_2)(x)=\begin{cases}\Gamma(x)&\Gamma_1(x)=\Gamma(x)\lor\Gamma_2(x)=\Gamma(x)\\
+  \Gamma_1(x)\cup\Gamma_2(x)&\text{otherwise}\end{cases}
+```
+
+with $`\Gamma[a\mapsto q]`$ the refinement by $`a`$'s answer $`q`$, and `&&`'s
+false outcome the same join. Each edge into $`S_1`$ is checked against the
+joined context, so `v === "dense" || v === "sparse"` leaves `v` at
+`"dense" | "sparse"` (`literal-union-narrowing`).
+
 `x === y` with `x` claimed at a union of
 singletons is dispatched as the disjunction over its singletons $`c`$ of
 $`x\equiv c\land y\equiv c`$ (`savedSplit` where `x` has effects). Strict
@@ -2019,6 +2382,105 @@ to the built-in `sparse ReadonlyArray<unknown>` where it holds
       \Gamma[x:T_{\lnot\mathsf{isArray}}(A)]\vdash_R S_2}
      {\Gamma\vdash_R\ \mathsf{if}\ (\mathtt{Array.isArray}(x))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-array}
 ```
+
+### User-defined guards
+
+A type guard `function g(x: A): x is T` and an assertion function
+`function f(x: A): asserts x is T` have function types of two signatures each,
+the plain one and a **promise signature** about the parameter $`x`$, the
+$`p`$-th:
+
+```math
+g : (A) \to \mathtt{boolean}\ \land\ (A) \to T\,[\mathsf{guards}\ p]
+\qquad
+f : (A) \to \mathtt{void}\ \land\ (A) \to T\,[\mathsf{asserts}\ p]
+```
+
+A promise signature's result operand is the promise's type. Its meaning is the
+[effect-qualified call contract](SEMANTICS.md#effect-qualified-call-contracts)
+whose result family relates the result $`v`$ to the $`p`$-th actual $`v_p`$:
+a call of $`g`$ returns `true` with $`v_p \in T`$, or `false`; a normal return
+of $`f`$ is `undefined` with $`v_p \in T`$. The same declaration reads the
+same in every position: a function type, a method, an imported module's
+declaration and a closure's annotation all carry both signatures.
+
+The promise is proved at the definition. The body is checked at the promise
+signature with the goal that each return meets the result family for the
+argument $`v`$ the call passed. The checker tracks the slots holding $`v`$,
+which a write of the parameter or a default replacing it leaves, and at each
+return asks for the answer and the argument's type where that answer is
+possible:
+
+```math
+\frac{\begin{array}{c}\Gamma_0 = x{:}A \qquad
+      \forall\ \mathsf{return}\ e \text{ at } \Gamma \text{ with } x \text{ holding } v:\
+      \Gamma\vdash e : \mathtt{boolean} \quad
+      \bigl(\Gamma\vdash e : \mathtt{false}\ \lor\ \Gamma_{e=\mathtt{true}} \vdash v : T\bigr)\end{array}}
+     {\vdash g : (A) \to T\,[\mathsf{guards}\ p]}\ \textsf{guard-def}
+```
+
+```math
+\frac{\forall\ \text{normal completion at } \Gamma \text{ with } x \text{ holding } v:\
+      \Gamma\vdash v : T}
+     {\vdash f : (A) \to T\,[\mathsf{asserts}\ p]}\ \textsf{assert-def}
+```
+
+$`\Gamma_{e=\mathtt{true}}`$ is $`\Gamma`$ refined by what the returned value
+being `true` establishes: a test of a slot (`typeof x === "string"`, a strict
+equality, a conjunction or disjunction of these), a Boolean slot carrying such
+a test's answer, or a call at a promise signature. A test of a value read
+from a field refines the object it was read from, while the read is current,
+to the arms whose field answers the test so (`return s.kind === "circle"`).
+A branch before the return refines $`\Gamma`$ itself. A return
+is claimed at its value's own type, so a `return false` answers `false`
+alone.
+
+A call consumes the promise. The callee is any expression whose type holds
+a promise signature its actuals meet: a name, a method or a field of an
+object, a bound function. Of an overloaded callee's promise signatures, the
+call narrows by one whose parameters admit its actuals. The call's `true`
+result, or its normal return, leaves the promised actual $`a`$, a name, a
+$`T`$:
+
+```math
+\frac{\Gamma\vdash g : (\vec A)\to T\,[\mathsf{guards}\ p]\quad \Gamma\vdash \vec a : \vec A\quad
+      \Gamma[a_p : T]\vdash_R S_1\quad \Gamma\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (g(\vec a))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-guard}
+\qquad
+\frac{\Gamma\vdash f : (\vec A)\to T\,[\mathsf{asserts}\ p]\quad \Gamma\vdash \vec a : \vec A\quad
+      \Gamma[a_p : T]\vdash_R S}
+     {\Gamma\vdash_R\ f(\vec a);\ S}\ \textsf{assert-call}
+```
+
+A `false` outcome narrows nothing: the promise states nothing of it
+(`invalid-type-guard-false-branch`). Passing a guard where a plain predicate
+is expected forgets its promise signature, as an intersection's operand.
+Binding a prefix of a guard's actuals (`g.bind(r, …)`) keeps a promise about
+an actual past the prefix, at its new position.
+
+A closure's written promise is proved whatever its claim offers: one of the
+signatures its code is checked at states that promise over the annotation's
+whole domain, admitting every receiver and argument the annotation admits,
+at a type within the written one, or the closure is refused.
+
+An imported guard is read at its declared type, both signatures; its promise
+is the import assumption of [the trust surface](DESIGN.md#trust-surface),
+discharged where the imported module's own run verifies the guard.
+
+Implementation: `CallEffects.Effect` (`guards p`, `asserts p`) gives the
+contract; `ControlFlow.Goal` states a body's goal and `checkReturnResult` its
+check at a return; [PromiseCalls.lean](../lean/Verification/Programs/PromiseCalls.lean)
+holds the yields of a returned value (`yieldFollows_sound`) and the promise
+call (`promiseCall_sound`); `Lowering.Control.promiseNarrowing` places the
+narrowed claim after a call, which the edge check verifies. Pipeline cases:
+`type-guards`, `type-guard-objects`, `type-guard-methods`,
+`type-guard-value-import` and `type-guard-overload-value-import` verify;
+`invalid-type-guard-promise`, `invalid-type-guard-undefined`,
+`invalid-type-guard-default`, `invalid-type-guard-object`,
+`invalid-type-guard-field-test`,
+`invalid-type-guard-method` and
+`invalid-assertion-promise` are refused at the return where the argument is
+not a $`T`$, each run under Node by `node-runs.mts`.
 
 ## Enums
 

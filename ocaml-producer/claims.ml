@@ -40,6 +40,8 @@ let unsupported s = fail ("unsupported: " ^ s)
 let effect_json = function
   | Unrestricted -> String "unrestricted"
   | PreservesInputHeap -> String "preservesInputHeap"
+  | Guards param -> Object ["guards",Object ["param",int param]]
+  | Asserts param -> Object ["asserts",Object ["param",int param]]
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]
@@ -217,9 +219,13 @@ let encode (proposal : Proposal_types.t) =
     (* A quantified signature inside a type (a class's generic method held by
        its prototype, a field of a generic function type): a scheme row,
        which binds its binders' names, the parser's for a closure's binders
-       (`"key"#k`) or the ones the source spells. *)
-    | Shape {fields=[];indexes=[];elements=None;calls=[s]}
-        when s.quantified <> [] ->
+       (`"key"#k`) or the ones the source spells. Plain signatures
+       quantified by the same binders (a generic value's overloads) share one
+       scheme; a promise signature beside its plain one (a generic guard's)
+       is not encoded. *)
+    | Shape {fields=[];indexes=[];elements=None;calls=(s :: _ as calls)}
+        when s.quantified <> [] && (calls = [s] || List.for_all (fun (t:Semantic.signature) ->
+          t.quantified = s.quantified && Semantic.plain_effect t.call_effect) calls) ->
       let binders = List.map (fun (q:Semantic.rigid) -> label_json (Binder q.spelling))
         (List.concat_map quantifier_identities s.quantified) in
       let _,resolution = List.fold_left (fun (offset,groups) (q:Semantic.quantifier) ->
@@ -232,7 +238,7 @@ let encode (proposal : Proposal_types.t) =
          closure claim. Keep the bound itself on the scheme as well. A
          packed binder is read at its row, in both components, and has no
          bound: the scheme holds at each of its instances. *)
-      let packed = signature_uses s in
+      let packed = List.concat_map signature_uses calls in
       let s = {s with quantified = List.map (fun (q:Semantic.quantifier) ->
         if List.mem q.identity packed then {q with bound = None} else q) s.quantified} in
       let within_bounds = List.filter_map (fun (q:Semantic.quantifier) ->
@@ -241,15 +247,17 @@ let encode (proposal : Proposal_types.t) =
         | None -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[top])))
         | Some (ValueArgument bound) -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[bound])))
         | Some _ -> None) s.quantified in
-      let body = Inference.substitute_signature within_bounds {s with quantified=[]} in
-      let signature,variadic = match body.variadic,body.rest_pack with
+      let forms = List.map (fun (t:Semantic.signature) ->
+        let body = Inference.substitute_signature within_bounds {t with quantified=[]} in
+        match body.variadic,body.rest_pack with
         | None,None -> [call_contract body.call_effect (labels body.receiver) (Array (List.map labels body.params)) (labels body.result)],[]
         | Some element,None ->
           [],[call_contract body.call_effect (labels body.receiver)
             (Array [Array (List.map labels body.params);
               pack_labels (Pack {required=[];optional_elements=[];rest=Some element;readonly=false;presence=Dense})])
             (labels body.result)]
-        | _,Some _ -> unsupported "a pack parameter in a generic method's scheme" in
+        | _,Some _ -> unsupported "a pack parameter in a generic method's scheme") calls in
+      let signature = List.concat_map fst forms and variadic = List.concat_map snd forms in
       let bounds = List.map (fun (q:Semantic.quantifier) ->
         let bound = Option.value q.bound ~default:(ValueArgument top) in
         Array [label_json (Binder q.identity.spelling);

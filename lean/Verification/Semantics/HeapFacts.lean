@@ -140,9 +140,9 @@ theorem holds_nil (ρ h) : Holds [] ρ h := by simp [Holds]
 /-- All target facts must have an incoming justification. Repeated slot maps
 retain aliases; different slot numbers do not imply different locations. -/
 def check (source target : Facts) (mapping : PointClaims.Mapping) : Bool :=
-  target.all fun f => source.any fun g =>
-    g.slot == PointClaims.slot mapping f.slot && g.field == f.field &&
-      covers g.contents f.contents
+  target.all fun f =>
+    let s := PointClaims.slot mapping f.slot
+    source.any fun g => g.slot == s && g.field == f.field && covers g.contents f.contents
 
 theorem check_sound {source target mapping ρ h}
     (hc : check source target mapping = true) (hs : Holds source ρ h) :

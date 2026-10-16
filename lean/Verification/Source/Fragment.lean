@@ -66,7 +66,13 @@ def inKeyRefusal (key : String) : Option String :=
     "flatMap", "map", "every", "some", "reduce", "reduceRight", "toReversed", "toSorted",
     "toSpliced", "with"]
   let functionKeys := ["name", "prototype", "apply", "bind", "call", "arguments", "caller"]
+  -- A regular expression owns `lastIndex` and inherits the rest from
+  -- `RegExp.prototype`; the model's regex states methods and no property.
+  let regexpKeys := ["lastIndex", "source", "flags", "global", "ignoreCase", "multiline", "sticky",
+    "unicode", "unicodeSets", "dotAll", "hasIndices", "exec", "test", "compile"]
   if reservedSourceKey key then some "the model reserves this key"
+  else if regexpKeys.contains key then
+    some "a regular expression owns it or inherits it from RegExp.prototype"
   else if objectKeys.contains key then some "every object inherits it from Object.prototype"
   else if arrayKeys.contains key then some "an array owns it or inherits it from Array.prototype"
   else if functionKeys.contains key then some "a function owns it or inherits it from Function.prototype"
@@ -171,6 +177,14 @@ def decodeTypeParams (raw : List Json) : Except String (List TypeParam) := do
   ResolutionWire.validateOwnership (parameters.map fun p => (p.name, p.resolution))
   return parameters
 
+/-- A user-defined guard's promise (`x is T`, `asserts x is T`), written in
+its result annotation: the actual it is about, by position among a call's
+actuals, whether it is an assertion function's, and `T`'s annotation. -/
+structure Guard where
+  param : Nat
+  asserts : Bool
+  type : Json
+
 mutual
 inductive Expr where
   | var (pos : Span) (name : String)
@@ -268,7 +282,7 @@ inductive Expr where
   `call` for any other (`Invoke`). -/
   | lambda (pos : Span) (receiver : Option (Json × Invoke)) (typeParams : List TypeParam)
       (params : List (String × Json)) (defaults : List (Nat × Expr)) (rest : Bool)
-      (result : Option Json) (body : Expr)
+      (result : Option Json) (guard : Option Guard) (body : Expr)
   /-- A class value: its constructor `lambda` as construct-only code, and its
   static fields, each the binding its initializer bound, in member order. -/
   | ctor (pos : Span) (lam : Expr) (statics : List (PropKey × Expr))
@@ -373,12 +387,14 @@ def iterateName : String := "%Iterate%"
 
 /-- The iteration intrinsics, one per kind of host iterable (`intrinsics.mts`):
 an array's, a string's (by code point), a `Set`'s, a `Map`'s, a host
-collection iterator's, and the entries a `for...in` over a dictionary visits.
+collection iterator's, a native regex's match iterator, and the entries a
+`for...in` over a dictionary visits.
 Each is `() => { readonly value: E } | null` of the iterable at its
 signature; none has a `return`, so an early exit calls nothing. A loop names
 one of them and no other value. -/
 def iterateNames : List String :=
-  [iterateName, "%Iterate:string%", "%Iterate:Set%", "%Iterate:Map%", "%Iterate:Iterator%", "%Iterate:ForIn%"]
+  [iterateName, "%Iterate:string%", "%Iterate:Set%", "%Iterate:Map%", "%Iterate:Iterator%",
+    "%Iterate:RegExpString%", "%Iterate:ForIn%"]
 
 /-- The name an optional chain's body reads its saved receiver by: no source
 identifier is spelled so. -/
@@ -390,7 +406,7 @@ executable source form cannot bypass parameter-initialization checks. -/
 partial def Expr.freeNames : Expr → List String
   | .var _ n => [n]
   | .lit .. => []
-  | .lambda _ receiver _ ps ds _ _ b =>
+  | .lambda _ receiver _ ps ds _ _ _ b =>
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
@@ -424,7 +440,7 @@ span, the name, as `freeNames` binds names, and the explicit type arguments
 written on the call. -/
 partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   | .var .. | .lit .. => []
-  | .lambda _ _ _ ps ds _ _ b =>
+  | .lambda _ _ _ ps ds _ _ _ b =>
     ((ds.flatMap fun d => d.2.callees) ++ b.callees).filter
       (fun c => !(ps.map Prod.fst).contains c.2.2.1)
   -- A read off a name instantiates it, as a call does, where it is a
@@ -557,7 +573,7 @@ def Expr.span : Expr → Span
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
   | .arrayLit p _ _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
 
 /-- What evaluating an assignment target's reference evaluates: a field's
 receiver, then its key; nothing for a local. -/
@@ -602,6 +618,8 @@ structure Fn where
   object, as a call of sloppy code does; a leading `this` parameter is the
   receiver. -/
   convertsReceiver : Bool
+  /-- The promise its result annotation states, beside its plain result `ret`. -/
+  guard : Option Guard := none
 
 private def decodeArith (j : Json) : Except String Arith := do
   match ← jStr j with
@@ -698,6 +716,14 @@ def decodeLabel (j : Json) : Except String (Option String) := do
   match ← jField j "label" with
   | .null => pure none
   | l => some <$> jStr l
+
+/-- A guard's promise as the Fragment states it, or none. -/
+def decodeGuard : Json → Except String (Option Guard)
+  | .null => pure none
+  | g => do
+    fieldsExactly g ["param", "asserts", "type", "span"]
+    let some param := (← jField g "param").getNat?.toOption | throw "a guard's parameter is a position"
+    return some ⟨param, ← (← jField g "asserts").getBool?, ← jField g "type"⟩
 
 mutual
 partial def decodeExpr (j : Json) : Except String Expr := do
@@ -915,7 +941,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- whose constructor this one's code is (`decodeBindings`).
     let lam ← decodeExpr (← jField j "lambda")
     match lam with
-    | .lambda _ none [] _ [] false _ _ | .var .. => pure ()
+    | .lambda _ none [] _ [] false _ _ _ | .var .. => pure ()
     | _ => throw "a class value is a constructor lambda with plain parameters"
     -- Its static fields, each read from the binding its initializer bound,
     -- under a name a source property spells; the list is left out when
@@ -944,7 +970,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- the unique encoding of the former, necessarily empty list.
     let (typeParams, receiver) ← match (j.getObjVal? "typeParams").toOption with
       | some raw => do
-        fieldsExactly j ["k","pos","typeParams","receiver","params","result","body"]
+        fieldsExactly j ["k","pos","typeParams","receiver","params","result","guard","body"]
         -- An ordinary function records its receiver annotation and whether
         -- its code is strict, which decides its code's kind below.
         let receiver ← match ← jField j "receiver" with
@@ -987,8 +1013,11 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- A result the source does not annotate is null: the producer's claim
     -- at the closure proposes it, and every claimed arrow's body is checked.
     let result ← jField j "result"
+    let guard ← match (j.getObjVal? "guard").toOption with
+      | some g => decodeGuard g
+      | none => pure none
     return .lambda p receiver typeParams params defaults (!restAt.isEmpty)
-      (if result == .null then none else some result) body
+      (if result == .null then none else some result) guard body
   | "conditional" =>
     return .ifBody p (← decodeExpr (← jField j "cond"))
       (← decodeExpr (← jField j "then")) (← decodeExpr (← jField j "else_"))
@@ -1118,8 +1147,9 @@ end
 
 
 def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
+  fieldsExactly j ["name", "namePos", "typeParams", "params", "retType", "guard", "body", "strict"]
   let typeParams ← decodeTypeParams (← jArr j "typeParams")
-  return (⟨← jStr (← jField j "name"), ← jSpan j "namePos",
+  let fn : Fn := ⟨← jStr (← jField j "name"), ← jSpan j "namePos",
     ← (← jArr j "params").mapM (fun p => do
       let rest ← match (p.getObjVal? "rest").toOption with
         | none => pure false
@@ -1127,7 +1157,9 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
           if !(← b.getBool?) then throw "a rest parameter is marked by `true`"
           pure true
       return ⟨← jStr (← jField p "name"), ← jField p "type", rest⟩),
-    ← jField j "retType", ← (← jArr j "body").mapM decodeStmt, !(← (← jField j "strict").getBool?)⟩, typeParams)
+    ← jField j "retType", ← (← jArr j "body").mapM decodeStmt, !(← (← jField j "strict").getBool?),
+    ← decodeGuard (← jField j "guard")⟩
+  return (fn, typeParams)
 
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
   fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions"]

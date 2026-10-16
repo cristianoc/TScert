@@ -54,11 +54,11 @@ Why:
   After:
     <the new form>
 
-Example (ts):
-    <the program, at most 10 lines>
-
 Effect:
-    <unit or case>   <old outcome> → <new outcome>
+    <case>   <kind>   <old outcome> → <new outcome>   <reason>
+
+Example (ts):   (only for a program that is no pipeline case)
+    <the program, at most 10 lines>
 
 Gap:        (optional) what stays unsupported, and what it needs
 Soundness:  (optional) why the change is sound, or where it is proved
@@ -78,8 +78,21 @@ Co-Authored-By: <attribution>
 
 - **Kinds:** `Rule`, `Semantics`, `Definition`, `Typing` (rendered as
   mathematics), `Lowering` (source ⇝ term), `Refusal`, `Trust`, `Wire`,
-  `Docs` (prose), `Example`, `Counterexample` (code). An added or removed
-  object has one form; a modified one has `Before:` and `After:`.
+  `Docs` (prose), `Example`, `Counterexample` (code), `Tooling` (lines as
+  written). An added or removed object has one form; a modified one has
+  `Before:` and `After:`.
+- **The object names its stage and its concept:** the parser's gate, the type
+  reader, the producer, a lowering, a Lean rule, the verifier's CLI, tooling.
+  `Definition modified (type reader: the members of a union)`, not
+  `Definition modified (members of a decided union)`.
+- **A `Definition` is a concept stated formally:** `name(args) ⟺ …` or
+  `name(x) = …`, by cases where it has them, each symbol defined where it
+  appears. A sentence about a concept is prose, not a definition: state the
+  concept, or describe the change under another kind.
+- **`Tooling`** is a change to how the project is built, tested or laid out:
+  the runner, a make target, a script, the module structure. It is never a
+  `Definition`, since it changes no concept of the calculus or the pipeline.
+  Its lines are kept as written, aligned columns included.
 - **Sections** are a line `Name:` at the start of a line, followed by text or
   an indented block (2 spaces for `Before:`/`After:`, 4 for content).
 - **Mathematics is Unicode, never TeX.** An inference rule is its premises
@@ -89,8 +102,24 @@ Co-Authored-By: <attribution>
   and superscripts; an indented line continues the formula above.
 - **A lowering line** is `<TypeScript form> ⇝ <term>`; `label: …` lines
   (`true branch: …`) are side conditions; a trailing `(…)` is a note.
-- **Effect lines** are `<unit or case>   <old> → <new>`, three or more spaces
-  apart.
+- **The examples are the Effect lines.** Each line is one pipeline case,
+  its fields three or more spaces apart: the case's name in
+  `pipeline/cases.mts`, its kind (`positive`, `negative`, `gap`), its outcome
+  before and after (`verified`, `refused`, `gap`; `new` before for an added
+  case, `removed` after for a deleted one), and the reason in a few words: the
+  refusal's obligation, or what the case shows. `⚠` after the old outcome
+  marks it unsound, an acceptance of a program that is not safe. The
+  renderer reads each case's program and expected diagnostic from the
+  commit, so a line expands to its source with the refused span marked:
+
+  ```
+  Effect:
+      invalid-computed-conditional-bound   negative   verified ⚠ → refused   number ≤ string at B<number>
+      named-tuple-members                  positive   new → verified          plain, optional and rest members
+  ```
+
+  An `Example (ts)` block is only for a program that is no case; a case's
+  source is never copied into the record.
 - **The final block is git trailers**: `Key: value` lines, continuation lines
   indented by one space, nothing after them. `git interpret-trailers --parse`
   must read every key. Every behaviour change states `Outcome` and `Trust`.
@@ -114,9 +143,6 @@ node dev/commit-records.mts --out review.html <base>..<tip>...
   depends) and the files more than one range changes.
 - `--fragment` omits the document skeleton, for publishing with the Artifact
   tool. The page uses no script and no external data.
-- A note on `refs/notes/records` overrides the commit message's record. Use
-  it only for what is added after a commit exists; the record itself belongs
-  in the commit message.
 
 ## When to produce a review
 

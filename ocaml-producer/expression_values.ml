@@ -314,8 +314,23 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
       (* A target of several signatures, `next(...[value]: [] | [TNext])`, is
          bound at the first that takes the prefix: the bound function's claim
          is one signature, which Lean selects among the target's. *)
-      let fits (s:Semantic.signature) = s.quantified=[] && s.rest_pack=None && (s.variadic<>None
+      let fits (s:Semantic.signature) = Semantic.plain_effect s.call_effect && s.quantified=[] && s.rest_pack=None && (s.variadic<>None
         || List.length args<=List.length s.params) in
+      (* A promise about a parameter past the prefix stays, about the same
+         actual's new position (Lean's `Effect.keeps`, `Effect.drop`). *)
+      let n = List.length args in
+      let kept (plain:Semantic.signature) = match callee with
+        | Atoms [Shape {calls;_}] -> List.filter_map (fun (s:Semantic.signature) ->
+            let shifted = match s.call_effect with
+              | Guards p when p >= n -> Some (Semantic.Guards (p - n))
+              | Asserts p when p >= n -> Some (Semantic.Asserts (p - n))
+              | _ -> None in
+            (match shifted with
+             | Some promise when s.params=plain.params && s.receiver=plain.receiver && s.variadic=None
+                 && s.quantified=[] && s.rest_pack=None ->
+               Some (promise,s.result)
+             | _ -> None)) calls
+        | _ -> [] in
       let callee = match callee with
         | Atoms [Shape ({calls=_::_::_ as calls;_} as shape)] when List.exists fits calls ->
           Atoms [Shape {shape with calls=[List.find fits calls]}]
@@ -335,7 +350,13 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
         let rest = prefix signature.params args in
         (match signature.variadic with
          | Some element -> variadic_arrow ~call_effect:signature.call_effect rest element signature.result
-         | None -> arrow ~call_effect:signature.call_effect rest signature.result)
+         | None ->
+           let promises = List.concat_map (fun (promise,result) -> match arrow ~call_effect:promise rest result with
+             | Atoms [Shape {calls;_}] -> calls
+             | _ -> []) (kept signature) in
+           (match arrow ~call_effect:signature.call_effect rest signature.result with
+            | Atoms [Shape shape] when promises <> [] -> Atoms [Shape {shape with calls=shape.calls @ promises}]
+            | t -> t))
       | _ -> Proposal_diagnostics.unsupported "bind requires a single arrow and a valid argument prefix")
     | Conditional (c,a,b) -> ignore (expr env c);
       let left = expr ?expected env a in
