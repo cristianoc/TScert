@@ -1252,6 +1252,28 @@ for (const [file, arity, accepted] of [
   clause.arrs.arrows = clause.arrs.arrows.filter((_, i) => kept[i]);
   arrow.rows = arrow.rows.filter((_, i) => kept[i]);
   const forged = writeClaims(artifacts, "forged-unoffered-promise", claims);
-  refusedAt(artifacts, forged, "forged-unoffered-promise", "a guard closure's claim must offer its written promise");
+  refusedAt(artifacts, forged, "forged-unoffered-promise", "a guard closure's claim must offer its written promise over its annotated parameters");
   process.stdout.write("guard closure claimed without its promise: refused\n");
+}
+
+{
+  // A closure's written promise is about every input its annotation admits:
+  // with `isNumber`'s promise signature claimed at the parameter `number`,
+  // where it holds of every argument, the closure is refused.
+  const artifacts = run("type-guards");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("(v: unknown): v is number =>");
+  const init = must(claims.init, "the module's claims");
+  const arrow = must(init.arrows?.find((a) => a.pos[0] === at), "isNumber's arrow claims");
+  const claim = must(init.expressions.find((e) => e.pos[0] === at && e.pos[1] === arrow.pos[1]), "isNumber's claim");
+  const label = Array.isArray(claim.type) && claim.type.length === 1 ? claim.type[0] : undefined;
+  assert.ok(typeof label === "number", "isNumber is claimed at one row");
+  const clause = must(claims.types[label]?.[0], "isNumber's row");
+  assert.ok(typeof clause === "object" && "arrs" in clause, "isNumber is claimed at arrows");
+  const promise = must(clause.arrs.arrows.find((a) => typeof a.effect === "object"), "isNumber's promise signature");
+  promise.arguments = [promise.result];
+  const forged = writeClaims(artifacts, "forged-narrowed-promise", claims);
+  refusedAt(artifacts, forged, "forged-narrowed-promise", "a guard closure's claim must offer its written promise over its annotated parameters");
+  process.stdout.write("guard closure's promise claimed over a narrower parameter: refused\n");
 }

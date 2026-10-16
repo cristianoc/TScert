@@ -1932,8 +1932,9 @@ Binding a prefix of a guard's actuals (`g.bind(r, …)`) keeps a promise about
 an actual past the prefix, at its new position.
 
 A closure's written promise is proved whatever its claim offers: one of the
-signatures its code is checked at states that promise, at a type within the
-written one, or the closure is refused.
+signatures its code is checked at states that promise over the annotation's
+whole domain, admitting every receiver and argument the annotation admits,
+at a type within the written one, or the closure is refused.
 
 An imported guard is read at its declared type, both signatures; its promise
 is the import assumption of [the trust surface](DESIGN.md#trust-surface),

@@ -261,13 +261,18 @@ scheme row's variadic signatures. -/
       if !ProgramTyping.kindOffers G .sloppy R then
         throw (locatedRefusal T pos .bindingAnnotation Fragment.sloppyReceiverReason)
   -- A written promise is proved whatever the claim offers: some signature
-  -- the code is checked at states it, at a type within the written one.
+  -- the code is checked at states it over the annotation's whole domain,
+  -- every receiver and every argument the annotation admits, at a type
+  -- within the written one.
   if let some g := guard then
     let promised ← lower (Fragment.translate g.type)
     let effect : CallEffects.Effect := if g.asserts then .asserts g.param else .guards g.param
-    let reason := "a guard closure's claim must offer its written promise"
-    let some row := rows.find? (·.effect == effect)
+    let reason := "a guard closure's claim must offer its written promise over its annotated parameters"
+    let some row := rows.find? (fun r => r.effect == effect && r.arguments.length == arity)
       | throw (locatedRefusal T pos .bindingAnnotation reason)
+    requireWithin T pos .bindingAnnotation Rsource row.receiver reason
+    for (D, B) in row.arguments.zip sourceDs do
+      requireWithin T pos .bindingAnnotation B D reason
     requireWithin T pos .bindingAnnotation row.result promised reason
   if !overlays.isEmpty && overlays.length != rows.length then
     throw "per-arrow interior claims do not match the claimed arrows"
