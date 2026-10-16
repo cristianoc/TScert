@@ -48,6 +48,7 @@ All fields are explicit; object field order is immaterial.
 | `result`  | The required result type of the graph.                                                                                        |
 | `start`   | The designated control-flow entry label.                                                                                      |
 | `inputs`  | External argument types in slot order. The designated entry context must equal this contract. Use `[]` for closed invocation. |
+| `promise` | `null`, or a guard's promise `[asserts, [slot, T]]`: the returns establish a type guard's `true` or `false` (`asserts` false) or an assertion function's `undefined` (true), each `true` or `undefined` with the input in entry slot `slot` a value of `T`; `result` is then the plain result. |
 
 A type is a list of type labels, interpreted as their union. The empty list
 means bottom. Every label, including labels in unused type definitions and
@@ -76,8 +77,11 @@ Each type-graph node is a union of clauses:
 | Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                  | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false,"presence":"dense"},"rest":[]}}` |
 
 The arrow example contains two signatures, each with one argument and the
-receiver label 5. Every signature carries `effect: "unrestricted"` or
-`effect: "preservesInputHeap"`; omission is refused. Host-relative method
+receiver label 5. Every signature carries `effect: "unrestricted"`,
+`effect: "preservesInputHeap"`, `effect: {"guards":{"param":p}}` or
+`effect: {"asserts":{"param":p}}`, the last two with the promise's type as
+the result ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts));
+omission is refused. Host-relative method
 signatures use the same record with `receiver: {}`. A record clause's
 `methods` lists its members as `{"key","calls","rests","schemes","receivers"}`:
 the fixed and variadic signatures, the quantified ones as scheme types, and
@@ -349,6 +353,16 @@ field `other` of the object in `value` are different locations, a timeless fact
 established by allocation, since fresh locations differ from every field of
 every record-typed slot in scope, and the reason a write to one cell keeps
 facts about another. These are finite state assertions, not extra type labels.
+Nodes also contain `implies`, `yields`, `arguments` and `promise`, which
+only a request's `promise` makes other than empty or `null`. `implies` lists `{test, target, type}`: where the Boolean in
+slot `test` is `true`, slot `target` holds a `type`; incoming edges must
+establish them. `yields` lists `{conditional, target, type, evidence}`: what
+the node's result promises of slot `target`, where it is `true`
+(`conditional`) or wherever the expression returns, with the subtype
+evidence a tag test's slice needs. `arguments` lists the entry slots holding
+the promised input. At a return, `promise` is `null` or `[slot, proof]`:
+one of those slots and a subtype proof that its type, refined by the
+yields, is within the promise.
 `effect: null` selects ordinary expression evidence; a non-null effect selects
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`, `reading`,
 `typedRead`, `observedRead`, `slicedRead`, `knownValue`, `created`, `allocated`, `written`).

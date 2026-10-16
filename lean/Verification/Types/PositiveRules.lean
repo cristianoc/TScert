@@ -568,7 +568,7 @@ inductive CallArrow (compat : ι → ι → Bool) (elem : List ι → Option (Li
   | combine : CallArrow compat elem R L S { q with result := b, effect := e } →
       CallArrow compat elem R L S { q with result := b', effect := e' } →
       (∀ i ∈ b, ∀ k ∈ b', compat i k = true → R [i] q.result) →
-      (e.meet e').covers q.effect = true → CallArrow compat elem R L S q
+      e.sameResult e' = true → (e.meet e').covers q.effect = true → CallArrow compat elem R L S q
 
 /-- An arrow's source result within the target's, or empty. -/
 theorem arrow_result {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop} {n : Nat} {r d : List ι}
@@ -621,8 +621,8 @@ theorem CallArrow.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R L S q}
     rcases List.mem_append.mp hi with hi | hi
     · exact hl j hj U hx hu heap hok r hrv ⟨i, hi, hvi⟩ args hvals ha
     · exact hh j hj U hx hu heap hok r hrv ⟨i, hi, hvi⟩ args hvals ha
-  | combine _ _ hg he hl hh =>
-    have combined := hl.combine hh (fun j hj r hb V V' heap h1 h2 u hv1 hv2 => by
+  | combine _ _ hg hs he hl hh =>
+    have combined := hl.combine hs hh (fun j hj r hb V V' heap h1 h2 u hv1 hv2 => by
       obtain ⟨i, hi, hv1⟩ := hv1
       obtain ⟨k, hk, hv2⟩ := hv2
       exact hr r (by omega) _ _ (hg i hi k hk (mixed_compatible hv1 hv2)) V u
@@ -1174,8 +1174,10 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
         exact ArgsShort_of_exact this
     obtain ⟨result, hi, hsafe⟩ := hv j hj U hx hu heap hh r hrv
       (hr j hj _ _ hrecv U r hrm) args hvals (Domains.short (hr j hj) hd hall)
-    exact ⟨result, hi, HeapObservations.consequence_below (fun m hm V u hu => hr m (by omega) _ _ hres V u hu)
-      (Effect.covers_sound heff heap) hsafe⟩
+    exact ⟨result, hi, HeapObservations.consequence_below (fun m hm V u hu =>
+        (Effect.covers_sound heff).2 _ args m V u (Effect.result_mono p.effect
+          (fun u hu => hr m (by omega) _ _ hres V u hu) (fun u hu => hr m (by omega) _ _ hres V u hu) hu))
+      ((Effect.covers_sound heff).1 heap) hsafe⟩
   · exact hc.elim
 
 /-- A position covered by another: a present source position needs a target
@@ -2199,8 +2201,9 @@ theorem bound_sigs_sound [DecidableEq ι] {G : NormalGraph ι} {θ : MixedAssign
       (Ds := p.arguments.map (mixedValues G θ))
       (R := mixedValues G θ p.result)
       (fs := []) (oid := oid) (pre := []) (hadm p.receiver) (by simp)
-      (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm b)
+      (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm b) (Effect.keeps_zero _)
       (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hc) hval.1 hval.2 hrv trivial (by simp [CallArguments.Values]) (by simp)
+    simp only [List.length_nil, Effect.drop_zero] at hbd
     refine ⟨hbd.1, fun y hy => ?_⟩
     cases List.mem_singleton.mp hy
     exact (hbd.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
@@ -2217,10 +2220,11 @@ theorem bound_sigs_sound [DecidableEq ι] {G : NormalGraph ι} {θ : MixedAssign
       (R := mixedValues G θ p.result)
       (fs := []) (oid := oid) (pre := []) (hadm p.receiver)
       (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm b)
-      (hargsAdm p.arguments.2) hc hval.1 hval.2 hrv
+      (hargsAdm p.arguments.2) (Effect.keeps_zero _) hc hval.1 hval.2 hrv
       (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
       (fun _ _ _ _ ys hys => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hys)
       (by simp [CallArguments.Values]) (by simp)
+    simp only [List.length_nil, Effect.drop_zero] at hbd
     refine ⟨hbd.1, fun y hy => ?_⟩
     cases List.mem_singleton.mp hy
     exact ((by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hbd.2 _ (List.mem_singleton_self _)) :

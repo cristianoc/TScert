@@ -523,10 +523,19 @@ result takes the rest, at any receiver, since invoking it drops the receiver it
 is given (`CallCode.bound`, `callsT_bound`):
 
 ```math
-\frac{\Gamma(f)=F\quad(R,\vec P\,\vec D,B)\in\mathrm{callSigs}_G(F)
-      \quad\Gamma(r)=R\quad\Gamma(\vec p)=\vec P}
-     {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):(Q;\vec D\to B)}
+\frac{\Gamma(f)=F\quad\Gamma(r)=R\quad\Gamma(\vec p)=\vec P\quad
+      \forall i.\ (R,\vec P\,\vec D_i,B_i,\epsilon_i)\in\mathrm{callSigs}_G(F)}
+     {\Gamma\vdash_G\mathsf{bound}(f,r,\vec p):\textstyle\bigwedge_i (Q_i;\vec D_i\to B_i)\,[\epsilon_i\!\downarrow_{|\vec p|}]}
 ```
+
+The bound function meets each of the selected signatures, one or more, and
+keeps each one's effect. A promise about
+the $`p`$-th parameter (`guards p`, `asserts p`) survives only where
+$`p\ge|\vec p|`$, and is then about parameter $`p-|\vec p|`$ (`Effect.keeps`,
+`Effect.drop`). A call rule (`app`, `callCallable`, `callRest`,
+`callPacked`) applies a signature whose result family is its result type
+(`Effect.plain`); a promise signature is consumed by the narrowing after a
+call ([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)).
 
 A method member is host-relative: its contract holds when it is invoked on
 the object it is read from ([Source model](SOURCE-MODEL.md#method-members-are-host-relative)).
@@ -1987,9 +1996,19 @@ supplied input context $`\Gamma_0`$, with an empty input fact context.
 \land\;\mathrm{HeapOk}(n,W,h)
 \\
 \Longrightarrow\quad
-\mathrm{SafeGraph}_P(⟦R⟧_G,n,W,h,\mathrm{at}(p,\rho)).
+\mathrm{SafeGraph}_P(⟦R⟧_G^{\rho},n,W,h,\mathrm{at}(p,\rho)).
 \end{gathered}
 ```
+
+$`R`$ is the graph's goal: a result type, whose meaning is $`⟦R⟧_G`$, or a
+guard's promise about the input in entry slot $`s`$, whose meaning relates the
+returned value to $`\rho(s)`$ as the
+[promise effects](SEMANTICS.md#effect-qualified-call-contracts) state
+(`ControlFlow.GoalHolds`). Under a promise goal, a return checks its answer
+and, where that answer is `true` or `undefined`, that a slot still holding the
+input has a type within the promise once the returned value's yields refine
+it (`checkReturnResult`); the slots holding the input, and the implications a
+Boolean slot carries, are node evidence the edges transfer.
 
 [`SafeGraph` and the machine state $`\mathrm{at}(p,\rho)`$](SEMANTICS.md#computations-and-recursive-types)
 are the graph-level analogues of `Safe`: the run starts at the entry label with

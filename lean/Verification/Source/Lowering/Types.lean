@@ -548,12 +548,20 @@ def moduleArrow (g : Fragment.Fn) : Except String Json := do
         | some e => pure (fixed.map (·.ty), [("rest", e)])
         | none => pure (fixed.map (·.ty) ++ (← Fragment.tupleRequired p.ty), [])
     | none => pure ([], [])
-  let signature (rest : List (String × Json)) :=
+  let signature (rest : List (String × Json)) (result : Json) (effect : List (String × Json)) :=
     [("a", toJson "function"), ("this", receiver), ("params", toJson positions)] ++ rest ++
-      [("result", g.ret), ("construct", toJson "unknown"), ("array", toJson "unknown")]
-  let discarding := if params.any (·.rest) then []
-    else [("and", toJson [Json.mkObj (signature [("rest", top)])])]
-  return Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj (signature rest ++ discarding)])]
+      [("result", result), ("construct", toJson "unknown"), ("array", toJson "unknown")] ++ effect
+  -- A guard's promise is a signature of its own, beside the plain one, its
+  -- result the promise's type.
+  let promised : List (Json × List (String × Json)) := match g.guard with
+    | some guard => [(guard.type, [("effect", toJson (if guard.asserts then CallEffects.Effect.asserts guard.param
+        else .guards guard.param))])]
+    | none => []
+  let extra := promised.map (fun (result, effect) => Json.mkObj (signature rest result effect)) ++
+    if params.any (·.rest) then []
+    else ((g.ret, []) :: promised).map fun (result, effect) => Json.mkObj (signature [("rest", top)] result effect)
+  let conjuncts := if extra.isEmpty then [] else [("and", toJson extra)]
+  return Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj (signature rest g.ret [] ++ conjuncts)])]
 
 /-- The same values with each label that is a union row, a declaration such as
 `type Maybe = number | undefined`, replaced by one label per clause: a tag

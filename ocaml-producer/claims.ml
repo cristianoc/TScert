@@ -40,6 +40,8 @@ let unsupported s = fail ("unsupported: " ^ s)
 let effect_json = function
   | Unrestricted -> String "unrestricted"
   | PreservesInputHeap -> String "preservesInputHeap"
+  | Guards param -> Object ["guards",Object ["param",int param]]
+  | Asserts param -> Object ["asserts",Object ["param",int param]]
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]

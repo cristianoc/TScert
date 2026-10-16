@@ -201,8 +201,12 @@ makes `o` and `r` binders of the same scheme;
 `this` is the required receiver type, `params` is the fixed parameter list,
 and `rest` is `null` or the surplus-element type. Binder names resolve
 lexically; a nested scheme's binders hide outer binders of the same names.
-The effect is `unrestricted` or `preservesInputHeap`. The latter promises
-that execution preserves the input heap and requires corresponding evidence.
+The effect is `unrestricted`, `preservesInputHeap`, `{"guards":{"param":p}}`
+or `{"asserts":{"param":p}}`. `preservesInputHeap` promises that execution
+preserves the input heap; `guards` and `asserts` promise the `p`-th actual a
+value of the result, on a `true` result or a normal return
+([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). Each requires
+corresponding evidence.
 
 A call expression can propose an instance with:
 

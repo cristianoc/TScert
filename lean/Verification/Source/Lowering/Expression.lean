@@ -459,13 +459,21 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- with an element rest leaves the positions the prefix did not take, then
     -- its rest, the prefix's positions past the fixed ones at the element.
     let (Rt, prefixTys, own, rule) ← match PositiveRules.expand G A with
-      | [.arrs [⟨Rb,Ds,_,_⟩] []] => do
+      | [.arrs (⟨Rb,Ds,_,_⟩ :: claimed) []] => do
         let L ← match PositiveRules.expand G callee.type with
           | [.arrs L _] | [.callable _ _ L _] => pure L
           | _ => throw "bind target requires a single callable contract"
         let ⟨Rt,domains,result,effect⟩ ← selectSignature G L (boundTypes ++ Ds) receiverPlan.type
         if domains.length < n then throw "bind prefix exceeds the target's parameters"
-        let own ← lower (SourceTypes.use (.arrs [⟨Rb, domains.drop n, result, effect⟩] []))
+        -- Each further claimed signature is another of the target's at the
+        -- same receiver and prefix: a promise about a parameter past the
+        -- prefix, which the bound function keeps.
+        let further ← claimed.mapM fun ⟨Rc, Dc, _, ec⟩ => do
+          let some s := L.find? fun s => s.receiver == Rt && s.arguments.take n == domains.take n &&
+              s.arguments.drop n == Dc && s.effect.keeps n && s.effect.drop n == ec
+            | throw "a bound function's further signature is none of its target's past the prefix"
+          pure (⟨Rc, s.arguments.drop n, s.result, s.effect.drop n⟩ : Arrow (Ty Tree))
+        let own ← lower (SourceTypes.use (.arrs (⟨Rb, domains.drop n, result, effect.drop n⟩ :: further) []))
         pure (Rt, domains.take n, own, ProgramCertificates.Rule.bindE)
       | [.arrs [] [⟨Rb,_,_,_⟩]] => do
         let sigs := ProgramTyping.restSigs G callee.type
@@ -758,7 +766,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     -- passes, then the parameters, allocated with its code field and its
     -- static fields, each at the contract its claim states, in member order
     -- (`Rule.ctorGraph`).
-    let .lambda _ none [] _ [] false (some _) _ := lam
+    let .lambda _ none [] _ [] false (some _) _ _ := lam
       | throw "a class value is a constructor lambda with plain parameters"
     let P ← match PositiveRules.expand G A with
       | [.ctors _ _ P []] => pure P

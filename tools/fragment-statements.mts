@@ -1225,14 +1225,16 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
   const typeParams = gate.enterTypeParams(node.typeParameters, undefined, true);
   try {
     gate.asyncBody = isAsync;
-    const promise = gate.guards.get(node.name.text);
-    const { retType, parameterTypes } = gate.headerTypes(() => ({
-      // A guard is called at its plain result; its promise is its own unit's.
-      retType: promise ? guardResult(promise) : gate.typeOf(node.type),
+    const { retType, guard, parameterTypes } = gate.headerTypes(() => {
+      const guard = gate.guardOf(node);
+      return {
+      retType: guard ? guardResult(guard) : gate.typeOf(node.type),
+      guard,
       parameterTypes: node.parameters.map(p => p.dotDotDotToken ? gate.moduleRestType(p, node)
         : p.questionToken || p.initializer ? gate.optionalTypeOf(p.type, p)
         : gate.typeOf(p.type, p)),
-    }));
+      };
+    });
     // A parameter written as a pattern or with a default binds a hidden
     // name, which the caller's argument initializes; a `destructure` over
     // it, first in the body in parameter order, binds the source's names,
@@ -1294,6 +1296,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
       typeParams,
       params,
       retType,
+      guard,
       body: isAsync ? gate.asyncCompletion(node.body, body) : body,
       strict: gate.strict,
     };

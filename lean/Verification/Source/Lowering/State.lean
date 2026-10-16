@@ -111,6 +111,9 @@ private structure GraphFrame where
   /-- The `let` declarations of the graph's body held in cells
   (`cellLocals`), by name and declaring statement. -/
   cells : List (String × Option Span) := []
+  /-- While a type guard's body is compiled: a return is claimed at its
+  value's own type, the answer its promise is checked against. -/
+  answers : Bool := false
 
 /-- Equation growth, obligations and nested code are shared across graph frames. -/
 private structure Built extends GraphFrame where
@@ -255,6 +258,15 @@ def withOwnedWrite (source : Span) (enabled : Bool) (action : Compiler α) : Com
 def withHandler (handler : Option (Target × Nat)) (action : Compiler α) : Compiler α :=
   scopeState (fun s => { s with handler := handler })
     (fun before after => { after with handler := before.handler }) action
+
+/-- The body compiled in the scope is a type guard's when `answers` holds. -/
+def withAnswers (answers : Bool) (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with answers := answers })
+    (fun before after => { after with answers := before.answers }) action
+
+/-- The claim of a return of a value of type `A` in a body returning `R`. -/
+def returnClaim (A R : Ty ι) : Compiler (Ty ι) := do
+  return if (← readBuilt (·.answers)) then A else R
 
 def currentHandler : Compiler (Option (Target × Nat)) := readBuilt (·.handler)
 

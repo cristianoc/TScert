@@ -137,7 +137,7 @@ def selectedCallPreserves : Evidence ι → Bool
   | .node _ (.sub _) [p] => selectedCallPreserves p
   | _ => false
 
-private theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
+theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {Γ : List (Ty ι)}
     {ps : List (Sequent ι)} {ρ n W h}
     (ht : ∀ p ∈ ps, HasTyUsing G images Γ p.term p.type)
@@ -189,7 +189,7 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     split at hL
     · rename_i L S hF
       have hf := ((represents_raw hF (n+1) W _ ) (member jf (by simp))).1
-      have hp := hf.2 _ (List.mem_map_of_mem hL)
+      have hp := hf.2 _ (List.mem_map_of_mem hL.1)
       simp only [CallEffects.Arrow.map, CallEffects.Contract.map, List.map_map,
         Function.comp_def] at hp
       have hArgs := argument_values (ps := jas)
@@ -237,7 +237,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     cases r <;> try simp only [selectedCallPreserves] at hp <;> try contradiction
     case app effect =>
       cases effect with
-      | unrestricted => contradiction
+      | unrestricted | guards _ | asserts _ => contradiction
       | preservesInputHeap =>
         apply call_local_sound ht.1 _ _ he hw hh
         · intro p hm

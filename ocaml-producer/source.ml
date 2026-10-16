@@ -3,6 +3,17 @@ open Semantic
 let unsupported s = fail ("unsupported: " ^ s)
 let text k j = str (field k j)
 let items k j = list (field k j)
+let natural j = match j with
+  | Number n -> (match int_of_string_opt n with Some i when i >= 0 -> i | _ -> fail "expected a natural number")
+  | _ -> fail "expected a natural number"
+(* A signature's effect, as the wire spells it: a heap effect's name, or a
+   promise naming its parameter. *)
+let effect_of = function
+  | String "unrestricted" -> Unrestricted
+  | String "preservesInputHeap" -> PreservesInputHeap
+  | Object [("guards",Object [("param",p)])] -> Guards (natural p)
+  | Object [("asserts",Object [("param",p)])] -> Asserts (natural p)
+  | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None
   | Object fields as slots ->
@@ -215,9 +226,7 @@ let rec source_type ctx j =
       | Null -> None,None
       | t when is_pack t -> None,Some (source_pack ctx (field "of" t))
       | t -> Some (recur t),None in
-    let call_effect = match text "effect" j with
-      | "unrestricted" -> Unrestricted | "preservesInputHeap" -> PreservesInputHeap
-      | _ -> unsupported "unknown callable effect" in
+    let call_effect = effect_of (field "effect" j) in
     let signature = {call_effect;quantified=[];receiver;
       params=List.map recur (items "params" j);
       variadic;rest_pack;
@@ -389,6 +398,14 @@ let literal j = match text "a" j with
   | "bigintlit" -> LBigint (text "v" j)
   | k -> unsupported ("literal " ^ k)
 let optional_type binders = function Null -> None | j -> Some (source_type binders j)
+(* A guard's promise as the Fragment states it: the parameter it is about, by
+   position among the actuals, and its type. *)
+let guard_of binders = function
+  | Null -> None
+  | j ->
+    let param = natural (field "param" j) in
+    Some ((if boolean (field "asserts" j) then Asserts param else Guards param),
+      source_type binders (field "type" j))
 let span_start j = match list j with
   | Number n :: _ -> int_of_string n
   | _ -> Json.fail "empty source span"
@@ -476,7 +493,10 @@ and expr_node =
      arrow, whose `this` is the enclosing one. *)
   (* The result is none where the source states no result annotation: the
      producer proposes it, and Lean checks the body against that claim. *)
-  | Lambda of ty option * quantifier list * (string * ty) list * (int * expr) list * bool * ty option * expr
+  (* A guard closure's promise, its result annotation `x is T` or `asserts x
+     is T`: the promise signature's effect and type, beside the plain result. *)
+  | Lambda of ty option * quantifier list * (string * ty) list * (int * expr) list * bool * ty option
+      * (call_effect * ty) option * expr
   (* The positions of the arguments written with `...`: each stands for the
      elements of its operand, read where it is written. The types are the
      explicit type arguments written on the call, if any. *)
@@ -556,7 +576,10 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
               parameter, an argument pack each call instantiates. The rest's
               type in [params] is the parameter's bound, the array the body
               sees. *)
-           rest_pack: rigid option; result: ty; body: stmt list }
+           rest_pack: rigid option; result: ty;
+           (* A guard's promise, beside its plain result: the promise
+              signature's effect and type. *)
+           guard: (call_effect * ty) option; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;
   defaults: ty option list; bases: ty list; expression: ty }
 (* `init` is the module's top-level code, run once after its function
@@ -596,7 +619,7 @@ let rec children e = match e.node with
   | Alloc fs -> List.map snd fs
   | Build parts -> List.map snd parts
   | ArrayLiteral (es,_) -> es
-  | Lambda (_,_,_,defaults,_,_,body) -> List.map snd defaults @ [body]
+  | Lambda (_,_,_,defaults,_,_,_,body) -> List.map snd defaults @ [body]
   | Call (f,r,args,_,_) -> f :: Option.to_list r @ args
   | Invoke (f,args,_,_) | New (f,_,args,_) -> f :: args
   | Apply (f,r,l) -> f :: r :: Option.to_list l
@@ -763,6 +786,7 @@ let rec expr binders j =
           (List.mapi (fun i p -> i,p) parameters),
         rest,
         optional_type inner (field "result" j),
+        guard_of inner (field "guard" j),
         expr inner (field "body" j))
   | "ctor" -> Ctor (sub "lambda",match List.assoc_opt "statics" (obj j) with
       | None -> []
@@ -970,4 +994,5 @@ let decode ast =
       params=List.map (fun p -> text "name" p,param_type p) (items "params" f);
       rest=List.exists (fun p -> List.mem_assoc "rest" (obj p)) (items "params" f);
       rest_pack=Option.map fst pack_rest;
-      result=source_type binders (field "retType" f);body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }
+      result=source_type binders (field "retType" f);guard=guard_of binders (field "guard" f);
+      body=List.map (stmt binders) (items "body" f)}) (items "functions" ast) }

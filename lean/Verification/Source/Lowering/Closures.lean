@@ -43,8 +43,9 @@ state resume afterwards. -/
 @[nospecialize] private partial def closureCode (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree) (pos : Span) (receiver : ScopeBinding Tree)
     (params : List (String × Ty Tree)) (rest : Option (String × (RestEntry Tree)))
     (defaults : List (Nat × Fragment.Expr)) (order : List Nat)
-    (captures : List (ScopeBinding Tree)) (Cs : List (Ty Tree)) (Rt R : Ty Tree) (bodyExpr : Fragment.Expr) :
-    Compiler (Program × Nat × List (PointClaim Tree) × CodeSource) := withFreshGraph do
+    (captures : List (ScopeBinding Tree)) (Cs : List (Ty Tree)) (Rt R : Ty Tree) (bodyExpr : Fragment.Expr)
+    (answers : Bool) :
+    Compiler (Program × Nat × List (PointClaim Tree) × CodeSource) := withFreshGraph <| withAnswers answers do
   -- The layout the rest's array is bound in: the receiver, the parameters,
   -- the array, then the captures. While an expression body has defaults, its
   -- parameters are named where the schedule reaches them.
@@ -91,7 +92,7 @@ state resume afterwards. -/
       -- The expression's nodes, as a `return e` statement's, ending in the
       -- return of its value.
       defaultEntry recursive fc pos params defaults (fun scope Γ => do
-          let done ← emitAt e.span (.var 0) .ret (A::Γ) R "return-contract"
+          let done ← emitAt e.span (.var 0) .ret (A::Γ) (← returnClaim A R) "return-contract"
             (scope := held ⟨"",some e.span⟩ :: scope)
           recursive.compileExpr fc scope Γ e done)
         order 0 layout inputs
@@ -147,7 +148,13 @@ signature's frame, whose certificate the unit's code table records. -/
   let Cs := s.capSlots.map Prod.fst
   let mut code : Option (Program × Nat) := none
   for ((sig, store, restTy), i) in s.rows.zipIdx do
-    let ⟨Rt, Di, Ri, _⟩ := sig
+    let ⟨Rt, Di, Ri, effect⟩ := sig
+    -- A promise signature's result operand is the promise's type; its body
+    -- returns a type guard's Boolean, an assertion function's `undefined`.
+    let Ri ← match effect with
+      | .guards _ => pure [← lower (SourceTypes.use .bool)]
+      | .asserts _ => pure [Labels.undef]
+      | .unrestricted | .preservesInputHeap => pure Ri
     let row := match s.overlays[i]? with
       | some o => fc.withOverlay o
       | none => fc
@@ -162,6 +169,7 @@ signature's frame, whose certificate the unit's code table records. -/
         pure (name, .tuple ((Di.drop s.fixedParams.length).take s.restElements) S restTy)
     let (P, start, claims, source) ←
       closureCode recursive row s.pos receiver ps restEntry s.defaults s.order s.captures Cs Rt Ri s.body
+        (match effect with | .guards _ => true | _ => false)
     match code with
     | some c =>
       if c != (P, start) then

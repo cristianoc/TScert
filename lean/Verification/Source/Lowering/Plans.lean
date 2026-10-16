@@ -332,7 +332,7 @@ other member is read as a field. -/
 /-- The row a field read gives before any claim replaces it: the object's own
 field or view, or, for a key an own-key bound does not admit, its prototype's, as
 `readCell` and the top level's search read it. -/
-@[nospecialize] private def fieldRow (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) :
+@[nospecialize] def fieldRow (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) :
     Option (Ty ι) :=
   match PositiveRules.expand G O with
   | [.refs fs [] vs _ _ ks] => fs.lookup fld <|> vs.lookup fld <|> do

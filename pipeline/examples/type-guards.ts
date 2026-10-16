@@ -1,8 +1,10 @@
-// A guard's promise is checked at its body, and a call narrows its argument
-// by testing it again: over a union of literals, of primitive kinds and of
-// `null`, in a statement, a ternary, a conjunction and a negated early
-// return; a module constant's arrow guard; an assertion function; a guard
-// passed as a plain predicate.
+// A guard's promise is part of its function type, checked at its body and
+// narrowing its argument where a call answers `true`: over a union of
+// literals, of primitive kinds and of `null`, in a statement, a ternary, a
+// conjunction and a negated early return; a module constant's arrow guard; a
+// guard closure; a guard catching its own exception; an assertion function;
+// a guard passed as a plain predicate; a guard bound with `.bind`, which keeps
+// its promise about an actual it does not bind.
 export type Presence = "dense" | "readable" | "sparse";
 
 export function isPresence(value: unknown): value is Presence {
@@ -50,4 +52,31 @@ export function length(v: unknown): number {
 
 export function predicate(): (v: unknown) => boolean {
   return isNumber;
+}
+
+export function size(v: unknown): number {
+  const isString = (x: unknown): x is string => typeof x === "string";
+  return isString(v) ? v.length : 0;
+}
+
+export function isWord(x: unknown): x is string {
+  try {
+    if (typeof x === "string") return true;
+    throw Error("not a string");
+  } catch {
+    return false;
+  }
+}
+
+export function wordLength(v: unknown): number {
+  return isWord(v) ? v.length : 0;
+}
+
+function isLabel(x: unknown): x is string {
+  return typeof x === "string";
+}
+
+export function boundLength(x: unknown): number {
+  const guard = isLabel.bind(undefined);
+  return guard(x) ? x.length : 0;
 }

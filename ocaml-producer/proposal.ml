@@ -73,7 +73,7 @@ let infer ?(state = Proposal_diagnostics.create ()) flows program =
     | [] -> None
     | body -> Some (infer_with (module_functions @ class_selves)
         {quantified=program.Source.init_quantified;name="";name_pos=Json.Null;params=[];rest=false;rest_pack=None;
-         result=Atoms [Undef];body}) in
+         result=Atoms [Undef];guard=None;body}) in
   (* The initialization unit checks both initializer and annotation. Use the
      annotation's offered signatures, retaining effects established by a matching
      initializer signature. Lean makes both checked contracts available. *)

@@ -27,7 +27,7 @@ design, not its progress.
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 14 of 252 verify (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 14 of 245 verify (2026-10-16) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -118,15 +118,11 @@ as a pack and as an array value (`...args: T`, `args: T`): a binder whose instan
 arrays or tuples of required positions, its pack meaning that tuple contract's lists, so an
 entry collects the fresh store at it and a spread of its value gives a list in the pack. Explicit type arguments on an element call,
 which reach an element only as a generic closure's quantified claim.
-User guards and assertion functions: the promise is a contract a
-conjunction of arrows states, `(x: A) => boolean` with
-`(x: Exclude<A, T>) => false` (an assertion function's `=> never`), which the
-body is checked at, as a closure at each of its signatures; a caller narrows
-through a fact the call leaves tying its result slot to its argument slot,
-"an argument in `Exclude<A, T>` gave `false`", which the branch on the
-result turns into a slice of the argument. Such a fact is about a type's
-meaning, world- and level-indexed, where current-content facts are not; it
-needs its own place in the knowledge a statement entry states. A static
+User guards: a generic guard, which needs a quantified promise signature in
+the producer's encoding; a promise about a property (`isWord(node.name)`),
+which needs a no-write effect beside the promise, proved from a source
+guard's body or, for a declared library guard, derived from its source by the
+compiler-API contract, and a typed current-content fact for the property. A static
 initializer calling a static method reading its class, or constructing it
 where construction reads an earlier static field, which runs the class's code
 before the class value exists (a construction reading a later one reads
@@ -175,27 +171,25 @@ options are in [TRUST-REDUCTION](docs/TRUST-REDUCTION.md).
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 252 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 245 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-16):
 
-- a namespace import, `import * as ts` (125);
-- a type guard whose promise names a type no test of the argument decides,
-  `v is Record<string, unknown>` (12) or `v is Span` (4);
-- a user-defined type guard or assertion function of another form (9);
-- a missing annotation (16);
+- a namespace import, `import * as ts` (126);
+- a missing annotation (19), an unannotated closure parameter typed `any` by
+  its context (5);
 - the compiler API's own declarations, `SyntaxKind`, `TypeFlags`,
-  `NodeFlags`, `SymbolFlags` (13);
-- module-level `let` and `var` (5), regular expression literals (4);
+  `NodeFlags`, `SymbolFlags` (12), and other unannotated declared values (9);
+- regular expression literals (8), module-level `let` and `var` (5);
 - library globals absent from the overlay: `Reflect`,
-  `Object.getOwnPropertyDescriptor`, `Array.from`, `Object.fromEntries` (6);
+  `Object.getOwnPropertyDescriptor`, `Array.from`, `Object.fromEntries` (5);
 - `Exclude<Clause, string>`, whose members name the alias's parameter `L` and
   are another type at each instance (1).
 
-Three slices reach the producer and fail there, and twelve fail in search,
-among them `Array.isArray(v)` not narrowing an `unknown` `v` to
-`unknown[]` (two) and a `.map` result built where a union of records is
-expected (`emptyObject`).
+Four slices reach the producer and fail there, and twenty fail in search,
+among them three guards whose promise `v is Record<string, unknown>` (or a
+list of such) rests on `typeof v === "object"` or `Array.isArray(v)`, which
+leave an `unknown` `v` without a narrower type.
 
 The goal is every function of the repository's own TypeScript verified:
 `tools/`, `pipeline/`, `tests/` and `dev/`, about 21,000 lines (the sources
@@ -214,10 +208,6 @@ against the fragment (2026-10-16) gives the work, each item its own design:
   326. Its enums are literal unions, its flag sets (`NodeFlags`, `TypeFlags`,
   `SymbolFlags`) numbers tested by bit, and its node methods
   (`forEachChild`, `getText`, `getStart`) contracts with their callbacks.
-  The guards need guard signatures, the next item, to cross modules.
-- **Guard signatures.** A guard's promise is part of its function type,
-  proved at its definition and consumed at a call, for any promised type
-  and across modules.
 - **Bounds of every alias application.** An alias with a bounded parameter
   keeps the obligation that its arguments meet their bounds, whatever its
   body.

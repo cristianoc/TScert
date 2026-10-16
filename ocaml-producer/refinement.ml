@@ -160,6 +160,48 @@ let refine_field bounds declarations env name field refine =
      | Some c -> fact env key (field_type bounds declarations [] t (Name field)) (refine c)
      | None -> env)
   | _ -> env
+(* What a call of a guard promises of its actual, a name: where a type guard
+   returned `true` (`asserts` false), or wherever an assertion function
+   returned (`asserts` true), the name holds the promise's type, the result of
+   a promise signature of the callee's type. The callee is any expression: a
+   name (`resolve` gives its type), a member or namespace read, whose claimed
+   type `claimed` gives. Of several promise signatures (overloads), those whose
+   parameters admit the actuals' known types. Lean checks the signature at the
+   call (`PromiseCalls.promiseCall_sound`). *)
+let promise_refine ?(claimed = fun _ -> None) resolve declarations env (cond:expr) asserts =
+  let call = match cond.node with
+    | Call (callee,None,args,[],[]) -> Some (callee,args)
+    | Invoke (callee,args,[],[]) -> Some (callee,args)
+    | _ -> None in
+  match call with
+  | None -> env
+  | Some (callee,args) ->
+    let callee_type = match callee.node with
+      | Id name -> (match resolve name with Some t -> Some t | None -> claimed callee.pos)
+      | _ -> claimed callee.pos in
+    let actual (a:expr) = match a.node with
+      | Id name -> resolve name
+      | _ -> claimed a.pos in
+    let promises = match Option.map (fun t ->
+        try Some (declared_head declarations [] t) with Json.Error _ -> None) callee_type with
+      | Some (Some (Atoms [Shape {calls;_}])) -> List.filter_map (fun (s:Semantic.signature) ->
+          match s.call_effect,asserts with
+          | Guards p,false | Asserts p,true -> Some (p,s)
+          | _ -> None) calls
+      | _ -> [] in
+    let applicable (_,(s:Semantic.signature)) =
+      List.length args <= List.length s.params &&
+      List.for_all2 (fun (a:expr) param -> match actual a with
+        | Some t -> plausible_subtype t param
+        | None -> true) args (List.filteri (fun i _ -> i < List.length args) s.params) in
+    let chosen = match promises with
+      | [_] -> promises
+      | _ -> List.filter applicable promises in
+    (match chosen with
+     | (p,s) :: _ -> (match List.nth_opt args p with
+       | Some {node=Id name;_} -> refine_value env name (fun _ -> s.result)
+       | _ -> env)
+     | [] -> env)
 let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) bounds declarations env cond truth =
   let branch = branch_with state ~modules ~claimed bounds declarations in
   let refine_field = refine_field bounds declarations in
@@ -279,5 +321,9 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
          | _ -> env)
       | Some _,_ -> env in
     narrow (narrow env l r) r l
+  | (Call _ | Invoke _) when truth ->
+    promise_refine ~claimed (fun name -> match List.assoc_opt name env with
+      | Some b -> Some (binding_type b)
+      | None -> modules name) declarations env cond false
   | _ -> env
 

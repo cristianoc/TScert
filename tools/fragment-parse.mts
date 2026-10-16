@@ -168,15 +168,6 @@ export class Gate {
   /** The symbols the declaration document lists, by index: which one a
    * computed class member's key names. */
   symbolIdentities: readonly { module: string; name: string }[] = [];
-  /** The declarations the file's types reference, by identity: what a
-   * guard's promise type names. */
-  definitions: readonly TypeDefinition[] = [];
-  /** The file's guards by name: its module functions and the closures its
-   * module constants bind that state `x is T` or `asserts x is T`
-   * (fragment-guards.mts). */
-  readonly guards = new Map<string, guards.GuardPromise>();
-  /** The guard closures module constants bind, by span. */
-  readonly guardClosures = new Map<string, guards.GuardPromise>();
   /** Private names `#x`, by span: the symbol of the member each names, as
    * the declaration document lists it. */
   readonly privateKeys = new Map<string, number>();
@@ -858,11 +849,7 @@ export class Gate {
 
   functionDecl = statements.functionDecl;
 
-  guardPromise = guards.guardPromise;
-
-  promiseUnit = guards.promiseUnit;
-
-  applyPromises = guards.applyPromises;
+  guardOf = guards.guardOf;
 }
 
 export function parseFile(file: string, carriesContext = false,
@@ -1453,7 +1440,6 @@ export function parseFile(file: string, carriesContext = false,
         },
         ...(seen ? { seen } : {}) });
       gate.symbolIdentities = declarations.symbols;
-      gate.definitions = declarations.definitions;
     } catch (error) {
       const at = error instanceof DeclarationError
         ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
@@ -1495,62 +1481,18 @@ export function parseFile(file: string, carriesContext = false,
   // retained declaration now has one source equation, shared with imports.
   // A function without a body is a declaration, not an example of one.
   const declared = carriesContext ? fnNodes.filter((s) => s.body) : fnNodes;
-  // A guard's calls test its argument again, wherever they are written, so
-  // every guard is known before any body is read.
-  const guardClosures: { name: string; node: ts.ArrowFunction }[] = [];
-  for (const s of declared) {
-    const promise = gate.guardPromise(s);
-    if (promise && s.name) gate.guards.set(s.name.text, promise);
-  }
-  for (const s of initNodes) {
-    if (!ts.isVariableStatement(s) || !(s.declarationList.flags & ts.NodeFlags.Const)) continue;
-    for (const d of s.declarationList.declarations) {
-      let init = d.initializer;
-      while (init && ts.isParenthesizedExpression(init)) init = init.expression;
-      if (!init || !ts.isIdentifier(d.name) || !(ts.isArrowFunction(init) || ts.isFunctionExpression(init))) continue;
-      if (!init.type || !ts.isTypePredicateNode(init.type)) continue;
-      const arrow = ts.isArrowFunction(init) && !init.modifiers?.length && !d.type ? init
-        : gate.fail(init, "a module constant's guard is an unannotated arrow function: its promise unit has no receiver and no annotation to meet");
-      if (arrow.parameters.some((p) => !ts.isIdentifier(p.name) || p.initializer || p.dotDotDotToken))
-        gate.fail(arrow, "a guard closure's parameters are plain names: its promise unit binds them as a function does");
-      const promise = gate.guardPromise(arrow);
-      if (promise) {
-        gate.guards.set(d.name.text, promise);
-        gate.guardClosures.set(gate.span(arrow).join(":"), promise);
-        guardClosures.push({ name: d.name.text, node: arrow });
-      }
-    }
-  }
   const parsed = declared.map((s) => gate.functionDecl(s));
   // Every enum's members must have values, whether or not it runs.
   for (const e of enumNodes) gate.enumMembers(e.name.text);
   const init = initNodes.flatMap((s) => ts.isClassDeclaration(s) ? [gate.classStmt(s)]
     : ts.isEnumDeclaration(s) ? gate.enumStmt(s) : [gate.stmt(s)]);
-  // Each guard's promise unit, beside it.
-  const units = parsed.flatMap((f, i) => {
-    const promise = gate.guards.get(f.name);
-    const node = declared[i];
-    if (!promise || !node?.body) return [];
-    return [gate.promiseUnit(f.name, promise.at, f.params, f.body, f.strict, promise, gate.span(node.body))];
-  });
-  for (const { name, node } of guardClosures) {
-    const promise = gate.guards.get(name);
-    const lambda = init.flatMap((s) => s.k === "const" ? s.bindings : []).find((b) => b.name === name)?.init;
-    if (!promise || lambda?.k !== "lambda") return gate.fail(node, "internal: a guard closure without its binding");
-    const params = lambda.params.map((p, i) => ({ name: p.name, pos: gate.span(node.parameters[i] ?? node), type: p.type }));
-    const body: Stmt[] = lambda.body.k === "blockBody" ? lambda.body.body
-      : [{ k: "return", pos: gate.span(node.body), e: lambda.body }];
-    units.push(gate.promiseUnit(name, promise.at, params, body, true, promise, gate.span(node.body)));
-  }
-  const functions = [...parsed, ...units].map((f) => ({ ...f, body: gate.applyPromises(f.body) }));
-  const rewritten = gate.applyPromises(init);
-  if (functions.length === 0 && init.length === 0) gate.fail(null, "no functions in file");
+  if (parsed.length === 0 && init.length === 0) gate.fail(null, "no functions in file");
   return {
     file,
     sourceSha256: createHash("sha256").update(text).digest("hex"),
     declarations,
-    functions,
-    init: rewritten,
+    functions: parsed,
+    init,
   };
 }
 

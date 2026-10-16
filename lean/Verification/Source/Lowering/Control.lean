@@ -68,6 +68,53 @@ def arrayTested : Fragment.Expr → Bool
   | .shapeTest _ .isArray _ _ => true
   | _ => false
 
+/-- What a call promises of its actual: a call whose callee's type holds a
+promise signature (a type guard's, `asserts` false; an assertion function's,
+`asserts` true), the callee a name, or a method or field of a name's object, of an
+actual that is an immutable name. Of several promise signatures (overloads),
+the first whose parameters hold the types of the actuals that are names. The
+actual's slot and the promise's type; the graph checker proves it from the
+callee's signature at the call (`PromiseCalls.promiseCall_sound`). -/
+@[nospecialize] def promiseNarrowing (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
+    (Γ : List (Ty ι)) (asserts : Bool) (e : Fragment.Expr) (original : String → String := id) :
+    Option (Nat × Ty ι) := do
+  let (callee, args) ← match e with
+    | .call _ callee args [] [] | .invoke _ callee args [] [] => some (callee, args)
+    | _ => none
+  let slotType := fun (name : String) => do
+    let i ← valueSlot scope (original name)
+    return (i, ← Γ[i]?)
+  -- The callee's signatures, as (parameters, result, effect).
+  let sigs : List (List (Ty ι) × Ty ι × Effect) ← match callee with
+    | .var _ f => do
+      let (_, F) ← slotType f
+      let [.arrs L _] := PositiveRules.expand G F | none
+      pure (L.map fun s => (s.arguments, s.result, s.effect))
+    | .read _ fld (.var _ o) => do
+      let (_, O) ← slotType o
+      match ProgramTyping.memberOf G O fld with
+      | some m => pure (m.calls.map fun s => (s.arguments, s.result, s.effect))
+      | none =>
+        let F ← fieldRow G O fld
+        let [.arrs L _] := PositiveRules.expand G F | none
+        pure (L.map fun s => (s.arguments, s.result, s.effect))
+    | _ => none
+  let holds := fun (Ds : List (Ty ι)) => (args.zip Ds).all fun (a, D) => match a with
+    | .var _ name => match slotType name with
+      | some (_, A) => A.all D.contains
+      | none => true
+    | _ => true
+  let promises := sigs.filterMap fun (Ds, T, effect) => match effect, asserts with
+    | .guards p, false | .asserts p, true => some (Ds, T, p)
+    | _, _ => none
+  let chosen := match promises with
+    | [one] => [one]
+    | _ => promises.filter fun (Ds, _, _) => holds Ds
+  let (_, T, p) ← chosen.head?
+  let .var _ name ← args[p]? | none
+  let (j, _) ← slotType name
+  return (j, T)
+
 /-- Facts justified on the path to a short-circuit operand. Only immutable
 source bindings are refined; every generated edge checks this candidate context.
 A true conjunction / false disjunction establishes both operand outcomes. The
@@ -87,7 +134,8 @@ leaves its operand that value alone, which `tagMember` checks on the edge. -/
       joinContexts Γ (conditionContext G scope Γ left answer arrays single)
         (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single) right answer arrays single)
   | _ =>
-    if let some (i, tag, equal) := conditionTag G scope Γ cond then
+    if let (true, some (j, T)) := (answer, promiseNarrowing G scope Γ false cond) then Γ.set j T
+    else if let some (i, tag, equal) := conditionTag G scope Γ cond then
       match tag, answer == equal, arrays with
       | .isArray, true, some R => Γ.set i (arrayRefine G (Γ[i]?.getD []) R)
       | _, holds, _ =>

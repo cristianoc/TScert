@@ -85,7 +85,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
       if binders.map (·.name) != (initBinders.map (·.1)).filter (!·.endsWith "#pack") then
         throw "the module initialization's binders are not its generic classes'"
       -- Nothing calls the initialization unit with a receiver.
-      pure [(⟨"", span, [], undefinedType, init, false⟩, binders,
+      pure [(⟨"", span, [], undefinedType, init, false, none⟩, binders,
         ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, c.arrows⟩)]
   -- Initialization order is the initialization unit's own obligation.
   if !initUnit.isEmpty then checkInitializationOrder d.types all init
@@ -125,7 +125,9 @@ def extractPlans (ast claims : Json) (fileKey : String)
       if !closures.contains a.pos then throw "per-arrow claims must name a source closure"
       for row in a.rows do
         checkPointSites flowGraphs prologues row.entries row.expressions row.contracts
-        if !row.entries.all (fun e => sites.1.contains e.start && a.pos.1 ≤ e.start && e.start < a.pos.2) ||
+        -- An expression body's entry is its prologue's, at the body's start.
+        if !row.entries.all (fun e => (sites.1.contains e.start || prologues.any (·.1.1 == e.start)) &&
+              a.pos.1 ≤ e.start && e.start < a.pos.2) ||
             !row.expressions.all (fun e => sites.2.contains e.pos && a.pos != e.pos &&
               a.pos.1 ≤ e.pos.1 && e.pos.2 ≤ a.pos.2) ||
             !row.contracts.all (fun c => a.pos.1 ≤ c.pos.1 && c.pos.2 ≤ a.pos.2) then
