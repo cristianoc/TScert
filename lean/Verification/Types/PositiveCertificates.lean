@@ -934,12 +934,14 @@ element. -/
     | some E => (t.arguments.1.drop s.arguments.1.length).map (·, E)
     | none => []
 
-/-- The pairs a variadic signature's coverage of a fixed one binding more
-parameters compares past `signaturePairs` (`RestFixed`): the target's further
-parameters against the source rest's element. -/
+/-- The pairs a variadic signature's coverage of a fixed one compares
+(`RestFixed`): receivers, the target's first parameters against the source's
+fixed ones, results, and the target's further parameters against the source
+rest's element. -/
 @[nospecialize] def restFixedPairs (G : NormalGraph ι) (source : List (RestArrow (List ι))) (target : List (Arrow (List ι))) :
     List (List ι × List ι) :=
   target.flatMap fun t => source.flatMap fun s =>
+    (t.receiver, s.receiver) :: (s.result, t.result) :: t.arguments.zip s.arguments.1 ++
     match PositiveRules.restElem G s.arguments.2 with
     | some E => (t.arguments.drop s.arguments.1.length).map (·, E)
     | none => []

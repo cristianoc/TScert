@@ -801,6 +801,8 @@ export const cases: Case[] = [
   negative("invalid-number-object", "`Number` of an object runs its `valueOf`: only primitives are admitted, though TypeScript's declaration takes `any`"),
   gap("number-call-and-members", "`Number` both called and read through its members is a callable object with methods, which the claims have no clause for",
     "unverified", "search", /a callable object with methods needs a combined clause/),
+  positive("rest-function-longer-signature", "a function with a rest parameter where a signature binding more parameters is expected, a declared value and a module function: its rest's element takes the further parameters"),
+  negative("invalid-rest-function-longer-signature", "a rest of strings where the further parameter is a number: the function returns the number at a string contract"),
   positive("library-well-known-symbols", "`Symbol.iterator` and the other well-known symbols read at `symbol`; `o[Symbol.iterator]` as the named read of its key"),
   positive("library-json", "`JSON.parse` of a string at `unknown`; `JSON.stringify` of a primitive, a fresh record of them and a dictionary, a string"),
   positive("library-date-now", "`Date.now()`, a number"),
