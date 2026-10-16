@@ -1184,6 +1184,16 @@ unrestricted `find`/`findIndex` callbacks receive `T | undefined`, and unrestric
 `preservesInputHeap` callback and respectively pass `T` or promise a dense result.
 Source `U[]` requires readability; the fresh qualified map result may choose that
 lifetime contract even when its initial contents are physically dense.
+`flatMap` appends the present elements of each array its callback returns,
+and appends any other result as it is: the declared `U | ReadonlyArray<U>`
+is unsound where `U` admits an array, since such a result is flattened
+(`invalid-array-flat-map-value`). It is stated at a callback returning an
+array, of which only present entries are read, with `thisArg` and its
+binder `This` dropped:
+
+```math
+\mathsf{flatMap}:\forall U.\ (\mathsf{this}:\mathsf{ReadonlyArray}(T),\ (T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow\mathsf{sparse\ ReadonlyArray}(U))\Rightarrow U[\,]
+```
 
 Native array results rely on the ordinary-construction invariant: an array owns
 neither `constructor` nor any key declared by `ArrayProto`; the host keeps the

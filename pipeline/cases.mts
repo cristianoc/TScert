@@ -92,6 +92,8 @@ export const cases: Case[] = [
   negative("invalid-generic-constructor-as-function", "a class value has construct code only: it does not meet a generic function type",
     /source expression obligation at \[260,263\): evidence search failed: no derivation of its binding-annotation claim/),
   negative("invalid-native-find-mutation", "find visits missing positions after a callback shrinks the array", /closure signature claim is outside/),
+  positive("array-flat-map", "`flatMap` with a callback returning an array: a fresh array of the returned arrays' present elements, readonly and mutable receivers, a mutable result"),
+  negative("invalid-array-flat-map-value", "a `flatMap` callback returning a value that may be an array, which `flatMap` flattens", /source expression obligation at \[318,322\): evidence search failed: no derivation of its return-contract claim/),
   negative("invalid-native-map-mutation", "map's sparse result cannot be iterated as a dense array", /evidence search failed|no compatible call signature/),
   negative("invalid-map-hole-coalescing", "A pure coalescing callback cannot fill the holes that map skips", /evidence search failed/),
   positive("native-map-sparse", "Sparse map results retain length, including tuple methods and callback mutation"),

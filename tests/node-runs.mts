@@ -59,6 +59,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-record-index-named-key: the element past the end is undefined, whose member is undefined at string");
   assert.equal(runImporting("invalid-node-exec-stdout-ignored", `run(["-e", ""])`), null,
     "invalid-node-exec-stdout-ignored: standard output not piped, the result is null at string");
+  assert.equal(runExample("invalid-array-flat-map-value", "first()"), 1,
+    "invalid-array-flat-map-value: the flattened array's number is returned at number[]");
   // The further actual a rest of strings takes is a number.
   assert.equal(runExample("invalid-rest-function-longer-signature", `wrong()("s", 1)`), 1,
     "invalid-rest-function-longer-signature: the number is returned at string");

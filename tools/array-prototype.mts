@@ -44,6 +44,9 @@ export type OverlayEntry = {
   signature: string;
   /** Parameters dropped by name: calls must omit them. */
   drop?: string[];
+  /** The member's own binders a statement leaves out, each of which types
+   * only what it drops (`flatMap`'s `This`, the type of `thisArg`). */
+  unbound?: string[];
   /** The declared `this` result is the receiver. */
   resultIsReceiver?: boolean;
   /** The result stated as this standard library interface at `T`, which the
@@ -107,6 +110,23 @@ export const overlay: readonly OverlayEntry[] = [
       { params: [callback(element, mappedElement, "unrestricted")],
         result: arrayOf(mappedElement, false, "sparse") },
     ] },
+  // `flatMap` calls the callback at each position still present when
+  // visited, below the length read before the first call, and appends the
+  // present elements of each array it returns, in order, to a fresh array:
+  // the result holds no hole whatever the callback does. A result that is
+  // no array is appended as it is, and one that is an array is flattened,
+  // so the declared `U | ReadonlyArray<U>` is unsound where `U` admits an
+  // array (`U := number[]` with a callback returning `[x]` gives numbers at
+  // `number[]`). Stated at a callback returning an array, whose holes are
+  // skipped; `thisArg` is not stated, so a call must omit it.
+  { name: "flatMap", from: "ReadonlyArray",
+    signature: "flatMap<U, This = undefined>(\n" +
+      "        callback: (this: This, value: T, index: number, array: T[]) => U | ReadonlyArray<U>,\n" +
+      "        thisArg?: This,\n" +
+      "    ): U[];",
+    unbound: ["This"],
+    stated: [{ params: [callback(element, arrayOf(mappedElement, true, "sparse"), "unrestricted")],
+      result: arrayOf(mappedElement, false) }] },
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
   // and a prototype member is read as one scheme with one signature
@@ -437,7 +457,8 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
       throw Error(`${entry.from}.${entry.name} is not declared as reviewed: ${entry.signature}`);
     const { member, source } = only;
     const span: [number, number] = [0, 0];
-    const own = (member.typeParameters ?? []).map(p => p.name.text);
+    const own = (member.typeParameters ?? []).map(p => p.name.text)
+      .filter(name => !entry.unbound?.includes(name));
     // The member's own binders lead, as its declaration lists them, so an
     // explicit type argument list instantiates them in order; the
     // prototype's binders follow, fixed by the receiver.
