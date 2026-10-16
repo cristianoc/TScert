@@ -112,6 +112,7 @@ export const cases: Case[] = [
     "unverified", "search", /source expression obligation at \[483,523\): evidence search failed: no derivation of its return-contract claim/),
   negative("invalid-map-primitive-method-mutation", "a `map` callback calling a string's method and `pop` on the source: not preserving, so the result may hold a hole the loop reads",
     /source expression obligation at \[397,426\): evidence search failed: no derivation of its for-of-iterator claim/),
+  positive("array-literal-host-spread", "array literals spreading a `Set` built of an array, a `Map`'s keys, a `Set` and a string alone, and a union of arrays (`xs ?? []`): each a fresh array its claim states, `new Set(xs)` at `xs`'s element type"),
   positive("for-of-pattern-binding", "a `for...of` binding destructured: an array pattern over an array of pairs and a `Map`'s entries, an object pattern with a default, each element bound then read before the body"),
   negative("invalid-for-of-pattern-string", "an array pattern binding a `for...of` over strings, which the pattern would step by code point: refused, no rule reading a pattern over a host non-array iterable",
     /source refusal at \[\d+,\d+\): an array pattern requires an array contract/),

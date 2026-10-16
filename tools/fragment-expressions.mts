@@ -287,15 +287,14 @@ export function expr(this: Gate, node: Expression): Expr {
         if (gate.hoist?.spread !== only) gate.fail(only, SPREAD_POSITION);
         return gate.collect(only.expression);
       }
-      // Over a string, a `Set`, a `Map` or a host collection iterator, it
-      // is `%Spread:K%(e)`, the fresh array of what the host's iterator
-      // yields, as an argument spread's operand is (`spreadOperand`).
-      if (kind) return gate.spreadOperand(only);
     }
     if (node.elements.some((e) => ts.isOmittedExpression(e)))
       gate.fail(node, "array literal holes are outside the fragment");
-    // A spread among other elements stands for its operand's elements,
-    // read where it is written, as an argument spread's operand is.
+    // A spread stands for its operand's elements, read where it is written,
+    // as an argument spread's operand is (`spreadOperand`): over a string, a
+    // `Set`, a `Map` or a host collection iterator, those of `%Spread:K%(e)`,
+    // the fresh array of what the host's iterator yields. The literal is a
+    // fresh array of its own, whose contract its claim states.
     const spreads: number[] = [];
     const elems = node.elements.map((e, i) => {
       if (!ts.isSpreadElement(e)) return gate.expr(e);

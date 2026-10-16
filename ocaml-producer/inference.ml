@@ -322,6 +322,11 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         when (List.length xs > 1 || List.length ys > 1)
           && List.exists callable xs && List.length (List.filter callable ys) = 1 ->
       constrain (Atoms (List.filter callable xs)) (Atoms (List.filter callable ys))
+      (* An array at a union with one array arm, `readonly T[] | null`: the
+         array is compared with that arm, as the other arms admit no array. *)
+      | Atoms [Shape {elements=Some _;_}],Atoms (_::_::_ as ys)
+        when List.length (List.filter (function Shape {elements=Some _;_} -> true | _ -> false) ys) = 1 ->
+      constrain left (Atoms (List.filter (function Shape {elements=Some _;_} -> true | _ -> false) ys))
       (* An array's elements: a readonly target reads them, so covariantly; a
          writable one also takes writes, so both ways. *)
       | Atoms [Shape {elements=Some l;fields=[];calls=[];indexes=[]}],

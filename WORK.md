@@ -209,10 +209,10 @@ lowering, rules and section, through `esc`, `highlight` and
 examplesOf, and readRecord and group through it), an element read a length
 guards (`paragraphs[paragraphs.length - 1]`, `guarded-element-read-refused`,
 2: parseTrailers, parseRecord), a conditional type over a type parameter, `KeysOf<T>` (2,
-lowering-dump), an array literal spreading a `Set` and a map's keys (2:
-summary, pageBody), a dictionary read at a key that may name an
-`Object.prototype` member (card), and a nested conditional of literals
-whose type the producer widens (mathTokens).
+lowering-dump), a dictionary read at a key that may name an
+`Object.prototype` member (2: card, pageBody), a closure claimed outside its
+parameter's contextual annotation (summary), and a nested conditional of
+literals whose type the producer widens (mathTokens).
 
 Two forms of the record tools are rewritten for a verifier limit, not
 for a departure from the fragment; each rewrite is reverted when its limit

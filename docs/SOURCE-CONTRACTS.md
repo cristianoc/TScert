@@ -1993,11 +1993,13 @@ literal or an argument of a call of a name after names and literals the file
 never assigns, and the statement's value, is collected before the
 statement, where nothing the statement evaluates before the spread can be
 changed by the iterator's code: $`\mathsf{const}\ a=[\,],\ i,\ n;\ \mathsf{while}\ (\mathsf{true})\ \{\ \mathsf{const}\ r=n();\ \mathsf{if}\ (r.\mathit{done})\ \mathsf{break};\ a.\mathit{push}(r.\mathit{value})\ \}`$, then $`\ldots a`$ (or $`a`$ for the literal);
-a spread steps to the end and closes nothing. The one element of an array
-literal spreading a host iterable (a string, a `Set`, a `Map`, a host
-collection iterator) is its spread intrinsic's call, `[...e]` $`\equiv`$
-`%Spread:K%(e)`, the fresh array of what the host's iterator yields, as an
-argument spread of one is. An array pattern
+a spread steps to the end and closes nothing. An array literal's spread of
+a host iterable (a string, a `Set`, a `Map`, a host collection iterator)
+spreads its spread intrinsic's array, `[…, ...e, …]` $`\equiv`$
+`[…, ...%Spread:K%(e), …]`, the fresh array of what the host's iterator
+yields, as an argument spread of one is; the literal is a fresh array of its
+own, at the store contract its claim states, also where the spread is its
+one element (`array-literal-host-spread`). An array pattern
 `const [p₀, …, ...q] = e` over one (`protocolPattern`) steps once per element,
 a hole too, into cells $`v_j`$ starting `undefined`, leaves a labeled block when
 a step is done, collects the rest to the end, and without a rest closes the
