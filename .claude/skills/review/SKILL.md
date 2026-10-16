@@ -30,7 +30,7 @@ description: Commit records and review pages for verification work. Use when com
    with judgement: what to show, what to hide, pseudo-code where it explains
    better than the exact form. Tools extract the exact facts the author starts
    from (`make lowering FILE=<file.ts> [FN=<function>]`, which runs
-   `node tools/lowering-dump.mts`, prints the program graph the verifier
+   `node dev/lowering-dump.mts`, prints the program graph the verifier
    checks); every abstraction in the record must
    be one those facts support.
 7. **The record states history; documents do not.** A commit is where "what
@@ -100,8 +100,8 @@ Co-Authored-By: <attribution>
 ## Rendering
 
 ```sh
-node tools/commit-records.mts --out review.html <rev>...
-node tools/commit-records.mts --out review.html <base>..<tip>...
+node dev/commit-records.mts --out review.html <rev>...
+node dev/commit-records.mts --out review.html <base>..<tip>...
 ```
 
 `make semantic-diff REV=<rev or base..tip>` runs the same command, writing to

@@ -10,8 +10,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { showTag, showTerm, type KeysOf } from "./calculus.mts";
-import { decodeNode, type Continuation, type ProgramNode, type Target } from "./control-flow.mts";
+import { showTag, showTerm, type KeysOf } from "../tools/calculus.mts";
+import { decodeNode, type Continuation, type ProgramNode, type Target } from "../tools/control-flow.mts";
 import { verifier } from "../pipeline/verify-source.mts";
 
 const [file, wanted] = process.argv.slice(2);

@@ -318,7 +318,7 @@ increasing trust silently.
   prose sections, then trailers with `Outcome`, `Parts` and `Trust`. The
   `commit-msg` hook (`make setup-git-hooks`) refuses a message without them.
   A review of agent work is rendered from records
-  (`node tools/commit-records.mts`), never written by hand.
+  (`node dev/commit-records.mts`), never written by hand.
 - Status: progress is written once, in the
   [status table](WORK.md#status) of WORK.md. A commit that moves an item
   updates its row. A row states the nature of its work: an investigation whose cause is

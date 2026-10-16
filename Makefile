@@ -36,10 +36,10 @@ check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir]
 	node pipeline/verify-source.mts $(FILE) $(if $(PROJECT),--project $(PROJECT))
 
 lowering: ## the program graph a source lowers to: FILE=path.ts [FN=function]
-	node tools/lowering-dump.mts $(FILE) $(FN)
+	node dev/lowering-dump.mts $(FILE) $(FN)
 
 semantic-diff: ## render the commit records of REV (a commit or base..tip, default HEAD) to OUT and open it
-	node tools/commit-records.mts --out $(OUT) $(REV)
+	node dev/commit-records.mts --out $(OUT) $(REV)
 	@if command -v open >/dev/null; then open $(OUT); \
 	elif command -v xdg-open >/dev/null; then xdg-open $(OUT); fi
 
