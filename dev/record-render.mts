@@ -12,7 +12,11 @@ type Section = { name: string; text: string[]; block: string[] };
 export type CommitRecord = {
   sha: string; author: string; subject: string; sections: Section[];
   trailers: Map<string, string>; coauthors: string[]; stat: string[];
+  examples: Map<string, Example>;
 };
+/** A pipeline case an Effect line names: its program at the commit, its kind
+ * in `pipeline/cases.mts`, and the source span its expected diagnostic names. */
+export type Example = { source: string; kind?: string; span?: [number, number] };
 
 export type Group = { name: string; range?: string; records: CommitRecord[]; files: string[] };
 
@@ -39,7 +43,8 @@ function parseTrailers(text: string): Map<string, string> {
 }
 
 /** A commit's record from its text, with what git says of the commit. */
-export function parseRecord(text: string, commit: { sha: string; author: string; stat: string[]; message: string }): CommitRecord {
+export function parseRecord(text: string, commit: { sha: string; author: string; stat: string[]; message: string;
+    examples?: Map<string, Example> }): CommitRecord {
   const trailers = parseTrailers(text);
   const lines = text.trimEnd().split("\n");
   let end = lines.length;
@@ -63,7 +68,7 @@ export function parseRecord(text: string, commit: { sha: string; author: string;
     sha: commit.sha, author: commit.author, subject: lines[0], sections, trailers,
     coauthors: commit.message.split("\n").filter(l => l.startsWith("Co-Authored-By:"))
       .map(l => l.replace("Co-Authored-By:", "with").replace(/<[^>]*>/, "").trim()),
-    stat: commit.stat,
+    stat: commit.stat, examples: commit.examples ?? new Map(),
   };
 }
 
@@ -277,7 +282,35 @@ function lowering(lines: string[], typing = false): string {
   }).join("")}</div>`;
 }
 
-function section(s: Section): string {
+/** The program of an example, the span its diagnostic names marked. */
+function program(e: Example): string {
+  const [from, to] = e.span && e.span[1] <= e.source.length ? e.span : [e.source.length, e.source.length];
+  const marked = highlight(e.source.slice(0, from)) +
+    (to > from ? `<mark>${highlight(e.source.slice(from, to))}</mark>` : "") + highlight(e.source.slice(to));
+  return `<pre class="code">${marked.trimEnd()}</pre>`;
+}
+
+/** An Effect line: `case   kind   old → new   reason`, three or more spaces
+ * apart; ⚠ after the old outcome marks it unsound. A line naming a pipeline
+ * case expands to the case's program at the commit. */
+function effects(lines: string[], examples: Map<string, Example>): string {
+  const KINDS = new Set(["positive", "negative", "gap", "control"]);
+  return `<ul class="effect">${lines.filter(l => l.trim()).map(l => {
+    const [what, ...rest] = parts(l);
+    const example = examples.get(what);
+    const kind = rest[0] !== undefined && KINDS.has(rest[0]) ? rest.shift() : example?.kind;
+    const change = rest[0] !== undefined && rest[0].includes("→") ? rest.shift() ?? "" : "";
+    const [old, now] = change.split("→").map(x => x.trim());
+    const outcome = change
+      ? `<span class="was${old.includes("⚠") ? " unsound" : ""}">${inline(old)}</span> <span class="arrow">→</span> <span class="now">${inline(now)}</span>`
+      : "";
+    const line = `<code>${esc(what)}</code>${kind ? ` <span class="kind ${esc(kind)}">${esc(kind)}</span>` : ""}` +
+      (outcome ? ` ${outcome}` : "") + (rest.length ? ` <span class="why">${rest.map(inline).join(" ")}</span>` : "");
+    return `<li>${example ? `<details><summary>${line}</summary>${program(example)}</details>` : line}</li>`;
+  }).join("")}</ul>`;
+}
+
+function section(s: Section, examples: Map<string, Example> = new Map()): string {
   const m = /^([A-Z][A-Za-z]*)(?: (added|modified|removed|replaced))?(?: \(((?:[^()]|\([^()]*\))*)\))?$/.exec(s.name);
   const kind = m?.[1] ?? s.name, action = m?.[2] ?? "", target = m?.[3] ?? "";
   const lines = dedent(s.block);
@@ -286,12 +319,7 @@ function section(s: Section): string {
     : "";
   const text = s.text.length ? `<p>${inline(s.text.join(" "))}</p>` : "";
   if (!lines.length) return head + text;
-  if (kind === "Effect") {
-    return head + text + `<ul class="effect">${lines.filter(l => l.trim()).map(l => {
-      const [what, ...rest] = parts(l);
-      return `<li><code>${esc(what)}</code>${rest.length ? ": " : ""}${rest.map(x => inline(x).replace(/ → /g, ' <span class="arrow">→</span> ')).join(" ")}</li>`;
-    }).join("")}</ul>`;
-  }
+  if (kind === "Effect") return head + text + effects(lines, examples);
   const split = lines.findIndex(l => /^(Before|After):\s*$/.test(l.trim()));
   const draw = (body: string[], mark: "add" | "del" | "" = "", other: string[] = []): string =>
     kind === "Lowering" ? lowering(body) : MATH_KINDS.has(kind) ? rules(body, kind) : CODE_KINDS.has(kind) ? codeBlock(body, mark, other)
@@ -321,7 +349,7 @@ function card(r: CommitRecord): string {
   ];
   const units = words(r, "Units");
   if (units.length) out.push(`<div class="units">${units.map(u => `<span>${esc(u)}</span>`).join("")}</div>`);
-  for (const s of r.sections) out.push(section(s));
+  for (const s of r.sections) out.push(section(s, r.examples));
   const facts = FACTS.flatMap(k => {
     const v = r.trailers.get(k);
     if (v === undefined) return [];
@@ -429,6 +457,11 @@ pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:va
 .prose p { margin:4px 0 }
 ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
 ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
 @media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
 .lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
 .lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }

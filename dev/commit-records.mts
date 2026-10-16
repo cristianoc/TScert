@@ -10,10 +10,40 @@
  */
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
-import { parseRecord, pageBody, CSS, type CommitRecord, type Group } from "./record-render.mts";
+import { parseRecord, pageBody, CSS, type CommitRecord, type Example, type Group } from "./record-render.mts";
 
 const git = (args: string[], input?: string): string =>
   execFileSync("git", args, { input, encoding: "utf8", maxBuffer: 64 << 20, stdio: ["pipe", "pipe", "ignore"] });
+
+/** A file's text at a revision, or undefined where it has none. */
+function at(rev: string, path: string): string | undefined {
+  try { return git(["show", `${rev}:${path}`]); } catch { return undefined; }
+}
+
+/** The pipeline cases an Effect section names, as the commit has them (a
+ * removed case as its parent had it): the program, its kind, and the span its
+ * expected diagnostic names, from `pipeline/cases.mts`. */
+function examplesOf(rev: string, text: string): Map<string, Example> {
+  const found = new Map<string, Example>();
+  const effect = /^Effect:\s*\n((?: {2,}.*\n?|\s*\n)*)/m.exec(text);
+  if (!effect) return found;
+  const names = effect[1].split("\n").map(l => l.trim().split(/\s{3,}/)[0]).filter(n => n && /^[\w/.-]+$/.test(n));
+  for (const name of names) {
+    for (const r of [rev, `${rev}^`]) {
+      const source = at(r, `pipeline/examples/${name}.ts`);
+      if (source === undefined) continue;
+      const cases = at(r, "pipeline/cases.mts") ?? "";
+      const i = cases.indexOf(`("${name}"`);
+      const next = i < 0 ? -1 : cases.slice(i + 1).search(/\n {2}(?:\{ \.\.\.)?(?:positive|negative|gap)\(/);
+      const entry = i < 0 ? "" : cases.slice(i, next < 0 ? undefined : i + 1 + next);
+      const kind = /(positive|negative|gap)$/.exec(cases.slice(Math.max(0, i - 10), i))?.[1];
+      const span = /\\\[(\d+),(\d+)\\\)/.exec(entry);
+      found.set(name, { source, kind, span: span ? [Number(span[1]), Number(span[2])] : undefined });
+      break;
+    }
+  }
+  return found;
+}
 
 /** The record of one commit: its note if it has one, else its message. */
 function readRecord(rev: string): CommitRecord {
@@ -26,6 +56,7 @@ function readRecord(rev: string): CommitRecord {
     author: git(["show", "-s", "--format=%an · %ad", "--date=format:%b %d, %H:%M", rev]).trim(),
     stat: git(["show", "--stat", "--format=", rev]).trimEnd().split("\n").filter(Boolean),
     message,
+    examples: examplesOf(rev, text),
   });
 }
 

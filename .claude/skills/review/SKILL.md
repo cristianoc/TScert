@@ -54,11 +54,11 @@ Why:
   After:
     <the new form>
 
-Example (ts):
-    <the program, at most 10 lines>
-
 Effect:
-    <unit or case>   <old outcome> → <new outcome>
+    <case>   <kind>   <old outcome> → <new outcome>   <reason>
+
+Example (ts):   (only for a program that is no pipeline case)
+    <the program, at most 10 lines>
 
 Gap:        (optional) what stays unsupported, and what it needs
 Soundness:  (optional) why the change is sound, or where it is proved
@@ -102,8 +102,24 @@ Co-Authored-By: <attribution>
   and superscripts; an indented line continues the formula above.
 - **A lowering line** is `<TypeScript form> ⇝ <term>`; `label: …` lines
   (`true branch: …`) are side conditions; a trailing `(…)` is a note.
-- **Effect lines** are `<unit or case>   <old> → <new>`, three or more spaces
-  apart.
+- **The examples are the Effect lines.** Each line is one pipeline case,
+  its fields three or more spaces apart: the case's name in
+  `pipeline/cases.mts`, its kind (`positive`, `negative`, `gap`), its outcome
+  before and after (`verified`, `refused`, `gap`; `new` before for an added
+  case, `removed` after for a deleted one), and the reason in a few words: the
+  refusal's obligation, or what the case shows. `⚠` after the old outcome
+  marks it unsound, an acceptance of a program that is not safe. The
+  renderer reads each case's program and expected diagnostic from the
+  commit, so a line expands to its source with the refused span marked:
+
+  ```
+  Effect:
+      invalid-computed-conditional-bound   negative   verified ⚠ → refused   number ≤ string at B<number>
+      named-tuple-members                  positive   new → verified          plain, optional and rest members
+  ```
+
+  An `Example (ts)` block is only for a program that is no case; a case's
+  source is never copied into the record.
 - **The final block is git trailers**: `Key: value` lines, continuation lines
   indented by one space, nothing after them. `git interpret-trailers --parse`
   must read every key. Every behaviour change states `Outcome` and `Trust`.
