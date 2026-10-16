@@ -1,5 +1,5 @@
 import Verification.Types.Claim
-import Verification.Source.EquationStore
+import Verification.Source.Equations.Store
 
 /-! Source types and the graph they are checked against. A program's types
 are labels of the store (`EquationStore.State`): extraction interns each compound

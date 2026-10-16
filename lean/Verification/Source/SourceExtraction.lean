@@ -1,33 +1,33 @@
 -- SourceFacts.lean supplies assignment and ownership analyses used by lowering.
 -- SourceRequests.lean defines the requests and validates their evidence.
--- LoweringState.lean owns lexical slots and the mutable graph construction state.
-import Verification.Source.LoweringState
--- LoweringTypes.lean resolves source claims and type-directed expression operations.
-import Verification.Source.LoweringTypes
--- LoweringObservations.lean emits graph nodes and checks source heap observations.
-import Verification.Source.LoweringObservations
--- LoweringPlans.lean builds direct proof plans for values, predicates and members.
-import Verification.Source.LoweringPlans
--- LoweringControl.lean builds control transfers and their scope mappings.
-import Verification.Source.LoweringControl
--- LoweringClosureSetup.lean prepares closure signatures, parameters and captures.
-import Verification.Source.LoweringClosureSetup
--- LoweringOperands.lean elaborates saved spread and method operands.
-import Verification.Source.LoweringOperands
--- LoweringCallbacks.lean declares the recursive lowering entry points.
-import Verification.Source.LoweringCallbacks
--- LoweringClosures.lean lowers each closure signature and its parameter prologue.
-import Verification.Source.LoweringClosures
--- LoweringExpression.lean builds compositional expression proof plans.
-import Verification.Source.LoweringExpression
--- LoweringAtoms.lean elaborates atomic expressions and predicates.
-import Verification.Source.LoweringAtoms
--- LoweringExecution.lean follows operand execution plans.
-import Verification.Source.LoweringExecution
--- LoweringBindings.lean follows binding and default schedules.
-import Verification.Source.LoweringBindings
--- LoweringFlow.lean lowers statement control-flow nodes.
-import Verification.Source.LoweringFlow
+-- Lowering/State.lean owns lexical slots and the mutable graph construction state.
+import Verification.Source.Lowering.State
+-- Lowering/Types.lean resolves source claims and type-directed expression operations.
+import Verification.Source.Lowering.Types
+-- Lowering/Observations.lean emits graph nodes and checks source heap observations.
+import Verification.Source.Lowering.Observations
+-- Lowering/Plans.lean builds direct proof plans for values, predicates and members.
+import Verification.Source.Lowering.Plans
+-- Lowering/Control.lean builds control transfers and their scope mappings.
+import Verification.Source.Lowering.Control
+-- Lowering/ClosureSetup.lean prepares closure signatures, parameters and captures.
+import Verification.Source.Lowering.ClosureSetup
+-- Lowering/Operands.lean elaborates saved spread and method operands.
+import Verification.Source.Lowering.Operands
+-- Lowering/Callbacks.lean declares the recursive lowering entry points.
+import Verification.Source.Lowering.Callbacks
+-- Lowering/Closures.lean lowers each closure signature and its parameter prologue.
+import Verification.Source.Lowering.Closures
+-- Lowering/Expression.lean builds compositional expression proof plans.
+import Verification.Source.Lowering.Expression
+-- Lowering/Atoms.lean elaborates atomic expressions and predicates.
+import Verification.Source.Lowering.Atoms
+-- Lowering/Execution.lean follows operand execution plans.
+import Verification.Source.Lowering.Execution
+-- Lowering/Bindings.lean follows binding and default schedules.
+import Verification.Source.Lowering.Bindings
+-- Lowering/Flow.lean lowers statement control-flow nodes.
+import Verification.Source.Lowering.Flow
 import Verification.Source.SourceFacts
 import Verification.Source.SourceRequests
 import Verification.Source.Fragment

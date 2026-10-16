@@ -1,4 +1,4 @@
-import Verification.Source.EquationStore
+import Verification.Source.Equations.Store
 import Verification.Source.ResolutionWire
 
 /-! Source resolution certificates retain the input and literal observation,

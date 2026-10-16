@@ -58,17 +58,17 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
 
 // Equation lowering reads declarations and claim labels across these owners.
 const equationReaders = [
-  "lean/Verification/Source/EquationTrees.lean",
-  "lean/Verification/Source/EquationDeclarations.lean",
-  "lean/Verification/Source/EquationClaimWire.lean",
-  "lean/Verification/Source/EquationState.lean",
-  "lean/Verification/Source/EquationInterning.lean",
-  "lean/Verification/Source/EquationCore.lean",
-  "lean/Verification/Source/EquationAnnotations.lean",
-  "lean/Verification/Source/EquationInstances.lean",
-  "lean/Verification/Source/EquationFinishing.lean",
-  "lean/Verification/Source/EquationSource.lean",
-  "lean/Verification/Source/EquationLowering.lean",
+  "lean/Verification/Source/Equations/Trees.lean",
+  "lean/Verification/Source/Equations/Declarations.lean",
+  "lean/Verification/Source/Equations/ClaimWire.lean",
+  "lean/Verification/Source/Equations/State.lean",
+  "lean/Verification/Source/Equations/Interning.lean",
+  "lean/Verification/Source/Equations/Core.lean",
+  "lean/Verification/Source/Equations/Annotations.lean",
+  "lean/Verification/Source/Equations/Instances.lean",
+  "lean/Verification/Source/Equations/Finishing.lean",
+  "lean/Verification/Source/Equations/Source.lean",
+  "lean/Verification/Source/Equations/Lowering.lean",
 ];
 
 // The Fragment AST and its declaration document.
@@ -94,7 +94,7 @@ const equationReaders = [
 // The SourceClaims document and its type table.
 {
   const ts = declared(["tools/source-claims.mts", "tools/type-graph.mts", "tools/declaration-types.mts"]);
-  const leanNames = lean(["lean/Verification/Source/SourceClaimWire.lean",
+  const leanNames = lean(["lean/Verification/Source/Claims/Wire.lean",
     "lean/Verification/Source/ResolutionWire.lean", ...equationReaders], true);
   expectSubset("OCaml writes of SourceClaims", ocamlWrites("ocaml-producer/claims.ml"), ts, {});
   expectSubset("SourceClaims fields Lean ignores", declared(["tools/source-claims.mts"]), leanNames, {

@@ -217,15 +217,15 @@ checks source interfaces and obligations using the graph evidence that
 Typed lowering is organized around three recursive operations: compiling an
 expression, a binding schedule, or a statement body.
 [SourceExtraction.lean](lean/Verification/Source/SourceExtraction.lean) connects
-them through [explicit callbacks](lean/Verification/Source/LoweringCallbacks.lean)
+them through [explicit callbacks](lean/Verification/Source/Lowering/Callbacks.lean)
 and constructs each function request. Separate modules handle
-[closure code](lean/Verification/Source/LoweringClosures.lean),
-[expression proofs](lean/Verification/Source/LoweringExpression.lean),
-[atomic operations](lean/Verification/Source/LoweringAtoms.lean),
-[operand schedules](lean/Verification/Source/LoweringExecution.lean),
-[bindings](lean/Verification/Source/LoweringBindings.lean), and
-[control flow](lean/Verification/Source/LoweringFlow.lean).
-[Construction state](lean/Verification/Source/LoweringState.lean) is private to
+[closure code](lean/Verification/Source/Lowering/Closures.lean),
+[expression proofs](lean/Verification/Source/Lowering/Expression.lean),
+[atomic operations](lean/Verification/Source/Lowering/Atoms.lean),
+[operand schedules](lean/Verification/Source/Lowering/Execution.lean),
+[bindings](lean/Verification/Source/Lowering/Bindings.lean), and
+[control flow](lean/Verification/Source/Lowering/Flow.lean).
+[Construction state](lean/Verification/Source/Lowering/State.lean) is private to
 its owner. Lowering components compose an abstract `Compiler` through operations
 for graph construction, observations, obligations and code publication. Temporary
 execution bindings, receivers, handlers and graph frames have scoped operations.
@@ -233,27 +233,27 @@ The extraction runner returns an immutable result containing the completed
 graph and shared outputs. The type boundary excludes general state access and
 raw compiler-state replacement from consumers.
 
-The source-claims boundary has a [wire decoder](lean/Verification/Source/SourceClaimWire.lean),
-[scheme interpretation](lean/Verification/Source/SourceClaimSchemes.lean),
-[source-site validation](lean/Verification/Source/SourceClaimSites.lean), and
-[equation preparation](lean/Verification/Source/SourceClaimPreparation.lean).
-[Request extraction](lean/Verification/Source/SourceClaimExtraction.lean) combines
-them with typed lowering. [Plan certification](lean/Verification/Source/SourceClaimPlans.lean)
+The source-claims boundary has a [wire decoder](lean/Verification/Source/Claims/Wire.lean),
+[scheme interpretation](lean/Verification/Source/Claims/Schemes.lean),
+[source-site validation](lean/Verification/Source/Claims/Sites.lean), and
+[equation preparation](lean/Verification/Source/Claims/Preparation.lean).
+[Request extraction](lean/Verification/Source/Claims/Extraction.lean) combines
+them with typed lowering. [Plan certification](lean/Verification/Source/Claims/Plans.lean)
 requires every extracted plan to cross an exhaustive conversion before
-[the acceptance entry point](lean/Verification/Source/SourceClaimJson.lean)
+[the acceptance entry point](lean/Verification/Source/Claims/Json.lean)
 checks evidence. That entry point also owns the theorem connecting its exact
 success condition to safety of every accepted function.
 
-[Equation lowering](lean/Verification/Source/EquationLowering.lean) turns
+[Equation lowering](lean/Verification/Source/Equations/Lowering.lean) turns
 source declarations, annotations and claim labels into recursive equations.
-Its [core](lean/Verification/Source/EquationCore.lean) handles mutually recursive
+Its [core](lean/Verification/Source/Equations/Core.lean) handles mutually recursive
 type constructors and declaration references; separate modules own
-[declaration decoding](lean/Verification/Source/EquationDeclarations.lean),
-[claim-row decoding](lean/Verification/Source/EquationClaimWire.lean),
-[annotation traversal](lean/Verification/Source/EquationAnnotations.lean),
-[instance matching](lean/Verification/Source/EquationInstances.lean), and
-[final validation](lean/Verification/Source/EquationFinishing.lean).
-[Construction state](lean/Verification/Source/EquationState.lean) carries pending
+[declaration decoding](lean/Verification/Source/Equations/Declarations.lean),
+[claim-row decoding](lean/Verification/Source/Equations/ClaimWire.lean),
+[annotation traversal](lean/Verification/Source/Equations/Annotations.lean),
+[instance matching](lean/Verification/Source/Equations/Instances.lean), and
+[final validation](lean/Verification/Source/Equations/Finishing.lean).
+[Construction state](lean/Verification/Source/Equations/State.lean) carries pending
 rows and bound obligations through those stages.
 
 The main Lean entry points are:
@@ -263,7 +263,7 @@ The main Lean entry points are:
 | Operational semantics and worlds | [Calculus](lean/Verification/Semantics/Calculus.lean), [Worlds](lean/Verification/Semantics/Worlds.lean), [ObjectCoherence](lean/Verification/Semantics/ObjectCoherence.lean) |
 | Semantic families and graph types | [Types](lean/Verification/Types/Types.lean), [PositiveGraphs](lean/Verification/Types/PositiveGraphs.lean), [PositiveRules](lean/Verification/Types/PositiveRules.lean) |
 | Program typing and checked evidence | [ProgramTyping](lean/Verification/Programs/ProgramTyping.lean), [ProgramCertificates](lean/Verification/Programs/ProgramCertificates.lean), [CertificateProducer](lean/Verification/Programs/CertificateProducer.lean) |
-| Source boundary and CLI | [Fragment](lean/Verification/Source/Fragment.lean), [SourceExtraction](lean/Verification/Source/SourceExtraction.lean), [SourceClaimJson](lean/Verification/Source/SourceClaimJson.lean), [RequestCli](lean/Verification/Source/RequestCli.lean) |
+| Source boundary and CLI | [Fragment](lean/Verification/Source/Fragment.lean), [SourceExtraction](lean/Verification/Source/SourceExtraction.lean), [SourceClaimJson](lean/Verification/Source/Claims/Json.lean), [RequestCli](lean/Verification/Source/RequestCli.lean) |
 | Other code and tests | [OCaml producer](ocaml-producer/README.md), [Node tools](tools/), [regression index](tests/README.md) |
 
 Claims documents preserve current-content assertions such as

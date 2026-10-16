@@ -546,7 +546,7 @@ this evidence order.
 
 [SourceRequests.Bundle](../lean/Verification/Source/SourceRequests.lean) declares
 this envelope and checks its graph interfaces and expression obligations.
-[SourceClaimJson.checkJson](../lean/Verification/Source/SourceClaimJson.lean)
+[SourceClaimJson.checkJson](../lean/Verification/Source/Claims/Json.lean)
 reconstructs the plans from Fragment and SourceClaims, strictly decodes the
 bundle and checks every certified request. Its `checkJson_safe` theorem ties
 that exact acceptance condition to modeled safety. The checking command

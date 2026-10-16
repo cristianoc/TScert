@@ -16,7 +16,7 @@ four things are trusted ([trust surface](DESIGN.md#trust-surface)):
 | --- | --- | --- |
 | **Parser rewrites** | `tools/fragment-parse.mts` (TypeScript) | Its lowerings (`switch`, `for`, templates, enums, optional chains, patterns, `super`, the iterator protocol, shadowing renames, …) preserve JavaScript's execution; TypeScript's binder names each reference's declaration. |
 | **Extraction** | `Source/SourceExtraction.lean`, `Source/Fragment.lean` (Lean) | The calculus program it builds from the Fragment AST means what the Fragment means: control flow, lexical binding, evaluation order, and the program point each claim attaches to. |
-| **Declared types** | `tools/declaration-graph.mts`, `type-term.mts`, `computed-types.mts`; `Source/EquationLowering.lean` | A declaration or annotation is read as the type TypeScript means. |
+| **Declared types** | `tools/declaration-graph.mts`, `type-term.mts`, `computed-types.mts`; `Source/Equations/Lowering.lean` | A declaration or annotation is read as the type TypeScript means. |
 | **Host** | intrinsics, library overlay, environment premises | Native code meets its stated types ([the host](#the-host)). |
 
 Extraction runs inside Lean, so what is checked is exactly what it produced;

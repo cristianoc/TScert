@@ -1,6 +1,6 @@
 -- FlowJson.lean supplies the claim-independent graphs the producer analyzes.
 import Verification.Source.FlowJson
-import Verification.Source.SourceClaimJson
+import Verification.Source.Claims.Json
 
 /-! File interface to the source adapter. Source parsing remains external;
 checking reconstructs each unit's request from the fragment and its claims. -/

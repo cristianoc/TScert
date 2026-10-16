@@ -220,7 +220,7 @@ with $`\varphi_i`$ a declaration's fields, methods and index signatures and
 $`\vec\sigma_i`$ its call signatures.
 
 The store a unit is extracted over is the lowering's heads, and extraction
-grows it ([EquationStore.lean](../lean/Verification/Source/EquationStore.lean)): a union of clauses, a scheme over a closure's
+grows it ([Equations/Store.lean](../lean/Verification/Source/Equations/Store.lean)): a union of clauses, a scheme over a closure's
 binders and a bounded binder's meet each become a head whose template lifts
 the owned parameters it names to arguments. Every unit of a file grows the
 one store in turn, and once extraction is done the heads are validated

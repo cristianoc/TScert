@@ -609,7 +609,7 @@ to parameters and quantified variables by position.
 | Soundness of the computed variances and of `Var` (4.3) | [Types/EquationFamilies.lean](../lean/Verification/Types/EquationFamilies.lean) |
 | Well-formedness of equations | [Types/EquationValidator.lean](../lean/Verification/Types/EquationValidator.lean) |
 | Term spelling of trees | [Types/EquationJson.lean](../lean/Verification/Types/EquationJson.lean) |
-| Lowering source declarations (5) | [Source/EquationLowering.lean](../lean/Verification/Source/EquationLowering.lean) |
+| Lowering source declarations (5) | [Source/Equations/Lowering.lean](../lean/Verification/Source/Equations/Lowering.lean) |
 
 The pipeline cases `non-regular-alias` and `invalid-non-regular-alias` lower an
 alias applied to a longer tuple at each level to one invariant head.

@@ -1,6 +1,6 @@
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
-import Verification.Source.SourceClaimJson
+import Verification.Source.Claims.Json
 
 /-!
 The acceptance theorem rests on Lean's standard axioms alone. The build fails
