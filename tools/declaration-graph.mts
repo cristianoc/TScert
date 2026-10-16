@@ -539,17 +539,11 @@ export function collectDeclarations(file: string, options: {
     const aliasKey = (identity: DeclarationIdentity) =>
       `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
     // A class merged with interfaces is one symbol too, the class its
-    // identity; an interface adding a member or a base to it is refused: its
-    // instances, which the class's construction makes, need not have it,
-    // though TypeScript assumes they do.
+    // identity, its instance contract every part's members (`collect`).
     const declarationOf = (nodes: readonly Node[], what: string): TypeDeclaration => {
       const types = nodes.filter(isTypeDeclaration);
       const classes = types.filter(ts.isClassDeclaration);
       const node = classes[0] ?? types[0];
-      if (classes.length === 1 && types.some(t => ts.isInterfaceDeclaration(t) &&
-          (t.members.length || t.heritageClauses?.length)))
-        throw Error(`${what} is a class merged with an interface adding members: TypeScript assumes them on ` +
-          "instances its construction need not give them");
       if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n) &&
             !ts.isFunctionDeclaration(n)) ||
           (types.length > 1 && !types.every(t => ts.isInterfaceDeclaration(t) || (t === node && classes.length === 1))))
@@ -939,13 +933,14 @@ export function collectDeclarations(file: string, options: {
         // name must have one.
         const nodes = resolveDeclarations(binding.local, binding.local.text);
         const [node] = nodes;
-        if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration)))
+        // Merged type declarations are one, as `lookup` reads them.
+        if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration) && !nodes.every(isTypeDeclaration)))
           throw Error(`TypeScript found ${nodes.length} declarations for ${binding.local.text}`);
         // A class is a type and, imported as a value, a constructor too.
-        if (!binding.typeOnly && !(ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)))
+        if (!binding.typeOnly && nodes.some(n => !ts.isTypeAliasDeclaration(n) && !ts.isInterfaceDeclaration(n)))
           values.push({ binding: { local: binding.local.text, imported: binding.imported,
             specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.local.text) });
-        if (!isTypeDeclaration(node)) continue;
+        if (!nodes.some(isTypeDeclaration)) continue;
         const declaration = lookup(binding.local, binding.local.text);
         roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.local.text,
           imported: binding.imported, specifier: binding.specifier, span: binding.span },
@@ -1724,26 +1719,6 @@ export function collectDeclarations(file: string, options: {
       return { declarations,
         members: () => exportsOf(target).map(e => entityOf(e) ?? { declarations: [], members: () => [] }) };
     };
-    // The members named `key` of what a declaration's annotation names: a
-    // type literal's, or those of the interfaces, classes and type literal
-    // aliases a reference names.
-    const membersNamed = (declaration: Node, key: string): Node[] => {
-      const annotation = ts.isVariableDeclaration(declaration) || ts.isPropertyDeclaration(declaration) ||
-        ts.isPropertySignatureDeclaration(declaration) ? declaration.type : undefined;
-      const holders: Node[] = !annotation ? []
-        : ts.isTypeLiteralNode(annotation) ? [annotation]
-        : ts.isTypeReferenceNode(annotation) && ts.isIdentifier(annotation.typeName)
-          ? (entityOf(checker.getSymbolAtLocation(annotation.typeName))?.declarations ?? [])
-            .map(d => ts.isTypeAliasDeclaration(d) ? d.type : d)
-          : [];
-      return holders.flatMap((holder): Node[] =>
-        ts.isTypeLiteralNode(holder) || ts.isInterfaceDeclaration(holder) || ts.isClassDeclaration(holder)
-          ? [...holder.members] : [])
-        .filter(m => {
-          const named = nameOf(m);
-          return !!named && ts.isIdentifier(named) && named.text === key;
-        });
-    };
     const boundOnly = new Set<Node>();
     const targets = new Map<string, TypeDeclaration>();
     let applications: WrittenApplication[];
@@ -1771,9 +1746,8 @@ export function collectDeclarations(file: string, options: {
         resolve: name => {
           // The declarations a name denotes: TypeScript's symbol at its
           // location, or, for a step of a member path TypeScript gives no
-          // symbol, the member of that name of what the step before it
-          // denotes: a module's or namespace's export, else the members of
-          // that name of what its declarations' annotations name.
+          // symbol, a module's or namespace's export of that name; none for
+          // a member the checker synthesises.
           const resolved = (at: Identifier): { symbol: Symbolic | null; entity: Entity } | null => {
             const direct = follow(checker.getSymbolAtLocation(at));
             const entity = entityOf(direct);
@@ -1789,15 +1763,7 @@ export function collectDeclarations(file: string, options: {
             const exported = owner.symbol ? follow(exportsOf(owner.symbol).find(e => e.name === at.text)) : undefined;
             const selected = entityOf(exported);
             if (exported && selected) return { symbol: exported, entity: selected };
-            const members = owner.entity.declarations.flatMap(d => membersNamed(d, at.text));
-            if (members.length) return { symbol: null, entity: { declarations: members, members: () => [] } };
-            // A member the checker synthesises (a mapped type's, an
-            // instantiation's) has its origin in the owner's type, which the
-            // owner's annotations state.
-            const type = owner.symbol && owner.symbol.flags & (SymbolFlags.Variable | SymbolFlags.Property)
-              ? checker.getTypeOfSymbol(owner.symbol) : undefined;
-            const member = type ? checker.getPropertyOfType(type, at.text) : undefined;
-            return member ? { symbol: null, entity: owner.entity } : null;
+            return null;
           };
           return resolved(name)?.entity ?? null;
         },
@@ -1814,7 +1780,6 @@ export function collectDeclarations(file: string, options: {
           // refused by the sweep (an entity without declarations).
           return properties.map(p => entityOf(p) ?? { declarations: [], members: () => [] });
         },
-        computed: node => ts.isTypeAliasDeclaration(node) && computedAlias(node, aliasOf),
         module: file => idOf(file),
         client,
       }, [client, ...valueDeclarations]);
@@ -2335,6 +2300,30 @@ function mergeMembers(parts: TypeTerm[], fail: (at: Node, message: string) => ne
     ...(symbolIndex ? { symbolIndex } : {}), calls };
 }
 
+/** A class's instance contract merged with its interfaces' members, as
+ * TypeScript merges them: a property both declare is one, of the one type
+ * TypeScript requires of both; a method both declare would be overloads,
+ * outside the fragment. An interface's heritage is refused by the caller's
+ * reading of bases. Construction establishes the whole contract where the
+ * class's code runs, so a member only the interface states is refused
+ * there. */
+function mergedClass(instance: TypeTerm, interfaces: TypeTerm[], fail: (at: Node, message: string) => never,
+    at: Node): TypeTerm {
+  if (!interfaces.length) return instance;
+  if (instance.k !== "object") return fail(at, "a class merged with an interface states no record");
+  const key = (name: PropertyKey) => typeof name === "string" ? name : `[symbol ${name.symbol}]`;
+  const own = new Set(instance.fields.map(f => key(f.name)));
+  const added = interfaces.map(part => {
+    if (part.k !== "object") return fail(at, "an interface merged with a class is a record");
+    for (const field of part.fields)
+      if (own.has(key(field.name)) &&
+          (field.type.k === "function" || field.type.k === "scheme" || field.type.k === "intersection"))
+        fail(at, "a method a class and an interface merged with it both declare would be overloads, outside the fragment");
+    return { ...part, fields: part.fields.filter(f => !own.has(key(f.name))) };
+  });
+  return mergeMembers([instance, ...added], fail, at);
+}
+
 /** A standard library interface through its overlay entries
  * (`interfaceOverlay`): each listed member, read from the one declaration
  * among the merged parts whose text is the reviewed one, a method as a
@@ -2549,7 +2538,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     let expression = ts.isTypeAliasDeclaration(node)
       ? parse(node.type)
       : ts.isClassDeclaration(node)
-        ? classInstance(scope, node, [node.getStart(source), node.end])
+        ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end]), parts.flatMap(part => {
+            if (part === node || !ts.isInterfaceDeclaration(part)) return [];
+            const file = part.getSourceFile();
+            return [members(scopeOf(file), part.members, part, [part.getStart(file), part.end], true)];
+          }), (at, message) => scope.fail(at, message), node)
         : mergeMembers(parts.map(part => {
             const file = part.getSourceFile();
             if (!ts.isInterfaceDeclaration(part)) return scope.fail(part, "a declaration merged with an interface is not one");

@@ -55,7 +55,7 @@ obstacle named. A search failure is neither.
 | A class extending `Array` | Its instances' `constructor` is the subclass, so `map`, `filter` and `slice` construct their results through it (`ArraySpeciesCreate`), which [ordinary array construction](SOURCE-MODEL.md#arrays) excludes (`invalid-array-subclass`). |
 | A catch binding annotated other than `unknown`, or destructured | Anything may be thrown; TypeScript's alternative is `any`. |
 | TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |
-| A class merged with an interface that adds a member or a base | TypeScript assumes the interface's members on the class's instances, which the class's construction does not create: `class C {} interface C { m: number }` types `new C().m`, `undefined`, as a number (`invalid-merged-augmented`). A class merged with interfaces adding nothing is one declaration. |
+| A class merged with an interface whose member its construction does not give | A class merged with interfaces is one instance contract, every part's members: a value consumed at it reads them all (`merged-class-consumer-value-import`), and its construction must give them all. TypeScript assumes them on instances its construction does not create: `class C {} interface C { m: number }` types `new C().m`, `undefined`, as a number, refused where the class is constructed (`invalid-merged-augmented`). |
 | A contract read through an unannotated declaration, whose type is inferred from its code: a declaration a type reaches (`typeof`, a member selection, a named type, a whole class, namespace or module) whose written annotations do not determine its exposed type ([the table below](#types-stated-by-annotations)) | Its type is whatever TypeScript infers from code the reader does not read, which may depend on any code; the bound obligations written there would go unchecked (`invalid-written-unannotated-call-value-import`, `invalid-written-whole-class-value-import`, `invalid-written-unannotated-field-value-import`). The client's own values carry annotations by the same requirement. |
 | A rest parameter typed by what is no array | TypeScript rejects it (TS2370). |
 | A rest parameter typed by an intersection (`...xs: T[] & (number[] \| string[])`) | Its declared contract can be empty at an instance TypeScript admits: at `T := boolean` no array is both a writable `boolean[]` and a `number[]`, writable storage being invariant, yet TypeScript accepts `f<boolean>()`, and a body writing through one operand's view returns a number as a `boolean` (`invalid-rest-intersection`, executed under Node by `node-runs.mts`). |
@@ -81,10 +81,14 @@ merged entity's); a class's members are its instance and static member
 symbols, apart; a module's or namespace's are its exported symbols,
 `export =`, a default export and ambient members included. A member under
 a computed name, which the checker binds late, counts by its declaration,
-and its name's entity is swept. A member the checker synthesises without a
-declaration (a mapped type's, an instantiation's) is determined by its
-origin, the annotations of the declaration it is selected from; without one
-found it is refused.
+and its name's entity is swept. A name path, `typeof E.p₁…pₙ` (a qualified name, a property access, a
+`typeof` or import type), contributes the determining annotations of every
+declared entity on it: the root, which must have them, and each later step
+with a declaration, with everything those annotations name. A step the
+checker synthesises (a mapped type's member, an instantiation's) has no
+declaration and needs none: its type is computed from annotations already
+swept. A module or namespace a further step selects from contributes
+nothing itself.
 
 | Declaration | Determined by |
 | --- | --- |

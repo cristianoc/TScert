@@ -86,3 +86,36 @@ export declare const remapped: {
 };
 export class Bounded<T extends string> {}
 export interface Bounded<T extends string> {}
+
+// A class merged with an interface adding a member
+// (`merged-class-consumer-value-import`): its instance contract is both.
+export class Augmented {}
+export interface Augmented {
+  m: number;
+}
+
+// Members whose types come from instantiation, mapping or composition
+// (`invalid-written-path-*` and `written-path-*` cases).
+interface Box<T> {
+  a: T;
+}
+export declare const boxed: Box<keyof { a: B<any> }>;
+export declare const partial: Partial<Box<keyof { a: B<any> }>>;
+export declare const picked: Pick<Box<keyof { a: B<any> }>, "a">;
+export declare const readonlyBox: Readonly<Box<keyof { a: B<any> }>>;
+export declare const required: Required<Box<keyof { a: B<any> }>>;
+export declare const omitted: Omit<Box<keyof { a: B<any> }>, "b">;
+export declare const unioned: Box<keyof { a: B<any> }> | { a: number };
+export declare const intersected: Box<keyof { a: B<any> }> & { a: string };
+declare const source: Box<keyof { a: B<any> }> & { b: number };
+export const spread = { ...source };
+export const { b: dropped, ...rest } = source;
+type Homomorphic<T> = { [K in keyof T]: keyof { z: B<any> } };
+export declare const homomorphic: Homomorphic<{ a: number }>;
+export declare const nest: { [K in "a"]: { [J in "b"]: number } };
+export declare const keyOwner: { [K in "a"]: "x" };
+export interface ByPropertyKey {
+  [keyOwner.a]: number;
+}
+export type Keys<T> = keyof T;
+export declare const keyed: { [K in "a"]: number };

@@ -50,9 +50,6 @@ export type SweepContext = {
    * declarations holding the members of `object`'s type at `key`'s literal
    * keys, or at every key where `key` is null or not a union of literals. */
   members(object: TypeNode, key: TypeNode | null): readonly Entity[];
-  /** Whether a declaration is an alias TypeScript computes from its
-   * parameters, whose equation may select members of its arguments. */
-  computed(declaration: Node): boolean;
   /** The module a specifier names; null where none. */
   moduleOf(specifier: ts.StringLiteral): Entity | null;
   /** The module a file is, as identities name it. */
@@ -207,8 +204,12 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
         at = at.parent?.parent;
       }
       if (at && (ts.isVariableDeclaration(at) || ts.isParameterDeclaration(at)) && at.type) return { nodes: [at.type] };
-      if (defaults && at && ts.isVariableDeclaration(at) && at.initializer && constant(at) && literal(at.initializer))
-        return none;
+      if (defaults && at && ts.isVariableDeclaration(at) && at.initializer && constant(at)) {
+        if (literal(at.initializer)) return none;
+        // A `const` the table determines by its value: a function with its
+        // annotations, an object literal of such, an assertion.
+        if (at === d) return value(at.initializer, d);
+      }
       return { inferred: d };
     }
     if (ts.isPropertyDeclaration(d) || ts.isPropertySignatureDeclaration(d))
@@ -319,22 +320,34 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (!root && ts.isExpression(node) && !named && erased(node, context.client) && !admitted(node))
       throw refusal(node, "an expression in a type or a declared module names a constant (an identifier, a " +
         "property of one read by name) or is a literal: another is erased, and nothing checks what it applies");
-    // Every name in erased syntax, each step of a member path included,
-    // resolves to the declarations of the symbol it denotes, which are swept.
-    // A step a further step selects a member of contributes nothing by
-    // itself, only that member; a whole module's type, `typeof import("m")`,
-    // contributes its exports.
-    // `as const` names no declaration. A step selected from contributes
-    // only what the next step selects, which must resolve.
+    // A name path in erased syntax, `E.p₁…pₙ` (a qualified name, a property
+    // access, a `typeof`'s or an import type's), contributes the determining
+    // annotations of every declared entity on it, each resolved by its
+    // symbol: the root, which must have them, and each later step that has
+    // a declaration. A step the checker synthesises has none and needs
+    // none: its type is computed from annotations already swept. A module or
+    // a namespace a further step selects from contributes nothing itself.
+    // `as const` names no declaration.
     const constAssertion = !!node.parent && ts.isTypeReferenceNode(node.parent) && node.parent.typeName === node &&
       ts.isIdentifier(node) && node.text === "const" && !!node.parent.parent &&
       (ts.isAsExpression(node.parent.parent) || ts.isTypeAssertion(node.parent.parent));
-    if (ts.isIdentifier(node) && !named && !constAssertion && erased(node, context.client) && !selectedFrom(node)) {
-      const entity = context.resolve(node);
-      if (!entity)
-        throw refusal(node, "a name in a type or a declared module that TypeScript resolves to no symbol or to " +
-          "a symbol without a declaration: the declarations its meaning depends on are unknown");
-      reach([entity], node);
+    if (ts.isIdentifier(node) && !named && !constAssertion && erased(node, context.client) && !prefixStep(node)) {
+      const steps = pathOf(node);
+      const top = topOf(node);
+      const memberOfImport = !!top.parent && ts.isImportTypeNode(top.parent) && top.parent.qualifier === top;
+      for (const [index, step] of steps.entries()) {
+        const entity = context.resolve(step);
+        if (!entity) {
+          if (index === 0 && !memberOfImport)
+            throw refusal(node, "a name in a type or a declared module that TypeScript resolves to no symbol: " +
+              "the declarations its meaning depends on are unknown");
+          continue;
+        }
+        const container = entity.declarations.length > 0 &&
+          entity.declarations.every(d => ts.isSourceFile(d) || ts.isModuleDeclaration(d));
+        if (index < steps.length - 1 && container) continue;
+        reach([entity], node);
+      }
     }
     if (ts.isImportTypeNode(node) && !node.qualifier && !selected(node) &&
         ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
@@ -361,32 +374,11 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     } else if (form?.name && !context.declarationsOf(form.name).some(d => env.names.has(d))) {
       application(node, form.name, form.args, env);
     }
-    // A member selection's meaning depends on the declarations of the members
-    // it selects: an indexed access's at its keys, and a computed alias's,
-    // whose equation may select any member of its arguments, at every key.
-    // A member the checker synthesises without a declaration (a tuple's
-    // position, a mapped type's member) has its origin in the object it is
-    // selected from: that object's syntax, swept here, or, for a `typeof` or
-    // an import type selected from, the entity it names, swept whole.
-    if (ts.isIndexedAccessTypeNode(node)) {
-      const members = context.members(node.objectType, node.indexType);
-      reach(members.filter(m => m.declarations.length), node);
-      if (members.some(m => !m.declarations.length)) {
-        let object: Node = node.objectType;
-        while (ts.isParenthesizedTypeNode(object)) object = object.type;
-        const name = ts.isTypeQueryNode(object) ? rightmost(object.exprName)
-          : ts.isImportTypeNode(object) ? rightmost(object.qualifier) : null;
-        const origin = name ? context.resolve(name)
-          : ts.isImportTypeNode(object) && ts.isLiteralTypeNode(object.argument) && ts.isStringLiteral(object.argument.literal)
-            ? context.moduleOf(object.argument.literal) : null;
-        if (origin) reach([origin], node);
-        else if (ts.isTypeQueryNode(object) || ts.isImportTypeNode(object))
-          throw refusal(node, "a member the checker synthesises without a declaration, selected from an entity " +
-            "that resolves to none: no annotation states its type");
-      }
-    }
-    if (form?.name && !form.instantiation && context.declarationsOf(form.name).some(d => context.computed(d)))
-      for (const arg of form.args) reach(context.members(arg, null), node);
+    // An indexed access selects members of its object, whose names the
+    // path rule sweeps: each selected member with a declaration contributes
+    // its determining annotations; a synthesised one needs none.
+    if (ts.isIndexedAccessTypeNode(node))
+      reach(context.members(node.objectType, node.indexType).filter(m => m.declarations.length), node);
     // Every child is visited, in the scope it is in.
     node.forEachChild(child => { visit(child, scopeOf(node, child, env), client); });
   };
@@ -475,12 +467,6 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (node) visit(node, enclosing(node), false, true);
   }
   return found;
-}
-
-/** The rightmost name of a qualified name or a property access. */
-function rightmost(name: Node | undefined): ts.Identifier | null {
-  return !name ? null : ts.isIdentifier(name) ? name : ts.isQualifiedName(name) ? rightmost(name.right)
-    : ts.isPropertyAccessExpression(name) ? rightmost(name.name) : null;
 }
 
 /** A form naming a type or a value with type arguments: the name it
@@ -573,18 +559,28 @@ function literal(node: Node): boolean {
   return false;
 }
 
-/** Whether a name is a step a further step selects a member of: the left
- * of a qualified name or the object of a property access, or the last name
- * of a `typeof` or an import type an indexed access selects from. */
-function selectedFrom(name: Node): boolean {
+/** The top of the name path a name ends or is a step of. */
+function topOf(name: Node): Node {
   let at = name;
-  const parent = (n: Node) => n.parent;
-  for (let up = parent(at); up && ((ts.isQualifiedName(up) && up.right === at) ||
-      (ts.isPropertyAccessExpression(up) && up.name === at)); up = parent(at)) at = up;
-  const up = parent(at);
-  if (up && ((ts.isQualifiedName(up) && up.left === at) || (ts.isPropertyAccessExpression(up) && up.expression === at)))
-    return true;
-  return !!up && (ts.isTypeQueryNode(up) || ts.isImportTypeNode(up)) && selected(up);
+  for (let up = at.parent; up && ((ts.isQualifiedName(up) && up.right === at) ||
+      (ts.isPropertyAccessExpression(up) && up.name === at)); up = at.parent) at = up;
+  return at;
+}
+
+/** Whether a name is a step a further step selects a member of: the left
+ * of a qualified name or the object of a property access. */
+function prefixStep(name: Node): boolean {
+  const top = topOf(name);
+  const up = top.parent;
+  return !!up && ((ts.isQualifiedName(up) && up.left === top) || (ts.isPropertyAccessExpression(up) && up.expression === top));
+}
+
+/** The names of the path a name ends, from its root. */
+function pathOf(name: Node): ts.Identifier[] {
+  const flatten = (n: Node): ts.Identifier[] =>
+    ts.isIdentifier(n) ? [n] : ts.isQualifiedName(n) ? [...flatten(n.left), ...flatten(n.right)]
+      : ts.isPropertyAccessExpression(n) ? [...flatten(n.expression), ...flatten(n.name)] : [];
+  return flatten(topOf(name));
 }
 
 /** Whether a type is the object an indexed access selects from. */

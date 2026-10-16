@@ -1,10 +1,10 @@
-// A class merged with an interface adding a member: TypeScript assumes `m`
-// on instances the class's construction does not give it, which reads
-// `undefined` as a number.
+// A class merged with an interface adding a member: constructing it must
+// give the whole contract, and its construction does not create `m`, which
+// JavaScript reads `undefined` though TypeScript types it a number.
 class C {}
 interface C {
   m: number;
 }
-export function f(x: C): number {
-  return x.m;
+export function f(): number {
+  return new C().m;
 }
