@@ -9,6 +9,7 @@ import type { Span } from "./span.mts";
 import { asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
 import { GENERATOR, UNCLOSABLE, bindingScope, firstOptional, forInEntryReads, freeOffsets, jumpTarget, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
+import { guardResult } from "./fragment-guards.mts";
 
 export function patternStmt(this: Gate, list: ts.VariableDeclarationList, node: Node, mutable: boolean): Stmt {
   const gate: Gate = this;
@@ -1224,8 +1225,10 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
   const typeParams = gate.enterTypeParams(node.typeParameters, undefined, true);
   try {
     gate.asyncBody = isAsync;
+    const promise = gate.guards.get(node.name.text);
     const { retType, parameterTypes } = gate.headerTypes(() => ({
-      retType: gate.typeOf(node.type),
+      // A guard is called at its plain result; its promise is its own unit's.
+      retType: promise ? guardResult(promise) : gate.typeOf(node.type),
       parameterTypes: node.parameters.map(p => p.dotDotDotToken ? gate.moduleRestType(p, node)
         : p.questionToken || p.initializer ? gate.optionalTypeOf(p.type, p)
         : gate.typeOf(p.type, p)),

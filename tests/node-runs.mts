@@ -19,6 +19,16 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number contract`);
   // `Number` of an object calls its `valueOf`, which here writes `seen.value`.
+  // A guard's promise, which TypeScript does not check: a lying guard and a
+  // lying assertion function, and a `false` outcome TypeScript narrows.
+  assert.throws(() => runExample("invalid-type-guard-promise", "shout(1)"), /toUpperCase is not a function/,
+    "invalid-type-guard-promise: the narrowed argument is a number");
+  assert.equal(runExample("invalid-type-guard-undefined", "label(undefined)"), undefined,
+    "invalid-type-guard-undefined: the narrowed argument is undefined, returned at string");
+  assert.equal(runExample("invalid-assertion-promise", "length(true)"), undefined,
+    "invalid-assertion-promise: the asserted argument is a Boolean, whose length is undefined");
+  assert.throws(() => runExample("invalid-type-guard-false-branch", "shout(-1)"), /toUpperCase is not a function/,
+    "invalid-type-guard-false-branch: the `false` outcome's argument is a number");
   assert.equal(runExample("invalid-number-object", `const seen = { value: 0 };
     wrong({ a: 1, valueOf() { seen.value = 1; return 1; } }, seen)`), 1,
     "invalid-number-object: the actual source returns 1 despite its 0 contract");

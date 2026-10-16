@@ -1723,10 +1723,9 @@ a throw may leave after any part of the body ran.
 
 Every guard is a tag test ([SEMANTICS](SEMANTICS.md#operational-language)),
 refining a tested immutable binding by the tag slice $`T_q`$ of its type on
-each edge ([refinement](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)). A
-user-defined type guard (`x is T`) or assertion function (`asserts x is T`)
-is refused where its type is written: its promise ties the call's result, or
-its completion, to its argument, which no function type states:
+each edge ([refinement](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)).
+A call of a [user-defined guard](#user-defined-guards) narrows by such tests
+of its argument, run again after the call:
 
 ```math
 \frac{\Gamma(x)=A\quad\Gamma[x:T_{\mathsf{typeofObject}}(A)]\vdash_R S_1\quad\Gamma[x:T_{\lnot\mathsf{typeofObject}}(A)]\vdash_R S_2}
@@ -1815,6 +1814,70 @@ to the built-in `sparse ReadonlyArray<unknown>` where it holds
       \Gamma[x:T_{\lnot\mathsf{isArray}}(A)]\vdash_R S_2}
      {\Gamma\vdash_R\ \mathsf{if}\ (\mathtt{Array.isArray}(x))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-array}
 ```
+
+### User-defined guards
+
+A type guard `function g(x: A): x is T { B }` and an assertion function
+`function f(x: A): asserts x is T { B }`, declared at the module's top level
+or bound by a module constant to an arrow function, are their functions at
+the plain results `boolean` and `void`. The promise, that a `true` result (a
+normal completion) leaves the argument a `T`, is a claim of a derived unit
+beside each, its **promise unit** $`g^{\circ}`$ (`%Promise:g%`, a name no
+source spells), whose body is the guard's with each result replaced by the
+argument:
+
+```math
+g^{\circ} = \mathsf{function}\,(x{:}\,A){:}\,T\ \{\,B[\mathsf{return}\ e \mapsto \mathsf{if}\ (e)\ \mathsf{return}\ x\ \mathsf{else}\ \mathsf{throw}\ x]\,\}
+\qquad
+f^{\circ} = \mathsf{function}\,(x{:}\,A){:}\,T\ \{\,B[\mathsf{return}\ e \mapsto \mathsf{return}\ (e,\, x)];\ \mathsf{return}\ x\,\}
+```
+
+The unit is checked as every function is, so `checkJson_safe` concludes that
+each normal return of $`g^{\circ}`$ is a value of $`T`$:
+
+```math
+\frac{\vdash g^{\circ} : (A) \to T\qquad x\notin\mathrm{written}(B)\qquad \mathsf{try}\notin B}
+     {\forall v{:}\,A.\ g(v) \Downarrow \mathsf{true} \implies v \in T}\ \textsf{guard}
+\qquad
+\frac{\vdash f^{\circ} : (A) \to T\qquad x\notin\mathrm{written}(B)}
+     {\forall v{:}\,A.\ f(v) \Downarrow \implies v \in T}\ \textsf{assert}
+```
+
+The two bodies take the same steps up to a `return e`, where $`g`$ returns
+$`e`$, a Boolean by its checked result, and $`g^{\circ}`$ returns $`x`$ where
+$`e`$ is `true` and throws where it is `false`; $`x`$ holds the argument $`v`$,
+since $`B`$ never assigns it. So $`g(v)`$ returns `true` exactly where
+$`g^{\circ}(v)`$ returns $`v`$. Without a `try` in $`B`$ the throw leaves the
+unit, a run that states nothing; an assertion function's results return
+$`x`$ after $`e`$. This is the [elaboration/certification
+boundary](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification):
+the promise unit's evidence proves the promise, and a call consumes it.
+
+A call consumes the promise by testing its argument again. $`T`$ is a union of
+primitive kinds and literals, decided by a test $`q_T`$ of the value alone: a
+`typeof` test per kind, a strict equality per literal and for `null`. Such a
+test runs no code, never throws, and no step changes its answer. A call of the
+guard by its name, its promised actual a name $`a`$, is the call followed by
+that test:
+
+```math
+g(\ldots, a, \ldots) \;\equiv\; g(\ldots, a, \ldots)\ \texttt{\&\&}\ q_T(a)
+\qquad
+f(\ldots, a, \ldots);\;\equiv\; f(\ldots, a, \ldots);\ \mathsf{if}\ (!q_T(a))\ \mathsf{throw}\ a;
+\qquad
+q_{T_1\cup\cdots\cup T_n}(a) = q_{T_1}(a)\parallel\cdots\parallel q_{T_n}(a)
+```
+
+Each equivalence holds wherever the promise does: where $`g`$ returns `true`,
+$`a`$ is a $`T`$, which $`q_T`$ answers `true` of; where it returns `false`,
+the conjunction is `false` either way. The narrowing is the test's own, by the
+rules above, `if-or` among them. A `false` outcome narrows nothing: the
+promise states nothing of it (`invalid-type-guard-false-branch`). The parser
+places the derived nodes' claims at spans inside the call no source node has
+(`fragment-guards.mts`). Pipeline cases: `type-guards` verifies;
+`invalid-type-guard-promise`, `invalid-type-guard-undefined` and
+`invalid-assertion-promise` are refused at the promise unit's return, each run
+under Node by `node-runs.mts`.
 
 ## Enums
 

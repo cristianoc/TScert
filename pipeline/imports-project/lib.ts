@@ -142,3 +142,6 @@ export interface Merge {
 export interface Merge {
   readonly label: string;
 }
+export function isWord(x: unknown): x is string {
+  return typeof x === "string";
+}

@@ -557,7 +557,10 @@ keeps its keys. A test on a mutable cell refines the read, never the cell.
 tests; a chain of one of them reads right-nested, so each operand sees what
 every earlier one answered. `x instanceof C` of a class whose chain of bases
 holds a static `[Symbol.hasInstance]` is a call of that method, its result
-converted by `ToBoolean`, and narrows nothing.
+converted by `ToBoolean`, and narrows nothing. A user-defined guard's promise
+is a claim of a derived unit checked at the guard's body, and a call narrows
+its argument by testing it again
+([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)).
 
 ### Async and iteration
 
