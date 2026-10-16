@@ -13,7 +13,7 @@ import { writeFileSync } from "node:fs";
 import { parseRecord, pageBody, CSS, type CommitRecord, type Example, type Group } from "./record-render.mts";
 
 const git = (args: string[], input?: string): string =>
-  execFileSync("git", args, { input, encoding: "utf8", maxBuffer: 64 << 20, stdio: ["pipe", "pipe", "ignore"] });
+  execFileSync("git", args, { input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["pipe", "pipe", "ignore"] });
 
 /** A file's text at a revision, or undefined where it has none. */
 function at(rev: string, path: string): string | undefined {
@@ -27,7 +27,8 @@ function examplesOf(rev: string, text: string): Map<string, Example> {
   const found = new Map<string, Example>();
   const effect = /^Effect:\s*\n((?: {2,}.*\n?|\s*\n)*)/m.exec(text);
   if (!effect) return found;
-  const names = effect[1].split("\n").map(l => l.trim().split(/\s{3,}/)[0]).filter(n => n && /^[\w/.-]+$/.test(n));
+  // A line's first field, or "" for a line with none, which no name matches.
+  const names = effect[1].split("\n").map(l => l.trim().split(/\s{3,}/)[0] ?? "").filter(n => n && /^[\w/.-]+$/.test(n));
   for (const name of names) {
     for (const r of [rev, `${rev}^`]) {
       const source = at(r, `pipeline/examples/${name}.ts`);
