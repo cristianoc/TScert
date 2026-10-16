@@ -3,10 +3,13 @@
  * skill's: a subject, sections ("Why:", "Rule added (name):", indented
  * blocks) and trailers. */
 
-const esc = (s: string): string =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
-const inline = (s: string): string => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+function inline(s: string): string {
+  return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+}
 
 type Section = { name: string; text: string[]; block: string[] };
 export type CommitRecord = {
@@ -119,23 +122,38 @@ function mathRoles(ts: MathToken[]): MathRole[] {
   // spaces, punctuation, quoted strings and code.
   const prose = new Set<number>();
   // A lone word just after a relation (`: bool`, `= number`) names a type.
-  const afterRelation = (k: number) => { let j = k - 1; while (ts[j]?.kind === "space") j--; return ts[j] !== undefined && RELATIONS.has(ts[j].text); };
-  const textWord = (k: number) => ts[k]?.kind === "word" && TEXT_WORD.test(ts[k].text) && !KEYWORDS.has(ts[k].text) && !LITERALS.has(ts[k].text)
-    && ts[k + 1]?.text !== "(" && ts[k + 1]?.kind !== "script";
+  const afterRelation = (k: number): boolean => {
+    let j = k - 1;
+    while (ts[j]?.kind === "space") j--;
+    const before = ts[j];
+    return before !== undefined && RELATIONS.has(before.text);
+  };
+  const textWord = (k: number): boolean => {
+    const t = ts[k];
+    return t !== undefined && t.kind === "word" && TEXT_WORD.test(t.text) && !KEYWORDS.has(t.text) && !LITERALS.has(t.text)
+      && ts[k + 1]?.text !== "(" && ts[k + 1]?.kind !== "script";
+  };
   // Inside a run a keyword is an ordinary word ("in double brackets").
-  const joins = (k: number) => ["space", "code", "str"].includes(ts[k].kind) || ",;()".includes(ts[k].text)
-    || (ts[k].kind === "word" && KEYWORDS.has(ts[k].text));
+  const joins = (k: number): boolean => {
+    const t = ts[k];
+    return t !== undefined && (["space", "code", "str"].includes(t.kind) || ",;()".includes(t.text)
+      || (t.kind === "word" && KEYWORDS.has(t.text)));
+  };
   for (let i = 0; i < ts.length; i++) {
-    if (!textWord(i)) continue;
-    const run = [i];
-    for (let k = i + 1; k < ts.length && (joins(k) || textWord(k)); k++) if (textWord(k)) run.push(k);
-    const last = run[run.length - 1];
-    if (run.length >= 2 || (/^[a-z]{3,}$/.test(ts[i].text) && !afterRelation(i))) {
+    const word = ts[i];
+    if (word === undefined || !textWord(i)) continue;
+    let count = 1, last = i;
+    for (let k = i + 1; k < ts.length && (joins(k) || textWord(k)); k++) if (textWord(k)) { count++; last = k; }
+    if (count >= 2 || (/^[a-z]{3,}$/.test(word.text) && !afterRelation(i))) {
       // A trailing closing parenthesis or string belongs to the run when the run holds its start.
       // An opening parenthesis just before the run belongs to it too.
       const start = ts[i - 1]?.text === "(" ? i - 1 : i;
       let end = last;
-      while (end + 1 < ts.length && (ts[end + 1].kind === "str" || (ts[end + 1].text === ")" && ts.slice(start, end + 1).some(t => t.text === "(")))) end++;
+      let after = ts[end + 1];
+      while (after !== undefined && (after.kind === "str" || (after.text === ")" && ts.slice(start, end + 1).some(t => t.text === "(")))) {
+        end++;
+        after = ts[end + 1];
+      }
       for (let k = start; k <= end; k++) prose.add(k);
       i = end;
     }
@@ -166,7 +184,8 @@ function math(text: string): string {
   const CLASS: { [R in MathRole]: string } = {
     text: "m-text", code: "", str: "", intr: "m-intr", lit: "m-lit", script: "", refused: "refused", kw: "m-kw", op: "m-op", var: "", con: "m-con", bind: "m-bind", rel: "m-rel", plain: "" };
   return ts.map((t, i) => {
-    const e = esc(t.text), r = roles[i];
+    // `roles` has one role per token.
+    const e = esc(t.text), r = roles[i] ?? "plain";
     const piece = r === "code" ? `<code class="m-code">${highlight(t.text.slice(1, -1))}</code>`
       : r === "str" ? `<code class="m-code"><span class="tk-s">${e}</span></code>`
       : r === "script" ? (() => {
@@ -190,20 +209,24 @@ const formulas = (lines: string[]): string =>
 /** A `Rule:` block: groups separated by blank lines; a group with a line of
  * `─` is an inference rule (premises above, conclusion below, the name after
  * the bar); any other group is a list of formulas. The text is the record's. */
-function rules(block: string[], kind = ""): string {
-  const groups: string[][] = [[]];
+function rules(block: string[], kind: string = ""): string {
+  let current: string[] = [];
+  const groups: string[][] = [current];
   for (const line of block) {
-    if (line.trim()) groups[groups.length - 1].push(line);
-    else if (groups[groups.length - 1].length) groups.push([]);
+    if (line.trim()) current.push(line);
+    else if (current.length) {
+      current = [];
+      groups.push(current);
+    }
   }
   return `<div class="rules">${groups.filter(g => g.length).map(g => {
-    const bar = g.findIndex(l => /^\s*─{3,}/.test(l));
-    if (bar < 0) return g.some(l => l.includes("⇝")) ? lowering(g, kind === "Typing") : formulas(g);
-    const name = /\(([^()]+)\)\s*$/.exec(g[bar])?.[1] ?? "";
+    const barLine = g.find(l => /^\s*─{3,}/.test(l));
+    if (barLine === undefined) return g.some(l => l.includes("⇝")) ? lowering(g, kind === "Typing") : formulas(g);
+    const bar = g.indexOf(barLine);
+    const name = /\(([^()]+)\)\s*$/.exec(barLine)?.[1] ?? "";
     // A definition ending in `=`, with its continuation, stays a formula above the rule.
-    let first = 0;
-    for (let i = 0; i < bar; i++) if (/=\s*$/.test(g[i])) first = i + 2;
-    first = Math.min(first, bar);
+    const ends = g.slice(0, bar).map((l, i) => (/=\s*$/.test(l) ? i + 2 : 0));
+    const first = Math.min(Math.max(0, ...ends), bar);
     const above = g.slice(0, first);
     const premises = g.slice(first, bar).flatMap(parts);
     const conclusion = g.slice(bar + 1);
@@ -219,7 +242,11 @@ function dedent(lines: string[]): string[] {
   const indents = lines.filter(l => l.trim()).map(l => /^ */.exec(l)?.[0].length ?? 0);
   const cut = indents.length ? Math.min(...indents) : 0;
   const out = lines.map(l => l.slice(cut));
-  while (out.length && !out[out.length - 1].trim()) out.pop();
+  let last = out.at(-1);
+  while (last !== undefined && !last.trim()) {
+    out.pop();
+    last = out.at(-1);
+  }
   return out;
 }
 
@@ -259,7 +286,7 @@ const PLAIN_KINDS = new Set(["Tooling"]);
 /** A lowering: each `source ⇝ target` line is the TypeScript form (highlighted)
  * mapped to its term in the calculus (operations coloured); `label: …` lines
  * are side conditions; a trailing parenthesized remark is a note. */
-function lowering(lines: string[], typing = false): string {
+function lowering(lines: string[], typing: boolean = false): string {
   const term = (t: string): string =>
     math(t);
   const note = (t: string): [string, string] => {
@@ -296,11 +323,16 @@ function program(e: Example): string {
 function effects(lines: string[], examples: Map<string, Example>): string {
   const KINDS = new Set(["positive", "negative", "gap", "control"]);
   return `<ul class="effect">${lines.filter(l => l.trim()).map(l => {
-    const [what, ...rest] = parts(l);
+    // A line holds a word, so `parts` gives at least one.
+    const rest = parts(l);
+    const what = rest.shift() ?? "";
     const example = examples.get(what);
-    const kind = rest[0] !== undefined && KINDS.has(rest[0]) ? rest.shift() : example?.kind;
-    const change = rest[0] !== undefined && rest[0].includes("→") ? rest.shift() ?? "" : "";
-    const [old, now] = change.split("→").map(x => x.trim());
+    const first = rest[0];
+    const kind = first !== undefined && KINDS.has(first) ? rest.shift() : example?.kind;
+    const next = rest[0];
+    const change = next !== undefined && next.includes("→") ? rest.shift() ?? "" : "";
+    const sides = change.split("→").map(x => x.trim());
+    const old = sides[0] ?? "", now = sides[1] ?? "";
     const outcome = change
       ? `<span class="was${old.includes("⚠") ? " unsound" : ""}">${inline(old)}</span> <span class="arrow">→</span> <span class="now">${inline(now)}</span>`
       : "";
@@ -376,8 +408,8 @@ function summary(groups: Group[]): string {
   if (!ranges.length) return "";
   const items = ranges.map(g => {
     const count = (o: string) => g.records.filter(r => r.trailers.get("Outcome") === o).flatMap(r => words(r, "Units")).length;
-    const units = ["verified", "refused", "gap"].map(o => [o, count(o)] as const).filter(([, n]) => n).map(([o, n]) => `${n} ${o}`).join(", ");
-    const list = (key: string, skip = "") => [...new Set(g.records.map(r => r.trailers.get(key) ?? "").filter(v => v && v !== skip))];
+    const units = ["verified", "refused", "gap"].filter(o => count(o)).map(o => `${count(o)} ${o}`).join(", ");
+    const list = (key: string, skip: string = ""): string[] => [...new Set(g.records.map(r => r.trailers.get(key) ?? "").filter(v => v && v !== skip))];
     const parts = [...new Set(g.records.flatMap(r => words(r, "Parts")))];
     const facts = [
       `${g.records.length} commit${g.records.length === 1 ? "" : "s"}${units ? `, units ${units}` : ""}`,
@@ -390,9 +422,13 @@ function summary(groups: Group[]): string {
   });
   const owners = new Map<string, string[]>();
   for (const g of ranges) for (const f of g.files) owners.set(f, [...(owners.get(f) ?? []), g.name]);
-  const shared = [...owners].filter(([, gs]) => gs.length > 1).sort();
+  const groupsOf = (f: string): string[] => owners.get(f) ?? [];
+  // Ordered as the text `file,group,…`.
+  const order = (f: string): string => `${f},${groupsOf(f).join(",")}`;
+  const shared = [...owners.keys()].filter(f => groupsOf(f).length > 1)
+    .sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
   return `<section><h2>Branches</h2><ul class="summary">${items.join("")}</ul>` +
-    (shared.length ? `<h4>Files changed by more than one branch</h4><ul class="summary">${shared.map(([f, gs]) => `<li><code>${esc(f)}</code>: ${gs.map(esc).join(", ")}</li>`).join("")}</ul>` : "") +
+    (shared.length ? `<h4>Files changed by more than one branch</h4><ul class="summary">${shared.map(f => `<li><code>${esc(f)}</code>: ${groupsOf(f).map(esc).join(", ")}</li>`).join("")}</ul>` : "") +
     `</section>`;
 }
 
