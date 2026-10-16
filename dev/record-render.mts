@@ -248,6 +248,8 @@ const codeBlock = (lines: string[], mark: "add" | "del" | "" = "", other: string
  * how its content is drawn (mathematics or code), Before/After shown side by side. */
 const MATH_KINDS = new Set(["Rule", "Rules", "Semantics", "Definition", "Definitions", "Type", "Typing", "Notation"]);
 const CODE_KINDS = new Set(["Example", "Counterexample", "Code"]);
+/** Kinds whose lines are drawn as written: commands, layouts, aligned columns. */
+const PLAIN_KINDS = new Set(["Tooling"]);
 
 /** A lowering: each `source ⇝ target` line is the TypeScript form (highlighted)
  * mapped to its term in the calculus (operations coloured); `label: …` lines
@@ -293,6 +295,7 @@ function section(s: Section): string {
   const split = lines.findIndex(l => /^(Before|After):\s*$/.test(l.trim()));
   const draw = (body: string[], mark: "add" | "del" | "" = "", other: string[] = []): string =>
     kind === "Lowering" ? lowering(body) : MATH_KINDS.has(kind) ? rules(body, kind) : CODE_KINDS.has(kind) ? codeBlock(body, mark, other)
+    : PLAIN_KINDS.has(kind) ? `<pre class="code">${body.map(l => `<span class="ln">${esc(l) || " "}</span>`).join("")}</pre>`
     : `<div class="prose">${body.join("\n").split(/\n\s*\n/).map(p => `<p>${inline(p.replace(/\s+/g, " ").trim())}</p>`).join("")}</div>`;
   if (split < 0) return head + text + draw(lines);
   const before: string[] = [], after: string[] = [];

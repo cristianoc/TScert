@@ -78,8 +78,21 @@ Co-Authored-By: <attribution>
 
 - **Kinds:** `Rule`, `Semantics`, `Definition`, `Typing` (rendered as
   mathematics), `Lowering` (source ⇝ term), `Refusal`, `Trust`, `Wire`,
-  `Docs` (prose), `Example`, `Counterexample` (code). An added or removed
-  object has one form; a modified one has `Before:` and `After:`.
+  `Docs` (prose), `Example`, `Counterexample` (code), `Tooling` (lines as
+  written). An added or removed object has one form; a modified one has
+  `Before:` and `After:`.
+- **The object names its stage and its concept:** the parser's gate, the type
+  reader, the producer, a lowering, a Lean rule, the verifier's CLI, tooling.
+  `Definition modified (type reader: the members of a union)`, not
+  `Definition modified (members of a decided union)`.
+- **A `Definition` is a concept stated formally:** `name(args) ⟺ …` or
+  `name(x) = …`, by cases where it has them, each symbol defined where it
+  appears. A sentence about a concept is prose, not a definition: state the
+  concept, or describe the change under another kind.
+- **`Tooling`** is a change to how the project is built, tested or laid out:
+  the runner, a make target, a script, the module structure. It is never a
+  `Definition`, since it changes no concept of the calculus or the pipeline.
+  Its lines are kept as written, aligned columns included.
 - **Sections** are a line `Name:` at the start of a line, followed by text or
   an indented block (2 spaces for `Before:`/`After:`, 4 for content).
 - **Mathematics is Unicode, never TeX.** An inference rule is its premises
