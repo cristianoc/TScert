@@ -9,6 +9,41 @@ open ProgramTyping PositiveRules PositiveGraphs PositiveNormalization Tower
 open HeapFacts HeapKnowledge HeapObservations ProgramCertificates
 open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
+/-- Evidence names the particular observation used. The checker binds it to
+an actual source sequent, so neither the slot nor the requested result type can
+be changed by an untrusted producer. -/
+inductive StepEvidence (ι : Type) where
+  | ordinary (proof : ProgramCertificates.Evidence ι)
+  | pure (proof : ProgramCertificates.Evidence ι)
+  /-- Field and element reads over values (`readTerm`): the ordinary
+  derivation, and every fact of the heap kept. -/
+  | reading (proof : ProgramCertificates.Evidence ι)
+  | created (proof : ProgramCertificates.Evidence ι)
+  | typedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι)
+  | observedRead (slot : Nat) (contents : List Atom)
+  /-- A read of a location whose contents exclude `tag`: the ordinary read
+  at the location's contract (`proof`), whose negative slice is
+  below the claim (`sub`). -/
+  | slicedRead (tag : Tag) (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.SubtypeChoices ι)
+  | knownValue (slot : Nat) (contents : List Atom)
+  /-- The fields, their slots and their contents are read off the term and the
+  state, so this carries only the ordinary derivation it stands beside. -/
+  | allocated (proof : ProgramCertificates.Evidence ι)
+  | written (receiver value : Nat) (contents : Option (List Atom)) (proof : ProgramCertificates.Evidence ι)
+
+/-- An expression-step checker carries the safety theorem required by graph
+composition, including its output heap knowledge. -/
+structure Checker [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) where
+  run : Sequent ι → Knowledge → StepEvidence ι →
+    (CodeEntry ι → Bool) → CheckResult ι Knowledge
+  sound : ∀ {j k e out codes}, (run j k e codes).value = some out →
+    CodesSound G codes → ∀ {ρ n W h},
+    EnvOk G j.context ρ n W → HeapKnowledge.Holds k ρ h →
+    WorldAdm W → HeapOk n W h →
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' v => HeapKnowledge.Holds out (push v ρ) h')
+      n W h (instantiate 0 ρ j.term)
+
 /-- Copy an immutable slot into the result while preserving the old slots. -/
 def copyFacts (fs : Facts) (i : Nat) : Facts :=
   (fs.filter (fun f => f.slot == i)).map (fun f => {f with slot := 0}) ++ HeapFacts.shift fs
@@ -910,28 +945,6 @@ theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
       exact Or.inr ⟨U,_,_,hx,hu,step,hh',
         refine_value rfl (HeapKnowledge.shift_holds (HeapKnowledge.alloc_frame (HeapKnowledge.alloc_frame hk))) hs'⟩
 
-/-- Evidence names the particular observation used. The checker binds it to
-an actual source sequent, so neither the slot nor the requested result type can
-be changed by an untrusted producer. -/
-inductive StepEvidence (ι : Type) where
-  | ordinary (proof : ProgramCertificates.Evidence ι)
-  | pure (proof : ProgramCertificates.Evidence ι)
-  /-- Field and element reads over values (`readTerm`): the ordinary
-  derivation, and every fact of the heap kept. -/
-  | reading (proof : ProgramCertificates.Evidence ι)
-  | created (proof : ProgramCertificates.Evidence ι)
-  | typedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι)
-  | observedRead (slot : Nat) (contents : List Atom)
-  /-- A read of a location whose contents exclude `tag`: the ordinary read
-  at the location's contract (`proof`), whose negative slice is
-  below the claim (`sub`). -/
-  | slicedRead (tag : Tag) (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.SubtypeChoices ι)
-  | knownValue (slot : Nat) (contents : List Atom)
-  /-- The fields, their slots and their contents are read off the term and the
-  state, so this carries only the ordinary derivation it stands beside. -/
-  | allocated (proof : ProgramCertificates.Evidence ι)
-  | written (receiver value : Nat) (contents : Option (List Atom)) (proof : ProgramCertificates.Evidence ι)
-
 /-- The field an operation names, read off the term rather than supplied by the
 producer, so evidence cannot claim a fact about a field the program never
 touched. -/
@@ -1396,19 +1409,6 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         simpa [instantiate] using write_sound typed hi hv hr he hk hw hh
       · contradiction
     · contradiction
-
-/-- An expression-step checker carries the safety theorem required by graph
-composition, including its output heap knowledge. -/
-structure Checker [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) where
-  run : Sequent ι → Knowledge → StepEvidence ι →
-    (CodeEntry ι → Bool) → CheckResult ι Knowledge
-  sound : ∀ {j k e out codes}, (run j k e codes).value = some out →
-    CodesSound G codes → ∀ {ρ n W h},
-    EnvOk G j.context ρ n W → HeapKnowledge.Holds k ρ h →
-    WorldAdm W → HeapOk n W h →
-    SafePost (excOf G) (meaning G j.type)
-      (fun h' v => HeapKnowledge.Holds out (push v ρ) h')
-      n W h (instantiate 0 ρ j.term)
 
 @[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) : Checker G images where

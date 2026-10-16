@@ -294,6 +294,12 @@ increasing trust silently.
   instances) carries `@[nospecialize]`. Lean's code generator otherwise copies
   the whole generic call graph into the first module that uses it at a concrete
   type, which multiplies that module's generated C and its rebuild time.
+- Lean: declare a module's inductive types and structures above the proofs
+  they do not need. Lean checks a theorem in the background, but adds an
+  `inductive`, a `structure` or a `mutual` block only after every earlier
+  proof of the module is checked, so one declared below slow proofs holds up
+  the rest of the module (HeapExpressionRules: 5.1 s → 3.2 s by moving two,
+  measured 2026-10-16).
 - New executable fields on an existing AST constructor need an explicit audit
   of every lowering and certification path. Exhaustive constructor matching
   alone cannot detect a discarded field. Each path must check the field's
