@@ -2122,7 +2122,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     const self: TypeTerm = { k: "self", span: at };
     const given = signature.type?.kind === ts.SyntaxKind.ThisType ? self : undefined;
     const read = signatures(scopeOf(signature, what), signature.parameters, signature.type, signature, at, false,
-      given);
+      given).map(form => ({ ...form, effect: entry?.effect ?? form.effect }));
     const admit = entry?.admit;
     if (!admit) return read;
     const index = signature.parameters.findIndex(p => ts.isIdentifier(p.name) && p.name.text === admit.parameter);
@@ -2209,7 +2209,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           const stated = entry.stated;
           for (const call of calls) boundedArguments(call, stated, what);
           const at = spanOf(overload);
-          const form: FunctionTerm = { k: "function", effect: "unrestricted", receiver: { k: "self", span: at }, params: stated.params,
+          const form: FunctionTerm = { k: "function", effect: entry.effect ?? "unrestricted", receiver: { k: "self", span: at }, params: stated.params,
             rest: stated.rest ?? null, result: stated.result, span: at };
           // A generic statement is a scheme over its binders, as a generic
           // interface method is.
@@ -2287,7 +2287,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       if (stated.binders.length) throw Error(`${what} is stated with binders, which a call signature cannot hold`);
       for (const call of calls) boundedArguments(call, stated, what);
       const at = spanOf(signature);
-      return [{ k: "function", effect: "unrestricted", receiver: null, params: stated.params,
+      return [{ k: "function", effect: entry.effect ?? "unrestricted", receiver: null, params: stated.params,
         rest: stated.rest ?? null, result: stated.result, span: at } satisfies FunctionTerm];
     }
     return forms(signature, name, what, entry).map(form => {

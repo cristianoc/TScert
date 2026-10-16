@@ -73,6 +73,10 @@ export type GlobalEntry = {
   /** Declarations the stated signature names that no library declares, such
    * as `JsonValue`: they join the document when the entry is read. */
   definitions?: TypeDefinition[];
+  /** The effect the read signature states, where reviewed: a call at the
+   * parameters it states runs no client code and leaves every location it
+   * did not allocate as it was. Absent, the signature states none. */
+  effect?: "preservesInputHeap";
 };
 
 const at: [number, number] = [0, 0];
@@ -148,13 +152,15 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `String(v)` converts a primitive, a symbol included, without running
   // client code; an object's conversion calls its `toString` or `valueOf`,
   // which may throw or return an object, and then `String` throws.
-  { global: "String", signature: "(value?: any): string;",
+  // At a primitive it writes nothing, so it states heap preservation.
+  { global: "String", signature: "(value?: any): string;", effect: "preservesInputHeap",
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
   // `Number(v)` converts a primitive without running client code: a bigint
   // to the nearest number, a symbol throws a TypeError, an outcome. An
   // object's conversion calls its `Symbol.toPrimitive`, `valueOf` or
-  // `toString`, client code, so the parameter is stated at the primitives.
-  { global: "Number", signature: "(value?: any): number;",
+  // `toString`, client code, so the parameter is stated at the primitives,
+  // where the call writes nothing and states heap preservation.
+  { global: "Number", signature: "(value?: any): number;", effect: "preservesInputHeap",
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
   // `Boolean(v)` is ToBoolean of its first argument, which reads no property
   // and runs no code of any value's, and ignores every further argument;
@@ -186,14 +192,16 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   { global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;",
     stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
   // Tests of a number that convert nothing: `false` for any argument that is
-  // not a number, an object included, whose methods are never read.
-  { global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;" },
-  { global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;" },
-  { global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;" },
+  // not a number, an object included, whose methods are never read. They
+  // write nothing.
+  { global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;", effect: "preservesInputHeap" },
+  { global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: "preservesInputHeap" },
+  { global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;",
+    effect: "preservesInputHeap" },
   // SameValue of the two arguments: identity of objects, equality of
-  // primitives, no conversion and no client code. `any` is read as
-  // `unknown`.
-  { global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;" },
+  // primitives, no conversion and no client code, and no write. `any` is
+  // read as `unknown`.
+  { global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: "preservesInputHeap" },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
   // (no getter is called). ES5 declares it at `object`, ES2015 at `{}`.

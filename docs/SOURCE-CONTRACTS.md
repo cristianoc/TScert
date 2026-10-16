@@ -1387,6 +1387,22 @@ states what the host does at every one of them.
      {\Gamma(x)=⟦\mathsf{sel}_{M,O,\mathsf{calls}_I}(I)⟧_\Omega}\ \textsf{library-value}
 ```
 
+An entry may state that its signature preserves the input heap
+(`effect`), where a call at the parameters the signature states runs no
+client code and writes no location it did not allocate:
+
+```math
+\frac{⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow R\quad \omega.\mathit{effect}=\mathsf{preservesInputHeap}}
+     {⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow_{\mathsf{preservesInputHeap}} R}\ \textsf{library-effect}
+```
+
+`String` and `Number` of a primitive, `Number.isFinite`, `Number.isInteger`,
+`Number.isSafeInteger` and `Object.is` state it: each converts only a
+primitive, or nothing, and reads and writes no location
+(`library-preserving-callback`, `library-preserving-tests`). An object
+argument, whose conversion runs its methods, is outside the stated
+parameter (`invalid-number-object`).
+
 The entries, each with the code its restriction keeps from running:
 
 - `Boolean(v, …)` is ToBoolean of its first argument, which runs no code and
