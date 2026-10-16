@@ -974,7 +974,9 @@ traverses its operands once instead of evaluating it and then replaying it. -/
     -- Where `Array.isArray` holds, a record or `unknown` arm is the built-ins'
     -- `readonly unknown[]` (`arraySlice`).
     let arrays ← if arrayTested left then some <$> builtinArrayTy else pure none
-    let H := conditionContext (SourceTypes.graph (← table)) scope Γ left andOp arrays
+    let G := SourceTypes.graph (← table)
+    let singles ← conditionSingletons G scope Γ left
+    let H := conditionContext G scope Γ left andOp arrays (singletonOf singles)
     let rhs ← compileConditionAtom recursive fc scope H right yes no
     compileConditionAtom recursive fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
   | .not _ e =>

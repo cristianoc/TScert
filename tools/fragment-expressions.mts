@@ -11,6 +11,7 @@ import { CHAIN } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { nameOf } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName } from "./intrinsics.mts";
+import { guardResult } from "./fragment-guards.mts";
 import { FORGED_PROMISE, GENERATOR, HAS_INSTANCE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 
@@ -1777,8 +1778,13 @@ export function lambda(this: Gate,
     // producer: the claim at the closure states it, and the body is checked
     // against that claim. A class method's result is its instance type's
     // member, which states it, so a method still needs the annotation.
-    const declaredResult: TypeTerm | null =
-      node.type || instance ? gate.typeOf(node.type, node) : null;
+    // A module constant's guard closure is called at its plain result, its
+    // promise being its own unit's; any other closure stating one is refused.
+    const promise = ts.isMethodDeclaration(node) ? undefined : gate.guardClosures.get(gate.span(node).join(":"));
+    if (node.type && ts.isTypePredicateNode(node.type) && !promise)
+      gate.fail(node.type, "a type guard other than a module function or a module constant's arrow function is outside the fragment: its promise unit would close over the bindings around it");
+    const declaredResult: TypeTerm | null = promise ? guardResult(promise)
+      : node.type || instance ? gate.typeOf(node.type, node) : null;
     const arrow = ts.isArrowFunction(node) ? gate.span(node.equalsGreaterThanToken) : null;
     const keyword = modifiers[0];
     const rest = (p: ts.ParameterDeclaration) => p.dotDotDotToken ? { rest: true as const } : {};

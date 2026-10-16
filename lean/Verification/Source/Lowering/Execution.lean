@@ -626,8 +626,9 @@ prepared predicate without replaying an effectful source operand. -/
       let correlated := test == .truthy && !Y.isEmpty && !N.isEmpty &&
         BranchRefinement.onlyBoolean G A && readOnly origin && !origin.freeNames.contains ""
       let arrays ← if correlated && arrayTested origin then some <$> builtinArrayTy else pure none
+      let singles ← if correlated then conditionSingletons G scope' Δ origin else pure []
       let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) => do
-        let base := if correlated then conditionContext G scope' Δ origin truth arrays else
+        let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) else
           match alias with
           | some i => Δ.set i T
           | none => Δ
