@@ -653,6 +653,17 @@ array runs after one of its steps and before a later one
 is not an array is refused; one over an iterable the program defines is the
 iterator protocol's steps ([loops](SOURCE-CONTRACTS.md#loops-and-spreads-over-iterables)).
 
+A pattern binding a `for...of` binds each element, then reads it, before the
+body, as JavaScript binds it per iteration:
+
+```math
+\mathtt{for}\ (\mathtt{const}\ p\ \mathtt{of}\ e)\ s\ \rightsquigarrow\ \mathtt{for}\ (\mathtt{const}\ \%e\ \mathtt{of}\ e)\ \{\ \mathtt{const}\ p = \%e;\ s\ \}
+```
+
+with $`\%e`$ a name no source spells and the inner declaration a `const`
+pattern's; a loop over an iterable the program defines takes no pattern
+(`for-of-pattern-binding`, `invalid-for-of-pattern-string`).
+
 A default replaces a read that is `undefined`, and only then runs. With
 $`R'`$ the read's labels told apart clause by clause (`byClause`: a label that
 is a union row, such as a declared alias, is replaced by one label per

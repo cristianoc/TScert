@@ -19,6 +19,9 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // The pattern steps a string by code point: the first is the whole emoji.
+  assert.equal(runExample("invalid-for-of-pattern-string", `firsts(["\\u{1F600}b"])`), "\u{1F600}",
+    "invalid-for-of-pattern-string: the pattern binds a code point, not the first code unit");
   // The step calling the closure constant reads `LIMIT` before it holds a value.
   assert.throws(() => runExample("invalid-initialization-closure-call", "scaled(1)"), /before initialization/,
     "invalid-initialization-closure-call: the module throws a ReferenceError while it initializes");

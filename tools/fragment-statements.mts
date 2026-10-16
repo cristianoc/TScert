@@ -1141,10 +1141,35 @@ export function controlStmt(this: Gate, node: Statement): Stmt {
         !(list.flags & ts.NodeFlags.Const || (list.flags & ts.NodeFlags.Let && gate.neverAssigned(list, true))))
       gate.fail(node, "a `for...of` loop declares one `const` binding, or a `let` nothing assigns");
     const d = list.declarations[0];
-    if (!ts.isIdentifier(d.name))
-      gate.fail(d, "destructuring is outside the fragment");
     if (d.type || d.initializer)
       gate.fail(d, "a `for...of` binding takes the element's type");
+    // `for (const p of e) s` with `p` a pattern is `for (const %e of e) {
+    // const p = %e; s }`: each iteration binds the element, then the
+    // pattern reads it, before the body, as JavaScript binds the pattern
+    // per iteration. The element is a name no source spells, and the
+    // pattern is a `const` pattern statement's.
+    if (ts.isObjectBindingPattern(d.name) || ts.isArrayBindingPattern(d.name)) {
+      const iterate = gate.iterations.get(gate.span(node.expression).join(":")) ?? iterateName;
+      if (iterate.startsWith("client"))
+        gate.fail(d, "a pattern binding a `for...of` over a program's iterable is outside the fragment");
+      const c = list.getStart(gate.file);
+      const element = `%element@${c}`;
+      const target = gate.pattern(d.name, new Set(), false);
+      gate.initializedBefore(d, [[target, null]]);
+      const bind: Stmt = { k: "destructure", pos: gate.span(d), target, default_: null,
+        init: { k: "id", pos: [c, c + "const".length], name: element } };
+      return {
+        k: "forOf",
+        pos: gate.span(node),
+        name: element,
+        namePos: gate.span(d.name),
+        iterate,
+        iterable: gate.expr(node.expression),
+        body: [bind, ...gate.block(node.statement)],
+      };
+    }
+    if (!ts.isIdentifier(d.name))
+      gate.fail(d, "destructuring is outside the fragment");
     if (d.name.text === "undefined")
       gate.fail(d, "shadowing undefined is outside the fragment");
     const iterate = gate.iterations.get(gate.span(node.expression).join(":")) ?? iterateName;

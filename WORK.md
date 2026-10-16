@@ -206,8 +206,9 @@ the effect checker does not certify (see [contract
 completeness](#restoring-completeness); 7: effects, tests, math, mathRoles,
 lowering, rules and section, through `esc`, `highlight` and
 `afterRelation`), a value of `undefined` written to an optional field (3:
-examplesOf, and readRecord and group through it), a `for...of` binding
-destructured (2), a conditional type over a type parameter, `KeysOf<T>` (2,
+examplesOf, and readRecord and group through it), an element read a length
+guards (`paragraphs[paragraphs.length - 1]`, `guarded-element-read-refused`,
+2: parseTrailers, parseRecord), a conditional type over a type parameter, `KeysOf<T>` (2,
 lowering-dump), an array literal spreading a `Set` and a map's keys (2:
 summary, pageBody), a dictionary read at a key that may name an
 `Object.prototype` member (card), and a nested conditional of literals
