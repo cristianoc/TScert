@@ -27,6 +27,7 @@ design, not its progress.
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 3 of 238 verify (2026-10-16, at cb47e7e) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -170,3 +171,21 @@ testing converges without a mechanized specification. A rewrite chosen by a
 type (`%Iterate:K%`, `%ElementAt%`) is correct under that typing premise.
 The reading of declared types and the host remain trusted; the remaining
 options are in [TRUST-REDUCTION](docs/TRUST-REDUCTION.md).
+
+<a id="the-front-ends-own-functions"></a>
+**The front end's own functions.** Each top-level function of `tools/*.mts`,
+sliced into its own file with the same-file declarations it uses, is a piece
+of ordinary TypeScript the pipeline can be asked about: 238 of them. A slice
+stops at its first refusal, so each blocker below hides the ones behind it.
+The first blockers, by the number of slices each stops (2026-10-16):
+
+- a namespace import, `import * as ts` (121);
+- `Error(…)` called without `new` (26);
+- named tuple members, `[start: number, end: number]` (15);
+- a user-defined type guard, `x is T` (13);
+- `Number.isFinite`, `Number.isSafeInteger`, `Object.is` and `Number(…)`,
+  absent from the overlay of library globals (15);
+- module-level `let` and `var`, regular expression literals, conditional
+  types, and the compiler API's own declarations (about 20).
+
+Only one slice reaches the producer and fails there; none fails in search.

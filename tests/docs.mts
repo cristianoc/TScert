@@ -20,7 +20,9 @@ const loaded: unknown = createRequire(join(root, "tools", "package.json"))("kate
 if (!isKatex(loaded)) throw Error("katex has no renderToString");
 const katex = loaded;
 
-/** Directories holding no maintained documents: dependencies and build output. */
+/** Directories holding no maintained documents: dependencies and build output.
+ * A directory with a `.git` entry of its own is another checkout, such as an
+ * agent's worktree under `.claude/worktrees/`, and holds that checkout's documents. */
 const excluded = new Set(["node_modules", ".lake", "_build"]);
 
 /** A symbolic link to a document is that document under another name: it is
@@ -31,7 +33,7 @@ function markdownFiles(dir: string): string[] {
     if (excluded.has(entry.name)) return [];
     const path = join(dir, entry.name);
     if (entry.isSymbolicLink()) { if (entry.name.endsWith(".md")) links.push(path); return []; }
-    if (entry.isDirectory()) return markdownFiles(path);
+    if (entry.isDirectory()) return existsSync(join(path, ".git")) ? [] : markdownFiles(path);
     return entry.name.endsWith(".md") ? [path] : [];
   });
 }
