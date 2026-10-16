@@ -1211,6 +1211,19 @@ scheme over its binders, host-relative) or a property (its type the result):
      {⟦s⟧_\Omega=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R}\ \textsf{library-construct}
 ```
 
+An entry may read a call signature as the global's construct (`construct`),
+where the host's call runs the construct's steps: `Error(m)` called takes the
+error constructor itself as its new target (ECMA-262, "Error ( message [ ,
+options ] )"). The call is written as the construct, and its statement joins
+the global's construct signatures:
+
+```math
+\frac{\mathit{lib}(x)\quad \omega\in\Omega\quad
+      \omega=(x,\ \cdot,\ \mathsf{text}(s),\ \mathsf{construct},\ \mathsf{stated}\ \forall\vec X.\ (\vec P)\Rightarrow R)\quad
+      |\vec a|\le|\vec P|\ \text{for each}\ x(\vec a)\ \text{selecting}\ s}
+     {⟦x(\vec e)⟧=\mathsf{new}\ x(⟦\vec e⟧)\qquad ⟦s⟧_\Omega=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R}\ \textsf{library-call-construct}
+```
+
 ```math
 \frac{\mathit{lib}(x)\quad \omega\in\Omega\quad \omega=(x,\ m,\ \mathsf{text}(s),\ \mathsf{stated}\ \forall\vec X.\ (\vec P)\Rightarrow R)\quad
       |\vec a|\le|\vec P|\ \text{for each}\ x.m(\vec a)\ \text{selecting}\ s}

@@ -270,6 +270,9 @@ export class Gate {
   /** Calls the reviewed overlay reads as a call of an intrinsic,
    * `Promise.resolve(v)`, by span: the intrinsic's name. */
   readonly globalIntrinsics = new Map<string, string>();
+  /** Calls the reviewed overlay reads as the global's construct, `Error(m)`,
+   * by span. */
+  readonly globalConstructs = new Set<string>();
   /** The file's enums by name (PROGRAM-TYPING.md, "Enums"), each member's value as
    * TypeScript computes it, once the declaration graph has been read. */
   readonly enums = new Map<string, EnumInfo>();
@@ -1405,6 +1408,7 @@ export function parseFile(file: string, carriesContext = false,
         symbolName: ([start, end], result) => gate.symbolNames.set(`${start}:${end}`, result),
         globalTest: ([start, end]) => gate.globalTests.add(`${start}:${end}`),
         globalIntrinsic: ([start, end], name) => gate.globalIntrinsics.set(`${start}:${end}`, name),
+        globalConstruct: ([start, end]) => gate.globalConstructs.add(`${start}:${end}`),
         enums: enumNodes.map(node => gate.span(node)),
         enumMember: ([start, end], value) => {
           for (const info of gate.enums.values())

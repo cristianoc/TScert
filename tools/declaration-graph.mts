@@ -306,6 +306,9 @@ export function collectDeclarations(file: string, options: {
    * an intrinsic, such as `Promise.resolve(v)`, by the call's span, with the
    * intrinsic's name; the intrinsics then join the values. */
   globalIntrinsic?: (span: Span, name: string) => void;
+  /** Told each call of a global that the reviewed overlay reads as its
+   * construct, such as `Error(m)`, by the call's span. */
+  globalConstruct?: (span: Span) => void;
   /** The names the client's ambient declarations bind, `declare function f`,
    * `declare const x: T`, `declare class C`, one span per name (overloads
    * once): each joins its values at the type its declarations state. */
@@ -1294,6 +1297,7 @@ export function collectDeclarations(file: string, options: {
             listIntrinsics(span, [name]);
             options.globalIntrinsic?.(span, name);
           },
+          construct: span => options.globalConstruct?.(span),
           library: libraryReference,
           define: definition => {
             const key = (d: TypeDefinition) => `${d.declaration.module}#${d.declaration.name}`;
@@ -1758,6 +1762,8 @@ type SelectionContext = {
   test: (span: Span, test: NonNullable<GlobalEntry["test"]>) => void;
   /** Told each call the overlay reads as a call of an intrinsic. */
   intrinsic: (span: Span, name: string) => void;
+  /** Told each call the overlay reads as the global's construct. */
+  construct: (span: Span) => void;
   /** Given each declaration a read entry's statement names that no library
    * declares (`GlobalEntry.definitions`). */
   define: (definition: TypeDefinition) => void;
@@ -1996,11 +2002,28 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     chosen.set(signature, [...chosen.get(signature) ?? [], call]);
   }
   const what = `${name}(…)`;
-  const callForms = [...chosen].flatMap(([signature, calls]) =>
-    forms(signature, name, what, reviewed(undefined, signature, what)).map(form => {
+  // A call the overlay reads as the global's construct, `Error(m)`: each is
+  // reported, and its statement joins the construct signatures.
+  const calledConstructs: { binders: string[]; type: TypeTerm }[] = [];
+  const callForms = [...chosen].flatMap(([signature, calls]) => {
+    const entry = reviewed(undefined, signature, what);
+    if (entry?.construct) {
+      const stated = entry.stated;
+      if (!stated) throw Error(`${what} is read as a construct with no statement`);
+      for (const call of calls) {
+        if (call.arguments.length > stated.params.length || call.arguments.some(ts.isSpreadElement))
+          throw Error(`${what} is read with at most ${stated.params.length} argument(s)`);
+        context.construct(spanOf(call));
+      }
+      calledConstructs.push({ binders: stated.binders, type: { k: "constructor", params: stated.params, rest: null,
+        result: stated.result, span: spanOf(signature) } });
+      return [];
+    }
+    return forms(signature, name, what, entry).map(form => {
       if (form.receiver) throw Error(`${what} states its receiver`);
       return form;
-    }));
+    });
+  });
   // The construct signatures the client's `new` expressions resolve to, each
   // read as the overlay states it (`stated`), or, outside the standard
   // library, as declared. A stated signature's parameters bound the
@@ -2014,7 +2037,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     built.set(signature, [...built.get(signature) ?? [], expression]);
   }
   const whatNew = `new ${name}(…)`;
-  const constructForms = [...built].flatMap(([signature, expressions]) => {
+  const constructForms = [...calledConstructs, ...[...built].flatMap(([signature, expressions]) => {
     const entry = reviewed(undefined, signature, whatNew);
     const span = spanOf(signature);
     // A construct of an intrinsic stating the same step, `new Promise(e)`:
@@ -2045,7 +2068,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         return { binders,
           type: { k: "constructor", params: form.params, rest: form.rest, result: form.result, span } satisfies TypeTerm };
       });
-  });
+  })];
   const source = declaration.getSourceFile();
   const identity: DeclarationIdentity = { module: context.identityOf(source), name,
     span: [declaration.getStart(source), declaration.end] };

@@ -49,6 +49,10 @@ export type GlobalEntry = {
    * member, whose signature is the variable's declaration, reads
    * `e instanceof X` as the test. */
   test?: "isArray";
+  /** The call runs the global's construct steps: the parser writes `Error(m)`
+   * as `new Error(m)`, and the call is read at `stated` as a construct
+   * signature, joining the global's construct signatures. */
+  construct?: true;
   /** The call is a call of this intrinsic (`intrinsics.mts`), which states
    * the same step: the parser writes `Promise.resolve(v)` as
    * `%PromiseResolve%(v)`, and the member joins no value. */
@@ -125,6 +129,21 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // which may throw or return an object, and then `String` throws.
   { global: "String", signature: "(value?: any): string;",
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
+  // `Number(v)` converts a primitive without running client code: a bigint
+  // to the nearest number, a symbol throws a TypeError, an outcome. An
+  // object's conversion calls its `Symbol.toPrimitive`, `valueOf` or
+  // `toString`, client code, so the parameter is stated at the primitives.
+  { global: "Number", signature: "(value?: any): number;",
+    admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
+  // Tests of a number that convert nothing: `false` for any argument that is
+  // not a number, an object included, whose methods are never read.
+  { global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;" },
+  { global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;" },
+  { global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;" },
+  // SameValue of the two arguments: identity of objects, equality of
+  // primitives, no conversion and no client code. `any` is read as
+  // `unknown`.
+  { global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;" },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
   // (no getter is called). ES5 declares it at `object`, ES2015 at `{}`.
@@ -176,8 +195,15 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `name` and a missing message are `Error.prototype`'s, which the model
   // does not hold, so only the message is stated, and it is required.
   // `stack` is the engine's and is not stated. ES2022 adds `options`.
-  ...["new (message?: string): Error;", "new (message?: string, options?: ErrorOptions): Error;"].map(
+  //
+  // `Error(m)` called runs the same steps: with no new target, the error
+  // constructor takes itself as the target (ECMA-262, "Error ( message [ ,
+  // options ] )"), so the call is read as the construct, at the same
+  // statement.
+  ...["new (message?: string): Error;", "new (message?: string, options?: ErrorOptions): Error;",
+    "(message?: string): Error;", "(message?: string, options?: ErrorOptions): Error;"].map(
     (signature): GlobalEntry => ({ global: "Error", signature,
+      ...(signature.startsWith("new ") ? {} : { construct: true }),
       stated: { binders: [], params: [atom("string")],
         result: { k: "object", fields: [], stringIndex: null, calls: [], span: at,
           prototype: { k: "object", fields: [{ name: "message", optional: false, readonly: true,

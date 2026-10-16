@@ -418,6 +418,11 @@ export function expr(this: Gate, node: Expression): Expr {
     if (intrinsic && ts.isPropertyAccessExpression(node.expression))
       return gate.intrinsic(intrinsic, gate.span(node), gate.span(node.expression.name),
         node.arguments.map(a => gate.expr(a)));
+    // `Error(m)`, which the overlay reads as the global's construct: the
+    // host runs `new Error(m)`.
+    if (gate.globalConstructs.has(gate.span(node).join(":")))
+      return { k: "new", pos: gate.span(node), callee: gate.expr(node.expression),
+        args: node.arguments.map(a => gate.expr(a)) };
     if (
       ts.isPropertyAccessExpression(node.expression) &&
       ts.isIdentifier(node.expression.expression) &&
