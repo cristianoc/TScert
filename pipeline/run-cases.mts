@@ -21,11 +21,21 @@ export function runCase(test: Case): Promise<Outcome> {
     .catch((error: unknown) => { throw new Error(`${test.file}: ${error instanceof Error ? error.message : String(error)}`); });
 }
 
-/** Map over `items` with at most `width` in flight, keeping their order. */
+/** Map over `items` with at most `width` in flight, keeping their order. The
+ * count finished so far is shown on standard error: on one rewritten line in a
+ * terminal, otherwise every tenth of the way. */
 export async function pooled<T, R>(items: readonly T[], work: (item: T) => Promise<R>,
     width = availableParallelism()): Promise<PromiseSettledResult<R>[]> {
   const results: PromiseSettledResult<R>[] = new Array(items.length);
-  let next = 0;
+  let next = 0, finished = 0;
+  const step = Math.max(1, Math.ceil(items.length / 10));
+  const shown = () => {
+    finished++;
+    if (process.stderr.isTTY)
+      process.stderr.write(`\r${finished} of ${items.length} cases${finished === items.length ? "\n" : ""}`);
+    else if (finished % step === 0 || finished === items.length)
+      process.stderr.write(`${finished} of ${items.length} cases\n`);
+  };
   const worker = async () => {
     while (next < items.length) {
       const i = next++;
@@ -34,6 +44,7 @@ export async function pooled<T, R>(items: readonly T[], work: (item: T) => Promi
       } catch (reason) {
         results[i] = { status: "rejected", reason };
       }
+      shown();
     }
   };
   await Promise.all(Array.from({ length: Math.min(width, items.length) }, worker));

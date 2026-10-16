@@ -1,11 +1,10 @@
 # TScert: an independent checker, proved in Lean, for TypeScript type claims.
-# `make help` lists the targets. VERBOSE=1 shows detailed diagnostics.
+# `make help` lists the targets.
 
-V := $(if $(filter 1,$(VERBOSE)),--verbose)
 OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
-.PHONY: help setup build test suite cases check lowering semantic-diff fmt \
+.PHONY: help setup build build-lean build-producer test suite cases check lowering semantic-diff fmt \
   check-fmt setup-git-hooks
 
 help: ## list the targets
@@ -16,15 +15,19 @@ setup: ## install the node dependencies (tools, the library fixture's Node types
 	npm ci --prefix pipeline/library-project
 	npm install --no-save
 
-build: ## build the Lean verifier and the OCaml producer
-	cd lean && lake build
+build: build-lean build-producer ## build the Lean verifier and the OCaml producer
+
+build-lean: ## build the Lean verifier
+	cd lean && lake build --log-level=warning
+
+build-producer: ## build the OCaml producer
 	dune build --root ocaml-producer
 
 test: ## the fast checks: front-end types, JSON field names, assertions, documents, rule inventory
-	@./test-all.sh --quick $(V)
+	@./test-all.sh
 
-suite: ## build, then every check, including all pipeline cases and controls (about 2 minutes)
-	@./test-all.sh --build $(V)
+suite: build ## build, then the pipeline cases and the controls no case can make
+	node pipeline/test.mts
 
 cases: ## the pipeline cases whose file names contain P (all of them when P is empty)
 	node pipeline/run-cases.mts $(P)

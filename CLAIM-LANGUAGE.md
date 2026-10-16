@@ -92,8 +92,7 @@ legend; it reads the record's structured fields and never infers an obligation
 from a diagnostic sentence. A direct obligation is a subtyping judgment between
 two ground types at a call's span, decoded structurally, its labels checked
 against the record's graph. `pipeline/verify-source.mts` prints the
-presentation's `summary` as the `obligation:` line of a failed search, and
-`pipeline/test.mts` reads its `searchOutcome`.
+presentation's `summary` as the `obligation:` line of a failed search.
 [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) owns the exact failure
 contract.
 

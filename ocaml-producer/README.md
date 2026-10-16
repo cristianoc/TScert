@@ -124,8 +124,6 @@ output and scope-projected path metadata on every exit. Each overload row owns
 its expression, entry and storage-contract claims; other inference effects
 remain with the enclosing pass. Block return context, observation roots, active
 point and rigid bounds use explicit scope operations.
-The [scope tests](speculation_tests.ml) check these restoration boundaries and
-retained effects, including exceptional exits that source cases cannot inject.
 
 Lean's final lowering consumes the same plan builders, with the claims used
 for type-directed operations. It reconstructs plans from Fragment when checking

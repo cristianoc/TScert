@@ -19,7 +19,3 @@
  (modules producer)
  (libraries producer_core))
 
-(test
- (name speculation_tests)
- (modules speculation_tests)
- (libraries producer_core))

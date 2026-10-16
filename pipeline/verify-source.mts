@@ -1,10 +1,11 @@
-import { execFile, spawnSync } from "node:child_process";
+import { fork, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { Socket } from "node:net";
+import { availableParallelism, tmpdir } from "node:os";
 import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 // ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.
-import { parseFile } from "../tools/fragment-parse.mts";
+import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { clientErrors, tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
@@ -202,14 +203,8 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
     // The TypeScript errors the parser's gate read are kept beside its log,
     // accepted or not: they are where a refusal over one of them points.
     const diagnostics = join(artifacts, "typescript-diagnostics.json");
-    const parsed = tsconfigPath
-      ? parsedHere(diagnostics, (seen) => parseFile(snapshot, false, tsconfigPath, resolve(source), seen))
-      : run(process.execPath, [
-          resolve(repo, "tools/fragment-parse.mts"),
-          snapshot,
-          "--typescript-diagnostics",
-          diagnostics,
-        ]);
+    const parsed = parsedHere(diagnostics, (seen) =>
+      parseFile(snapshot, false, tsconfigPath, tsconfigPath ? resolve(source) : snapshot, seen));
     writeFileSync(join(artifacts, "parse.log"), parsed.detail);
     const refusedErrors = () =>
       typescriptErrors
@@ -329,26 +324,115 @@ function readOutcome(value: unknown): Outcome {
     return { status, artifacts, phase, detail: value.detail };
   throw Error("not an outcome");
 }
-/** The same run in a process of its own, exactly as the command line below
- * runs it, for a caller that must stay responsive or runs several at once.
- * `project` is what `--project` takes; `typescriptErrors`, whether a failed
- * search is named by TypeScript's errors (`--typescript-errors`). */
+/** What one check is asked: the arguments of `check`, as they cross to a worker. */
+type Request = { source: string; project?: string; typescriptErrors: boolean; subtypeRounds?: number };
+function readRequest(value: unknown): Request {
+  if (!value || typeof value !== "object" || !("source" in value) || typeof value.source !== "string" ||
+      !("typescriptErrors" in value) || typeof value.typescriptErrors !== "boolean")
+    throw Error("not a request");
+  const project = "project" in value && typeof value.project === "string" ? value.project : undefined;
+  const subtypeRounds = "subtypeRounds" in value && typeof value.subtypeRounds === "number"
+    ? value.subtypeRounds : undefined;
+  return { source: value.source, project, typescriptErrors: value.typescriptErrors, subtypeRounds };
+}
+const checkRequest = (r: Request): Outcome =>
+  check(r.source, r.project ? tsconfigOf(r.project) : undefined, r.typescriptErrors, r.subtypeRounds);
+
+/** A whole check is killed after this long: the parser runs inside the worker,
+ * so its step has no limit of its own. */
+const checkTimeoutMs = 4 * stepTimeoutMs;
+type Job = { request: Request; done: (o: Outcome) => void; fail: (e: Error) => void };
+const queue: Job[] = [];
+const idle: ChildProcess[] = [];
+const logs = new Map<ChildProcess, string>();
+let workers = 0;
+/** Give queued checks to idle workers, starting one per core at most. An idle
+ * worker does not keep the caller's process alive. */
+function dispatch(): void {
+  for (let job = queue.shift(); job; job = queue.shift()) {
+    const worker = idle.pop() ?? (workers < availableParallelism() ? startWorker() : undefined);
+    if (!worker) {
+      queue.unshift(job);
+      return;
+    }
+    give(worker, job);
+  }
+}
+function startWorker(): ChildProcess {
+  workers++;
+  const worker = fork(import.meta.filename, ["--serve"], { cwd: repo, stdio: ["ignore", "ignore", "pipe", "ipc"] });
+  // What the worker writes to standard error is shown only with a failure.
+  worker.stderr?.setEncoding("utf8");
+  worker.stderr?.on("data", (text: string) => { logs.set(worker, (logs.get(worker) ?? "") + text); });
+  if (worker.stderr instanceof Socket) worker.stderr.unref();
+  worker.on("exit", () => {
+    workers--;
+    const at = idle.indexOf(worker);
+    if (at >= 0) idle.splice(at, 1);
+    dispatch();
+  });
+  return worker;
+}
+function give(worker: ChildProcess, job: Job): void {
+  logs.set(worker, "");
+  worker.ref();
+  worker.channel?.ref();
+  const settle = (finish: () => void) => {
+    clearTimeout(timer);
+    worker.off("message", answered);
+    worker.off("exit", died);
+    finish();
+  };
+  const answered = (message: unknown) => settle(() => {
+    worker.unref();
+    worker.channel?.unref();
+    idle.push(worker);
+    try {
+      job.done(readOutcome(message));
+    } catch (error) {
+      job.fail(new Error(`no outcome: ${messageOf(error)} ${logs.get(worker)?.trim() ?? ""}`));
+    }
+    dispatch();
+  });
+  const died = () => settle(() =>
+    job.fail(new Error(`no outcome: the worker for ${job.request.source} exited: ${logs.get(worker)?.trim() ?? ""}`)));
+  const timer = setTimeout(() => settle(() => {
+    worker.kill();
+    job.fail(new Error(`timeout: ${basename(job.request.source)} did not finish within ${checkTimeoutMs / 1000} s`));
+  }), checkTimeoutMs);
+  worker.on("message", answered);
+  worker.on("exit", died);
+  worker.send(job.request);
+}
+/** The same check in one of a pool of worker processes, one per core, each
+ * keeping its compiler between checks: for a caller that must stay responsive
+ * or runs several at once. `project` is what `--project` takes;
+ * `typescriptErrors`, whether a failed search is named by TypeScript's errors
+ * (`--typescript-errors`). */
 export function checkApart(source: string, project?: string, typescriptErrors = false,
     subtypeRounds?: number): Promise<Outcome> {
-  const args = [import.meta.filename, source, ...(project ? ["--project", project] : []),
-    ...(typescriptErrors ? ["--typescript-errors"] : []),
-    ...(subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)])];
-  return new Promise((done, fail) =>
-    execFile(process.execPath, args, { cwd: repo, maxBuffer: 16 * 1024 * 1024 }, (_error, stdout, stderr) => {
-      // A source that is not verified exits 1 and still prints its outcome.
-      try {
-        done(readOutcome(JSON.parse(stdout)));
-      } catch {
-        fail(new Error(`no outcome: ${stderr.trim()}`));
-      }
-    }));
+  return new Promise((done, fail) => {
+    queue.push({ request: { source, project, typescriptErrors, subtypeRounds }, done, fail });
+    dispatch();
+  });
 }
-if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
+// A worker of `checkApart`'s pool: one check per message, answered with its outcome.
+if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && process.argv[2] === "--serve") {
+  process.on("message", (message: unknown) => {
+    let outcome: Outcome;
+    try {
+      outcome = checkRequest(readRequest(message));
+    } catch (error) {
+      process.stderr.write(messageOf(error) + "\n");
+      process.exit(1);
+    }
+    process.send?.(outcome);
+  });
+  process.on("disconnect", () => {
+    closeParser();
+    process.exit(0);
+  });
+} else if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const all = process.argv.slice(2);
   const budgetAt = all.indexOf("--subtype-rounds");
   const subtypeRounds = budgetAt < 0 ? undefined : Number(all.splice(budgetAt, 2)[1]);

@@ -1,31 +1,22 @@
 #!/usr/bin/env bash
-# Build and exercise the parser -> OCaml producer -> Lean pipeline and the
-# checks around it: front-end types, JSON field names, documents, the rule
-# inventory and the source boundaries.
-# Usage: test-all.sh [--build] [--quick] [--verbose]
-# --quick leaves out the pipeline cases and controls (pipeline/test.mts).
+# The fast checks around the parser -> OCaml producer -> Lean pipeline:
+# front-end types, JSON field names, assertions, documents and the rule
+# inventory. The pipeline cases and controls are pipeline/test.mts.
+# Usage: test-all.sh
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO" || exit 1
 
-BUILD=0
-QUICK=0
-VERBOSE=0
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --build) BUILD=1; shift ;;
-    --quick) QUICK=1; shift ;;
-    --verbose) VERBOSE=1; shift ;;
-    *) echo "Unknown argument: $1"; exit 2 ;;
-  esac
-done
+if [ $# -gt 0 ]; then
+  echo "Unknown argument: $1"
+  exit 2
+fi
 
 WORK="$(mktemp -d)"
 passed=0
 failed=0
 completed=0
-build_status="not requested"
 started_at=$SECONDS
 
 # Match the example report; preserve readable plain text in logs and NO_COLOR.
@@ -45,11 +36,10 @@ finish() {
   local status=$?
   echo
   if [ "$status" -eq 0 ]; then
-    status_line 32 "✓ Pipeline tests: PASS"
+    status_line 32 "✓ Fast checks: PASS"
   else
-    status_line 31 "✗ Pipeline tests: FAIL"
+    status_line 31 "✗ Fast checks: FAIL"
   fi
-  echo "  Lean build: $build_status"
   echo "  Test suites: $passed passed, $failed failed"
   if [ "$completed" -eq 0 ]; then
     status_line 33 "  ⚠ Run stopped early; remaining suites were not run."
@@ -94,19 +84,6 @@ report_tests() {
   done
 }
 
-if [ "$BUILD" -eq 1 ]; then
-  build_status="failed"
-  echo "Building verifier..."
-  if (cd lean && lake build) > "$WORK/build.out" 2>&1; then
-    build_status="passed"
-    [ "$VERBOSE" -eq 0 ] || cat "$WORK/build.out"
-  else
-    echo "FAIL: verifier build"
-    cat "$WORK/build.out"
-    exit 1
-  fi
-fi
-
 # The front end is TypeScript and is checked as such: `tsc` over the trusted
 # tools, under full strictness.
 # A silently-renamed compiler API reads as `undefined` at runtime and as an
@@ -121,10 +98,10 @@ run_test "JSON field names agree (TS, Lean, OCaml)" node tests/json-field-names.
 run_test "Assertions carry their reasons" node tools/unchecked.mts
 # tests/docs.mts checks every document's links, anchors and math.
 run_test "Documents: links, math" node tests/docs.mts
-# pipeline/test.mts runs every case, then the checks no case can make, each group justified by what it guards: pinned trusted inputs, imports, forged documents and claims and Node runs.
-if [ "$QUICK" -eq 0 ]; then
-  run_test "Pipeline cases and controls" bash -c 'dune build --root ocaml-producer && node pipeline/test.mts'
-fi
+# pipeline/node-runs.mts runs examples and native-contract counterexamples under Node.
+run_test "Examples run under Node" node pipeline/node-runs.mts
+# pipeline/trusted-inputs.mts checks the front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay.
+run_test "Trusted inputs" node pipeline/trusted-inputs.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node tests/rule-inventory.mts
 

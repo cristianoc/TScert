@@ -1,7 +1,8 @@
 # Verification regressions
 
-`make suite` runs every check ([`test-all.sh`](../test-all.sh)); `make test`
-runs them without the pipeline cases.
+`make test` runs the fast checks, which need no build
+([`test-all.sh`](../test-all.sh)); `make suite` builds, then runs the pipeline
+cases and controls ([`pipeline/test.mts`](../pipeline/test.mts)).
 
 The pipeline cases are listed in [`pipeline/cases.mts`](../pipeline/cases.mts),
 each a source file under [`pipeline/examples/`](../pipeline/examples/) with its

@@ -12,13 +12,13 @@ without breaking the suite's shape.
 
 ```sh
 make help        # every target
-make test        # the fast checks, in seconds: no pipeline case runs
-make suite       # build, then every check, including all pipeline cases (about 2 minutes)
+make test        # the fast checks, in seconds: nothing built, no pipeline case runs
+make suite       # build, then the pipeline cases and controls (about 40 s)
 make cases P=x   # the pipeline cases whose file names contain x
 make check FILE=f.ts [PROJECT=dir]  # one source file through the pipeline
 make lowering FILE=f.ts [FN=name]   # the program graph a source lowers to
 make semantic-diff REV=rev          # render the commit records of a commit or range
-make build       # the Lean verifier and the OCaml producer
+make build       # build-lean and build-producer: the Lean verifier and the OCaml producer
 make setup       # the node dependencies
 ```
 
@@ -29,13 +29,15 @@ that covers what changed, and the wider tier once before committing:
 
 | Changed | While iterating | Before committing |
 | --- | --- | --- |
-| OCaml producer (`ocaml-producer/*.ml`) | `dune build --root ocaml-producer`, then `node pipeline/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `node pipeline/test.mts` (all cases, then the checks no case can make: pinned inputs, imports, forged documents and claims, Node runs) |
+| OCaml producer (`ocaml-producer/*.ml`) | `dune build --root ocaml-producer`, then `node pipeline/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `node pipeline/test.mts` (all cases, then the forged documents and claims no case can make) |
 | One source file | `node pipeline/verify-source.mts <file.ts> [--project dir]` | — |
-| Lean | `(cd lean && lake build)`, then `run-cases.mts` for the affected cases | `./test-all.sh` |
-| Parser, Fragment or SourceClaims wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `./test-all.sh` |
+| Lean | `(cd lean && lake build)`, then `run-cases.mts` for the affected cases | `make suite` |
+| Parser, Fragment or SourceClaims wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `make test`, then `make suite` |
 
-`run-cases.mts` with no pattern runs every case (about 100 s on 12 cores) and is the first part
-of `test.mts`, through the same check.
+`run-cases.mts` with no pattern runs every case (26 s on 12 cores, measured
+2026-10-16) and is the first part of `test.mts`, through the same check. Cases
+run in one worker process per core, each keeping its TypeScript compiler
+between cases; progress goes to standard error.
 
 ### Working in a separate git worktree
 
@@ -98,13 +100,15 @@ extraction, producer, wire), and what Lean proves needs no test.
 
 ## The suite's shape, and the rules that keep it
 
-`test-all.sh` keeps the suites fast by one decision, a rule for anything added; the
-runner summary reports the current suite count.
+`test-all.sh` (`make test`) runs the fast checks; `make suite` builds, then
+runs `pipeline/test.mts`. Two rules decide where a check goes.
 
 - **Suites start together.** A suite is `run_test "Name" command args…`; its
   output is buffered and reported in order, and a failure is counted, never
-  fatal. A suite runs the verifier binary; it does not build Lean. The
-  pipeline suite also builds the producer's Dune executable before its cases.
+  fatal.
+- **A fast check needs no build.** A check that runs neither the verifier nor
+  the producer is a suite of `test-all.sh`; one that needs either belongs in
+  `pipeline/test.mts`.
 
 ## What a result means
 
