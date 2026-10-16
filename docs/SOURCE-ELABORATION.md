@@ -680,7 +680,7 @@ binds its saved value directly:
 ```
 
 The predicate's semantic guarantee is proved by `ProgramTyping.answers_sound`
-in [ProgramTyping.lean](../lean/Verification/Programs/ProgramTyping.lean).
+in [TypingBasics.lean](../lean/Verification/Programs/TypingBasics.lean).
 This specializes the existing conditional semantics. The read occurs once,
 and its preceding effects are retained; the default contributes neither
 execution nor a type claim. The condition uses the read type derived by the

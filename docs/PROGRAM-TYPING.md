@@ -1,6 +1,9 @@
 # Program typing over positive recursive types
 
-[ProgramTyping.lean](../lean/Verification/Programs/ProgramTyping.lean) gives syntactic program-typing rules for the stateful language.
+[ProgramTyping.lean](../lean/Verification/Programs/ProgramTyping.lean) gives syntactic program-typing rules for the stateful language,
+over [TypingBasics.lean](../lean/Verification/Programs/TypingBasics.lean) (types, environments, code entries),
+[OperatorTyping.lean](../lean/Verification/Programs/OperatorTyping.lean) (binary operators) and
+[VariadicTyping.lean](../lean/Verification/Programs/VariadicTyping.lean) (variadic functions).
 Its fundamental theorem
 connects those rules to the model in [SEMANTICS.md](SEMANTICS.md). Subsumption uses
 the certificate checker specified in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
