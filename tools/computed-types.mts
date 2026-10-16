@@ -120,6 +120,14 @@ export function computedType(context: ComputedContext, node: TypeNode, span: Spa
   const form = computedForm(node) ?? "a computed type";
   const type = checker.getTypeFromTypeNode(node);
   if (!type || type.isErrorType()) throw Error(`TypeScript computes no type for this ${form}: it is not valid TypeScript`);
+  // An application of a conditional type alias is replaced by what
+  // TypeScript computes for it, which keeps no bound of its parameters.
+  const alias = ts.isTypeReferenceNode(node) ? context.alias(node) : null;
+  let body = alias?.type;
+  while (body && ts.isParenthesizedTypeNode(body)) body = body.type;
+  if (alias && body && ts.isConditionalTypeNode(body) && alias.typeParameters?.some(p => p.constraint))
+    throw Error(`the conditional type alias ${alias.name.text} has a bounded parameter: its application, ` +
+      "with the obligation that each argument meets its bound, would be replaced by what TypeScript computes for it");
   const literals = literalUnion(type, span, context.unique);
   if (literals) return literals;
   const computed = describe(checker, type);
@@ -167,7 +175,9 @@ type Member = { node: TypeNode; read: (node: TypeNode) => TypeTerm };
 /** The members of the union `node` is written as, in the order written: a
  * union's members, and those of the equation of an alias each names, read
  * where that alias is declared, with its parameters read as the reference's
- * arguments or their defaults. Any other type is one member. */
+ * arguments or their defaults. Any other type is one member, an application
+ * of an alias with a bounded parameter among them: read as written, it keeps
+ * the obligation that its arguments meet their bounds. */
 function unionMembers(context: ComputedContext, node: TypeNode, read: (node: TypeNode) => TypeTerm,
     seen: Set<Node> = new Set()): Member[] {
   while (ts.isParenthesizedTypeNode(node)) node = node.type;
@@ -175,7 +185,8 @@ function unionMembers(context: ComputedContext, node: TypeNode, read: (node: Typ
   const alias = ts.isTypeReferenceNode(node) ? context.alias(node) : null;
   // A computed alias has no equation to read members from.
   const computed = (n: Node): boolean => computedAlias(n, context.alias);
-  if (!alias || !ts.isTypeReferenceNode(node) || seen.has(alias) || enclosingBinders(alias).length || computed(alias))
+  if (!alias || !ts.isTypeReferenceNode(node) || seen.has(alias) || enclosingBinders(alias).length || computed(alias) ||
+      alias.typeParameters?.some(p => p.constraint))
     return [{ node, read }];
   const args: TypeTerm[] = [];
   for (const [i, parameter] of (alias.typeParameters ?? []).entries()) {

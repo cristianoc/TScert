@@ -1068,8 +1068,10 @@ A conditional type is read through an alias distributing over a parameter,
 `type Extract<T, U> = T extends U ? T : never`, as `Extract`, `Exclude` and a
 user alias of that shape are. With $`\mathsf{members}(\sigma)`$ the members of
 the union $`\sigma`$ is written as, a union's members and those of the
-equation of an alias it names, each alias's parameters read as the
-reference's arguments or their defaults, an application TypeScript decides
+equation of an alias without bounded parameters it names, each alias's
+parameters read as the reference's arguments or their defaults, an
+application of an alias with a bounded parameter being one member read as
+written, with its bound obligation, an application TypeScript decides
 member by member, whose result is a union of the types of whole members, is
 the union of those members, each read where it is written:
 
@@ -1087,10 +1089,18 @@ $`\textsf{computed}`$: `KeysOf<Shape>` with
 `type KeysOf<T> = T extends unknown ? keyof T : never` is the union of the
 members' keys. The result's identity with the members' types is the premise:
 TypeScript's decision selects members, and each kept member's contract is
-its declaration's.
+its declaration's, optional fields included. A naked check type distributes
+over no member of `never`, so `Extract<never, U>` is `never`; a wrapped one,
+`[T] extends [U] ? X : Y`, decides `never` once, and its branch's literals are
+the result by $`\textsf{computed}`$. `Extract<any, U>` is the member `any`,
+which TypeScript keeps, read where it is written by the declaration reader as
+`unknown` (`any` constrains nothing): a parameter at it accepts every value,
+and a result at it promises none.
 
 Refused: a conditional type over a function's own type parameter, which
-TypeScript defers; one whose result has a part that is no member of the
+TypeScript defers; an application of a conditional type alias with a bounded
+parameter, which what TypeScript computes for it would replace together with
+the obligation that its arguments meet their bounds; one whose result has a part that is no member of the
 decided union as written (a branch other than the parameter, `T[]`, or a
 member naming a parameter of the alias declaring it, which is another type at
 each instance); a conditional type outside an alias distributing over a
