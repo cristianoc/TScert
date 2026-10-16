@@ -224,7 +224,8 @@ imported and host values it uses.
 
 For inputs that satisfy their types and a heap that satisfies its storage
 contracts, the extracted program does not get stuck or return a value outside
-its result type. It may throw or run forever. Generic units have this guarantee
+its result type; a type guard's or an assertion function's returns keep its
+promise. It may throw or run forever. Generic units have this guarantee
 at every admissible assignment of their type parameters. All extracted plans
 pass through the checked conversion to `CertifiedPlan`; acceptance cannot
 silently omit an unhandled kind of plan.
@@ -330,7 +331,7 @@ throw, which safety admits, but never return a wrong value.
 
 | Assumption | Where it is stated |
 | --- | --- |
-| An imported value meets its declaration; a function declared with overloads meets every overload; an imported `unique symbol` constant holds the symbol its declaration names, the one its key names; distinct canonical symbol identities denote distinct run-time symbols, and an alias or a re-export shares its original's identity, as do constants made by `Symbol.for` of the same string literal. | `IMPORT`, `OVERLOADS` in [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md#imported-ambient-and-global-values) |
+| An imported value meets its declaration, a guard's declared promise included; a function declared with overloads meets every overload; an imported `unique symbol` constant holds the symbol its declaration names, the one its key names; distinct canonical symbol identities denote distinct run-time symbols, and an alias or a re-export shares its original's identity, as do constants made by `Symbol.for` of the same string literal. | `IMPORT`, `OVERLOADS` in [SOURCE-CONTRACTS](SOURCE-CONTRACTS.md#imported-ambient-and-global-values) |
 | An ambient declaration (`declare function`, `declare const`, `declare class`, `declare enum`) holds of the value the environment supplies under that name, an ambient enum's object at its members' object type ([enums](SOURCE-CONTRACTS.md#enums)); the declaration document lists it with the specifier `ambient`. | `AMBIENT`; `collectDeclarations` |
 | Other code preserves the file's top-level bindings and their functions: the file runs as a module, or, run as a script, whose top-level functions are properties of the global object, no other code writes those globals or gives one of the file's functions an own `call`, `apply` or `bind`. A module function's immutable slot rests on it, for a plain call and for `.call`, `.apply` and `.bind` alike (`script-global-assumption` runs what it excludes under Node). | `moduleFunction` in `tools/fragment-parse.mts`; [module functions](SOURCE-MODEL.md#mutable-bindings) |
 | A global variable outside the standard library (Node's `process`) meets its declaration at the members and calls the module selects, from the project's type packages, and no code the module does not see reassigns it. | `GLOBAL`; `selectGlobal` |

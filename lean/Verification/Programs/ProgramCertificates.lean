@@ -813,7 +813,7 @@ declared bounds. -/
       (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
       (∀ ja ∈ jas, ja.context = j.context) ∧
       match expand G jf.type with
-      | [.arrs L _] => ⟨jr.type, jas.map Sequent.type, j.type, effect⟩ ∈ L
+      | [.arrs L _] => ⟨jr.type, jas.map Sequent.type, j.type, effect⟩ ∈ L ∧ effect.plain = true
       | _ => False
     | _, _ => False
   | .letE =>
@@ -1038,7 +1038,7 @@ declared bounds. -/
       (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
       (∀ ja ∈ jas, ja.context = j.context) ∧
       match expand G jf.type with
-      | [.callable _ _ L _] => ⟨jr.type, jas.map Sequent.type,j.type, effect⟩ ∈ L
+      | [.callable _ _ L _] => ⟨jr.type, jas.map Sequent.type,j.type, effect⟩ ∈ L ∧ effect.plain = true
       | _ => False
     | _, _ => False
   -- A field of a callable object's bag or of a class value's statics.
@@ -1095,7 +1095,8 @@ declared bounds. -/
         (flags.zip (jas.drop (k + u))).map (fun q => spreadTerm (q.1, q.2.term)) ∧
       (∀ ja ∈ (jas.drop k).take u, ja.term = .undef) ∧
       RestParts G P ((flags.zip (jas.drop (k + u))).map fun q => (q.1, q.2.type)) ∧
-      ⟨jr.type, ((jas.take (k + u)).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type
+      ⟨jr.type, ((jas.take (k + u)).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type ∧
+      effect.plain = true
     | _, _ => False
   -- The callee, the receiver, the fixed actuals, then the value whose store
   -- the last actual spreads, of the packed binder the rest is.
@@ -1107,7 +1108,8 @@ declared bounds. -/
       args = (jas.take k).map Sequent.term ++
         (jas.drop k).map (fun ja => .spread (.readAt CallArguments.arrayStoreField ja.term)) ∧
       (∀ ja ∈ jas.drop k, PackedBy G ja.type t) ∧ t ∈ P ∧
-      ⟨jr.type, ((jas.take k).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type
+      ⟨jr.type, ((jas.take k).map Sequent.type, P), j.type, effect⟩ ∈ restSigs G jf.type ∧
+      effect.plain = true
     | _, _ => False
   -- `.bind`'s saved slots, with no premises: the target's selected signature
   -- starts with the prefix slots' contracts, and the result takes the rest at
@@ -1119,7 +1121,8 @@ declared bounds. -/
       match varSlots pre, j.context[t]?, j.context[r]?, expand G j.type with
       | some saved, some T, some Rt, [.arrs [⟨_, Ds, R, effect⟩] []] =>
         saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
-        ⟨Rt, saved.filterMap (j.context[·]?) ++ Ds, R, effect⟩ ∈ callSigs G T
+        ∃ s ∈ callSigs G T, s.receiver = Rt ∧ s.arguments = saved.filterMap (j.context[·]?) ++ Ds ∧
+          s.result = R ∧ s.effect.keeps saved.length = true ∧ s.effect.drop saved.length = effect
       | _, _, _, _ => False
     | _, _ => False
   -- As `bindE`, for a variadic signature of the target with an element rest:
@@ -1131,7 +1134,8 @@ declared bounds. -/
       match varSlots pre, j.context[t]?, j.context[r]?, expand G j.type with
       | some saved, some T, some Rt, [.arrs [] [⟨_, (Ds, E'), R, effect⟩]] =>
         saved.map (j.context[·]?) = (saved.filterMap (j.context[·]?)).map some ∧
-        ∃ s ∈ restSigs G T, s.receiver = Rt ∧ s.arguments.2 = E' ∧ s.result = R ∧ s.effect = effect ∧
+        ∃ s ∈ restSigs G T, s.receiver = Rt ∧ s.arguments.2 = E' ∧ s.result = R ∧
+          s.effect.keeps saved.length = true ∧ s.effect.drop saved.length = effect ∧
           Ds = s.arguments.1.drop saved.length ∧ ∃ El ∈ (restElem G E').toList,
           saved.filterMap (j.context[·]?) =
             s.arguments.1.take saved.length ++ List.replicate (saved.length - s.arguments.1.length) El
@@ -1673,7 +1677,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         rw [← List.map_append, List.take_append_drop]
       have h := HasTyUsing.app hf he (xs := (jas.take args.length).map (fun ja => (ja.type,ja.term)))
         (Us := (jas.drop args.length).map Sequent.type)
-        (by rw [hsplit]; exact hL) hrt ha hu
+        (by rw [hsplit]; exact hL.1) hrt ha hu hL.2
       simpa only [List.map_map,Function.comp_def,hargs] using h
     · contradiction
   · rename_i a b ja jb
@@ -2015,7 +2019,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         rw [← List.map_append, List.take_append_drop]
       have h := HasTyUsing.callCallable hf he (xs := (jas.take args.length).map (fun ja => (ja.type,ja.term)))
         (Us := (jas.drop args.length).map Sequent.type)
-        (by rw [hsplit]; exact hL) hrt ha hu
+        (by rw [hsplit]; exact hL.1) hrt ha hu hL.2
       simpa only [List.map_map,Function.comp_def,hargs] using h
     · contradiction
   · rename_i a ja
@@ -2082,7 +2086,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     have := HasTyUsing.callRest (xs := (jas.take k).map fun ja => (ja.type, ja.term))
       (Us := ((jas.drop k).take u).map Sequent.type) (P := P)
       (parts := (flags.zip (jas.drop (k + u))).map fun q => (q.1, q.2.type, q.2.term)) hf
-      (by rw [htake] at hL; simpa [List.map_append, List.map_map, Function.comp_def] using hL) hrt
+      (by rw [htake] at hL; simpa [List.map_append, List.map_map, Function.comp_def] using hL.1) hrt
       (by
         intro p hm
         obtain ⟨ja, hja, rfl⟩ := List.mem_map.mp hm
@@ -2104,7 +2108,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         have h := hp q.2 (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hja))
         rw [hctx q.2 hja] at h
         exact h)
-      (by simpa [List.map_map, Function.comp_def] using hparts)
+      (by simpa [List.map_map, Function.comp_def] using hparts) hL.2
     simpa [List.map_map, Function.comp_def] using this
   · rename_i effect k t P _ _ f r args jf jr jas
     rcases hl with ⟨hΓf, htf, hΓr, htr, hctx, hlen, rfl, hpk, htP, hL⟩
@@ -2120,31 +2124,33 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     have ha := hp ja (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ hjamem))
     rw [hctx ja hjamem] at ha
     have := HasTyUsing.callPacked (xs := (jas.take k).map fun ja => (ja.type, ja.term)) hf
-      (by simpa [List.map_map, Function.comp_def] using hL) htP hrt
+      (by simpa [List.map_map, Function.comp_def] using hL.1) htP hrt
       (by
         intro p hm
         obtain ⟨jb, hjb, rfl⟩ := List.mem_map.mp hm
         have h := hp jb (List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (List.mem_of_mem_take hjb)))
         rw [hctx jb (List.mem_of_mem_take hjb)] at h
         exact h)
-      ha (hpk ja (by rw [hja]; simp))
+      ha (hpk ja (by rw [hja]; simp)) hL.2
     rw [hja]
     simpa [List.map_map, Function.comp_def] using this
   · obtain ⟨rfl, rfl, hl⟩ := hl
     split at hl
     · rename_i hsaved hT hRt hF
-      obtain ⟨hmap, hsig⟩ := hl
+      obtain ⟨hmap, ⟨Rt', args', R', ef⟩, hmem, h1, h2, h3, hk, hd⟩ := hl
+      simp only at h1 h2 h3 hk hd
+      subst h1 h2 h3 hd
       rw [varSlots_eq hsaved]
-      exact HasTyUsing.bindE hT hsig hRt hmap hF
+      exact HasTyUsing.bindE hT hmem hRt hmap hk hF
     · contradiction
   · obtain ⟨rfl, rfl, hl⟩ := hl
     split at hl
     · rename_i hsaved hT hRt hF
-      obtain ⟨hmap, ⟨Rt', ⟨Ps, E'⟩, R', ef⟩, hmem, h1, h2, h3, hef, h4, El, hEl, h5⟩ := hl
-      simp only at h1 h2 h3 hef h4 h5
+      obtain ⟨hmap, ⟨Rt', ⟨Ps, E'⟩, R', ef⟩, hmem, h1, h2, h3, hk, hef, h4, El, hEl, h5⟩ := hl
+      simp only at h1 h2 h3 hk hef h4 h5
       subst h1 h2 h3 hef h4
       rw [varSlots_eq hsaved]
-      exact HasTyUsing.bindRestE hT hmem (by simpa using hEl) hRt hmap h5 hF
+      exact HasTyUsing.bindRestE hT hmem (by simpa using hEl) hRt hmap h5 hk hF
     · contradiction
   · obtain ⟨rfl, rfl, rfl, rfl, hl⟩ := hl
     unfold MemberProofsUsing at hl

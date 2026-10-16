@@ -1,6 +1,6 @@
 // `isString` answers `true` for numbers, which TypeScript does not check:
-// `shout(1)` calls `toUpperCase` on a number. Its promise unit returns the
-// argument where it answers `true`, a number, at `string`.
+// `shout(1)` calls `toUpperCase` on a number. Where the body answers `true`,
+// its argument is a number, not within the promise's `string`.
 export function isString(x: unknown): x is string {
   return typeof x === "number";
 }

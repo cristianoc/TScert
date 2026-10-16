@@ -62,6 +62,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | Some b -> declared_head declarations [] b
           | None -> Rigid r)
         | t -> t in
+      (* A promise signature states what a call promises of an actual, not
+         its result: the call is typed at the plain ones, and a condition
+         narrows by the promise (`Refinement.promise_refine`). *)
+      let callee = match callee with
+        | Atoms [Shape ({calls;_} as shape)]
+          when List.exists (fun (s:Semantic.signature) -> not (Semantic.plain_effect s.call_effect)) calls ->
+          Atoms [Shape {shape with calls=List.filter (fun (s:Semantic.signature) ->
+            Semantic.plain_effect s.call_effect) calls}]
+        | t -> t in
       (* The receiver the call passes: the `.call` operand, the object a
          method is read from, or `undefined`. A scheme infers from it too. *)
       let receiver_type = match receiver, target.node with
@@ -101,7 +110,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                     | Some _ -> List.length offered.params >= arity) -> Some (t,offered)
           | _ -> None in
         match arg.node with
-        | Lambda (_,[],ps,_,false,_,_) ->
+        | Lambda (_,[],ps,_,false,_,_,_) ->
           Option.map (fun (t,_) () -> publish_instance arg.pos t)
             (offered (List.length ps))
         | Id n when List.mem_assoc n (path_facts ()).Proposal_flow.closures ->

@@ -1190,70 +1190,44 @@ for (const [file, arity, accepted] of [
 }
 
 {
-  // A guard's promise is its promise unit's claim, checked at its body: the
-  // lying guard's unit, claimed at `string` wherever the producer claimed
-  // `number`, the argument returned where the body answers `true` included,
-  // is refused where the body's test leaves that argument a number.
+  // A guard's promise is its function type's, checked at its body: the lying
+  // guard's claims forged to hold its argument at `string` throughout the
+  // body, and its answer at `true`, are refused at the edge into its
+  // return, which holds the argument at the parameter's `unknown`.
   const artifacts = run("invalid-type-guard-promise");
   const claims = readClaims(artifacts);
-  const unit = must(claims.functions.find((f) => f.name === "%Promise:isString%"), "the promise unit's claims");
-  const num = rowOf(claims, "num");
+  const guard = must(claims.functions.find((f) => f.name === "isString"), "the guard's claims");
+  const x = must(guard.params[0], "the guard's parameter");
   const str = rowOf(claims, "str");
-  let changed = 0;
-  for (const e of unit.expressions) {
-    const before = JSON.stringify(e.type);
-    if (Array.isArray(e.type)) e.type = e.type.map((l) => l === num ? str : l);
-    if (JSON.stringify(e.type) !== before) changed++;
-  }
-  for (const entry of unit.entries) for (const b of entry.bindings) if (Array.isArray(b.type)) b.type = b.type.map((l) => l === num ? str : l);
-  assert.ok(changed > 0, "the producer claimed the argument at number somewhere");
+  const tru = rowOf(claims, { boolLit: { value: true } });
+  for (const entry of guard.entries) for (const b of entry.bindings) if (b.name === x.name) b.type = [str];
+  const read = must(guard.expressions.find((e) => e.pos[1] - e.pos[0] === x.name.length), "the read of the argument");
+  for (const e of guard.expressions) e.type = e === read ? [str] : [tru];
   const forged = writeClaims(artifacts, "forged-guard-promise", claims);
   const searched = produceWith(artifacts, forged, "forged-guard-promise");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  assert.match(searched.stdout + searched.stderr, /obligation at \[\d+,\d+\)/);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /obligation|evidence|claim/);
+  assert.match(searched.stdout + searched.stderr, /source incoming edge obligation at \[271,300\): evidence search failed/);
   process.stdout.write("forged guard promise: refused at the guard's body\n");
 }
 
 {
-  // A call narrows its argument by the test it runs again, never by the
-  // guard's syntax: with the test removed from the parser's document and its
-  // claims dropped, the producer's narrowed claims for the branch are refused.
+  // A call narrows its argument by the promise the parser's document states
+  // of its callee, never by the producer's claims: with the promise removed
+  // from `isPresence`'s document, the producer's claims, which read
+  // `isPresence` at its qualified signature, are refused at that read.
   const artifacts = run("type-guards");
   const fragment: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
-  const describe = must(fragment.functions.find((f) => f.name === "describe"), "describe");
-  const removed = new Set<string>();
-  const spans = (tree: unknown): void => {
-    if (Array.isArray(tree)) {
-      if (tree.length === 2 && typeof tree[0] === "number" && typeof tree[1] === "number") removed.add(tree.join(":"));
-      else tree.forEach(spans);
-    } else if (tree && typeof tree === "object") Object.values(tree).forEach(spans);
-  };
-  const strip = (tree: unknown): unknown => {
-    if (Array.isArray(tree)) return tree.map(strip);
-    if (!tree || typeof tree !== "object") return tree;
-    if ("k" in tree && tree.k === "bin" && "op" in tree && tree.op === "&&" && "l" in tree && "r" in tree && "pos" in tree &&
-        tree.l && typeof tree.l === "object" && "k" in tree.l && tree.l.k === "apply" && "callee" in tree.l &&
-        JSON.stringify(tree.l.callee).includes('"name":"isPresence"')) {
-      spans(tree.r);
-      spans([tree.pos]);
-      return tree.l;
-    }
-    return Object.fromEntries(Object.entries(tree).map(([k, v]) => [k, strip(v)]));
-  };
-  const body = strip(describe.body);
-  assert.ok(removed.size > 0 && Array.isArray(body), "describe's call of isPresence is followed by its test");
-  Object.assign(describe, { body });
-  const ast = join(artifacts, "forged-untested-guard.json");
+  const isPresence = must(fragment.functions.find((f) => f.name === "isPresence"), "isPresence");
+  assert.ok(isPresence.guard, "isPresence states a promise");
+  isPresence.guard = null;
+  const ast = join(artifacts, "forged-unpromised-guard.json");
   writeFileSync(ast, JSON.stringify(fragment));
-  const claims = readClaims(artifacts);
-  const fn = must(claims.functions.find((f) => f.name === "describe"), "describe's claims");
-  fn.expressions = fn.expressions.filter((e) => !removed.has(e.pos.join(":")));
-  const forged = writeClaims(artifacts, "forged-untested-guard-claims", claims);
-  const searched = produceWith(artifacts, forged, "forged-untested-guard", ast);
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-unpromised-guard", ast);
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  // The edge into the branch holds `v` at `unknown`, where the branch needs `Presence`.
-  assert.match(searched.stdout + searched.stderr, /source incoming edge obligation at \[\d+,\d+\): evidence search failed: the edge from node \d+ does not establish/);
-  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts, ast), /obligation|evidence|claim/);
-  process.stdout.write("untested guard call: the branch's narrowed claim refused\n");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const call = source.indexOf("isPresence(v)");
+  assert.match(searched.stdout + searched.stderr,
+    new RegExp(`source expression obligation at \\[${call},${call + "isPresence".length}\\): evidence search failed`));
+  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, ast), /obligation|evidence|claim/);
+  process.stdout.write("unpromised guard call: its qualified read refused\n");
 }

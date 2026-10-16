@@ -393,8 +393,10 @@ safety theorem does not prove. Intrinsics are collected on demand from the opera
 
 A call signature may state the effect `preservesInputHeap`: on normal return,
 the call leaves every previously allocated location's contents unchanged.
-It may allocate fresh storage. An **effect-qualified signature** is a signature
-carrying such a guarantee. `CallEffects.lean` defines its semantics; the
+It may allocate fresh storage. A type guard's and an assertion function's
+signatures state the effects `guards` and `asserts`, a promise about an actual
+([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). An
+**effect-qualified signature** is a signature carrying such a guarantee. `CallEffects.lean` defines its semantics; the
 [effect contract](SEMANTICS.md#effect-qualified-call-contracts) and
 [certification rules](SOURCE-ELABORATION.md#certifying-inferred-call-effects)
 state what a certificate must establish.

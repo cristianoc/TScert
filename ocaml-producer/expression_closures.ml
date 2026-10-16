@@ -35,7 +35,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           | t -> t in
         {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) statics in
   match e.node with
-    | Ctor ({node=Lambda (None,[],ps,[],false,Some result,body);_},statics) ->
+    | Ctor ({node=Lambda (None,[],ps,[],false,Some result,_,body);_},statics) ->
       (* The constructor's body under its parameters; `new` passes it no
          receiver it reads, and runs it later, when a cell it captures holds
          what its contract admits. The class value's type is its construct
@@ -143,7 +143,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
             s.result
           | [] -> Proposal_diagnostics.unsupported "no construct signature takes this many arguments")
        | _ -> Proposal_diagnostics.unsupported "`new` needs a value with construct signatures"))
-    | Lambda (receiver,quantified,ps,defaults,rest,written,body) ->
+    | Lambda (receiver,quantified,ps,defaults,rest,written,guard,body) ->
       (* An ordinary function binds its own `this`, replacing an enclosing
          one; an arrow keeps the enclosing binding, as a capture. *)
       (* The body runs later, when any cell it captures holds whatever its
@@ -277,6 +277,18 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           Atoms [Shape {shape with calls=call :: List.filter (fun s -> s <> call)
             (List.sort_uniq compare (List.map (fun s -> {s with call_effect}) extra))}]
         | _ -> own in
+      (* A guard closure offers its promise beside its own signature, at the
+         same parameters, and its body is checked at each, returning its plain
+         result under both (Lean's `lambdaCode`). *)
+      let own = match guard,own with
+        | None,_ -> own
+        | Some (promise_effect,promised),Atoms [Shape ({calls=[call];_} as shape)]
+          when quantified=[] && element=None ->
+          let row () = collect_overload_row_claims (fun () ->
+            ignore (infer_closure_body ~expected:result inner)) in
+          publish_arrow e.pos [row (); row ()];
+          Atoms [Shape {shape with calls=[call;{call with call_effect=promise_effect;result=promised}]}]
+        | Some _,_ -> Proposal_diagnostics.unsupported "a guard closure with binders or a rest" in
       (* A contract advertising several signatures is implemented by this one
          closure. Propose that contract and state what the body claims under
          each signature; Lean checks every one of them. *)

@@ -68,6 +68,27 @@ def arrayTested : Fragment.Expr → Bool
   | .shapeTest _ .isArray _ _ => true
   | _ => false
 
+/-- What a call promises of its actual: a call of a name whose type holds a
+promise signature (a type guard's, `asserts` false; an assertion function's,
+`asserts` true), of an actual that is an immutable name. The actual's slot and
+the promise's type; the graph checker proves it from the callee's signature
+(`PromiseCalls.promiseCall_sound`). -/
+@[nospecialize] def promiseNarrowing (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
+    (Γ : List (Ty ι)) (asserts : Bool) (e : Fragment.Expr) (original : String → String := id) :
+    Option (Nat × Ty ι) :=
+  match e with
+  | .call _ (.var _ callee) args [] [] => do
+    let i ← valueSlot scope callee
+    let F ← Γ[i]?
+    let [.arrs L _] := PositiveRules.expand G F | none
+    L.findSome? fun s => match s.effect, asserts with
+      | .guards p, false | .asserts p, true => do
+        let .var _ name ← args[p]? | none
+        let j ← valueSlot scope (original name)
+        return (j, s.result)
+      | _, _ => none
+  | _ => none
+
 /-- Facts justified on the path to a short-circuit operand. Only immutable
 source bindings are refined; every generated edge checks this candidate context.
 A true conjunction / false disjunction establishes both operand outcomes. The
@@ -87,7 +108,8 @@ leaves its operand that value alone, which `tagMember` checks on the edge. -/
       joinContexts Γ (conditionContext G scope Γ left answer arrays single)
         (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single) right answer arrays single)
   | _ =>
-    if let some (i, tag, equal) := conditionTag G scope Γ cond then
+    if let (true, some (j, T)) := (answer, promiseNarrowing G scope Γ false cond) then Γ.set j T
+    else if let some (i, tag, equal) := conditionTag G scope Γ cond then
       match tag, answer == equal, arrays with
       | .isArray, true, some R => Γ.set i (arrayRefine G (Γ[i]?.getD []) R)
       | _, holds, _ =>

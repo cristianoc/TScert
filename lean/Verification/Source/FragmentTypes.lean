@@ -15,16 +15,21 @@ requirements: the receiver contract, the parameters, the result, and the
 contract of each further actual, for a signature that takes any number of
 them. Every signature states its receiver; one indifferent to it states
 `unknown`. -/
-private def callableShape (a : Json) : Except String (Json × List Json × Json × Option Json) := do
+private def callableShape (a : Json) : Except String (Json × List Json × Json × Option Json × CallEffects.Effect) := do
   let rest := (a.getObjVal? "rest").toOption
+  let effect := (a.getObjVal? "effect").toOption
   fieldsExactly a
-    (["a","this","params","result","construct","array"] ++ (if rest.isSome then ["rest"] else []))
+    (["a","this","params","result","construct","array"] ++ (if rest.isSome then ["rest"] else []) ++
+      (if effect.isSome then ["effect"] else []))
   if (← jStr (← jField a "a")) != "function" then throw "expected a function atom"
   for key in ["construct","array"] do
     let mode ← jStr (← jField a key)
     if mode != "unknown" && mode != "absent" then throw "unsupported function object mode"
   let args ← jArr a "params"
-  return (← jField a "this", args, ← jField a "result", rest)
+  let effect ← match effect with
+    | some e => fromJson? e
+    | none => pure .unrestricted
+  return (← jField a "this", args, ← jField a "result", rest, effect)
 
 /-- The positions a rest parameter stands for: the required elements of its
 tuple contract. A contract with optional or unbounded positions is not a fixed
@@ -82,16 +87,16 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
       return [label]
     else if (← jStr (← jField atom "a")) == "function" then
       let signatures ← (← CellClaims.conjuncts atom).mapM fun a => do
-        let (recv, args, result, rest) ← callableShape a
+        let (recv, args, result, rest, effect) ← callableShape a
         return (← callableType recv, ← args.mapM callableType, ← rest.mapM callableType,
-          ← callableType result)
+          ← callableType result, effect)
       -- Fixed and variadic signatures of one value sit in one clause: each
       -- says which receivers and actual lists a caller may write.
-      let fixed := signatures.filterMap fun (Rc, Ds, E, R) =>
-        if E.isNone then some ⟨Rc, Ds, R, .unrestricted⟩ else none
+      let fixed := signatures.filterMap fun (Rc, Ds, E, R, effect) =>
+        if E.isNone then some ⟨Rc, Ds, R, effect⟩ else none
       -- A rest's type is the pack of any number of actuals at its element.
-      let variadic ← signatures.filterMapM fun (Rc, Ds, E, R) => E.mapM fun E => do
-        return ⟨Rc, (Ds, [← SourceTypes.use (.pack ⟨[], [], some E, false, .dense⟩ [])]), R, .unrestricted⟩
+      let variadic ← signatures.filterMapM fun (Rc, Ds, E, R, effect) => E.mapM fun E => do
+        return ⟨Rc, (Ds, [← SourceTypes.use (.pack ⟨[], [], some E, false, .dense⟩ [])]), R, effect⟩
       return [← SourceTypes.use (.arrs fixed.eraseDups variadic.eraseDups)]
     else if (← jStr (← jField atom "a")) == "constructor" then
       -- A construct signature: what a class meets and no plain function does.
@@ -252,7 +257,7 @@ private def cellConjunction (atom : Json) : SourceTypes.Lowering Tree := do
 private def callableObject (atom : Json) : SourceTypes.Lowering Tree := do
   fieldsExactly atom ["a","function","bag"]
   let fn ← jField atom "function"
-  let (recv,args,result,rest) ← callableShape fn
+  let (recv,args,result,rest,_) ← callableShape fn
   let Rc ← callableType recv
   let Ds ← args.mapM callableType
   let E ← rest.mapM callableType

@@ -150,7 +150,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       HasTyWith G images subtyping Γ f F → Represents G F (.callable P Ps L S) →
       ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTyWith G images subtyping Γ r Rt →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) →
-      HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd)) B
+      effect.plain = true → HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd)) B
   /-- A field of a value with code: a callable object's bag field, or a
   class value's static field. -/
   | readCallable {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
@@ -167,7 +167,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       HasTyWith G images subtyping Γ f F → Represents G F (.arrs L S) →
       ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTyWith G images subtyping Γ r Rt →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) →
-      HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd)) B
+      effect.plain = true → HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd)) B
   | letE : HasTyWith G images subtyping Γ a A → HasTyWith G images subtyping (A :: Γ) b B → HasTyWith G images subtyping Γ (.letE a b) B
   /-- **Allocation.** One object, one fresh location per named field. The field
   names are distinct, which is what makes the object a map from them. Its own
@@ -339,7 +339,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       HasTyWith G images subtyping Γ f F → ⟨Rt, (xs.map Prod.fst ++ Us, P), B, effect⟩ ∈ restSigs G F → HasTyWith G images subtyping Γ r Rt →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → (∀ A ∈ Us, HasTyWith G images subtyping Γ .undef A) → (Us = [] ∨ parts = []) →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
-      RestParts G P (parts.map fun p => (p.1, p.2.1)) →
+      RestParts G P (parts.map fun p => (p.1, p.2.1)) → effect.plain = true →
       HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd ++ parts.map fun p => spreadTerm (p.1, p.2.2))) B
   /-- **A spread of a packed value.** A call at a variadic signature whose
   rest admits a packed binder `t`'s argument lists, after its fixed actuals,
@@ -350,7 +350,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       HasTyWith G images subtyping Γ f F → ⟨Rt, (xs.map Prod.fst, P), B, effect⟩ ∈ restSigs G F →
       t ∈ P → HasTyWith G images subtyping Γ r Rt →
       (∀ p ∈ xs, HasTyWith G images subtyping Γ p.2 p.1) → HasTyWith G images subtyping Γ a A → PackedBy G A t →
-      HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd ++
+      effect.plain = true → HasTyWith G images subtyping Γ (.invoke f r (xs.map Prod.snd ++
         [.spread (.readAt CallArguments.arrayStoreField a)])) B
   /-- **A bound function.** `.bind` saved its target, receiver and prefix in
   slots; allocation stores those values, as they are, in a forwarding
@@ -360,8 +360,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   | bindE {effect : Effect} {Γ : List (Ty ι)} {F T Rt R Rc : Ty ι} {t r : Nat} {slots : List Nat}
       {Ps Ds : List (Ty ι)} :
       Γ[t]? = some T → ⟨Rt, Ps ++ Ds, R, effect⟩ ∈ callSigs G T →
-      Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some →
-      Represents G F (.arrs [⟨Rc, Ds, R, effect⟩] []) →
+      Γ[r]? = some Rt → slots.map (Γ[·]?) = Ps.map some → effect.keeps slots.length = true →
+      Represents G F (.arrs [⟨Rc, Ds, R, effect.drop slots.length⟩] []) →
       HasTyWith G images subtyping Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   /-- **A bound variadic function.** As `bindE`, for a variadic signature of
   the target whose rest is an element rest: the prefix takes its first fixed
@@ -371,8 +371,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       {Ps Qs : List (Ty ι)} :
       Γ[t]? = some T → ⟨Rt, (Ps, E), R, effect⟩ ∈ restSigs G T → restElem G E = some El →
       Γ[r]? = some Rt → slots.map (Γ[·]?) = Qs.map some →
-      Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) El →
-      Represents G F (.arrs [] [⟨Rc, (Ps.drop slots.length, E), R, effect⟩]) →
+      Qs = Ps.take slots.length ++ List.replicate (slots.length - Ps.length) El → effect.keeps slots.length = true →
+      Represents G F (.arrs [] [⟨Rc, (Ps.drop slots.length, E), R, effect.drop slots.length⟩]) →
       HasTyWith G images subtyping Γ (.makeAt (.bound (.var t) (.var r) (slots.map .var)) [] []) F
   /-- **A member bound to its host.** The member is read from the object in a
   slot, before anything else runs, and bound to that same object: the bound
@@ -830,7 +830,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           · exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
           · exact ihp p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
       · exact hparts.elim
-  | @callCallable effect Γ f r F Rt B P Ps L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
+  | @callCallable effect Γ f r F Rt B P Ps L S xs Us hf hr hp hrt ha hu hplain ihf ihrt iha ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hs := call_safe_short (Ξ := excOf G) (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
@@ -846,7 +846,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
       simpa [Arrow.map, Contract.map, Arrow.plain, List.map_map, List.map_append, Function.comp_def] using
-        CallEffects.callsT_erase (CallEffects.callsT_select (((represents_raw hr k U v) hv).1.2) (List.mem_map_of_mem hp))
+        CallEffects.callsT_erase (by simpa [Arrow.map, Contract.map] using hplain)
+          (CallEffects.callsT_select (((represents_raw hr k U v) hv).1.2) (List.mem_map_of_mem hp))
     · intro j hj U hx hu' heap hok
       exact ihrt j U heap ρ (he.transfer j hj U hx) hu' hok
     · intro p hp'
@@ -883,7 +884,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply Safe_mono k (fun i _ X v hval => (represents_back hn i X v) hval)
     exact bag_write (meaning_adm G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
       (bag_sem hc ((represents_raw hr k V av) ha'')).1 hb' hbval hv hok'
-  | @app effect Γ f r F Rt B L S xs Us hf hr hp hrt ha hu ihf ihrt iha ihu =>
+  | @app effect Γ f r F Rt B L S xs Us hf hr hp hrt ha hu hplain ihf ihrt iha ihu =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hs := call_safe_short (Ξ := excOf G) (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
@@ -899,7 +900,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
       intro k hk U v hv
       simpa [Arrow.map, Contract.map, Arrow.plain, List.map_map, List.map_append, Function.comp_def] using
-        CallEffects.callsT_erase (CallEffects.callsT_select ((represents_raw hr k U v) hv).1 (List.mem_map_of_mem hp))
+        CallEffects.callsT_erase (by simpa [Arrow.map, Contract.map] using hplain)
+          (CallEffects.callsT_select ((represents_raw hr k U v) hv).1 (List.mem_map_of_mem hp))
     · intro j hj U hx hu' heap hok
       exact ihrt j U heap ρ (he.transfer j hj U hx) hu' hok
     · intro p hp'
@@ -1625,12 +1627,12 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (fresh_store_safe ro presence (meaning_adm G E) (meaning_valOnly G E) hu hok hex)
     intro k _ V v hv
     exact (represents_back hr k V v) ⟨by simpa [tupleFams] using hv, by simp⟩
-  | @callPacked effect Γ f r a F Rt A B P xs t hf hmem htP hrt hx ha hpk ihf ihrt ihx iha =>
+  | @callPacked effect Γ f r a F Rt A B P xs t hf hmem htP hrt hx ha hpk hplain ihf ihrt ihx iha =>
     intro n W h ρ he hw hh
     have hfF : Safe (excOf G) (restsT (excOf G) [(meaning G Rt, (xs.map Prod.fst).map (meaning G), argMeaning G P,
         meaning G B)]) n W h (instantiate 0 ρ f) :=
-      Safe_mono n (fun m _ U v hv => CallEffects.restsT_erase (restsT_of_restSigs hmem hv)) W h _
-        (ihf n W h ρ he hw hh)
+      Safe_mono n (fun m _ U v hv => CallEffects.restsT_erase (by simpa [RestArrow.mapWith, Contract.map] using hplain)
+        (restsT_of_restSigs hmem hv)) W h _ (ihf n W h ρ he hw hh)
     have hterm : instantiate 0 ρ (.invoke f r (xs.map Prod.snd ++
           [.spread (.readAt CallArguments.arrayStoreField a)])) =
         .invoke (instantiate 0 ρ f) (instantiate 0 ρ r)
@@ -1656,12 +1658,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
     · intro j hj U hxU hu heap hok
       exact iha j U heap ρ (he.transfer j hj U hxU) hu hok
-  | @callRest effect Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts
+  | @callRest effect Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts hplain
       ihf ihrt ihx ihu ihp =>
     intro n W h ρ he hw hh
     have hfF : Safe (excOf G) (restsT (excOf G) [(meaning G Rt, (xs.map Prod.fst ++ Us).map (meaning G), argMeaning G P,
         meaning G B)]) n W h (instantiate 0 ρ f) :=
-      Safe_mono n (fun m _ U v hv => CallEffects.restsT_erase (restsT_of_restSigs hmem hv)) W h _ (ihf n W h ρ he hw hh)
+      Safe_mono n (fun m _ U v hv => CallEffects.restsT_erase (by simpa [RestArrow.mapWith, Contract.map] using hplain)
+        (restsT_of_restSigs hmem hv)) W h _ (ihf n W h ρ he hw hh)
     unfold RestParts at hparts
     split at hparts
     · -- A spread: the rest is an element rest.
@@ -1772,7 +1775,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hA
           exact ihu q hq j U heap ρ (he.transfer j hj U hxU) hu' hok
       · exact hparts.elim
-  | @bindE effect Γ F T Rt R Rc t r saved Ps Ds ht hsig hr hpre hF =>
+  | @bindE effect Γ F T Rt R Rc t r saved Ps Ds ht hsig hr hpre hkeeps hF =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
       Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
@@ -1787,11 +1790,11 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       have hbound := CallEffects.callsT_bound (Rc := meaning G Rc) (fs := []) (oid := oid)
         (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
         (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
-        hcall (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv
+        (by simpa using hkeeps) hcall (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv
         (ArgsT_values (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q) hpv)
         (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
       exact (represents_back hF (m + 1) _ _) ⟨by simpa [Arrow.map, RestArrow.mapWith, Contract.map] using hbound, hbound.1, by simp⟩
-  | @bindRestE effect Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hpre hQs hF =>
+  | @bindRestE effect Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hpre hQs hkeeps hF =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
       Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
@@ -1821,7 +1824,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       intro oid
       have hbound := CallEffects.restsT_bound (Rc := meaning G Rc) (fs := []) (oid := oid)
         (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
-        (argMeaning_adm G E) hrest (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv'
+        (argMeaning_adm G E) (by simpa using hkeeps) hrest (meaning_value (he.2 r Rt hr)).1 (he.1 r) (he.2 r Rt hr) hpv'
         hext hvals (by intro a ha; obtain ⟨q, _, rfl⟩ := List.mem_map.mp ha; exact he.1 q)
       refine (represents_back hF (m + 1) _ _) ⟨⟨hbound.1, by simp⟩, ?_⟩
       simpa [RestArrow.mapWith, Contract.map, List.map_drop, hlen] using hbound
@@ -1884,9 +1887,9 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
               exact (hc'.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
                 (fun _ _ _ args ha => ArgsShort_mono hle ha)
                 (fun m _ V w hw => PositiveCertificates.acceptedUsing hpr m V w hw)⟩
-          exact CallEffects.callsT_bound (Ps := []) (oid := oid) hRadm (by simp)
+          simpa [Arrow.map, Contract.map] using CallEffects.callsT_bound (Ps := []) (pre := []) (oid := oid) hRadm (by simp)
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
-            ht hvalρ hscope hhost trivial (by simp [CallArguments.Values]) (by simp)
+            (Effect.keeps_zero _) ht hvalρ hscope hhost trivial (by simp [CallArguments.Values]) (by simp)
         have hrests : CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) (q + 2) U (.objAt [] (.bound u (ρ i) []) oid) := by
           refine CallEffects.restsT_of_signatures hinv fun x hx => ?_
           obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
@@ -1903,7 +1906,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           have hb := CallEffects.restsT_bound (Rc := meaning G y.receiver) (pre := []) (fs := []) (oid := oid)
             hRadm
             (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b)
-            (argMeaning_adm G _)
+            (argMeaning_adm G _) (Effect.keeps_zero _)
             (show CallEffects.restsT (excOf G) [⟨MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G)), (y.arguments.1.map (meaning G), argMeaning G y.arguments.2),
               meaning G y.result, y.effect⟩] (q + 2) U u from ht)
             hvalρ hscope hhost (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)

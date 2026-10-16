@@ -1778,12 +1778,9 @@ export function lambda(this: Gate,
     // producer: the claim at the closure states it, and the body is checked
     // against that claim. A class method's result is its instance type's
     // member, which states it, so a method still needs the annotation.
-    // A module constant's guard closure is called at its plain result, its
-    // promise being its own unit's; any other closure stating one is refused.
-    const promise = ts.isMethodDeclaration(node) ? undefined : gate.guardClosures.get(gate.span(node).join(":"));
-    if (node.type && ts.isTypePredicateNode(node.type) && !promise)
-      gate.fail(node.type, "a type guard other than a module function or a module constant's arrow function is outside the fragment: its promise unit would close over the bindings around it");
-    const declaredResult: TypeTerm | null = promise ? guardResult(promise)
+    // A guard closure's annotation is its plain result and its promise.
+    const guard = gate.guardOf(node);
+    const declaredResult: TypeTerm | null = guard ? guardResult(guard)
       : node.type || instance ? gate.typeOf(node.type, node) : null;
     const arrow = ts.isArrowFunction(node) ? gate.span(node.equalsGreaterThanToken) : null;
     const keyword = modifiers[0];
@@ -1851,6 +1848,7 @@ export function lambda(this: Gate,
         receiver,
         params,
         result: declaredResult,
+        guard,
         body: { k: "blockBody", pos: gate.span(body), body: [...bindings, ...statements] },
       };
     }
@@ -1876,6 +1874,7 @@ export function lambda(this: Gate,
         ...rest(p),
       })),
       result: declaredResult,
+      guard,
       body: inner,
     };
   } finally {

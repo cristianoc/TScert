@@ -160,6 +160,27 @@ let refine_field bounds declarations env name field refine =
      | Some c -> fact env key (field_type bounds declarations [] t (Name field)) (refine c)
      | None -> env)
   | _ -> env
+(* What a call of a guard promises of its actual, a name: where a type guard
+   returned `true` (`asserts` false), or wherever an assertion function
+   returned (`asserts` true), the name holds the promise's type, the result of
+   the callee's promise signature (`resolve` gives the callee's type). Lean
+   checks that signature at the call (`PromiseCalls.promiseCall_sound`). *)
+let promise_refine resolve declarations env (cond:expr) asserts =
+  match cond.node with
+  | Call ({node=Id callee;_},None,args,[],[]) ->
+    let promise = Option.bind (resolve callee) (fun t ->
+      match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
+      | Some (Atoms [Shape {calls;_}]) -> List.find_map (fun (s:Semantic.signature) ->
+          match s.call_effect,asserts with
+          | Guards p,false | Asserts p,true -> Some (p,s.result)
+          | _ -> None) calls
+      | _ -> None) in
+    (match promise with
+     | Some (p,promised) -> (match List.nth_opt args p with
+       | Some {node=Id name;_} -> refine_value env name (fun _ -> promised)
+       | _ -> env)
+     | None -> env)
+  | _ -> env
 let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) bounds declarations env cond truth =
   let branch = branch_with state ~modules ~claimed bounds declarations in
   let refine_field = refine_field bounds declarations in
@@ -279,5 +300,9 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
          | _ -> env)
       | Some _,_ -> env in
     narrow (narrow env l r) r l
+  | Call _ when truth ->
+    promise_refine (fun name -> match List.assoc_opt name env with
+      | Some b -> Some (binding_type b)
+      | None -> modules name) declarations env cond false
   | _ -> env
 

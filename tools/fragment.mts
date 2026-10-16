@@ -211,6 +211,9 @@ export type Expr =
       /* The result annotation; null where the source states none, and the
          producer's claim at the closure proposes the result instead. */
       result: TypeTerm | null;
+      /* A guard's promise, where the result annotation is `x is T` or
+         `asserts x is T`; `result` is then its plain result. */
+      guard: Guard | null;
       body: Expr;
     }
   /* A closure's body written as statements: a block, or an expression body
@@ -328,12 +331,25 @@ export interface BindingAst {
 
 export type TypeParamAst = SourceTypeParameter<TypeTerm>;
 
+/** A user-defined guard's promise, its result annotation `x is T` (a type
+ * guard) or `asserts x is T` (an assertion function): the parameter `x`, by
+ * its position among the call's actuals, and `T`. The function's type carries
+ * it as a promise signature beside its plain one (`CallEffect`). */
+export interface Guard {
+  param: number;
+  asserts: boolean;
+  type: TypeTerm;
+  span: Span;
+}
+
 export interface FunctionAst {
   name: string;
   namePos: Span;
   typeParams: TypeParamAst[];
   params: { name: string; pos: Span; type: TypeTerm; rest?: true }[];
+  /** The result annotation: a guard's plain result, `boolean` or `void`. */
   retType: TypeTerm;
+  guard: Guard | null;
   body: Stmt[];
   /** Whether the function's code is strict: a sloppy call converts a
    * receiver that is not an object. */

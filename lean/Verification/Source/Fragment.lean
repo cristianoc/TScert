@@ -592,6 +592,14 @@ structure Param where
   /-- A rest parameter stands for the required positions of its tuple
   contract, and binds the array its arguments are collected into. -/
   rest : Bool := false
+/-- A user-defined guard's promise (`x is T`, `asserts x is T`): the actual
+it is about, by position among a call's actuals, whether it is an assertion
+function's, and `T`'s annotation. -/
+structure Guard where
+  param : Nat
+  asserts : Bool
+  type : Json
+
 structure Fn where
   name : String
   namePos : Span
@@ -602,6 +610,8 @@ structure Fn where
   object, as a call of sloppy code does; a leading `this` parameter is the
   receiver. -/
   convertsReceiver : Bool
+  /-- The promise its result annotation states, beside its plain result `ret`. -/
+  guard : Option Guard := none
 
 private def decodeArith (j : Json) : Except String Arith := do
   match ← jStr j with
@@ -944,7 +954,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     -- the unique encoding of the former, necessarily empty list.
     let (typeParams, receiver) ← match (j.getObjVal? "typeParams").toOption with
       | some raw => do
-        fieldsExactly j ["k","pos","typeParams","receiver","params","result","body"]
+        fieldsExactly j ["k","pos","typeParams","receiver","params","result","guard","body"]
         -- An ordinary function records its receiver annotation and whether
         -- its code is strict, which decides its code's kind below.
         let receiver ← match ← jField j "receiver" with
@@ -1117,9 +1127,18 @@ partial def decodeStmt (j : Json) : Except String Stmt := do
 end
 
 
+/-- A guard's promise as the Fragment states it, or none. -/
+def decodeGuard : Json → Except String (Option Guard)
+  | .null => pure none
+  | g => do
+    fieldsExactly g ["param", "asserts", "type", "span"]
+    let some param := (← jField g "param").getNat?.toOption | throw "a guard's parameter is a position"
+    return some ⟨param, ← (← jField g "asserts").getBool?, ← jField g "type"⟩
+
 def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
+  fieldsExactly j ["name", "namePos", "typeParams", "params", "retType", "guard", "body", "strict"]
   let typeParams ← decodeTypeParams (← jArr j "typeParams")
-  return (⟨← jStr (← jField j "name"), ← jSpan j "namePos",
+  let fn : Fn := ⟨← jStr (← jField j "name"), ← jSpan j "namePos",
     ← (← jArr j "params").mapM (fun p => do
       let rest ← match (p.getObjVal? "rest").toOption with
         | none => pure false
@@ -1127,7 +1146,9 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
           if !(← b.getBool?) then throw "a rest parameter is marked by `true`"
           pure true
       return ⟨← jStr (← jField p "name"), ← jField p "type", rest⟩),
-    ← jField j "retType", ← (← jArr j "body").mapM decodeStmt, !(← (← jField j "strict").getBool?)⟩, typeParams)
+    ← jField j "retType", ← (← jArr j "body").mapM decodeStmt, !(← (← jField j "strict").getBool?),
+    ← decodeGuard (← jField j "guard")⟩
+  return (fn, typeParams)
 
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
   fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions"]

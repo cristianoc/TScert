@@ -52,20 +52,20 @@ structure PointClaim (ι : Type) where
 @[nospecialize] def signature (c : NodeEvidence ι) : PointClaim ι := ⟨entry c, result c⟩
 
 /-- Claims are part of the request, not facts the producer may replace. -/
-@[nospecialize] def acceptResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
+@[nospecialize] def acceptResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : ControlFlow.Goal ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) : CheckResult ι Unit :=
   (CheckResult.ofBool (decide (C.map signature = claims))).bind fun _ =>
   checkEntryResult (checker := checker) G images R P C start inputs codes
 
-@[nospecialize] def acceptUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
+@[nospecialize] def acceptUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : ControlFlow.Goal ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) : Bool :=
   (acceptResult (checker := checker) G images R P claims C start inputs codes).accepted
 
-theorem acceptUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : Ty ι) (P : Program)
+theorem acceptUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : ControlFlow.Goal ι) (P : Program)
     (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
     (inputs : List (Ty ι)) (codes : CodeEntry ι → Bool)
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
@@ -76,8 +76,8 @@ theorem acceptUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceI
     CheckResult.accepted_ofBool, checkEntryUsing]
 
 theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {checker : HeapExpressionRules.Checker G images} {R P claims C start inputs}
-    {codes : CodeEntry ι → Bool} (hc : acceptUsing (checker := checker) G images R P claims C start inputs codes = true) (n W h ρ)
+    {checker : HeapExpressionRules.Checker G images} {R : Ty ι} {P claims C start inputs}
+    {codes : CodeEntry ι → Bool} (hc : acceptUsing (checker := checker) G images (.plain R) P claims C start inputs codes = true) (n W h ρ)
     (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hcodes : ProgramCertificates.CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _) :
     SafeGraph (excOf G) P (meaning G R) n W h (.at start ρ) := by
@@ -995,6 +995,9 @@ inductive Failure (ι : Type) where
   | rejected
   | exhaustedExpression (label : Nat) (stop : Exhaustion ι)
   | exhaustedEdge (source destination edgeIndex : Nat) (stop : Exhaustion ι)
+  /-- A return whose promised argument has type `actual`, not within the
+  promise `promised`. -/
+  | promise (label : Nat) (actual promised : Ty ι)
   deriving DecidableEq, Repr
 
 /-- Ordinary and observed edges share slot selection and coverage search. The
@@ -1122,18 +1125,85 @@ def successors : Continuation → List Target
   | .tagBind t _ _ => HeapKnowledge.observeTyped G Γ k 0 (.tag t (index == 0))
   | _ => k
 
-@[nospecialize] private def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
-    (fuel l : Nat) (node : Node) (claims : List (PointClaim ι))
-    (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : List (Evidence ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
-    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
-    Except (Failure ι) (NodeEvidence ι) := do
-  let some c := claims[l]? | throw .claimCount
-  let searched := expressionEffectUsing G images pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions known codes
-    aliases checker
-  let some (e,effect,out) := searched.value | throw (match searched.exhaustion with
-    | some stop => .exhaustedExpression l stop
-    | none => .expression l)
+/-- What a node's expression yields: a call at a promise signature, its
+promise; a slot read, the slot's implications; a tag test read as a Boolean,
+where it passes, its slot's slice, or, where the slice is the slot's whole
+type, a type of the pool the test decides. Untrusted: the checker decides. -/
+@[nospecialize] def nodeYields [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι))
+    (implies : List (PromiseCalls.Implication ι)) (e : Evidence ι)
+    (out k : HeapKnowledge.Knowledge) : List (PromiseCalls.Yield ι) :=
+  match PromiseCalls.promiseOf G e with
+  | some (effect, a, T) =>
+    if out == HeapExpressionRules.ordinaryOutput k then
+      [{ conditional := match effect with | .guards _ => true | _ => false, target := a, type := T }]
+    else []
+  | none =>
+    match (claim e).term with
+    | .var i => implies.filterMap fun x =>
+        if x.test == i then some { conditional := true, target := x.target, type := x.type } else none
+    | .ite (.test tag (.var i)) .tru .fls => tested i tag true
+    | .ite (.test tag (.var i)) .fls .tru => tested i tag false
+    | _ => []
+where
+  tested (i : Nat) (tag : Tag) (q : Bool) : List (PromiseCalls.Yield ι) :=
+    match Γ[i]? with
+    | some A =>
+      let sliced := BranchRefinement.tagSlice G A tag q
+      let decided := (pool.filter fun B => !B.isEmpty && BranchRefinement.tagMember G B tag q).foldl
+        (fun best B => match best with
+          | some b => if B.length < b.length then some B else best
+          | none => some B) none
+      match (if sliced != A then none else decided) with
+      | some B => [{ conditional := true, target := i, type := B, evidence := some {} }]
+      | none => match (subtypeUsing G images sliced sliced).value with
+        | some p => [{ conditional := true, target := i, type := sliced, evidence := some p }]
+        | none => []
+    | none => []
+
+/-- An edge's implications in the target's slots: each the source states, at
+every pair of target slots the mapping reads it from. -/
+def projectImplications (xs : List (PromiseCalls.Implication ι)) (m : PointClaims.Mapping) (width : Nat) :
+    List (PromiseCalls.Implication ι) :=
+  (List.range width).flatMap fun t => (List.range width).filterMap fun a =>
+    (xs.find? fun x => x.test == PointClaims.slot m t && x.target == PointClaims.slot m a).map
+      fun x => ⟨t, a, x.type⟩
+
+/-- What every predecessor of a merge establishes, in the merge's slots: an
+implication one of them states, at the union of the types each states or
+justifies by its own type of the target slot; dropped where one justifies it
+neither way nor by never holding `true` in the tested slot. -/
+def meetImplications [DecidableEq ι] (G : NormalGraph ι)
+    (edges : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
+    (width : Nat) : List (PromiseCalls.Implication ι) :=
+  let projected := edges.map fun (Γ, xs, m) => (Γ, m, projectImplications xs m width)
+  let candidates := (projected.flatMap fun (_, _, xs) => xs.map fun x => (x.test, x.target)).eraseDups
+  candidates.filterMap fun (t, a) => do
+    let types ← projected.mapM fun (Γ, m, xs) =>
+      match xs.find? (fun x => x.test == t && x.target == a) with
+      | some x => some x.type
+      | none => match Γ[PointClaims.slot m a]? with
+        | some A => some A
+        | none => if (Γ[PointClaims.slot m t]?).any (BranchRefinement.impossible G · (.boolean true))
+          then some [] else none
+    return ⟨t, a, types.flatten.eraseDups⟩
+
+/-- A node's evidence at its expression's derivation and the yields chosen
+for it: its edges, its handler and, at a return under a promise goal, the
+promise's evidence. -/
+@[nospecialize] private def produceNodeAt [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (pool : List (Ty ι)) (l : Nat) (node : Node) (claims : List (PointClaim ι))
+    (k : HeapKnowledge.Knowledge) (c : PointClaim ι) (e : Evidence ι) (effect : HeapExpressionRules.StepEvidence ι)
+    (out : HeapKnowledge.Knowledge) (implies : List (PromiseCalls.Implication ι)) (arguments : List Nat)
+    (goal : ControlFlow.Goal ι) (ys : List (PromiseCalls.Yield ι)) : Except (Failure ι) (NodeEvidence ι) := do
+  let unconditional := PromiseCalls.yieldFacts ys false
+  let conditional := PromiseCalls.yieldFacts ys true
+  let refine := fun Γ facts shift => PromiseCalls.refineBy Γ facts shift
+  -- An edge's refinement reaches the slots its knowledge's aliases relate.
+  let pushedRefine := fun facts => PromiseCalls.refineBy (c.type :: c.context)
+    (PromiseCalls.aliasFacts out.links facts 1) 0
+  let keptRefine := fun facts => PromiseCalls.refineBy c.context
+    (PromiseCalls.aliasFacts (HeapKnowledge.dropResult out).links facts 0) 0
   let target := fun Γ t index =>
     let searched := edgeUsing G images claims Γ t
     match searched.value with
@@ -1150,14 +1220,15 @@ def successors : Continuation → List Target
       | none => Failure.edge l t.label index)
   let ps ← (match node.continuation with
     | .ret => pure []
-    | .bind t => (target (c.type :: c.context) t 0).map (fun p => [p])
-    | .effect t => (target c.context t 0).map (fun p => [p])
-    | .branch y n => (target c.context y 0).bind (fun py =>
-        (target c.context n 1).map (fun pn => [py,pn]))
-    | .branchBind y n => (branchTarget (c.type :: c.context) (.boolean true) y 0).bind (fun py =>
-        (branchTarget (c.type :: c.context) (.boolean false) n 1).map (fun pn => [py,pn]))
-    | .tagBind t y n => (branchTarget (c.type :: c.context) (.tag t true) y 0).bind (fun py =>
-        (branchTarget (c.type :: c.context) (.tag t false) n 1).map (fun pn => [py,pn])) : Except (Failure ι) (List (EdgeEvidence ι)))
+    | .bind t => (target (pushedRefine unconditional) t 0).map (fun p => [p])
+    | .effect t => (target (keptRefine unconditional) t 0).map (fun p => [p])
+    | .branch y n => (target (keptRefine conditional) y 0).bind (fun py =>
+        (target (keptRefine unconditional) n 1).map (fun pn => [py,pn]))
+    | .branchBind y n => (branchTarget (pushedRefine conditional) (.boolean true) y 0).bind (fun py =>
+        (branchTarget (pushedRefine unconditional) (.boolean false) n 1).map (fun pn => [py,pn]))
+    | .tagBind t y n => (branchTarget (pushedRefine
+        (PromiseCalls.yieldFacts ys (ControlFlow.truthyBoolean G t c.type))) (.tag t true) y 0).bind (fun py =>
+        (branchTarget (pushedRefine unconditional) (.tag t false) n 1).map (fun pn => [py,pn])) : Except (Failure ι) (List (EdgeEvidence ι)))
   -- A handler receives the thrown value at a type admitting every value: the
   -- type its target states for the slot it lands in, else one from the pool.
   let hd ← (match node.handler with
@@ -1174,7 +1245,113 @@ def successors : Continuation → List Target
         | some stop => .exhaustedEdge l t.label (successors node.continuation).length stop
         | none => .edge l t.label (successors node.continuation).length)
     : Except (Failure ι) (Option (Ty ι × EdgeEvidence ι)))
-  return {expression := e, edges := ps, knowledge := k, effect := some effect, output := out, handler := hd}
+  -- A return under a promise goal: evidence that the argument, as the yields
+  -- leave it, is within the promise.
+  let within := fun (facts : List (Nat × Ty ι)) (T : Ty ι) =>
+    arguments.findSome? fun p => match (refine c.context facts 0)[p]? with
+      | some B => (subtypeUsing G images B T).value.map (p, ·)
+      | none => none
+  let promise := match node.continuation, goal with
+    | .ret, .guards T _ => if BranchRefinement.impossible G c.type (.boolean true) then none else within conditional T
+    | .ret, .asserts T _ => within unconditional T
+    | _, _ => none
+  let evidence : NodeEvidence ι := {expression := e, edges := ps, knowledge := k, effect := some effect, output := out, handler := hd}
+  return { evidence with implies := implies, yields := ys, arguments := arguments, promise := promise }
+
+
+@[nospecialize] private def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+    (fuel l : Nat) (node : Node) (claims : List (PointClaim ι))
+    (k : HeapKnowledge.Knowledge) (suggestions : List (Sequent ι)) (known : List (Evidence ι))
+    (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
+    (implies : List (PromiseCalls.Implication ι) := []) (arguments : List Nat := [])
+    (goal : ControlFlow.Goal ι := .plain []) :
+    Except (Failure ι) (NodeEvidence ι) := do
+  let some c := claims[l]? | throw .claimCount
+  let searched := expressionEffectUsing G images pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions known codes
+    aliases checker
+  let some (e,effect,out) := searched.value | throw (match searched.exhaustion with
+    | some stop => .exhaustedExpression l stop
+    | none => .expression l)
+  let found := nodeYields G images pool c.context implies e out k
+  -- Yields that leave a target's claim unmet are not taken.
+  match produceNodeAt G images pool l node claims k c e effect out implies arguments goal found with
+  | .ok x => return x
+  | .error err =>
+    if found.isEmpty then throw err
+    else produceNodeAt G images pool l node claims k c e effect out implies arguments goal []
+
+/-- The implications a source node carries on its edge of `cont` numbered
+`index`, and the context, refined by its yields, they are checked in. -/
+def edgeImplicationsOf [DecidableEq ι] (previous : NodeEvidence ι) (cont : Continuation) : List (PromiseCalls.Implication ι) :=
+  PromiseCalls.aliasImplications (edgeFactsOf previous cont).links (match cont with
+    | .effect _ | .branch _ _ => previous.implies
+    | _ => PromiseCalls.edgeImplications previous.implies previous.yields true)
+where
+  /-- The knowledge an edge's implications and argument slots are carried by,
+  as the checker reads it (`ControlFlow.carries`). -/
+  edgeFactsOf (previous : NodeEvidence ι) : Continuation → HeapKnowledge.Knowledge
+    | .effect _ | .branch _ _ => HeapKnowledge.dropResult previous.output
+    | _ => previous.output
+
+/-- The slots of a node's edge holding the promised argument, in the source's
+slots, its knowledge's aliases included. -/
+def edgeArgumentsOf [DecidableEq ι] (previous : NodeEvidence ι) (node : Node) : List Nat :=
+  PromiseCalls.aliasSources (edgeImplicationsOf.edgeFactsOf previous node.continuation).links
+    (match node.continuation with
+     | .effect _ | .branch _ _ => previous.arguments
+     | _ => ControlFlow.pushedSources previous.arguments (ControlFlow.aliasedRead previous.arguments node.expression))
+
+/-- An edge's argument slots in the target's: each slot whose mapping reads
+one holding it. -/
+def projectArguments (sources : List Nat) (m : PointClaims.Mapping) (width : Nat) : List Nat :=
+  (List.range width).filter fun i => sources.contains (PointClaims.slot m i)
+
+def edgeContextOf [DecidableEq ι] (G : NormalGraph ι) (previous : NodeEvidence ι) (cont : Continuation) (index : Nat) :
+    List (Ty ι) :=
+  let Γ := (claim previous.expression).context
+  let A := (claim previous.expression).type
+  let facts := PromiseCalls.yieldFacts previous.yields
+  let pushed := fun fs => PromiseCalls.refineBy (A :: Γ) (PromiseCalls.aliasFacts previous.output.links fs 1) 0
+  let kept := fun fs => PromiseCalls.refineBy Γ
+    (PromiseCalls.aliasFacts (HeapKnowledge.dropResult previous.output).links fs 0) 0
+  match cont with
+  | .bind _ => pushed (facts false)
+  | .tagBind t _ _ => pushed (facts (index == 0 && ControlFlow.truthyBoolean G t A))
+  | .effect _ => kept (facts false)
+  | .branch _ _ => kept (facts (index == 0))
+  | .branchBind _ _ => pushed (facts (index == 0))
+  | .ret => Γ
+
+/-- The slots holding the promised argument at each node: the goal's slot at
+the entry, carried along every edge, a handler's included, to each slot whose
+mapping reads one holding it, those every predecessor carries. Untrusted: the
+checker follows each edge again. -/
+@[nospecialize] def argumentSlots (P : Program) (claims : List (PointClaim ι)) (start : Nat)
+    (slot : Option Nat) : List (List Nat) := Id.run do
+  -- `none`: not reached yet.
+  let mut table : List (Option (List Nat)) := List.replicate P.length none
+  table := table.set start (some slot.toList)
+  for _ in List.range (2 * P.length + 2) do
+    let mut changed := false
+    for (node, l) in P.zipIdx do
+      let some here := (table[l]?).getD none | continue
+      let edges := (successors node.continuation).zipIdx.map (fun (t, _) =>
+          (t, match node.continuation with | .effect _ | .branch _ _ => false | _ => true)) ++
+        node.handler.toList.map (fun t => (t, true))
+      for (t, pushed) in edges do
+        let sources := if pushed then ControlFlow.pushedSources here (ControlFlow.aliasedRead here node.expression)
+          else here
+        let width := ((claims[t.label]?).map (·.context.length)).getD 0
+        let carried := (List.range width).filter fun i => sources.contains (PointClaims.slot t.mapping i)
+        let merged := match (table[t.label]?).getD none with
+          | none => some carried
+          | some old => some (old.filter carried.contains)
+        if merged != (table[t.label]?).getD none then
+          table := table.set t.label merged
+          changed := true
+    if !changed then break
+  return table.map fun x => x.getD []
 
 /-- Propagate established postconditions along single-predecessor paths. Entry
 starts empty; source cuts use exactly their supplied requirements, even when
@@ -1186,9 +1363,12 @@ Every edge is still checked by the independent consumer. -/
     (suggestions : List (Sequent ι) := []) (known : List (Evidence ι) := []) (start : Nat := 0)
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
-    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
+    (goal : ControlFlow.Goal ι := .plain []) :
     Except (Failure ι) (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
+  let arguments := argumentSlots P claims start goal.slot
+  let handlerTargets := P.filterMap fun node => node.handler.map (·.label)
   let incoming := (List.range P.length).map fun target =>
     P.zipIdx.flatMap fun (node,l) =>
       (successors node.continuation).zipIdx.filterMap fun (t,index) =>
@@ -1206,6 +1386,9 @@ Every edge is still checked by the independent consumer. -/
       let some c := claims[l]? | throw .claimCount
       let required := (requirements.lookup l).getD ⟨[],[],[]⟩
       let mut k := required
+      let mut implies : List (PromiseCalls.Implication ι) := []
+      -- At the entry and at cuts, the argument slots every edge carries.
+      let mut held := (arguments[l]?).getD []
       if l != start && !cuts.contains l then
         match incoming[l]? with
         | some [(pred,index,target)] =>
@@ -1213,24 +1396,44 @@ Every edge is still checked by the independent consumer. -/
           let some source := P[pred]? | throw .claimCount
           k := HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) previous.output source.continuation index)
             target.mapping c.context.length
+          implies := projectImplications (edgeImplicationsOf previous source.continuation) target.mapping
+            c.context.length
+          held := projectArguments (edgeArgumentsOf previous source) target.mapping c.context.length
         | some preds =>
           -- A merge that is not a cut states no requirement of its own; it
           -- keeps what every predecessor establishes, once all are available.
           -- Cycles pass through cuts, so waiting here cannot deadlock.
           let mut projections : List HeapKnowledge.Knowledge := []
+          let mut carried : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping) := []
+          let mut holding : List (List Nat) := []
           let mut ready := true
           for (pred,index,target) in preds do
             match (table[pred]?).getD none, P[pred]? with
             | some previous, some source =>
               projections := projections ++ [HeapKnowledge.project
                 (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) previous.output source.continuation index) target.mapping c.context.length]
+              carried := carried ++ [(edgeContextOf G previous source.continuation index,
+                edgeImplicationsOf previous source.continuation, target.mapping)]
+              holding := holding ++ [projectArguments (edgeArgumentsOf previous source) target.mapping
+                c.context.length]
             | _, _ => ready := false
           if !ready && !force then continue
-          if ready then k := HeapKnowledge.meet projections
+          if ready then
+            k := HeapKnowledge.meet projections
+            implies := meetImplications G carried c.context.length
+            held := match holding with
+              | first :: rest => first.filter fun p => rest.all (·.contains p)
+              | [] => []
         | none => pure ()
       k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
         (k.links ++ required.links).eraseDups⟩
+      -- A handler target is entered by throws too, which carry no
+      -- implication, and the argument slots the throwing nodes carry.
+      if handlerTargets.contains l then
+        implies := []
+        held := held.filter ((arguments[l]?).getD []).contains
       let evidence ← produceNode G images pool fuel l node claims k suggestions known codes aliases checker
+        implies held goal
       table := table.set l (some evidence)
       progress := true
     if !progress then
@@ -1254,7 +1457,7 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
   return none
 
 @[nospecialize] def produceUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
-    (fuel : Nat) (R : Ty ι) (P : Program) (claims : List (PointClaim ι))
+    (fuel : Nat) (R : ControlFlow.Goal ι) (P : Program) (claims : List (PointClaim ι))
     (start : Nat) (hints : List (Ty ι) := []) (inputs : List (Ty ι) := [])
     (suggestions : List (Sequent ι) := []) (known : List (ProgramCertificates.Evidence ι) := [])
     (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
@@ -1262,14 +1465,38 @@ heap entailment; it is not limited to ordinary subtype proof construction. -/
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
     (aliases : List (ι × ι) := []) :
     Except (Failure ι) (ControlFlow.Certificate ι) :=
-  match produceRawUsing G images (vocabulary G labels claims (inputs ++ hints)) fuel P claims suggestions known start requirements cuts codes
-      aliases checker with
+  let promised := match R with
+    | .guards T _ | .asserts T _ => [T]
+    | .plain _ => []
+  match produceRawUsing G images (vocabulary G labels claims (inputs ++ hints ++ promised)) fuel P claims suggestions known start
+      requirements cuts codes aliases checker R with
   | .error e => .error e
   | .ok C =>
     let checked := acceptResult G images R P claims C start inputs codes checker
     if checked.accepted then .ok C
     else match checked.exhaustion with
       | some stop => .error (.exhaustedExpression (stop.nodeLabel.getD start) stop)
-      | none => .error ((failedEdge G P C).getD .rejected)
+      | none => .error ((failedEdge G P C).getD (Id.run do
+          -- The first node whose own check fails: its expression, its yields,
+          -- its return, or one of its edges.
+          for (node, l) in P.zipIdx do
+            if let some c := C[l]? then
+              if !checkNodeUsing (checker := checker) G images R P C node c codes then
+                return (unkept l node c).getD (.expression l)
+          return .rejected))
+where
+  /-- A return of a promise goal whose answer is right but whose promised
+  argument is not within the promise: the argument's type as the return
+  knows it. -/
+  unkept (l : Nat) (node : Node) (c : NodeEvidence ι) : Option (Failure ι) := do
+    let .ret := node.continuation | none
+    let (T, answered, answer) ← match R with
+      | .guards T _ => some (T, true, BranchRefinement.onlyBoolean G (ControlFlow.result c))
+      | .asserts T _ => some (T, false, PromiseCalls.onlyUndef G (ControlFlow.result c))
+      | .plain _ => none
+    guard answer
+    let p ← c.arguments.head?
+    let A ← (PromiseCalls.refineBy (ControlFlow.entry c) (PromiseCalls.yieldFacts c.yields answered) 0)[p]?
+    pure (.promise l A T)
 
 end Verification.CertificateProducer

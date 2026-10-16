@@ -70,7 +70,7 @@ let create diagnostics flows offered declarations module_functions arities bound
   let rec register_expression (e:Source.expr) =
     Hashtbl.replace expression_hints e.pos e;
     (match e.node with
-     | Lambda (_,quantified,_,_,_,_,_) -> resolution_parameters := quantified @ !resolution_parameters
+     | Lambda (_,quantified,_,_,_,_,_,_) -> resolution_parameters := quantified @ !resolution_parameters
      | NullishAssign (name,source,_) ->
        Hashtbl.replace expression_hints source {pos=source;node=Id name}
      | _ -> ());

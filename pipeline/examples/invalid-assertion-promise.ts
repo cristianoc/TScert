@@ -1,7 +1,6 @@
 // `str` completes for every value but a number, which TypeScript does not
-// check: `length(true)` reads `length` off a Boolean, `undefined`. Its
-// promise unit returns the argument where it completes, an unknown, at
-// `string`.
+// check: `length(true)` reads `length` off a Boolean, `undefined`. Where the
+// body completes, its argument is unknown, not within the promise's `string`.
 export function str(v: unknown): asserts v is string {
   if (typeof v === "number") throw Error("a number");
 }

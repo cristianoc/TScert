@@ -826,7 +826,7 @@ export function collectDeclarations(file: string, options: {
           clean(part, `${idOf(source)}#${node.name.text}`);
         const { names, typeParams } = bindersOf(node.typeParameters, node, what);
         return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false, typeParams,
-          type: signature(valueScope(node, what, names), node.parameters, node.type, node, span, true) };
+          type: oneTerm(signature(valueScope(node, what, names), node.parameters, node.type, node, span, true), span) };
       }
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
         const list = node.parent;

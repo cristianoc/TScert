@@ -5,8 +5,16 @@ open Source
 (* A module function as its callers see it: an ordinary function at exactly its
    annotated parameters and result. A rest parameter contributes its tuple's
    positions or its array's element. Generic ones are not reachable yet. *)
-(* A leading `this: T` parameter is the receiver, not a position. *)
-let module_type (g:Source.fn) =
+(* A leading `this: T` parameter is the receiver, not a position. A guard
+   holds its promise signature beside its plain one, at the same parameters. *)
+let rec module_type (g:Source.fn) = match g.guard with
+  | Some (call_effect,promised) ->
+    (match module_type {g with guard=None} with
+     | Atoms [Shape ({calls=[call];_} as shape)] ->
+       Atoms [Shape {shape with calls=[call;{call with call_effect;result=promised}]}]
+     | _ -> Proposal_diagnostics.unsupported "a guard of a rest or generic signature")
+  | None -> plain_type g
+and plain_type (g:Source.fn) =
   let receiver,params = match g.params with
     | ("this",t) :: rest -> t,rest
     | params -> top,params in

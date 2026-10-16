@@ -1,6 +1,14 @@
 (* Semantic types contain no solver state. More precise proposals do not mutate them.
    A rigid parameter remains distinct from any future inference/existential IDs. *)
-type call_effect = Unrestricted | PreservesInputHeap
+(* What a signature guarantees beyond its contract: a heap effect, or a
+   promise about the actual at a parameter (Lean's `CallEffects.Effect`). A
+   promise signature's result is the promise's type, not the call's: a type
+   guard's call is `true` or `false`, `true` leaving the actual at the result;
+   an assertion function's returns `undefined`, leaving it there. *)
+type call_effect = Unrestricted | PreservesInputHeap | Guards of int | Asserts of int
+
+(* Whether a signature's result is the call's: a heap effect's. *)
+let plain_effect = function Unrestricted | PreservesInputHeap -> true | Guards _ | Asserts _ -> false
 
 type array_presence = Dense | Readable | Sparse
 let presence_name = function Dense -> "dense" | Readable -> "readable" | Sparse -> "sparse"

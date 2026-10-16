@@ -312,7 +312,8 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G s.receiver j U r)
     {args : List Tm} (hvals : CallArguments.Values args)
     (ha : ArgsRest (s.arguments.1.map (meaning G)) (argMeaning G s.arguments.2) j U args) :
-    SafePost (excOf G) (meaning G s.result) (s.effect.post heap) j U heap (CallArguments.graphEntry arity E K start vs true r args) := by
+    SafePost (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args)) (s.effect.post heap) j U heap
+      (CallArguments.graphEntry arity E K start vs true r args) := by
   obtain ⟨hshort, hpack⟩ := ha
   simp only [List.length_map, hk] at hshort hpack
   have hle : arity ≤ s.fixed.arguments.length := by simp [RestArrow.fixed, hk]
@@ -357,7 +358,11 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
         funext i; cases i <;> rfl
       rw [← he]; exact henv
     apply HeapObservations.weaken (fun heap'' v hp => s.effect.post_prefix hprefix hp)
-    exact hs.2 p _ heap' _ (henv'.transfer p (Nat.le_succ p) _ (WExt_refl _))
+    have hpromised := framePromised_params (e := s.fixed.effect) hs.2.1 [a, r] args vs
+    simp only [List.length_cons, List.length_nil, List.cons_append, List.nil_append] at hpromised
+    rw [← show framePromised s.effect (frameOffset (some A)) (a :: r :: CallArguments.parameters arity args ++ vs) =
+      s.effect.promised args from hpromised]
+    exact hs.2.2 p _ heap' _ (henv'.transfer p (Nat.le_succ p) _ (WExt_refl _))
       (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') (by
         intro v hm
         rcases List.mem_cons.mp hm with rfl | hm

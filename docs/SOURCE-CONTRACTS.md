@@ -1858,67 +1858,87 @@ to the built-in `sparse ReadonlyArray<unknown>` where it holds
 
 ### User-defined guards
 
-A type guard `function g(x: A): x is T { B }` and an assertion function
-`function f(x: A): asserts x is T { B }`, declared at the module's top level
-or bound by a module constant to an arrow function, are their functions at
-the plain results `boolean` and `void`. The promise, that a `true` result (a
-normal completion) leaves the argument a `T`, is a claim of a derived unit
-beside each, its **promise unit** $`g^{\circ}`$ (`%Promise:g%`, a name no
-source spells), whose body is the guard's with each result replaced by the
-argument:
+A type guard `function g(x: A): x is T` and an assertion function
+`function f(x: A): asserts x is T` have function types of two signatures each,
+the plain one and a **promise signature** about the parameter $`x`$, the
+$`p`$-th:
 
 ```math
-g^{\circ} = \mathsf{function}\,(x{:}\,A){:}\,T\ \{\,B[\mathsf{return}\ e \mapsto \mathsf{if}\ (e)\ \mathsf{return}\ x\ \mathsf{else}\ \mathsf{throw}\ x]\,\}
+g : (A) \to \mathtt{boolean}\ \land\ (A) \to T\,[\mathsf{guards}\ p]
 \qquad
-f^{\circ} = \mathsf{function}\,(x{:}\,A){:}\,T\ \{\,B[\mathsf{return}\ e \mapsto \mathsf{return}\ (e,\, x)];\ \mathsf{return}\ x\,\}
+f : (A) \to \mathtt{void}\ \land\ (A) \to T\,[\mathsf{asserts}\ p]
 ```
 
-The unit is checked as every function is, so `checkJson_safe` concludes that
-each normal return of $`g^{\circ}`$ is a value of $`T`$:
+A promise signature's result operand is the promise's type. Its meaning is the
+[effect-qualified call contract](SEMANTICS.md#effect-qualified-call-contracts)
+whose result family relates the result $`v`$ to the $`p`$-th actual $`v_p`$:
+a call of $`g`$ returns `true` with $`v_p \in T`$, or `false`; a normal return
+of $`f`$ is `undefined` with $`v_p \in T`$. The same declaration reads the
+same in every position: a function type, a method, an imported module's
+declaration and a closure's annotation all carry both signatures.
+
+The promise is proved at the definition. The body is checked at the promise
+signature with the goal that each return meets the result family for the
+argument $`v`$ the call passed. The checker tracks the slots holding $`v`$,
+which a write of the parameter or a default replacing it leaves, and at each
+return asks for the answer and the argument's type where that answer is
+possible:
 
 ```math
-\frac{\vdash g^{\circ} : (A) \to T\qquad x\notin\mathrm{written}(B)\qquad \mathsf{try}\notin B}
-     {\forall v{:}\,A.\ g(v) \Downarrow \mathsf{true} \implies v \in T}\ \textsf{guard}
-\qquad
-\frac{\vdash f^{\circ} : (A) \to T\qquad x\notin\mathrm{written}(B)}
-     {\forall v{:}\,A.\ f(v) \Downarrow \implies v \in T}\ \textsf{assert}
+\frac{\begin{array}{c}\Gamma_0 = x{:}A \qquad
+      \forall\ \mathsf{return}\ e \text{ at } \Gamma \text{ with } x \text{ holding } v:\
+      \Gamma\vdash e : \mathtt{boolean} \quad
+      \bigl(\Gamma\vdash e : \mathtt{false}\ \lor\ \Gamma_{e=\mathtt{true}} \vdash v : T\bigr)\end{array}}
+     {\vdash g : (A) \to T\,[\mathsf{guards}\ p]}\ \textsf{guard-def}
 ```
-
-The two bodies take the same steps up to a `return e`, where $`g`$ returns
-$`e`$, a Boolean by its checked result, and $`g^{\circ}`$ returns $`x`$ where
-$`e`$ is `true` and throws where it is `false`; $`x`$ holds the argument $`v`$,
-since $`B`$ never assigns it. So $`g(v)`$ returns `true` exactly where
-$`g^{\circ}(v)`$ returns $`v`$. Without a `try` in $`B`$ the throw leaves the
-unit, a run that states nothing; an assertion function's results return
-$`x`$ after $`e`$. This is the [elaboration/certification
-boundary](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification):
-the promise unit's evidence proves the promise, and a call consumes it.
-
-A call consumes the promise by testing its argument again. $`T`$ is a union of
-primitive kinds and literals, decided by a test $`q_T`$ of the value alone: a
-`typeof` test per kind, a strict equality per literal and for `null`. Such a
-test runs no code, never throws, and no step changes its answer. A call of the
-guard by its name, its promised actual a name $`a`$, is the call followed by
-that test:
 
 ```math
-g(\ldots, a, \ldots) \;\equiv\; g(\ldots, a, \ldots)\ \texttt{\&\&}\ q_T(a)
-\qquad
-f(\ldots, a, \ldots);\;\equiv\; f(\ldots, a, \ldots);\ \mathsf{if}\ (!q_T(a))\ \mathsf{throw}\ a;
-\qquad
-q_{T_1\cup\cdots\cup T_n}(a) = q_{T_1}(a)\parallel\cdots\parallel q_{T_n}(a)
+\frac{\forall\ \text{normal completion at } \Gamma \text{ with } x \text{ holding } v:\
+      \Gamma\vdash v : T}
+     {\vdash f : (A) \to T\,[\mathsf{asserts}\ p]}\ \textsf{assert-def}
 ```
 
-Each equivalence holds wherever the promise does: where $`g`$ returns `true`,
-$`a`$ is a $`T`$, which $`q_T`$ answers `true` of; where it returns `false`,
-the conjunction is `false` either way. The narrowing is the test's own, by the
-rules above, `if-or` among them. A `false` outcome narrows nothing: the
-promise states nothing of it (`invalid-type-guard-false-branch`). The parser
-places the derived nodes' claims at spans inside the call no source node has
-(`fragment-guards.mts`). Pipeline cases: `type-guards` verifies;
-`invalid-type-guard-promise`, `invalid-type-guard-undefined` and
-`invalid-assertion-promise` are refused at the promise unit's return, each run
-under Node by `node-runs.mts`.
+$`\Gamma_{e=\mathtt{true}}`$ is $`\Gamma`$ refined by what the returned value
+being `true` establishes: a test of a slot (`typeof x === "string"`, a strict
+equality, a conjunction or disjunction of these), a Boolean slot carrying such
+a test's answer, or a call at a promise signature. A branch before the return
+refines $`\Gamma`$ itself (`if (s.kind === "circle") return true;`). A return
+is claimed at its value's own type, so a `return false` answers `false`
+alone.
+
+A call consumes the promise. Where the callee's type holds a promise
+signature its actuals meet, the call's `true` result, or its normal return,
+leaves the promised actual $`a`$ a $`T`$:
+
+```math
+\frac{\Gamma\vdash g : (\vec A)\to T\,[\mathsf{guards}\ p]\quad \Gamma\vdash \vec a : \vec A\quad
+      \Gamma[a_p : T]\vdash_R S_1\quad \Gamma\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (g(\vec a))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-guard}
+\qquad
+\frac{\Gamma\vdash f : (\vec A)\to T\,[\mathsf{asserts}\ p]\quad \Gamma\vdash \vec a : \vec A\quad
+      \Gamma[a_p : T]\vdash_R S}
+     {\Gamma\vdash_R\ f(\vec a);\ S}\ \textsf{assert-call}
+```
+
+A `false` outcome narrows nothing: the promise states nothing of it
+(`invalid-type-guard-false-branch`). Passing a guard where a plain predicate
+is expected forgets its promise signature, as an intersection's operand.
+
+An imported guard is read at its declared type, both signatures; its promise
+is the import assumption of [the trust surface](DESIGN.md#trust-surface),
+discharged where the imported module's own run verifies the guard.
+
+Implementation: `CallEffects.Effect` (`guards p`, `asserts p`) gives the
+contract; `ControlFlow.Goal` states a body's goal and `checkReturnResult` its
+check at a return; [PromiseCalls.lean](../lean/Verification/Programs/PromiseCalls.lean)
+holds the yields of a returned value (`yieldFollows_sound`) and the promise
+call (`promiseCall_sound`); `Lowering.Control.promiseNarrowing` places the
+narrowed claim after a call, which the edge check verifies. Pipeline cases:
+`type-guards`, `type-guard-objects` and `type-guard-value-import` verify;
+`invalid-type-guard-promise`, `invalid-type-guard-undefined`,
+`invalid-type-guard-default`, `invalid-type-guard-object` and
+`invalid-assertion-promise` are refused at the return where the argument is
+not a $`T`$, each run under Node by `node-runs.mts`.
 
 ## Enums
 

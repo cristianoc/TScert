@@ -314,7 +314,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
       (* A target of several signatures, `next(...[value]: [] | [TNext])`, is
          bound at the first that takes the prefix: the bound function's claim
          is one signature, which Lean selects among the target's. *)
-      let fits (s:Semantic.signature) = s.quantified=[] && s.rest_pack=None && (s.variadic<>None
+      let fits (s:Semantic.signature) = Semantic.plain_effect s.call_effect && s.quantified=[] && s.rest_pack=None && (s.variadic<>None
         || List.length args<=List.length s.params) in
       let callee = match callee with
         | Atoms [Shape ({calls=_::_::_ as calls;_} as shape)] when List.exists fits calls ->

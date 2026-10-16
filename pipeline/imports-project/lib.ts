@@ -142,6 +142,7 @@ export interface Merge {
 export interface Merge {
   readonly label: string;
 }
+/** A type guard; the case type-guard-value-import imports it. */
 export function isWord(x: unknown): x is string {
   return typeof x === "string";
 }
