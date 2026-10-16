@@ -1660,11 +1660,14 @@ export function collectDeclarations(file: string, options: {
       const what = `${idOf(at.getSourceFile())}#${at.getText(at.getSourceFile())}`;
       const base = valueScope(at, what);
       return { ...base, named: (part, pos, read) => {
-        const [declaration] = ts.isIdentifier(part.typeName) ? typeDeclarationsOf(part.typeName) : [];
-        if (declaration && ts.isTypeParameterDeclaration(declaration)) {
-          const name = binder(declaration);
+        // A merged declaration's parameter is one per part: the one in scope.
+        const parameters = (ts.isIdentifier(part.typeName) ? typeDeclarationsOf(part.typeName) : [])
+          .filter(ts.isTypeParameterDeclaration);
+        const [first] = parameters;
+        if (first) {
+          const name = parameters.map(binder).find(n => n !== undefined);
           if (!name || part.typeArguments?.length)
-            throw Error(`the type parameter ${declaration.name.text} in ${what} is not one the written application's scope binds`);
+            throw Error(`the type parameter ${first.name.text} in ${what} is not one the written application's scope binds`);
           return { k: "binder", name, span: pos };
         }
         return base.named(part, pos, read);

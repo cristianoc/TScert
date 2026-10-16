@@ -142,3 +142,6 @@ export interface Merge {
 export interface Merge {
   readonly label: string;
 }
+
+// A bounded alias an import type applies (`invalid-written-import-type-value-import`).
+export type Bounded<T extends string> = T;

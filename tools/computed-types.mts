@@ -152,48 +152,59 @@ function aliasApplication(context: ComputedContext, node: TypeReferenceNode, spa
     throw Error(`${computed} is not an application of a type alias TypeScript computes`);
   // An omitted argument is its parameter's default, read at the earlier
   // arguments.
-  const args: TypeTerm[] = [];
-  const members: Member[] = [];
-  for (const [i, parameter] of (alias.typeParameters ?? []).entries()) {
-    const written = node.typeArguments?.[i];
-    const member: Member | null = written ? { node: written, read }
-      : parameter.defaultType ? { node: parameter.defaultType, read: context.applied(alias, [...args]) } : null;
-    if (!member) throw Error(`${computed} omits the argument of ${alias.name.text}'s ${parameter.name.text}, which has no default`);
-    args.push(member.read(member.node));
-    members.push(member);
-  }
+  const applied = parameterMembers(context, alias, node, read, new Map());
+  if (!applied) throw Error(`${computed} omits an argument of ${alias.name.text} that has no default`);
   let body = alias.type;
   while (ts.isParenthesizedTypeNode(body)) body = body.type;
-  if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, computed, members);
-  return computedType(context, body, span, context.applied(alias, args));
+  if (ts.isConditionalTypeNode(body)) return distributed(context, node, alias, body, span, computed, applied.members);
+  return computedType(context, body, span, context.applied(alias, applied.args));
 }
 
-/** A union member as written: its type node and the reader of the scope it
- * is written in. */
-type Member = { node: TypeNode; read: (node: TypeNode) => TypeTerm };
+/** A union member as written: its type node, the reader of the scope it
+ * is written in, and the members the parameters it may name stand for. */
+type Member = { node: TypeNode; read: (node: TypeNode) => TypeTerm; params: ReadonlyMap<Node, Member> };
+
+/** The members `alias`'s parameters stand for at `reference`: each written
+ * argument where it is written, each omitted one its default, read at the
+ * earlier ones; null where one has neither. */
+function parameterMembers(context: ComputedContext, alias: TypeAliasDeclaration, reference: TypeReferenceNode,
+    read: (node: TypeNode) => TypeTerm, params: ReadonlyMap<Node, Member>): { args: TypeTerm[]; members: Map<Node, Member> } | null {
+  const args: TypeTerm[] = [];
+  const members = new Map<Node, Member>();
+  for (const [i, parameter] of (alias.typeParameters ?? []).entries()) {
+    const written = reference.typeArguments?.[i];
+    const member: Member | null = written ? { node: written, read, params }
+      : parameter.defaultType ? { node: parameter.defaultType, read: context.applied(alias, [...args]), params: new Map(members) }
+      : null;
+    if (!member) return null;
+    args.push(member.read(member.node));
+    members.set(parameter, member);
+  }
+  return { args, members };
+}
 
 /** The members of the union `node` is written as, in the order written: a
  * union's members, and those of the equation of an alias each names, read
  * where that alias is declared, with its parameters read as the reference's
- * arguments or their defaults. Any other type is one member. */
+ * arguments or their defaults; a parameter standing alone is the members of
+ * what it stands for (`params`). Any other type is one member. */
 function unionMembers(context: ComputedContext, node: TypeNode, read: (node: TypeNode) => TypeTerm,
-    seen: Set<Node> = new Set()): Member[] {
+    seen: Set<Node> = new Set(), params: ReadonlyMap<Node, Member> = new Map()): Member[] {
   while (ts.isParenthesizedTypeNode(node)) node = node.type;
-  if (ts.isUnionTypeNode(node)) return node.types.flatMap(t => unionMembers(context, t, read, seen));
+  if (ts.isUnionTypeNode(node)) return node.types.flatMap(t => unionMembers(context, t, read, seen, params));
+  if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && !node.typeArguments?.length) {
+    const declarations = (context.checker.getSymbolAtLocation(node.typeName)?.declarations ?? []).map(d => d.resolve());
+    const standing = declarations.map(d => d && params.get(d)).find(m => m !== undefined);
+    if (standing) return unionMembers(context, standing.node, standing.read, seen, standing.params);
+  }
   const alias = ts.isTypeReferenceNode(node) ? context.alias(node) : null;
   // A computed alias has no equation to read members from.
   const computed = (n: Node): boolean => computedAlias(n, context.alias);
   if (!alias || !ts.isTypeReferenceNode(node) || seen.has(alias) || enclosingBinders(alias).length || computed(alias))
-    return [{ node, read }];
-  const args: TypeTerm[] = [];
-  for (const [i, parameter] of (alias.typeParameters ?? []).entries()) {
-    const written = node.typeArguments?.[i];
-    const value = written ? read(written)
-      : parameter.defaultType ? context.applied(alias, args)(parameter.defaultType) : null;
-    if (!value) return [{ node, read }];
-    args.push(value);
-  }
-  return unionMembers(context, alias.type, context.applied(alias, args), new Set([...seen, alias]));
+    return [{ node, read, params }];
+  const applied = parameterMembers(context, alias, node, read, params);
+  if (!applied) return [{ node, read, params }];
+  return unionMembers(context, alias.type, context.applied(alias, applied.args), new Set([...seen, alias]), applied.members);
 }
 
 /** An application of an alias whose equation is a conditional type
@@ -203,7 +214,7 @@ function unionMembers(context: ComputedContext, node: TypeNode, read: (node: Typ
  * the union of those members, each read as written. Where TypeScript computes
  * a union of literals and primitives for it, that union was taken already. */
 function distributed(context: ComputedContext, node: TypeReferenceNode, alias: TypeAliasDeclaration,
-    body: ts.ConditionalTypeNode, span: Span, computed: string, args: readonly Member[]): TypeTerm {
+    body: ts.ConditionalTypeNode, span: Span, computed: string, args: ReadonlyMap<Node, Member>): TypeTerm {
   const { checker } = context;
   const type = checker.getTypeFromTypeNode(node);
   if (!type || generic(type))
@@ -212,12 +223,13 @@ function distributed(context: ComputedContext, node: TypeReferenceNode, alias: T
   const index = ts.isTypeReferenceNode(check) && ts.isIdentifier(check.typeName) && !check.typeArguments?.length
     ? (alias.typeParameters ?? []).findIndex(p => ts.isIdentifier(check.typeName) && p.name.text === check.typeName.text)
     : -1;
-  const decided = args[index];
+  const parameter = (alias.typeParameters ?? [])[index];
+  const decided = parameter && args.get(parameter);
   if (!decided)
     throw Error(`the conditional type ${alias.name.text} decides a type other than one of its parameters, ` +
       `${computed}: it distributes over no union`);
   const argument = decided.node;
-  const members = unionMembers(context, argument, decided.read);
+  const members = unionMembers(context, argument, decided.read, new Set(), decided.params);
   const results = type.isUnionType() ? type.getTypes() : [type];
   const ids = new Set(results.map(t => t.id));
   const covered = new Set<number>();

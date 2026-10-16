@@ -131,22 +131,26 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (!client && (ts.isBlock(node) || (node.parent && "initializer" in node.parent && node.parent.initializer === node &&
         !ts.isTypeNode(node))))
       return;
-    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
-      if (!env.names.has(context.declarationsOf(node.typeName)[0] ?? node))
-        application(node, node.typeName, node.typeArguments ?? [], env);
-      for (const arg of node.typeArguments ?? []) visit(arg, env, client);
-      return;
-    }
-    if (ts.isExpressionWithTypeArguments(node) && ts.isIdentifier(node.expression) &&
-        node.parent && ts.isHeritageClause(node.parent)) {
-      application(node, node.expression, node.typeArguments ?? [], env);
-      for (const arg of node.typeArguments ?? []) visit(arg, env, client);
-      return;
-    }
-    if (ts.isTypeQueryNode(node)) {
-      const name = ts.isIdentifier(node.exprName) ? node.exprName : node.exprName.right;
-      if (ts.isIdentifier(name)) reach(context.declarationsOf(name));
-      node.forEachChild(child => { visit(child, env, client); });
+    // Every form naming a type with arguments: a type reference, simple or
+    // qualified (`ns.B<σ>`, `globalThis.Record<K, V>`), an import type
+    // (`import("m").B<σ>`), a heritage clause (`extends ns.Base<σ>`); and the
+    // forms instantiating a value's generic signature (`typeof f<σ>`,
+    // `f<σ>` as an expression), whose binder bounds are checked only at a
+    // call and are refused here.
+    const form = applicationForm(node);
+    if (form) {
+      if (form.instantiation) {
+        if (form.args.length) {
+          const file = node.getSourceFile();
+          throw new SweepError(file === context.client ? spanOf(node) : null,
+            `the instantiation ${node.getText(file)} in ${site(node)}: a value's type arguments are checked ` +
+            "against its binders' bounds only at a call");
+        }
+        if (form.name) reach(context.declarationsOf(form.name));
+      } else if (form.name && !context.declarationsOf(form.name).some(d => env.names.has(d))) {
+        application(node, form.name, form.args, env);
+      }
+      for (const arg of form.args) visit(arg, env, client);
       return;
     }
     if (ts.isMappedTypeNode(node)) {
@@ -182,7 +186,8 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (!ts.isTypeReferenceNode(check) || !ts.isIdentifier(check.typeName) || check.typeArguments?.length ||
         inferred(node.extendsType).length)
       return env;
-    const [declaration] = context.declarationsOf(check.typeName);
+    // A merged declaration's parameter is one per part: the one in scope.
+    const declaration = context.declarationsOf(check.typeName).find(d => outer.names.has(d));
     if (!declaration || !ts.isTypeParameterDeclaration(declaration)) return env;
     const outerName = outer.names.get(declaration);
     if (!outerName) return env;
@@ -224,6 +229,25 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (node) visit(node, empty, false);
   }
   return found;
+}
+
+/** A form naming a type or a value with type arguments: the name it
+ * resolves through (the rightmost of a qualified name; none for a module's
+ * namespace), its arguments, and whether it instantiates a value. */
+function applicationForm(node: Node): { name: ts.Identifier | null; args: readonly TypeNode[]; instantiation: boolean } | null {
+  const rightmost = (name: Node | undefined): ts.Identifier | null =>
+    !name ? null : ts.isIdentifier(name) ? name : ts.isQualifiedName(name) ? rightmost(name.right)
+      : ts.isPropertyAccessExpression(name) ? rightmost(name.name) : null;
+  if (ts.isTypeReferenceNode(node))
+    return { name: rightmost(node.typeName), args: node.typeArguments ?? [], instantiation: false };
+  if (ts.isImportTypeNode(node))
+    return { name: rightmost(node.qualifier), args: node.typeArguments ?? [], instantiation: node.isTypeOf };
+  if (ts.isTypeQueryNode(node))
+    return { name: rightmost(node.exprName), args: node.typeArguments ?? [], instantiation: true };
+  if (ts.isExpressionWithTypeArguments(node))
+    return { name: rightmost(node.expression), args: node.typeArguments ?? [],
+      instantiation: !(node.parent && ts.isHeritageClause(node.parent)) };
+  return null;
 }
 
 /** A declaration's or signature's own type parameters. */

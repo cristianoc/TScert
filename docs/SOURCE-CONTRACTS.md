@@ -1069,7 +1069,9 @@ A conditional type is read through an alias distributing over a parameter,
 user alias of that shape are. With $`\mathsf{members}(\sigma)`$ the members of
 the union $`\sigma`$ is written as, a union's members and those of the
 equation of an alias it names, each alias's parameters read as the
-reference's arguments or their defaults, an application TypeScript decides
+reference's arguments or their defaults, a parameter standing alone in an
+equation or a default being the members of what it stands for, an
+application TypeScript decides
 member by member, whose result is a union of the types of whole members, is
 the union of those members, each read where it is written:
 
@@ -1108,8 +1110,8 @@ default there, at the earlier arguments.
 Refused: a conditional type over a function's own type parameter, which
 TypeScript defers; one whose result has a part that is no member of the
 decided union as written (a branch other than the parameter, `T[]`, or a
-member naming a parameter of the alias declaring it, which is another type at
-each instance); a conditional type outside an alias distributing over a
+member naming a parameter of the alias declaring it inside another type,
+which is another type at each instance); a conditional type outside an alias distributing over a
 parameter that computes no union of literals and primitives; a template
 literal type with a `$`{string}` or ``${number}` hole; a
 form over a function's own type parameter (`keyof T`, `T[number]` with `T`
@@ -1143,13 +1145,18 @@ equation). An application of a declaration with no bounded parameter obliges
 only $`\sigma_i\le\mathsf{top}`$, which every type meets.
 
 The front end reads the obligations from the syntax
-(`written-applications.mts`): every `TypeReference` naming an alias,
-interface or class, at every depth, written with or without arguments, and
-every heritage clause (`extends`, `implements`). Swept are the client file's
+(`written-applications.mts`): every form naming an alias, interface or
+class, at every depth, written with or without arguments: a type reference,
+simple or qualified (`ns.B<σ>`, `globalThis.Record<K, V>`), an import type
+(`import("m").B<σ>`), and a heritage clause (`extends`, `implements`,
+qualified or not). A form instantiating a value's generic signature,
+`typeof f<σ>` or `f<σ>` as an expression, is refused: its binders' bounds
+are checked only at a call. Swept are the client file's
 code, with every type node outside its interfaces and aliases; the declared
 types of the values the client reads; and, closed under naming (a reference,
-a heritage clause, `typeof`), every declaration they reach with all its
-merged parts, generic or not. The standard library's declarations are not
+an import type, a heritage clause, `typeof`), every declaration they reach
+with all its merged parts, generic or not, each part's parameters its own
+binders. The standard library's declarations are not
 swept: the applications inside them belong to the reviewed library
 declarations. A call's type arguments are swept for the applications written
 in them; whether they meet the callee's binder bounds is the instantiation of
@@ -1204,8 +1211,11 @@ and defaults and no equation. `any` in a user declaration reads as
 Refused, each a limit of the mechanism: an argument computed over a binder,
 `B<T["k"]>` in a generic body, which has no term there; `infer U` at a
 bounded position, whose implied constraint is not modelled; a narrowing other
-than a naked check type's; an obligation whose comparison exhausts its
-budget; an argument outside the fragment.
+than a naked check type's, as of a wrapped check type `[T] extends [X]` or an
+extends type with `infer`; a generic signature whose bound names another of
+its binders, which a scheme does not represent; an obligation whose
+comparison exhausts its budget; an argument outside the fragment, such as a
+string pattern.
 
 ## Index signatures
 
