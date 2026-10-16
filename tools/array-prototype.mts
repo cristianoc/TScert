@@ -309,7 +309,14 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
  * its argument. Not listed: `[Symbol.toStringTag]`. Of `Date`, the getters,
  * `setTime`, `valueOf`, `toString` and `toISOString` (a `RangeError` for an
  * invalid date, an outcome); `[Symbol.toPrimitive]`, whose overloads take
- * hints, is not listed, nor the members taking locales. */
+ * hints, is not listed, nor the members taking locales.
+ *
+ * The readers state `preservesInputHeap`: `has` and `get` compare by
+ * SameValueZero and run no code, `keys`, `values`, `entries` and
+ * `[Symbol.iterator]` allocate a fresh iterator, and `Date`'s getters,
+ * `valueOf`, `toString` and `toISOString` read its time value. The members
+ * that change a collection or a date, and `forEach`, which calls its
+ * callback, state none. */
 export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>> = {
   Set: [
     { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true },
@@ -318,7 +325,7 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "forEach", from: "Set",
       signature: "forEach(callbackfn: (value: T, value2: T, set: Set<T>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
-    { name: "has", from: "Set", signature: "has(value: T): boolean;" },
+    { name: "has", from: "Set", signature: "has(value: T): boolean;", effect: "preservesInputHeap" },
     { name: "size", from: "Set", signature: "readonly size: number;" },
     // A host collection's tag, which its prototype holds: no object the
     // fragment builds has one (a literal or class writes no well-known
@@ -327,12 +334,12 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "[Symbol.toStringTag]", from: "Set", signature: "readonly [Symbol.toStringTag]: string;" },
     // As for arrays: `SetIterator<T>` is an `Iterator<T>`.
     { name: "[Symbol.iterator]", from: "Set", signature: "[Symbol.iterator](): SetIterator<T>;",
-      resultAs: "Iterator" },
+      resultAs: "Iterator", effect: "preservesInputHeap" },
     // A `SetIterator<T>` is read as an `Iterator<T>` too; a `for...of` over
     // one steps it as the host's (`intrinsics.mts`).
-    { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "Iterator" },
-    { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "Iterator" },
-    { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator" },
+    { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "Iterator", effect: "preservesInputHeap" },
+    { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "Iterator", effect: "preservesInputHeap" },
+    { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator", effect: "preservesInputHeap" },
   ],
   Map: [
     { name: "clear", from: "Map", signature: "clear(): void;" },
@@ -341,25 +348,25 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
       signature: "forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
     // TypeScript's own `V | undefined`: a key the map lacks reads nothing.
-    { name: "get", from: "Map", signature: "get(key: K): V | undefined;" },
-    { name: "has", from: "Map", signature: "has(key: K): boolean;" },
+    { name: "get", from: "Map", signature: "get(key: K): V | undefined;", effect: "preservesInputHeap" },
+    { name: "has", from: "Map", signature: "has(key: K): boolean;", effect: "preservesInputHeap" },
     { name: "set", from: "Map", signature: "set(key: K, value: V): this;", resultIsReceiver: true },
     { name: "size", from: "Map", signature: "readonly size: number;" },
     { name: "[Symbol.toStringTag]", from: "Map", signature: "readonly [Symbol.toStringTag]: string;" },
     { name: "[Symbol.iterator]", from: "Map", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
-      resultAs: "Iterator" },
-    { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "Iterator" },
-    { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "Iterator" },
-    { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator" },
+      resultAs: "Iterator", effect: "preservesInputHeap" },
+    { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "Iterator", effect: "preservesInputHeap" },
+    { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "Iterator", effect: "preservesInputHeap" },
+    { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator", effect: "preservesInputHeap" },
   ],
   Date: [
     ...["valueOf", "getTime", "getFullYear", "getUTCFullYear", "getMonth", "getUTCMonth", "getDate",
       "getUTCDate", "getDay", "getUTCDay", "getHours", "getUTCHours", "getMinutes", "getUTCMinutes",
       "getSeconds", "getUTCSeconds", "getMilliseconds", "getUTCMilliseconds", "getTimezoneOffset"]
-      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): number;` })),
+      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): number;`, effect: "preservesInputHeap" })),
     { name: "setTime", from: "Date", signature: "setTime(time: number): number;" },
     ...["toString", "toISOString"]
-      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;` })),
+      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;`, effect: "preservesInputHeap" })),
   ],
 };
 

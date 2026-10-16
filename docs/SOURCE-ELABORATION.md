@@ -958,7 +958,12 @@ for an arrow). The premise over $`L`$ is the creation rule's, so leaving the
 result out drops a requirement and no check: the result is the claim's, like
 any expression's. A parameter written without a type has for $`D_j`$ the type
 TypeScript gives it from its context, which the parser writes
-(`closureParamType`): a proposal like any claim, since the body is checked at
+(`closureParamType`) as an annotation of it would read: primitives,
+literals, unions, intersections, arrays, type parameters, declarations by
+name, and tuples of required positions and a rest, readonly as TypeScript
+types them. A tuple with an optional position is refused, since TypeScript
+gives that position's type with `undefined` whether or not an annotation
+wrote it (`invalid-contextual-optional-tuple`). It is a proposal like any claim, since the body is checked at
 $`A_j\sqsubseteq_G D_j`$ and the closure at $`\bigwedge L`$ wherever it goes, the
 call offering it included. A closure is **offered** each signature binding
 more parameters than it does that is expected where it flows: passed where

@@ -1612,6 +1612,25 @@ export function collectDeclarations(file: string, options: {
         if (element) return { k: "array", presence: "readable", readonly: type.getSymbol()?.name === "ReadonlyArray",
           element: contextualTerm(element, span), span };
       }
+      // A tuple of required positions and a rest, as its annotation reads,
+      // readonly as TypeScript says. An optional position's type TypeScript
+      // gives with `undefined` whether or not it was written, so it is not
+      // read.
+      const tuple = checker.isTupleType(type) && isTypeReference(type) ? type.getTarget() : undefined;
+      if (tuple && isTupleType(tuple) && isTypeReference(type)) {
+        const elements = checker.getTypeArguments(type);
+        const required: TypeTerm[] = [];
+        let rest: TypeTerm | null = null;
+        for (const [i, flag] of tuple.elementFlags.entries()) {
+          const element = elements[i];
+          if (!element) throw Error(`the contextual tuple ${text()} states no type at position ${i}`);
+          if (flag === ElementFlags.Required && rest === null) required.push(contextualTerm(element, span));
+          else if (flag === ElementFlags.Rest && rest === null) rest = contextualTerm(element, span);
+          else throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, ` +
+            "a tuple with an optional or variadic position, which an annotation states");
+        }
+        return { k: "tuple", presence: "dense", readonly: tuple.readonly, required, optional: [], rest, span };
+      }
       const symbol = type.getAliasSymbol() ?? type.getSymbol();
       const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
       const [node] = nodes;
@@ -1635,7 +1654,7 @@ export function collectDeclarations(file: string, options: {
         if (stated) return stated;
       }
       throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, which is ` +
-        "not stated by primitives, literals, unions, intersections, arrays, type parameters and declarations by name");
+        "not stated by primitives, literals, unions, intersections, arrays, tuples, type parameters and declarations by name");
     };
     const parameterAt = (span: Span): ts.ParameterDeclaration | null => {
       const visit = (node: Node): ts.ParameterDeclaration | null => {
@@ -2461,7 +2480,7 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
     const forms = signatures(scope, parameters, member.type, member, span, false, given);
     if (forms.some(f => f.receiver)) throw Error(`${where}.${entry.name} states its receiver`);
     fields.push({ name: key, optional: false, readonly: false, span,
-      type: oneTerm(forms.map(f => ({ ...f, receiver: { k: "self", span } })), span) });
+      type: oneTerm(forms.map(f => ({ ...f, receiver: { k: "self", span }, effect: entry.effect ?? f.effect })), span) });
   }
   return { k: "object", fields, stringIndex: null, calls: [], span: identityOf(node).span };
 }

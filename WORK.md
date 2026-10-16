@@ -214,14 +214,12 @@ parameter, `KeysOf<T>` (2, lowering-dump), a closure constant created before
 a constant its code reads (`initialization-closure-constant-refused`, 1:
 rules), and an array literal spreading a `Set` and a map's keys (1: summary).
 
-Three forms of the record tools are rewritten for a verifier limit, not
+Two forms of the record tools are rewritten for a verifier limit, not
 for a departure from the fragment; each rewrite is reverted when its limit
-lifts: tuples built with `as const` and destructured by callbacks
-(`summary`; `contextual-tuple-callback-refused`); element reads the code
-already guards, by a length or a test of the same element (`dedent`,
-`effects`, `mathRoles`' `afterRelation` and `textWord`;
-`guarded-element-read-refused`); and a `flatMap` callback returning a
-string (`card`; `flat-map-scalar-result-refused`).
+lifts: element reads the code already guards, by a length or a test of the
+same element (`dedent`, `effects`, `mathRoles`' `afterRelation` and
+`textWord`; `guarded-element-read-refused`); and a `flatMap` callback
+returning a string (`card`; `flat-map-scalar-result-refused`).
 
 The goal is every function of the repository's own TypeScript verified:
 `tools/`, `pipeline/`, `tests/` and `dev/`, about 21,000 lines (the sources

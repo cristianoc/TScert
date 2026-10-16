@@ -1295,7 +1295,11 @@ other signature or its receiver condition from the declared scheme.
      {⟦I\langle\vec X\rangle⟧_\Omega=\{k_1:⟦m_1⟧_{\omega_1};\ \ldots;\ k_n:⟦m_n⟧_{\omega_n}\}}\ \textsf{library-interface}
 ```
 
-a supertype of the declared interface. $`⟦m⟧_\omega`$ drops
+a supertype of the declared interface. A member's signatures state the
+entry's effect: `preservesInputHeap` for the readers, `has`, `get`, `keys`,
+`values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`,
+`toString` and `toISOString`, none for the members that change the
+collection or the date or call a callback. $`⟦m⟧_\omega`$ drops
 `thisArg`, reads a `this` result as the receiver, and reads a declared
 iterator result as `Iterator<T>`, which it extends. A property is a readonly
 view. A string's own `length` and indices are the calculus's `lenStr` and

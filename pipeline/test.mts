@@ -1156,12 +1156,14 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
 
 // A heap-preservation claim forged onto a callback is certified only where
 // its body is: one reading its arguments is; one capturing a cell it writes,
-// or calling `pop`, a member stated unrestricted, on the source, beside a
-// string's `trim`, is refused at its own typing.
+// or calling a member stated unrestricted (`pop` on the source beside a
+// string's `trim`, a global regex's `test`, a `Map`'s `set`), is refused at
+// its own typing.
 for (const [file, marker, arity, accepted] of [
   ["closure-result-contract", "(p: number", 2, true], ["closure-graph-captured-cell", "(): void", 0, false],
   ["invalid-map-primitive-method-mutation", "(x: string)", 3, false],
   ["invalid-regexp-global-callback-effect", "(l) => word", 3, false],
+  ["invalid-map-collection-write-callback", "(name) =>", 3, false],
 ] as const) {
   const artifacts = run(file);
   const claims = readClaims(artifacts);

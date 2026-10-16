@@ -19,6 +19,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // The callback's `set` writes the map it captures.
+  assert.equal(runExample("invalid-map-collection-write-callback",
+    `(() => { const counts = new Map(); seen(["a", "a"], counts); return counts.get("a"); })()`), 2,
+    "invalid-map-collection-write-callback: the callback's call writes the map");
   // `map` passes the index to the constant's second parameter, whose `tag`
   // is undefined.
   assert.equal(runExample("invalid-annotated-constant-callback", `tags(["a"])[0]`), undefined,

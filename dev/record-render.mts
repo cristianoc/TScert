@@ -405,7 +405,7 @@ function summary(groups: Group[]): string {
   if (!ranges.length) return "";
   const items = ranges.map(g => {
     const count = (o: string) => g.records.filter(r => r.trailers.get("Outcome") === o).flatMap(r => words(r, "Units")).length;
-    const units = ["verified", "refused", "gap"].filter(o => count(o)).map(o => `${count(o)} ${o}`).join(", ");
+    const units = ["verified", "refused", "gap"].map(o => [o, count(o)] as const).filter(([, n]) => n).map(([o, n]) => `${n} ${o}`).join(", ");
     const list = (key: string, skip: string = ""): string[] => [...new Set(g.records.map(r => r.trailers.get(key) ?? "").filter(v => v && v !== skip))];
     const parts = [...new Set(g.records.flatMap(r => words(r, "Parts")))];
     const facts = [
