@@ -20,9 +20,9 @@ export type Example = { source: string; kind?: string | undefined; span?: [numbe
 
 export type Group = { name: string; range?: string; records: CommitRecord[]; files: string[] };
 
-const OUTCOMES: { [k: string]: string } = {
-  verified: "ok", refused: "principled", gap: "gap", "no-behaviour-change": "neutral",
-};
+const OUTCOMES = new Map<string, string>([
+  ["verified", "ok"], ["refused", "principled"], ["gap", "gap"], ["no-behaviour-change", "neutral"],
+]);
 const FACTS = ["Parts", "Lean", "Wire", "Trust", "Depends", "Measured", "Tests"];
 
 /** The trailers of a message: its last paragraph, when every line of it is
@@ -374,7 +374,7 @@ function card(r: CommitRecord): string {
   const out: string[] = [
     `<article class="card" id="c-${r.sha}"><header><div><div class="sha">${r.sha} · ${esc(r.author)}</div>` +
     `<h3>${inline(r.subject)}</h3></div>` +
-    (outcome ? `<span class="pill ${OUTCOMES[outcome] ?? "neutral"}">${esc(outcome)}</span>` : "") + `</header>`,
+    (outcome ? `<span class="pill ${OUTCOMES.get(outcome) ?? "neutral"}">${esc(outcome)}</span>` : "") + `</header>`,
   ];
   const units = words(r, "Units");
   if (units.length) out.push(`<div class="units">${units.map(u => `<span>${esc(u)}</span>`).join("")}</div>`);

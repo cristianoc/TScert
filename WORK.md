@@ -203,15 +203,14 @@ search. Of the 23 functions of `dev/`, the record tools and the lowering
 dump, 7 verify; the first blockers there are a callback writing only
 locations it allocated, a `let` cell or a fresh regex's `lastIndex`, which
 the effect checker does not certify (see [contract
-completeness](#restoring-completeness); 7: effects, tests, math, mathRoles,
-lowering, rules and section, through `esc`, `highlight` and
+completeness](#restoring-completeness); 8: effects, tests, math, mathRoles,
+lowering, rules, section and card, through `esc`, `highlight` and
 `afterRelation`), a `map` callback running a child process, whose effect
 no contract bounds to locations other than the source's (group), an element read a length
 guards (`paragraphs[paragraphs.length - 1]`, `guarded-element-read-refused`,
 2: parseTrailers, parseRecord), a conditional type over a type parameter, `KeysOf<T>` (2,
-lowering-dump), a dictionary read at a key that may name an
-`Object.prototype` member (2: card, pageBody), a closure claimed outside its
-parameter's contextual annotation (summary), and a nested conditional of
+lowering-dump), a closure claimed outside its parameter's contextual
+annotation (2: summary, pageBody), and a nested conditional of
 literals whose type the producer widens (mathTokens).
 
 Two forms of the record tools are rewritten for a verifier limit, not
