@@ -12,7 +12,8 @@
       "@fixture/lib": ["./lib.ts"],
       "@fixture/relay": ["./relay.ts"],
       "@fixture/whole": ["./whole.ts", "./defaulted.ts"],
-      "@fixture/defaulted": ["./defaulted.ts"]
+      "@fixture/defaulted": ["./defaulted.ts"],
+      "@fixture/defaulted-key": ["./defaulted-key.ts"]
     }
   },
   "include": [
@@ -20,6 +21,7 @@
     "./lib.ts",
     "./relay.ts",
     "./whole.ts",
-    "./defaulted.ts"
+    "./defaulted.ts",
+    "./defaulted-key.ts"
   ]
 }

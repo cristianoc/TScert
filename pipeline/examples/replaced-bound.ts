@@ -21,6 +21,8 @@ export function chain(...a: Outer<"s">): "s" {
 export function signature(g: (...a: Inner<"s">) => number): number {
   return g("s");
 }
-export function under(x: keyof { [K in "a"]: B<"s"> } | keyof { b: <U>() => B<"s"> }): "a" | "b" {
+export function under(
+  x: keyof { [K in "a"]: B<"s"> } | keyof { b: <U>() => B<"s"> },
+): "a" | "b" {
   return x;
 }

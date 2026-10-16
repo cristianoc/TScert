@@ -19,6 +19,9 @@ import { childrenOf, nameOf } from "./syntax.mts";
 export type Entity = {
   declarations: readonly Node[];
   members(): readonly Entity[];
+  /** A value the language defines, `undefined` or `globalThis`, which no
+   * declaration states. */
+  intrinsic?: true;
 };
 
 /** What the sweep needs from the declaration graph. */
@@ -98,6 +101,9 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       // not read.
       if ("inferred" in determined) {
         const at = determined.inferred;
+        if (!at)
+          throw refusal(use, "a member the checker synthesises without a declaration and with no origin found: " +
+            "no annotation states its type");
         const file = at.getSourceFile();
         throw refusal(use, `the type of ${at.getText(file).split("\n")[0]} in ${site(at)} is inferred from ` +
           "its code, which no annotation states: a contract read through an unannotated declaration is refused");
@@ -114,7 +120,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   // declarations, each by its kind, with an overload set's and an accessor
   // pair's declarations taken together, and the members its type exposes;
   // the declaration whose type is inferred where there are none.
-  type Determined = { nodes: Node[] } | { inferred: Node };
+  type Determined = { nodes: Node[] } | { inferred: Node | null };
   const all = (parts: readonly Determined[]): Determined => {
     const nodes: Node[] = [];
     for (const part of parts) {
@@ -125,6 +131,10 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   };
   const seen = new Set<Node>();
   const determining = (entity: Entity): Determined => {
+    // An entity has declarations: one the checker synthesised without one
+    // has no origin found, and its type no annotation states.
+    if (entity.intrinsic) return { nodes: [] };
+    if (!entity.declarations.length) return { inferred: null };
     const declarations = entity.declarations.filter(d => !context.library(d) &&
       (d.getSourceFile() !== context.client || withinTypeDeclaration(d)));
     const [first] = entity.declarations;
@@ -227,8 +237,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (ts.isFunctionExpression(e) || ts.isArrowFunction(e)) return signature(e);
     if (ts.isAsExpression(e) || ts.isTypeAssertion(e)) return { nodes: [e.type] };
     if (ts.isObjectLiteralExpression(e))
-      return all(e.properties.map(p => isFunctionLike(p) || ts.isGetAccessorDeclaration(p) || ts.isSetAccessorDeclaration(p)
-        ? determining({ declarations: [p, ...pairOf(p)], members: () => [] }) : single(p)));
+      return all(e.properties.map(p => determining({ declarations: [p, ...pairOf(p)], members: () => [] })));
     return { inferred: d };
   };
   const fresh = (node: ts.TypeParameterDeclaration, suffix = ""): string => {
@@ -315,12 +324,17 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     // A step a further step selects a member of contributes nothing by
     // itself, only that member; a whole module's type, `typeof import("m")`,
     // contributes its exports.
-    if (ts.isIdentifier(node) && !named && erased(node, context.client)) {
+    // `as const` names no declaration. A step selected from contributes
+    // only what the next step selects, which must resolve.
+    const constAssertion = !!node.parent && ts.isTypeReferenceNode(node.parent) && node.parent.typeName === node &&
+      ts.isIdentifier(node) && node.text === "const" && !!node.parent.parent &&
+      (ts.isAsExpression(node.parent.parent) || ts.isTypeAssertion(node.parent.parent));
+    if (ts.isIdentifier(node) && !named && !constAssertion && erased(node, context.client) && !selectedFrom(node)) {
       const entity = context.resolve(node);
       if (!entity)
-        throw refusal(node, "a name in a type or a declared module that TypeScript resolves to no symbol: the " +
-          "declarations its meaning depends on are unknown");
-      if (!selectedFrom(node)) reach([entity], node);
+        throw refusal(node, "a name in a type or a declared module that TypeScript resolves to no symbol or to " +
+          "a symbol without a declaration: the declarations its meaning depends on are unknown");
+      reach([entity], node);
     }
     if (ts.isImportTypeNode(node) && !node.qualifier && !selected(node) &&
         ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
@@ -350,7 +364,27 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     // A member selection's meaning depends on the declarations of the members
     // it selects: an indexed access's at its keys, and a computed alias's,
     // whose equation may select any member of its arguments, at every key.
-    if (ts.isIndexedAccessTypeNode(node)) reach(context.members(node.objectType, node.indexType), node);
+    // A member the checker synthesises without a declaration (a tuple's
+    // position, a mapped type's member) has its origin in the object it is
+    // selected from: that object's syntax, swept here, or, for a `typeof` or
+    // an import type selected from, the entity it names, swept whole.
+    if (ts.isIndexedAccessTypeNode(node)) {
+      const members = context.members(node.objectType, node.indexType);
+      reach(members.filter(m => m.declarations.length), node);
+      if (members.some(m => !m.declarations.length)) {
+        let object: Node = node.objectType;
+        while (ts.isParenthesizedTypeNode(object)) object = object.type;
+        const name = ts.isTypeQueryNode(object) ? rightmost(object.exprName)
+          : ts.isImportTypeNode(object) ? rightmost(object.qualifier) : null;
+        const origin = name ? context.resolve(name)
+          : ts.isImportTypeNode(object) && ts.isLiteralTypeNode(object.argument) && ts.isStringLiteral(object.argument.literal)
+            ? context.moduleOf(object.argument.literal) : null;
+        if (origin) reach([origin], node);
+        else if (ts.isTypeQueryNode(object) || ts.isImportTypeNode(object))
+          throw refusal(node, "a member the checker synthesises without a declaration, selected from an entity " +
+            "that resolves to none: no annotation states its type");
+      }
+    }
     if (form?.name && !form.instantiation && context.declarationsOf(form.name).some(d => context.computed(d)))
       for (const arg of form.args) reach(context.members(arg, null), node);
     // Every child is visited, in the scope it is in.
@@ -441,6 +475,12 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     if (node) visit(node, enclosing(node), false, true);
   }
   return found;
+}
+
+/** The rightmost name of a qualified name or a property access. */
+function rightmost(name: Node | undefined): ts.Identifier | null {
+  return !name ? null : ts.isIdentifier(name) ? name : ts.isQualifiedName(name) ? rightmost(name.right)
+    : ts.isPropertyAccessExpression(name) ? rightmost(name.name) : null;
 }
 
 /** A form naming a type or a value with type arguments: the name it

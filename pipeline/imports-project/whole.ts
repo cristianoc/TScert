@@ -74,3 +74,15 @@ export class Merged {}
 export interface Merged {
   m: number;
 }
+
+// A constant of a mapped type, whose members the checker synthesises
+// (`invalid-written-synthetic-member-value-import`), and a default export
+// object with a computed key (`defaulted.ts` holds its own).
+export declare const mappedConstant: {
+  [K in "a"]: keyof { a: B<any> };
+};
+export declare const remapped: {
+  [K in "x" as `${K}y`]: keyof { a: B<any> };
+};
+export class Bounded<T extends string> {}
+export interface Bounded<T extends string> {}

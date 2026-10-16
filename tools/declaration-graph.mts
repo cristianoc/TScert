@@ -538,12 +538,21 @@ export function collectDeclarations(file: string, options: {
     const aliasNodes = new Map<string, ts.TypeAliasDeclaration>();
     const aliasKey = (identity: DeclarationIdentity) =>
       `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
+    // A class merged with interfaces is one symbol too, the class its
+    // identity; an interface adding a member or a base to it is refused: its
+    // instances, which the class's construction makes, need not have it,
+    // though TypeScript assumes they do.
     const declarationOf = (nodes: readonly Node[], what: string): TypeDeclaration => {
       const types = nodes.filter(isTypeDeclaration);
-      const [node] = types;
+      const classes = types.filter(ts.isClassDeclaration);
+      const node = classes[0] ?? types[0];
+      if (classes.length === 1 && types.some(t => ts.isInterfaceDeclaration(t) &&
+          (t.members.length || t.heritageClauses?.length)))
+        throw Error(`${what} is a class merged with an interface adding members: TypeScript assumes them on ` +
+          "instances its construction need not give them");
       if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n) &&
             !ts.isFunctionDeclaration(n)) ||
-          (types.length > 1 && !types.every(ts.isInterfaceDeclaration)))
+          (types.length > 1 && !types.every(t => ts.isInterfaceDeclaration(t) || (t === node && classes.length === 1))))
         throw Error(types.length > 1 || nodes.length > 1
           ? `TypeScript found ${nodes.length} declarations for ${what}`
           : `${what} is not one type alias, interface or class`);
@@ -1705,11 +1714,15 @@ export function collectDeclarations(file: string, options: {
       }
       return [...found.values()];
     };
+    // A symbol the checker synthesises has no declaration: no entity. Its
+    // origin is found where it is selected (`resolve`, `members`).
     const entityOf = (symbol: Symbolic | undefined): Entity | null => {
       const target = follow(symbol);
       if (!target || checker.isUnknownSymbol(target)) return null;
-      return { declarations: target.declarations.map(d => d.resolve()).filter((d): d is Node => !!d),
-        members: () => exportsOf(target).flatMap(e => entityOf(e) ?? []) };
+      const declarations = target.declarations.map(d => d.resolve()).filter((d): d is Node => !!d);
+      if (!declarations.length) return null;
+      return { declarations,
+        members: () => exportsOf(target).map(e => entityOf(e) ?? { declarations: [], members: () => [] }) };
     };
     // The members named `key` of what a declaration's annotation names: a
     // type literal's, or those of the interfaces, classes and type literal
@@ -1765,6 +1778,9 @@ export function collectDeclarations(file: string, options: {
             const direct = follow(checker.getSymbolAtLocation(at));
             const entity = entityOf(direct);
             if (direct && entity) return { symbol: direct, entity };
+            // The values the language defines, which no declaration states.
+            if (direct && !direct.declarations.length && (direct.name === "undefined" || direct.name === "globalThis"))
+              return { symbol: direct, entity: { declarations: [], members: () => [], intrinsic: true } };
             const path = at.parent;
             if (!path || !ts.isQualifiedName(path) || path.right !== at) return null;
             const left = ts.isIdentifier(path.left) ? path.left : path.left.right;
@@ -1774,7 +1790,14 @@ export function collectDeclarations(file: string, options: {
             const selected = entityOf(exported);
             if (exported && selected) return { symbol: exported, entity: selected };
             const members = owner.entity.declarations.flatMap(d => membersNamed(d, at.text));
-            return members.length ? { symbol: null, entity: { declarations: members, members: () => [] } } : null;
+            if (members.length) return { symbol: null, entity: { declarations: members, members: () => [] } };
+            // A member the checker synthesises (a mapped type's, an
+            // instantiation's) has its origin in the owner's type, which the
+            // owner's annotations state.
+            const type = owner.symbol && owner.symbol.flags & (SymbolFlags.Variable | SymbolFlags.Property)
+              ? checker.getTypeOfSymbol(owner.symbol) : undefined;
+            const member = type ? checker.getPropertyOfType(type, at.text) : undefined;
+            return member ? { symbol: null, entity: owner.entity } : null;
           };
           return resolved(name)?.entity ?? null;
         },
@@ -1787,7 +1810,9 @@ export function collectDeclarations(file: string, options: {
           const literals = parts.length && parts.every(p => p.isStringLiteralType() || p.isNumberLiteralType())
             ? parts.map(p => p.isStringLiteralType() ? p.value : p.isNumberLiteralType() ? String(p.value) : "") : null;
           const properties = literals ? literals.map(k => checker.getPropertyOfType(type, k)) : checker.getPropertiesOfType(type);
-          return properties.flatMap(p => entityOf(p) ?? []);
+          // A member the checker synthesises without a declaration is
+          // refused by the sweep (an entity without declarations).
+          return properties.map(p => entityOf(p) ?? { declarations: [], members: () => [] });
         },
         computed: node => ts.isTypeAliasDeclaration(node) && computedAlias(node, aliasOf),
         module: file => idOf(file),
