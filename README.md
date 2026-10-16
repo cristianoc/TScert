@@ -49,10 +49,14 @@ make suite
 
 [tools/package.json](tools/package.json) pins what the node side installs: the
 TypeScript compiler the parser runs on, and KaTeX, which
-checks the documents' math. [lean/lakefile.toml](lean/lakefile.toml) declares
-the Lean package Lake builds: the `Verification` library and the `verifier`
-executable. [.gitignore](.gitignore) keeps what these commands write, Lake's
-build and manifest and npm's lock, out of the repository.
+checks the documents' math. Its lock,
+[tools/package-lock.json](tools/package-lock.json), fixes every package npm
+installs there, and `make setup` installs it with `npm ci`, as it does
+[the library fixture's](pipeline/library-project/package-lock.json).
+[lean/lakefile.toml](lean/lakefile.toml) declares the Lean package Lake
+builds: the `Verification` library and the `verifier` executable.
+[.gitignore](.gitignore) keeps what these commands write, Lake's build and
+manifest and `node_modules`, out of the repository.
 
 Tests favour end-to-end pipeline cases, source files through the parser, the
 OCaml producer and Lean, over unit tests of intermediate steps; tests written

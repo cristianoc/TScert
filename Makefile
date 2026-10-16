@@ -11,7 +11,7 @@ help: ## list the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | expand -t 16
 
 setup: ## install the node dependencies (tools, the library fixture's Node types, Prettier)
-	npm install --prefix tools
+	npm ci --prefix tools
 	npm ci --prefix pipeline/library-project
 	npm install --no-save
 
