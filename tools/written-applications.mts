@@ -132,28 +132,17 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
         node.getSourceFile() === context.client) {
       return;
     }
-    // Code of another module: only its declared types.
-    if (!client && (ts.isBlock(node) || (node.parent && "initializer" in node.parent && node.parent.initializer === node &&
-        !ts.isTypeNode(node))))
+    // Another module's code is not its declared types: its bodies, its
+    // decorators and the initializers of its bindings run there.
+    if (!client && (ts.isBlock(node) || ts.isDecorator(node) ||
+        (node.parent && "initializer" in node.parent && node.parent.initializer === node && !insideType(node.parent))))
       return;
-    // An expression inside a type, or in another module's declarations, is
-    // erased: no code runs it, so a call's or a construction's bounds there
-    // are checked nowhere. A computed key there names an entity or is a
-    // literal, as TypeScript requires of a type's key; a heritage clause
-    // there names an entity. Any other expression is refused before a type
-    // holding it is replaced. In the client's code a heritage expression is
-    // code, swept whole.
-    if (ts.isComputedPropertyName(node) && erased(node, context.client) && !keyEntity(node.expression))
-      throw refusal(node, "a computed key in a type names a constant (an identifier or a qualified name) or is a " +
-        "literal: another expression there is erased, and nothing checks what it applies");
-    if (ts.isExpressionWithTypeArguments(node) && node.parent && ts.isHeritageClause(node.parent) &&
-        !entity(node.expression)) {
-      if (erased(node, context.client))
-        throw refusal(node, "a heritage clause in a type or a declared module names a class or an interface: " +
-          "another expression there is erased, and nothing checks what it applies");
-      node.forEachChild(child => { visit(child, env, client); });
-      return;
-    }
+    // Every expression in erased syntax is an entity name or a literal key
+    // (`admitted`); any other is refused before a type holding it is
+    // replaced, whatever node holds it.
+    if (ts.isExpression(node) && erased(node, context.client) && !admitted(node))
+      throw refusal(node, "an expression in a type or a declared module names a constant (an identifier, a " +
+        "property of one read by name) or is a literal: another is erased, and nothing checks what it applies");
     // Every form naming a type with arguments: a type reference, simple or
     // qualified (`ns.B<σ>`, `globalThis.Record<K, V>`), an import type
     // (`import("m").B<σ>`), a heritage clause (`extends ns.Base<σ>`); and the
@@ -161,44 +150,42 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     // `f<σ>` as an expression), whose binder bounds are checked only at a
     // call and are refused here.
     const form = applicationForm(node);
-    if (form) {
-      if (form.instantiation) {
-        if (form.args.length) {
-          const file = node.getSourceFile();
-          throw new SweepError(file === context.client ? spanOf(node) : null,
-            `the instantiation ${node.getText(file)} in ${site(node)}: a value's type arguments are checked ` +
-            "against its binders' bounds only at a call");
-        }
-        if (form.name) reach(context.declarationsOf(form.name));
-      } else if (form.name && !context.declarationsOf(form.name).some(d => env.names.has(d))) {
-        application(node, form.name, form.args, env);
+    if (form?.instantiation) {
+      if (form.args.length) {
+        const file = node.getSourceFile();
+        throw new SweepError(file === context.client ? spanOf(node) : null,
+          `the instantiation ${node.getText(file)} in ${site(node)}: a value's type arguments are checked ` +
+          "against its binders' bounds only at a call");
       }
-      for (const arg of form.args) visit(arg, env, client);
-      return;
+      if (form.name) reach(context.declarationsOf(form.name));
+    } else if (form?.name && !context.declarationsOf(form.name).some(d => env.names.has(d))) {
+      application(node, form.name, form.args, env);
     }
+    // Every child is visited, in the scope it is in.
+    node.forEachChild(child => { visit(child, scopeOf(node, child, env), client); });
+  };
+  // The scope a child of `node` is in: a mapped type's key is in scope past
+  // its constraint, `infer` binders in the extends type and the true branch,
+  // a naked check type narrowed in the true branch, and a declaration's or
+  // signature's parameters in all of it.
+  const scopeOf = (node: Node, child: Node, env: Env): Env => {
     if (ts.isMappedTypeNode(node)) {
+      if (child === node.typeParameter) return env;
       const key = node.typeParameter;
-      if (key.constraint) visit(key.constraint, env, client);
       const names = new Map(env.names);
       names.set(key, fresh(key));
       const level: Binder[] = [{ node: key, name: fresh(key),
         bound: () => key.constraint ? context.read(key.constraint, resolve(env)) : null }];
-      const inner: Env = { names, levels: [...env.levels, level] };
-      for (const part of [node.nameType, node.type]) if (part) visit(part, inner, client);
-      return;
+      return { names, levels: [...env.levels, level] };
     }
     if (ts.isConditionalTypeNode(node)) {
-      visit(node.checkType, env, client);
+      if (child !== node.extendsType && child !== node.trueType) return env;
       const infers = inferred(node.extendsType);
       const withInfers = infers.length ? group(env, infers) : env;
-      visit(node.extendsType, withInfers, client);
-      visit(node.trueType, refined(node, withInfers, env), client);
-      visit(node.falseType, env, client);
-      return;
+      return child === node.trueType ? refined(node, withInfers, env) : withInfers;
     }
     const parameters = childParameters(node);
-    const inner = parameters.length ? group(env, parameters) : env;
-    node.forEachChild(child => { visit(child, inner, client); });
+    return parameters.length ? group(env, parameters) : env;
   };
   // The true branch's scope: a naked check type `T` in scope is rebound to
   // a fresh name bounded by `T & X`, X the extends type read in the
@@ -273,24 +260,37 @@ function applicationForm(node: Node): { name: ts.Identifier | null; args: readon
   return null;
 }
 
-/** Whether an expression names an entity: an identifier, or a property of
- * one read by name. */
-function entity(node: Node): boolean {
-  return ts.isIdentifier(node) || (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name) && entity(node.expression));
+/** The expressions erased syntax admits: an entity name (an identifier, a
+ * property of an entity read by name) and a literal (a string, a number or
+ * a bigint, signed or not, `true`, `false`, `null`). Each node is judged by
+ * itself; its children are visited and judged in turn. */
+function admitted(node: Node): boolean {
+  // A heritage clause's entry: its expression is judged in turn.
+  if (ts.isExpressionWithTypeArguments(node) && node.parent && ts.isHeritageClause(node.parent)) return true;
+  if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node) || ts.isBigIntLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) || node.kind === ts.SyntaxKind.TrueKeyword ||
+      node.kind === ts.SyntaxKind.FalseKeyword || node.kind === ts.SyntaxKind.NullKeyword)
+    return true;
+  if (ts.isPropertyAccessExpression(node))
+    return ts.isIdentifier(node.name) && (ts.isIdentifier(node.expression) || ts.isPropertyAccessExpression(node.expression));
+  if (ts.isPrefixUnaryExpression(node))
+    return (node.operator === ts.SyntaxKind.MinusToken || node.operator === ts.SyntaxKind.PlusToken) &&
+      (ts.isNumericLiteral(node.operand) || ts.isBigIntLiteral(node.operand));
+  return false;
 }
 
-/** Whether a computed key names an entity or is a string or number literal. */
-function keyEntity(node: Node): boolean {
-  return entity(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
-}
-
-/** Whether `node` is erased: in another module than the client's, or inside
- * a type or an interface, where no code runs it. */
-function erased(node: Node, client: ts.SourceFile): boolean {
-  if (node.getSourceFile() !== client) return true;
+/** Whether `node` is inside type syntax: a type (a heritage clause's
+ * expression excepted, which is code in a class) or an interface. */
+function insideType(node: Node): boolean {
   for (let at = node.parent; at; at = at.parent)
     if ((ts.isTypeNode(at) && !ts.isExpressionWithTypeArguments(at)) || ts.isInterfaceDeclaration(at)) return true;
   return false;
+}
+
+/** Whether `node` is erased: inside type syntax, or in a module other than
+ * the client's, where no code the client runs evaluates it. */
+function erased(node: Node, client: ts.SourceFile): boolean {
+  return node.getSourceFile() !== client || insideType(node);
 }
 
 /** A declaration's or signature's own type parameters. */
