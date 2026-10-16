@@ -17,8 +17,9 @@ setup: ## install the node dependencies (tools, the library fixture's Node types
 
 build: build-lean build-producer ## build the Lean verifier and the OCaml producer
 
-build-lean: ## build the Lean verifier
-	cd lean && lake build --log-level=warning
+build-lean: ## build the Lean verifier (C compiled at low priority: bin/lean-cc.sh)
+	cd lean && TSCERT_LEAN_SYSROOT="$$(lean --print-prefix)" LEAN_CC="$(CURDIR)/bin/lean-cc.sh" \
+	  lake build --log-level=warning
 
 build-producer: ## build the OCaml producer
 	dune build --root ocaml-producer
