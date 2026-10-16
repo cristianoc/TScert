@@ -274,7 +274,7 @@ theorem ownAll_nodup {h : List Tm} {v : Tm} {ps : List (PropKey × Tm)} (hp : ow
 variable [DecidableEq ι]
 
 /-- `A`'s labels are among `T`'s, so every value of `A` is one of `T`. -/
-def inLabels (A T : List ι) : Bool := A.all (· ∈ T)
+@[nospecialize] def inLabels (A T : List ι) : Bool := A.all (· ∈ T)
 
 theorem inLabels_sound {G : NormalGraph ι} {A T : List ι} (h : inLabels A T = true)
     {n : Nat} {W : WorldT n} {v : Val} (hv : meaning G A n W v) : meaning G T n W v := by
@@ -283,7 +283,7 @@ theorem inLabels_sound {G : NormalGraph ι} {A T : List ι} (h : inLabels A T = 
 
 /-- A store type whose elements are within `T`: each clause a store's, the
 positions of its first tuple contract within `T`. -/
-def storeIn (G : NormalGraph ι) (S T : List ι) : Bool :=
+@[nospecialize] def storeIn (G : NormalGraph ι) (S T : List ι) : Bool :=
   G.plainTy S && (expand G S).all fun c => match c with
     | .list a _ => a.operands.all (inLabels · T)
     | _ => false
@@ -315,7 +315,7 @@ theorem meaning_isVal {G : NormalGraph ι} {A : List ι} {n : Nat} {W : WorldT n
   exact (normalDenote_value h).1
 
 /-- Some bound excludes the key: no object under the bounds owns it. -/
-def excludes (ks : List KeyBound) (k : PropKey) : Bool := ks.any fun K => !K.admits k
+@[nospecialize] def excludes (ks : List KeyBound) (k : PropKey) : Bool := ks.any fun K => !K.admits k
 
 theorem excludes_lookup {ks : List KeyBound} {k : PropKey} (h : excludes ks k = true)
     {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)}
@@ -324,7 +324,7 @@ theorem excludes_lookup {ks : List KeyBound} {k : PropKey} (h : excludes ks k = 
   exact ownKeysT_lookup (hb K hK) (by simpa using hn)
 
 /-- A string key, which an index signature speaks of. -/
-def strKey : PropKey → Bool
+@[nospecialize] def strKey : PropKey → Bool
   | .str _ => true
   | .sym _ => false
 
@@ -338,14 +338,14 @@ structure Obj (ι : Type) where
   bounds : List KeyBound
   plain : Bool
 
-def objOf : Clause (List ι) → Option (Obj ι)
+@[nospecialize] def objOf : Clause (List ι) → Option (Obj ι)
   | .refs a bs vs os _ ks => some ⟨(a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, [], ks, false⟩
   | .dict a bs vs ds os _ ks cs => some ⟨(a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, ds ++ cs, ks, !(ds ++ cs).isEmpty⟩
   | _ => none
 
 /-- A clause whose values own no enumerable property: `null`, `undefined`,
 Booleans, numbers, bigints and symbols. A spread of one copies nothing. -/
-def emptyClause : Clause (List ι) → Bool
+@[nospecialize] def emptyClause : Clause (List ι) → Bool
   | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .bigint | .bigintLit _ | .symbol
   | .symbolLit _ => true
   | _ => false
@@ -463,7 +463,7 @@ theorem emptyClause_ownData {G : NormalGraph ι} {c : Clause (List ι)} (he : em
 function's own enumerable properties are whatever was assigned to it, a
 class value's its static fields, of which its type states the bag's fields,
 if any, and no bound. -/
-def codeOf : Clause (List ι) → Option (Obj ι)
+@[nospecialize] def codeOf : Clause (List ι) → Option (Obj ι)
   | .arrs _ _ => some ⟨[], [], [], [], false⟩
   | .callable a bs _ _ =>
     some ⟨(a :: bs).flatten.filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
@@ -529,11 +529,11 @@ inductive Src (ι : Type) where
   | obj (o : Obj ι)
 
 /-- A clause of strings. -/
-def stringClause : Clause (List ι) → Bool
+@[nospecialize] def stringClause : Clause (List ι) → Bool
   | .str | .strLit _ => true
   | _ => false
 
-def srcOf (c : Clause (List ι)) : Option (Src ι) :=
+@[nospecialize] def srcOf (c : Clause (List ι)) : Option (Src ι) :=
   if emptyClause c then some .prim else
   if stringClause c then some .str else
     match objOf c with
@@ -544,20 +544,20 @@ def srcOf (c : Clause (List ι)) : Option (Src ι) :=
 or a bound excludes it and, if an array could give it as an index, the store
 too. A symbol key the model's copy does not take, JavaScript's takes where
 the source owns it enumerable: only a bound says it never does. -/
-def Src.never : Src ι → List PropKey → PropKey → Bool
+@[nospecialize] def Src.never : Src ι → List PropKey → PropKey → Bool
   | .prim, _, _ => true
   | .str, d, k => d.contains k || !indexKey k
   | .obj o, d, k => d.contains k || (strKey k && !copiedKey k) ||
       (excludes o.bounds k && (!indexKey k || excludes o.bounds arrayStoreKey))
 
 /-- The source surely gives the key, at a value within `T`: its type names it. -/
-def Src.sure : Src ι → List PropKey → PropKey → List ι → Bool
+@[nospecialize] def Src.sure : Src ι → List PropKey → PropKey → List ι → Bool
   | .prim, _, _, _ => false
   | .str, _, _, _ => false
   | .obj o, d, k, T => !d.contains k && copiedKey k && o.named.any fun p => p.1 == k && inLabels p.2 T
 
 /-- Whatever the source gives under the key is within `T`. -/
-def Src.within : Src ι → List PropKey → PropKey → List ι → Bool
+@[nospecialize] def Src.within : Src ι → List PropKey → PropKey → List ι → Bool
   | .prim, _, _, _ => true
   | .str, d, k, _ => (Src.str : Src ι).never d k
   | .obj o, d, k, T => (Src.obj o).never d k || (Src.obj o).sure d k T ||
@@ -567,13 +567,13 @@ def Src.within : Src ι → List PropKey → PropKey → List ι → Bool
 
 /-- The accumulator never gives the key: it is the store's, or excluded, or
 the prototype of an object its index says has none. -/
-def Obj.neverA (o : Obj ι) (k : PropKey) : Bool :=
+@[nospecialize] def Obj.neverA (o : Obj ι) (k : PropKey) : Bool :=
   k == arrayStoreKey || excludes o.bounds k || (o.plain && k == CallArguments.protoField)
 
-def Obj.sureA (o : Obj ι) (k : PropKey) (T : List ι) : Bool :=
+@[nospecialize] def Obj.sureA (o : Obj ι) (k : PropKey) (T : List ι) : Bool :=
   k != arrayStoreKey && o.named.any fun p => p.1 == k && inLabels p.2 T
 
-def Obj.withinA (o : Obj ι) (k : PropKey) (T : List ι) : Bool :=
+@[nospecialize] def Obj.withinA (o : Obj ι) (k : PropKey) (T : List ι) : Bool :=
   o.neverA k || o.sureA k T ||
     (k != arrayStoreKey && ((o.optional.any fun q => q.key == k && inLabels q.type T) ||
       (o.indexes.any fun x => x.1.surely k && inLabels x.2 T)))
@@ -587,7 +587,7 @@ typing each the class may admit. -/
 
 /-- Whatever the accumulator gives under a key the class `K` admits is within
 `T`. -/
-def Obj.classWithinA (o : Obj ι) (K : IndexKeys) (T : List ι) : Bool :=
+@[nospecialize] def Obj.classWithinA (o : Obj ι) (K : IndexKeys) (T : List ι) : Bool :=
   o.named.all (fun p => !K.may p.1 || inLabels p.2 T) &&
   o.optional.all (fun q => !K.may q.key || inLabels q.type T) &&
   (o.indexes.any (fun x => K.within x.1 && inLabels x.2 T) ||
@@ -595,7 +595,7 @@ def Obj.classWithinA (o : Obj ι) (K : IndexKeys) (T : List ι) : Bool :=
      !K.may x || x == arrayStoreKey || o.named.any (·.1 == x) || o.optional.any (·.key == x))
 
 /-- A type holding every string: one of its clauses is the string family. -/
-def strIn (G : NormalGraph ι) (T : List ι) : Bool :=
+@[nospecialize] def strIn (G : NormalGraph ι) (T : List ι) : Bool :=
   (expand G T).any fun c => match c with | .str => true | _ => false
 
 omit [DecidableEq ι] in
@@ -608,7 +608,7 @@ theorem strIn_sound {G : NormalGraph ι} {T : List ι} (h : strIn G T = true) (n
 /-- A type none of whose members is an array's store: every clause is a
 primitive's or a plain object's. A string index at such a type rules out the
 store key, `[]`, which is a string. -/
-def noStore (G : NormalGraph ι) (T : List ι) : Bool :=
+@[nospecialize] def noStore (G : NormalGraph ι) (T : List ι) : Bool :=
   G.plainTy T && (expand G T).all fun c => match c with
     | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _
     | .bigint | .bigintLit _ | .symbol | .symbolLit _ | .refs .. | .dict .. => true
@@ -654,7 +654,7 @@ properties, so the source's type says what it holds there, by a symbol index
 within `T` or by listing its keys, none a symbol. Otherwise the source owns no
 store whose elements it would give under index keys, and each key it copies
 is typed. -/
-def Src.classWithinPlain (G : NormalGraph ι) : Src ι → List PropKey → IndexKeys → List ι → Bool
+@[nospecialize] def Src.classWithinPlain (G : NormalGraph ι) : Src ι → List PropKey → IndexKeys → List ι → Bool
   | .prim, _, _, _ => true
   | .str, _, K, T => K == .symbols || strIn G T
   | .obj o, d, K, T => if K == .symbols then
@@ -671,7 +671,7 @@ def Src.classWithinPlain (G : NormalGraph ι) : Src ι → List PropKey → Inde
 /-- An array source under the canonical numeric keys: its store's elements
 are within `T`, and so, by the built-ins' invariant (`numericOwn`), are its own
 fields there. -/
-def Src.arrayRoute (G : NormalGraph ι) : Src ι → IndexKeys → List ι → Bool
+@[nospecialize] def Src.arrayRoute (G : NormalGraph ι) : Src ι → IndexKeys → List ι → Bool
   | .obj o, K, T => K == .numeric && G.builtins.isSome &&
       o.named.any fun p => p.1 == CallArguments.arrayStoreField && storeIn G p.2 T
   | _, _, _ => false
@@ -679,7 +679,7 @@ def Src.arrayRoute (G : NormalGraph ι) : Src ι → IndexKeys → List ι → B
 /-- Whatever the source gives under a key the class `K` admits is within `T`:
 by its type's statements (`classWithinPlain`), or, under the canonical
 numeric keys, as an array (`arrayRoute`). -/
-def Src.classWithin (G : NormalGraph ι) (sb : Src ι) (d : List PropKey) (K : IndexKeys) (T : List ι) : Bool :=
+@[nospecialize] def Src.classWithin (G : NormalGraph ι) (sb : Src ι) (d : List PropKey) (K : IndexKeys) (T : List ι) : Bool :=
   sb.arrayRoute G K T || sb.classWithinPlain G d K T
 
 /-! ### The copied values are the types say -/
@@ -1071,7 +1071,7 @@ accumulator's and the source's own keys are among them (the source owning no
 store, so no index), a symbol key the source lists included, which
 JavaScript's copy takes where it is enumerable; excluding keys, neither side
 gives one. -/
-def boundOk (oa : Obj ι) (sb : Src ι) (d : List PropKey) (K : KeyBound) : Bool :=
+@[nospecialize] def boundOk (oa : Obj ι) (sb : Src ι) (d : List PropKey) (K : KeyBound) : Bool :=
   if K.among then
     (oa.bounds.any fun Ka => Ka.among && Ka.keys.all fun x => x == arrayStoreKey || K.admits x) &&
     (match sb with
@@ -1086,7 +1086,7 @@ surely given within its type: by the source, or by the accumulator where
 whatever the source gives is within it too. Each optional field is within its
 type on both sides, and then the accumulator gives no prototype, so the
 result has none. Each bound admits every key either side may give. -/
-def FieldsOk (d : List PropKey) (oa : Obj ι) (sb : Src ι) (fs : List (PropKey × List ι))
+@[nospecialize] def FieldsOk (d : List PropKey) (oa : Obj ι) (sb : Src ι) (fs : List (PropKey × List ι))
     (os : List (OptionalField (List ι))) (ks : List KeyBound) : Bool :=
   decide ((fs.map Prod.fst ++ os.map (·.key)).Nodup) &&
   fs.all (fun p => sb.sure d p.1 p.2 || (oa.sureA p.1 p.2 && sb.within d p.1 p.2)) &&
@@ -1100,7 +1100,7 @@ a key a class admits is within its type, and the accumulator gives no
 prototype. A field or optional field whose key a class may admit is at a
 type within that class's, and exactly it where a writable index may admit
 it, whose locations hold exactly that type. -/
-def DictOk (G : NormalGraph ι) (d : List PropKey) (oa : Obj ι) (sb : Src ι)
+@[nospecialize] def DictOk (G : NormalGraph ι) (d : List PropKey) (oa : Obj ι) (sb : Src ι)
     (fs : List (PropKey × List ι)) (os : List (OptionalField (List ι)))
     (ds cs : List (IndexKeys × List ι)) : Bool :=
   !(ds ++ cs).isEmpty &&
@@ -1120,7 +1120,7 @@ keys, a dictionary (`DictOk`). A writable index lets outside code add keys,
 which an own-key bound listing keys, or excluding a key of the index's class,
 would deny: each bound of a result with one keeps its writable classes
 (`KeyBound.keeps`). -/
-def MergeClause (G : NormalGraph ι) (d : List PropKey) (ca cb cr : Clause (List ι)) : Bool :=
+@[nospecialize] def MergeClause (G : NormalGraph ι) (d : List PropKey) (ca cb cr : Clause (List ι)) : Bool :=
   match objOf ca, srcOf cb, cr with
   | some oa, some sb, .refs fs [] [] os [] ks => FieldsOk d oa sb fs os ks
   | some oa, some sb, .dict fs [] [] ds os [] ks cs =>
@@ -1129,7 +1129,7 @@ def MergeClause (G : NormalGraph ι) (d : List PropKey) (ca cb cr : Clause (List
   | _, _, _ => false
 
 /-- Every pair of the operands' clauses merges into a clause of the result. -/
-def MergeOk (G : NormalGraph ι) (d : List PropKey) (A B R : List ι) : Bool :=
+@[nospecialize] def MergeOk (G : NormalGraph ι) (d : List PropKey) (A B R : List ι) : Bool :=
   G.plainTy A && G.plainTy B &&
     (expand G A).all fun ca => (expand G B).all fun cb => (expand G R).any fun cr =>
       MergeClause G d ca cb cr
@@ -1824,21 +1824,21 @@ Untrusted: what extraction proposes for a merge, one clause per pair of the
 operands' clauses. `MergeClause` checks it, as any claim. -/
 
 /-- The type a side's field or view states for a key. -/
-def Obj.namedType (o : Obj ι) (k : PropKey) : Option (List ι) :=
+@[nospecialize] def Obj.namedType (o : Obj ι) (k : PropKey) : Option (List ι) :=
   (o.named.find? (·.1 == k)).map (·.2)
 
 /-- The types a side may hold under a key it need not own: its optional
 field's, and, for a string key, its index types. -/
-def Obj.maybeTypes (o : Obj ι) (k : PropKey) : List ι :=
+@[nospecialize] def Obj.maybeTypes (o : Obj ι) (k : PropKey) : List ι :=
   (o.optional.filter (·.key == k)).flatMap (·.type) ++ (o.indexes.filter (·.1.may k)).flatMap (·.2)
 
-def Obj.keys (o : Obj ι) : List PropKey := o.named.map (·.1) ++ o.optional.map (·.key)
+@[nospecialize] def Obj.keys (o : Obj ι) : List PropKey := o.named.map (·.1) ++ o.optional.map (·.key)
 
 /-- The record a merge of two clauses gives: each key the source surely
 copies, at its type; each the accumulator surely has, at its type with what
 the source may copy over it; the rest, where both sides' types say what they
 may hold, optional; and, when both sides list their keys, the keys listed. -/
-def mergeResult (G : NormalGraph ι) (d : List PropKey) (ca cb : Clause (List ι)) :
+@[nospecialize] def mergeResult (G : NormalGraph ι) (d : List PropKey) (ca cb : Clause (List ι)) :
     Option (Clause (List ι)) := do
   let oa ← objOf ca
   let sb ← srcOf cb
