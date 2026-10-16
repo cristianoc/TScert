@@ -1773,6 +1773,29 @@ dispatched on its truthiness:
      {\Gamma\vdash_R\ \mathsf{if}\ (o.f)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-field-truthy}
 ```
 
+Where the singleton $`c`$ is a string or a number other than a zero, a passed
+test leaves the operand $`c`$ alone, whatever its type was, `unknown`
+included: $`T_{\mathsf{eq}(c)}(A)=\{c\}`$ for every $`A`$ the test may pass
+on (`tagMember`). A disjunction's passed outcome came from either operand,
+and each slot holds what either path left it, a slot one path leaves at its
+input type keeping that type:
+
+```math
+\frac{\Gamma_1=\Gamma[a\mapsto\mathsf{true}]\quad
+      \Gamma_2=\Gamma[a\mapsto\mathsf{false}][b\mapsto\mathsf{true}]\quad
+      \Gamma_1\sqcup_\Gamma\Gamma_2\vdash_R S_1\quad
+      \Gamma[a\mapsto\mathsf{false}][b\mapsto\mathsf{false}]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (a\parallel b)\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-or}
+\qquad
+(\Gamma_1\sqcup_\Gamma\Gamma_2)(x)=\begin{cases}\Gamma(x)&\Gamma_1(x)=\Gamma(x)\lor\Gamma_2(x)=\Gamma(x)\\
+  \Gamma_1(x)\cup\Gamma_2(x)&\text{otherwise}\end{cases}
+```
+
+with $`\Gamma[a\mapsto q]`$ the refinement by $`a`$'s answer $`q`$, and `&&`'s
+false outcome the same join. Each edge into $`S_1`$ is checked against the
+joined context, so `v === "dense" || v === "sparse"` leaves `v` at
+`"dense" | "sparse"` (`literal-union-narrowing`).
+
 `x === y` with `x` claimed at a union of
 singletons is dispatched as the disjunction over its singletons $`c`$ of
 $`x\equiv c\land y\equiv c`$ (`savedSplit` where `x` has effects). Strict

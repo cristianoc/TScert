@@ -547,11 +547,12 @@ let rec restrict ?declarations singleton equal t = match t with
         | Top,_ -> None
         | _,_ -> Some false in
       match known atom with Some result -> result=equal | None -> true) xs
-    (* Equal to one number other than a zero, or to one string: that value
-       (Lean's `observeAtom` and `tagMember`). *)
+    (* Equal to one number other than a zero, or to one string: that value,
+       whatever the operand was, `unknown` included (Lean's `observeAtom` and
+       `tagMember`). *)
     |> List.map (fun atom -> match atom,singleton with
-      | Num,NumLit b when equal && Int64.float_of_bits b <> 0.0 -> NumLit b
-      | Str,StrLit s when equal -> StrLit s
+      | (Num | Top),NumLit b when equal && Int64.float_of_bits b <> 0.0 -> NumLit b
+      | (Str | Top),StrLit s when equal -> StrLit s
       | _ -> atom))
   (* A union's arms each; an intersection's values are its principal's, so
      it goes where none of those can. *)
