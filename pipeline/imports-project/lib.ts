@@ -219,3 +219,32 @@ export const inferred = {
     return 1;
   },
 };
+
+// Destructured constants, typed by their initializer
+// (`invalid-written-unannotated-destructured-value-import`).
+export const { destructured } = {
+  destructured: "a" as keyof { a: Bounded<any> },
+};
+export const [first] = ["a" as keyof { a: Bounded<any> }];
+
+// A property holding a call's result, whose function's result its body
+// determines, and a class method whose body determines its result
+// (`invalid-written-unannotated-call-value-import`).
+function make() {
+  return "a" as keyof { a: Bounded<any> };
+}
+export const madeProperty = { m: make() };
+export class Inferring {
+  m() {
+    return 1;
+  }
+}
+
+// An annotated constant whose arrow has an expression body: the body is code,
+// not swept (`written-expression-body-value-import`).
+export const exprBody: { m: () => number } = {
+  m: (): number =>
+    (() => {
+      return 1;
+    })(),
+};

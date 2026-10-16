@@ -39,9 +39,6 @@ export type SweepContext = {
   /** Whether a declaration is an alias TypeScript computes from its
    * parameters, whose equation may select members of its arguments. */
   computed(declaration: Node): boolean;
-  /** The declarations of the binding a shorthand property `{ m }` takes
-   * its value from; null where it resolves to none. */
-  shorthand(node: ts.ShorthandPropertyAssignment): readonly Node[] | null;
   /** The module a file is, as identities name it. */
   module(file: ts.SourceFile): string;
   /** The client file, whose spans the verifier reports. */
@@ -81,10 +78,16 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   // only the members a further step selects. The client file's code is
   // swept as a root; its interfaces and aliases, and their members, where
   // something reaches them.
-  const reach = (nodes: readonly Node[]): void => {
+  const reach = (nodes: readonly Node[], use: Node): void => {
     for (const node of nodes)
       if (!ts.isSourceFile(node) && !ts.isModuleDeclaration(node) && !context.library(node) && !swept.has(node) &&
           (node.getSourceFile() !== context.client || withinTypeDeclaration(node))) {
+        // Its type is its annotation: one inferred from its code is not read.
+        if (!annotated(node)) {
+          const file = node.getSourceFile();
+          throw refusal(use, `the type of ${node.getText(file).split("\n")[0]} in ${site(node)} is inferred from ` +
+            "its code, which no annotation states: a contract read through an unannotated declaration is refused");
+        }
         swept.add(node);
         queue.push(node);
       }
@@ -118,7 +121,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
   const application = (node: Node, name: ts.Identifier, args: readonly TypeNode[], env: Env): void => {
     const target = context.declaration(name);
     if (!target) return;
-    reach(target);
+    reach(target, node);
     if (listed.has(node)) return;
     listed.add(node);
     const [first] = target;
@@ -145,47 +148,25 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     return new SweepError(file === context.client ? spanOf(node) : null,
       `${node.getText(file)} in ${site(node)}: ${message}`);
   };
-  const visit = (node: Node, env: Env, client: boolean, determining = false): void => {
+  const visit = (node: Node, env: Env, client: boolean): void => {
     // A client's interface or alias is swept where something names it.
     if (client && node.parent && (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)) &&
         node.getSourceFile() === context.client) {
       return;
     }
-    // Another module's code is not its declared types: its bodies and its
-    // decorators run there, and so do its bindings' initializers, which
-    // determine no type where the binding is annotated. An unannotated
-    // binding's type is its initializer's: that initializer determines it,
-    // its type syntax and the values whose types flow into it.
-    if (!client) {
-      if (ts.isDecorator(node)) return;
-      if (ts.isBlock(node)) {
-        const owner = node.parent;
-        if (determining && owner && isFunctionLike(owner) && !("type" in owner && owner.type))
-          throw refusal(owner, "a function whose result type its body determines, in a declaration a client's " +
-            "type depends on: the types that body's code produces are not read");
-        return;
-      }
-      const owner = node.parent;
-      if (owner && "initializer" in owner && owner.initializer === node && !insideType(owner)) {
-        if ("type" in owner && owner.type) return;
-        determining = true;
-      }
-    }
-    // A shorthand property's value is the binding of its name.
-    if (determining && ts.isShorthandPropertyAssignment(node)) {
-      const declarations = context.shorthand(node);
-      if (!declarations)
-        throw refusal(node, "a shorthand property whose value TypeScript resolves to no binding");
-      reach(declarations);
-    }
+    // Another module's code is not its declared types: its function bodies,
+    // its decorators and its bindings' initializers run there. A reached
+    // declaration's type is its annotation (`annotated`).
+    if (!client && (ts.isDecorator(node) || isBody(node) ||
+        (node.parent && "initializer" in node.parent && node.parent.initializer === node && !insideType(node.parent))))
+      return;
     // Every expression in erased syntax is an entity name or a literal key
     // (`admitted`); any other is refused before a type holding it is
-    // replaced, whatever node holds it. Code that determines a declaration's
-    // type runs; its type syntax and its values are swept instead.
+    // replaced, whatever node holds it.
     // A declaration's name is no expression, a private name `#x` included.
     const named = !!node.parent && "name" in node.parent && node.parent.name === node &&
       !ts.isPropertyAccessExpression(node.parent);
-    if (!determining && ts.isExpression(node) && !named && erased(node, context.client) && !admitted(node))
+    if (ts.isExpression(node) && !named && erased(node, context.client) && !admitted(node))
       throw refusal(node, "an expression in a type or a declared module names a constant (an identifier, a " +
         "property of one read by name) or is a literal: another is erased, and nothing checks what it applies");
     // Every name in erased syntax, each step of a member path included,
@@ -195,7 +176,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       if (!declarations)
         throw refusal(node, "a name in a type or a declared module that TypeScript resolves to no symbol: the " +
           "declarations its meaning depends on are unknown");
-      reach(declarations);
+      reach(declarations, node);
     }
     // Every form naming a type with arguments: a type reference, simple or
     // qualified (`ns.B<σ>`, `globalThis.Record<K, V>`), an import type
@@ -211,18 +192,18 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
           `the instantiation ${node.getText(file)} in ${site(node)}: a value's type arguments are checked ` +
           "against its binders' bounds only at a call");
       }
-      if (form.name) reach(context.declarationsOf(form.name));
+      if (form.name) reach(context.declarationsOf(form.name), node);
     } else if (form?.name && !context.declarationsOf(form.name).some(d => env.names.has(d))) {
       application(node, form.name, form.args, env);
     }
     // A member selection's meaning depends on the declarations of the members
     // it selects: an indexed access's at its keys, and a computed alias's,
     // whose equation may select any member of its arguments, at every key.
-    if (ts.isIndexedAccessTypeNode(node)) reach(context.members(node.objectType, node.indexType));
+    if (ts.isIndexedAccessTypeNode(node)) reach(context.members(node.objectType, node.indexType), node);
     if (form?.name && !form.instantiation && context.declarationsOf(form.name).some(d => context.computed(d)))
-      for (const arg of form.args) reach(context.members(arg, null));
+      for (const arg of form.args) reach(context.members(arg, null), node);
     // Every child is visited, in the scope it is in.
-    node.forEachChild(child => { visit(child, scopeOf(node, child, env), client, determining); });
+    node.forEachChild(child => { visit(child, scopeOf(node, child, env), client); });
   };
   // The scope a child of `node` is in: a mapped type's key is in scope past
   // its constraint, `infer` binders in the extends type and the true branch,
@@ -363,11 +344,71 @@ function erased(node: Node, client: ts.SourceFile): boolean {
   return node.getSourceFile() !== client || insideType(node);
 }
 
-/** Whether `node` is a function, method, getter or arrow, whose result
- * type its body determines where it states none. */
-function isFunctionLike(node: Node): boolean {
-  return ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) ||
-    ts.isMethodDeclaration(node) || ts.isGetAccessorDeclaration(node);
+/** Whether `node` is a function's, method's, accessor's, constructor's or
+ * arrow's body, block or expression: code. */
+function isBody(node: Node): boolean {
+  const owner = node.parent;
+  return !!owner && (ts.isFunctionDeclaration(owner) || ts.isFunctionExpression(owner) || ts.isArrowFunction(owner) ||
+    ts.isMethodDeclaration(owner) || ts.isGetAccessorDeclaration(owner) || ts.isSetAccessorDeclaration(owner) ||
+    ts.isConstructorDeclaration(owner)) && owner.body === node;
+}
+
+/** Whether a declaration's type is written: a type declaration; a binding,
+ * property or parameter with its annotation (a destructured one by its
+ * declaration's); a function, method, accessor or signature with its result's
+ * and every parameter's; or a `const` whose initializer is a literal naming
+ * nothing, its type syntactic. */
+function annotated(node: Node): boolean {
+  if (ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) || ts.isClassDeclaration(node) ||
+      ts.isEnumDeclaration(node) || ts.isEnumMember(node) || ts.isTypeParameterDeclaration(node) ||
+      ts.isClassExpression(node))
+    return true;
+  const typed = (n: Node): boolean => "type" in n && !!n.type;
+  const parameters = (n: Node): boolean =>
+    !("parameters" in n) || !Array.isArray(n.parameters) || n.parameters.every(p => ts.isParameterDeclaration(p) && !!p.type);
+  if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) ||
+      ts.isMethodDeclaration(node) || ts.isMethodSignatureDeclaration(node) || ts.isGetAccessorDeclaration(node) ||
+      ts.isCallSignatureDeclaration(node) || ts.isConstructSignatureDeclaration(node))
+    return typed(node) && parameters(node);
+  if (ts.isSetAccessorDeclaration(node) || ts.isConstructorDeclaration(node)) return parameters(node);
+  if (ts.isParameterDeclaration(node) || ts.isPropertyDeclaration(node) || ts.isPropertySignatureDeclaration(node))
+    return typed(node);
+  if (ts.isBindingElement(node)) {
+    let at: Node | undefined = node.parent;
+    while (at && !ts.isVariableDeclaration(at) && !ts.isParameterDeclaration(at)) at = at.parent;
+    return !!at && typed(at);
+  }
+  if (ts.isVariableDeclaration(node))
+    return typed(node) || (!!node.initializer && constant(node) && literal(node.initializer));
+  if (ts.isPropertyAssignment(node)) return literal(node.initializer);
+  return false;
+}
+
+/** Whether a variable is declared `const`. */
+function constant(node: ts.VariableDeclaration): boolean {
+  const list = node.parent;
+  return !!list && ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) !== 0;
+}
+
+/** Whether an expression is a literal naming nothing: a string, number,
+ * bigint, Boolean or null, an object or array literal of these, or one of
+ * these `as const`. */
+function literal(node: Node): boolean {
+  if (ts.isStringLiteral(node) || ts.isNumericLiteral(node) || ts.isBigIntLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) || node.kind === ts.SyntaxKind.TrueKeyword ||
+      node.kind === ts.SyntaxKind.FalseKeyword || node.kind === ts.SyntaxKind.NullKeyword)
+    return true;
+  if (ts.isPrefixUnaryExpression(node))
+    return node.operator === ts.SyntaxKind.MinusToken && (ts.isNumericLiteral(node.operand) || ts.isBigIntLiteral(node.operand));
+  if (ts.isArrayLiteralExpression(node)) return node.elements.every(literal);
+  // `as const` keeps a literal's type syntactic: its literals, readonly.
+  if (ts.isAsExpression(node) && ts.isTypeReferenceNode(node.type) && ts.isIdentifier(node.type.typeName) &&
+      node.type.typeName.text === "const")
+    return literal(node.expression);
+  if (ts.isObjectLiteralExpression(node))
+    return node.properties.every(p => ts.isPropertyAssignment(p) &&
+      (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNumericLiteral(p.name)) && literal(p.initializer));
+  return false;
 }
 
 /** Whether `node` is or is in an interface or a type alias. */

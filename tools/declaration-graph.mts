@@ -1760,12 +1760,6 @@ export function collectDeclarations(file: string, options: {
           };
           return resolved(name);
         },
-        shorthand: node => {
-          const symbol = checker.getShorthandAssignmentValueSymbol(node);
-          const target = symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
-          return !target || checker.isUnknownSymbol(target) ? null
-            : target.declarations.map(d => d.resolve()).filter((d): d is Node => !!d);
-        },
         members: (object, key) => {
           const type = checker.getTypeFromTypeNode(object);
           if (!type) return [];
