@@ -206,7 +206,7 @@ theorem optionalFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
   match P[target.label]?, C[target.label]? with
   | some _, some c =>
       (checkObservedResult G images Γ (entry c) 0 o target.mapping p
-        (readFields facts 0) (optionalFields facts 0)).bind fun _ =>
+        (readFields facts 0) (optionalFields facts 0) (HeapKnowledge.observeTyped G Γ facts 0 o).cells).bind fun _ =>
       CheckResult.ofBool (HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge target.mapping &&
         carries G Γ facts xs sources target c)
   | _, _ => failure
@@ -222,7 +222,7 @@ theorem checkBranchTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images 
     checkBranchTargetUsing G images P C Γ o target p facts xs sources = (
   match P[target.label]?, C[target.label]? with
   | some _, some c => checkObservedUsing G images Γ (entry c) 0 o target.mapping p (readFields facts 0)
-      (optionalFields facts 0) && (HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge target.mapping &&
+      (optionalFields facts 0) (HeapKnowledge.observeTyped G Γ facts 0 o).cells && (HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge target.mapping &&
         carries G Γ facts xs sources target c)
   | _, _ => false
   ) := by
@@ -484,7 +484,7 @@ def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (l : Target) (facts : HeapKnowledge.Knowledge)
     (xs : List (Implication ι)) (sources : List Nat) : Prop :=
   ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 o l.mapping (readFields facts 0)
-    (optionalFields facts 0) ∧ HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge l.mapping = true ∧
+    (optionalFields facts 0) (HeapKnowledge.observeTyped G Γ facts 0 o).cells ∧ HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge l.mapping = true ∧
     carries G Γ facts xs sources l c = true
 
 /-- Where a throw out of a node in environment `ρ` may go: nowhere (it leaves
@@ -685,7 +685,8 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
     StateOk G Rty C v0 n (trunc n (Nat.le_succ n) W) h (.at l.label (mapEnv l.mapping ρ)) := by
   obtain ⟨c,hc,hcov,hfact,hcar⟩ := ht
   simp only [carries, Bool.and_eq_true] at hcar
-  exact ⟨c,hc,(hcov.env he hq hh (readFields_holds hf) (optionalFields_holds hf)).transfer n
+  exact ⟨c,hc,(hcov.env he hq hh (readFields_holds hf) (optionalFields_holds hf)
+    (HeapKnowledge.observeTyped_holds he hf hq).1).transfer n
     (Nat.le_succ n) _ (WExt_refl _),
     (PromiseCalls.impliesCheck_sound hcar.1 he (PromiseCalls.aliasImplications_holds hf.2.2 hi)).transfer n
       (Nat.le_succ n) _ (WExt_refl _),

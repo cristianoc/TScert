@@ -1626,6 +1626,29 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A field's observed contents exclude an arm only once every test it
+  // failed rules the arm's field type out: after `kind` failed "a", the arm
+  // `{ kind: "a" | "b" }` may still hold "b". Claimed excluded there, the
+  // edge is refused where evidence is produced and where it is checked.
+  const artifacts = run("field-contents-exclusion");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const chained = must(claims.functions.find(f => f.name === "chained"), "chained's claims");
+  const at = source.indexOf(`if (k.kind === "b")`, source.indexOf("function chained"));
+  const entry = must(chained.entries.find(e => e.start === at), "the entry of the test for b");
+  const after = must(chained.entries.find(e => e.start === source.indexOf(`if (k.kind === "c")`, at)), "the entry of the test for c");
+  const binding = must(entry.bindings.find(b => b.name === "k"), "k at the test for b");
+  binding.type = must(after.bindings.find(b => b.name === "k"), "k at the test for c").type;
+  const input = writeClaims(artifacts, "forged-field-contents-exclusion", claims);
+  const produce = produceWith(artifacts, input, "forged-field-contents-exclusion");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+    assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify)/);
+  process.stdout.write("forged field contents: an arm excluded before its field failed every value refused in search and in checking\n");
+}
+
+{
   // A guard's promise is its annotation's: a guard declaration claimed
   // heap-preserving is refused at the declaration.
   const artifacts = run("type-guards");

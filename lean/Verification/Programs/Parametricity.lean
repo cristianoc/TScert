@@ -124,12 +124,18 @@ theorem optionalRefinements_reassign (o : Observation) (optionals : List (Nat ×
     (j : Nat) :
     optionalRefinements o optionals A B j (reassign G η) = optionalRefinements o optionals A B j G := rfl
 
+theorem cellRefinements_reassign (cells : HeapFacts.Facts) (A B : List ι) (j : Nat) (p : SubtypeChoices ι) :
+    cellRefinements cells A B j (reassign G η) (images.reassign η) p =
+      cellRefinements cells A B j G images p := by
+  simp only [cellRefinements_eq, check_fun_reassign]
+  rfl
+
 theorem checkObserved_reassign (Γ Δ : List (List ι)) (tested : Nat) (o : Observation)
-    (m : Mapping) (ps : EdgeEvidence ι) (fields optionals : List (Nat × PropKey)) :
-    checkObservedUsing (reassign G η) (images.reassign η) Γ Δ tested o m ps fields optionals =
-      checkObservedUsing G images Γ Δ tested o m ps fields optionals := by
+    (m : Mapping) (ps : EdgeEvidence ι) (fields optionals : List (Nat × PropKey)) (cells : HeapFacts.Facts) :
+    checkObservedUsing (reassign G η) (images.reassign η) Γ Δ tested o m ps fields optionals cells =
+      checkObservedUsing G images Γ Δ tested o m ps fields optionals cells := by
   simp only [checkObservedUsing_eq, checkObservedSub_reassign, check_fun_reassign,
-    fieldRefinements_reassign, optionalRefinements_reassign]
+    fieldRefinements_reassign, optionalRefinements_reassign, cellRefinements_reassign]
   rfl
 
 theorem CallProofs_reassign (q : CallEffects.Arrow (List ι)) (c : CallEffects.MethodArrow (List ι))

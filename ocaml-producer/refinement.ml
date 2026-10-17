@@ -150,6 +150,18 @@ let record_field ?(allow_optional=false) declarations t field =
   has [] t
 (* A guard on a field of an immutable binding's object: what the field holds
    is known until a step may write it. *)
+(* The atoms of a field's type some of the known contents may be: a
+   primitive atom meets a content atom equal to it, a singleton meets its
+   family; any other atom, or contents not all primitive, is kept. *)
+let contents_meet field known = match field,known with
+  | Atoms fs,Atoms ks ->
+    let primitive = function
+      | Nul | Undef | True | False | Str | StrLit _ | Num | NumLit _ -> true | _ -> false in
+    if not (List.for_all primitive ks) then field else
+    let meets f k = f = k || (match f,k with
+      | StrLit _,Str | Str,StrLit _ | NumLit _,Num | Num,NumLit _ -> true | _ -> false) in
+    Atoms (List.filter (fun f -> not (primitive f) || List.exists (meets f) ks) fs)
+  | _ -> field
 let refine_field bounds declarations env name field refine =
   (* A read of an optional key that gave something other than `undefined`
      found the key present: the object's record arms have it from then on
@@ -177,11 +189,32 @@ let refine_field bounds declarations env name field refine =
   match List.assoc_opt name env with
   | Some (Value t) when record_field ~allow_optional:true declarations t field ->
     let key = field_key name field in
+    (* A field declared at a named union of primitives holds one of its
+       atoms: the definition's, so that a test slices them. *)
+    let flat f =
+      let rec plain = function
+        | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
+      if plain f then (try (match flat_atoms declarations f with [] -> f | atoms -> Atoms (List.sort_uniq compare atoms))
+        with Json.Error _ -> f) else f in
     let current = match List.assoc_opt key env with
       | Some (Value c) -> Some c
-      | _ -> (try Some (field_type bounds declarations [] t (Name field)) with Json.Error _ -> None) in
+      | _ -> (try Some (flat (field_type bounds declarations [] t (Name field))) with Json.Error _ -> None) in
     (match current with
-     | Some c -> fact env key (field_type bounds declarations [] t (Name field)) (refine c)
+     | Some c ->
+       let contents = refine c in
+       let env = fact env key (field_type bounds declarations [] t (Name field)) contents in
+       (* The object's arms whose field the contents rule out are dropped
+          (Lean's `factSlice`): a primitive arm none of whose atoms meets one
+          of the contents. Successive tests narrow the contents, so their
+          exclusions combine. *)
+       (match List.assoc_opt key env with
+        | Some (Value known) -> refine_value env name (fun t ->
+            discriminate_fixed bounds declarations t (Name field) (fun f ->
+              let rec plain = function
+                | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
+              let f = if plain f then (try Atoms (flat_atoms declarations f) with Json.Error _ -> f) else f in
+              contents_meet f known))
+        | _ -> env)
      | None -> env)
   | _ -> env
 (* What a call of a guard promises of its actual, a name: where a type guard

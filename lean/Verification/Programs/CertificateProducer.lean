@@ -1023,7 +1023,8 @@ observation comes from graph dispatch, never from supplied point annotations. -/
 @[nospecialize] def edgeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (target : Target)
     (observed : Option (Nat × BranchRefinement.Observation) := none)
-    (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := []) :
+    (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := [])
+    (cells : HeapFacts.Facts := []) :
     CheckResult ι (EdgeEvidence ι) := do
   let c ← claims[target.label]?
   if let some (tested, o) := observed then
@@ -1053,7 +1054,7 @@ observation comes from graph dispatch, never from supplied point annotations. -/
             -- A type parameter's value: its meet with what the test admits.
             else if BranchRefinement.meetSlice G A B t q then some {}
             else none
-      else (subtypeUsing G images A B).orElse (fun _ => match o with
+      else ((subtypeUsing G images A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose
         -- field admits the observation.
         | .tag t q => (fields ++ optionals).findCheck? fun (k, f) =>
@@ -1064,7 +1065,13 @@ observation comes from graph dispatch, never from supplied point annotations. -/
         -- the `undefined` an absent key reads: the key is present.
         if BranchRefinement.excludesUndef o && optionals.any (fun (k, f) =>
             k == slot target.mapping i && BranchRefinement.promotes G A B f)
-        then some {} else none
+        then some {} else none) |>.orElse fun _ =>
+        -- An object a cell fact is about keeps the labels its field's
+        -- observed contents admit.
+        cells.findCheck? fun fct =>
+          if fct.slot == slot target.mapping i then
+            subtypeUsing G images (BranchRefinement.factSlice G A fct.field fct.contents) B
+          else none
     | none => subtypeUsing G images A B
 
 
@@ -1241,6 +1248,7 @@ promise's evidence. -/
       | none => Failure.edge l t.label index)
   let branchTarget := fun Γ o t index =>
     let searched := edgeUsing G images claims Γ t (some (0, o)) (readFields out 0) (optionalFields out 0)
+      (HeapKnowledge.observeTyped G Γ out 0 o).cells
     match searched.value with
     | some p => Except.ok p
     | none => Except.error (match searched.exhaustion with

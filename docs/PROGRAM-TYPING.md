@@ -2824,22 +2824,40 @@ call discards them. So `Array.isArray(t.mapping)` followed by
 `t.mapping.map(nat)` reads an array.
 
 The facts also exclude semantic type labels of the object they are about.
-Where the facts about $`x.f`$ hold, a label of $`\Gamma(x)`$ is dropped when
-every clause of its expansion fixes $`f`$, as an invariant field or a
-readonly view, at a type no value meeting the facts meets. The proof is one
-step index down, as for the edge's field slice: the field's location holds
-a value of the field's type one level down (`field_value`), and that value
-meets the facts. A clause whose field type cannot be decided against the
-facts (one not plain, an unresolved reference) keeps its label, and a special
-field keeps its own exclusions, as `fieldAnswers` keeps an array's `length`
-out. The exclusion is a fact about the value's type, so it survives later
-writes and calls, as the edge's field slice does; the observed contents it
-came from do not. Unlike that slice, it combines successive tests: after
-`k.kind` fails `"isNul"` and `"isBool"`, the label
-`{ kind: "isNul" | "isBool" }` is dropped. Controls: a write through an
-alias between the test and the read, an intervening call, successive
-singleton exclusions, and forged observations, each where evidence is
-produced and where it is checked.
+A fact $`x.f\mapsto R`$ is a disjunction of atoms; each atom of a primitive
+family or singleton is a tag's passing answer (`atomTag`: `strLit s` is
+`strEq s`, `str` is `isStr`, and so on). A label of $`\Gamma(x)`$ is dropped
+(`factSlice`) when, for every atom of $`R`$, every clause of its expansion
+fixes $`f`$, as an invariant field or a readonly view, at a type answering
+that atom's tag `false`:
+
+```math
+F^{f}_{R}(A)=\{a\in A\mid \lnot(\mathsf{plain}(a)\wedge R\neq[\,]\wedge
+  \forall r\in R.\ \exists t.\ \mathsf{tag}(r)=t\wedge
+  \forall c\in\mathsf{expand}([a]).\ \mathsf{fieldAnswers}(c,f,t,\mathsf{false}))\}
+```
+
+The proof is one step index down, as for the edge's field slice
+(`factSlice_sound`, through `fieldSlice_sound` at the atom the field's value
+meets, and `fieldSlice_absent` where the object lacks the key): the field's
+location holds a value of the field's type one level down (`field_value`),
+and that value meets one of the atoms. A clause whose field type cannot be
+decided against the atoms (one not plain, an unresolved reference) keeps its
+label, and a special field keeps its own exclusions, as `fieldAnswers`
+keeps an array's `length` out. A branch edge applies it to the facts its
+observation leaves (`observeTyped`), beside the field slice
+(`ObservedCovers`, `cellRefinements`). The exclusion is a fact about the
+value's type, so it survives later writes and calls, as the edge's field
+slice does; the observed contents it came from do not, as a call discards
+them. Successive tests leave contents that only shrink, so the exclusion
+combines them: after `k.kind` fails `"a"` and `"b"`, the label
+`{ kind: "a" | "b" }` is dropped (`field-contents-exclusion`); after a call
+between the tests it is not (`invalid-field-contents-call`, run under
+Node), and an arm claimed excluded before every failed test rules it out is
+refused where evidence is produced and where it is checked (the forged field
+contents in `pipeline/test.mts`). Recording a tag that is not a primitive
+predicate (`isArray`) as an atom, and the sliced read it gives, are the part
+of the design [left](../WORK.md#cell-fact-slices).
 The write rule takes no premise about the cell's old contents. These are operation rules within a
 local segment: at the next statement entry, only the supplied interface
 survives.

@@ -23,7 +23,7 @@ design, not its progress.
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open: certified imports designed (2026-10-17) | a Lean theorem composes units certified against each other's signatures |
-| [Cell facts by tag, and label slices](#cell-fact-slices) | open: designed (2026-10-17) | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
+| [Cell facts by tag, and label slices](#cell-fact-slices) | open: label slices done; tag atoms and sliced reads by them left | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
 | [Decoders' dictionary reads](#decoders-dictionary-reads) | investigation, waiting for the owner | a route is chosen for reading `unknown` JSON by key |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |

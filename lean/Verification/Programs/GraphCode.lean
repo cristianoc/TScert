@@ -805,10 +805,10 @@ theorem nodes_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
 /-- Definition effects supplement, rather than replace, ordinary safety. A
 footprint letting everything change, without a fresh result or a footprint on
 a throw, holds of every run (`Closed.top_safe`); any other bound is
-established node by node (`compositionalChecked`), or, without a fresh result
-or a footprint on a throw, by a graph of pure nodes, which preserves the heap,
-for code returning a plain result. A fresh result, and a footprint on a
-throw, are established node by node whatever the footprint. -/
+established node by node (`compositionalChecked`), or, without a fresh result,
+by a graph of pure nodes, which keeps the heap a prefix at every step, a raise
+included, for code returning a plain result. A fresh result is established
+node by node whatever the footprint. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
   if c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false then pure () else
