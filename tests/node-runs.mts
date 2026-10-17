@@ -624,6 +624,9 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runImporting("unique-symbol-reexport-value-import", "same()"), true);
   assert.equal(runImporting("unique-symbol-registry-value-import", "same()"), true);
   assert.equal(runImporting("invalid-unique-symbol-value-import", "held === brand"), false);
+  // An imported computed alias's keys index the table that names them.
+  assert.equal(runImporting("computed-alias-value-import", 'show("branch")'), "branch if");
+  assert.equal(runImporting("invalid-computed-alias-value-import", 'only("branch")'), "branch");
   // A class has no plain call: calling it throws.
   assert.throws(() => runExample("invalid-class-as-function", "go()"), /cannot be invoked without 'new'/);
   // A construction in a static initializer reads a static not yet defined.

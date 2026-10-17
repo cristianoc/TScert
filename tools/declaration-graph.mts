@@ -1101,6 +1101,9 @@ export function collectDeclarations(file: string, options: {
             specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.local.text) });
         if (!nodes.some(isTypeDeclaration)) continue;
         const declaration = lookup(binding.local, binding.local.text);
+        // An imported alias TypeScript computes from its parameters has no
+        // equation, as a local one has none: each application is a computed type.
+        if (computedAlias(declaration, aliasOf)) continue;
         roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.local.text,
           imported: binding.imported, specifier: binding.specifier, span: binding.span },
         declaration: identityOf(declaration) } });
@@ -1937,7 +1940,7 @@ export function collectDeclarations(file: string, options: {
     for (const span of options.computed ?? []) {
       const node = computedAt(client, span);
       if (!node) throw new DeclarationError(span, "TypeScript computed type missing");
-      // A global type's application is computed when the alias it names is.
+      // A global or an imported type's application is computed when the alias it names is.
       const alias = ts.isTypeReferenceNode(node) ? aliasOf(node) : null;
       if (ts.isTypeReferenceNode(node) && !(alias && computedAlias(alias, aliasOf))) continue;
       const what = `${idOf(client)}#${node.getText(client)}`;

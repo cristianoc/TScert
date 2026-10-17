@@ -265,8 +265,10 @@ the same-file declarations it uses). The first blockers of the others in
   (group: 1);
 - an element read a length guards (`paragraphs[paragraphs.length - 1]`,
   `guarded-element-read-refused`; parseTrailers, parseRecord: 2);
-- a conditional type over a type parameter, `KeysOf<T>` (printGraph,
-  showStep: 2).
+- a mapped type whose value names its key, `SHOW_STEP`'s
+  `{ [K in KeysOf<Step>]: (a: Extract<Step, Record<K, unknown>>[K]) => string }`,
+  then showStep's two assertions, which state what `decodeNode` checked, and
+  printGraph's missing return annotation (printGraph, showStep: 2).
 
 In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
 verify; the others stop at a namespace import, Node's `Buffer` type, `join`

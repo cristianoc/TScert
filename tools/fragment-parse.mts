@@ -1003,11 +1003,12 @@ export function parseFile(file: string, carriesContext = false,
   // as the standard library's `Promise`: TypeScript decides, and a global
   // declaration joins the graph as a root. Each name's first reference
   // stands for it.
+  const imported = new Set<string>(importNodes.flatMap(node => {
+    const bindings = node.importClause?.namedBindings;
+    return bindings && ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [];
+  }));
   const rooted = new Set<string>([
-    ...importNodes.flatMap(node => {
-      const bindings = node.importClause?.namedBindings;
-      return bindings && ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [];
-    }),
+    ...imported,
     ...[...aliasNodes, ...interfaceNodes, ...classNodes, ...enumNodes].flatMap(node => node.name ? [node.name.text] : []),
   ]);
   const globalNodes: Identifier[] = [];
@@ -1342,10 +1343,11 @@ export function parseFile(file: string, carriesContext = false,
       computedNodes.push(node);
       return;
     }
-    // An application of a global type is one where the alias it names is
-    // computed (`Extract<T, U>`), which the declaration graph decides.
+    // An application of a global or an imported type is one where the alias
+    // it names is computed (`Extract<T, U>`), which the declaration graph decides.
     if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeArguments?.length &&
-        !rooted.has(node.typeName.text) && !enclosingBinders(node).includes(node.typeName.text))
+        (!rooted.has(node.typeName.text) || imported.has(node.typeName.text)) &&
+        !enclosingBinders(node).includes(node.typeName.text))
       computedNodes.push(node);
     // So does the computed key of a class method or an object literal's
     // property or method, `[Symbol.iterator]() { … }`.

@@ -1084,8 +1084,9 @@ A **computed alias** is a generic alias whose equation is a computed form or
 an application of another computed alias (`computedAlias`): `type
 ElementOf<T> = T[number]`, `type Keys<T> = keyof T`. Over its parameters it
 is known only at an application, so it has no equation of its own, and an
-application of it is a computed type, evaluated where it is written, its
-equation read with the parameters as the arguments:
+application of it, declared in the file or imported, is a computed type,
+evaluated where it is written, its equation read with the parameters as the
+arguments:
 
 ```math
 \frac{A\langle\vec X\rangle=\tau\ \text{a computed alias}\quad

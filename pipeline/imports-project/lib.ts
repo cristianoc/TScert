@@ -284,3 +284,6 @@ export function isKind(x: unknown, k: "number"): x is number;
 export function isKind(x: unknown, k: "string" | "number"): boolean {
   return typeof x === k;
 }
+/** A conditional alias computing a union's keys; the case
+ * computed-alias-value-import imports it. */
+export type KeysOf<T> = T extends unknown ? keyof T : never;
