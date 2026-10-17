@@ -234,6 +234,10 @@ export function expr(this: Gate, node: Expression): Expr {
   }
 
   if (ts.isPropertyAccessExpression(node)) {
+    // `ns.x`, a member of a namespace import: a read of the binding it is
+    // (`namespace-members.mts`).
+    const member = gate.namespaceMember(node);
+    if (member !== undefined) return { k: "id", pos: gate.span(node), name: member };
     if (node.questionDotToken)
       gate.fail(node, "optional property access is outside the fragment");
     // `C.x` that TypeScript binds to a static field of class `C` reads the
@@ -621,8 +625,10 @@ export function expr(this: Gate, node: Expression): Expr {
       return gate.intrinsic(dispatch, gate.span(node), gate.span(target.name),
         [gate.expr(target.expression), ...node.arguments.map((arg) => gate.expr(arg))]);
     }
+    // A namespace member's call is a call of the binding it reads; the
+    // declaration graph refuses one whose callee states its receiver.
     if (
-      (ts.isPropertyAccessExpression(target) && !isStatic) ||
+      (ts.isPropertyAccessExpression(target) && !isStatic && gate.namespaceMember(target) === undefined) ||
       ts.isElementAccessExpression(target)
     ) {
       const spreads: number[] = [];

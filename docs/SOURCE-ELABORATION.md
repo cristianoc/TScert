@@ -204,25 +204,28 @@ reads); a pattern element may name one bound before it in the pattern:
 
 **Namespace imports.** A module namespace object's members are the module's
 export bindings, read as an import binding reads them
-([ECMA-262](REFERENCES.md#ecma-262)). So `import * as ns from M`, where every
-mention TypeScript binds to `ns` is a member read `ns.x` or a qualified type
-name `ns.T`, is the named import of each member, under a name no other
-binding of the file spells:
+([ECMA-262](REFERENCES.md#ecma-262)). So in `import * as ns from M`, where
+every mention TypeScript binds to `ns` is a member read `ns.x` or a qualified
+type name `ns.T`, each member is a binding of the file, named `ns.x`, which no
+identifier spells, bound to the export of $`M`$ that TypeScript binds the
+member to, as a named import of it is:
 
 ```math
-\frac{\mathrm{mentions}(ns)\subseteq\{\,ns.x_1,\ldots,ns.x_n\,\}\quad ns\$x_i\notin\mathrm{names}(S)}
-     {\mathtt{import}\ \ast\ \mathtt{as}\ ns\ \mathtt{from}\ M;\ S\;\equiv\;\mathtt{import}\ \{\,x_1\ \mathtt{as}\ ns\$x_1,\ldots,x_n\ \mathtt{as}\ ns\$x_n\,\}\ \mathtt{from}\ M;\ S[ns\$x_i/ns.x_i]}\ \textsf{namespace-import}
+\frac{\mathrm{mentions}(ns)\subseteq\{\,ns.x_1,\ldots,ns.x_n\,\}\quad \Gamma(x_i@M)=T_i}
+     {\Gamma(ns.x_i)=T_i}\ \textsf{namespace-import}
 ```
 
-A member used only in types is a type import. The parser writes the
-elaborated text at the source's offsets (`namespace-imports.mts`): the
-namespace import becomes blank text of its length, each `ns.x` the identifier
-`ns$x`, and the named imports follow the last statement; a refusal located
-in them is reported at the namespace import. A call `ns.f(a)` passes the
-namespace object as the receiver, where `ns$f(a)` passes `undefined`; the two
-agree for a callee whose signatures state no `this` parameter, and a call of
-one that does is refused. Any other mention of `ns` (`const m = ns`,
-`ns[k]`, `ns?.x`, `{ ns }`, an export) is refused at the mention.
+A read of `ns.x` is a read of that binding, at its own span and spelling,
+and a qualified type name `ns.T` names the declaration the export is; a
+member used only in types imports no value. A refusal about a member names
+its use (`namespace-members.mts`; the declaration graph resolves each
+member through the checker). A call `ns.f(a)` passes the namespace object as
+the receiver, where a call of the binding passes `undefined`; the two agree
+for a callee whose signatures state no `this` parameter, and a call of one
+that does is refused where it is written. Any other mention of `ns`
+(`const m = ns`, `ns[k]`, `ns?.x`, `{ ns }`, an export) is refused at the
+mention, and so is a write of a member, which JavaScript refuses with a
+`TypeError`.
 
 **A `let` nothing assigns.** A `let` statement whose bindings are all
 initialized and which no assignment, compound or logical assignment, update,

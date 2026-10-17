@@ -304,3 +304,6 @@ export function fresh(): Numbers {
 /** A conditional alias computing a union's keys; the case
  * computed-alias-value-import imports it. */
 export type KeysOf<T> = T extends unknown ? keyof T : never;
+/** A name spelled with `$`; the case namespace-import-value-import reads it
+ * beside a namespace import named `lib$limit`. */
+export const limit$double: number = 3;

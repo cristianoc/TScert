@@ -684,6 +684,11 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   // An imported computed alias's keys index the table that names them.
   assert.equal(runImporting("computed-alias-value-import", 'show("branch")'), "branch if");
   assert.equal(runImporting("invalid-computed-alias-value-import", 'only("branch")'), "branch");
+  // Members of two namespace imports whose names differ only by where the
+  // `$` stands: `lib.limit$double` is 3, `lib$limit.double(1)` is 2.
+  assert.equal(runImporting("namespace-import-value-import", "twoMembers()"), 5);
+  // A namespace member is an import binding: writing it throws.
+  assert.throws(() => runImporting("invalid-namespace-member-write-value-import", "reset()"), /read only|read-only|Cannot assign/);
   // `map` over an array named only through declarations, its callback
   // shrinking it: the result has three positions, two present.
   assert.equal(runImporting("invalid-array-through-declaration-value-import", "Object.keys(shrunk()).length"), 2);

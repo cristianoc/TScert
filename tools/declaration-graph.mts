@@ -16,7 +16,6 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 // intrinsics.mts declares the intrinsics this reader lists among the client's values: the trusted steps async functions, loops, spreads and patterns lower to.
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
-import type { NamespaceCall } from "./namespace-imports.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
@@ -116,17 +115,12 @@ export function tsconfigOf(path: string): string {
  * `tsconfigPath` when given, otherwise the project that owns the file. The
  * compiler reads the files on disk; only a probe program (`type-probe.mts`)
  * reads some of them with text of its own, in a snapshot of its own. */
-function withProject<T>(file: string, tsconfigPath: string | undefined, clientText: string | undefined,
+function withProject<T>(file: string, tsconfigPath: string | undefined,
   use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
   const overlay = new Map<string, string>();
-  // The client's text where the parser read an elaboration of it
-  // (`namespace-imports.mts`), unless a probe replaces it.
-  const clientPaths = clientText === undefined ? [] : [file, realpathSync(file)];
-  const read = (name: string): string | undefined =>
-    overlay.get(name) ?? (clientPaths.includes(name) ? clientText : undefined);
   const api = new API({ cwd: dirname(file), fs: {
-    readFile: read,
-    fileExists: name => (read(name) !== undefined ? true : undefined),
+    readFile: name => overlay.get(name),
+    fileExists: name => (overlay.has(name) ? true : undefined),
   } });
   // The files the last probe replaced, read from disk again by the next. The
   // compiler keeps an open file's text over its changes: the client, open
@@ -292,22 +286,40 @@ function computedAt(file: SourceFile, span: Span): TypeNode | null {
 }
 
 /** The client's named imports: each must name exactly one declaration. */
-function importBindings(client: SourceFile): { local: Identifier; imported: string;
-  specifier: string; span: Span; typeOnly: boolean }[] {
-  return client.statements.filter(ts.isImportDeclaration).flatMap(node => {
+/** A namespace member the parser found (`namespace-members.mts`): its
+ * binding, the export it names, and its occurrences, each by the span of the
+ * member read or qualified name and of the member's name. */
+export type NamespaceMemberSpans = { local: string; imported: string; specifier: string;
+  uses: { span: Span; name: Span; value: boolean; callee: boolean }[] };
+
+/** The client's imports, each the binding `name` the client reads, the
+ * identifier `at` TypeScript resolves to the export, and the span a refusal
+ * names: a named import's specifier and its import declaration, a namespace
+ * member's first occurrence (`members`). */
+function importBindings(client: SourceFile, members: readonly NamespaceMemberSpans[]): { name: string; at: Identifier;
+  imported: string; specifier: string; span: Span; typeOnly: boolean }[] {
+  const named = client.statements.filter(ts.isImportDeclaration).flatMap(node => {
     const span: Span = [node.getStart(client), node.end];
     const clause = node.importClause;
-    if (!clause || clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings) ||
-        !ts.isStringLiteral(node.moduleSpecifier))
-      throw new DeclarationError(span, "only named imports are resolved");
+    if (!clause || clause.name || !clause.namedBindings || !ts.isStringLiteral(node.moduleSpecifier))
+      throw new DeclarationError(span, "only named and namespace imports are resolved");
+    if (ts.isNamespaceImport(clause.namedBindings)) return [];
     const specifier = node.moduleSpecifier.text;
     // The unstable AST exposes this runtime field but omits it from the
     // ImportClause interface.
     const clauseTypeOnly = "isTypeOnly" in clause && clause.isTypeOnly === true;
-    return clause.namedBindings.elements.map(element => ({ local: element.name,
+    return clause.namedBindings.elements.map(element => ({ name: element.name.text, at: element.name,
       imported: element.propertyName?.text ?? element.name.text, specifier, span,
       typeOnly: clauseTypeOnly || element.isTypeOnly }));
   });
+  const namespaced = members.map(member => {
+    const [first] = member.uses;
+    const at = first ? identifierAt(client, first.name) : null;
+    if (!first || !at) throw new DeclarationError(first?.span ?? [0, 0], `TypeScript namespace member ${member.local} missing`);
+    return { name: member.local, at, imported: member.imported, specifier: member.specifier, span: first.span,
+      typeOnly: !member.uses.some(u => u.value) };
+  });
+  return [...named, ...namespaced];
 }
 
 /**
@@ -319,14 +331,12 @@ function importBindings(client: SourceFile): { local: Identifier; imported: stri
 export function collectDeclarations(file: string, options: {
   tsconfigPath?: string;
   client?: SourceFile;
-  /** The text the parser read for `file`, where it elaborated the source
-   * (`namespace-imports.mts`): TypeScript reads it in place of the file's. */
-  clientText?: string;
-  /** The callees of the client's calls through a namespace import
-   * (`namespace-imports.mts`), which pass the namespace object as the
-   * receiver: each is refused where its signatures state a `this`
-   * parameter. */
-  namespaceReceivers?: readonly NamespaceCall[];
+  /** The members the client reads through its namespace imports
+   * (`namespace-members.mts`): each joins as a named import of its export
+   * would, under its own binding; a call of one whose signatures state a
+   * `this` parameter is refused at the call, since it passes the namespace
+   * object as the receiver. */
+  namespaceMembers?: readonly NamespaceMemberSpans[];
   locals?: readonly Span[];
   /** The client's type-reference names that are neither imported nor its own
    * declarations: each that TypeScript binds to a global declaration becomes
@@ -534,7 +544,7 @@ export function collectDeclarations(file: string, options: {
   seen?: (diagnostic: SeenDiagnostic) => void;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
-  return withProject(clientFile, options.tsconfigPath, options.clientText, (checker, client, root, program, probeProgram) => {
+  return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
     const idOf = moduleIds(clientFile, root);
@@ -580,6 +590,16 @@ export function collectDeclarations(file: string, options: {
         clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
       return nodes;
     };
+    // The name a type reference reads: an identifier, or the member of a
+    // namespace import a qualified name `ns.T` reads, which TypeScript binds
+    // to the export it names (`namespace-members.mts`); null for any other
+    // qualified name.
+    const memberName = (name: ts.EntityName): Identifier | null => {
+      if (ts.isIdentifier(name)) return name;
+      if (!ts.isIdentifier(name.left)) return null;
+      const declaration = checker.getSymbolAtLocation(name.left)?.declarations[0]?.resolve();
+      return declaration && ts.isNamespaceImport(declaration) ? name.right : null;
+    };
     // The enum a name denotes, every declaration TypeScript binds it to an
     // enum's (merged enums are one), or null.
     const enumsOf = (identifier: Identifier): ts.EnumDeclaration[] | null => {
@@ -617,18 +637,20 @@ export function collectDeclarations(file: string, options: {
     };
     // `E.M`, an enum member's literal type, where `E` names an enum; and
     // `typeof E`, the enum's object.
+    // The enum named directly or as a namespace member.
     const enumerated = (node: TypeNode, span: Span): TypeTerm | null => {
-      if (ts.isTypeQueryNode(node) && ts.isIdentifier(node.exprName) && !node.typeArguments?.length) {
-        const enums = enumsOf(node.exprName);
-        return enums ? enumMembersTerm(enumMembersOf(enums, node.exprName.text), span) : null;
+      if (ts.isTypeQueryNode(node) && !node.typeArguments?.length) {
+        const named = memberName(node.exprName);
+        const enums = named ? enumsOf(named) : null;
+        return named && enums ? enumMembersTerm(enumMembersOf(enums, named.text), span) : null;
       }
-      if (!ts.isTypeReferenceNode(node) || !ts.isQualifiedName(node.typeName) || !ts.isIdentifier(node.typeName.left))
-        return null;
-      const enums = enumsOf(node.typeName.left);
-      if (!enums) return null;
+      if (!ts.isTypeReferenceNode(node) || !ts.isQualifiedName(node.typeName)) return null;
+      const owner = memberName(node.typeName.left);
+      const enums = owner ? enumsOf(owner) : null;
+      if (!owner || !enums) return null;
       const name = node.typeName.right.text;
-      const member = enumMembersOf(enums, node.typeName.left.text).find(m => m.name === name);
-      if (!member) throw Error(`${node.typeName.left.text} has no member ${name}`);
+      const member = enumMembersOf(enums, owner.text).find(m => m.name === name);
+      if (!member) throw Error(`${owner.text} has no member ${name}`);
       return member.value === undefined ? { k: "atom", name: "number", span } : literalTerm(member.value, span);
     };
     const resolveDeclaration = (identifier: Identifier, what: string): Node => {
@@ -925,9 +947,9 @@ export function collectDeclarations(file: string, options: {
         enumerated,
         fail: (_node, message) => { throw Error(`${message} in ${what}`); },
         named: (part, pos, read) => {
-          const name = part.typeName;
-          if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${what}`);
-          if (binders.includes(name.text)) {
+          const name = memberName(part.typeName);
+          if (!name) throw Error(`a qualified type reference in ${what}`);
+          if (ts.isIdentifier(part.typeName) && binders.includes(name.text)) {
             if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${name.text}`);
             return { k: "binder", name: name.text, span: pos };
           }
@@ -1180,39 +1202,39 @@ export function collectDeclarations(file: string, options: {
       }
       return completed;
     };
-    for (const binding of importBindings(client)) {
+    for (const binding of importBindings(client, options.namespaceMembers ?? [])) {
       try {
         // A function with overloads is its several declarations; any other
         // name must have one.
-        const nodes = resolveDeclarations(binding.local, binding.local.text);
-        const enums = enumsOf(binding.local);
+        const nodes = resolveDeclarations(binding.at, binding.name);
+        const enums = enumsOf(binding.at);
         if (enums) {
-          options.importedEnum?.(binding.local.text, enumMembersOf(enums, binding.local.text));
+          options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name));
           if (!binding.typeOnly)
-            values.push({ binding: { local: binding.local.text, imported: binding.imported,
-              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.local.text) });
+            values.push({ binding: { local: binding.name, imported: binding.imported,
+              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name) });
           continue;
         }
         const reviewed = moduleEntries(binding.specifier, binding.imported);
         if (!binding.typeOnly && reviewed.length) {
-          values.push({ binding: { local: binding.local.text, imported: binding.imported,
-            specifier: binding.specifier, span: binding.span }, ...moduleValue(nodes, reviewed, binding.local.text) });
+          values.push({ binding: { local: binding.name, imported: binding.imported,
+            specifier: binding.specifier, span: binding.span }, ...moduleValue(nodes, reviewed, binding.name) });
           continue;
         }
         const [node] = nodes;
         // Merged type declarations are one, as `lookup` reads them.
         if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration) && !nodes.every(isTypeDeclaration)))
-          throw Error(`TypeScript found ${nodes.length} declarations for ${binding.local.text}`);
+          throw Error(`TypeScript found ${nodes.length} declarations for ${binding.name}`);
         // A class is a type and, imported as a value, a constructor too.
         if (!binding.typeOnly && nodes.some(n => !ts.isTypeAliasDeclaration(n) && !ts.isInterfaceDeclaration(n)))
-          values.push({ binding: { local: binding.local.text, imported: binding.imported,
-            specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.local.text) });
+          values.push({ binding: { local: binding.name, imported: binding.imported,
+            specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name) });
         if (!nodes.some(isTypeDeclaration)) continue;
-        const declaration = lookup(binding.local, binding.local.text);
+        const declaration = lookup(binding.at, binding.name);
         // An imported alias TypeScript computes from its parameters has no
         // equation, as a local one has none: each application is a computed type.
         if (computedAlias(declaration, aliasOf)) continue;
-        roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.local.text,
+        roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.name,
           imported: binding.imported, specifier: binding.specifier, span: binding.span },
         declaration: identityOf(declaration) } });
       } catch (error) {
@@ -1220,16 +1242,18 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(binding.span, error instanceof Error ? error.message : String(error));
       }
     }
-    // A call through a namespace import passes the namespace object as the
-    // receiver, where the named import standing for it passes `undefined`:
-    // the two agree for a callee whose contract states no receiver.
-    for (const { span, written } of options.namespaceReceivers ?? []) {
-      const identifier = identifierAt(client, span);
-      const type = identifier ? checker.getTypeAtLocation(identifier) : undefined;
-      if (!identifier || !type) throw new DeclarationError(span, "TypeScript types no namespace member here");
-      if (checker.getSignaturesOfType(type, SignatureKind.Call).some(s => s.thisParameter !== undefined))
-        throw new DeclarationError(span, `the call of ${written} passes the namespace object as \`this\`, which ${written}'s declared \`this\` parameter constrains`);
-    }
+    // A call of a namespace member passes the namespace object as the
+    // receiver, where a call of the binding it reads passes `undefined`: the
+    // two agree for a callee whose contract states no receiver, and the
+    // call of one that states its receiver is refused where it is written.
+    for (const member of options.namespaceMembers ?? [])
+      for (const use of member.uses.filter(u => u.callee)) {
+        const name = identifierAt(client, use.name);
+        const type = name ? checker.getTypeAtLocation(name) : undefined;
+        if (!name || !type) throw new DeclarationError(use.span, "TypeScript types no namespace member here");
+        if (checker.getSignaturesOfType(type, SignatureKind.Call).some(s => s.thisParameter !== undefined))
+          throw new DeclarationError(use.span, `the call of ${member.local} passes the namespace object as \`this\`, which its declared \`this\` parameter constrains`);
+      }
     // The client's ambient declarations (PROGRAM-TYPING.md,
     // "Imported, ambient and global values"):
     // each name joins the values like an import of the client's own
@@ -2235,7 +2259,7 @@ export function collectDeclarations(file: string, options: {
       for (const { node: start, span } of list) {
         try {
           collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
-            enumType: enumTypeAt, enumerated, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+            enumType: enumTypeAt, enumerated, memberName, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
             libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
             keys: keyTypeOf, alias: aliasOf, awaited });
         } catch (error) {
@@ -2803,7 +2827,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
  * only; never a premise of acceptance. */
 export function clientErrors(file: string, tsconfigPath?: string): SeenDiagnostic[] {
   const clientFile = resolve(file);
-  return withProject(clientFile, tsconfigPath, undefined, (_checker, client, _root, program) =>
+  return withProject(clientFile, tsconfigPath, (_checker, client, _root, program) =>
     [...program.getSyntacticDiagnostics(client.fileName), ...program.getSemanticDiagnostics(client.fileName)]
       .filter(d => d.category === DiagnosticCategory.Error)
       .map(d => ({ file: client.fileName, client: true, pos: [d.pos, d.end],
@@ -2969,6 +2993,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   enumType: (identifier: Identifier, at: SourceFile, span: Span) => TypeTerm | null;
   /** An enum member's literal type `E.M`, or `typeof E`. */
   enumerated: NonNullable<TermScope["enumerated"]>;
+  /** The name a type reference reads, a namespace member's included. */
+  memberName: (name: ts.EntityName) => Identifier | null;
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -3046,14 +3072,15 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       enumerated: context.enumerated,
       fail: (_node, message) => { throw Error(`${message} in ${identity.module}#${identity.name}`); },
       named: (part, pos, read) => {
-        const name = part.typeName;
-        if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${identity.module}#${identity.name}`);
-        const enumType = names.includes(name.text) ? null : context.enumType(name, source, pos);
+        const name = context.memberName(part.typeName);
+        if (!name) throw Error(`a qualified type reference in ${identity.module}#${identity.name}`);
+        const own = ts.isIdentifier(part.typeName) && names.includes(name.text);
+        const enumType = own ? null : context.enumType(name, source, pos);
         if (enumType) {
           if (part.typeArguments?.length) throw Error(`an enum type takes no type arguments: ${name.text}`);
           return enumType;
         }
-        const index = names.indexOf(name.text);
+        const index = own ? names.indexOf(name.text) : -1;
         if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
         if (part.typeArguments?.length)
           throw Error(`type parameter applied as constructor: ${name.text}`);

@@ -39,3 +39,13 @@ export function severity(d: Diagnostic): string {
       return "other";
   }
 }
+
+// The file's own declarations name the namespace's enum members too.
+interface Marked {
+  readonly kind: ts.SyntaxKind.Identifier;
+}
+const ACCESS: ts.SyntaxKind.PublicKeyword[] = [ts.SyntaxKind.PublicKeyword];
+
+export function markedKind(m: Marked): number {
+  return m.kind + ACCESS.length;
+}

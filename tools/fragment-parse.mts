@@ -42,7 +42,7 @@ import * as classes from "./fragment-classes.mts";
 import * as expressions from "./fragment-expressions.mts";
 import * as statements from "./fragment-statements.mts";
 import * as guards from "./fragment-guards.mts";
-import { elaborateNamespaceImports, type Elaboration } from "./namespace-imports.mts";
+import { memberUses, namespaceMembers, type MemberUse, type NamespaceMember } from "./namespace-members.mts";
 
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.
@@ -304,14 +304,19 @@ export class Gate {
   /* Whether the function whose body is being read is async: its returns
      settle the promise its call returned (`intrinsics.mts`). */
   asyncBody = false;
-  /** The namespace imports the file was elaborated from, if any: a position
-   * in the appended named imports is reported at the namespace import. */
-  readonly elaboration: Elaboration | null;
+  /** Each occurrence of a namespace member (`namespace-members.mts`), a
+   * member read or a qualified type name, by its span: the binding it reads. */
+  namespaceUses = new Map<string, { member: NamespaceMember; use: MemberUse }>();
 
-  constructor(file: SourceFile, elaboration: Elaboration | null = null) {
+  constructor(file: SourceFile) {
     this.file = file;
-    this.elaboration = elaboration;
     this.scope = this.termScope();
+  }
+
+  /** The binding a namespace member read or qualified type name reads, or
+   * undefined for another node. */
+  namespaceMember(node: Node): string | undefined {
+    return this.namespaceUses.get(this.span(node).join(":"))?.member.local;
   }
 
   /** The leading `"use strict"` directives of a directive prologue: whether
@@ -443,8 +448,7 @@ export class Gate {
   registerDeclaredType = classes.registerDeclaredType;
 
   fail(node: Node | null, message: string): never {
-    const written = node ? node.getStart(this.file) : 0;
-    const start = this.elaboration && written >= this.elaboration.appended ? this.elaboration.origin : written;
+    const start = node ? node.getStart(this.file) : 0;
     const at = this.file.getLineAndCharacterOfPosition(start);
     throw new Error(
       `gate: ${message} (line ${at.line + 1}, col ${at.character + 1})`,
@@ -583,16 +587,21 @@ export class Gate {
           if (found) return found.value === null ? { k: "atom", name: "number", span } : literalTerm(found.value, span);
         }
         // An imported enum's, at its members as the declaration graph read
-        // them (`ambient-enum`).
-        if (ts.isTypeQueryNode(node) && ts.isIdentifier(node.exprName) && !node.typeArguments?.length) {
-          const imported = this.importedEnums.get(node.exprName.text);
-          if (imported && !this.hasTypeParam(node.exprName.text)) return enumMembersTerm(imported, span);
+        // them (`ambient-enum`); the enum named directly or as a namespace
+        // member.
+        const enumName = (name: Node): string | undefined =>
+          ts.isIdentifier(name) ? (this.hasTypeParam(name.text) ? undefined : name.text) : this.namespaceMember(name);
+        if (ts.isTypeQueryNode(node) && !node.typeArguments?.length) {
+          const named = enumName(node.exprName);
+          const imported = named === undefined ? undefined : this.importedEnums.get(named);
+          if (imported) return enumMembersTerm(imported, span);
         }
-        if (ts.isTypeReferenceNode(node) && ts.isQualifiedName(node.typeName) && ts.isIdentifier(node.typeName.left)) {
-          const imported = this.importedEnums.get(node.typeName.left.text);
+        if (ts.isTypeReferenceNode(node) && ts.isQualifiedName(node.typeName)) {
+          const named = enumName(node.typeName.left);
+          const imported = named === undefined ? undefined : this.importedEnums.get(named);
           const member = node.typeName.right.text;
           const found = imported?.find((m) => m.name === member);
-          if (imported && !found) return this.fail(node, `${node.typeName.left.text} has no member ${member}`);
+          if (imported && !found) return this.fail(node, `${named ?? ""} has no member ${member}`);
           if (found) return found.value === undefined ? { k: "atom", name: "number", span } : literalTerm(found.value, span);
         }
         return null;
@@ -629,7 +638,7 @@ export class Gate {
       },
       named: (node, span, read) => {
         const name = ts.isIdentifier(node.typeName) ? node.typeName.text
-          : this.fail(node, "type reference outside the fragment");
+          : this.namespaceMember(node.typeName) ?? this.fail(node, "type reference outside the fragment");
         // An application of an alias TypeScript computes from its parameters
         // is a computed type, evaluated where it is written.
         const computed = this.hasTypeParam(name) ? undefined : this.computedTypes.get(`${span[0]}:${span[1]}`);
@@ -908,11 +917,12 @@ export function parseFile(file: string, carriesContext = false,
   seen?: (diagnostic: SeenDiagnostic) => void): Ast {
   const absolute = resolve(file);
   const text = readFileSync(absolute, "utf8");
-  const original = openFile(absolute, text);
-  const elaboration = elaborateNamespaceImports(original.file, original.checker,
-    (node, message) => new Gate(original.file).fail(node, message));
-  const source = elaboration ? openFile(absolute, elaboration.text).file : original.file;
-  const gate = new Gate(source, elaboration);
+  const { file: source, checker } = openFile(absolute, text);
+  const gate = new Gate(source);
+  // The members read through namespace imports, each a binding of its own.
+  const members = namespaceMembers(source, checker, (node, message) => gate.fail(node, message));
+  gate.namespaceUses = memberUses(members, source);
+  const memberNodes = [...gate.namespaceUses.values()].map(({ use }) => use.node);
   const aliasNodes: TypeAliasDeclaration[] = [];
   const interfaceNodes: InterfaceDeclaration[] = [];
   const classNodes: ClassDeclaration[] = [];
@@ -1420,15 +1430,16 @@ export function parseFile(file: string, carriesContext = false,
     // import is an assumption at the type its declaration states.
     for (const node of importNodes) {
       const clause = node.importClause;
-      if (!clause || clause.name || !clause.namedBindings ||
-          !ts.isNamedImports(clause.namedBindings))
-        gate.fail(node, "only named imports are in the source fragment");
+      if (!clause || clause.name || !clause.namedBindings)
+        gate.fail(node, "only named and namespace imports are in the source fragment");
     }
     // TypeScript resolves every name, in the project that owns the file or the
     // one named explicitly: the declaration graph is the compiler's.
     try {
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
-        ...(elaboration ? { clientText: elaboration.text, namespaceReceivers: elaboration.receivers } : {}),
+        namespaceMembers: [...members.values()].map(m => ({ local: m.local, imported: m.imported,
+          specifier: m.specifier, uses: m.uses.map(u => ({ span: gate.span(u.node), name: gate.span(u.name),
+            value: u.value, callee: u.callee })) })),
         locals: localNodes.map(node => gate.span(node)),
         globals: globalNodes.map(node => gate.span(node)),
         globalValues: globalValueNodes.map(node => gate.span(node)),
@@ -1529,7 +1540,7 @@ export function parseFile(file: string, carriesContext = false,
       gate.symbolIdentities = declarations.symbols;
     } catch (error) {
       const at = error instanceof DeclarationError
-        ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
+        ? [...importNodes, ...memberNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
             ...classTestNodes, ...classReadNodes, ...contextualNodes, ...assignNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
