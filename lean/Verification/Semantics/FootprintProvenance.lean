@@ -248,20 +248,29 @@ theorem dense_class {x n ρ h l} (hd : Dense x n ρ h)
   rw [hs] at hm; cases hm
   simp [Region.mem, hv, Cls.has, isArr]
 
-/-- The support lemma of `Dense`: it survives a footprint whose entries that
-cover its store change it at most by `grow`. -/
+/-- **The support lemma of `Dense`.** It depends only on its store's
+location, and survives any change of it by `grow`. -/
+theorem dense_support {x n ρ h h'} (hd : Dense x n ρ h)
+    (hs : Supported [(.field x arrayStoreKey, .grow)] ρ h h') : Dense x n ρ h' := by
+  obtain ⟨s, ls, hsl, hv, hn⟩ := hd
+  obtain ⟨v', hv', hh⟩ := hs _ (List.mem_singleton_self _) s _ (by simp [Region.mem, hsl]) hv
+  rcases hh with rfl | ⟨ls₁, ls', h₁, rfl, hd, -⟩
+  · exact ⟨s, ls, hsl, hv', hn⟩
+  · cases h₁; exact ⟨s, ls', hsl, hv', hd n hn⟩
+
+/-- A footprint whose entries covering the store change it at most by `grow`
+supports `Dense`. -/
 theorem dense_stable {x n ρ h h' Φ} (hd : Dense x n ρ h) (hp : Post Φ ρ h h')
     (hΦ : ∀ e ∈ Φ, ∀ l, (Region.field x arrayStoreKey).mem ρ h l = true → e.1.mem ρ h l = true →
       e.2.le .grow = true) : Dense x n ρ h' := by
-  obtain ⟨s, ls, hs, hv, hn⟩ := hd
-  obtain ⟨v', hv', ha⟩ := hp.2 s _ hv
-  have hsm : (Region.field x arrayStoreKey).mem ρ h s = true := by simp [Region.mem, hs]
-  refine ⟨s, ?_⟩
-  rcases ha with rfl | ⟨e, he, hem, hh⟩
-  · exact ⟨ls, hs, hv', hn⟩
-  · rcases (hh.mono (hΦ e he s hsm hem) : Change.grow.Holds _ _ _) with rfl | ⟨ls₁, ls', h₁, rfl, hd, -⟩
-    · exact ⟨ls, hs, hv', hn⟩
-    · cases h₁; exact ⟨ls', hs, hv', hd n hn⟩
+  refine dense_support hd fun e he l v hm hv => ?_
+  simp only [List.mem_singleton] at he
+  subst he
+  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+  refine ⟨v', hv', ?_⟩
+  rcases ha with rfl | ⟨f, hf, hfm, hh⟩
+  · exact Change.Holds.refl _ _ _
+  · exact hh.mono (hΦ f hf l hm hfm)
 
 /-- The stability check of `Dense` under a closed footprint with no
 knowledge: `class(value)` entries are apart from the store by class, every

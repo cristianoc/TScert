@@ -206,6 +206,13 @@ def Allowed (Φ : Footprint) (ρ : Env) (h : Heap) (l : Nat) (v v' : Val) : Prop
 def Post (Φ : Footprint) (ρ : Env) (h h' : Heap) : Prop :=
   h.length ≤ h'.length ∧ ∀ l v, h[l]? = some v → ∃ v', h'[l]? = some v' ∧ Allowed Φ ρ h l v v'
 
+/-- Every location of every region of `S`, read at `h`, changes from `h` to
+`h'` at most by its entry's change: what a fact's support tolerates. Locations
+outside `S` may change arbitrarily. -/
+def Supported (S : Footprint) (ρ : Env) (h h' : Heap) : Prop :=
+  ∀ e ∈ S, ∀ l v, e.1.mem ρ h l = true → h[l]? = some v →
+    ∃ v', h'[l]? = some v' ∧ e.2.Holds h.length v v'
+
 theorem Post.refl (Φ : Footprint) (ρ : Env) (h : Heap) : Post Φ ρ h h :=
   ⟨Nat.le_refl _, fun _ v hv => ⟨v, hv, .inl rfl⟩⟩
 

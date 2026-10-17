@@ -4,10 +4,11 @@ import Verification.Semantics.FootprintProvenance
 import Verification.Semantics.HeapFacts
 import Verification.Types.PositiveNormalization
 
-/-! Controls for the footprint lemmas: each counterexample a design review
-found against an earlier statement, run against the decision procedures or
-stated as a theorem, and the axiom check of the lemmas themselves, which
-nothing in the acceptance path uses yet. -/
+/-! Controls for the footprint lemmas. Each counterexample a design review
+found against an earlier statement is a theorem refuting that statement, so a
+definition changed back to the false form fails here. The file ends with the
+axiom check of every footprint theorem, which nothing in the acceptance path
+uses yet. -/
 namespace Verification.Footprints.Controls
 
 /-- Slot 0 holds an array whose store is location 0. -/
@@ -25,16 +26,19 @@ private def h₁ : Heap := [.arr [some 2], .nul, .nul]
 private def h₂ : Heap := [.arr [some 2], .nul, .tru]
 private def elemsValue : TransportEvidence := ⟨fun _ => false, fun x => x == 0⟩
 
-#guard postB Φelems arr0 h₀ h₁
-#guard postB Φelems arr0 h₁ h₂
-#guard !postB Φelems arr0 h₀ h₂
 #guard postB (Φelems ++ transportAll elemsValue Φelems) arr0 h₀ h₂
+
+/-- The two-step rule without transport is false. -/
+theorem union_composition_false :
+    ¬ ∀ (Φ : Footprint) (ρ : Env) (a b c : Heap), Post Φ ρ a b → Post Φ ρ b c → Post Φ ρ a c := by
+  intro H
+  have h := H Φelems arr0 h₀ h₁ h₂ (postB_iff.mp (by decide)) (postB_iff.mp (by decide))
+  exact absurd (postB_iff.mpr h) (by decide)
 
 /-! ## Inclusion needs evidence valid at the entry heap
 
-At `h` the field holds a value, at `h₀` a store. Class evidence that holds
-at `h` justifies the inclusion of `Φp` in `Φq`, and the composed claim
-fails; the same evidence fails at `h₀`, where `Post.compose` requires it. -/
+At `g` the field holds a value, at `g₀` a store. Class evidence true at `g`
+justifies the inclusion of `Φp` in `Φq`, and the composed claim fails. -/
 
 private def fieldK : Env := fun i => if i = 0 then .objAt [("k", 0)] .absent 9 else .undef
 private def g₀ : Heap := [.arr []]
@@ -43,47 +47,141 @@ private def Φp : Footprint := [(.field 0 "k", .any)]
 private def Φq : Footprint := [(.cls .value, .any)]
 private def valueK : ClassEvidence := fun x k => if x = 0 ∧ k = "k" then some .value else none
 
-#guard postB Φp fieldK g₀ g
-#guard postB [] fieldK g g
-#guard !postB Φq fieldK g₀ g
-#guard Footprint.le valueK (Φp ++ transportAll ⟨fun _ => false, fun _ => false⟩ []) Φq
-#guard classOkB valueK fieldK g [0] ["k"]
-#guard !classOkB valueK fieldK g₀ [0] ["k"]
+theorem valueK_ok_current : ClassOk valueK fieldK g := by
+  intro x k c l hc hl _
+  simp only [valueK] at hc
+  split at hc
+  · rename_i hxk
+    obtain ⟨rfl, rfl⟩ := hxk
+    cases hc
+    simp [fieldK, fieldsOf] at hl
+    subst hl
+    decide
+  · cases hc
+
+theorem valueK_fails_entry : ¬ ClassOk valueK fieldK g₀ := by
+  intro h
+  have := h 0 "k" .value 0 (by simp [valueK]) (by simp [fieldK, fieldsOf]) (by decide)
+  exact absurd this (by decide)
+
+/-- Composition with class evidence valid at the current heap, instead of the
+entry heap, is false. -/
+theorem current_heap_compose_false :
+    ¬ ∀ (Φp Φn Φq : Footprint) (cl : ClassEvidence) (ρ : Env) (a b c : Heap) (ev : TransportEvidence),
+      Post Φp ρ a b → Post Φn ρ b c → FreshOk ev.fresh ρ a.length → ElemsValueOk ev.elemsValue ρ b →
+      Footprint.le cl (Φp ++ transportAll ev Φn) Φq = true → ClassOk cl ρ b → Post Φq ρ a c := by
+  intro H
+  have h := H Φp [] Φq valueK fieldK g₀ g g ⟨fun _ => false, fun _ => false⟩
+    (postB_iff.mp (by decide)) (Post.refl _ _ _) (fun _ h => by cases h)
+    (fun _ h => by cases h) (by decide) valueK_ok_current
+  exact absurd (postB_iff.mpr h) (by decide)
 
 /-! ## Freshness of a store says nothing of its elements
 
 Slot 0's own location is 5, at least mark 1; slot 1's typed field `f` is
-location 1, below mark 1. The store at 5 lists location 1. So slot 0's own
-locations are apart from slot 1's typed field, and its listed elements are
-not. -/
+location 1, below mark 1. The store at 5 lists location 1. -/
 
 private def apart : Env := fun i =>
   if i = 0 then .objAt [(arrayStoreKey, 5)] .absent 9
   else if i = 1 then .objAt [("f", 1)] .absent 9 else .undef
 private def heap5 : Heap := [.nul, .nul, .nul, .nul, .nul, .arr [some 1]]
+private def apartStamps : Stamps :=
+  ⟨fun x => if x = 0 then some 1 else none, fun y => if y = 1 then some 1 else none⟩
+private def typedF : Nat → List PropKey := fun y => if y = 1 then ["f"] else []
+private def μ5 : Nat → Nat := fun i => if i = 0 then 0 else 5
 
-#guard (Region.own 0).mem apart heap5 5 && !(Region.own 0).mem apart heap5 1
-#guard (Region.field 1 "f").mem apart heap5 1
-#guard (Region.elems 0).mem apart heap5 1
+theorem apart_stamps_hold : StampsHold apartStamps typedF μ5 apart := by
+  refine ⟨fun x m ha l hl => ?_, fun y m hb k hk l hl => ?_⟩
+  · simp only [apartStamps] at ha
+    split at ha
+    · rename_i hx; subst hx; cases ha
+      simp [apart, fieldsOf] at hl; subst hl; decide
+    · cases ha
+  · simp only [apartStamps] at hb
+    split at hb
+    · rename_i hy; subst hy; cases hb
+      simp [typedF] at hk; subst hk
+      simp [apart, fieldsOf] at hl; subst hl; decide
+    · cases hb
+
+/-- Separation by `after` of every region rooted at a slot, its listed
+elements included, is false. -/
+theorem elems_separation_false :
+    ¬ ∀ (st : Stamps) (typed : Nat → List PropKey) (μ : Nat → Nat) (ρ : Env) (h : Heap)
+        (x y m m' l : Nat) (k : PropKey) (l' : Nat),
+      StampsHold st typed μ ρ → (∀ i j, i ≤ j → μ i ≤ μ j) → st.after x = some m →
+      st.before y = some m' → m' ≤ m → (Region.elems x).mem ρ h l = true → k ∈ typed y →
+      (fieldsOf (ρ y)).lookup k = some l' → l ≠ l' := by
+  intro H
+  exact H apartStamps typedF μ5 apart heap5 0 1 1 1 1 "f" 1 apart_stamps_hold
+    (fun i j hij => by simp only [μ5]; split <;> split <;> omega) rfl rfl (Nat.le_refl _)
+    (by decide) (by simp [typedF]) (by simp [apart, fieldsOf]) rfl
 
 /-! ## Mark maps
 
-Source stamps: `after 0 = 1`, `before 1 = 2`, with marks `0, 5, 10`; one
-location may be in both regions (7). A target that merges marks 1 and 2
-would make the regions apart; every way to state it is refused, as are a
-reordering and a moved mark 0. -/
+Source stamps: `after 0 = 1`, `before 1 = 2`, with marks `0, 5, 10`, and
+location 7 both an own location of slot 0 and slot 1's typed field. A target
+merging marks 1 and 2 would make them apart. The check refuses every way to
+state it, as it refuses a reordering and a moved mark 0, and each merge it
+refuses is false. -/
 
 private def source : Stamps := ⟨fun x => if x = 0 then some 1 else none, fun y => if y = 1 then some 2 else none⟩
 private def merged : Stamps := ⟨fun x => if x = 0 then some 1 else none, fun y => if y = 1 then some 1 else none⟩
-private def typedF : Nat → List PropKey := fun y => if y = 1 then ["f"] else []
 
 #guard stampEdgeOk ⟨[0, 1, 2], id⟩ source source typedF typedF [0, 1]
 #guard !stampEdgeOk ⟨[0, 1], id⟩ source merged typedF typedF [0, 1]
 #guard !stampEdgeOk ⟨[0, 2], id⟩ source merged typedF typedF [0, 1]
 #guard !stampEdgeOk ⟨[0, 2, 1], id⟩ source source typedF typedF [0, 1]
 #guard !stampEdgeOk ⟨[1, 1, 2], id⟩ source source typedF typedF [0, 1]
--- weakening in the right direction is admitted: `after` to an earlier mark, `before` to a later one
+-- weakening in its own direction is admitted: `after` to an earlier mark, `before` to a later one
 #guard stampEdgeOk ⟨[0, 1, 2], id⟩ source ⟨fun x => if x = 0 then some 0 else none, source.before⟩ typedF typedF [0, 1]
+
+private def μ0510 : Nat → Nat := fun i => if i = 0 then 0 else if i = 1 then 5 else 10
+private def shared7 : Env := fun i =>
+  if i = 0 then .objAt [("g", 7)] .absent 9 else if i = 1 then .objAt [("f", 7)] .absent 9 else .undef
+
+theorem merged_marks_unsound :
+    StampsHold source typedF μ0510 shared7 ∧
+      ¬ StampsHold merged typedF (fun i => μ0510 (markAt [0, 1] i)) shared7 ∧
+      ¬ StampsHold merged typedF (fun i => μ0510 (markAt [0, 2] i)) shared7 := by
+  refine ⟨⟨fun x m ha l hl => ?_, fun y m hb k hk l hl => ?_⟩, fun h => ?_, fun h => ?_⟩
+  · simp only [source] at ha
+    split at ha
+    · rename_i hx; subst hx; cases ha
+      simp [shared7, fieldsOf] at hl; subst hl; decide
+    · cases ha
+  · simp only [source] at hb
+    split at hb
+    · rename_i hy; subst hy; cases hb
+      simp [typedF] at hk; subst hk
+      simp [shared7, fieldsOf] at hl; subst hl; decide
+    · cases hb
+  · have := h.2 1 1 rfl "f" (by simp [typedF]) 7 (by simp [shared7, fieldsOf])
+    exact absurd this (by decide)
+  · have := h.1 0 1 rfl 7 (by simp [shared7, fieldsOf])
+    exact absurd this (by decide)
+
+/-! ## Density depends on its store alone
+
+Every slot names store location 0. Location 1 shrinks; every region that
+covers it also covers location 0, so no footprint keeping location 0 within
+`grow` states the change, and density survives it. -/
+
+private def store0 : Env := fun _ => .objAt [(arrayStoreKey, 0)] .absent 9
+
+theorem dense_survives_outside_support :
+    Dense 0 1 store0 [.arr [some 2], .arr [some 2], .nul] ∧
+      Dense 0 1 store0 [.arr [some 2], .arr [], .nul] := by
+  have hd : Dense 0 1 store0 [.arr [some 2], .arr [some 2], .nul] :=
+    ⟨0, [some 2], by simp [store0, fieldsOf], rfl,
+      ⟨by simp, fun i hi => by cases i with | zero => simp | succ i => omega⟩⟩
+  refine ⟨hd, dense_support hd fun e he l v hm hv => ?_⟩
+  simp only [List.mem_singleton] at he
+  subst he
+  simp only [Region.mem, store0, fieldsOf, List.lookup, beq_self_eq_true, beq_iff_eq,
+    Option.some.injEq] at hm
+  subst hm
+  exact ⟨v, by simpa using hv, Change.Holds.refl _ _ _⟩
 
 /-! ## Classes need contracts -/
 
@@ -139,16 +237,21 @@ theorem elems_class_needs_two_levels :
     exact ⟨_, rfl, fun _ _ => trivial⟩
   | l + 2, hl => simp at hl
 
-/-! ## The lemmas rest on the standard axioms -/
+/-! ## The lemmas rest on the standard axioms
+
+Every theorem of the `Footprints` namespace, these controls included. -/
 
 open Lean Elab Command in
 run_cmd do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
-  for name in [``Post.compose, ``transport_sound, ``Post.mono, ``Post.empty_iff, ``Post.all_iff,
-      ``postB_iff, ``stamps_transport, ``stamps_separate, ``MarksOk.rename, ``MarksOk.push,
-      ``alloc_after, ``typed_below, ``before_of_typed, ``contract_class, ``contract_store,
-      ``contract_class_entry, ``dense_class, ``dense_stable, ``stableDenseClosed_sound,
-      ``elems_class, ``elems_class_needs_two_levels] do
+  let env ← getEnv
+  let names := env.constants.fold (init := #[]) fun acc n ci =>
+    match ci with
+    | .thmInfo _ => if (`Verification.Footprints).isPrefixOf n then acc.push n else acc
+    | _ => acc
+  if names.size < 50 then
+    throwError "the footprint axiom check found only {names.size} theorems"
+  for name in names do
     let used ← liftCoreM <| collectAxioms name
     for axiom_ in used do
       unless standard.contains axiom_ do
