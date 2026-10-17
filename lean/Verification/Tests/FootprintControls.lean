@@ -2,7 +2,6 @@ import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Verification.Semantics.FootprintProvenance
 import Verification.Semantics.ClosedFootprints
-import Verification.Programs.FootprintTyping
 import Verification.Semantics.FootprintNatives
 import Verification.Semantics.HeapFacts
 import Verification.Types.PositiveNormalization
@@ -271,24 +270,6 @@ theorem elems_class_needs_two_levels :
     subst hl
     exact ⟨_, rfl, fun _ _ => trivial⟩
   | l + 2, hl => simp at hl
-
-/-! ## Readonly arrays have a typed store
-
-A readonly array's store is a view, a writable one's an invariant field.
-Either counts in each alternative, so the store is typed for each, and for a
-union of a writable and a readonly array, where it is invariant in one
-alternative and a view in the other. `length` is never a typed view. -/
-
-private def readonlyArr : PositiveNormalization.Clause Nat := PositiveNormalization.arrayClauseOf 0 1 [] true
-private def writableArr : PositiveNormalization.Clause Nat := PositiveNormalization.arrayClauseOf 0 1 [] false
-
-#guard typedOperand [readonlyArr] CallArguments.arrayStoreField
-#guard typedOperand [writableArr] CallArguments.arrayStoreField
-#guard typedOperand [writableArr, readonlyArr] CallArguments.arrayStoreField
-#guard typedOperand [readonlyArr, writableArr] CallArguments.arrayStoreField
--- neither invariant in every alternative nor a view in every one
-#guard !HeapExpressionRules.fieldOperand [writableArr, readonlyArr] CallArguments.arrayStoreField
-#guard !typedOperand [readonlyArr] lengthKey
 
 /-! ## The stability check
 

@@ -353,15 +353,8 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
  * `setTime`) state `{value: any, store: keep}`: they compare keys by
  * SameValueZero or take a number, run no code, and write only the receiver's
  * internal slots, which hold values and no array store. `forEach`, which
- * calls its callback, states none. */
-// Footprints (SOURCE-CONTRACTS.md, "Native footprints"): a collection's state
-// is its own locations; `new Set()` and `new Map()` allocate all of it. The
-// members that change a collection have the footprint `state(receiver): any`,
-// the readers (`size` and `has` included) the empty one. An iterator's state
-// is its own position; it holds the collection through an immutable hidden
-// field and reads the collection's state at every step, so it observes later
-// changes; a step's footprint is `state(self): any`, which leaves the
-// collection's state unchanged.
+ * calls its callback, states none (SOURCE-CONTRACTS.md, "Native
+ * footprints"). */
 const changesValues = footprintEffect({ value: "any", store: "keep" });
 export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>> = {
   Set: [

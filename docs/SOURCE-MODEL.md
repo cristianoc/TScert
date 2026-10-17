@@ -334,8 +334,10 @@ Unrestricted `find` and `findIndex` callbacks receive `T | undefined`: a prior c
 shrink even an initially dense array through another reference, while these
 methods visit the original index range. `map` visits only present indices,
 but shrinking its source can leave holes in its result. Separate overloads consume
-a certified callback at the empty footprint: `find`/`findIndex` can then pass `T`,
-and `map` produces a dense result from its dense receiver. The fresh result
+a certified callback: `find`/`findIndex` at the empty footprint can then pass `T`,
+and `map` at each footprint that keeps dense prefixes
+([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)) produces a dense result
+from its dense receiver. The fresh result
 is assigned the readable `U[]` lifetime contract, so it remains writable at
 the source type even when `U` admits holes. These are ordinary
 qualified callback types, including when the callback is returned or bound.

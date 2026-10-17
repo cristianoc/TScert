@@ -107,13 +107,8 @@ function splitResult(shape: RegExpShape | null): TypeTerm {
  * global nor sticky, and where it is, `{value: any, store: keep}`: they
  * leave `lastIndex`, a location holding a number, where the last match
  * ended (0 after the last). The conservative shape, whose flags are not
- * read, and a structural regex's members are any value's and state none.
- *
- * Footprints (SOURCE-CONTRACTS.md, "Native footprints"): a native regex's
- * state is its own locations, `lastIndex` the only mutable one. The members
- * that write `lastIndex` have the footprint `state(receiver): any`; the
- * others the empty footprint, by their own audits. A match iterator's state
- * is its own locations and its clone's, which it alone references. */
+ * read, and a structural regex's members are any value's and state none
+ * (SOURCE-CONTRACTS.md, "Native footprints"). */
 function members(shape: RegExpShape | null, keys: RegExpKeys, native: boolean): Field[] {
   const exec = execResult(shape);
   const optionalNumber = either(atom("number"), atom("undefined"));

@@ -20,9 +20,8 @@ design, not its progress.
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
-| [Footprints](#footprints) | open: increments 1 to 3 of 6 done | the seven programs of [FOOTPRINTS](docs/FOOTPRINTS.md#seven-example-programs) are decided as stated there, and every framing rule is an instance of the stability check |
-| [The match iterator's state](#footprints) | open | a region over a hidden field states the match iterator's state |
-| [Element freshness](#footprints) | open | `freshElems` is a fact kind with its support lemma and its maintenance proved |
+| [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound, and an array literal with a spread part is within the empty footprint |
+| [Footprint precision](#footprints) | deferred | a retained program refused because the rule does not separate arrays verifies |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open | a Lean theorem composes units certified against each other's signatures |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
@@ -32,7 +31,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/`, 7 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 8 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -86,30 +85,34 @@ effect. A program with an arbitrary callback promising readable `U[]` for every
 Effect inference remains conservative for some rest wrappers, call forms and
 nested heap operations. Expression scheduling alone does not supply the missing
 effect derivation. Code that writes only locations it allocated preserves the
-heap it was called with, but each node of its graph is checked against a
-closed footprint from its own entry heap: a destructive mutator such as `pop`
-called on an array the code allocated is refused at any footprint that keeps
-array stores. Certifying it needs the knowledge of which locations were
-allocated since entry and call effects stating which locations a call may
-write (its receiver's own). A call of a value holding a fixed
+heap it was called with, but a body's checked footprint does not separate
+those from older ones ([footprint precision](#footprints)). A call of a value holding a fixed
 signature and its variadic extension, a module constant read as a value
 elsewhere, is not certified preserving: the selected call's evidence is no
 qualified application at the fixed signature. Keep the source targets and their
 negative controls when extending the body-effect checker.
 
 <a id="footprints"></a>
-**Footprints.** [FOOTPRINTS](docs/FOOTPRINTS.md) designs one mechanism for
-keeping heap-dependent facts across writes, calls and callbacks: each action
-states a footprint, and a fact survives it when the stability check accepts.
-It closes the effect inference gaps of [contract
-completeness](#restoring-completeness) by footprints relative to the code's
-entry heap and freshness stamps, and lets a `map` callback write state other
-than the mapped array. Its increments are listed in
-[FOOTPRINTS](docs/FOOTPRINTS.md#increments). Two pieces of the native and
-relational parts are open beside them: the match iterator's state, its own
-locations and its regex clone's, needs a region over a hidden field; and an
-array built in the code needs a maintained fact that its element locations
-are fresh, so that writes to its elements transport to nothing.
+**Footprints.** [FOOTPRINTS](docs/FOOTPRINTS.md) states the mechanism: a
+construct's fact, the operations proved to keep it, stated as closed
+footprints, and Lean's node-by-node check that a callback, with what it
+calls, stays within one. The checked forms are inspections, typed writes of
+fields holding values, and fixed calls, variadic calls without spreads and
+constructions at a selected signature. Left open:
+
+- the other application forms (a variadic call with spreads, a variadic
+  construction, a call of a callable object, a packed call) consume no
+  footprint, so a bounded body refuses them;
+- an array element write has no bound; the fragment writes elements only at
+  proved index singletons, and no measured program needs one;
+- an array literal with a spread part is no inspection, so a bounded body
+  refuses it: `record-render.mts`'s `mathTokens`
+  (`[...text.matchAll(token)]`), on which `math` and its callers depend.
+
+**Footprint precision** is deferred
+([FOOTPRINTS](docs/FOOTPRINTS.md#deferred-extra-precision)): separating one
+array from another, so that `pop` on an array the callback allocated is
+admitted.
 
 <a id="keys-known-only-at-run-time"></a>
 **Keys known only at run time.** A write at a string key known only at run
@@ -253,33 +256,34 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 7 verify; the first blockers there are a callback writing only
-locations it allocated, a `let` cell or a fresh regex's `lastIndex`, which
-the effect checker does not certify (see [contract
-completeness](#restoring-completeness); 8: effects, tests, math, mathRoles,
-lowering, rules, section and card, through `esc`, `highlight` and
-`afterRelation`), a `map` callback running a child process, whose effect
-no contract bounds to locations other than the source's (group), an element read a length
-guards (`paragraphs[paragraphs.length - 1]`, `guarded-element-read-refused`,
-2: parseTrailers, parseRecord), a conditional type over a type parameter, `KeysOf<T>` (2,
-lowering-dump), a closure claimed outside its parameter's contextual
-annotation (2: summary, pageBody), and a nested conditional of
-literals whose type the producer widens (mathTokens): the producer types a
-callback's object literal before it solves `map`'s `U` from the call's
-expected result, so the literal's fields widen to `string` and `U` becomes
-the union of the widened record and the expected element type, which no
-mutable array of the expected type admits. TypeScript solves `U` from the
-return context first and types the literal against it.
+dump, 8 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
+the same-file declarations it uses). The first blockers of the others in
+`dev/`:
 
-Behind the effect question the callback chains of `effects`, `mathRoles`
-and the five slices calling `math` stop at three more forms (2026-10-17,
-probes, and a copy of `record-render.mts` with its write forms replaced by
-write-free ones of the same types, which verifies 8 of 23): an optional
-chain, which the producer never proposes heap-preserving
-(`heap_preserving_expr`), in `afterRelation`'s condition; `new Set` of a
-string, the parameter the overlay states only at an array, in the module
-constants `BINDERS` and `RELATIONS`; and the literal widening of
-`mathTokens` above.
+- an array literal spreading a regex's matches, `[...text.matchAll(token)]`,
+  which a bounded body refuses ([footprints](#footprints)), in `mathTokens`:
+  `math`'s `map` callback calls it, so the callback is bounded by nothing and
+  its result may hold holes, which stops `math` and the seven slices calling
+  it (lowering, rules, effects, section, summary, card, pageBody);
+- `new Set` of a string, the parameter the overlay states only at an array,
+  in the module constants `BINDERS` and `RELATIONS` (mathRoles);
+- a nested conditional of literals whose type the producer widens
+  (mathTokens): the producer types a callback's object literal before it
+  solves `map`'s `U` from the call's expected result, so the literal's
+  fields widen to `string` and `U` becomes the union of the widened record
+  and the expected element type, which no mutable array of the expected type
+  admits. TypeScript solves `U` from the return context first and types the
+  literal against it;
+- a `map` callback running a child process, whose effect no contract bounds
+  (group);
+- an element read a length guards (`paragraphs[paragraphs.length - 1]`,
+  `guarded-element-read-refused`; parseTrailers, parseRecord);
+- a top-level `if` and a conditional type over a type parameter, `KeysOf<T>`
+  (lowering-dump).
+
+In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
+verify; the others stop at a namespace import, Node's `Buffer` type, `join`
+of `node:path`, `Number` read as a value, or a top-level block.
 
 Two forms of the record tools are rewritten for a verifier limit, not
 for a departure from the fragment; each rewrite is reverted when its limit

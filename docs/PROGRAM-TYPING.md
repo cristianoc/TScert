@@ -656,7 +656,7 @@ A plain effect has no promise, so its result operand is the result's type. A
 construction with value operands runs within its selected signature's
 footprint $`\varepsilon`$ (`CallEffects.construct_safe`), which is how a body
 checked against a bound consumes it, as it consumes a call's
-([FOOTPRINTS.md](FOOTPRINTS.md#composition)).
+([FOOTPRINTS.md](FOOTPRINTS.md#the-checked-callback-contract)).
 
 A static field is read and written as a callable object's bag field is
 (`readCallable`, `writeCallable`, over the clause's bag, `Clause.bag`), a
