@@ -21,8 +21,8 @@ design, not its progress.
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
-| [Footprint precision](#footprints) | design under review ([arrays a callback allocated](docs/FOOTPRINTS.md#deferred-extra-precision)) | `dev/record-render.mts`'s `effects` verifies |
-| [Several stated forms of one declaration](docs/SOURCE-CONTRACTS.md#library-globals) | design under review | `new Set` of a string verifies (`dev/record-render.mts`'s `mathRoles`) |
+| [Footprint precision](#footprints) | open: fresh array storage designed ([FOOTPRINTS](docs/FOOTPRINTS.md#deferred-extra-precision)) | `dev/record-render.mts`'s `effects` verifies |
+| [Several stated forms of one declaration](docs/SOURCE-CONTRACTS.md#library-globals) | open: designed | `new Set` of a string verifies (`dev/record-render.mts`'s `mathRoles`) |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open | a Lean theorem composes units certified against each other's signatures |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |

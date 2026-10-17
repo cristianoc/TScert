@@ -249,47 +249,47 @@ are in `Footprints.lean` (`Post`, `Post.compose`, `transport_sound`) and
 programs, nor the repository code measured, needs them; a retained program
 refused for this reason is the trigger.
 
-**Design, under review: arrays a callback allocated.** The trigger is
-`dev/record-render.mts`'s `effects`, whose `map` callback reads
-`const rest = parts(l)`, a fresh array (`split` then `filter`), and calls
-`rest.shift()`; `section`, `card` and `pageBody` call it. `shift` is
-`{value: any, store: any}`, so the callback is unbounded and the result may
-hold holes, although only a store allocated during the call changes. The
-design keeps the fact and the stable set, and refines what a node's run is
-measured against:
+**Design: fresh array storage.** The trigger is `dev/record-render.mts`'s
+`effects`, whose `map` callback reads `const rest = parts(l)`, the store of a
+fresh array (`parts` returns `split(…).filter(…)`), and calls `rest.shift()`;
+`section`, `card` and `pageBody` call it. `shift` states
+`{value: any, store: any}`, so the callback is unbounded, although only a
+store allocated during the call changes. The guarantee needed is weaker than
+freshness of the array: its **store** was allocated after the callback's
+entry, so a destructive operation on it changes no store the entry heap
+held. The callback is then within `{value: any, store: keep}`, which keeps
+density; the empty footprint is not claimed, since the operation may change
+any location holding a value (`array_native_post_any`).
 
-1. **Entry-relative footprints.** A body within $`\Phi`$ means every run from
-   its entry heap $`h_0`$ meets $`\Phi.\mathrm{Holds}(h_0, h)`$, which
-   constrains only the locations below $`|h_0|`$. A node may break $`\Phi`$
-   step by step as long as it changes only locations at or above $`|h_0|`$:
-   the check composes nodes against $`h_0`$, not against each node's start
-   (`Closed.Holds.trans` is replaced by composition through the entry heap,
-   `Post.compose` restricted to closed footprints).
-2. **Fresh slots.** A slot is fresh when its own locations, and its store's
-   element list, lie at or above $`|h_0|`$: an allocation's result
-   (`alloc_after`, `arrLit_fresh`), and a call's result where the selected
-   signature states a fresh result. A fact `fresh(x)` is kept along edges
-   and through writes, and dropped where the slot is redefined.
-3. **Fresh results on signatures.** An effect gains a flag: the result's
-   own locations, and an array's store, are allocated by the call. It holds
-   of `split`, `filter`, `map`, `slice`, `flatMap`, `concat` (audited:
-   `ArraySpeciesCreate`, ordinary construction) and of a declaration whose
-   every return is a fresh slot (checked). Covering requires the source's
-   flag where the target states it.
-4. **The destructive natives at a fresh receiver.** `pop`, `shift`,
-   `reverse`, `splice` and a shorter `length` change only the receiver's
-   store and its elements; at a fresh receiver those lie at or above
-   $`|h_0|`$, so the call is within the empty footprint relative to $`h_0`$
-   (proved of the specification steps from `array_native_post_any`, with
-   the receiver's freshness; audited: nothing else changes).
+1. **Store freshness only.** A slot's store is fresh when the store location
+   of its array lies at or above the entry heap's length. Element locations
+   are not tracked: a fresh store may list old element locations
+   (`FootprintProvenance.lean`).
+2. **An entry-relative analysis.** A fact `freshStore(x)` holds after an
+   allocation of an array, after a call whose selected signature states a
+   fresh-store result, and through copies and immutable bindings; a join
+   keeps it where every incoming edge has it, and a reassignment or a write
+   of the slot drops it. Lean checks each fact on every edge.
+3. **Fresh-store results.** A signature's effect may state that its result's
+   store is fresh. Natives: `split` and `filter` (audited: ordinary
+   construction). A declaration states it where every normal return returns
+   a fresh-store slot, checked by the same edge analysis, independently of
+   the shortcuts that accept an unrestricted effect or a pure body. Covering
+   a signature that states it requires the source to state it.
+4. **Destructive natives at a fresh store.** `pop`, `shift` and `reverse`
+   state that they change only their receiver's store, destructively, and
+   element contents. At a receiver whose store is fresh, the call's run
+   from the entry heap is within `{value: any, store: keep}`. A fresh
+   receiver narrows only these natives' effects, never an arbitrary call's.
+   `splice` and length writes are left out.
 
-The rule users see gains: `pop`, `shift`, `reverse` and `splice` of an array
-the callback created, or obtained from a call stating a fresh result, are
-allowed. Controls: `rest.shift()` with `rest` a parameter or a captured
-array is refused; a declaration claimed to return a fresh result that
-returns its argument is refused; a fresh slot redefined to an old array
-loses the fact. This replaces neither the closed check nor `map_rely`, and
-adds no region beyond the fresh slots'.
+The producer's inference proposes the facts and the fresh-store results
+(`expression_closures.ml`). The rule users see gains: `pop`, `shift` and
+`reverse` of an array whose storage the callback created, directly or
+through a call stating a fresh result, are allowed. Controls: an old
+captured or parameter array; a reassigned slot; an alias of an old array;
+a join of a fresh and an old array; a declaration claimed to return a fresh
+store that returns its argument; a handler reached after the operation.
 
 **Provenance stamps** (`FootprintProvenance.lean`: marks, `after` and
 `before` stamps, `stamps_separate`) are the candidate replacement for the
