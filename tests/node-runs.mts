@@ -82,10 +82,23 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-map-literal-outside-element: the actual source returns a kind its type does not name");
   assert.equal(runExample("array-spread-named-union", `sizes({ kind: "dot" }, [{ kind: "line", length: 2 }])`), "0, 2",
     "array-spread-named-union: each element's size");
+  assert.equal(runExample("json-stringify-recursive", `JSON.stringify(serialized([{ a: { b: [] } }, 1]))`), '["{\\"a\\":{\\"b\\":[]}}","1"]',
+    "json-stringify-recursive: each value serialized");
+  // Each hook runs code of the client's that pops the array `map` visits, so
+  // the result has a hole below its length.
+  for (const [file, call] of [
+    ["invalid-json-stringify-tojson", "(() => { const xs = [1, 2, 3]; return wrong(xs, { toJSON() { xs.pop(); return \"\"; } }); })()"],
+    ["invalid-json-stringify-replacer", "(() => { const xs = [1, 2, 3]; return wrong(xs, (k, v) => { xs.pop(); return v; }); })()"],
+    ["invalid-error-options", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { get cause() { xs.pop(); return 0; } }); })()"],
+  ])
+    assert.equal(runExample(file, `(r => r.length === 3 && !(2 in r))(${call})`), true,
+      `${file}: the hook shrinks the mapped array, leaving a hole in the result`);
   assert.equal(runExample("map-stable-json-error", `JSON.stringify([quotedAll(["a"]), checkedAll([1, 2])])`),
     '[["\\"a\\""],[1,2]]', "map-stable-json-error: dense results");
   assert.throws(() => runExample("map-stable-json-error", "checkedAll([-1])"), /negative: -1/,
     "map-stable-json-error: the callback's throw is an outcome");
+  assert.equal(runExample("typeof-named-union-open-arms", `[nonString({ size: 2 }), nonString("x"), joined({ a: 1, b: 2 }), joined("y")].join()`),
+    "2,-1,3,-1", "typeof-named-union-open-arms: the undecided arms are read");
   assert.equal(runExample("typeof-named-union", `[showKey("a"), showKey({ symbol: 2 }), symbolOf({ symbol: 3 }), symbolOf("x")].join()`),
     "a,sym#2,3,-1", "typeof-named-union: each arm reads its own representation");
   assert.equal(runExample("logical-narrowing-past-reads",

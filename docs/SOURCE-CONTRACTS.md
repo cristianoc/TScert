@@ -1794,7 +1794,12 @@ declaration no library has, which joins the document with the entry:
 (`JSON.stringify`'s parameter). At a `JsonValue`, `JSON.stringify` reads own
 data properties, calls no `toJSON` and no getter, and allocates its string,
 so it states the empty footprint; so does `Error` at a string message, which
-it stores without conversion code (`map-stable-json-error`). An entry may
+it stores without conversion code (`map-stable-json-error`,
+`json-stringify-recursive`). Each is read with its one argument: a
+`toJSON` hook, a replacer and `Error`'s options run code of the client's,
+which may write what a footprint excludes
+(`invalid-json-stringify-tojson`, `invalid-json-stringify-replacer`,
+`invalid-error-options`, each run under Node; `invalid-json-stringify-space`). An entry may
 read a member as a test of the
 calculus (`test`), and the variable's declaration as the right operand of
 `instanceof`:

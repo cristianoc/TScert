@@ -58,24 +58,29 @@ let rec typeof_slice shape holds = function
   | Meet (t,_) when typeof_slice shape holds t = Atoms [] -> Atoms []
   | t -> t
 (* A declaration's arm stays on both arms of a `typeof` test, its shape not
-   known there. Where the test decides some atom of its definition, the
-   definition's atoms are sliced instead: `Key = string | { sym: number }`
-   where `typeof k === "string"` fails is `{ sym: number }`. A type with a
-   type parameter or an intersection stays as the plain slice leaves it. *)
+   known there. Where the test decides some arm of its definition, the
+   definition is sliced instead, arm by arm: `Key = string | { sym: number }`
+   where `typeof k === "string"` fails is `{ sym: number }`. A type
+   parameter's or an intersection's arm in a definition is sliced as
+   `typeof_slice` slices it, so it stays where the test cannot decide it. *)
 let typeof_refine declarations shape holds t =
   let sliced = typeof_slice shape holds t in
-  let rec plain = function
-    | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
   let rec named = function
     | Atoms xs -> List.exists (function Named _ -> true | _ -> false) xs
     | Union ts -> List.exists named ts | Rigid _ | Meet _ -> false in
-  if not (plain sliced && named sliced) then sliced else
-  match (try Some (flat_atoms declarations sliced) with Json.Error _ -> None) with
-  | None -> sliced
-  | Some atoms ->
-    (match typeof_slice shape holds (Atoms atoms) with
-     | Atoms kept when List.length kept < List.length atoms -> Atoms kept
-     | _ -> sliced)
+  if not (named sliced) then sliced else
+  let rec unfold seen = function
+    | Atoms xs -> List.fold_left union (Atoms []) (List.map (function
+        | Named (id,args) as a when not (List.mem id seen) ->
+          (match definition declarations id args with
+           | body -> unfold (id::seen) body
+           | exception Json.Error _ -> Atoms [a])
+        | a -> Atoms [a]) xs)
+    | Union ts -> List.fold_left union (Atoms []) (List.map (unfold seen) ts)
+    | t -> t in
+  let unfolded = unfold [] sliced in
+  let resliced = typeof_slice shape holds unfolded in
+  if resliced = unfolded then sliced else resliced
 (* Where `Array.isArray` holds, an open record's arm and `unknown`'s are an
    array of the built-ins: record types and `unknown` are of values meeting the
    array invariant, so one owning an array's store holds a possibly sparse
