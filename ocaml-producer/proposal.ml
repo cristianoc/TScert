@@ -59,6 +59,10 @@ let with_footprint footprint t = match t with
     Atoms [Shape {shape with calls=List.map (fun (s:signature) -> {s with call_effect={s.call_effect with footprint}}) calls}]
   | _ -> t
 
+(* A call of a signature the call applies: no quantified one, whose call is
+   an elimination of a scheme, and no packed rest. *)
+let applicable (s:signature) = s.quantified = [] && s.rest_pack = None
+
 (* The declarations whose signatures may state the empty footprint: plain
    ones, without a guard, a rest or binders of their own. *)
 let effect_candidate (g:Source.fn) = g.guard = None && not g.rest && g.quantified = []
@@ -67,24 +71,22 @@ let effect_candidate (g:Source.fn) = g.guard = None && not g.rest && g.quantifie
    claims as a closure's is (`Expression_closures`), else the one letting
    everything change. A proposal: Lean's check of the unit's graph
    establishes it. *)
-let declaration_footprint declarations names (claim:function_claim) =
+let declaration_footprint declarations values names (claim:function_claim) =
   let g = claim.source in
-  (* A call at an instance of a quantified callee is an elimination, whose
-     evidence is no qualified application: such a body is not proposed. *)
-  if not (effect_candidate g) || List.exists (fun (x:expression) -> x.instantiation <> None) claim.expressions
-  then top_footprint else
+  if not (effect_candidate g) then top_footprint else
   let callable (callee:expr) =
     match List.filter_map (fun (x:expression) -> if x.pos = callee.pos then Some x.type_ else None)
             claim.expressions with
     | [] -> None
     | types -> List.fold_left (fun acc t -> join_bound acc (match Type_queries.declared_head declarations [] t with
       | Atoms [Shape {calls;fields=[];indexes=[];elements=None}]
-        when calls <> [] && List.for_all (fun (s:signature) -> s.rest_pack=None) calls ->
+        when calls <> [] && List.for_all applicable calls ->
         Some (List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint)
           empty_footprint calls)
       | _ -> None)) (Some empty_footprint) types in
   let readable = List.map fst g.params @ names in
-  Option.value (footprint_stmts ~callable ~readable g.body) ~default:top_footprint
+  let iteration name = Option.bind (List.assoc_opt name values) iteration_footprint in
+  Option.value (footprint_stmts ~callable ~iteration ~readable g.body) ~default:top_footprint
 
 let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
   (* Footprints are proposed at the least fixpoint: every candidate is
@@ -92,12 +94,18 @@ let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
      what its body then changes, until a round raises none. Larger callee
      footprints make no body's smaller, and the footprints are finitely
      many, so the rounds terminate. *)
-  let names = List.map (fun (g:Source.fn) -> g.name) program.Source.functions @ List.map fst program.Source.values in
+  (* The module's functions, values and constants: reading one changes
+     nothing. *)
+  let constants = List.concat_map (fun (s:Source.stmt) -> match s.statement with
+    | Declare (false,bindings) -> List.map (fun (n,_,_) -> n) bindings
+    | _ -> []) program.Source.init in
+  let names = List.map (fun (g:Source.fn) -> g.name) program.Source.functions @ List.map fst program.Source.values
+    @ constants in
   let start = List.filter_map (fun (g:Source.fn) ->
     if effect_candidate g then Some (g.name,empty_footprint) else None) program.Source.functions in
   let rec rounds assumed =
     let proposal : Proposal_types.t = infer_assuming ~state flows program assumed in
-    let footprints = List.map (fun c -> c,declaration_footprint program.Source.declarations names c) proposal.functions in
+    let footprints = List.map (fun c -> c,declaration_footprint program.Source.declarations program.Source.values names c) proposal.functions in
     let raised = List.filter_map (fun ((c:function_claim),f) ->
       match List.assoc_opt c.source.name assumed with
       | Some a -> Some (c.source.name,join_footprint a f)

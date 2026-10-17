@@ -698,8 +698,20 @@ let join_footprint a b =
   {on_value=join_change a.on_value b.on_value;on_store=join_change a.on_store b.on_store}
 let join_bound a b = match a,b with Some a,Some b -> Some (join_footprint a b) | _ -> None
 let cell_write = Some {on_value=Any;on_store=Keep}
-let rec footprint_expr ~callable ~readable (e:expr) : footprint option =
-  let go = footprint_expr ~callable ~readable in
+(* The footprint a `for...of` runs its iteration within, read off the
+   iteration intrinsic's type: its call, which creates the iterator, then
+   each call of the step the iterator is. *)
+let iteration_footprint (t:ty) : footprint option =
+  let join_calls calls = List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint)
+    empty_footprint calls in
+  match t with
+  | Atoms [Shape {calls=(_ :: _ as calls);_}] ->
+    List.fold_left (fun acc (s:signature) -> join_bound acc (match s.result with
+      | Atoms [Shape {calls=(_ :: _ as steps);_}] -> Some (join_footprint s.call_effect.footprint (join_calls steps))
+      | _ -> None)) (Some empty_footprint) calls
+  | _ -> None
+let rec footprint_expr ~callable ~iteration ~readable (e:expr) : footprint option =
+  let go = footprint_expr ~callable ~iteration ~readable in
   let all es = List.fold_left (fun acc e -> join_bound acc (go e)) (Some empty_footprint) es in
   match e.node with
   | Id name -> if List.mem name readable then Some empty_footprint else None
@@ -726,24 +738,24 @@ let rec footprint_expr ~callable ~readable (e:expr) : footprint option =
      prototype, for a primitive) and invokes it. *)
   | Invoke ({node=Read (o,_);_} as callee,args,spreads,_) ->
     if spreads<>[] then None else join_bound (all (o :: args)) (callable callee)
-  | BlockBody body -> footprint_stmts ~callable ~readable body
+  | BlockBody body -> footprint_stmts ~callable ~iteration ~readable body
   | Unary _ | HasKey _ | InstanceTest _ | Build _
   | Write _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _ | New _
   | Optional _ | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> None
-and footprint_stmts ~callable ~readable = function
+and footprint_stmts ~callable ~iteration ~readable = function
   | [] -> Some empty_footprint
   | s::rest ->
-    let go = footprint_expr ~callable ~readable in
-    let block readable body = footprint_stmts ~callable ~readable body in
+    let go = footprint_expr ~callable ~iteration ~readable in
+    let block readable body = footprint_stmts ~callable ~iteration ~readable body in
     let tail () = block readable rest in
     match s.statement with
     | Declare (_,bindings) ->
       let rec add readable acc = function
         | [] -> join_bound acc (block readable rest)
         | (name,_,init)::more ->
-          add (name::readable) (join_bound acc (footprint_expr ~callable ~readable init)) more in
+          add (name::readable) (join_bound acc (footprint_expr ~callable ~iteration ~readable init)) more in
       add readable (Some empty_footprint) bindings
     | Return e | Effect e | Throw e -> join_bound (go e) (tail ())
     | If (c,a,b) -> join_bound (go c) (join_bound (block readable a) (join_bound (block readable b) (tail ())))
@@ -756,8 +768,11 @@ and footprint_stmts ~callable ~readable = function
     | Destructure (target,d,init) when pattern_reads target ->
       List.fold_left join_bound (go init)
         (Option.to_list (Option.map go d) @ List.map go (pattern_defaults target) @
-         [footprint_stmts ~callable ~readable:(pattern_names target @ readable) rest])
-    | Destructure _ | ForOf _ | Try _ | Closing _ -> None
+         [footprint_stmts ~callable ~iteration ~readable:(pattern_names target @ readable) rest])
+    | ForOf (name,_,iterate,iterable,body) ->
+      join_bound (go iterable) (join_bound (iteration iterate)
+        (join_bound (block (name::readable) body) (tail ())))
+    | Destructure _ | Try _ | Closing _ -> None
 
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow | "rem" -> Rem

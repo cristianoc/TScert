@@ -77,7 +77,7 @@
 import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots } from "./type-term.mts";
-import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
 export const awaitName = "%Await%";
@@ -284,12 +284,13 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // a fresh promise: a promise of the input's observation.
     [promiseResolveName]: () => ({ typeParams: [awaitable], type: fn([input], promise(observed)) }),
     [asyncCompleteName]: () => ({ typeParams: [], type: fn([], promise(atom("void"))) }),
-    // The array's iterator, fresh: its state is its own position. Each step
-    // reads the array's current length and an element, and writes only that
-    // position: the footprint `state(self): any` (SOURCE-CONTRACTS.md,
-    // "Native footprints").
+    // The array's iterator, fresh: creating it changes nothing, and its
+    // state is its own position, a number. Each step reads the array's
+    // current length and an element, and writes only that position:
+    // `{value: any, store: keep}` (SOURCE-CONTRACTS.md, "Native footprints").
     [iterateName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
-      type: fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }], step) }),
+      type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }],
+        { ...step, effect: footprintEffect({ value: "any", store: "keep" }) }), effect: emptyEffect } }),
     [promiseAllName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: promise(binder), span }],
         promise({ k: "array", presence: "dense", readonly: false, element: binder, span })) }),

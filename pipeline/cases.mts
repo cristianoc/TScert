@@ -118,6 +118,7 @@ export const cases: Case[] = [
   positive("map-stable-regexp-test", "a `map` callback testing a captured global regex: `test` writes its `lastIndex`, a location holding a number, within `{value: any, store: keep}`, which keeps the array's dense prefixes, so the result is dense"),
   negative("invalid-map-structural-replace", "a `map` callback replacing through a `RegExp` parameter, whose `[Symbol.replace]` may be any object's and change anything: the dispatch at it states no footprint, so the result may hold holes",
     /no derivation of its return-contract claim/),
+  positive("map-stable-for-of", "`map` callbacks looping with `for...of` over an array and pushing, and calling a declaration that replaces through global regexes: the iterator's step writes only its position, so each callback keeps every dense prefix"),
   positive("map-stable-regexp-replace", "a `map` callback replacing through a global regex literal: the dispatch states the footprint its target's `[Symbol.replace]` states, `{value: any, store: keep}`, so the result is dense"),
   negative("invalid-map-primitive-method-mutation", "a `map` callback calling a string's method and `pop` on the source: not preserving, so the result may hold a hole the loop reads",
     /source expression obligation at \[397,426\): evidence search failed: no derivation of its for-of-iterator claim/),

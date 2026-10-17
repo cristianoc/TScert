@@ -1546,8 +1546,10 @@ present and it lists no old element location it did not list before. A
 another's state, an iterator and its collection, holds the other through an
 immutable hidden field and lists the other's state as read, never as its own.
 The signatures above state closed footprints: the empty one, `all: any`,
-`map`'s four that keep dense prefixes, and `push`'s and `unshift`'s
-`{value: any, store: grow}`, the closed coarsening of their row below. The
+`map`'s four that keep dense prefixes, `push`'s and `unshift`'s
+`{value: any, store: grow}`, the closed coarsening of their row below, and
+the array iteration's: `%Iterate%` the empty footprint, its step
+`{value: any, store: keep}`, the closed coarsening of its row below. The
 footprints
 below are the specification of each native for the footprint mechanism:
 

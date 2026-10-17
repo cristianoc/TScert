@@ -1364,14 +1364,14 @@ for (const [file, marker, arity, accepted, footprint] of [
 
 {
   // A declaration's claimed footprint is established by its own unit's
-  // graph. `collect` verifies at its honest claims, steps an array iterator,
-  // which may change anything, and pushes onto its parameter. Claimed at
-  // any footprint other than the one letting everything change, evidence
-  // production refuses at a node of its body, and the evidence for the
-  // honest claims does not justify the forged ones.
+  // graph. `collect` steps an array iterator, which writes its position,
+  // and pushes onto its parameter: it is within `{value: any, store: grow}`
+  // and verifies there. Claimed at a footprint not covering that one,
+  // evidence production refuses at a node of its body, and the evidence for
+  // the honest claims does not justify the forged ones.
   const artifacts = run("optional-call-loop-cell");
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  for (const footprint of narrowerFootprints) {
+  for (const footprint of narrowerFootprints.filter((f) => f.value !== "any" || f.store === "keep")) {
     const claims = readClaims(artifacts);
     must(claims.functions.find(f => f.name === "collect"), "collect's claims").footprint = footprint;
     const name = `forged-declaration-footprint-${footprint.value}-${footprint.store}`;
@@ -1388,7 +1388,7 @@ for (const [file, marker, arity, accepted, footprint] of [
         `refused in the loop, not at ${at}`);
     }
   }
-  process.stdout.write("forged declaration footprints: each narrower than everything refused in the body's loop, in search and in checking\n");
+  process.stdout.write("forged declaration footprints: each not covering the body's refused in its loop, in search and in checking\n");
 }
 
 {

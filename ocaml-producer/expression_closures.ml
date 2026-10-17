@@ -226,16 +226,17 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         match (match latest_instance callee.pos with Some t -> Some t | None -> latest_claim callee.pos) with
         | Some t -> (match declared_head declarations [] t with
           | Atoms [Shape {calls;fields=[];indexes=[];elements=None}]
-            when calls <> [] && List.for_all (fun (s:signature) -> s.rest_pack=None) calls ->
+            when calls <> [] && List.for_all (fun (s:signature) -> s.quantified=[] && s.rest_pack=None) calls ->
             Some (List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint)
               empty_footprint calls)
           | _ -> None)
         | None -> None in
       (* Rest entries have a separate wrapper; its signature transport remains
          conservative until that lowering carries the inferred effect too. *)
+      let iteration name = Option.bind (module_type name) iteration_footprint in
       let bound = if rest then None else
-        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~callable ~readable d))
-          (footprint_expr ~callable ~readable body) defaults in
+        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~callable ~iteration ~readable d))
+          (footprint_expr ~callable ~iteration ~readable body) defaults in
       let call_effect = match bound with
         | Some footprint -> {Semantic.ordinary_effect with footprint}
         | None -> Semantic.ordinary_effect in

@@ -32,6 +32,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     ["map-stable-push", "twice([1, 2])", "[[1,1],[2,2]]"],
     ["map-stable-helper", `counts(["ab", "c"])`, "[2,1]"],
     ["map-stable-outer-cell", "runningTotals([1, 2, 3])", "[1,3,6]"],
+    ["map-stable-for-of", "doubled([[1, 2], [3]])", "[[2,4],[6]]"],
+    ["map-stable-for-of", "proses([\"a `b` c\"])", '["a   c"]'],
   ] as const)
     assert.equal(runExample(file, `((r) => Object.keys(r).length === r.length && JSON.stringify(r))(${call})`),
       expected, `${file}: the result is dense`);
