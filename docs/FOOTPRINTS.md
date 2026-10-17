@@ -143,8 +143,10 @@ by `Closed.Holds.trans` into the body's (`GraphCode.BoundState`,
 - a **selected call or construction** whose signature's footprint is within
   $`\Phi`$, its operands values (`selectedCallWithin`; proved:
   `selectedCall_sound`, through `CallEffects.call_safe` and
-  `CallEffects.construct_safe`): a fixed call, a variadic call without
-  spreads and a construction, each at the signature the evidence selects.
+  `CallEffects.construct_safe`): a fixed call, a variadic call and a
+  construction, each at the signature the evidence selects; a variadic
+  call's spreads read their stores in the heap the call starts in
+  (`spread_values_post`, `spread_head_post`).
 
 A node with an exceptional handler is refused: a handler could turn a
 throwing call into a normal return after mutation the bound does not track.

@@ -735,13 +735,14 @@ let rec footprint_expr ~callable ~iteration ~readable (e:expr) : footprint optio
      holding a value (Lean's typed write rule). *)
   | Assign (_,v) -> join_bound cell_write (go v)
   | Update (_,{node=Id _;_},r,_) -> join_bound cell_write (all (Option.to_list r))
-  | Call (callee,receiver,args,spreads,_) ->
-    if spreads<>[] then None else
+  (* A spread argument reads its operand's store, as an array literal's
+     spread part does. *)
+  | Call (callee,receiver,args,_,_) ->
     join_bound (all (callee :: Option.to_list receiver @ args)) (callable callee)
   (* A method call reads the member off its receiver (through a primitive's
      prototype, for a primitive) and invokes it. *)
-  | Invoke ({node=Read (o,_);_} as callee,args,spreads,_) ->
-    if spreads<>[] then None else join_bound (all (o :: args)) (callable callee)
+  | Invoke ({node=Read (o,_);_} as callee,args,_,_) ->
+    join_bound (all (o :: args)) (callable callee)
   (* A construction changes at most what every construct signature its
      callee may take states. *)
   | New (callee,_,args,spreads) ->

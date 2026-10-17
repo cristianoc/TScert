@@ -180,18 +180,20 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `valueOf` or `toString`, code of the client's. So each argument is
   // stated at the primitives, a hole a spread reads (`undefined`) included.
   // The result is a number: `NaN` if any argument converts to `NaN`, and
-  // `-Infinity` (`max`) or `Infinity` (`min`) of no argument.
-  ...["max", "min"].map((member): GlobalEntry => ({ global: "Math", member,
+  // `-Infinity` (`max`) or `Infinity` (`min`) of no argument. At primitives
+  // they run no code and write nothing: the empty footprint, as the
+  // `String` conversions below.
+  ...["max", "min"].map((member): GlobalEntry => ({ global: "Math", member, effect: emptyEffect,
     signature: `${member}(...values: number[]): number;`,
     stated: { binders: [], params: [], rest: primitive, result: atom("number") } })),
   // `String.fromCodePoint(...cs)` converts every argument with ToNumber, as
   // `Math.max` does, and throws a RangeError where the number is no integer
   // from 0 to 0x10FFFF, an outcome; otherwise its result is a string.
-  { global: "String", member: "fromCodePoint", signature: "fromCodePoint(...codePoints: number[]): string;",
+  { global: "String", member: "fromCodePoint", signature: "fromCodePoint(...codePoints: number[]): string;", effect: emptyEffect,
     stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
   // `String.fromCharCode(...cs)` likewise, each number taken modulo 2^16 to a
   // code unit, which never throws.
-  { global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;",
+  { global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;", effect: emptyEffect,
     stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
   // Tests of a number that convert nothing: `false` for any argument that is
   // not a number, an object included, whose methods are never read. They

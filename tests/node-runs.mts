@@ -38,6 +38,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     ["map-stable-set", `distinct([["a", "b", "a"], []])`, "[2,0]"],
     ["map-stable-spread", "padded([[1], [2, 3]])", "[[0,1,0],[0,2,3,0]]"],
     ["map-stable-named-callback", `[escapedAll(["a&b", "c"])]`, '["a&amp;b,c"]'],
+    ["map-stable-spread-call", "peaks([[1, 5], []])", "[5,0]"],
+    ["map-stable-spread-call", "boxedPeaks([{ values: [3, 200] }])", "[3]"],
     ["map-stable-spread", `matchCounts(["aba", "b"])`, "[2,0]"],
     ["map-stable-spread", `distinctCounts([["a", "a"], []])`, "[1,0]"],
     ["map-stable-spread", `codePoints(["h\u00e9llo"])`, "[5]"],
@@ -79,6 +81,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "set-string-construction: three letters, an \"a\" and a 1");
   assert.equal(runExample("invalid-set-string-at-number", `typeof [...digits("12")][0]`), "string",
     "invalid-set-string-at-number: the set at number holds strings");
+  assert.equal(runExample("invalid-map-spread-call-pop", "Object.keys(totals([[9]])).length"), 2,
+    "invalid-map-spread-call-pop: the result has three positions, two present");
   assert.equal(runExample("invalid-map-spread-pop", "Object.keys(drained([1, 2, 3])).length"), 2,
     "invalid-map-spread-pop: the result has three positions, two present");
   assert.equal(runExample("invalid-map-filter-pop", "Object.keys(trimmed([\"a\", \"b\", \"c\"])).length"), 2,

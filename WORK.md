@@ -31,7 +31,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 13 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 14 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -100,10 +100,9 @@ calls, stays within one. The checked forms are inspections, typed writes of
 fields holding values, and fixed calls, variadic calls without spreads and
 constructions at a selected signature. Left open:
 
-- the other application forms (a variadic call with spreads, a variadic
-  construction, a call of a callable object, a packed call) consume no
-  footprint, so a bounded body refuses them: `record-render.mts`'s `rules`
-  (`Math.max(0, ...ends)`);
+- the other application forms (a variadic construction, a call of a
+  callable object, a packed call) consume no footprint, so a bounded body
+  refuses them;
 - an array element write has no bound; the fragment writes elements only at
   proved index singletons, and no measured program needs one.
 
@@ -254,13 +253,10 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 13 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
+dump, 14 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
 the same-file declarations it uses). The first blockers of the others in
 `dev/`, with the functions each stops directly and through callees:
 
-- a variadic call with a spread argument in a bounded body,
-  `Math.max(0, ...ends)` (rules; through it section, card, pageBody: 4;
-  [footprints](#footprints));
 - `shift` of an array a `map` callback allocated (effects: `rest.shift()` on
   the result of `parts`), which the rule refuses
   ([footprint precision](#footprints)) (effects; through it section, card,
