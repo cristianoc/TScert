@@ -387,7 +387,8 @@ the written value's predicate, or `null` where it is not a known primitive.
 The code descriptor is part of the requested term, so changing it invalidates
 the evidence. `typedRead` (`slot`, ordinary `proof`) accepts a nonempty
 expansion of plain or callable bags whose first invariant operand each has the
-field read, at any type. Empty expansions and non-bag alternatives are
+field read, or plain records stating it as a readonly view other than
+`length`, at any type. Empty expansions and non-bag alternatives are
 rejected; its stored read links retain the receiver descriptor. Within a source
 statement, the producer derives checked facts along administrative paths. The
 source consumer additionally enforces the exact entry interfaces described below.

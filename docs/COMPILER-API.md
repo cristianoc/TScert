@@ -33,14 +33,14 @@ states one invariant for syntax trees and derives the guards from it.
   declarations give kind $`k`$, and its fields never change. The type `Node`,
   and every node type whose `kind` is no set of literals (`Expression`,
   `Statement`, `TypeNode`, …), is the union of the shapes below it,
-  discriminated by the immutable field `kind`.
+  discriminated by its readonly field `kind`.
 - **Guards are kind tests.** `ts.isX(e)` is the test
   $`e.\mathtt{kind}\in K_X`$, with $`K_X`$ the kinds the guard's
   implementation accepts, read from its body by a check over a small syntax.
   Narrowing comes from the invariant through the field-test rule, on both
   edges, since the test is the guard's body.
 - **Everything else is the declaration**, read by five general rules for
-  host declarations: stable members are immutable fields and a member whose
+  host declarations: stable members are readonly views and a member whose
   read allocates is refused; an `any` member is an optional `unknown`; a
   numeric enum type at a package position is `number`; each host class is
   read through a named view; branded strings are opaque host-introduced
@@ -178,10 +178,10 @@ are ordinary types.
 1. **Stable members.** A member of a host type whose read returns the same
    value every time (a data property the package writes only in its
    constructor, or a getter decoding the immutable buffer and returning a
-   primitive or a memoized object) is an **immutable field**. A writable
-   declared member is read the same way, and a client write to it is
-   refused. The contract lists the members whose read allocates (`jsDoc`);
-   such a member is refused at its read.
+   primitive or a memoized object) is a **readonly view**, whether or not
+   its declaration is `readonly`, so a client write to it is refused. The
+   contract lists the members whose read allocates (`jsDoc`); such a member
+   is refused at its read.
 2. **`any` states nothing.** A member declared `any` is an optional member
    of type `unknown`. A brand is such a member; reading one gives
    `undefined`.
@@ -240,87 +240,48 @@ objects have those prototypes, and it is preserved:
   prototype (`Object.getPrototypeOf`, `Object.create`,
   `Object.setPrototypeOf`, `__proto__` writes) are outside the admitted
   language or refused on a host value;
-- by the immutable-field capability below, every type a host value can be
+- by the reading of stable members below, every type a host value can be
   given keeps its stable members unwritable.
 
-### The immutable-field capability
+### Stable members as readonly views
 
 A record clause $`\mathsf{Ref}(\varphi;\psi;\omega;\mu;\beta)`$
 ([records](POSITIVE-TYPES.md#records)) has invariant fields $`\varphi`$,
 which the write rule consumes ($`a.f\leftarrow a'`$ needs
 $`(f{:}A)\in\varphi`$,
 [judgments](PROGRAM-TYPING.md#judgments-and-constructor-views)), and
-readonly views $`\psi`$, which a writable alias may change. A structural
-view `{ flags: number }` of a node is an invariant field. The contract needs
-a third mode, **immutable fields** $`\iota`$, in the clause
-$`\mathsf{Ref}(\varphi;\psi;\iota;\omega;\mu;\beta)`$:
+readonly views $`\psi`$. A view $`(f{:}A)\in\psi`$ holds of an object whose
+field $`f`$ is a location whose stored contract implies $`⟦A⟧`$ at every
+smaller index and world (`viewT`), and world extension preserves it
+(`viewT_adm`): no alias writes a value outside the view. A stable member of
+a host type is read as a readonly view:
 
-- *Meaning.* $`(f{:}A)\in\iota`$ holds of a location in a heap when the
-  location's $`f`$ holds a value in $`⟦A⟧`$, and in every later heap of the
-  run with the same value: world extension never changes an immutable field.
-  The run's admissible worlds require this of host objects (T1).
-- *Read.* $`a.f`$ for $`(f{:}A)\in\iota`$ has type $`A`$, as for
-  $`\varphi`$.
-- *Write.* The write rule consumes $`\varphi`$ alone, and no subtyping
-  produces $`\varphi`$ from $`\iota`$.
-- *Subtyping.* $`\iota`$ is covariant: $`(f{:}A)\in\iota`$ is below
-  $`(f{:}B)\in\iota`$ for $`A\le B`$. An immutable field is below a readonly
-  view of the same key and incomparable with an invariant field. So a node
-  is below `{ readonly flags: number }` and outside `{ flags: number }`; a
-  generic call instantiating a parameter bounded by `{ parent: Node }` at a
-  node type fails its bound; a separately verified function taking
-  `{ flags: number }` rejects a node, because the importer checks the
-  argument against the declared parameter.
-- *Narrowing.* A field test on $`\iota`$ fixes the arm by `if-field`
-  ([guards](SOURCE-CONTRACTS.md#guards)), as on an invariant field of an
-  allocation-typed object. Narrowing a readonly view stays refused.
-- *Introduction.* Host types alone have immutable fields; a client
-  allocation's fields are invariant. The clause is introduced only by host
-  values, under T1.
+- *Write.* The write rule consumes $`\varphi`$ alone; a view grants none.
+- *Subtyping.* A view is below a wider view and is no invariant field, which
+  states the stored contract exactly. So a node is below
+  `{ readonly flags: number }` and outside `{ flags: number }`; a generic call
+  instantiating a parameter bounded by `{ parent: Node }` at a node type
+  fails its bound; a separately verified function taking `{ flags: number }`
+  rejects a node, because the importer checks the argument against the
+  declared parameter.
+- *Narrowing.* A field test on a view drops the arms whose view answers the
+  other way (`if-field`, [guards](SOURCE-CONTRACTS.md#guards); Lean's
+  `fieldSlice` and `fieldSlice_sound`, which take a view's location from
+  `viewsT_at`). The exclusion concerns the object's label, which the stored
+  contract fixes for the object's lifetime. A view of `length`, which an
+  array's length meets too and which is no field location, narrows nothing.
+- *Introduction.* A host value meets the view by T1.
+
+A view states no equality between two reads: a readonly `parent` may give
+different values. That stable members return the same value on every read is
+the host assumption T1; no rule of the node shapes or the guards reads it,
+since the host-guard expansion reads `kind` with nothing between the reads
+and the field slice's exclusion is timeless.
 
 The refinements of `unknown` (`typeof`, `in`, `Array.isArray`) must give
 readonly views or optional fields, so that no writable view of a host object
 arises from `unknown` either. This is an obligation on the existing
 refinement rules, which the provenance controls of [Tests](#tests) check.
-The Lean obligations of the capability are its meaning, the monotonicity of
-$`\iota`$ under every step, covariant subtyping, and `if-field` on
-$`\iota`$.
-
-**Open: whether $`\iota`$ is needed beside readonly views.** Each use the
-contract makes of $`\iota`$ is already a property of the readonly views
-$`\psi`$, in the model as it stands:
-
-- *No write.* The write rule consumes $`\varphi`$ alone; a readonly view
-  grants no write (`viewT`: the stored contract implies the view's family).
-- *Subtyping.* A view is below a wider view and is no invariant field: an
-  invariant field states the stored contract exactly, a view only an
-  implication from it. So a node read with readonly views is below
-  `{ readonly flags: number }` and outside `{ flags: number }`, as the
-  subtyping item above requires.
-- *Narrowing.* Lean's field slice already drops an arm by a readonly view.
-  `fieldAnswers` (`BranchRefinement.lean`) lists the clause's invariant
-  fields and its views. `fieldSlice_sound` proves the exclusion from the
-  stored contract, fixed at allocation, which a view constrains as an
-  invariant field does: the exclusion concerns the object's label, which is
-  timeless. "Narrowing a readonly view stays refused" is no property of the
-  calculus.
-- *What $`\iota`$ adds.* Only that the value a stable member holds is the
-  same in every later heap. No rule of this document reads that property.
-  The host-guard expansion reads `kind` several times with nothing between
-  the reads, and the field slice's exclusion is timeless.
-
-The pipeline does not narrow by a readonly view today. With
-`type A = { readonly k: "a"; x: number } | { readonly k: "b"; y: string }`,
-`o.k === "a" ? o.x : o.y.length` is refused at the edge ("the edge from
-node 24 does not establish the claims at this point"). The producer claims
-the narrowed arm, and the same program with `k` writable verifies (probes,
-2026-10-17). The cause, in the edge's link to the read or elsewhere, is not
-established.
-
-If $`\iota`$ is not needed, rule 1 reads a stable member as a readonly view,
-its write refusal and subtyping hold as they are, and the work is the
-investigation of view narrowing in the pipeline. If it is needed, the
-property it adds must be named by a rule that reads it.
 
 ## The node invariant
 
@@ -380,8 +341,8 @@ in its residual, since a source file's `parent` is absent.
 
 **Residual inclusion.** Each replaced shape $`S_k`$ is below $`R_u`$. Every
 member of $`R_u`$ is a member of $`S_k`$, since the join keeps only common
-members; its provenance key is $`S_k`$'s; every member of $`R_u`$ is an
-immutable field whose type contains $`S_k`$'s, which covariance admits,
+members; its provenance key is $`S_k`$'s; every member of $`R_u`$ is a
+readonly view whose type contains $`S_k`$'s, which covariance admits,
 `kind` included ($`\{k\}\le\bigcup_j\{k_j\}`$); an optional member of
 $`R_u`$ admits a required one of $`S_k`$. A member of $`S_k`$ that the join
 drops is forgotten, which record subtyping allows for every field mode. So
@@ -865,7 +826,7 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
   parameter of a separately verified function and refined by
   `Array.isArray`; negative: `for…in` over a list (under Node, yielding
   `parent`, `view`, …), `list.at(0.5)`;
-- the immutable-field capability: a node passed where `{ flags: number }`
+- stable members as readonly views: a node passed where `{ flags: number }`
   is expected, to a generic function bounded by `{ parent: Node }`, and to a
   separately verified function taking `{ kind: number }` that writes it, each
   refused; a node at `{ readonly flags: number }` verified;
@@ -914,9 +875,6 @@ The pieces, by file:
 
 The implementation needs, beside these:
 
-- **Immutable fields** in the calculus: the clause mode $`\iota`$, its
-  meaning, its monotonicity under every step, covariant subtyping below
-  readonly views, and `if-field` on it. The host declarations depend on it.
 - **Foreign arrays** in the calculus: the array domain, the array invariant
   over it, the `isArray` refinement, the readonly-array rules for foreign
   arrays, and the audit of the operations consuming arbitrary values.
@@ -933,16 +891,14 @@ The implementation needs, beside these:
 
 Host enums, bitwise operators, namespace imports and arrays from imported
 declarations are independent of each other and of guard signatures;
-immutable fields, foreign arrays and the union-receiver and generic-method
-calls precede the node invariant.
+foreign arrays and the union-receiver and generic-method calls precede the
+node invariant.
 
 The reading rules split along the same dependencies:
 
-- Reading rule 1 is immutable fields: a stable member's reading is the
-  clause mode $`\iota`$, so the rule lands with that mode, together with its
-  refusal of a member whose read allocates. A readonly view would refuse the
-  writes, but would also refuse the `if-field` narrowing the node invariant
-  rests on, and is not a stage of rule 1.
+- Reading rule 1 reads stable members as readonly views, with the
+  refusal of a member whose read allocates; the narrowing it needs is the
+  field slice's on views.
 - The corrections apply to node shapes, which the node invariant builds:
   three of the eight are members a kind inherits
   (`NoSubstitutionTemplateLiteral.rawText` and `.templateFlags` from
@@ -953,8 +909,8 @@ The reading rules split along the same dependencies:
   from every list member, and so is every view member taking or giving a
   node (`getTypeAtLocation(node: Node)`, `NodeHandle.resolve()`).
 
-So the pieces land in this order: immutable fields in the calculus, then
-rule 1 with the allocating-member refusal; foreign arrays and
+So the pieces land in this order: rule 1 with the allocating-member
+refusal; foreign arrays and
 $`\mathsf{NodeList}`$; then rules 2, 4 and 5, the contract file (views,
 branded types, the corrections table, every reviewed declaration text) and
 the node invariant, each tested on the host types the front end reads,
@@ -978,7 +934,7 @@ cost experiment and departs from the contract:
 - shapes omit the inherited node methods and other members;
 - some literal unions are widened (`ImportAttributes.token` and
   `ImportClause.phaseModifier` are `number`);
-- members are mutable-typed in place of immutable fields, which a mutable
+- members are mutable-typed in place of readonly views, which a mutable
   field does not faithfully represent;
 - node lists are ordinary `readonly` arrays, the guards are written as their
   expanded kind tests, and the flag test is a declared `isAlias(flags)`.

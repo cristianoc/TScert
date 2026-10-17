@@ -1654,6 +1654,26 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A test of a readonly view narrows a union by the arms whose view answers
+  // it: the read of `o` after `o.k === "a"` forged to the arm whose `k` is
+  // "b" is refused, the edge's field slice keeping only the "a" arm.
+  const artifacts = run("readonly-view-narrowing");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const measure = must(claims.functions.find((f) => f.name === "measure"), "measure's claims");
+  const at = source.indexOf("o.x");
+  const read = must(measure.expressions.find((e) => e.pos[0] === at && e.pos[1] === at + 1), "the read of o on the true edge");
+  const other = must(measure.expressions.find((e) => e.pos[0] === source.indexOf("o.y") && e.pos[1] === source.indexOf("o.y") + 1),
+    "the read of o on the false edge");
+  read.type = other.type;
+  const forged = writeClaims(artifacts, "forged-view-narrowing", claims);
+  const searched = produceWith(artifacts, forged, "forged-view-narrowing");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /evidence search failed/);
+  process.stdout.write("forged view narrowing: the other arm on the true edge refused\n");
+}
+
+{
   // A guard's promise is its function type's, checked at its body: the lying
   // guard's claims forged to hold its argument at `string` throughout the
   // body, and its answer at `true`, are refused at the edge into its

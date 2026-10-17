@@ -2814,9 +2814,12 @@ The `allocated` and `typedRead` evidence constructors serve both plain and
 callable bags. `allocationSlots` selects a `make` whose initializers are
 existing value slots; it never treats an effectful initializer as a value.
 A typed read (`fieldOperand`) requires that every clause of the receiver's nonempty expansion is a `refs`
-or `callable` whose first invariant operand has the field read, at any type,
-so the read is of a location of the object whichever arm it has, and its link
-names that location.
+or `callable` whose first invariant operand has the field read, or a `refs`
+stating it as a readonly view other than `length`, at any type, so the read
+is of a location of the object whichever arm it has, and its link names that
+location. A view constrains the location's stored contract (`viewsT_at`), as
+an invariant field does; a view of `length` is met by an array's length too,
+which is no field location.
 The same allocation proof frames old facts and records the fresh bag, and the
 read proof records links with the object's actual descriptor.
 Nested invocation uses the existing closure, let-binding and heap rules, with
