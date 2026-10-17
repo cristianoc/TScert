@@ -205,6 +205,10 @@ field of `y` (proved: `stamps_separate`). A fresh store may list old element
 locations, so `elems(x)` is apart from nothing by `after(x)`
 (`elems_separation_false`, `stamps_separate_excludes_elems`).
 
+Stamps are the one provenance analysis. The distinct links the checker keeps
+between two fields, which write framing consumes, are derived from
+`stamps_separate` and checked as any other fact.
+
 **Edges rename marks** by a sorted map `σ` from target marks to source
 marks with `σ(0) = 0`; the target valuation is $`\mu \circ \sigma`$ (proved:
 `MarksOk.rename`). A target `after(j) = m'` needs a source
@@ -358,26 +362,45 @@ closes the `cap i` entries by their class containments, else to `all`.
 
 **A signature's effect** is a footprint over its operand roots, a
 fresh-result flag and an optional promise: $`(\Phi, \phi, \pi)`$ with
-$`\Phi`$ a list of entries whose regions are the classes, `all`, and `own`
-or `field(·, k)` rooted at `receiver`, `arg i` or `self`. Its postcondition,
-from the heap $`h`$ the call starts in, is $`\mathsf{Post}_\Phi(\rho)(h,h')`$
-with $`\rho`$ the call's operands, and, when $`\phi`$ holds, every own
-location of the result at least $`|h|`$. A closed footprint is the instance
-with class regions alone, and $`\phi`$ false the instance stating nothing of
-the result. One signature covers another when its entries lie within the
-other's (`Footprint.le` without class evidence), its flag implies the
-other's and the promises are equal. The natives use the operand regions and
-the flag: a regex literal's intrinsic $`(\emptyset, \top, -)`$; a global
-regex's `[Symbol.replace]` $`(\{\mathsf{own}(\mathsf{receiver}){:}\,\mathsf{any}\}, \bot, -)`$;
-`%Dispatch:replace%` at a target whose member states that,
-$`(\{\mathsf{own}(\mathsf{arg}\ 1){:}\,\mathsf{any}\}, \bot, -)`$, a further
-signature of its intersection (audited, as its empty-footprint signature);
-`Set`'s constructor and `%Iterate%` fresh, `add` `own(receiver)`, an
-iterator's step `own(self)`. The graph checker of an invocation's entry
-footprint (the [composition](#composition) check with $`\Phi_q`$ given) has
-the empty-footprint check as its instance $`\Phi_q = \emptyset`$: a node's
-call entry `own(x)` with `after(x) = 0` transports to nothing, so a callback
-allocating a regex and replacing through it has the empty footprint.
+$`\Phi`$ a closed footprint and entries $`\mathsf{own}(o){:}\,\mathsf{any}`$
+for operands $`o`$ among `self` (the callee), `receiver` and `arg i`. Its
+postcondition, from the heap $`h`$ the call starts in, is
+$`\mathsf{Post}_\Phi(\rho)(h,h')`$ with $`\rho`$ the call's operands, and,
+when $`\phi`$ holds, every own location of the result at least $`|h|`$ (a
+primitive has none). A closed footprint is the instance without operand
+entries, and $`\phi`$ false the instance stating nothing of the result. One
+signature covers another when each of its entries lies within the other's
+(an operand entry within the same operand's, or within `all: any`), the
+other's flag implies its own, and the promises are equal: an ordinary result
+never meets a fresh one. Two signatures of one call are conjoined only where
+the call meets the argument obligations of both, and their guarantees are
+then both available; their domains are not intersected.
+
+Binding saves the callee, the receiver and an argument prefix: an operand
+entry rooted at any of them, `self` included, becomes its closed coarsening
+`all: any`, and `arg i` past the prefix is renumbered. Construct and
+variadic calls consume a signature's guarantees as fixed calls do.
+
+A code entry whose row states a fresh result proves it at every normal
+return: the returned slot carries `after(·)` at a mark of the invocation, or
+holds a primitive. Every route by which a row's effect is accepted requires
+it, the footprint `all: any` and a body of pure nodes included.
+
+The natives use the operand entries and the flag: a regex literal's
+intrinsic $`(\emptyset, \top, -)`$; a global regex's `[Symbol.replace]`
+$`(\{\mathsf{own}(\mathsf{receiver}){:}\,\mathsf{any}\}, \bot, -)`$;
+`%Dispatch:replace%`'s signature whose target member states that has the
+effect $`(\{\mathsf{own}(\mathsf{arg}\ 1){:}\,\mathsf{any}\}, \bot, -)`$, the
+member's operand `receiver` being the dispatch's `arg 1` (audited, as its
+empty-footprint signature is); `Set`'s constructor and `%Iterate%` fresh,
+`add` `own(receiver)`, an iterator's step `own(self)`. A match iterator's
+state includes its regex clone's, which `own(self)` does not name: the match
+iterator stays at `all: any` ([WORK](../WORK.md#footprints)). The graph
+checker of an invocation's entry footprint (the [composition](#composition)
+check with $`\Phi_q`$ given) has the empty-footprint check as its instance
+$`\Phi_q = \emptyset`$: a node's operand entry `own(x)` with `after(x)` at a
+mark of the invocation transports to nothing, so a callback allocating a
+regex and replacing through it has the empty footprint.
 
 ## Natives
 
@@ -595,14 +618,15 @@ controls, and updates the documents that own its subject.
    becomes a footprint, every proof consuming `Effect.post` is re-pointed
    through `Post.empty_iff` and `Post.all_iff`, and footprints go on the wire
    across TypeScript, OCaml and Lean, with identical outcomes.
-4. **Definition summaries and relies**: `FootprintState` and its graph
+4. **Definition summaries and relies**, in slices: first operand entries and
+   fresh results on signatures, stamps in `HeapKnowledge` with the distinct
+   links derived from them, and programs 3 and 7; then `FootprintState` and its graph
    lemmas over `Post.compose`, with class evidence at the entry heap from
    `contract_class_entry` and transport's evidence at depth 2; producer
    footprint inference; binder expansion and relied native signatures; the
    seven programs as cases, with the forged-claim controls.
 5. **Caller framing**: `frame` in place of `ordinaryOutput`, `writeOutput`'s
-   filter, `handlerFacts` and `checkYields`; explicit link kinds; stamps in
-   place of the distinct-link product.
+   filter, `handlerFacts` and `checkYields`; explicit link kinds.
 6. **Relational regions**: `cap i` instantiated at calls of known closures,
    relies checked at the call site with the caller's separation, an
    entry-stable `elems₀` with its membership fact, the `freshElems` fact and
@@ -619,15 +643,3 @@ controls, and updates the documents that own its subject.
    operands. Footprints over operands substituted at the call need a
    Lean-native binder or call-site rely checks; how often a closed footprint
    refuses a safe callback is a census question.
-3. **Stamps beside allocation separation.** The `after` stamps that
-   [provenance](#provenance) places in `HeapKnowledge` (with the invocation's
-   entry heap length as mark 0, which `HeapKnowledge.Holds` and the graph
-   state invariant then take as a parameter) state freshness, and so do the
-   distinct links an allocation adds (`HeapExpressionRules.allocOutput`,
-   `Observations.distinctLinks`, `Bindings.mutableBinding`'s `apart`), which
-   frame cell facts across writes. Increment 5 puts stamps in place of the
-   latter, which needs `before` stamps and `stamps_separate` in the write
-   framing. The fresh-result flag needs `after` stamps first. Undecided:
-   whether stamps enter beside the distinct links until increment 5, a
-   second freshness analysis for one increment, or replace them in the same
-   step, moving the write framing of increment 5 forward.
