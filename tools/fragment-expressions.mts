@@ -1241,6 +1241,12 @@ export function update(this: Gate,
     [ts.SyntaxKind.SlashEqualsToken]: "div",
     [ts.SyntaxKind.AsteriskAsteriskEqualsToken]: "pow",
     [ts.SyntaxKind.PercentEqualsToken]: "rem",
+    [ts.SyntaxKind.AmpersandEqualsToken]: "bitAnd",
+    [ts.SyntaxKind.BarEqualsToken]: "bitOr",
+    [ts.SyntaxKind.CaretEqualsToken]: "xor",
+    [ts.SyntaxKind.LessThanLessThanEqualsToken]: "shl",
+    [ts.SyntaxKind.GreaterThanGreaterThanEqualsToken]: "shr",
+    [ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken]: "ushr",
     [ts.SyntaxKind.PlusPlusToken]: "add",
     [ts.SyntaxKind.MinusMinusToken]: "sub",
   };
@@ -1421,6 +1427,12 @@ export function binary(this: Gate, node: BinaryExpression): Expr {
     case ts.SyntaxKind.SlashEqualsToken:
     case ts.SyntaxKind.AsteriskAsteriskEqualsToken:
     case ts.SyntaxKind.PercentEqualsToken:
+    case ts.SyntaxKind.AmpersandEqualsToken:
+    case ts.SyntaxKind.BarEqualsToken:
+    case ts.SyntaxKind.CaretEqualsToken:
+    case ts.SyntaxKind.LessThanLessThanEqualsToken:
+    case ts.SyntaxKind.GreaterThanGreaterThanEqualsToken:
+    case ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken:
       return gate.update(
         node,
         node.left,
@@ -1436,6 +1448,14 @@ export function binary(this: Gate, node: BinaryExpression): Expr {
     [ts.SyntaxKind.SlashToken]: "div",
     [ts.SyntaxKind.AsteriskAsteriskToken]: "pow",
     [ts.SyntaxKind.PercentToken]: "rem",
+    // On numbers, through `ToInt32` and `ToUint32`, running no code; the
+    // typing admits numbers alone, and `^` two bigints too.
+    [ts.SyntaxKind.AmpersandToken]: "bitAnd",
+    [ts.SyntaxKind.BarToken]: "bitOr",
+    [ts.SyntaxKind.CaretToken]: "xor",
+    [ts.SyntaxKind.LessThanLessThanToken]: "shl",
+    [ts.SyntaxKind.GreaterThanGreaterThanToken]: "shr",
+    [ts.SyntaxKind.GreaterThanGreaterThanGreaterThanToken]: "ushr",
     [ts.SyntaxKind.LessThanToken]: "lt",
     [ts.SyntaxKind.LessThanEqualsToken]: "le",
     [ts.SyntaxKind.GreaterThanToken]: "gt",

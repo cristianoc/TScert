@@ -518,10 +518,12 @@ let string_like declarations t =
   | _ -> false
 
 (* What an arithmetic operator yields: a string for `+` with a string
-   operand, which concatenates; else the numeric family of the left operand.
+   operand, which concatenates; a number for `&`, `|`, `<<`, `>>` and `>>>`,
+   which take numbers alone; else the numeric family of the left operand.
    Lean checks the operands pair by pair. *)
 let operation_result declarations op left right =
   if op = Add && (string_like declarations left || string_like declarations right) then Atoms [Str]
+  else if List.mem op [BitAnd; BitOr; Shl; Shr; Ushr] then Atoms [Num]
   else numeric_family declarations left
 
 (* The atoms of `t` that may be (`equal`) or may not be strictly equal to a

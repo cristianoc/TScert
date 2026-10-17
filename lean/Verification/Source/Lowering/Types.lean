@@ -185,9 +185,11 @@ program mentions. -/
 
 /-- The type a binary operator's value is claimed at before it meets the
 expression's claim: both Booleans for a comparison, strings for `+` with a
-string operand, else the numeric family of its operands. -/
+string operand, a number for an operator stated on numbers alone, else the
+numeric family of its operands. -/
 @[nospecialize] def operatorResult (op : Arith) (A B : Ty Tree) : Compiler (Ty Tree) := do
   if op.relational || op == .eq || op == .looseEq then return [Labels.tru, Labels.fls]
+  if op.numberOnly then return [← lower (SourceTypes.use .num)]
   let G := SourceTypes.graph (← table)
   let strings := fun (T : Ty Tree) =>
     let cs := PositiveRules.expand G T

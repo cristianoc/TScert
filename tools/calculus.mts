@@ -82,7 +82,8 @@ export type Term =
    * property at the key `key`'s value converts to, holding `init`'s value. */
   | { makeKey: { key: Term; init: Term } };
 /** Every binary operator, as `Arith` in Calculus.lean names them. */
-const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "lt", "le", "gt", "ge", "eq"] as const;
+const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "bitAnd", "bitOr", "shl", "shr", "ushr",
+  "lt", "le", "gt", "ge", "eq"] as const;
 /** Every tag, checked against `Tag`: adding one there and not here is a type
  * error rather than an "unknown tag" at run time. */
 const TAGS: Record<Extract<Tag, string>, true> = {

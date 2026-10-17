@@ -1213,12 +1213,14 @@ and $`\approx`$ loose equality (`==`):
 \mathsf{bool} & op\ \text{relational},\ c,d\in\mathsf{Nc}\ \text{or}\ c,d\in\mathsf S\\
 \mathsf{str} & op={+},\ c\in\mathsf S,\ d\in\mathsf P\ \text{or}\ c\in\mathsf P,\ d\in\mathsf S\\
 \mathsf{num} & op\ \text{arithmetic},\ c,d\in\mathsf N\\
-\mathsf{bigint} & op\ \text{arithmetic},\ c,d\in\mathsf Z\\
+\mathsf{bigint} & op\ \text{arithmetic},\ op\notin\{\&,|,\ll,\gg,\ggg\},\ c,d\in\mathsf Z\\
 \text{none} & \text{otherwise}
 \end{cases}
 ```
 
-A bigint divisor, of `/` or `%`, that may be zero, or an exponent that may be negative, is
+The bitwise operators $`\&`$, $`|`$, $`\ll`$, $`\gg`$ and $`\ggg`$ (`numberOnly`) are
+typed on numbers alone, whose `ToInt32` and `ToUint32` run no code; `^` and
+`~` keep the bigint reading `xor` has. A bigint divisor, of `/` or `%`, that may be zero, or an exponent that may be negative, is
 admitted: the operation then throws a `RangeError`, an outcome safety admits
 ([Source model](SOURCE-MODEL.md#throws)). $`\mathrm{Operands}_G(op,A,B,r)`$
 requires both types of clause rows and every clause pair of $`A`$ and $`B`$ to

@@ -11,7 +11,8 @@ tests that exercise it.
 
 The pipeline implements namespace imports
 ([derived source forms](SOURCE-ELABORATION.md#derived-source-forms)), host
-enums (reading rule 3, [enums](SOURCE-CONTRACTS.md#enums)) and the check C1;
+enums (reading rule 3, [enums](SOURCE-CONTRACTS.md#enums)), the check C1 and
+the bitwise operators;
 the other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
@@ -628,10 +629,12 @@ parameter, since the call passes the namespace object as the receiver
 
 `a & b`, `a | b`, `a ^ b`, `~a`, `a << b`, `a >> b` and `a >>> b` with
 operands of type `number` evaluate `ToInt32` or `ToUint32` of numbers, run
-no client code and give a `number`; operands that may be objects or bigints
-are refused. A flag test `(t.flags & TypeFlags.Union) !== 0` is arithmetic on
-numbers and a comparison. Its Lean obligations are a step rule and its
-typing rule.
+no client code and give a `number`; operands that may be objects are
+refused, and so are bigints but for `^` and `~`, which the calculus's `xor`
+states on two bigints too. A flag test `(t.flags & TypeFlags.Union) !== 0`
+is arithmetic on numbers and a comparison. The operators are the calculus's
+binary operators, with their step rule and the one typing rule `arith`
+([judgments](PROGRAM-TYPING.md#judgments-and-constructor-views)).
 
 ## Binding the contract to the implementation
 
@@ -741,7 +744,7 @@ Behaviours excluded because soundness needs it:
 | R2  | No client value meets a host type; host values come only from the package         | Passing a forged node, type or symbol to the API (an object literal, a spread or `Object.assign` copy of a node, a class implementing `ts.Node`); the node factory               |
 | R3  | A host guard narrows to what its implementation accepts                           | Relying on `isTypeAliasDeclaration`, `isImportDeclaration`, `isAnyImportSyntax` excluding JavaScript kinds; relying on `isExpression` matching the declarations' category       |
 | R4  | A host enum type at a package position is `number`                                | Exhaustive reasoning over flag values (`switch (node.flags)` with a case per member and no default)                                                                              |
-| R5  | Bitwise operators take `number` operands only                                     | `obj & 1` (runs `valueOf`), `1n & x`                                                                                                                                             |
+| R5  | Bitwise operators take `number` operands only, but `^` and `~`, which take two bigints too | `obj & 1` (runs `valueOf`), `1n & x`                                                                                                                                  |
 | R6  | An abstract node type is the union of the shapes below it, with brands optional   | Using a brand member as evidence (`"_expressionBrand" in n`)                                                                                                                     |
 | R7  | Every admitted `API` instance runs the executable the package selects             | `new API({ tsserverPath })`, `pipe` options, `API.fromLSPConnection`                                                                                                             |
 

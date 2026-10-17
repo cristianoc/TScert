@@ -160,7 +160,7 @@ two values, or throws where JavaScript throws, and is stuck otherwise:
 \frac{\mathsf{binop}(op,v_1,v_2)=v}{h,\ v_1\mathbin{op}v_2\to h,\ v}\ (\texttt{arithV})
 \qquad
 \frac{\mathsf{binopThrows}(op,v_1,v_2)}{h,\ v_1\mathbin{op}v_2\to h\mathbin{+\!\!+}[\mathsf{null}],\ \mathsf{throw}\ \mathit{err}_{|h|}}\ (\texttt{arithThrow})
-\qquad op\in\{+,-,*,/,\%,{*}{*},\mathbin{\hat{}},<,\le,>,\ge,\equiv\}.
+\qquad op\in\{+,-,*,/,\%,{*}{*},\mathbin{\hat{}},\mathbin{\&},\mathbin{|},\ll,\gg,\ggg,<,\le,>,\ge,\equiv\}.
 ```
 
 $\mathsf{binop}$ is JavaScript's operation on the operand kinds it models;
@@ -170,10 +170,10 @@ object without fields whose identity cell the step appends at $i$, standing
 for the `TypeError` or `RangeError` instance). Neither answers where JavaScript converts through code or
 coercions the calculus does not have:
 
-| Operands | Arithmetic ($+,-,*,/,\%,{*}{*},\hat{}$) | Relational ($<,\le,>,\ge$) |
+| Operands | Arithmetic ($+,-,*,/,\%,{*}{*},\hat{},\&,\vert,\ll,\gg,\ggg$) | Relational ($<,\le,>,\ge$) |
 | --- | --- | --- |
-| two numbers | the IEEE-754 double operation; ${*}{*}$ is `Number::exponentiate` (C's `pow`, but NaN for a NaN exponent and for a base of magnitude 1 to an infinite power); $\hat{}$ is exclusive or after `ToInt32` on both; $\%$ is `Number::remainder`, exact: $n-d\cdot q$ for $q$ the quotient truncated toward zero, with $n$'s sign (so `-4 % 2` is $-0$), NaN for a NaN or infinite $n$ or a NaN or zero $d$, and $n$ itself for an infinite $d$ or a zero $n$ | the IEEE order: false when either is NaN, the two zeros equal |
-| two bigints | the integer operation; $/$ truncates toward zero and $\%$ is the remainder it leaves, with the dividend's sign; throws for $/$ or $\%$ by $0$ and ${*}{*}$ by a negative exponent (a `RangeError`) | the integer order |
+| two numbers | the IEEE-754 double operation; ${*}{*}$ is `Number::exponentiate` (C's `pow`, but NaN for a NaN exponent and for a base of magnitude 1 to an infinite power); $\hat{}$, $\&$ and $\vert$ are exclusive or, and and or after `ToInt32` on both; $\ll$ and $\gg$ shift the left operand's `ToInt32` left (modulo $2^{32}$, read as signed) or right (sign-propagating) by the right operand's `ToUint32` modulo 32, and $\ggg$ shifts its `ToUint32` right by that count, zero-filling; $\%$ is `Number::remainder`, exact: $n-d\cdot q$ for $q$ the quotient truncated toward zero, with $n$'s sign (so `-4 % 2` is $-0$), NaN for a NaN or infinite $n$ or a NaN or zero $d$, and $n$ itself for an infinite $d$ or a zero $n$ | the IEEE order: false when either is NaN, the two zeros equal |
+| two bigints | the integer operation; $/$ truncates toward zero and $\%$ is the remainder it leaves, with the dividend's sign; throws for $/$ or $\%$ by $0$ and ${*}{*}$ by a negative exponent (a `RangeError`); none for $\&,\vert,\ll,\gg,\ggg$ (`numberOnly`) | the integer order |
 | a number and a bigint | throws (a `TypeError`) | the exact order of the double's rational value and the integer; false when the number is NaN, an infinity beyond every integer |
 | two strings | $+$ concatenates; others none | lexicographic over UTF-16 code units, a proper prefix less |
 | a string and a number, bigint, Boolean, `null` or `undefined`, either order | $+$ concatenates the string with $\mathsf{str}$ of the other, in operand order; others none | none |
@@ -253,7 +253,7 @@ which the typing rule rules out. The unary operators are this one with a
 constant right operand of the operand's family ([source
 forms](PROGRAM-TYPING.md#judgments-and-constructor-views)): $-x=x*(-1)$, $+x=x*1$
 and $\sim x=x\mathbin{\hat{}}(-1)$, exact on doubles (a sign flip, the identity,
-`ToInt32` complemented) and on integers alike. Lean: `binop`, `arithBits`, `remBits`,
+`ToInt32` complemented) and on integers alike. Lean: `binop`, `arithBits`, `remBits`, `intAnd`, `intOr`, `toUint32`,
 `bigintArith`, `doubleIntOrder`, `utf16Units`, `primString`, `numberToString`
 (`Semantics/Calculus.lean`); their agreement with node's values rests on
 review.

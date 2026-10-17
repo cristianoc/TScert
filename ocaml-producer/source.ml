@@ -430,8 +430,10 @@ let quantify binders scope parameters =
       loop (index+1) binders (quantified::accumulated) rest in
   loop 0 binders [] parameters
 (* A binary operator on primitive operands: arithmetic, or a comparison. *)
-type arithmetic = Add | Sub | Mul | Div | Pow | Rem | Lt | Le | Gt | Ge
-let relational = function Lt | Le | Gt | Ge -> true | Add | Sub | Mul | Div | Pow | Rem -> false
+type arithmetic = Add | Sub | Mul | Div | Pow | Rem | BitAnd | BitOr | Xor | Shl | Shr | Ushr | Lt | Le | Gt | Ge
+let relational = function
+  | Lt | Le | Gt | Ge -> true
+  | Add | Sub | Mul | Div | Pow | Rem | BitAnd | BitOr | Xor | Shl | Shr | Ushr -> false
 (* `-e`, `+e` and `~e`; and `typeof e`, the string naming the operand's shape. *)
 type unary = Neg | Plus | BitNot | Typeof
 type equality = StrictEqual | StrictUnequal | LooseEqual | LooseUnequal
@@ -735,6 +737,7 @@ and heap_preserving_stmts ~callable values = function
 
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow | "rem" -> Rem
+  | "bitAnd" -> BitAnd | "bitOr" -> BitOr | "xor" -> Xor | "shl" -> Shl | "shr" -> Shr | "ushr" -> Ushr
   | "lt" -> Lt | "le" -> Le | "gt" -> Gt | "ge" -> Ge
   | k -> unsupported ("arithmetic " ^ k)
 let rec expr binders j =
