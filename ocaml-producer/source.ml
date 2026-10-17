@@ -743,11 +743,14 @@ let rec footprint_expr ~callable ~iteration ~readable (e:expr) : footprint optio
      callee may take states. *)
   | New (callee,_,args,spreads) ->
     if spreads<>[] then None else join_bound (all (callee :: args)) (callable callee)
+  (* An optional chain runs its receiver once, then its body, which reads
+     the receiver as `?.`, where the receiver is present. *)
+  | Optional (r,b) -> join_bound (go r) (footprint_expr ~callable ~iteration ~readable:("?." :: readable) b)
   | BlockBody body -> footprint_stmts ~callable ~iteration ~readable body
   | Unary _ | HasKey _ | InstanceTest _ | Build _
   | Write _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
-  | Optional _ | IndexWrite _ | Bind _ | ObjectAssign _
+  | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> None
 and footprint_stmts ~callable ~iteration ~readable = function
   | [] -> Some empty_footprint
