@@ -31,7 +31,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 20 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 21 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -281,7 +281,7 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 20 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
+dump, 21 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
 the same-file declarations it uses). The first blockers of the others in
 `dev/`, with the functions each stops directly and through callees:
 
@@ -292,18 +292,19 @@ the same-file declarations it uses). The first blockers of the others in
   certification establishes ([module composition](#module-composition));
   past both, `at`'s catch of `git`'s throw needs
   [exceptional footprints](#exceptional-footprints) (group: 1);
-- in lowering-dump, showStep's case analysis over `Continuation`, a union of
-  records each holding one key: `"bind" in k` is refused, as every function
-  inherits `bind` ([SOURCE-FRAGMENT](docs/SOURCE-FRAGMENT.md)), and a passed
-  `in` test narrows nothing, as an open record may own any other key
-  (`in-test`'s `either`), so no arm's payload read is typed (showStep: 1);
 - in printGraph, `program.map(decodeNode)` passes an imported function as a
   callback, which a signature binding more parameters may call with further
   actuals; only a module function's own code is known to discard them
-  ([module composition](#module-composition)). A certified import of
-  either needs its module's code to verify: `decodeNode` stops at
-  `calculus`'s `nat`, which has no return annotation, and `showTerm` at
-  `showCode`'s mapped type whose value names its key (printGraph: 1).
+  ([module composition](#module-composition)), and so is `showTerm`, which a callback calls. A certified import of
+  either needs its module's code to verify. In `control-flow` and
+  `calculus` (2026-10-17), `decodeTarget`, `decodeContinuation` and
+  `decodeNode` stop at a read of `map` on an array a field holds, which a
+  test does not narrow; `showTerm`, `showTag` and `showCode` at a member
+  read the producer and TypeScript disagree on; `nat`, `bitsOf`, `fields`
+  and `keyOf` at a `typeof` or record test that does not narrow `unknown`;
+  `constructorOf` and `decodeTag` at a record index by a string; and
+  `decodeTerm`, `decodeCode` and `termsOf` at a callback parameter
+  TypeScript types `any` (printGraph: 1).
 
 In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
 verify; the others stop at a namespace import, Node's `Buffer` type, `join`

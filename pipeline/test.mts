@@ -1121,8 +1121,9 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   const writeFailure = readDiagnostic(refusedWrite.stdout + refusedWrite.stderr);
   assert.equal(writeFailure?.kind, "node-typing");
   assert.ok(writeFailure?.source?.sourceMap?.pos, "the native write refusal is located");
-  assert.ok(writeFailure?.sequent && typeof writeFailure.sequent.term === "object" && "writeAt" in writeFailure.sequent.term);
-  assert.equal(writeFailure.sequent.term.writeAt.field, "constructor");
+  const writeTerm = writeFailure?.sequent?.term;
+  assert.ok(writeTerm?.kind === "writeAt");
+  assert.equal(writeTerm.field, "constructor");
   invoke(borrowedClaims, join(write, "weakened-native-constructor-evidence.json"), write);
   // The verifier interprets these impossible native input annotations before
   // consuming any evidence. It refuses them independently of producer choices.

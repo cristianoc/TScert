@@ -10,7 +10,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { showTag, showTerm } from "../tools/calculus.mts";
+import { showTag, showTerm, unmatched } from "../tools/calculus.mts";
 import { decodeNode, type Continuation, type ProgramNode, type Target } from "../tools/control-flow.mts";
 import { verifier } from "../pipeline/verify-source.mts";
 
@@ -36,13 +36,15 @@ const units = JSON.parse(lowered.stdout) as Unit[];
 
 const to = (t: Target) => `n${t.label}`;
 function showStep(k: Continuation): string {
-  if (k === "ret") return "return";
-  if ("bind" in k) return `→ ${to(k.bind.next)}`;
-  if ("effect" in k) return `→ ${to(k.effect.next)} (value dropped)`;
-  if ("branch" in k) return `if true → ${to(k.branch.yes)}, else → ${to(k.branch.no)}`;
-  if ("branchBind" in k) return `if true → ${to(k.branchBind.yes)}, else → ${to(k.branchBind.no)} (value kept)`;
-  if ("tagBind" in k) return `if ${showTag(k.tagBind.test)} → ${to(k.tagBind.yes)}, else → ${to(k.tagBind.no)}`;
-  throw new Error("a continuation of no known shape");
+  switch (k.kind) {
+    case "ret": return "return";
+    case "bind": return `→ ${to(k.next)}`;
+    case "effect": return `→ ${to(k.next)} (value dropped)`;
+    case "branch": return `if true → ${to(k.yes)}, else → ${to(k.no)}`;
+    case "branchBind": return `if true → ${to(k.yes)}, else → ${to(k.no)} (value kept)`;
+    case "tagBind": return `if ${showTag(k.test)} → ${to(k.yes)}, else → ${to(k.no)}`;
+    default: return unmatched(k);
+  }
 }
 function printGraph(start: number, program: unknown[]): void {
   const nodes: ProgramNode[] = program.map(decodeNode);

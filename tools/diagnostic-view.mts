@@ -136,8 +136,9 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
       const names = bindingsOf(sourceMap, source);
       const binding = (slot: number) => names[slot] || "slot " + slot;
       const inContext = (slot: number) => Number.isInteger(slot) && slot >= 0 && slot < q.context.length;
-      if (typeof q.term === "object" && "var" in q.term && inContext(q.term.var.i)) {
-        const slot = q.term.var.i;
+      const term = q.term;
+      if (term.kind === "var" && inContext(term.i)) {
+        const slot = term.i;
         const required = recordType(ob, q.type);
         const role = sourceMap?.role;
         const isReturn = role === "return-contract" || role === "closure-result";
@@ -146,20 +147,36 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
           searchOutcome: searched,
         };
       }
-      if (typeof q.term !== "object") return { searchOutcome: searched };
+      if (term.kind === "nul" || term.kind === "undef" || term.kind === "tru" || term.kind === "fls")
+        return { searchOutcome: searched };
       // Not a slot: name the term's form and the claims of the slots it reads
-      // directly, which are what the rule for that form would use.
-      const [form, node] = Object.entries(q.term)[0] ?? ["term", undefined];
-      const op = typeof node === "object" && node !== null && "op" in node ? ` ${String(node.op)}` : "";
+      // directly, which are what the rule for that form would use: those
+      // within three levels of the wire's nesting, where a constructor's
+      // fields sit two levels below it, in the wire's order of their names.
+      const form = term.kind;
+      const op = term.kind === "arith" ? ` ${term.op}` : "";
       const slots = new Set<number>();
+      const visitFields = (v: object, depth: number): void => {
+        const named = Object.entries(v).filter(([k]) => k !== "kind").sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+        for (const [, x] of named) visit(x, depth);
+      };
       const visit = (v: unknown, depth: number): void => {
         if (typeof v !== "object" || v === null || depth > 3) return;
-        if ("var" in v && typeof v.var === "object" && v.var !== null && "i" in v.var && typeof v.var.i === "number") {
-          slots.add(v.var.i); return;
+        if (Array.isArray(v)) {
+          for (const x of v) visit(x, depth + 1);
+          return;
+        }
+        if ("kind" in v) {
+          if (v.kind === "var" && "i" in v && typeof v.i === "number") {
+            slots.add(v.i);
+            return;
+          }
+          if (depth + 1 <= 3) visitFields(v, depth + 2);
+          return;
         }
         for (const x of Object.values(v)) visit(x, depth + 1);
       };
-      visit(node, 0);
+      visitFields(term, 1);
       const operands = [...slots].flatMap((s) =>
         inContext(s) ? [`${binding(s)}: ${recordType(ob, q.context[s])}`] : []);
       return {

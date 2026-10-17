@@ -1,7 +1,7 @@
 import { decodeGraph, decodeLabels, type TypeGraph, type Labels, type Clause } from "./type-graph.mts";
 // calculus.mts decodes the native terms a record's judgements and source map name.
 // control-flow.mts decodes the program-graph node a node or edge obligation names.
-import { decodeTerm, isTag, type Tag, type Term } from "./calculus.mts";
+import { decodeTag, decodeTerm, type Tag, type Term } from "./calculus.mts";
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
 import type { Span } from "./span.mts";
 
@@ -284,9 +284,8 @@ function diagnosticNode(v: unknown, size: number) {
     if (!Array.isArray(c.context)) throw Error("invalid context");
     c.context.forEach(t => decodeLabels(t,size)); decodeLabels(c.type,size);
   }
-  if (n.node !== null) {
-    decodeNode(n.node);
-  }
+  // The decoded node replaces its wire form, as the term and tag below do.
+  if (n.node !== null) n.node = decodeNode(n.node);
 }
 
 export function readDiagnostic(
@@ -341,7 +340,7 @@ export function readDiagnostic(
     if (d.kind === "node-typing" || d.kind === "expression-claim") {
       const q = d.sequent;
       if (!isRecord(q) || Object.keys(q).sort().join() !== "context,term,type" || !Array.isArray(q.context)) return undefined;
-      q.context.forEach(labels); labels(q.type); decodeTerm(q.term);
+      q.context.forEach(labels); labels(q.type); q.term = decodeTerm(q.term);
     }
     if (d.kind === "edge-coverage") {
       nat(d.edgeIndex);
@@ -350,7 +349,8 @@ export function readDiagnostic(
       if (transfer.tagObservation !== null) {
         const tag = record(transfer.tagObservation,["test","answer","slot"]);
         nat(tag.slot);
-        if (!isTag(tag.test) || typeof tag.answer !== "boolean") return undefined;
+        tag.test = decodeTag(tag.test);
+        if (typeof tag.answer !== "boolean") return undefined;
       }
       const destination = record(d.destination,["label","sourceMap","node","claim","requiredKnowledge"]);
       const claim = destination.claim;
