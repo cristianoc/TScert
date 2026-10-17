@@ -572,37 +572,65 @@ reads them. Without `onThrow`, $`R`$ is `True`. Coverage
 (`Effect.Covers`) gains one clause: an effect with `onThrow` covers one
 without, and not the other way.
 
+**Combining effects.** Two guarantees of one call combine
+(`Effect.meet`) into the meet of their footprints, with `onThrow` the
+conjunction of theirs. A disjunction would be unsound: an empty footprint
+stated on normal return only, met with a wider one stated also on a throw,
+gives no empty footprint on a throw. Where the conjunction loses a useful
+guarantee, the signatures stay separately selectable, as overloads are. The
+field is carried, and audited, wherever an effect is: overload combination,
+weakening by an annotation, `bind`, construct signatures, and imported and
+library signatures.
+
 **What stays on normal edges.** A promise (`guards`, `asserts`) is a fact
 about the arguments a normal return establishes, and `fresh` a fact about
 the returned value. A throw establishes neither, so neither moves onto an
 exceptional edge. A handler binds the thrown value at the graph's exception
-family, `unknown`, with no freshness, and receives only the current-content
-facts the footprint keeps stable, as a normal edge receives those its call
-keeps.
+family, `unknown`, and the thrown slot is never fresh; the slots the node
+already held keep their freshness. The handler receives only the
+current-content facts the footprint keeps stable, as a normal edge receives
+those its call keeps.
 
 **Composition through a body.** `GraphCode.BoundState` states the run's
-invariant from the body's entry heap $`h_0`$. It changes in three places:
+invariant from the body's entry heap $`h_0`$, with $`b`$ the body's
+freshness cutoff, the length of $`h_0`$: a node's run is bounded on the
+locations below $`b`$, so a node may change storage the body allocated
+before it, a receiver among them. The extension keeps that cutoff:
 
-- a node with a handler is admitted when its term's run is
-  `SafePostExc` with the footprint on the locations below the node's entry
-  as its exceptional postcondition, and the `handle` transition then keeps
-  $`\Phi.\mathsf{Holds}\,h_0\,h`$, by `Closed.Holds.trans_on` from the
-  node's entry, as `enter` does for a normal return;
+- a node with a handler is admitted when its term's run is `SafePostExc`
+  whose exceptional postcondition relates the node's entry heap to the heap
+  it raises in on the locations below $`b`$; the `handle` transition then
+  keeps $`\Phi.\mathsf{Holds}\,h_0\,h`$ by `Closed.Holds.trans_on` with
+  the invariant at the node's entry, as `enter` does for a normal return;
 - the state `.raised v` keeps $`\Phi.\mathsf{Holds}\,h_0\,h`$ where the body
   claims `onThrow`; without it the state stays unconstrained;
+- the `handle` transition also establishes the handler target's
+  `FreshOk`, through the handler's slot mapping with the thrown slot
+  non-fresh;
 - each node's term is checked by the form that admits it today (an
   inspection, a typed write, a call at a selected signature), now also on
   its throws.
+
+**Handler facts.** Ordinary graph certification checks a handler edge
+(`HandlerOk`) with facts that hold in every heap, and `handlerFacts` drops
+heap observations. The exceptional postcondition is therefore threaded
+through expression checking, handler checking and `StateOk`: a handler edge
+carries the current-content facts the throwing node's footprint keeps, and
+its check is relative to the heap the postcondition describes. A handler
+that relies on a fact the footprint does not keep is refused.
 
 Every way a node's term can raise is then covered:
 
 - **Before the invocation.** Source lowering evaluates operands into slots
   first (`valueTerm`), so a call node raises either while reading its
-  operands, which writes nothing, or in the callee. An inspection or a read
-  raises at its entry heap. A typed write raises before it writes.
+  operands, which writes nothing, or in the callee. An inspection may
+  allocate before it raises; it preserves the heap's prefix
+  (`inspect_step`), so every location below $`b`$ keeps its contents. A typed
+  write raises before it writes.
 - **In the callee.** A call at a selected signature raises within the
-  signature's `onThrow` footprint; one whose signature lacks `onThrow` admits
-  no handler and no `onThrow` body.
+  signature's `onThrow` footprint. In bounded certification, a node whose
+  call lacks `onThrow` admits no handler, and a body containing one claims
+  no `onThrow`; ordinary safety keeps every handler.
 - **Defaults and intermediate mutations.** A parameter default runs as nodes
   of the declaration's graph, and earlier nodes' normal returns compose into
   the invariant, so a throw at any node is relative to the body's entry
@@ -627,9 +655,12 @@ operation's own errors. `execFileSync`'s
 [restricted form](SOURCE-CONTRACTS.md#library-modules) is the first; its
 overlay entry in `library-modules.mts` states the empty footprint with
 `onThrow`, at options whose optional fields `env?: undefined` and
-`shell?: false` the argument's claim must meet. An object literal meets them
-by leaving those keys out, since a literal owns exactly the properties it
-writes ([object literals](#object-literals)). The entry keeps the unrestricted
+`shell?: false` the argument's claim must meet. An object literal without a
+spread meets them by leaving those keys out, since a literal owns exactly
+the properties it writes ([object literals](#object-literals)). A literal
+with a spread meets them only where each spread part's claim states the two
+keys absent or at those types; leaving them out after an open spread does
+not. The entry keeps the unrestricted
 form beside it, so a call outside the restricted options keeps its type and
 an unrestricted effect.
 
