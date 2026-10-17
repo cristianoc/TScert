@@ -22,7 +22,7 @@ design, not its progress.
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
-| [Module composition](#module-composition) | open | a Lean theorem composes units certified against each other's signatures |
+| [Module composition](#module-composition) | open: certified imports and `onThrow` designed (2026-10-17) | a Lean theorem composes units certified against each other's signatures |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
@@ -128,7 +128,17 @@ merge result at the instance's row.
 
 <a id="module-composition"></a>
 **Module composition** as a Lean theorem: the step-indexed argument that
-units certified against each other's signatures compose.
+units certified against each other's signatures compose. Two stages lead up
+to it. [Certified imports](docs/SOURCE-MODEL.md#certified-imports), over
+acyclic module graphs, check an imported function's code in the importer's
+run, at its effect-qualified signature. A call's footprint on a throw
+(`onThrow`) carries an effect through a handler: `group` in `dev/` needs it
+at `at`'s catch, with `execFileSync`'s
+[restricted form](docs/SOURCE-CONTRACTS.md#library-modules).
+`checkJson_safe` keeps its statement. Combining a certified import's
+conclusion with the importer's is left to this theorem, plus the review
+obligation that the import binds the certified unit's closure
+([the linking obligation](docs/SOURCE-MODEL.md#certified-imports)).
 
 <a id="iteration-left-open"></a>
 **Iteration left open.** An array pattern over a host

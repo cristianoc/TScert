@@ -1897,6 +1897,42 @@ unrestricted in its effect. The entries:
   option the host reads it validates without converting, throwing on a type
   it does not accept: an object at each such key ran no code of the client's
   under Node 25.2.1.
+- `execFileSync` has a second stated form, the **restricted form**, at
+  options without `env` and with an explicit `stdio`:
+  $`(\mathtt{string},\ \mathtt{readonly\ string[]},\ O_r)\Rightarrow\mathtt{string}`$ with
+
+  `O_r = { encoding: "utf8"; input?: string; maxBuffer?: number; stdio: readonly [S, "pipe", S] }`.
+
+  It states the empty footprint on normal return and on a throw
+  ([exceptional exits](SOURCE-MODEL.md#certified-imports)). A call meeting
+  only the first form keeps an unrestricted effect. The audit of Node
+  25.2.1's `lib/child_process.js` and `lib/internal/child_process.js` covers
+  every write the call makes before it returns or throws:
+
+  - `normalizeExecFileArgs` and `normalizeSpawnArguments` copy `args`
+    (`ArrayPrototypeSlice`) and the options (an object spread) into fresh
+    objects.
+  - Without `options.env`, the environment is a fresh copy of `process.env`.
+    `copyProcessEnvToEnv` writes `NODE_V8_COVERAGE` into it, and, under the
+    permission model, `copyPermissionModelFlagsToEnv` writes `NODE_OPTIONS`.
+    With `options.env`, both write into the caller's object, which is why the
+    restricted form states no `env`.
+  - `getValidStdio` pushes `undefined` into the caller's `stdio` array while
+    it is shorter than 3. The stated tuple has length 3, so no push happens.
+    Its reduction is a fresh array, which `spawnSync` stores before it writes
+    the input pipe into it.
+  - `execFileSync` writes the child's standard error through
+    `process.stderr` when `stdio` is omitted. The restricted form requires
+    `stdio`.
+  - The thrown error is the fresh `ret.error` or a fresh `genericNodeError`,
+    with `ObjectAssign` copying the result onto it.
+  - Every other step validates or converts primitives and runs no code of
+    the client's: the input is a string (`Buffer.from`), and `for…in` over
+    the environment copy reads `Object.prototype`, which holds no enumerable
+    key under the [ordinary-prototype assumption](SOURCE-MODEL.md#exact-contracts-and-native-effects).
+
+  The form also assumes that `NODE_DEBUG` does not name `child_process`:
+  `debuglog` would otherwise write the options through `process.stderr`.
 - `writeFileSync(file, data)` with a path and a string writes the string to
   the file as UTF-8 and returns `undefined`; a path it cannot write throws:
   $`(\mathtt{string},\ \mathtt{string})\Rightarrow\mathtt{undefined}`$.

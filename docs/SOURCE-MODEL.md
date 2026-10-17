@@ -426,9 +426,10 @@ inspect its source body or recheck it for the observed call. The guarantee
 must survive passing, returning, capturing and generic instantiation through
 ordinary type operations. An explicit annotation may forget the guarantee;
 that loses precision, not soundness. Overloads carry effects per signature.
-An imported implementation needs checked evidence or an explicitly documented
-external assumption: its TypeScript declaration supplies neither proof nor an
-implicit effect. Built-in contracts remain separately audited assumptions.
+An imported implementation needs checked evidence
+([certified imports](#certified-imports)) or an explicitly documented external
+assumption: its TypeScript declaration supplies neither proof nor an implicit
+effect. Built-in contracts remain separately audited assumptions.
 
 The first guarantee preserves existing heap contents on normal return and
 allows fresh allocation. A call that throws supplies no heap postcondition.
@@ -451,6 +452,109 @@ checking limit, not a restriction on the meaning of heap preservation.
 The source acceptance theorem includes effect checking. Pipeline controls
 exercise qualified callbacks passed or returned as values, ordinary-call
 fallbacks, and forged effect claims on bodies that mutate captured storage.
+
+### Certified imports
+
+An imported function of the program is read at its declaration's ordinary
+signature, which states no effect. A **certified import** is read at an
+effect-qualified signature that the same run certifies from the imported
+declaration's code. This is the checked evidence the
+[previous section](#inferred-call-effects-elaboration-and-certification)
+requires; the import's TypeScript declaration still supplies none. Module
+graphs whose certified imports form a cycle are left to a later stage: an
+import on such a cycle is read at its ordinary signature.
+
+**The exported unit.** For each import the claims read at a qualified
+signature, the document holds the exported declaration as a unit of its own,
+lowered from its module's source like a declaration of the checked file. The
+unit carries its origin: the module's file, that file's `sha256` (the
+snapshot the parser lowers, as `sourceSha256` is for the checked file), and
+the declaration's span and exported name. The parser resolves the import to
+the declaration TypeScript binds it to. The unit is checked in its own
+module's environment: the declarations of its file at their signatures, and
+its own imports.
+
+**Binding.** Lean reads an import at a qualified signature only where the
+document holds a unit of that origin certified at exactly that signature.
+The ordinary part is the declaration's annotation; the effect is the one the
+read states. Each of the following is refused at the import's span: a read
+naming no unit, a unit of another origin or signature, and a unit whose
+check fails. The importer's evidence and the unit's are checked by one
+`checkJson` call, so the evidence that certifies the effect is evidence
+about that declaration's code, not about a name.
+
+**The ordinary signature is kept.** The unit is checked at its annotation's
+signature with the effect added, its annotation obligations retained, as
+[elaboration](#inferred-call-effects-elaboration-and-certification) states
+for a module function. The importer reads the declared parameter and result
+types unchanged. A certified import is read as a module function is
+(`moduleArrow`), so its code is known to discard further actuals: it may be
+passed where a signature binding more parameters is expected
+(`program.map(decodeNode)`).
+
+**The dependency's own assumptions.** The unit's inputs are those of any
+unit of its module. A declaration of its module that it reads at a qualified
+signature is a unit of the document too, certified the same way. An import
+it reads at a qualified signature is a certified import, recursively. Every
+other input is read at its declared type, the ordinary
+[import assumption](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)
+the module's own run also makes. Recursion within one module is inferred as
+the module's functions are, at the greatest fixpoint.
+
+**Inference.** OCaml proposes the dependency's effects as it proposes its
+module's own (the greatest fixpoint over that module), then the importer's
+claims at them. No effect follows from a comment, a name or a module's
+role. A proposal its check refutes is withdrawn, and the import is then
+read at its ordinary signature. Dense `map` needs a callback footprint that
+keeps dense prefixes ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density));
+the empty footprint is one. `record-render`'s `parseRecord` writes only
+storage it allocates: its sections, the section it extends, and the
+trailers' entries and map. Its proposal is therefore the empty footprint,
+which its certificate must establish from the body.
+
+**What the theorem states.** `SourceClaimJson.checkJson_safe` keeps its
+statement. The exported units are requests of the same document. Its
+conclusion therefore gives each of them safety and its footprint under
+`EnvOk` of its own inputs, and gives the importer's functions safety under
+`EnvOk` of theirs, the qualified import among them.
+
+**The linking obligation.** The two conclusions combine into safety of the
+linked program only under two premises:
+
+- the value the import binds at run time is the closure of the certified
+  unit's code over its module's environment;
+- units certified against each other's signatures compose, so that closure
+  meets the qualified signature at every step index.
+
+The second is the [module composition](../WORK.md#module-composition)
+argument. The units of one module already rely on it when they read each
+other at qualified signatures. The first is a review obligation on the
+parser's resolution and the host's module loader. Until module composition
+is proved, both are obligations of review, listed with the import
+assumption.
+
+**Exceptional exits.** A call's effect states its footprint on normal
+return. With `onThrow`, it also states the footprint when the call throws.
+A handler then starts in a heap that the footprint relates to its node's
+entry heap: graph composition checks such a handler as it checks a normal
+successor, with the composed footprint checked at the handler's returns. A
+handler of a node whose operation states no `onThrow` stays refused, as
+[above](#inferred-call-effects-elaboration-and-certification).
+
+A body's own `onThrow` is certified where two conditions hold:
+
+- every node whose throw leaves the body is an operation stating `onThrow`,
+  or a term the semantics proves leaves the heap unchanged when it throws;
+- the footprint composed up to that node holds.
+
+`commit-records`' `at` catches the throw of `git`, and `git`'s only call is
+`execFileSync`. At the restricted contract
+([library modules](SOURCE-CONTRACTS.md#library-modules)), which states
+`onThrow`, `git` certifies `onThrow` at the empty footprint, and `at`'s
+handler, which returns `undefined`, is checked at it. Without this
+extension, the normal-return footprint gives `at` no heap at its handler,
+and `readRecord`, which reaches `at` through `examplesOf`, has no
+certificate.
 
 ### Calls
 
