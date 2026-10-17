@@ -80,6 +80,12 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "map-literal-at-expected-element: each token's kind is one the type names");
   assert.equal(runExample("invalid-map-literal-outside-element", `tokens([" "])[0].kind`), "space",
     "invalid-map-literal-outside-element: the actual source returns a kind its type does not name");
+  assert.equal(runExample("array-spread-named-union", `sizes({ kind: "dot" }, [{ kind: "line", length: 2 }])`), "0, 2",
+    "array-spread-named-union: each element's size");
+  assert.equal(runExample("map-stable-json-error", `JSON.stringify([quotedAll(["a"]), checkedAll([1, 2])])`),
+    '[["\\"a\\""],[1,2]]', "map-stable-json-error: dense results");
+  assert.throws(() => runExample("map-stable-json-error", "checkedAll([-1])"), /negative: -1/,
+    "map-stable-json-error: the callback's throw is an outcome");
   assert.equal(runExample("typeof-named-union", `[showKey("a"), showKey({ symbol: 2 }), symbolOf({ symbol: 3 }), symbolOf("x")].join()`),
     "a,sym#2,3,-1", "typeof-named-union: each arm reads its own representation");
   assert.equal(runExample("logical-narrowing-past-reads",

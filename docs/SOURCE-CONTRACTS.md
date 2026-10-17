@@ -1791,7 +1791,11 @@ declaration no library has, which joins the document with the entry:
 \mathsf{JsonValue}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\{\mathsf{readonly}\ [k:\mathsf{string}]:\mathsf{JsonValue}\}
 ```
 
-(`JSON.stringify`'s parameter). An entry may read a member as a test of the
+(`JSON.stringify`'s parameter). At a `JsonValue`, `JSON.stringify` reads own
+data properties, calls no `toJSON` and no getter, and allocates its string,
+so it states the empty footprint; so does `Error` at a string message, which
+it stores without conversion code (`map-stable-json-error`). An entry may
+read a member as a test of the
 calculus (`test`), and the variable's declaration as the right operand of
 `instanceof`:
 

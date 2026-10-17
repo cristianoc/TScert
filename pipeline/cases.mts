@@ -120,6 +120,8 @@ export const cases: Case[] = [
   positive("map-literal-at-expected-element", "a `map` callback returning an object literal with a conditional of string literals, at a return type naming them: the expected result fixes `U`, so the literal is typed at the element type"),
   negative("invalid-map-literal-outside-element", "a `map` callback returning a field literal the element type does not name, at that return type: the literal is no element",
     /no derivation of its node-typing claim/),
+  positive("array-spread-named-union", "an array literal of a value of a named union and a spread of an array of it holds that union, so a callback at it keeps `map` dense"),
+  positive("map-stable-json-error", "`JSON.stringify` at a JSON value and `Error` at a string message within the empty footprint: callbacks calling them keep `map`'s result dense"),
   positive("typeof-named-union", "a `typeof` test of a value whose type names a union decides the arms of its definition, in a module constant's arrow"),
   positive("logical-narrowing-past-reads", "the right operand of `&&` and `||` sees the left operand's `typeof` test on a parameter also past member reads, a method read and a regex literal before the parameter's read: a value binding's entry claim is its first read before a call, checked by the incoming edge"),
   positive("logical-truth-narrowing", "conditions of `&&` with a string left operand, in a statement and a conditional: the condition is read for its truthiness, so the right operand's test narrows the guarded branch; a computed read at a 14-key union is a chain of decided tests"),
