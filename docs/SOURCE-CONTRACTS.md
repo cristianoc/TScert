@@ -1585,7 +1585,10 @@ prefix (a position read at its index is its type, `elemReadPlan`):
 ```
 
 The form holds at any union of non-empty separators; which literals are
-collected bounds only which calls it serves. Its result's store contract has
+collected bounds only which calls it serves. A call of a string's `split`,
+its receiver's type deciding as for a primitive's prototype, collects the
+array prototype its result's members need; a structural `split` does not
+(`tests/trusted-inputs.mts`). Its result's store contract has
 a required position, which forbids a removal, so the producer proposes the
 form only for a call whose result nothing shrinks (`Source.unshrunk`): read
 by index at once, or bound to an unannotated constant every use of which

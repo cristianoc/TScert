@@ -1276,25 +1276,33 @@ export function collectDeclarations(file: string, options: {
       if (!regexpDefinitions.length) regexpDefinitions.push(nativeIteratorDefinition(keys));
       return keys;
     };
-    let arrayProto: TypeDefinition[] = [];
-    if (options.arrays) {
-      try {
-        arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
-      } catch (error) {
-        throw new DeclarationError(options.arrays, error instanceof Error ? error.message : String(error));
-      }
-    }
     // A primitive's members are read through its wrapper's prototype: its
     // contract joins the definitions, and the built-in prototype the values,
-    // an assumption at that contract as an import is at its type.
+    // an assumption at that contract as an import is at its type. A string's
+    // `split` gives an array, whose members the array prototype states.
     const primitiveProtos: TypeDefinition[] = [];
     const primitives = new Map<PrimitiveKind, Span>();
+    let stringSplit: Span | undefined;
     for (const span of options.memberReceivers ?? []) {
       const receiver = expressionAt(client, span);
       if (!receiver) throw new DeclarationError(span, "TypeScript member receiver missing");
       const type = checker.getTypeAtLocation(receiver);
-      for (const kind of type ? primitivesOf(type) : [])
+      const kinds = type ? primitivesOf(type) : [];
+      for (const kind of kinds)
         if (!primitives.has(kind)) primitives.set(kind, span);
+      const member = receiver.parent;
+      if (kinds.includes("string") && member && ts.isPropertyAccessExpression(member) &&
+          member.name.text === "split" && member.parent && ts.isCallExpression(member.parent))
+        stringSplit ??= span;
+    }
+    let arrayProto: TypeDefinition[] = [];
+    const arraysAt = options.arrays ?? stringSplit;
+    if (arraysAt) {
+      try {
+        arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
+      } catch (error) {
+        throw new DeclarationError(arraysAt, error instanceof Error ? error.message : String(error));
+      }
     }
     for (const [kind, at] of primitives) {
       try {

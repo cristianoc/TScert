@@ -1089,12 +1089,11 @@ export function parseFile(file: string, carriesContext = false,
     if (firstArray) return;
     const arrayReference = ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) &&
       (node.typeName.text === "Array" || node.typeName.text === "ReadonlyArray");
-    // A regex's matches and splits are arrays, and so is a string's `split`.
-    const splitCall = ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.name.text === "split";
+    // A regex's matches and splits are arrays. A string's `split` is one
+    // too, which the declaration graph decides from the receiver's type.
     if (ts.isArrayTypeNode(node) || ts.isTupleTypeNode(node) || ts.isArrayLiteralExpression(node) || arrayReference ||
         ts.isForOfStatement(node) || (ts.isParameterDeclaration(node) && !!node.dotDotDotToken) ||
-        node.kind === ts.SyntaxKind.RegularExpressionLiteral || splitCall) {
+        node.kind === ts.SyntaxKind.RegularExpressionLiteral) {
       firstArray = node;
       return;
     }
