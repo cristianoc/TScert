@@ -273,14 +273,20 @@ theorem elems_class_needs_two_levels :
 /-! ## Readonly arrays have a typed store
 
 A readonly array's store is a view, a writable one's an invariant field.
-Both count as typed fields, so both get a `before` bound. -/
+Either counts in each alternative, so the store is typed for each, and for a
+union of a writable and a readonly array, where it is invariant in one
+alternative and a view in the other. `length` is never a typed view. -/
 
-#guard !HeapExpressionRules.fieldOperand [PositiveNormalization.arrayClauseOf (0 : Nat) 1 [] true]
-  CallArguments.arrayStoreField
-#guard viewOperand [PositiveNormalization.arrayClauseOf (0 : Nat) 1 [] true] CallArguments.arrayStoreField
-#guard HeapExpressionRules.fieldOperand [PositiveNormalization.arrayClauseOf (0 : Nat) 1 [] false]
-  CallArguments.arrayStoreField
-#guard !viewOperand [PositiveNormalization.arrayClauseOf (0 : Nat) 1 [] true] lengthKey
+private def readonlyArr : PositiveNormalization.Clause Nat := PositiveNormalization.arrayClauseOf 0 1 [] true
+private def writableArr : PositiveNormalization.Clause Nat := PositiveNormalization.arrayClauseOf 0 1 [] false
+
+#guard typedOperand [readonlyArr] CallArguments.arrayStoreField
+#guard typedOperand [writableArr] CallArguments.arrayStoreField
+#guard typedOperand [writableArr, readonlyArr] CallArguments.arrayStoreField
+#guard typedOperand [readonlyArr, writableArr] CallArguments.arrayStoreField
+-- neither invariant in every alternative nor a view in every one
+#guard !HeapExpressionRules.fieldOperand [writableArr, readonlyArr] CallArguments.arrayStoreField
+#guard !typedOperand [readonlyArr] lengthKey
 
 /-! ## The stability check
 

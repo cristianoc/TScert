@@ -3,10 +3,9 @@ import Verification.Semantics.FootprintStability
 
 /-! # Typed fields from a point's types
 
-A slot's **typed fields** are the fields its type names as a record's
-invariant fields (`HeapExpressionRules.contractFields`) or readonly views
-(`viewFields`), an array's store under either: each has a location with a
-world contract. This is the proof role of today's allocation separation, and what
+A slot's **typed fields** are the fields every alternative of its type
+names as an invariant field or a readonly view, an array's store under
+either: each has a location with a world contract. This is the proof role of today's allocation separation, and what
 `before` stamps need: at a new mark equal to the heap's length, every typed
 field of every slot lies below it. Nothing uses this module yet. -/
 namespace Verification.Footprints
@@ -17,94 +16,100 @@ def clauseViewOperand : PositiveNormalization.Clause α → Option (List (PropKe
   | .refs _ _ vs .. | .dict _ _ vs .. => some vs
   | _ => none
 
-/-- Whether every alternative is an object with the readonly view `fld`,
-other than `length`, which arrays answer from their store: a view, like an
-invariant field, is a location of the object with a world contract. -/
-def viewOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
-  !cs.isEmpty && fld != lengthKey && cs.all fun c => match clauseViewOperand c with
+/-- Whether a clause gives `fld` a location with a world contract: as an
+invariant field, or as a readonly view other than `length`, which arrays
+answer from their store. -/
+def clauseTyped (c : PositiveNormalization.Clause α) (fld : PropKey) : Bool :=
+  (match clauseBagOperand c with
+    | some B => B.any fun p => decide (p.1 = fld)
+    | none => false) ||
+  (fld != lengthKey && match clauseViewOperand c with
     | some vs => vs.any fun p => decide (p.1 = fld)
-    | none => false
+    | none => false)
 
-theorem viewOperand_contract [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
-    (hr : viewOperand (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
-    ∃ flds l c oid, v = .objAt flds .absent oid ∧ flds.lookup fld = some l ∧ lookup W l = some c := by
-  simp only [viewOperand, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
-    List.all_eq_true, bne_iff_ne, ne_eq] at hr
-  obtain ⟨⟨hne, hlen⟩, hall⟩ := hr
-  have hp : G.plainTy Ref = true := by
-    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hne
-    exact plain_of_mem_expand (c := c) hc
-  obtain ⟨c, hm, hc, -⟩ := (expand_sem G Ref hp n W v).mp hv
-  have hb := hall c hm
-  cases c <;> simp only [clauseViewOperand] at hb
-  all_goals try contradiction
-  all_goals
-    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hb
-    simp only [decide_eq_true_eq] at hg
-    subst hg
-    rcases hc.2.1 _ _ (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) with hview | ⟨hl, -⟩
-    · obtain ⟨flds, l, c, oid, hv, hl, hw, -⟩ := hview _ _ (List.mem_singleton_self _)
-      exact ⟨flds, l, c, oid, hv, hl, hw⟩
-    · exact absurd hl hlen
+/-- Whether every alternative gives `fld` a located field, an invariant field
+in one and a view in another included. -/
+def typedOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
+  !cs.isEmpty && cs.all (clauseTyped · fld)
 
-/-- The readonly views of every slot whose type names them in every
-alternative, as `contractFields` lists invariant fields. -/
-@[nospecialize] def viewFields [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : List (Nat × PropKey) :=
-  Γ.zipIdx.flatMap fun (A, s) => match (expand G A).head? >>= clauseViewOperand with
-    | some vs => (vs.map Prod.fst).eraseDups.filterMap fun f =>
-        if viewOperand (expand G A) f then some (s, f) else none
-    | none => []
-
-theorem viewFields_mem [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {s f}
-    (hm : (s, f) ∈ viewFields G Γ) : ∃ Ref, Γ[s]? = some Ref ∧ viewOperand (expand G Ref) f = true := by
-  obtain ⟨⟨A, s'⟩, hA, hsel⟩ := List.mem_flatMap.mp hm
-  simp only at hsel
-  split at hsel
-  · obtain ⟨g, _, hg⟩ := List.mem_filterMap.mp hsel
-    split at hg
-    · rename_i hf
-      cases hg
-      exact ⟨A, List.mem_zipIdx_iff_getElem?.mp hA, hf⟩
-    · cases hg
-  · simp at hsel
-
-/-- The keys of slot `s`'s typed fields: its invariant fields and its
-readonly views, an array's store under either. -/
-@[nospecialize] def typedFields [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) : List PropKey :=
-  (contractFields G Γ ++ viewFields G Γ).filterMap fun p => if p.1 = s then some p.2 else none
-
-theorem mem_typedFields [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {s k}
-    (hk : k ∈ typedFields G Γ s) : (s, k) ∈ contractFields G Γ ∨ (s, k) ∈ viewFields G Γ := by
-  obtain ⟨⟨t, f⟩, hm, he⟩ := List.mem_filterMap.mp hk
-  simp only at he
-  split at he
-  · rename_i ht; cases he; subst ht; exact List.mem_append.mp hm
-  · cases he
-
-/-- **A typed field has a world contract.** -/
-theorem typedField_contract [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W}
-    (he : EnvOk G Γ ρ n W) {s k l} (hk : k ∈ typedFields G Γ s)
-    (hl : (fieldsOf (ρ s)).lookup k = some l) : ∃ c, lookup W l = some c := by
-  rcases mem_typedFields hk with hc | hv
-  case inr =>
-    obtain ⟨Ref, hidx, hvo⟩ := viewFields_mem hv
-    obtain ⟨flds, l', c, oid, hρ, hl', hw⟩ := viewOperand_contract hvo (he.2 s Ref hidx)
-    rw [hρ] at hl
-    simp only [fieldsOf] at hl
-    rw [hl] at hl'
-    cases hl'
-    exact ⟨c, hw⟩
-  obtain ⟨Ref, hidx, hfo⟩ := contractFields_mem hc
-  obtain ⟨B, El, hmem, hbag⟩ := fieldOperand_sound hfo (he.2 s Ref hidx)
+/-- The located field of a value bound by an invariant bag. -/
+private theorem bag_contract {B : List (PropKey × Fam)} {fld El n W v}
+    (hmem : (fld, El) ∈ B) (hbag : bagT B n W v) :
+    ∀ l, (fieldsOf v).lookup fld = some l → ∃ c, lookup W l = some c := by
+  intro l hl
   obtain ⟨flds0, code0, oid0, hl0, _, hrec⟩ := hbag
-  obtain ⟨flds1, l1, c1, oid', hproj, hfd1, hlookup, _⟩ :=
-    recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
+  obtain ⟨flds1, l1, c1, oid', hproj, hfd1, hlookup, _⟩ := recT_at hmem hrec
   rw [hl0] at hl
   cases hproj
   simp only [fieldsOf] at hl
   rw [hl] at hfd1
   cases hfd1
   exact ⟨c1, hlookup⟩
+
+theorem typedOperand_contract [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+    (hr : typedOperand (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+    ∀ l, (fieldsOf v).lookup fld = some l → ∃ c, lookup W l = some c := by
+  simp only [typedOperand, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at hr
+  obtain ⟨hne, hall⟩ := hr
+  have hp : G.plainTy Ref = true := by
+    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hne
+    exact plain_of_mem_expand (c := c) hc
+  obtain ⟨c, hm, hc, -⟩ := (expand_sem G Ref hp n W v).mp hv
+  have hb := hall c hm
+  simp only [clauseTyped, Bool.or_eq_true, Bool.and_eq_true, bne_iff_ne, ne_eq] at hb
+  rcases hb with hb | ⟨hlen, hb⟩
+  · cases c <;> simp only [clauseBagOperand] at hb
+    all_goals try contradiction
+    all_goals
+      obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hb
+      simp only [decide_eq_true_eq] at hg
+      subst hg
+    · exact bag_contract (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) (recT_bag hc.1.1)
+    · exact bag_contract (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hc.1.1.1
+  · cases c <;> simp only [clauseViewOperand] at hb
+    all_goals try contradiction
+    all_goals
+      obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hb
+      simp only [decide_eq_true_eq] at hg
+      subst hg
+      intro l hl
+      rcases hc.2.1 _ _ (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) with hview | ⟨hl', -⟩
+      · obtain ⟨flds, l', c, oid, hv, hl', hw, -⟩ := hview _ _ (List.mem_singleton_self _)
+        rw [hv] at hl
+        simp only [fieldsOf] at hl
+        rw [hl] at hl'
+        cases hl'
+        exact ⟨c, hw⟩
+      · exact absurd hl' hlen
+
+/-- The keys of slot `s`'s typed fields: those every alternative of its type
+gives a located field, as an invariant field or a readonly view. The
+candidates are the first alternative's. -/
+@[nospecialize] def typedFields [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (s : Nat) : List PropKey :=
+  match Γ[s]? with
+  | some A => match (expand G A).head? with
+    | some c => ((((clauseBagOperand c).getD []) ++ (clauseViewOperand c).getD []).map Prod.fst).eraseDups.filter
+        (typedOperand (expand G A))
+    | none => []
+  | none => []
+
+theorem mem_typedFields [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {s k}
+    (hk : k ∈ typedFields G Γ s) : ∃ A, Γ[s]? = some A ∧ typedOperand (expand G A) k = true := by
+  unfold typedFields at hk
+  split at hk
+  · rename_i A hA
+    split at hk
+    · exact ⟨A, hA, (List.mem_filter.mp hk).2⟩
+    · simp at hk
+  · simp at hk
+
+/-- **A typed field has a world contract.** -/
+theorem typedField_contract [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W}
+    (he : EnvOk G Γ ρ n W) {s k l} (hk : k ∈ typedFields G Γ s)
+    (hl : (fieldsOf (ρ s)).lookup k = some l) : ∃ c, lookup W l = some c := by
+  obtain ⟨A, hA, ht⟩ := mem_typedFields hk
+  exact typedOperand_contract ht (he.2 s A hA) l hl
 
 /-- At a new mark equal to the heap's length, every slot's typed fields lie
 below it. -/
