@@ -555,7 +555,7 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) : Exce
   -- result the promise's type.
   let promised : List (Json × List (String × Json)) := match g.guard with
     | some guard => [(guard.type, [("effect", toJson (CallEffects.Effect.mk .top
-        (some (if guard.asserts then .asserts guard.param else .guards guard.param)) false false))])]
+        (some (if guard.asserts then .asserts guard.param else .guards guard.param)) false false false))])]
     | none => []
   -- The plain signature states the footprint the declaration's claim
   -- proposes, which the declaration's own unit certifies; its extension

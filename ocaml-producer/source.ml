@@ -20,10 +20,11 @@ let promise_of = function
   | Object [("asserts",Object [("param",p)])] -> Asserts (natural p)
   | _ -> unsupported "unknown callable promise"
 let effect_of j = match j with
-  | Object fields when List.sort String.compare (List.map fst fields) = ["footprint";"fresh";"promise";"receiverStore"] ->
+  | Object fields when List.sort String.compare (List.map fst fields) = ["footprint";"fresh";"onThrow";"promise";"receiverStore"] ->
     {footprint=footprint_of (field "footprint" j);
      promise=(match field "promise" j with Null -> None | p -> Some (promise_of p));
-     fresh=boolean (field "fresh" j); receiver_store=boolean (field "receiverStore" j)}
+     fresh=boolean (field "fresh" j); receiver_store=boolean (field "receiverStore" j);
+     on_throw=boolean (field "onThrow" j)}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None

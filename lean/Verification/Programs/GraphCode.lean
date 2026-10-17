@@ -605,6 +605,7 @@ nodes, which preserves the heap, for code returning a plain result. A fresh
 result is established node by node whatever the footprint. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
+  (ProgramCertificates.CheckResult.ofBool (!c.row.effect.onThrow)).bind fun _ =>
   if c.row.effect.footprint = .top ∧ c.row.effect.fresh = false then pure () else
     (ProgramCertificates.CheckResult.ofBool c.row.effect.promise.isNone).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (!c.row.effect.fresh && c.exprs.all Purity.pureTerm)).orElse fun _ =>
@@ -616,15 +617,17 @@ result is established node by node whatever the footprint. -/
 
 theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) :
-    effectChecked G images c C = (
+    effectChecked G images c C = (!c.row.effect.onThrow && (
   decide (c.row.effect.footprint = .top ∧ c.row.effect.fresh = false) || (c.row.effect.promise.isNone &&
     ((!c.row.effect.fresh && c.exprs.all Purity.pureTerm) ||
-      compositionalChecked G images c.row.effect.footprint c.row.effect.fresh c.start (program c.exprs c.conts) C))
+      compositionalChecked G images c.row.effect.footprint c.row.effect.fresh c.start (program c.exprs c.conts) C)))
   ) := by
-  by_cases h : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false <;>
-    simp [effectChecked, effectCheckedResult, h, ProgramCertificates.CheckResult.accepted_orElse,
+  cases ho : c.row.effect.onThrow
+  all_goals by_cases h : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false <;>
+    simp [effectChecked, effectCheckedResult, h, ho, ProgramCertificates.CheckResult.accepted_orElse,
       ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_bind,
-      compositionalChecked] <;> rfl
+      compositionalChecked]
+  all_goals rfl
 
 /-- What a code entry's graph is checked to return: its signature's result,
 or its signature's promise about the parameter it names, at that parameter's
@@ -673,8 +676,13 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
     exact (Parametricity.checkEntry_reassign G η images _ _ _ _ _ _).trans hentry
   have ht : ProgramCertificates.CodesSound (reassign G η) (admits table) :=
     fun e he η' => htable e he η'
+  rw [effectChecked_eq, Bool.and_eq_true, Bool.not_eq_true'] at heff
+  obtain ⟨honThrow, heff⟩ := heff
   refine ⟨harity, hbelow, ?_⟩
   intro n W heap L he hw hh hvalues
+  -- A code entry states no footprint on a throw: the throw's postcondition
+  -- is vacuous.
+  apply HeapObservations.SafePostExc.of_post (fun _ r h => absurd h (by simp [honThrow]))
   have hs := goto_safe hc ht n W heap L .nul he hw hh
   have hsafe : Safe (excOf (reassign G η)) (c.row.effect.result (meaning (reassign G η) c.row.result)
       (framePromised c.row.effect (frameOffset c.store) L)) n W heap
@@ -696,7 +704,6 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       simp only [CallEffects.Effect.result, framePromised, hpr, CallEffects.TypePromise.result,
         CallEffects.TypePromise.param]
       exact hs
-  rw [effectChecked_eq] at heff
   by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false
   · refine HeapObservations.weaken (fun h' v hp r => ?_) (Footprints.Closed.top_safe hsafe)
     refine ⟨CallEffects.Effect.within_of_holds ?_, fun hf => by rw [htop.2] at hf; cases hf⟩

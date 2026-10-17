@@ -18,9 +18,12 @@ export type CallPromise = { guards: { param: number } } | { asserts: { param: nu
 /** What a signature guarantees beyond its contract: its footprint, an
  * optional promise, whether a normal return's value has an array store the
  * call allocated (`fresh`), and whether the footprint excepts the receiver's
- * array store, which the call may change arbitrarily (`receiverStore`)
+ * array store, which the call may change arbitrarily (`receiverStore`), and
+ * whether the footprint also bounds the heap a throw leaves (`onThrow`)
  * (`CallEffects.Effect`). */
-export type CallEffect = { footprint: ClosedFootprint; promise: CallPromise | null; fresh: boolean; receiverStore: boolean };
+export type CallEffect = {
+  footprint: ClosedFootprint; promise: CallPromise | null; fresh: boolean; receiverStore: boolean; onThrow: boolean;
+};
 /** One type alias or interface: its module (a path relative to the project's
  * tsconfig, the client's absolute path, or `typescript/lib/<file>`), its name
  * and its span there. */
