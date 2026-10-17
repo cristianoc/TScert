@@ -1215,16 +1215,24 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   }
 }
 
-// A heap-preservation claim forged onto a callback is certified only where
-// its body is: one reading its arguments is; one capturing a cell it writes,
-// or calling a member stated unrestricted (`pop` on the source beside a
-// string's `trim`, a global regex's `test`, a `Map`'s `set`), is refused at
-// its own typing.
-for (const [file, marker, arity, accepted] of [
-  ["closure-result-contract", "(p: number", 2, true], ["closure-graph-captured-cell", "(): void", 0, false],
-  ["invalid-map-primitive-method-mutation", "(x: string)", 3, false],
-  ["invalid-regexp-global-callback-effect", "(l) => word", 3, false],
-  ["invalid-map-collection-write-callback", "(name) =>", 3, false],
+// A footprint claim forged onto a callback is certified only where its body
+// is within it: one reading its arguments is within the empty footprint; one
+// writing a cell it captures is within `{value: any, store: keep}` and not the
+// empty one; one calling a member stated unrestricted (`pop` on the source
+// beside a string's `trim` or alone, a global regex's `test`, a `Map`'s
+// `set`) is refused at its own typing, even at the footprint `map`'s dense
+// signature accepts.
+const keepAll: ClosedFootprint = { value: "keep", store: "keep" };
+const writeValues: ClosedFootprint = { value: "any", store: "keep" };
+const growStores: ClosedFootprint = { value: "any", store: "grow" };
+for (const [file, marker, arity, accepted, footprint] of [
+  ["closure-result-contract", "(p: number", 2, true, keepAll], ["closure-graph-captured-cell", "(): void", 0, false, keepAll],
+  ["invalid-map-primitive-method-mutation", "(x: string)", 3, false, keepAll],
+  ["invalid-regexp-global-callback-effect", "(l) => word", 3, false, keepAll],
+  ["invalid-map-collection-write-callback", "(name) =>", 3, false, keepAll],
+  ["map-stable-outer-cell", "(x: number)", 3, false, keepAll],
+  ["map-stable-outer-cell", "(x: number)", 3, true, writeValues],
+  ["invalid-map-unstable-pop", "(x: number)", 3, false, growStores],
 ] as const) {
   const artifacts = run(file);
   const claims = readClaims(artifacts);
@@ -1239,7 +1247,7 @@ for (const [file, marker, arity, accepted] of [
   const arrow = must(row.flatMap(clause =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
     .find(s => s.arguments.length === arity), "the callback contract");
-  arrow.effect = emptyEffect;
+  arrow.effect = footprintEffect(footprint);
   const input = writeClaims(artifacts, "qualified-callback", claims);
   const produce = produceWith(artifacts, input, "qualified-callback");
   assert.ifError(produce.error);
@@ -1255,17 +1263,20 @@ for (const [file, marker, arity, accepted] of [
     assert.ok(failure && failure.kind === "node-typing", "a failed effect must name the callable's typing obligation");
     assert.ok(failure.source?.sourceMap?.pos, "the failed callable must have a source location");
     // Checking the honest evidence, where the case has any, against the
-    // forged claim names a node of the closure search named.
+    // forged claim is a located footprint refusal: at a node of the closure
+    // search named, or of a unit whose call of it the forged type no longer
+    // admits at the signature the evidence selected.
     const callable = failure.source?.sourceMap?.pos;
     if (callable && existsSync(join(artifacts, "evidence.json"))) {
       const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
-      const refused = /source effect refusal at \[(\d+),(\d+)\): the footprint claimed for a closure/.exec(checked);
+      const refused = /source effect refusal at \[(\d+),(\d+)\): the footprint claimed for (a closure|')/.exec(checked);
       assert.ok(refused, checked);
-      assert.ok(callable[0] <= Number(refused[1]) && Number(refused[2]) <= callable[1],
-        `checking refused at [${refused[1]},${refused[2]}), outside the closure [${callable[0]},${callable[1]})`);
+      if (refused[3] === "a closure")
+        assert.ok(callable[0] <= Number(refused[1]) && Number(refused[2]) <= callable[1],
+          `checking refused at [${refused[1]},${refused[2]}), outside the closure [${callable[0]},${callable[1]})`);
     }
   }
-  process.stdout.write(`callback heap-preservation claim, ${file}: ${accepted ? "certified" : "refused"}\n`);
+  process.stdout.write(`callback footprint claim {${footprint.value}, ${footprint.store}}, ${file}: ${accepted ? "certified" : "refused"}\n`);
 }
 
 {
@@ -1353,11 +1364,11 @@ for (const [file, marker, arity, accepted] of [
 
 {
   // A declaration's claimed footprint is established by its own unit's
-  // graph. `collect` verifies at its honest claims, and writes a `let` cell
-  // and pushes onto its parameter. Claimed at any footprint other than the
-  // one letting everything change, evidence production refuses at one of
-  // those writes, and the evidence for the honest claims does not justify
-  // the forged ones.
+  // graph. `collect` verifies at its honest claims, steps an array iterator,
+  // which may change anything, and pushes onto its parameter. Claimed at
+  // any footprint other than the one letting everything change, evidence
+  // production refuses at a node of its body, and the evidence for the
+  // honest claims does not justify the forged ones.
   const artifacts = run("optional-call-loop-cell");
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
   for (const footprint of narrowerFootprints) {
@@ -1368,16 +1379,16 @@ for (const [file, marker, arity, accepted] of [
     const produce = produceWith(artifacts, input, name);
     assert.ifError(produce.error);
     assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-    // Search and checking both name the write or the push.
+    // Search and checking both name a node of `collect`'s loop.
     for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)]) {
       const refused = /source effect refusal at \[(\d+),\d+\): the footprint claimed for 'collect'/.exec(detail);
       assert.ok(refused, detail);
       const at = Number(refused[1]);
-      assert.ok(source.indexOf("target?.push(line)") <= at && at < source.indexOf("target = into") + "target = into".length,
-        `refused at the push or the write, not at ${at}`);
+      assert.ok(source.indexOf("for (const line") <= at && at < source.indexOf("target = into") + "target = into".length,
+        `refused in the loop, not at ${at}`);
     }
   }
-  process.stdout.write("forged declaration footprints: each narrower than everything refused at a cell write or a push onto a parameter, in search and in checking\n");
+  process.stdout.write("forged declaration footprints: each narrower than everything refused in the body's loop, in search and in checking\n");
 }
 
 {

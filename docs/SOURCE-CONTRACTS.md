@@ -1408,7 +1408,7 @@ result. Of `ArrayProto`, `slice`, `join`, `toString`, `indexOf`,
 `lastIndexOf`, `includes`, `at` and `[Symbol.iterator]` state it: they read
 the receiver, convert only numbers and elements meeting the conversion
 contract below, compare by strict equality or SameValueZero, and allocate
-only their result; so do the overloads of `map`, `find`, `findIndex`,
+only their result; so do the overloads of `find`, `findIndex`,
 `filter`, `some`, `every` and `forEach` that take a preserving callback,
 which they call, the ordinary construction below allocating `map`'s and
 `filter`'s results. Each of these members reads the length once and the
@@ -1432,9 +1432,21 @@ The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source
 annotations are still translated in full. `join` bounds `T` to the conversion
 contract below,
-unrestricted (`all: any`) `find`/`findIndex` callbacks receive `T | undefined`, and unrestricted
-`map` callbacks produce a sparse result. Qualified overloads require a certified
-callback at the empty footprint and respectively pass `T` or promise a dense result.
+unrestricted (`all: any`) `find`/`findIndex` callbacks receive `T | undefined`.
+Their qualified overloads require a certified callback at the empty footprint
+and pass `T`. `map` relies on every index below the length it captured staying
+present until it tests it, a fact every closed footprint whose change to stores
+is at most `grow` keeps (`map_rely`, `denseCheck_stable`): at each such
+footprint $`\varepsilon`$, a dense receiver and a callback within
+$`\varepsilon`$ give a dense result, and the call is within $`\varepsilon`$,
+since beside the callback `map` reads the receiver and allocates its result.
+Any other callback gives a result that may hold holes:
+
+```math
+\frac{\varepsilon.\mathit{store}\sqsubseteq\mathsf{grow}\quad \mathit{xs}:\mathsf{dense}\ T[\,]\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon}U}
+     {\mathit{xs}.\mathsf{map}(f):U[\,]\;!\;\varepsilon}\ \textsf{map-stable-callback}
+```
+
 Source `U[]` requires readability; the fresh qualified map result may choose that
 lifetime contract even when its initial contents are physically dense.
 `flatMap` appends the present elements of each array its callback returns,
@@ -1533,8 +1545,10 @@ present and it lists no old element location it did not list before. A
 **state** is the locations its mutable state occupies; an object sharing
 another's state, an iterator and its collection, holds the other through an
 immutable hidden field and lists the other's state as read, never as its own.
-The signatures above state two closed footprints, the empty one and
-`all: any`. The footprints
+The signatures above state closed footprints: the empty one, `all: any`,
+`map`'s four that keep dense prefixes, and `push`'s and `unshift`'s
+`{value: any, store: grow}`, the closed coarsening of their row below. The
+footprints
 below are the specification of each native for the footprint mechanism:
 
 - `push`, `unshift`: `store(receiver): grow`, `class(value): any`.

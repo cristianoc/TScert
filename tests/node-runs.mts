@@ -25,6 +25,18 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   // The step calling the closure constant reads `LIMIT` before it holds a value.
   assert.throws(() => runExample("invalid-initialization-closure-call", "scaled(1)"), /before initialization/,
     "invalid-initialization-closure-call: the module throws a ReferenceError while it initializes");
+  // `map` over stable callbacks returns dense arrays; a callback popping the
+  // array it maps leaves a hole below the result's length.
+  for (const [file, call, expected] of [
+    ["map-stable-local-counter", `lengths(["ab", "c"])`, "[2,1]"],
+    ["map-stable-push", "twice([1, 2])", "[[1,1],[2,2]]"],
+    ["map-stable-helper", `counts(["ab", "c"])`, "[2,1]"],
+    ["map-stable-outer-cell", "runningTotals([1, 2, 3])", "[1,3,6]"],
+  ] as const)
+    assert.equal(runExample(file, `((r) => Object.keys(r).length === r.length && JSON.stringify(r))(${call})`),
+      expected, `${file}: the result is dense`);
+  assert.equal(runExample("invalid-map-unstable-pop", "Object.keys(shrink([1, 2, 3])).length"), 2,
+    "invalid-map-unstable-pop: the result has three positions, two present");
   // The callback's `set` writes the map it captures.
   assert.equal(runExample("invalid-map-collection-write-callback",
     `(() => { const counts = new Map(); seen(["a", "a"], counts); return counts.get("a"); })()`), 2,

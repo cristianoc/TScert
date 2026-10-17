@@ -64,10 +64,9 @@ let with_footprint footprint t = match t with
 let effect_candidate (g:Source.fn) = g.guard = None && not g.rest && g.quantified = []
 
 (* The footprint a declaration's body proposes for its signature, read off its
-   claims as a closure's is (`Expression_closures`): the empty footprint where
-   the body is made of reads, fresh allocations and calls whose callees'
-   signatures all state it, else the one letting everything change. A
-   proposal: Lean's check of the unit's graph establishes it. *)
+   claims as a closure's is (`Expression_closures`), else the one letting
+   everything change. A proposal: Lean's check of the unit's graph
+   establishes it. *)
 let declaration_footprint declarations names (claim:function_claim) =
   let g = claim.source in
   (* A call at an instance of a quantified callee is an elimination, whose
@@ -77,40 +76,42 @@ let declaration_footprint declarations names (claim:function_claim) =
   let callable (callee:expr) =
     match List.filter_map (fun (x:expression) -> if x.pos = callee.pos then Some x.type_ else None)
             claim.expressions with
-    | [] -> false
-    | types -> List.for_all (fun t -> match Type_queries.declared_head declarations [] t with
-      | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] -> calls <> [] &&
-        List.for_all (fun (s:signature) -> s.call_effect=empty_effect &&
-          s.variadic=None && s.rest_pack=None) calls
-      | _ -> false) types in
-  let values = List.filter (fun n -> not (List.exists (assigns n) g.body)) (List.map fst g.params) @ names in
-  if heap_preserving_stmts ~callable values g.body then empty_footprint else top_footprint
+    | [] -> None
+    | types -> List.fold_left (fun acc t -> join_bound acc (match Type_queries.declared_head declarations [] t with
+      | Atoms [Shape {calls;fields=[];indexes=[];elements=None}]
+        when calls <> [] && List.for_all (fun (s:signature) -> s.rest_pack=None) calls ->
+        Some (List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint)
+          empty_footprint calls)
+      | _ -> None)) (Some empty_footprint) types in
+  let readable = List.map fst g.params @ names in
+  Option.value (footprint_stmts ~callable ~readable g.body) ~default:top_footprint
 
 let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
-  (* Effects are proposed at the greatest fixpoint: every candidate whose body
-     could preserve the heap, were its callees to, is assumed preserving, and
-     a round's claims withdraw the assumption from each whose body then does
-     not, until a round withdraws none. Fewer preserving callees make no body
-     more preserving, so the rounds terminate. *)
+  (* Footprints are proposed at the least fixpoint: every candidate is
+     assumed to change nothing, and a round's claims raise each assumption to
+     what its body then changes, until a round raises none. Larger callee
+     footprints make no body's smaller, and the footprints are finitely
+     many, so the rounds terminate. *)
   let names = List.map (fun (g:Source.fn) -> g.name) program.Source.functions @ List.map fst program.Source.values in
-  let plausible = List.filter_map (fun (g:Source.fn) ->
-    if effect_candidate g && heap_preserving_stmts ~callable:(fun _ -> true)
-        (List.filter (fun n -> not (List.exists (assigns n) g.body)) (List.map fst g.params) @ names) g.body
-    then Some g.name else None) program.Source.functions in
+  let start = List.filter_map (fun (g:Source.fn) ->
+    if effect_candidate g then Some (g.name,empty_footprint) else None) program.Source.functions in
   let rec rounds assumed =
     let proposal : Proposal_types.t = infer_assuming ~state flows program assumed in
     let footprints = List.map (fun c -> c,declaration_footprint program.Source.declarations names c) proposal.functions in
-    let kept = List.filter_map (fun ((c:function_claim),f) ->
-      if f = empty_footprint && List.mem c.source.name assumed then Some c.source.name else None) footprints in
-    if List.length kept = List.length assumed then
+    let raised = List.filter_map (fun ((c:function_claim),f) ->
+      match List.assoc_opt c.source.name assumed with
+      | Some a -> Some (c.source.name,join_footprint a f)
+      | None -> None) footprints in
+    if raised = assumed then
       {proposal with functions=List.map (fun ((c:function_claim),f) ->
-        {c with declared_footprint=if List.mem c.source.name kept then f else top_footprint}) footprints}
-    else rounds kept in
-  rounds plausible
+        {c with declared_footprint=(match List.assoc_opt c.source.name assumed with
+          | Some a -> join_footprint a f | None -> top_footprint)}) footprints}
+    else rounds raised in
+  rounds start
 
 and infer_assuming ~state flows program assumed =
   let module_functions = List.map (fun (g:Source.fn) -> g.name,lazy (with_footprint
-      (if List.mem g.name assumed then empty_footprint else top_footprint) (module_type g)))
+      (Option.value (List.assoc_opt g.name assumed) ~default:top_footprint) (module_type g)))
     program.Source.functions
     @ List.map (fun (name,t) -> name,lazy t) program.Source.values in
   let arities = List.map (fun (g:Source.fn) -> g.name,arity g) program.Source.functions in

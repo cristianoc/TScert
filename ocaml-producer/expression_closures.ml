@@ -218,24 +218,27 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
            | None,Some element -> List.rev fixed,Some element
            | _ -> Proposal_diagnostics.unsupported "a rest parameter needs a tuple of required positions or an array")
         | [] -> Proposal_diagnostics.unsupported "a rest parameter needs a parameter" in
-      let values = List.filter_map (fun (name,b) -> match b with
-        | Value _ | Local _ -> Some name | Storage _ -> None) inner @ module_names in
-      (* A call's callee is preserving where every signature it may take
-         states it: the one the call's instance projects from a value's
+      let readable = List.map fst inner @ module_names in
+      (* A call changes at most what every signature its callee may take
+         states: the one the call's instance projects from a value's
          quantified overloads, else all of its type's. *)
       let callable (callee:expr) =
         match (match latest_instance callee.pos with Some t -> Some t | None -> latest_claim callee.pos) with
         | Some t -> (match declared_head declarations [] t with
-          | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] -> calls <> [] &&
-            List.for_all (fun (s:signature) -> s.call_effect=Semantic.empty_effect &&
-              s.variadic=None && s.rest_pack=None) calls
-          | _ -> false)
-        | None -> false in
+          | Atoms [Shape {calls;fields=[];indexes=[];elements=None}]
+            when calls <> [] && List.for_all (fun (s:signature) -> s.rest_pack=None) calls ->
+            Some (List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint)
+              empty_footprint calls)
+          | _ -> None)
+        | None -> None in
       (* Rest entries have a separate wrapper; its signature transport remains
          conservative until that lowering carries the inferred effect too. *)
-      let call_effect = if not rest && heap_preserving_expr ~callable values body &&
-        List.for_all (fun (_,d) -> heap_preserving_expr ~callable values d) defaults
-        then Semantic.empty_effect else Semantic.ordinary_effect in
+      let bound = if rest then None else
+        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~callable ~readable d))
+          (footprint_expr ~callable ~readable body) defaults in
+      let call_effect = match bound with
+        | Some footprint -> {Semantic.ordinary_effect with footprint}
+        | None -> Semantic.ordinary_effect in
       let own = match element with
         | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result
         | None -> quantified_arrow ~call_effect ~receiver quantified params result in

@@ -683,65 +683,81 @@ let rec assigns name s = match s.statement with
     (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
   | Closing (close,body) -> List.exists (assigns name) (body @ close)
   | Break _ | Continue -> false
-(* A definition-level proposal, never a call-site assumption. This first
-   analysis proposes pure operations, field and element reads and fresh
-   allocations.
-   Creation does not execute a closure's code. Calls consume their inferred
-   qualified contracts; Lean independently checks the selected call evidence.
+(* A definition-level proposal, never a call-site assumption: the closed
+   footprint a body's runs stay within, or [None] where the analysis cannot
+   bound them. Reads, tests, arithmetic and fresh allocations change nothing;
+   an assignment to a variable changes at most a cell holding a value, which
+   [cell_write] bounds; a call changes at most what every signature its
+   callee may take states. Creation does not execute a closure's code. Lean
+   checks every node of the body against the proposed footprint, and each
+   call at the signature it selects.
    Every constructor is listed so extensions require a decision here. *)
-let rec heap_preserving_expr ~callable values (e:expr) =
-  let pure = heap_preserving_expr ~callable values in
+let join_change a b = match a,b with
+  | Any,_ | _,Any -> Any | Grow,_ | _,Grow -> Grow | Keep,Keep -> Keep
+let join_footprint a b =
+  {on_value=join_change a.on_value b.on_value;on_store=join_change a.on_store b.on_store}
+let join_bound a b = match a,b with Some a,Some b -> Some (join_footprint a b) | _ -> None
+let cell_write = Some {on_value=Any;on_store=Keep}
+let rec footprint_expr ~callable ~readable (e:expr) : footprint option =
+  let go = footprint_expr ~callable ~readable in
+  let all es = List.fold_left (fun acc e -> join_bound acc (go e)) (Some empty_footprint) es in
   match e.node with
-  | Id name -> List.mem name values
-  | Literal _ -> true
-  | Not a | TypeofTest (_,_,a) | Cast (_,_,a) -> pure a
-  | Arith (_,a,b) | Comma (a,b) -> pure a && pure b
-  | Logical (_,a,b) | Coalesce (a,b) -> pure a && pure b
-  | Conditional (c,a,b) -> pure c && pure a && pure b
+  | Id name -> if List.mem name readable then Some empty_footprint else None
+  | Literal _ -> Some empty_footprint
+  | Not a | TypeofTest (_,_,a) | Cast (_,_,a) -> go a
+  | Arith (_,a,b) | Comma (a,b) -> all [a;b]
+  | Logical (_,a,b) | Coalesce (a,b) -> all [a;b]
+  | Conditional (c,a,b) -> all [c;a;b]
   (* A read changes no location: Lean's inspection rule admits any read of a
      field or an element, ordinary safety supplying that it does not stick. *)
-  | Read (a,_) -> pure a
-  | Index (a,b) | Equality (_,a,b) -> pure a && pure b
-  | Alloc fields -> List.for_all (fun (_,e) -> pure e) fields
-  | ArrayLiteral (es,spreads) -> spreads=[] && List.for_all pure es
-  | Lambda _ -> true
-  | Call (callee,receiver,args,spreads,_) -> spreads=[] &&
-    pure callee && Option.fold ~none:true ~some:pure receiver &&
-    List.for_all pure args && callable callee
+  | Read (a,_) -> go a
+  | Index (a,b) | Equality (_,a,b) -> all [a;b]
+  | Alloc fields -> all (List.map snd fields)
+  | ArrayLiteral (es,spreads) -> if spreads=[] then all es else None
+  | Lambda _ -> Some empty_footprint
+  (* A variable's new value goes to its slot, or to its cell, a location
+     holding a value (Lean's typed write rule). *)
+  | Assign (_,v) -> join_bound cell_write (go v)
+  | Update (_,{node=Id _;_},r,_) -> join_bound cell_write (all (Option.to_list r))
+  | Call (callee,receiver,args,spreads,_) ->
+    if spreads<>[] then None else
+    join_bound (all (callee :: Option.to_list receiver @ args)) (callable callee)
   (* A method call reads the member off its receiver (through a primitive's
-     prototype, for a primitive) and invokes it: preserving when the member's
-     signatures all state it. *)
-  | Invoke ({node=Read (o,_);_} as callee,args,spreads,_) -> spreads=[] &&
-    pure o && List.for_all pure args && callable callee
-  | BlockBody body -> heap_preserving_stmts ~callable values body
+     prototype, for a primitive) and invokes it. *)
+  | Invoke ({node=Read (o,_);_} as callee,args,spreads,_) ->
+    if spreads<>[] then None else join_bound (all (o :: args)) (callable callee)
+  | BlockBody body -> footprint_stmts ~callable ~readable body
   | Unary _ | HasKey _ | InstanceTest _ | Build _
-  | Write _ | Assign _ | Update _ | LogicalAssign _ | NullishAssign _
+  | Write _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _ | New _
   | Optional _ | IndexWrite _ | Bind _ | ObjectAssign _
-  | WithFields _ -> false
-and heap_preserving_stmts ~callable values = function
-  | [] -> true
+  | WithFields _ -> None
+and footprint_stmts ~callable ~readable = function
+  | [] -> Some empty_footprint
   | s::rest ->
-    let pure = heap_preserving_expr ~callable values in
-    let unchanged () = heap_preserving_stmts ~callable values rest in
+    let go = footprint_expr ~callable ~readable in
+    let block readable body = footprint_stmts ~callable ~readable body in
+    let tail () = block readable rest in
     match s.statement with
-    | Declare (false,bindings) ->
-      let rec add values = function
-        | [] -> heap_preserving_stmts ~callable values rest
-        | (name,_,init)::more -> heap_preserving_expr ~callable values init && add (name::values) more in
-      add values bindings
-    | Return e | Effect e | Throw e -> pure e && unchanged ()
-    | If (c,a,b) -> pure c && heap_preserving_stmts ~callable values a &&
-        heap_preserving_stmts ~callable values b && unchanged ()
-    | Block (_,body) -> heap_preserving_stmts ~callable values body && unchanged ()
-    | Break _ | Continue -> unchanged ()
+    | Declare (_,bindings) ->
+      let rec add readable acc = function
+        | [] -> join_bound acc (block readable rest)
+        | (name,_,init)::more ->
+          add (name::readable) (join_bound acc (footprint_expr ~callable ~readable init)) more in
+      add readable (Some empty_footprint) bindings
+    | Return e | Effect e | Throw e -> join_bound (go e) (tail ())
+    | If (c,a,b) -> join_bound (go c) (join_bound (block readable a) (join_bound (block readable b) (tail ())))
+    | Block (_,body) -> join_bound (block readable body) (tail ())
+    | While (c,body,update) ->
+      join_bound (go c) (join_bound (block readable (body @ update)) (tail ()))
+    | Break _ | Continue -> tail ()
     (* A pattern without a rest reads fields and positions of its
        initializer's value and binds them. *)
     | Destructure (target,d,init) when pattern_reads target ->
-      pure init && Option.fold ~none:true ~some:pure d &&
-      List.for_all pure (pattern_defaults target) &&
-      heap_preserving_stmts ~callable (pattern_names target @ values) rest
-    | Declare (true,_) | Destructure _ | While _ | ForOf _ | Try _ | Closing _ -> false
+      List.fold_left join_bound (go init)
+        (Option.to_list (Option.map go d) @ List.map go (pattern_defaults target) @
+         [footprint_stmts ~callable ~readable:(pattern_names target @ readable) rest])
+    | Destructure _ | ForOf _ | Try _ | Closing _ -> None
 
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow | "rem" -> Rem

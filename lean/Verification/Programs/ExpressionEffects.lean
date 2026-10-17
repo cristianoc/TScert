@@ -197,6 +197,9 @@ def selectedCallWithin (Φ : Footprints.Closed) : Evidence ι → Bool
   | .node _ (.app e) ps =>
       e.footprint.le Φ && ps.all fun p => valueTerm (claim p).term &&
         checkScope (claim p).context.length (claim p).term
+  | .node _ (.callRest e _ _ flags _) ps =>
+      e.footprint.le Φ && flags.all (· == false) && ps.all fun p => valueTerm (claim p).term &&
+        checkScope (claim p).context.length (claim p).term
   | .node _ (.sub _) [p] => selectedCallWithin Φ p
   | _ => false
 
@@ -287,6 +290,147 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
         instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] using hs
     · contradiction
 
+theorem map_spread_false : ∀ (flags : List Bool) (qs : List (Sequent ι)), (∀ b ∈ flags, b = false) →
+    flags.length = qs.length →
+    (flags.zip qs).map (fun q => spreadTerm (q.1, q.2.term)) = qs.map Sequent.term
+  | [], [], _, _ => rfl
+  | b :: bs, q :: qs, hf, hl => by
+    obtain rfl := hf b (by simp)
+    have ih := map_spread_false bs qs (fun b hb => hf b (by simp [hb])) (by simpa using hl)
+    simp only [List.zip_cons_cons, List.map_cons, ih]
+    rfl
+  | [], _ :: _, _, hl => by simp at hl
+  | _ :: _, [], _, hl => by simp at hl
+
+theorem map_zip_type : ∀ (flags : List Bool) (qs : List (Sequent ι)), flags.length = qs.length →
+    (flags.zip qs).map (fun q => q.2.type) = qs.map Sequent.type
+  | [], [], _ => rfl
+  | _ :: bs, q :: qs, hl => by
+    simp only [List.zip_cons_cons, List.map_cons]
+    rw [map_zip_type bs qs (by simpa using hl)]
+  | [], _ :: _, hl => by simp at hl
+  | _ :: _, [], hl => by simp at hl
+
+/-- A variadic call whose parts are all values, none a spread, at its selected
+signature: the signature's postcondition holds of the call. -/
+private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G}
+    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool}
+    {e : CallEffects.Effect} {k u : Nat} {flags : List Bool} {P : Ty ι}
+    (hl : LocalUsing G images j (.callRest e k u flags P) ps codes)
+    (hnos : flags.all (· == false) = true)
+    (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
+    (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type) (e.post h)
+      n W h (instantiate 0 ρ j.term) := by
+  rcases j with ⟨Γ,t,A⟩
+  cases t <;> try exact (hl : False).elim
+  rename_i f r args
+  rcases ps with _ | ⟨jf, _ | ⟨jr, jas⟩⟩
+  · exact (hl : False).elim
+  · exact (hl : False).elim
+  obtain ⟨hΓf, htf, hΓr, htr, hcontexts, hlen, hshort, hargs, hundef, hparts, hmem, hplain⟩ := hl
+  have context : ∀ p ∈ jf::jr::jas, p.context = Γ := by
+    intro p hp
+    simp only [List.mem_cons] at hp
+    rcases hp with rfl | rfl | hp
+    · exact hΓf
+    · exact hΓr
+    · exact hcontexts p hp
+  have typed : ∀ p ∈ jf::jr::jas, HasTyUsing G images Γ p.term p.type := by
+    intro p hp
+    simpa only [context p hp] using ht p hp
+  have values : ∀ p ∈ jf::jr::jas, isVal (instantiate 0 ρ p.term) = true := by
+    intro p hp
+    exact valueTerm_instantiate (hv p hp).1 (hv p hp).2 (by simpa [context p hp] using he)
+  -- No part is a spread: the parts are the actuals themselves.
+  have hflags : ∀ b ∈ flags, b = false := by
+    intro b hb
+    simpa using List.all_eq_true.mp hnos b hb
+  have hl2 : (jas.drop (k + u)).length = flags.length := by simp [hlen]
+  have hl2' : jas.length - (k + u) = flags.length := by simpa using hl2
+  have hnospread := map_spread_false flags (jas.drop (k + u)) hflags hl2.symm
+  rw [hnospread] at hargs
+  cases n with
+  | zero => trivial
+  | succ n =>
+    have member : ∀ p ∈ jf::jr::jas, meaning G p.type (n+1) W (instantiate 0 ρ p.term) := by
+      intro p hp
+      exact safe_value_mem (values p hp) ((typed p hp).sound _ _ h ρ he hw hh)
+    have hf := restsT_of_restSigs hmem (member jf (by simp))
+    have hp := hf.2 _ (List.mem_singleton_self _)
+    have hAll := argument_values (ps := jas)
+      (fun p hp => typed p (by simp [hp])) (fun p hp => values p (by simp [hp])) he hw hh
+    -- The actuals' values: the fixed ones, then the parts.
+    let vals := fun (qs : List (Sequent ι)) => qs.map (fun p => instantiate 0 ρ p.term)
+    have hsplitk := ArgsT_take_drop k hAll
+    have hsplitku := ArgsT_take_drop (k + u) hAll
+    simp only [← List.map_take, ← List.map_drop] at hsplitk hsplitku
+    have hpack : argMeaning G P (n+1) W (vals (jas.drop (k + u))) := by
+      unfold RestParts at hparts
+      have hany : ((flags.zip (jas.drop (k + u))).map fun q => (q.1, q.2.type)).any (·.1) = false := by
+        simp only [List.any_eq_false, List.mem_map, Prod.exists]
+        rintro _ ⟨a, b, hab, rfl⟩
+        exact by simpa using hflags a (List.of_mem_zip hab).1
+      rw [hany] at hparts
+      simp only [Bool.false_eq_true, ite_false] at hparts
+      split at hparts
+      · rename_i T hPT
+        obtain ⟨hreq, hbound, hpos⟩ := hparts
+        have hzip := map_zip_type flags (jas.drop (k + u)) hl2.symm
+        apply restParts_pack hPT (Qs := (jas.drop (k + u)).map Sequent.type)
+        · simp only [List.length_map, List.length_drop, hl2']
+          simpa [List.length_map, List.length_zip, hl2'] using hreq
+        · simp only [List.length_map, List.length_drop, hl2']
+          simpa [List.length_map, List.length_zip, hl2'] using hbound
+        · intro i hi
+          have := hpos i (by
+            simp only [List.mem_range, List.length_map, List.length_drop, List.length_zip] at hi ⊢
+            omega)
+          rw [this, ← hzip]
+          simp [List.getElem?_map, Option.map_map, Function.comp_def]
+        · simpa [vals, List.map_map, Function.comp_def] using hsplitku.2
+      · exact hparts.elim
+    have hacc : ArgsRest ((jas.take (k + u)).map (fun p => meaning G p.type)) (argMeaning G P) (n+1) W
+        (vals (jas.take k) ++ vals (jas.drop (k + u))) := by
+      rcases hshort with rfl | rfl
+      · simp only [Nat.add_zero] at hpack ⊢
+        exact ArgsRest_of_exact_extra hsplitk.1 hpack
+      · have hl2 : jas.drop (k + u) = [] := by
+          apply List.eq_nil_of_length_eq_zero; simp [hlen]
+        rw [hl2]
+        simp only [vals, List.map_nil, List.append_nil]
+        have hpad : ArgsShort ((jas.take (k + u)).map (fun p => meaning G p.type)) (n+1) W
+            ((jas.take k).map (fun p => instantiate 0 ρ p.term)) := by
+          apply ArgsShort_of_pad (pad := ((jas.drop k).take u).map (fun p => instantiate 0 ρ p.term))
+          · intro a ha
+            obtain ⟨p, hp, rfl⟩ := List.mem_map.mp ha
+            simp [hundef p hp, instantiate]
+          · simpa only [List.take_add, List.map_append] using hsplitku.1
+        have hlen' := hpad.1
+        refine ⟨by rwa [List.take_of_length_le hlen'], ?_⟩
+        rw [List.drop_eq_nil_of_le hlen']
+        simpa [vals, hl2] using hpack
+    have hvals : CallArguments.Values (vals (jas.take k) ++ vals (jas.drop (k + u))) := by
+      intro a ha
+      rcases List.mem_append.mp ha with ha | ha <;> obtain ⟨p, hp, rfl⟩ := List.mem_map.mp ha
+      · exact values p (by simp [List.mem_of_mem_take hp])
+      · exact values p (by simp [List.mem_of_mem_drop hp])
+    have hr := member jr (by simp)
+    have hrval := values jr (by simp)
+    have hs := CallEffects.call_safe (effect := e)
+      (P := ArgsRest ((jas.take (k + u)).map (fun p => meaning G p.type)) (argMeaning G P))
+      (Adm.of_transfer (fun ha j hj U hx => ArgsRest_transfer (fun T hm => by
+          obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type)
+        (argMeaning_adm G P) ha j hj U hx))
+      (meaning_adm G jr.type)
+      (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, List.map_map, Function.comp_def] using hp)
+      hr hrval hvals hacc hw hh
+    rw [CallEffects.Effect.result_plain hplain] at hs
+    simpa [htf, htr, hargs, vals, instantiate, instantiateArgs_eq_map, List.map_map,
+      Function.comp_def] using hs
+
 theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {Φ : Footprints.Closed} (e : Evidence ι)
     {codes : CodeEntry ι → Bool} (ht : checkTreeUsing G images e codes = true)
@@ -305,6 +449,17 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
       obtain ⟨hle, hp⟩ := hp
       apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono hle hq)
       apply call_local_sound ht.1 _ _ he hw hh
+      · intro p hm
+        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+      · intro p hm
+        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+        exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
+    case callRest effect k u flags P =>
+      simp only [Bool.and_eq_true] at hp
+      obtain ⟨⟨hle, hnos⟩, hp⟩ := hp
+      apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono hle hq)
+      apply callRest_local_sound ht.1 hnos _ _ he hw hh
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes

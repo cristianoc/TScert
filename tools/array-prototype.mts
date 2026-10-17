@@ -29,8 +29,8 @@ import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { signatures, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
-import type { CallEffect, ArrayPresence } from "./type-graph.mts";
+import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
+import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
 export type OverlayEntry = {
   /** The member's key on the prototype, as declared: a name, or a computed
@@ -100,6 +100,13 @@ const callback = (value: TypeTerm, result: TypeTerm,
 const findingCallback = callback(maybeElement, atomOf("unknown"), ordinaryEffect);
 const preservingFind = callback(element, atomOf("unknown"), emptyEffect);
 const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
+/** The closed footprints that keep an array's dense prefixes: those whose
+ * change to array stores is at most `grow` (`stableDenseClosed`), smallest
+ * first. */
+const stableForDensity: ClosedFootprint[] = [
+  { value: "keep", store: "keep" }, { value: "any", store: "keep" },
+  { value: "keep", store: "grow" }, { value: "any", store: "grow" },
+];
 
 export const overlay: readonly OverlayEntry[] = [
   // At a callback preserving the input heap, `forEach` does, as `every`
@@ -112,13 +119,19 @@ export const overlay: readonly OverlayEntry[] = [
       { params: [callback(element, atomOf("unknown"), ordinaryEffect)], result: atomOf("undefined") }] },
   { name: "map", from: "ReadonlyArray",
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
-    // Under ordinary construction, a callback preserving the input heap
-    // leaves every original source position present throughout traversal.
-    // The unrestricted contract admits reentrancy and only promises presence
-    // at visited positions. Both are ordinary per-signature call contracts.
+    // `map` relies on every index below the length it captured staying
+    // present until it tests it. A callback whose footprint changes array
+    // stores at most by `grow` keeps that fact (FOOTPRINTS.md, "Natives":
+    // `map_rely`, `denseCheck_stable`), so at each such footprint a dense
+    // receiver gives a dense result, and the call's own footprint is the
+    // callback's: `map` reads the receiver and allocates its result. Any
+    // other callback gives a result that may hold holes. These are ordinary
+    // per-signature call contracts.
     stated: [
-      { receiver: arrayOf(element, true, "dense"), params: [callback(element, mappedElement, emptyEffect)],
-        result: arrayOf(mappedElement, false), effect: emptyEffect },
+      ...stableForDensity.map((footprint) => ({
+        receiver: arrayOf(element, true, "dense"),
+        params: [callback(element, mappedElement, footprintEffect(footprint))],
+        result: arrayOf(mappedElement, false), effect: footprintEffect(footprint) })),
       { params: [callback(element, mappedElement, ordinaryEffect)],
         result: arrayOf(mappedElement, false, "sparse") },
     ] },
@@ -217,10 +230,12 @@ export const overlay: readonly OverlayEntry[] = [
   // store changes do. The store relations are proved of the specification
   // steps (FootprintNatives.lean); that each native changes nothing but its
   // store and element contents is this entry's audit.
-  { name: "push", from: "Array", signature: "push(...items: T[]): number;" },
+  { name: "push", from: "Array", signature: "push(...items: T[]): number;",
+    effect: footprintEffect({ value: "any", store: "grow" }) },
   { name: "pop", from: "Array", signature: "pop(): T | undefined;" },
   { name: "shift", from: "Array", signature: "shift(): T | undefined;" },
-  { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;" },
+  { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;",
+    effect: footprintEffect({ value: "any", store: "grow" }) },
   { name: "reverse", from: "Array", signature: "reverse(): T[];" },
   // Iteration: `ArrayIterator<T>` extends `IteratorObject<T,
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
