@@ -1525,8 +1525,13 @@ other signature or its receiver condition from the declared scheme.
 a supertype of the declared interface. A member's signatures state the
 entry's effect: the empty footprint for the readers, `has`, `get`, `keys`,
 `values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`,
-`toString` and `toISOString`, none for the members that change the
-collection or the date or call a callback. $`⟦m⟧_\omega`$ drops
+`toString` and `toISOString`; `{value: any, store: keep}` for the members
+that change the collection or the date, `add`, `set`, `delete`, `clear` and
+`setTime`, which compare by SameValueZero or take a number, run no code and
+write only the receiver's internal slots, which hold no array store; none for
+`forEach`, which calls a callback. `new Set` and `new Map` of an array or of
+nothing state the empty footprint on their construct signatures: they read the
+array through the host's iterator and allocate. $`⟦m⟧_\omega`$ drops
 `thisArg`, reads a `this` result as the receiver, and reads a declared
 iterator result as `Iterator<T>`, which it extends. A property is a readonly
 view. A string's own `length` and indices are the calculus's `lenStr` and
@@ -1547,9 +1552,11 @@ another's state, an iterator and its collection, holds the other through an
 immutable hidden field and lists the other's state as read, never as its own.
 The signatures above state closed footprints: the empty one, `all: any`,
 `map`'s four that keep dense prefixes, `push`'s and `unshift`'s
-`{value: any, store: grow}`, the closed coarsening of their row below, and
-the array iteration's: `%Iterate%` the empty footprint, its step
-`{value: any, store: keep}`, the closed coarsening of its row below. The
+`{value: any, store: grow}`, the closed coarsening of their row below, the
+array iteration's: `%Iterate%` the empty footprint, its step
+`{value: any, store: keep}`, the closed coarsening of its row below, and the
+collections': `new Set` and `new Map` the empty footprint, their mutators
+`{value: any, store: keep}`. The
 footprints
 below are the specification of each native for the footprint mechanism:
 

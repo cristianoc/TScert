@@ -42,7 +42,7 @@ for the synthetic copy. -/
         if T.optional.isEmpty && T.rest.isNone then return S
     -- Into a variadic construct signature's element rest, a copy at that
     -- element type.
-    if let [.ctors _ ((_, P, _) :: _) _ _ _] := PositiveRules.expand G B then
+    if let [.ctors _ (⟨_, (_, P), _, _⟩ :: _) _ _ _] := PositiveRules.expand G B then
       if let some E := PositiveRules.restElem G P then
         let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
         recordHints [C]

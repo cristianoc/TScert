@@ -219,13 +219,13 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
            | _ -> Proposal_diagnostics.unsupported "a rest parameter needs a tuple of required positions or an array")
         | [] -> Proposal_diagnostics.unsupported "a rest parameter needs a parameter" in
       let readable = List.map fst inner @ module_names in
-      (* A call changes at most what every signature its callee may take
-         states: the one the call's instance projects from a value's
-         quantified overloads, else all of its type's. *)
+      (* A call or a construction changes at most what every signature its
+         callee may take states: the one the call's instance projects from a
+         value's quantified overloads, else all of its type's. *)
       let callable (callee:expr) =
         match (match latest_instance callee.pos with Some t -> Some t | None -> latest_claim callee.pos) with
         | Some t -> (match declared_head declarations [] t with
-          | Atoms [Shape {calls;fields=[];indexes=[];elements=None}]
+          | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] | Atoms [Ctors (calls,_)]
             when calls <> [] && List.for_all (fun (s:signature) -> s.quantified=[] && s.rest_pack=None) calls ->
             Some (List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint)
               empty_footprint calls)

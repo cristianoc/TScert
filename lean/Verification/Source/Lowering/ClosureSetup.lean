@@ -201,12 +201,12 @@ scheme row's variadic signatures. -/
             -- binding the code's further positions at the element or
             -- `undefined` (`ProgramTyping.ctorRestParams`).
             let codeArity := fixedParams.length + restElements.length
-            let variadic ← S.mapM fun (Qs, P, Ri) => do
+            let variadic ← S.mapM fun ⟨_, (Qs, P), Ri, effect⟩ => do
               let some El := PositiveRules.restElem G P
                 | throw (locatedRefusal (← table) pos .bindingAnnotation
                     "a variadic construct signature needs an element rest")
-              pure (⟨U, ProgramTyping.ctorRestParams codeArity Qs El U, Ri, .ordinary⟩ : Arrow (Ty Tree))
-            pure (L.map (fun (Di, Ri) => ⟨U, Di, Ri, .ordinary⟩) ++ variadic, [])
+              pure (⟨U, ProgramTyping.ctorRestParams codeArity Qs El U, Ri, effect⟩ : Arrow (Ty Tree))
+            pure (L.map (·.withReceiver U) ++ variadic, [])
           | _ => throw "a class value's claim must name construct signatures"
         | .annotated F, _ => match PositiveRules.expand G F with
           | [.arrs L _] => pure (L, [])

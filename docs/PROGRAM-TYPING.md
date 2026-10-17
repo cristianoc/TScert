@@ -623,8 +623,11 @@ an arrow only the first. The calculus records which in the closure's code
 (`kind`), a plain call dispatches only call code, and `new f(args)` is its own
 term, which evaluates `f`, then the actuals, and runs only construct code, with
 `undefined` for the receiver. A construct signature
-$`\mathsf{new}(A_1,\ldots,A_n)\Rightarrow B`$ (the `ctors` clause) is met by a
-class whose code, for actuals at the parameters, is safe at $`B`$. As for a
+$`\mathsf{new}(A_1,\ldots,A_n)\Rightarrow^{\varepsilon} B`$ (the `ctors` clause)
+is met by a class whose code, for actuals at the parameters, is safe at $`B`$
+and whose normal return meets the signature's effect $`\varepsilon`$ from the
+heap the construction starts in (`ConstructPromise`), as a call signature's
+effect is met ([inferred call effects](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)). As for a
 function, a signature may offer more parameters than the constructor binds:
 the construct step binds its first $`\mathit{arity}`$ actuals and discards the
 rest, so the code is checked at the signature's first $`\mathit{arity}`$
@@ -635,18 +638,25 @@ fields $`\overline{k_i{=}e_i}`$, each at its contract $`A_i`$ (the class's bag
 $`\varphi=\overline{k_i{:}A_i}`$, empty for a class with none):
 
 ```math
-\frac{L\equiv_G\mathsf{Ctors}(\ldots,(\vec A,B),\ldots;\varphi)\quad
+\frac{L\equiv_G\mathsf{Ctors}(\ldots,(\vec A,B,\varepsilon),\ldots;\varphi)\quad
       U\equiv_G\mathsf{Undefined}\quad
       \kappa_{\mathsf{code}}\,\vec k\ \text{distinct}\quad
       \forall i.\;\Gamma\vdash_G e_i:A_i\quad
-      \vec C\vdash_G\kappa^{\mathsf{new}}:(U;\vec A\to B)\ \text{for each signature}\quad
+      \vec C\vdash_G\kappa^{\mathsf{new}}:(U;\vec A\to^{\varepsilon} B)\ \text{for each signature}\quad
       \forall j.\;\Gamma\vdash_G x_j:C_j}
      {\Gamma\vdash_G \mathsf{make}(\kappa^{\mathsf{new}}[\vec x],\kappa_{\mathsf{code}}{=}\mathsf{null},\overline{k_i{=}e_i}) : L}
 \qquad
-\frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots,(\vec A\,\vec U,B),\ldots;\varphi)\quad
+\frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots,(\vec A\,\vec U,B,\varepsilon),\ldots;\varphi)\quad
+      \varepsilon\ \text{plain}\quad
       \Gamma\vdash_G a_i:A_i\quad\Gamma\vdash_G\mathsf{undefined}:U_j}
      {\Gamma\vdash_G \mathsf{new}\ f(\vec a):B}
 ```
+
+A plain effect has no promise, so its result operand is the result's type. A
+construction with value operands runs within its selected signature's
+footprint $`\varepsilon`$ (`CallEffects.construct_safe`), which is how a body
+checked against a bound consumes it, as it consumes a call's
+([FOOTPRINTS.md](FOOTPRINTS.md#composition)).
 
 A static field is read and written as a callable object's bag field is
 (`readCallable`, `writeCallable`, over the clause's bag, `Clause.bag`), a
@@ -673,8 +683,8 @@ generic class it constructs: the producer proposes that instantiation, and it
 is checked as an inferred one is ([explicit type arguments](SOURCE-CONTRACTS.md#explicit-type-arguments)). No arrow meets a construct signature and no
 class a call signature, so `new` on an arrow and a plain call of a class are
 refused, as JavaScript throws. A construct signature is covered by one taking
-as many parameters, each at least as wide, with a result at most as wide:
-`new (params: Specific) => R` is a `new (params: never) => R`.
+as many parameters, each at least as wide, with a result at most as wide, that
+supplies its effect: `new (params: Specific) => R` is a `new (params: never) => R`.
 
 #### Packed binders
 
@@ -752,8 +762,8 @@ spelled with its packed name, `T#pack`.
 
 #### Variadic construct signatures
 
-A variadic construct signature $`\mathsf{new}(\vec Q,\ {\ldots}P)\Rightarrow B`$
-admits the lists whose first $`|\vec Q|`$ actuals are at $`\vec Q`$ and whose
+A variadic construct signature $`\mathsf{new}(\vec Q,\ {\ldots}P)\Rightarrow^{\varepsilon} B`$,
+its effect $`\varepsilon`$ plain, admits the lists whose first $`|\vec Q|`$ actuals are at $`\vec Q`$ and whose
 further ones form a pack of $`P`$ (`CtorRest`, `ctorRestsT`). `new` reads a
 spread actual as a call does, its store's elements replacing it once every
 earlier actual is a value (`Step.constructSpread`), and the parts past the
@@ -762,7 +772,7 @@ above; `constructRest`, `construct_rest_safe`, `construct_pack_safe`,
 `ctor_elim_rest`):
 
 ```math
-\frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots;\ldots,(\vec Q,P,B),\ldots)\quad
+\frac{\Gamma\vdash_G f:L\quad L\equiv_G\mathsf{Ctors}(\ldots;\ldots,(\vec Q,P,B,\varepsilon),\ldots)\quad
       \forall i.\;\Gamma\vdash_G a_i:Q_i\quad\mathrm{Parts}_G(P,\vec p)}
      {\Gamma\vdash_G \mathsf{new}\ f(\vec a,\vec p):B}\ \textsf{constructRest}
 ```
@@ -774,8 +784,8 @@ first $`k`$ actuals, `undefined` where the list is shorter, and discards the
 rest (`ctorRestParams`, `ctorRestsT_of_graph`):
 
 ```math
-\frac{\vec C\vdash_G\kappa^{\mathsf{new}}:\bigl(U;\ \vec Q\,(E\mid\mathsf{undefined})^{k-|\vec Q|}\to B\bigr)}
-     {\kappa^{\mathsf{new}}[\vec x]\ \text{meets}\ \mathsf{new}(\vec Q,\ {\ldots}P)\Rightarrow B}
+\frac{\vec C\vdash_G\kappa^{\mathsf{new}}:\bigl(U;\ \vec Q\,(E\mid\mathsf{undefined})^{k-|\vec Q|}\to^{\varepsilon} B\bigr)}
+     {\kappa^{\mathsf{new}}[\vec x]\ \text{meets}\ \mathsf{new}(\vec Q,\ {\ldots}P)\Rightarrow^{\varepsilon} B}
 ```
 
 This is the variadic premise of `ctorGraph`. A class value whose code binds

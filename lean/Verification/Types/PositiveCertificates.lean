@@ -114,7 +114,7 @@ instance {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R
   unfold CoversTuple; infer_instance
 
 instance {G : NormalGraph ι} {R : List ι → List ι → Prop} [DecidableRel R]
-    (p : List (List ι) × List ι) (t : List (List ι) × List ι × List ι) :
+    (p : MethodArrow (List ι)) (t : MethodRestArrow (List ι)) :
     Decidable (FixedCoversPack G R p t) := by
   unfold FixedCoversPack; split <;> infer_instance
 
@@ -1020,8 +1020,8 @@ and the target's receivers, its signatures against the target's schemes'). -/
     signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T ++
       restFixedPairs G S M
   | .ctors L S a bs vs, .ctors M T c ds ws =>
-    let fixed (p : List (List ι) × List ι) : Arrow (List ι) := ⟨[], p.1, p.2, .ordinary⟩
-    let rest (p : List (List ι) × List ι × List ι) : RestArrow (List ι) := ⟨[], (p.1, p.2.1), p.2.2, .ordinary⟩
+    let fixed (p : MethodArrow (List ι)) : Arrow (List ι) := p.withReceiver []
+    let rest (p : MethodRestArrow (List ι)) : RestArrow (List ι) := p.withReceiver []
     recordPairs G known self (a :: bs).flatten vs [] [] (c :: ds).flatten ws [] [] ++
     signaturePairs (L.map fixed) (M.map fixed) ++ restPairs (S.map rest) (T.map rest) ++
       packPairs G (L.map fixed) (T.map rest)

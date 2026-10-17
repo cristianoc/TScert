@@ -575,21 +575,21 @@ came from a different context. No execution budget is inspected. -/
       return (own ++ pool).eraseDups.findCheck? fun F => do
         let [.ctors L S _ _ _] := expand G F | none
         let flags := args.map fun a => match a with | .spread _ => true | _ => false
-        let candidates : List ((List (Ty ι) × Ty ι) ⊕ (List (Ty ι) × Ty ι × Ty ι)) :=
+        let candidates : List (CallEffects.MethodArrow (Ty ι) ⊕ CallEffects.MethodRestArrow (Ty ι)) :=
           (if flags.any id then [] else L.map .inl) ++ S.map .inr
         candidates.findCheck? fun c => match c with
         | .inl p => do
-          if args.length > p.1.length then none else do
-          let _ ← subtypeUsing G images p.2 A
+          if args.length > p.arguments.length || !p.effect.plain then none else do
+          let _ ← subtypeUsing G images p.result A
           let ef ← recur Γ f F
-          let eas ← (args.zip p.1).mapM fun (a,D) => recur Γ a D
-          let eus ← (p.1.drop args.length).mapM fun D => recur Γ .undef D
-          coerce G images aliases (.node ⟨Γ,t,p.2⟩ .construct (ef :: eas ++ eus)) A
+          let eas ← (args.zip p.arguments).mapM fun (a,D) => recur Γ a D
+          let eus ← (p.arguments.drop args.length).mapM fun D => recur Γ .undef D
+          coerce G images aliases (.node ⟨Γ,t,p.result⟩ (.construct p.effect) (ef :: eas ++ eus)) A
         -- A variadic construct signature: the fixed actuals at its
         -- parameters, then the further parts as a variadic call's.
-        | .inr ⟨Ps, P, B⟩ => do
+        | .inr ⟨(), (Ps, P), B, effect⟩ => do
           let k := Ps.length
-          if args.length < k || (flags.take k).any id then none else do
+          if args.length < k || (flags.take k).any id || !effect.plain then none else do
           let _ ← subtypeUsing G images B A
           let ef ← recur Γ f F
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D

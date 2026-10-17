@@ -501,7 +501,7 @@ function constructorForms(scope: TermScope, node: ts.ConstructorTypeNode | ts.Co
   if (!node.type) scope.fail(node, "a constructor type needs its result type");
   const construct = (f: FunctionTerm): Extract<TypeTerm, { k: "constructor" }> => {
     if (f.receiver) scope.fail(node, "a constructor type has no receiver");
-    return { k: "constructor", params: f.params, rest: f.rest, result: f.result, span };
+    return { k: "constructor", effect: f.effect, params: f.params, rest: f.rest, result: f.result, span };
   };
   // A generic construct signature, `new <A>(x: A) => C<A>`, is a scheme of
   // construct signatures: a class value meeting each at every instance.

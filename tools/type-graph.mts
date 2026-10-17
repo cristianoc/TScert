@@ -158,15 +158,15 @@ export type Clause<L = number> =
    * one argument list, are at the rest type, a `pack`; the field is left out
    * when there are none. */
   | { arrs: { arrows: Arrow<L>[]; variadic?: RestArrow<L>[] } }
-  /** Construct signatures `[parameters, result]`: what a class meets; and
-   * variadic ones `[parameters, [rest, result]]`, whose actuals past the
-   * parameters are, as one argument list, at the rest type; the field is left
-   * out when there are none. Its static fields, invariant record operands as
-   * a callable's bag, `first` and `rest`, are left out when there are none. */
+  /** Construct signatures, each with its parameters, result and effect and
+   * no receiver: what a class meets; and variadic ones, whose actuals past
+   * the parameters are, as one argument list, at the rest type; the field is
+   * left out when there are none. Its static fields, invariant record operands
+   * as a callable's bag, `first` and `rest`, are left out when there are none. */
   | {
       ctors: {
-        signatures: [Labels<L>[], Labels<L>][];
-        variadic?: [Labels<L>[], [Labels<L>, Labels<L>]][];
+        signatures: MethodArrow<L>[];
+        variadic?: MethodRestArrow<L>[];
         first?: Fields<L>;
         rest?: Fields<L>[];
         views?: Fields<L>;
@@ -427,26 +427,12 @@ export function decodeGraph(value: unknown): TypeGraph {
       if ("first" in r) fields(r.first);
       if ("rest" in r) array(r.rest).forEach(v => fields(v));
       if ("views" in r) fields(r.views, true);
-      array(r.signatures).forEach((sig) => {
-        const pair = array(sig);
-        if (pair.length !== 2) throw Error("invalid construct signature");
-        array(pair[0]).forEach(labels);
-        labels(pair[1]);
-      });
+      array(r.signatures).forEach((c) => contract(c, true, false));
       if ("variadic" in r) {
         const sigs = array(r.variadic);
         if (!sigs.length)
           throw Error("an empty variadic list is written by omitting it");
-        sigs.forEach((sig) => {
-          const pair = array(sig);
-          if (pair.length !== 2)
-            throw Error("invalid variadic construct signature");
-          array(pair[0]).forEach(labels);
-          const tail = array(pair[1]);
-          if (tail.length !== 2) throw Error("expected a rest and a result");
-          labels(tail[0]);
-          labels(tail[1]);
-        });
+        sigs.forEach((c) => contract(c, true, true));
       }
     },
     list: (b) => {

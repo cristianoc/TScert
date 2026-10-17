@@ -349,8 +349,11 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
  * SameValueZero and run no code, `keys`, `values`, `entries` and
  * `[Symbol.iterator]` allocate a fresh iterator, and `Date`'s getters,
  * `valueOf`, `toString` and `toISOString` read its time value. The members
- * that change a collection or a date, and `forEach`, which calls its
- * callback, state none. */
+ * that change a collection or a date (`add`, `set`, `delete`, `clear`,
+ * `setTime`) state `{value: any, store: keep}`: they compare keys by
+ * SameValueZero or take a number, run no code, and write only the receiver's
+ * internal slots, which hold values and no array store. `forEach`, which
+ * calls its callback, states none. */
 // Footprints (SOURCE-CONTRACTS.md, "Native footprints"): a collection's state
 // is its own locations; `new Set()` and `new Map()` allocate all of it. The
 // members that change a collection have the footprint `state(receiver): any`,
@@ -359,11 +362,12 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
 // field and reads the collection's state at every step, so it observes later
 // changes; a step's footprint is `state(self): any`, which leaves the
 // collection's state unchanged.
+const changesValues = footprintEffect({ value: "any", store: "keep" });
 export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>> = {
   Set: [
-    { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true },
-    { name: "clear", from: "Set", signature: "clear(): void;" },
-    { name: "delete", from: "Set", signature: "delete(value: T): boolean;" },
+    { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true, effect: changesValues },
+    { name: "clear", from: "Set", signature: "clear(): void;", effect: changesValues },
+    { name: "delete", from: "Set", signature: "delete(value: T): boolean;", effect: changesValues },
     { name: "forEach", from: "Set",
       signature: "forEach(callbackfn: (value: T, value2: T, set: Set<T>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
@@ -384,15 +388,16 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator", effect: emptyEffect },
   ],
   Map: [
-    { name: "clear", from: "Map", signature: "clear(): void;" },
-    { name: "delete", from: "Map", signature: "delete(key: K): boolean;" },
+    { name: "clear", from: "Map", signature: "clear(): void;", effect: changesValues },
+    { name: "delete", from: "Map", signature: "delete(key: K): boolean;", effect: changesValues },
     { name: "forEach", from: "Map",
       signature: "forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
     // TypeScript's own `V | undefined`: a key the map lacks reads nothing.
     { name: "get", from: "Map", signature: "get(key: K): V | undefined;", effect: emptyEffect },
     { name: "has", from: "Map", signature: "has(key: K): boolean;", effect: emptyEffect },
-    { name: "set", from: "Map", signature: "set(key: K, value: V): this;", resultIsReceiver: true },
+    { name: "set", from: "Map", signature: "set(key: K, value: V): this;", resultIsReceiver: true,
+      effect: changesValues },
     { name: "size", from: "Map", signature: "readonly size: number;" },
     { name: "[Symbol.toStringTag]", from: "Map", signature: "readonly [Symbol.toStringTag]: string;" },
     { name: "[Symbol.iterator]", from: "Map", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
@@ -406,7 +411,7 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
       "getUTCDate", "getDay", "getUTCDay", "getHours", "getUTCHours", "getMinutes", "getUTCMinutes",
       "getSeconds", "getUTCSeconds", "getMilliseconds", "getUTCMilliseconds", "getTimezoneOffset"]
       .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): number;`, effect: emptyEffect })),
-    { name: "setTime", from: "Date", signature: "setTime(time: number): number;" },
+    { name: "setTime", from: "Date", signature: "setTime(time: number): number;", effect: changesValues },
     ...["toString", "toISOString"]
       .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;`, effect: emptyEffect })),
   ],

@@ -418,6 +418,166 @@ theorem PromiseWith.congr {Ξ Ξ' : Fam} {effect Acc Acc' Rc Rc' R T n W v}
       (fun j hj U args => (hacc j hj U args).mp)
       (fun j hj U u => (hres j hj U u).mpr)
 
+/-! ### Construct signatures -/
+
+/-- The promise of one construct signature, independent of argument-list
+syntax: constructing the value, in any strictly future world, with actuals
+`P` admits, runs a body safe at the result whose normal return meets the
+signature's effect, from the heap the construction starts in. -/
+def ConstructPromise (Ξ : Fam) (effect : Effect) (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k)
+    (v : Val) : Prop :=
+  ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+    WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+      ∀ args, CallArguments.Values args → P j U args →
+        ∃ result, ConstructsTo v args result ∧
+          SafePost Ξ (effect.result R (effect.promised args)) (effect.post heap) j U heap result
+
+theorem ConstructPromise.down {effect P R n W v}
+    (h : ConstructPromise Ξ effect P R (n + 1) W v) :
+    ConstructPromise Ξ effect P R n (trunc n (Nat.le_succ n) W) v := by
+  intro j hj U hx hu heap hh args hv ha
+  exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha
+
+theorem ConstructPromise.mono {effect P R n W W' v} (hx : WExt W W')
+    (h : ConstructPromise Ξ effect P R n W v) : ConstructPromise Ξ effect P R n W' v := by
+  intro j hj U hy hu heap hh args hv ha
+  exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha
+
+theorem ConstructPromise.weaken' {Ξ Ξ' : Fam} {effect effect' P P' R T k W v}
+    (he : effect.Covers effect')
+    (hexc : ∀ j, j < k → ∀ U u, Ξ j U u → Ξ' j U u)
+    (hacc : ∀ j, j < k → ∀ U args, P' j U args → P j U args)
+    (hres : ∀ j, j < k → ∀ U u, R j U u → T j U u)
+    (h : ConstructPromise Ξ effect P R k W v) : ConstructPromise Ξ' effect' P' T k W v := by
+  intro j hj U hx hu heap hh args hv ha
+  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv (hacc j hj U args ha)
+  exact ⟨result, hc, consequence_below' (fun m hm => hexc m (by omega))
+    (fun m hm U' u hu => he.2 T args m U' u
+      (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu)) (he.1 heap) hs⟩
+
+theorem ConstructPromise.congr {Ξ Ξ' : Fam} {effect P P' R T n W v}
+    (hexc : Agree Ξ Ξ' n)
+    (hacc : ∀ j, j < n → ∀ U args, P j U args ↔ P' j U args)
+    (hres : Agree R T n) :
+    ConstructPromise Ξ effect P R n W v ↔ ConstructPromise Ξ' effect P' T n W v := by
+  constructor <;> intro h
+  · exact h.weaken' (Effect.Covers.refl _)
+      (fun j hj U u => (hexc j hj U u).mp)
+      (fun j hj U args => (hacc j hj U args).mpr)
+      (fun j hj U u => (hres j hj U u).mp)
+  · exact h.weaken' (Effect.Covers.refl _)
+      (fun j hj U u => (hexc j hj U u).mpr)
+      (fun j hj U args => (hacc j hj U args).mp)
+      (fun j hj U u => (hres j hj U u).mpr)
+
+/-- A plain signature's promise gives a safe construction once its
+postcondition is forgotten. -/
+theorem ConstructPromise.erase {effect P R k W v} (hp : effect.plain = true)
+    (h : ConstructPromise Ξ effect P R k W v) :
+    ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+        ∀ args, CallArguments.Values args → P j U args →
+          ∃ result, ConstructsTo v args result ∧ Safe Ξ R j U heap result := by
+  intro j hj U hx hu heap hh args hv ha
+  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv ha
+  rw [Effect.result_plain hp] at hs
+  exact ⟨result, hc, HeapObservations.erase hs⟩
+
+/-- A safe construction meets the ordinary effect, which states no more. -/
+theorem ConstructPromise.ordinary {P R k W v}
+    (h : ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+        ∀ args, CallArguments.Values args → P j U args →
+          ∃ result, ConstructsTo v args result ∧ Safe Ξ R j U heap result) :
+    ConstructPromise Ξ Effect.ordinary P R k W v := by
+  intro j hj U hx hu heap hh args hv ha
+  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv ha
+  exact ⟨result, hc, Footprints.Closed.top_safe hs⟩
+
+/-- **Construct signatures.** Values meeting every signature `(parameters,
+result)` under `new`, each with its effect (`ConstructPromise`). The code is
+construct-only, so a plain call cannot run it, and no code without
+`[[Construct]]` is one. As for call signatures, the promise is about the term
+after the step, which is what lets the signature's variance be used only
+below the current level. -/
+def ctorsT (Ξ : Fam) (L : List (MethodArrow Fam)) : Fam := fun k W v =>
+  Constructible v ∧ ∀ p ∈ L, ConstructPromise Ξ p.effect (ArgsT p.arguments) p.result k W v
+
+theorem ctorsT_adm (L : List (MethodArrow Fam)) : Adm (ctorsT Ξ L) :=
+  ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
+   fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
+
+/-- A variadic construct signature: its fixed parameters, then, as one
+argument pack, the rest. -/
+abbrev CtorRestSignature := Contract Unit (List Fam × ArgFam) Fam
+
+/-- **Variadic construct signatures** `(parameters, rest, result)`: as
+`ctorsT`, for the lists `CtorRest` admits. -/
+def ctorRestsT (Ξ : Fam) (S : List CtorRestSignature) : Fam := fun k W v =>
+  Constructible v ∧ ∀ s ∈ S,
+    ConstructPromise Ξ s.effect (CtorRest s.arguments.1 s.arguments.2) s.result k W v
+
+theorem ctorRestsT_adm (S : List CtorRestSignature) : Adm (ctorRestsT Ξ S) :=
+  ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
+   fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
+
+theorem ctorRestsT_append (S T : List CtorRestSignature) (k : Nat) (W : WorldT k) (v : Val) :
+    ctorRestsT Ξ (S ++ T) k W v ↔ ctorRestsT Ξ S k W v ∧ ctorRestsT Ξ T k W v := by
+  simp only [ctorRestsT, List.mem_append, or_imp, forall_and]
+  constructor
+  · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
+  · rintro ⟨⟨hc, hl⟩, -, hm⟩; exact ⟨hc, hl, hm⟩
+
+theorem ctorsT_select {L n W v p} (hf : ctorsT Ξ L n W v) (hp : p ∈ L) : ctorsT Ξ [p] n W v :=
+  ⟨hf.1, fun q hq => by cases List.mem_singleton.mp hq; exact hf.2 p hp⟩
+
+theorem ctorsT_append (L M : List (MethodArrow Fam)) (k : Nat) (W : WorldT k) (v : Val) :
+    ctorsT Ξ (L ++ M) k W v ↔ ctorsT Ξ L k W v ∧ ctorsT Ξ M k W v := by
+  simp only [ctorsT, List.mem_append, or_imp, forall_and]
+  constructor
+  · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
+  · rintro ⟨⟨hc, hl⟩, -, hm⟩; exact ⟨hc, hl, hm⟩
+
+theorem ctorsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → MethodArrow Fam) {n : Nat}
+    (hΞ : Agree Ξ Ξ' n)
+    (h : ∀ x ∈ l, (f x).effect = (g x).effect ∧ ArgsAgree n (f x).arguments (g x).arguments ∧
+      Agree (f x).result (g x).result n)
+    (W : WorldT n) (v : Val) : ctorsT Ξ (l.map f) n W v ↔ ctorsT Ξ' (l.map g) n W v := by
+  unfold ctorsT
+  refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩ <;>
+    obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
+  · have hp := hs (f x) (List.mem_map_of_mem hm)
+    rw [(h x hm).1] at hp
+    exact (ConstructPromise.congr hΞ (fun j hj U args => ArgsT_congr (h x hm).2.1 hj U args)
+      (h x hm).2.2).mp hp
+  · have hp := hs (g x) (List.mem_map_of_mem hm)
+    rw [← (h x hm).1] at hp
+    exact (ConstructPromise.congr hΞ (fun j hj U args => ArgsT_congr (h x hm).2.1 hj U args)
+      (h x hm).2.2).mpr hp
+
+theorem ctorRestsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → CtorRestSignature) {n : Nat}
+    (hΞ : Agree Ξ Ξ' n)
+    (h : ∀ x ∈ l, (f x).effect = (g x).effect ∧ ArgsAgree n (f x).arguments.1 (g x).arguments.1 ∧
+      Agree (f x).arguments.2 (g x).arguments.2 n ∧ Agree (f x).result (g x).result n)
+    (W : WorldT n) (v : Val) : ctorRestsT Ξ (l.map f) n W v ↔ ctorRestsT Ξ' (l.map g) n W v := by
+  unfold ctorRestsT
+  have hacc : ∀ x ∈ l, ∀ j, j < n → ∀ U args,
+      CtorRest (f x).arguments.1 (f x).arguments.2 j U args ↔
+        CtorRest (g x).arguments.1 (g x).arguments.2 j U args := by
+    intro x hm j hj U args
+    have hl := ArgsAgree_length (h x hm).2.1
+    unfold CtorRest
+    rw [hl]
+    exact and_congr Iff.rfl (and_congr (ArgsT_congr (h x hm).2.1 hj U _) ((h x hm).2.2.1 j hj U _))
+  refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩ <;>
+    obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
+  · have hp := hs (f x) (List.mem_map_of_mem hm)
+    rw [(h x hm).1] at hp
+    exact (ConstructPromise.congr hΞ (hacc x hm) (h x hm).2.2.2).mp hp
+  · have hp := hs (g x) (List.mem_map_of_mem hm)
+    rw [← (h x hm).1] at hp
+    exact (ConstructPromise.congr hΞ (hacc x hm) (h x hm).2.2.2).mpr hp
+
 /-- Combining result guarantees retains the effects established for this call
 domain by either premise. World-sensitive results still require the same
 cross-world compatibility as ordinary arrows. Effects concern the shared final
@@ -493,6 +653,33 @@ theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
       vs hv (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
     exact .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
       HeapOk_trunc n W heap hh, hs⟩
+
+/-- A construction of a class value with value actuals takes one step to the
+body its signature makes safe, meeting the signature's effect from the heap
+it starts in. The signature may declare trailing positions the construction
+omits: each admits `undefined`, which the step binds there. The signature's
+effect is plain, so its result operand is the result's type. -/
+theorem construct_safe {effect : Effect} (hpl : effect.plain = true) {P : ArgFam} {R : Fam}
+    (hP : Adm P) {n W heap v vs pad}
+    (hf : ConstructPromise Ξ effect P R n W v) (hv : CallArguments.Values vs)
+    (hpad : ∀ a ∈ pad, a = .undef) (ha : P n W (vs ++ pad))
+    (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    SafePost Ξ R (effect.post heap) n W heap (.construct v vs) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    let U := trunc n (Nat.le_succ n) W
+    have hvp : CallArguments.Values (vs ++ pad) := by
+      intro a h
+      rcases List.mem_append.mp h with h | h
+      · exact hv a h
+      · rw [hpad a h]; rfl
+    obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc, rfl⟩, hs⟩ := hf n (Nat.lt_succ_self n) U (WExt_refl _)
+      (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) _ hvp
+      (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
+    rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_plain hpl] at hs
+    exact .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
+      CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh, hs⟩
 
 /-- An operational invariant that only appends fresh locations supplies
 the normal-return preservation postcondition, supplementing ordinary safety.

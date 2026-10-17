@@ -228,7 +228,7 @@ let rec source_type ctx j =
           let readonly = List.mem_assoc "readonly" (obj f) in
           {name=property_key (field "name" f);optional=false;read=t;write=(if readonly then None else Some t);
            host=false;receivers=[]}) (list fs) in
-    Atoms [Ctors ([{call_effect=ordinary_effect;quantified=[];receiver=top;params=List.map recur (items "params" j);
+    Atoms [Ctors ([{call_effect=effect_of (field "effect" j);quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;rest_pack;result=recur (field "result" j)}],statics)]
   | "function" ->
     let receiver = match field "receiver" j with Null -> top | source -> recur source in
@@ -687,8 +687,9 @@ let rec assigns name s = match s.statement with
    footprint a body's runs stay within, or [None] where the analysis cannot
    bound them. Reads, tests, arithmetic and fresh allocations change nothing;
    an assignment to a variable changes at most a cell holding a value, which
-   [cell_write] bounds; a call changes at most what every signature its
-   callee may take states. Creation does not execute a closure's code. Lean
+   [cell_write] bounds; a call or a construction changes at most what every
+   signature its callee may take states ([callable]: call signatures, or
+   construct signatures). Creation does not execute a closure's code. Lean
    checks every node of the body against the proposed footprint, and each
    call at the signature it selects.
    Every constructor is listed so extensions require a decision here. *)
@@ -738,10 +739,14 @@ let rec footprint_expr ~callable ~iteration ~readable (e:expr) : footprint optio
      prototype, for a primitive) and invokes it. *)
   | Invoke ({node=Read (o,_);_} as callee,args,spreads,_) ->
     if spreads<>[] then None else join_bound (all (o :: args)) (callable callee)
+  (* A construction changes at most what every construct signature its
+     callee may take states. *)
+  | New (callee,_,args,spreads) ->
+    if spreads<>[] then None else join_bound (all (callee :: args)) (callable callee)
   | BlockBody body -> footprint_stmts ~callable ~iteration ~readable body
   | Unary _ | HasKey _ | InstanceTest _ | Build _
   | Write _ | Update _ | LogicalAssign _ | NullishAssign _
-  | ArrayAssign _ | Invoke _ | Apply _ | Ctor _ | New _
+  | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | Optional _ | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> None
 and footprint_stmts ~callable ~iteration ~readable = function

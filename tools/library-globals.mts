@@ -299,16 +299,18 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `new Set<T>(xs)` is a fresh set of the array's elements, `new Set<T>()`
   // an empty one, at every `T`. An array's iterator is the host's, which
   // runs no client code; any other iterable's is the client's, so the
-  // parameter is stated at an array (`Set<T>`: `array-prototype.mts`).
+  // parameter is stated at an array (`Set<T>`: `array-prototype.mts`). The
+  // construction reads the array and allocates, so it states the empty
+  // footprint; so does `new Map`'s.
   ...["new <T = any>(values?: readonly T[] | null): Set<T>;", "new <T>(iterable?: Iterable<T> | null): Set<T>;"]
-    .map((signature): GlobalEntry => ({ global: "Set", signature,
+    .map((signature): GlobalEntry => ({ global: "Set", signature, effect: emptyEffect,
       stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
         result: library("Set", [binder("T")]) }) })),
   // `new Map<K, V>(es)` is a fresh map of the array's pairs, each read at
   // its indices 0 and 1, and `new Map()` an empty one, at every `K` and `V`.
   ...["new (): Map<any, any>;", "new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;",
     "new <K, V>(iterable?: Iterable<readonly [K, V]> | null): Map<K, V>;"]
-    .map((signature): GlobalEntry => ({ global: "Map", signature,
+    .map((signature): GlobalEntry => ({ global: "Map", signature, effect: emptyEffect,
       stated: library => ({ binders: ["K", "V"],
         params: [optional(readonlyArray({ k: "tuple", presence: "dense", readonly: true, required: [binder("K"), binder("V")],
           optional: [], rest: null, span: at }))],

@@ -95,7 +95,7 @@ inductive Clause (α : Type) where
   the invariant record operands `first` and `rest`, as a callable object's
   (`CallableConjunctions.propsT`), and the readonly `views`
   (`CallableConjunctions.viewsT`); with none it states no field. -/
-  | ctors (signatures : List (List α × α)) (variadic : List (List α × α × α) := [])
+  | ctors (signatures : List (MethodArrow α)) (variadic : List (MethodRestArrow α) := [])
       (first : List (PropKey × α) := []) (rest : List (List (PropKey × α)) := [])
       (views : List (PropKey × α) := [])
   /-- An argument list under one or more tuple contracts: what a rest
@@ -147,8 +147,8 @@ def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → 
       interT (CallableConjunctions.objectsT Ξ (famsOf X a) (bs.map (famsOf X))
         (L.map (Arrow.map X)))
         (CallEffects.restsT Ξ (S.map (RestArrow.mapWith X P)))
-  | .ctors L S a bs vs => interT (interT (ctorsT Ξ (L.map fun p => (p.1.map X, X p.2)))
-      (ctorRestsT Ξ (S.map fun s => (s.1.map X, P s.2.1, X s.2.2))))
+  | .ctors L S a bs vs => interT (interT (ctorsT Ξ (L.map (MethodArrow.map X)))
+      (ctorRestsT Ξ (S.map (MethodRestArrow.mapWith X P))))
       (interT (CallableConjunctions.propsT (famsOf X a) (bs.map (famsOf X)))
         (CallableConjunctions.viewsT (famsOf X vs)))
   -- An argument list is not a runtime value: a pack clause's members are
@@ -445,7 +445,7 @@ private theorem meet_source (X : α → Fam) (P : α → ArgFam) (c : Clause α)
     simp only [singleton_sem]
     exact ⟨fun h => ⟨semWithArgs_source (by simp) (by intros; simp) h, h⟩, And.right⟩
 
-theorem meet_ctors (L M : List (List α × α)) (S T : List (List α × α × α))
+theorem meet_ctors (L M : List (MethodArrow α)) (S T : List (MethodRestArrow α))
     (a c : List (PropKey × α)) (bs ds : List (List (PropKey × α))) (vs ws : List (PropKey × α)) :
     meet (.ctors L S a bs vs) (.ctors M T c ds ws) =
       if a = [] ∧ bs = [] ∧ vs = [] ∧ c = [] ∧ ds = [] ∧ ws = [] then [.ctors (L ++ M) (S ++ T)]
@@ -913,8 +913,10 @@ theorem semWithArgs_congr {Ξ Ξ' : Fam} (X Y : α → Fam) (P Q : α → ArgFam
       intro As; induction As with
       | nil => exact .nil
       | cons a As ih => exact .cons (h a) ih
-    exact and_congr (and_congr (ctorsT_congr L _ _ hexc (fun p _ => ⟨hd p.1, h p.2⟩) W v)
-      (ctorRestsT_congr S _ _ hexc (fun s _ => ⟨hd s.1, hP s.2.1, h s.2.2⟩) W v))
+    exact and_congr (and_congr (ctorsT_congr L (MethodArrow.map X) (MethodArrow.map Y) hexc
+        (fun p _ => ⟨rfl, hd p.arguments, h p.result⟩) W v)
+      (ctorRestsT_congr S (MethodRestArrow.mapWith X P) (MethodRestArrow.mapWith Y Q) hexc
+        (fun s _ => ⟨rfl, hd s.arguments.1, hP s.arguments.2, h s.result⟩) W v))
       (and_congr (CallableConjunctions.props_congr_below X Y a bs n h W v)
         (CallableConjunctions.views_congr_below X Y vs n h W v))
   | pack a bs => rfl
@@ -958,8 +960,8 @@ def Clause.map (f : α → β) : Clause α → Clause β
   | .callable a bs L S => .callable (mapFields f a) (bs.map (mapFields f))
       (L.map (Arrow.map f))
       (S.map (RestArrow.map f))
-  | .ctors L S a bs vs => .ctors (L.map fun q => (q.1.map f, f q.2))
-      (S.map fun q => (q.1.map f, f q.2.1, f q.2.2)) (mapFields f a) (bs.map (mapFields f))
+  | .ctors L S a bs vs => .ctors (L.map (MethodArrow.map f))
+      (S.map (MethodRestArrow.map f)) (mapFields f a) (bs.map (mapFields f))
       (mapFields f vs)
   | .pack a bs => .pack (a.map f) (bs.map (·.map f))
 
@@ -1006,7 +1008,7 @@ def Clause.operands : Clause α → List α
   | .callable a bs L S => (a ++ bs.flatten).map (·.2) ++
       L.flatMap Arrow.operands ++
       S.flatMap RestArrow.operands
-  | .ctors L S a bs vs => L.flatMap (fun q => q.1 ++ [q.2]) ++ S.flatMap (fun q => q.1 ++ [q.2.1, q.2.2]) ++
+  | .ctors L S a bs vs => L.flatMap MethodArrow.operands ++ S.flatMap MethodRestArrow.operands ++
       (a ++ bs.flatten ++ vs).map (·.2)
   | .pack a bs => a.operands ++ bs.flatMap Tuple.operands
   | _ => []
@@ -1027,7 +1029,8 @@ theorem semWithArgs_map (Y : β → Fam) (P : β → ArgFam) (f : α → β) (c 
     simp only [semWithArgs, Clause.map, mapFields, List.forall_mem_map]
     simp [mapFields, famsOf_fun, Function.comp_def, Member.of_map, OptionalField.map]
   all_goals simp [semWithArgs, Clause.map, mapFields, famsOf_fun, tupleFams, Tuple.map, Function.comp_def,
-    Member.of_map, OptionalField.map, Arrow.map, RestArrow.map, RestArrow.mapWith, Contract.map] <;> rfl
+    Member.of_map, OptionalField.map, Arrow.map, RestArrow.map, RestArrow.mapWith, MethodArrow.map,
+    MethodRestArrow.map, MethodRestArrow.mapWith, Contract.map] <;> rfl
 
 
 /-- The same syntactic operand substitution preserves the argument component,
@@ -1130,17 +1133,11 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
   | ctors L S a bs vs =>
     simp only [Clause.operands, List.map_append, List.mem_append, List.mem_flatMap] at h
     simp only [Clause.map, Clause.ctors.injEq]
-    refine ⟨map_self fun q hq => ?_, map_self fun q hq => ?_,
+    refine ⟨map_self fun q hq => MethodArrow.map_of_operands fun x hx => h x (.inl (.inl ⟨q, hq, hx⟩)),
+      map_self fun q hq => MethodRestArrow.map_of_operands fun x hx => h x (.inl (.inr ⟨q, hq, hx⟩)),
       mapFields_self fun x hx => h x (.inr (.inl (.inl hx))),
       map_self fun fs hfs => mapFields_self fun x hx => h x (.inr (.inl (.inr ?_))),
       mapFields_self fun x hx => h x (.inr (.inr hx))⟩
-    · have h2 := h q.2 (.inl (.inl ⟨q, hq, by simp⟩))
-      have h1 := map_self (l := q.1) fun x hx => h x (.inl (.inl ⟨q, hq, by simp [hx]⟩))
-      simp [h1, h2]
-    · have h2 := h q.2.1 (.inl (.inr ⟨q, hq, by simp⟩))
-      have h3 := h q.2.2 (.inl (.inr ⟨q, hq, by simp⟩))
-      have h1 := map_self (l := q.1) fun x hx => h x (.inl (.inr ⟨q, hq, by simp [hx]⟩))
-      simp [h1, h2, h3]
     · simp only [List.mem_map, List.mem_flatten] at hx ⊢
       obtain ⟨q, hq, rfl⟩ := hx
       exact ⟨q, ⟨fs, hfs, hq⟩, rfl⟩

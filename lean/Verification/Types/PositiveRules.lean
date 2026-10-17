@@ -1115,14 +1115,16 @@ element contracts; no location is retyped. -/
 
 /-- A fixed construct signature `(Ps, B)` covers a variadic one `(Qs, P, D)`
 whose rest is one exact tuple: its fixed parameters, then the tuple's
-positions, are within the source's parameters, and the source's result is
-within the target's. An exact tuple holds its actuals at their positions at the
-current level, whatever the positions' types. -/
+positions, are within the source's parameters, the source's result is
+within the target's, and the source supplies the target's effect. An exact
+tuple holds its actuals at their positions at the current level, whatever the
+positions' types. -/
 @[nospecialize] def FixedCoversPack (G : NormalGraph ι) (R : List ι → List ι → Prop)
-    (p : List (List ι) × List ι) (t : List (List ι) × List ι × List ι) : Prop :=
-  match expand G t.2.1 with
+    (p : MethodArrow (List ι)) (t : MethodRestArrow (List ι)) : Prop :=
+  match expand G t.arguments.2 with
   | [.pack τ []] => τ.optional = [] ∧ τ.rest = none ∧
-      Domains R (t.1 ++ τ.required) p.1 ∧ R p.2 t.2.2
+      Domains R (t.arguments.1 ++ τ.required) p.arguments ∧ R p.result t.result ∧
+      p.effect.covers t.effect = true
   | _ => False
 
 /-- A fixed call signature `(Rc, Ps, B)` covers a variadic one `(Rt, Qs, P, D)`
@@ -1320,17 +1322,21 @@ checks over the supplied subtype relation. -/
       arrows L S M ∧
       ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
   -- A construct signature is covered by one taking as many parameters, each
-  -- at least as wide, with a result at most as wide. One with a `never`
-  -- parameter admits no actual list, so any class value meets it; the
-  -- results are still compared, as TypeScript compares them.
+  -- at least as wide, with a result at most as wide, that supplies its
+  -- effect. One with a `never` parameter admits no actual list, so any class
+  -- value meets it; the results and effects are still compared, as
+  -- TypeScript compares the results.
   -- A static field the target states is one the source states at the same
   -- contract, as a callable object's bag field; a readonly one, a field or
   -- a view the source states within it.
-  | .ctors L S a bs vs, .ctors M T c ds ws => ((∀ q ∈ M, ∃ p ∈ L, (Domains R q.1 p.1 ∨ [] ∈ q.1) ∧ R p.2 q.2) ∧
+  | .ctors L S a bs vs, .ctors M T c ds ws => ((∀ q ∈ M, ∃ p ∈ L,
+        (Domains R q.arguments p.arguments ∨ [] ∈ q.arguments) ∧ R p.result q.result ∧
+          p.effect.covers q.effect = true) ∧
       -- A variadic one by one taking as many fixed parameters, each at least as
-      -- wide, a rest at least as wide and a result at most as wide; or by a
-      -- fixed one, when its rest is an exact tuple.
-      ∀ t ∈ T, (∃ s ∈ S, Domains R t.1 s.1 ∧ R t.2.1 s.2.1 ∧ R s.2.2 t.2.2) ∨
+      -- wide, a rest at least as wide and a result at most as wide, that
+      -- supplies its effect; or by a fixed one, when its rest is an exact tuple.
+      ∀ t ∈ T, (∃ s ∈ S, Domains R t.arguments.1 s.arguments.1 ∧ R t.arguments.2 s.arguments.2 ∧
+          R s.result t.result ∧ s.effect.covers t.effect = true) ∨
         ∃ p ∈ L, FixedCoversPack G R p t) ∧ CoversFields R (a :: bs) (c :: ds) ∧ CoversBagViews R (a :: bs) vs ws
   -- Every target contract has a source contract within it.
   | .pack a bs, .pack c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack R p q
@@ -2968,7 +2974,7 @@ are lists of a covering source signature, and its result is within the
 target's, read below the level. -/
 theorem covers_ctors_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι}
     {R : List ι → List ι → Prop} {known : Known ι} {arrows : Ops ι → List (RestArrow (List ι)) → Ops ι → Prop}
-    {self : List ι} {L M : List (List (List ι) × List ι)} {S T : List (List (List ι) × List ι × List ι)}
+    {self : List ι} {L M : List (MethodArrow (List ι))} {S T : List (MethodRestArrow (List ι))}
     {a c : List (PropKey × List ι)} {bs ds : List (List (PropKey × List ι))} {vs ws : List (PropKey × List ι)}
     (hc : CoversWith G sub R known arrows self (.ctors L S a bs vs) (.ctors M T c ds ws)) (n : Nat)
     (hr : ∀ j, j < n → ∀ S T, R S T → FamLeAt G η S T j) (hpa : ArgsLeBelow G η R n)
@@ -2980,40 +2986,37 @@ theorem covers_ctors_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (
   refine ⟨⟨⟨hv.1, fun q hq => ?_⟩, ⟨hv.1, fun t ht => ?_⟩⟩, covers_bags_sound hc.2.1 n hr W v hb,
     covers_bag_views_sound hc.2.2 n hr W v hb hvs⟩
   · obtain ⟨q0, hq0, rfl⟩ := List.mem_map.mp hq
-    obtain ⟨p, hp, hd, hres⟩ := hc.1.1 q0 hq0
-    intro j hj U hx hu heap hh args hvals ha
+    obtain ⟨p, hp, hd, hres, heff⟩ := hc.1.1 q0 hq0
     rcases hd with hd | hnever
-    · obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh args hvals
-        (Domains.sound hd (fun a b hab => hr j hj a b hab) ha)
-      exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu) U heap _ hsafe⟩
+    · exact (hv.2 _ (List.mem_map_of_mem hp)).weaken' (Effect.covers_sound heff) (fun _ _ _ _ h => h)
+        (fun j hj U args ha => Domains.sound hd (fun a b hab => hr j hj a b hab) ha)
+        (fun m hm V u hu => hr m hm _ _ hres V u hu)
     · -- No actual meets `never`: the promise is vacuous.
+      intro j hj U hx hu heap hh args hvals ha
       obtain ⟨a, ha'⟩ := ArgsT_mem ha (List.mem_map_of_mem hnever)
       exact absurd ha' (by simp [mixedValues, setSem])
   · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
-    rcases hc.1.2 t0 ht0 with ⟨s, hs, hd, hrest, hres⟩ | ⟨p, hp, hfp⟩
-    · intro j hj U hx hu heap hh args hvals ha
+    rcases hc.1.2 t0 ht0 with ⟨s, hs, hd, hrest, hres, heff⟩ | ⟨p, hp, hfp⟩
+    · have hl : t0.arguments.1.length = s.arguments.1.length := Domains.length_eq hd
+      refine (hw.2 _ (List.mem_map_of_mem hs)).weaken' (Effect.covers_sound heff) (fun _ _ _ _ h => h)
+        (fun j hj U args ha => ?_) (fun m hm V u hu => hr m hm _ _ hres V u hu)
       obtain ⟨hlen, hfix, hpack⟩ := ha
-      have hl : t0.1.length = s.1.length := Domains.length_eq hd
-      simp only [List.length_map] at hlen hfix hpack
-      obtain ⟨result, hcon, hsafe⟩ := hw.2 _ (List.mem_map_of_mem hs) j hj U hx hu heap hh args
-        hvals ⟨by simpa [← hl] using hlen,
-          by simpa [← hl] using Domains.sound hd (fun a b hab => hr j hj a b hab) hfix,
-          by simpa [← hl] using hpa j hj _ _ hrest U _ hpack⟩
-      exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu) U heap _ hsafe⟩
+      simp only [MethodRestArrow.mapWith, Contract.map, List.length_map] at hlen hfix hpack ⊢
+      exact ⟨by simpa [← hl] using hlen,
+        by simpa [← hl] using Domains.sound hd (fun a b hab => hr j hj a b hab) hfix,
+        by simpa [← hl] using hpa j hj _ _ hrest U _ hpack⟩
     · unfold FixedCoversPack at hfp
       split at hfp
       · rename_i τ hP
-        obtain ⟨hopt, hrest, hd, hres⟩ := hfp
-        intro j hj U hx hu heap hh args hvals ha
+        obtain ⟨hopt, hrest, hd, hres, heff⟩ := hfp
+        refine (hv.2 _ (List.mem_map_of_mem hp)).weaken' (Effect.covers_sound heff) (fun _ _ _ _ h => h)
+          (fun j hj U args ha => ?_) (fun m hm V u hu => hr m hm _ _ hres V u hu)
         obtain ⟨hlen, hfix, hpack⟩ := ha
-        simp only [List.length_map] at hlen hfix hpack
+        simp only [MethodRestArrow.mapWith, Contract.map, List.length_map] at hlen hfix hpack
         have htup := mixed_pack_exact hP hopt hrest hpack
         have hall := ArgsT_append hfix htup
         rw [List.take_append_drop, ← List.map_append] at hall
-        obtain ⟨result, hcon, hsafe⟩ := hv.2 _ (List.mem_map_of_mem hp) j hj U hx hu heap hh
-          args hvals (Domains.sound hd (fun a b hab => hr j hj a b hab) hall)
-        exact ⟨result, hcon, Safe_mono j (fun m hm V u hu => hr m (by omega) _ _ hres V u hu)
-          U heap _ hsafe⟩
+        exact Domains.sound hd (fun a b hab => hr j hj a b hab) hall
       · exact hfp.elim
 
 

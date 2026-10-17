@@ -389,22 +389,25 @@ as one [argument pack](#argument-packs) at $P'$.
 - `callable φ⃗ L S` is additionally a plain object under the invariant record
   operands $\vec\varphi$. It has no views, optional fields or methods.
 - `ctors L S φ⃗ ψ` is a class, whose code is construct-only. A construct signature
-  $\vec A\Rightarrow B$ says that `new` with actuals in $\vec A$ steps to a
-  term safe at $B$ one level below; a variadic one takes a pack as its rest.
+  $\vec A\Rightarrow^{\varepsilon} B$ says that `new` with actuals in $\vec A$
+  steps to a term safe at $B$ one level below, whose normal return meets the
+  effect $\varepsilon$ from the heap the construction starts in, as a call
+  signature's does; a variadic one takes a pack as its rest.
   Its property bag, its static fields, is under the invariant record operands
   $`\vec\varphi`$, as a callable object's is, and the readonly fields
   $`\psi`$, views; with none it states no field.
 
 ```math
-⟦\mathsf{Ctors}\,\overline{(\vec A,B)}⟧_k(W,v)
-\iff\mathsf{Constructible}(v)\land\forall(\vec A,B),\,j<k,\,
+⟦\mathsf{Ctors}\,\overline{(\vec A,B,\varepsilon)}⟧_k(W,v)
+\iff\mathsf{Constructible}(v)\land\forall(\vec A,B,\varepsilon),\,j<k,\,
    U\sqsupseteq W|_j,\,\mathit{heap}\models_j U,\,\vec a\in\vec A.\;
-\exists t.\;\mathsf{new}\,v(\vec a)\to t\land t\in\mathsf{Safe}_j(B)(U,\mathit{heap}),
+\exists t.\;\mathsf{new}\,v(\vec a)\to t\land
+   t\in\mathsf{Safe}_j(\varepsilon.\mathrm{result}(B,\vec a),\varepsilon.\mathrm{post}(\mathit{heap}))(U,\mathit{heap}),
 ```
 
 ```math
-⟦\mathsf{Ctors}\,\overline{(\vec A,B)}\,\vec\varphi\,\psi⟧_k(W,v)
-\iff⟦\mathsf{Ctors}\,\overline{(\vec A,B)}⟧_k(W,v)\land
+⟦\mathsf{Ctors}\,\overline{(\vec A,B,\varepsilon)}\,\vec\varphi\,\psi⟧_k(W,v)
+\iff⟦\mathsf{Ctors}\,\overline{(\vec A,B,\varepsilon)}⟧_k(W,v)\land
    \forall\varphi\in\vec\varphi.\;\mathsf{bag}(\varphi)_k(W,v)\land\mathsf{views}(\psi)_k(W,v),
 ```
 
@@ -1066,16 +1069,19 @@ positions' types:
      {\Delta\vdash(Q_0;\vec A)\to B\ \sqsubseteq\ (Q;\vec C,\ldots Q')\to D}
 ```
 
-**Classes.** A construct signature $\vec C\Rightarrow D$ is covered by a
-source one $\vec A\Rightarrow B$ with $\Delta(\vec C,\vec A)$ and
-$\Delta(B,D)$. One with a `never` parameter admits no actual list, so its
-promise is vacuous and any class meets it; the results are still compared,
-as TypeScript compares them. This is how `ResourceClass<C, never>` holds a
-class whatever its constructor takes (`ArgsT_mem`):
+**Classes.** A construct signature $\vec C\Rightarrow^{\varepsilon'} D$ is
+covered by a source one $\vec A\Rightarrow^{\varepsilon} B$ with
+$\Delta(\vec C,\vec A)$, $\Delta(B,D)$ and $\varepsilon\succeq\varepsilon'$,
+the source effect guaranteeing the target's (`Effect.covers`). One with a
+`never` parameter admits no actual list, so its promise is vacuous and any
+class meets it; the results and effects are still compared, the results as
+TypeScript compares them. This is how `ResourceClass<C, never>` holds a class
+whatever its constructor takes (`ArgsT_mem`):
 
 ```math
-\frac{(\vec A\Rightarrow B)\in L\quad\Delta(\vec C,\vec A)\ \lor\ \bot\in\vec C\quad\Delta(B,D)}
-     {\Delta\vdash\mathsf{Ctors}(L)\sqsubseteq(\vec C\Rightarrow D)}
+\frac{(\vec A\Rightarrow^{\varepsilon} B)\in L\quad\Delta(\vec C,\vec A)\ \lor\ \bot\in\vec C\quad\Delta(B,D)\quad
+      \varepsilon\succeq\varepsilon'}
+     {\Delta\vdash\mathsf{Ctors}(L)\sqsubseteq(\vec C\Rightarrow^{\varepsilon'} D)}
 ```
 
 A target's static field is a source field of the same name, covered both
@@ -1090,8 +1096,9 @@ ways, as a callable object's bag field is (`covers_bags_sound`):
 A target's readonly static field is a source field or view within it
 (`covers_bag_views_sound`).
 A variadic one is covered by a variadic source one with as many fixed
-parameters, each at least as wide, a rest at least as wide and a result at most as
-wide, or, when its rest is an exact tuple, by a fixed one as above. So a class
+parameters, each at least as wide, a rest at least as wide, a result at most as
+wide and an effect guaranteeing its own, or, when its rest is an exact tuple, by
+a fixed one as above. So a class
 taking a number meets `new (...params: [number]) => M`.
 
 Lean: `CallArrow`, `CallArrow.sound`, `Domains`, `RestFixed`, `RestCovers`,

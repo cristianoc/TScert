@@ -502,7 +502,7 @@ for (const [artifacts, arity, refusal] of [
   const domains = claims.types.flatMap((row) => row.flatMap((clause) =>
     typeof clause !== "object" ? [] :
     "arrs" in clause ? clause.arrs.arrows.map((s) => s.arguments) :
-    "ctors" in clause ? clause.ctors.signatures.map(([params]) => params) : []));
+    "ctors" in clause ? clause.ctors.signatures.map((s) => s.arguments) : []));
   const params = must(domains.find((ps) => ps.length === arity), "the claimed signature");
   must(params.at(-1), "a claimed parameter").unshift(3);
   assert.match(invoke(writeClaims(artifacts, "forged-wider-domain", claims), join(artifacts, "evidence.json"), artifacts), refusal);
@@ -1217,10 +1217,11 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
 
 // A footprint claim forged onto a callback is certified only where its body
 // is within it: one reading its arguments is within the empty footprint; one
-// writing a cell it captures is within `{value: any, store: keep}` and not the
-// empty one; one calling a member stated unrestricted (`pop` on the source
-// beside a string's `trim` or alone, a global regex's `test`, a `Map`'s
-// `set`) is refused at its own typing, even at the footprint `map`'s dense
+// writing a cell it captures, a `Map`'s internal slots through `set`, or a
+// fresh `Set`'s through `add` is within `{value: any, store: keep}` and not
+// the empty one; one calling a member stated unrestricted (`pop` on the source
+// beside a string's `trim` or alone) or beyond the footprint (a global regex's
+// `test`) is refused at its own typing, even at the footprint `map`'s dense
 // signature accepts.
 const keepAll: ClosedFootprint = { value: "keep", store: "keep" };
 const writeValues: ClosedFootprint = { value: "any", store: "keep" };
@@ -1229,7 +1230,10 @@ for (const [file, marker, arity, accepted, footprint] of [
   ["closure-result-contract", "(p: number", 2, true, keepAll], ["closure-graph-captured-cell", "(): void", 0, false, keepAll],
   ["invalid-map-primitive-method-mutation", "(x: string)", 3, false, keepAll],
   ["map-stable-regexp-test", "(l) => word", 3, false, keepAll],
-  ["invalid-map-collection-write-callback", "(name) =>", 3, false, keepAll],
+  ["map-stable-collection-write", "(name) =>", 3, false, keepAll],
+  ["map-stable-collection-write", "(name) =>", 3, true, writeValues],
+  ["map-stable-set", "(ys: readonly", 3, false, keepAll],
+  ["map-stable-set", "(ys: readonly", 3, true, writeValues],
   ["map-stable-outer-cell", "(x: number)", 3, false, keepAll],
   ["map-stable-outer-cell", "(x: number)", 3, true, writeValues],
   ["invalid-map-unstable-pop", "(x: number)", 3, false, growStores],
@@ -1277,6 +1281,35 @@ for (const [file, marker, arity, accepted, footprint] of [
     }
   }
   process.stdout.write(`callback footprint claim {${footprint.value}, ${footprint.store}}, ${file}: ${accepted ? "certified" : "refused"}\n`);
+}
+
+{
+  // A footprint claim forged onto classes' construct signatures is checked
+  // against their constructors' code: constructors writing their instances'
+  // fields are refused within the empty footprint, at their own typing,
+  // located in a class; the honest evidence checked against the forged claim
+  // is a footprint refusal located there too.
+  const artifacts = run("class-constructor-default");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const classes: [number, number] = [source.indexOf("class Counter"), source.indexOf("export function")];
+  const within = (at: [number, number]) => classes[0] <= at[0] && at[1] <= classes[1];
+  const signatures = claims.types.flatMap(row => row.flatMap(clause =>
+    typeof clause === "object" && "ctors" in clause ? clause.ctors.signatures : []));
+  assert.ok(signatures.length > 0, "the classes' construct signatures");
+  for (const signature of signatures) signature.effect = footprintEffect(keepAll);
+  const input = writeClaims(artifacts, "qualified-constructor", claims);
+  const produce = produceWith(artifacts, input, "qualified-constructor");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  const failure = readDiagnostic(produce.stdout + produce.stderr);
+  assert.ok(failure && failure.kind === "node-typing", produce.stdout + produce.stderr);
+  const pos = must(failure.source?.sourceMap?.pos, "the failed class's source location");
+  assert.ok(within(pos), `refused at [${pos[0]},${pos[1]}), outside the classes`);
+  const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+  const refused = must(/source effect refusal at \[(\d+),(\d+)\)/.exec(checked), checked);
+  assert.ok(within([Number(refused[1]), Number(refused[2])]), checked);
+  process.stdout.write("construct footprint claim {keep, keep}, class-constructor-default: refused\n");
 }
 
 {

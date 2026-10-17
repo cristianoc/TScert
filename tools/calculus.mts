@@ -32,7 +32,10 @@ type CallCode =
   | { closure: { arity: number; body: Term } }
   | { variadic: { fixed: number; body: Term } }
   | { bound: { target: Term; receiver: Term; pre: Term[] } }
-  | { graph: { arity: number; exprs: Term[]; conts: [unknown, unknown][]; start: number; caps: Term[] } };
+  /** Graph code; `kind` is left out for `[[Call]]` code and `rest` when the
+   * code collects none, the one spelling of each. */
+  | { graph: { arity: number; exprs: Term[]; conts: [unknown, unknown][]; start: number; caps: Term[];
+      kind?: "construct" | "sloppy"; rest?: true } };
 export type Term =
   | "nul"
   | "undef"
@@ -47,6 +50,8 @@ export type Term =
   | { var: { i: number } }
   /** Invoke `f` with the receiver `r` and the actuals `args`. */
   | { invoke: { f: Term; r: Term; args: Term[] } }
+  /** `new f(args)`: run `f`'s construct code with the actuals `args`. */
+  | { construct: { f: Term; args: Term[] } }
   | { letE: { a: Term; b: Term } }
   | { objAt: { fields: [string, number][]; call: CallCode; identity: number } }
   | { makeAt: { call: CallCode; names: string[]; inits: Term[] } }
@@ -171,7 +176,11 @@ function code(v: unknown) {
     if (!Array.isArray(c.pre)) throw Error("invalid bound prefix");
     c.pre.forEach(decodeTerm);
   } else if (key === "graph") {
-    const c = fields(fields(v, ["graph"]).graph, ["arity", "exprs", "conts", "start", "caps"]);
+    const g = fields(v, ["graph"]).graph;
+    const optional = isRecord(g) ? ["kind", "rest"].filter((k) => k in g) : [];
+    const c = fields(g, ["arity", "exprs", "conts", "start", "caps", ...optional]);
+    if ("kind" in c && c.kind !== "construct" && c.kind !== "sloppy") throw Error("invalid code kind");
+    if ("rest" in c && c.rest !== true) throw Error("invalid code rest flag");
     nat(c.arity);
     nat(c.start);
     if (!Array.isArray(c.exprs) || !Array.isArray(c.conts) || !Array.isArray(c.caps) ||
@@ -209,6 +218,7 @@ export function decodeTerm(value: unknown): Term {
     bigint: ["value"],
     var: ["i"],
     invoke: ["f", "r", "args"],
+    construct: ["f", "args"],
     letE: ["a", "b"],
     objAt: ["fields", "call", "identity"],
     makeAt: ["call", "names", "inits"],
@@ -296,6 +306,7 @@ const SHOW_TERM: { [K in TermKey]: (a: Args<K>) => string } = {
   bigint: a => `${a.value}n`,
   var: a => `x${a.i}`,
   invoke: a => `${showTerm(a.f)}.call(${[a.r, ...a.args].map(showTerm).join(", ")})`,
+  construct: a => `new ${showTerm(a.f)}(${showTerms(a.args)})`,
   letE: a => `let ${showTerm(a.a)} in ${showTerm(a.b)}`,
   objAt: a => `obj#${a.identity}{${a.fields.map(([k, l]) => `${k}: ℓ${l}`).join(", ")}}${showCode(a.call)}`,
   makeAt: a => `new{${a.names.map((n, i) => `${n}: ${a.inits[i] === undefined ? "?" : showTerm(a.inits[i])}`).join(", ")}}${showCode(a.call)}`,

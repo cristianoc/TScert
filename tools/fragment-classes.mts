@@ -12,6 +12,7 @@ import { childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enumIntrinsicName, enumMembersTerm, literalTerm } from "./intrinsics.mts";
 import { type ClassRecord, type EnumMember, FORGED_PROMISE, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
+import { ordinaryEffect } from "./type-graph.mts";
 
 /** A class declaration, in module initialization order: one constant per
  * method, holding a closure allocated once, whose receiver is the instance,
@@ -719,7 +720,8 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
       lambda: constructs || extended ? { k: "id", pos: gate.span(name), name: freshName(name.text) } : constructorLambda,
       ...(staticFields.length ? { statics: staticFields.map((f) =>
         ({ name: f.name, e: { k: "id", pos: f.pos, name: f.binding } satisfies Expr })) } : {}) };
-    const type: TypeTerm = { k: "constructor", params: params.map((p) => p.type), rest: null, result: instance,
+    const type: TypeTerm = { k: "constructor", effect: ordinaryEffect, params: params.map((p) => p.type), rest: null,
+      result: instance,
       ...(staticFields.length ? { statics: staticFields.map((f) => ({ name: f.name, type: f.type })) } : {}),
       span: gate.span(name) };
     // A class another extends is also bound, first, as its fresh

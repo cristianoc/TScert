@@ -34,15 +34,19 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     ["map-stable-outer-cell", "runningTotals([1, 2, 3])", "[1,3,6]"],
     ["map-stable-for-of", "doubled([[1, 2], [3]])", "[[2,4],[6]]"],
     ["map-stable-for-of", "proses([\"a `b` c\"])", '["a   c"]'],
+    ["map-stable-collection-write", `seen(["a", "b"], new Map())`, '["a","b"]'],
+    ["map-stable-set", `distinct([["a", "b", "a"], []])`, "[2,0]"],
   ] as const)
     assert.equal(runExample(file, `((r) => Object.keys(r).length === r.length && JSON.stringify(r))(${call})`),
       expected, `${file}: the result is dense`);
   assert.equal(runExample("invalid-map-unstable-pop", "Object.keys(shrink([1, 2, 3])).length"), 2,
     "invalid-map-unstable-pop: the result has three positions, two present");
+  assert.equal(runExample("invalid-map-class-constructor-pop", "Object.keys(shrinkAll([1, 2, 3])).length"), 2,
+    "invalid-map-class-constructor-pop: the result has three positions, two present");
   // The callback's `set` writes the map it captures.
-  assert.equal(runExample("invalid-map-collection-write-callback",
+  assert.equal(runExample("map-stable-collection-write",
     `(() => { const counts = new Map(); seen(["a", "a"], counts); return counts.get("a"); })()`), 2,
-    "invalid-map-collection-write-callback: the callback's call writes the map");
+    "map-stable-collection-write: the callback's call writes the map");
   // The declaration called by the callback writes the counter it is passed.
   assert.equal(runExample("invalid-declaration-write-callback",
     `(() => { const counter = { n: 0 }; counted(["a", "b"], counter); return counter.n; })()`), 2,

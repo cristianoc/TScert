@@ -73,7 +73,7 @@ Each type-graph node is a union of clauses:
 | Intersection of callable contracts, each with a receiver, arguments, result and required effect  | `{"arrs":{"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null}},{"receiver":[5],"arguments":[[1]],"result":[0],"effect":{"footprint":{"value":"any","store":"any"},"promise":null}}]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false,"presence":"readable"},"rest":[]}}` |
 | Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null}}]}}`             |
-| Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it; `"variadic": [[params, [rest, result]], ...]` when there are any      | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
+| Class value: construct signatures, each a contract with receiver `{}`, arguments, result and effect, which `new` meets; no call signature meets it; `"variadic"` in the same format, arguments `[params, rest]`, when there are any      | `{"ctors":{"signatures":[{"receiver":{},"arguments":[[1,2]],"result":[1,2],"effect":{"footprint":{"value":"keep","store":"keep"},"promise":null}}]}}`             |
 | Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                  | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false,"presence":"dense"},"rest":[]}}` |
 
 The arrow example contains two signatures, each with one argument and the
@@ -122,8 +122,8 @@ signatures, whose rest may be a binder, a pack parameter (left out when none), a
 form resolution descriptors, each naming three positions among the binders,
 or two with `r` `null` for an observation (left out when none), and
 `"construct": true` for a construct scheme, a generic constructor type, whose
-signatures are construct signatures, each a contract's arguments and result,
-its receiver `[]` and its effect `{"footprint":{"value":"any","store":"any"},"promise":null}` (left out for a call scheme);
+signatures are construct signatures, each a contract's arguments, result and
+effect, its receiver `[]` (left out for a call scheme);
 a **parameter row** `{"param": i, "name": n, "kind": "value" | "arguments"}`, which
 names its own label $i$ and, in `n`, the binder it stands for (the name has no meaning). Its kind is mandatory and is preserved by instantiation and binder renaming;
 or a **meet row** `{"meet": p, "clauses": [...], "also": [...]}`, the value
@@ -404,7 +404,8 @@ parameters, and the rule's `arrays` name their rest-store types, in order:
 each is the `store` of that signature's entry. At a scheme row the signatures
 are the scheme's. `ctorGraph` creates a class value's construct-only code: an
 entry per construct signature, its receiver the rule's `undef`, the
-`undefined` type, with the code field, then one initializer premise per
+`undefined` type, its effect the signature's (a variadic signature's effect is
+plain), with the code field, then one initializer premise per
 static field, then the captures. `callableGraph` creates a callable object: one initializer
 premise per field, then the captures, its code's entries as `funGraph`'s.
 
@@ -446,9 +447,14 @@ names the element type and flags the parts that are spreads, with one premise
 per part, as `callRest`'s further parts; its result is fresh storage with the
 element contract `E`, either readonly flag and any chosen presence mode; the
 values fill every position, including explicit `undefined` read from source holes.
+`construct` carries the selected construct signature's `effect`, which is
+plain, and takes the constructor's premise, then one per actual and one
+`undefined` premise per position the signature declares and the construction
+omits, as `app` without a receiver.
 `constructRest` names how many actuals are fixed, the spread flags of the
 further parts and the rest type, with the constructor's premise, one per fixed
-actual and one per part, as `callRest` without a receiver.
+actual and one per part, as `callRest` without a receiver; its signature's
+effect is plain.
 `callPacked` names how many actuals are fixed, the packed binder and the rest
 type, with premises for the callee, the receiver, each fixed actual and the
 value whose store the last actual spreads.

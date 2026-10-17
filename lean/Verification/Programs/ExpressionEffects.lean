@@ -188,8 +188,8 @@ theorem write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
         · refine ⟨v, by rw [List.getElem?_set_ne (Ne.symm hll)]; exact hv, Footprints.Change.Holds.refl _ _ _⟩
   · contradiction
 
-/-- Invocation consumes the selected signature's effect: within the bound
-when the signature's footprint is. All actual evaluation has already been
+/-- Invocation and construction consume the selected signature's effect:
+within the bound when the signature's footprint is. All actual evaluation has already been
 lowered to earlier graph nodes; omitted arguments are the ordinary evidence's
 explicit `undefined` premises. Subsumption may retain the postcondition while
 changing the result type. -/
@@ -199,6 +199,9 @@ def selectedCallWithin (Φ : Footprints.Closed) : Evidence ι → Bool
         checkScope (claim p).context.length (claim p).term
   | .node _ (.callRest e _ _ flags _) ps =>
       e.footprint.le Φ && flags.all (· == false) && ps.all fun p => valueTerm (claim p).term &&
+        checkScope (claim p).context.length (claim p).term
+  | .node _ (.construct e) ps =>
+      e.footprint.le Φ && ps.all fun p => valueTerm (claim p).term &&
         checkScope (claim p).context.length (claim p).term
   | .node _ (.sub _) [p] => selectedCallWithin Φ p
   | _ => false
@@ -288,6 +291,77 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
       rw [CallEffects.Effect.result_plain hplain] at hs
       simpa [CallEffects.Arrow.map, CallEffects.Contract.map, htf, htr,
         instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] using hs
+    · contradiction
+
+/-- Construction consumes the selected construct signature's effect, as
+invocation does: the constructor and the actuals are values, each omitted
+position an explicit `undefined` premise. -/
+private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G}
+    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool}
+    {e : CallEffects.Effect} (hl : LocalUsing G images j (.construct e) ps codes)
+    (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
+    (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type) (e.post h)
+      n W h (instantiate 0 ρ j.term) := by
+  rcases j with ⟨Γ,t,A⟩
+  -- The rule admits only a construction with a constructor premise.
+  cases t <;> try exact (hl : False).elim
+  rename_i f args
+  rcases ps with _ | ⟨jf, jas⟩
+  · exact (hl : False).elim
+  obtain ⟨hΓf, htf, hargs, hundef, hcontexts, hL⟩ := hl
+  have context : ∀ p ∈ jf::jas, p.context = Γ := by
+    intro p hp
+    simp only [List.mem_cons] at hp
+    rcases hp with rfl | hp
+    · exact hΓf
+    · exact hcontexts p hp
+  have typed : ∀ p ∈ jf::jas, HasTyUsing G images Γ p.term p.type := by
+    intro p hp
+    simpa only [context p hp] using ht p hp
+  have values : ∀ p ∈ jf::jas, isVal (instantiate 0 ρ p.term) = true := by
+    intro p hp
+    exact valueTerm_instantiate (hv p hp).1 (hv p hp).2 (by simpa [context p hp] using he)
+  cases n with
+  | zero => trivial
+  | succ n =>
+    have member : ∀ p ∈ jf::jas, meaning G p.type (n+1) W (instantiate 0 ρ p.term) := by
+      intro p hp
+      exact safe_value_mem (values p hp) ((typed p hp).sound _ _ h ρ he hw hh)
+    split at hL
+    · rename_i L S a bs vs hF
+      obtain ⟨hmem, hpl⟩ := hL
+      have hf := ((represents_raw hF (n+1) W _ ) (member jf (by simp))).1.1
+      have hp := hf.2 _ (List.mem_map_of_mem hmem)
+      simp only [CallEffects.MethodArrow.map, CallEffects.Contract.map, List.map_map,
+        Function.comp_def] at hp
+      have hArgs := argument_values (ps := jas)
+        (fun p hp => typed p (by simp [hp])) (fun p hp => values p (by simp [hp])) he hw hh
+      have actual : (jas.take args.length).map (fun p => instantiate 0 ρ p.term)
+          = args.map (instantiate 0 ρ) := by
+        simpa only [List.map_map, Function.comp_def] using
+          congrArg (List.map (instantiate 0 ρ)) hargs
+      have hsplit : jas.map (fun p => instantiate 0 ρ p.term) = args.map (instantiate 0 ρ) ++
+          (jas.drop args.length).map (fun p => instantiate 0 ρ p.term) := by
+        rw [← actual, ← List.map_append, List.take_append_drop]
+      have hvals : CallArguments.Values (args.map (instantiate 0 ρ)) := by
+        rw [← actual]
+        intro v hv'
+        obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hv'
+        exact values p (by simp [List.mem_of_mem_take hp])
+      have hs := CallEffects.construct_safe hpl
+        (P := ArgsT (jas.map (fun p => meaning G p.type)))
+        (Adm.of_transfer (fun ha j hj U hx => ArgsT_transfer (fun T hm => by
+          obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
+        hp hvals (pad := (jas.drop args.length).map (fun p => instantiate 0 ρ p.term))
+        (by
+          intro v hv'
+          obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hv'
+          simp [hundef p hp, instantiate])
+        (by rw [← hsplit]; exact hArgs) hw hh
+      simpa [htf, instantiate, instantiateArgs_eq_map] using hs
     · contradiction
 
 theorem map_spread_false : ∀ (flags : List Bool) (qs : List (Sequent ι)), (∀ b ∈ flags, b = false) →
@@ -460,6 +534,17 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
       obtain ⟨⟨hle, hnos⟩, hp⟩ := hp
       apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono hle hq)
       apply callRest_local_sound ht.1 hnos _ _ he hw hh
+      · intro p hm
+        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+      · intro p hm
+        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+        exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
+    case construct effect =>
+      simp only [Bool.and_eq_true] at hp
+      obtain ⟨hle, hp⟩ := hp
+      apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono hle hq)
+      apply construct_local_sound ht.1 _ _ he hw hh
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes

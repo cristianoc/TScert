@@ -380,62 +380,11 @@ def Constructible (v : Val) : Prop :=
 def ConstructsTo (v : Val) (args : List Tm) (result : Tm) : Prop :=
   ∃ fs c enter oid, v = .objAt fs c oid ∧ CallArguments.construction c = some enter ∧ result = enter args
 
-/-- The common constructor promise, independent of argument-list syntax. -/
-def ConstructPromise (Ξ : Fam) (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k) (v : Val) : Prop :=
-  ∀ (j : Nat) (hj : j < k) (U : WorldT j),
-    WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
-      ∀ args, CallArguments.Values args → P j U args →
-        ∃ result, ConstructsTo v args result ∧ Safe Ξ R j U heap result
-
-/-- **Construct signatures.** Values meeting every signature `(parameters,
-result)` under `new`: constructing the value, in any strictly future world,
-with values at the parameters, runs a body safe at the result. The code is
-construct-only, so a plain call cannot run it, and no code without
-`[[Construct]]` is one. As for call signatures, the promise is about the term
-after the step, which is what lets the signature's variance be used only
-below the current level. -/
-def ctorsT (Ξ : Fam) (L : List (List Fam × Fam)) : Fam := fun k W v =>
-  Constructible v ∧ ∀ p ∈ L, ConstructPromise Ξ (ArgsT p.1) p.2 k W v
-
-theorem ctorsT_adm (L : List (List Fam × Fam)) : Adm (ctorsT Ξ L) :=
-  ⟨fun _ _ _ h => ⟨h.1, fun p hp j hj U hx hu heap hh args hv ha =>
-      h.2 p hp j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha⟩,
-   fun _ _ _ hx _ h => ⟨h.1, fun p hp j hj U hy hu heap hh args hv ha =>
-      h.2 p hp j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha⟩⟩
-
 /-- The actual lists a variadic construct signature admits: its fixed
 parameters' actuals exactly, then, as one argument pack, the rest. -/
 def CtorRest (Ps : List Fam) (P : ArgFam) (j : Nat) (W : WorldT j) (args : List Tm) : Prop :=
   Ps.length ≤ args.length ∧ ArgsT Ps j W (args.take Ps.length) ∧
     P j W (args.drop Ps.length)
-
-/-- **Variadic construct signatures** `(parameters, rest, result)`: as
-`ctorsT`, for the lists `CtorRest` admits. -/
-def ctorRestsT (Ξ : Fam) (S : List (List Fam × ArgFam × Fam)) : Fam := fun k W v =>
-  Constructible v ∧ ∀ s ∈ S, ConstructPromise Ξ (CtorRest s.1 s.2.1) s.2.2 k W v
-
-theorem ctorRestsT_adm (S : List (List Fam × ArgFam × Fam)) : Adm (ctorRestsT Ξ S) :=
-  ⟨fun _ _ _ h => ⟨h.1, fun p hp j hj U hx hu heap hh args hv ha =>
-      h.2 p hp j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha⟩,
-   fun _ _ _ hx _ h => ⟨h.1, fun p hp j hj U hy hu heap hh args hv ha =>
-      h.2 p hp j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha⟩⟩
-
-theorem ctorRestsT_append (S T : List (List Fam × ArgFam × Fam)) (k : Nat) (W : WorldT k) (v : Val) :
-    ctorRestsT Ξ (S ++ T) k W v ↔ ctorRestsT Ξ S k W v ∧ ctorRestsT Ξ T k W v := by
-  simp only [ctorRestsT, List.mem_append, or_imp, forall_and]
-  constructor
-  · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
-  · rintro ⟨⟨hc, hl⟩, -, hm⟩; exact ⟨hc, hl, hm⟩
-
-theorem ctorsT_select {L n W v p} (hf : ctorsT Ξ L n W v) (hp : p ∈ L) : ctorsT Ξ [p] n W v :=
-  ⟨hf.1, fun q hq => by cases List.mem_singleton.mp hq; exact hf.2 p hp⟩
-
-theorem ctorsT_append (L M : List (List Fam × Fam)) (k : Nat) (W : WorldT k) (v : Val) :
-    ctorsT Ξ (L ++ M) k W v ↔ ctorsT Ξ L k W v ∧ ctorsT Ξ M k W v := by
-  simp only [ctorsT, List.mem_append, or_imp, forall_and]
-  constructor
-  · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
-  · rintro ⟨⟨hc, hl⟩, -, hm⟩; exact ⟨hc, hl, hm⟩
 
 /-! ### Argument packs -/
 
@@ -641,47 +590,6 @@ theorem ArgsRest_of_exact_extra {Ps : List Fam} {E : ArgFam} {j W args extra}
   refine ⟨?_, ?_⟩
   · rw [← hl, List.take_left]; exact ArgsShort_of_exact ha
   · rw [← hl, List.drop_left]; exact he
-
-theorem ctorsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → List Fam × Fam) {n : Nat}
-    (hΞ : Agree Ξ Ξ' n)
-    (h : ∀ x ∈ l, ArgsAgree n (f x).1 (g x).1 ∧ Agree (f x).2 (g x).2 n)
-    (W : WorldT n) (v : Val) : ctorsT Ξ (l.map f) n W v ↔ ctorsT Ξ' (l.map g) n W v := by
-  unfold ctorsT
-  refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩ <;>
-    obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp <;>
-    intro j hj U hx hu heap hh args hv ha
-  · obtain ⟨result, hc, hsafe⟩ := hs (f x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
-      ((ArgsT_congr (h x hm).1 hj U args).mpr ha)
-    exact ⟨result, hc, (Safe_congr' n hΞ (h x hm).2 j hj U heap _).mp hsafe⟩
-  · obtain ⟨result, hc, hsafe⟩ := hs (g x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
-      ((ArgsT_congr (h x hm).1 hj U args).mp ha)
-    exact ⟨result, hc, (Safe_congr' n hΞ (h x hm).2 j hj U heap _).mpr hsafe⟩
-
-theorem ctorRestsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → List Fam × ArgFam × Fam) {n : Nat}
-    (hΞ : Agree Ξ Ξ' n)
-    (h : ∀ x ∈ l, ArgsAgree n (f x).1 (g x).1 ∧ Agree (f x).2.1 (g x).2.1 n ∧
-      Agree (f x).2.2 (g x).2.2 n)
-    (W : WorldT n) (v : Val) : ctorRestsT Ξ (l.map f) n W v ↔ ctorRestsT Ξ' (l.map g) n W v := by
-  unfold ctorRestsT
-  refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩ <;>
-    obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp <;>
-    intro j hj U hx hu heap hh args hv ha
-  · have hl := ArgsAgree_length (h x hm).1
-    obtain ⟨result, hc, hsafe⟩ := hs (f x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
-      (by
-        obtain ⟨hlen, hfix, hpack⟩ := ha
-        refine ⟨by rw [hl]; exact hlen, ?_, ?_⟩
-        · rw [hl]; exact (ArgsT_congr (h x hm).1 hj U _).mpr hfix
-        · rw [hl]; exact ((h x hm).2.1 j hj U _).mpr hpack)
-    exact ⟨result, hc, (Safe_congr' n hΞ (h x hm).2.2 j hj U heap _).mp hsafe⟩
-  · have hl := ArgsAgree_length (h x hm).1
-    obtain ⟨result, hc, hsafe⟩ := hs (g x) (List.mem_map_of_mem hm) j hj U hx hu heap hh args hv
-      (by
-        obtain ⟨hlen, hfix, hpack⟩ := ha
-        refine ⟨by rw [← hl]; exact hlen, ?_, ?_⟩
-        · rw [← hl]; exact (ArgsT_congr (h x hm).1 hj U _).mp hfix
-        · rw [← hl]; exact ((h x hm).2.1 j hj U _).mp hpack)
-    exact ⟨result, hc, (Safe_congr' n hΞ (h x hm).2.2 j hj U heap _).mpr hsafe⟩
 
 /-! ### Bound functions
 

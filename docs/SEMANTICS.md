@@ -116,7 +116,8 @@ the receiver:
 relation stays deterministic (`Step_det`). What a construct signature promises
 is in [the clause's meaning](POSITIVE-TYPES.md#functions-and-classes):
 the construct step's result is safe at the signature's result, one level below
-the budget, as a call's body is.
+the budget, and its normal return meets the signature's effect, as a call's
+body does.
 
 **Allocation from parts.** $\mathsf{merge}_\delta(a,b)$ (`Tm.merge`)
 evaluates $a$, then $b$ (`mergeC1`, `mergeC2`), then reads, in the heap as it

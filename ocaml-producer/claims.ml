@@ -161,7 +161,7 @@ let encode (proposal : Proposal_types.t) =
     | Callable -> [Row (intern (Array [Object ["arrs",Object ["arrows",Array []]]]))]
     (* A quantified construct signature, `new <T>(x: T) => C<T>`: a construct
        scheme row, its binders the names the source spells, each construct
-       signature an arrow's arguments and result (no receiver). *)
+       signature an arrow's arguments, result and effect (no receiver). *)
     (* A generic class value's static fields name none of its binders and are
        read at an instance; the scheme states its construct signatures. *)
     | Ctors ([s],_) when s.quantified <> [] ->
@@ -175,8 +175,8 @@ let encode (proposal : Proposal_types.t) =
         | _ -> None) s.quantified in
       let body = Inference.substitute_signature within_bounds {s with quantified=[]} in
       let signature,variadic = match body.rest_pack with
-        | None -> [call_contract ordinary_effect (Array []) (Array (List.map labels body.params)) (labels body.result)],[]
-        | Some r -> [],[call_contract ordinary_effect (Array [])
+        | None -> [call_contract body.call_effect (Array []) (Array (List.map labels body.params)) (labels body.result)],[]
+        | Some r -> [],[call_contract body.call_effect (Array [])
             (Array [Array (List.map labels body.params);pack_labels r]) (labels body.result)] in
       let bounds = List.map (fun (q:Semantic.quantifier) ->
         let bound = Option.value q.bound ~default:(ValueArgument top) in
@@ -193,10 +193,11 @@ let encode (proposal : Proposal_types.t) =
       (* Variadic construct signatures carry their rest, an argument-list type;
          the list is left out when empty, its one spelling of none. *)
       let fixed = List.filter_map (fun (s:Semantic.signature) -> match s.rest_pack with
-        | None -> Some (Array [Array (List.map labels s.params);labels s.result])
+        | None -> Some (call_contract s.call_effect (Object []) (Array (List.map labels s.params)) (labels s.result))
         | Some _ -> None) signatures in
       let rests = List.filter_map (fun (s:Semantic.signature) -> Option.map (fun r ->
-        Array [Array (List.map labels s.params);Array [pack_labels r;labels s.result]]) s.rest_pack) signatures in
+        call_contract s.call_effect (Object [])
+          (Array [Array (List.map labels s.params);pack_labels r]) (labels s.result)) s.rest_pack) signatures in
       (* The static fields, invariant, and the readonly ones, views, each
          list left out when empty. *)
       let invariant,readonly = List.partition (fun (f:Semantic.field) -> f.write <> None) statics in

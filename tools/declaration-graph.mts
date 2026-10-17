@@ -954,7 +954,8 @@ export function collectDeclarations(file: string, options: {
         const identity = identityOf(node);
         valueStarts.push(node);
         const nameSpan: Span = [node.name.getStart(source), node.name.end];
-        return { declaration: identity, construct: true, typeParams, type: { k: "constructor", params, rest: null,
+        return { declaration: identity, construct: true, typeParams, type: { k: "constructor",
+          effect: ordinaryEffect, params, rest: null,
           result: { k: "reference", reference: { name: node.name.text, span: nameSpan,
             arguments: names.map(() => nameSpan), target: identity },
             args: names.map(name => ({ k: "binder", name, span: nameSpan })), span: nameSpan }, span } };
@@ -2535,8 +2536,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           throw Error(`${what} is read with at most ${stated.params.length} argument(s)`);
         context.construct(spanOf(call));
       }
-      calledConstructs.push({ binders: stated.binders, type: { k: "constructor", params: stated.params, rest: null,
-        result: stated.result, span: spanOf(signature) } });
+      calledConstructs.push({ binders: stated.binders, type: { k: "constructor", effect: entry.effect ?? ordinaryEffect,
+        params: stated.params, rest: null, result: stated.result, span: spanOf(signature) } });
       return [];
     }
     // A call signature the overlay states instead of the declared one, as a
@@ -2587,7 +2588,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
             expression.arguments?.some(ts.isSpreadElement))
           throw Error(`${whatNew} is read with at most ${stated.params.length} argument(s)`);
       return [{ binders: stated.binders,
-        type: { k: "constructor", params: stated.params, rest: null, result: stated.result, span } satisfies TypeTerm }];
+        type: { k: "constructor", effect: entry.effect ?? ordinaryEffect, params: stated.params, rest: null,
+          result: stated.result, span } satisfies TypeTerm }];
     }
     if (signature.typeParameters?.length) throw Error(`${whatNew} is generic`);
     context.clean(signature, where(signature, name));
@@ -2596,7 +2598,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         if (form.receiver) throw Error(`${whatNew} states its receiver`);
         const binders: string[] = [];
         return { binders,
-          type: { k: "constructor", params: form.params, rest: form.rest, result: form.result, span } satisfies TypeTerm };
+          type: { k: "constructor", effect: form.effect, params: form.params, rest: form.rest, result: form.result,
+            span } satisfies TypeTerm };
       });
   })];
   if (valueUses.length && constructForms.length)

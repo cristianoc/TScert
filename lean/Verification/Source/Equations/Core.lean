@@ -354,10 +354,12 @@ partial def termRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) :=
     -- A class value's type states its static fields (`statics`), each an
     -- invariant field of the class value, left out when it has none.
     let hasStatics := (term.getObjVal? "statics").isOk
-    fieldsExactly term (["k", "params", "rest", "result", "span"] ++ (if hasStatics then ["statics"] else []))
+    fieldsExactly term (["k", "params", "rest", "result", "effect", "span"] ++
+      (if hasStatics then ["statics"] else []))
     let ps ← (← arr term "params").mapM (lowerType ctx)
     let restTerm ← field term "rest"
     let result ← lowerType ctx (← field term "result")
+    let effect : CallEffects.Effect ← fromJson? (← field term "effect")
     -- A readonly one is a view, listed with `readonly: true`.
     let statics ← if !hasStatics then pure [] else do
       let fs ← arr term "statics"
@@ -372,8 +374,8 @@ partial def termRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) :=
         return (readonly, key, ← lowerType ctx (← field f "type"))
     let fields := statics.filterMap fun (ro, k, t) => if ro then none else some (k, t)
     let views := statics.filterMap fun (ro, k, t) => if ro then some (k, t) else none
-    if restTerm == .null then return .clauses [.ctors [(ps.toList, result)] [] fields [] views]
-    return .clauses [.ctors [] [(ps.toList, ← lowerRest ctx restTerm, result)] fields [] views]
+    if restTerm == .null then return .clauses [.ctors [⟨(), ps.toList, result, effect⟩] [] fields [] views]
+    return .clauses [.ctors [] [⟨(), (ps.toList, ← lowerRest ctx restTerm), result, effect⟩] fields [] views]
   | k => throw s!"{ctx.site}: no row for a '{k}' term"
 
 /-- A pack parameter's bound, an array or a tuple of required positions: the
@@ -423,8 +425,8 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
   let mut fixed : List (Arrow (List Tree)) := []
   let mut rests : List (RestArrow (List Tree)) := []
   -- Call signatures, or construct signatures (`new <T>(…) => R`), each an
-  -- arrow's arguments and result: a construct signature has no receiver and
-  -- no effect, read as an ordinary arrow's.
+  -- arrow's arguments, result and effect: a construct signature has no
+  -- receiver.
   let sigs ← arr term "signatures"
   let construct := sigs.toList.any (kindOf · == some "constructor")
   if construct && !sigs.toList.all (kindOf · == some "constructor") then
@@ -433,7 +435,7 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
     throw s!"{ctx.site}: a resolution-qualified construct scheme is outside the fragment"
   for f in sigs do
     let recv ← if construct then do
-        fieldsExactly f ["k", "params", "rest", "result", "span"]
+        fieldsExactly f ["k", "params", "rest", "result", "effect", "span"]
         pure []
       else do
         fieldsExactly f ["k", "receiver", "params", "rest", "result", "effect", "span"]
@@ -441,7 +443,7 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
     let ps ← (← arr f "params").toList.mapM (lowerType inner)
     let restTerm ← field f "rest"
     let res ← lowerType inner (← field f "result")
-    let effect : CallEffects.Effect ← if construct then pure .ordinary else fromJson? (← field f "effect")
+    let effect : CallEffects.Effect ← fromJson? (← field f "effect")
     if restTerm == .null then fixed := fixed ++ [⟨recv, ps, res, effect⟩]
     else rests := rests ++ [⟨recv, (ps, ← lowerRest inner restTerm), res, effect⟩]
   return .scheme ((List.range names.length).map Tree.local) fixed bounds rests resolution construct
