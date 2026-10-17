@@ -376,7 +376,13 @@ undefined, whose broad saved nullish predicate alone is insufficient. -/
   | .tag tag q, some A =>
     match atoms G (BranchRefinement.tagSlice G A tag q) with
     | some R => ⟨linkFacts k slot R ++ out.cells, ⟨slot,R,valueField⟩ :: out.values, out.links⟩
-    | none => out
+    -- A slice of objects a test leaves, `x` truthy where `x` is an object or
+    -- undefined: its values are neither null nor undefined.
+    | none =>
+      if G.plainTy (BranchRefinement.tagSlice G A tag q) && (expand G (BranchRefinement.tagSlice G A tag q)).all
+          (fun c => tagClause .isNullish c == some false) then
+        ⟨linkFacts k slot [.nonNullish] ++ out.cells, ⟨slot,[.nonNullish],valueField⟩ :: out.values, out.links⟩
+      else out
   | _, _ => out
 
 theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
@@ -399,7 +405,27 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
         rcases List.mem_cons.mp hf with rfl | hf
         · exact hv
         · exact hout.2.1 f hf
-    · exact hout
+    · by_cases hn : (G.plainTy (BranchRefinement.tagSlice G A tag q) && (expand G (BranchRefinement.tagSlice G A tag q)).all
+          (fun c => tagClause .isNullish c == some false)) = true
+      · rw [if_pos hn]
+        have hm := BranchRefinement.tagSlice_sound (he.2 slot A hi) ho
+        simp only [Bool.and_eq_true, List.all_eq_true, beq_iff_eq] at hn
+        have hq := answers_sound (show Answers G _ .isNullish false from ⟨hn.1, hn.2⟩) hm
+        have hval := (meaning_value hm).1
+        have hv : ∃ a ∈ [Atom.nonNullish], a.holds (ρ slot) := by
+          refine ⟨.nonNullish, by simp, hval, ?_, ?_⟩
+          · intro h; rw [h] at hq; simp [tagHolds] at hq
+          · intro h; rw [h] at hq; simp [tagHolds] at hq
+        refine ⟨?_, ?_, hout.2.2⟩
+        · intro f hf
+          rcases List.mem_append.mp hf with hf | hf
+          · exact linkFacts_holds hk hv f hf
+          · exact hout.1 f hf
+        · intro f hf
+          rcases List.mem_cons.mp hf with rfl | hf
+          · exact hv
+          · exact hout.2.1 f hf
+      · rw [if_neg hn]; exact hout
   · exact hout
 
 end Verification.HeapKnowledge

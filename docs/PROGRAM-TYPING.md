@@ -2453,7 +2453,9 @@ The observation and read rules are:
 `read_sound` proves the read rule and preservation of the heap.
 `observeTyped_holds` also derives a supported predicate from the tested value's
 ordinary type restricted by the observed tag. For example, the falsy branch of
-an object-or-undefined type supplies the predicate `{undefined}`. Presence is
+an object-or-undefined type supplies the predicate `{undefined}`, and its
+truthy branch, whose objects no predicate names, `nonNullish`: a slice whose
+every clause answers `isNullish` false (`cell-truthiness-narrowing`). Presence is
 separate: a read result excluding `undefined` proves presence for an optional
 key. A predicate admitting `undefined` covers both absence and a present value.
 Writes require the ordinary lifetime contract; the observation grants no write

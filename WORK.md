@@ -266,11 +266,11 @@ the same-file declarations it uses). The first blockers of the others in
   imported function's effect needs a contract its own module's
   certification establishes ([module composition](#module-composition))
   (group: 1);
-- in parseRecord, a `let` holding an object narrowed by the truthiness of an
-  optional chain on it (`if (current?.block.length) current.block…`), which
-  the cell's knowledge does not state, and an unguarded element read stored
-  at a `string` field (`subject: lines[0]`), refused: an element read is
-  `T | undefined` (parseRecord: 1);
+- in parseRecord, element 0 of `text.trimEnd().split("\n")` stored at a
+  `string` field (`subject: lines[0]`): an element read is `T | undefined`,
+  and a non-empty `split` is designed in
+  [SOURCE-CONTRACTS](docs/SOURCE-CONTRACTS.md#native-footprints) ("a
+  non-empty `split`") (parseRecord: 1);
 - in lowering-dump, a mapped type whose value names its key, `SHOW_STEP`'s
   `{ [K in KeysOf<Step>]: (a: Extract<Step, Record<K, unknown>>[K]) => string }`,
   refuses the file; showStep's assertions, which state what `decodeNode`

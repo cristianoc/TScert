@@ -110,6 +110,9 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("invalid-nullish-member-reads", `typeof label({ n: 1 })`), "number",
     "invalid-nullish-member-reads: the member is a number");
   assert.throws(() => runExample("nullish-member-write-refused", "reset(undefined)"), /Cannot set properties/);
+  assert.equal(runExample("cell-truthiness-narrowing", `named(["x"], { name: "a", block: [] }) + blocks(["p", "q"], { name: "", block: [] })`), "atrue3");
+  assert.equal(runExample("invalid-cell-truthiness-narrowing", `String(kept({ name: "a" }))`), "undefined",
+    "invalid-cell-truthiness-narrowing: the reset cell returns undefined at a Section");
   assert.equal(runExample("logical-string-values", `[both("x"), both(""), either("", "y"), joined("a", "b"), fallback("", "c")].join()`), "1,0,1,b,c");
   assert.equal(runExample("invalid-logical-string-values", `JSON.stringify(length("", 3))`), '""',
     "invalid-logical-string-values: the empty string, no number");

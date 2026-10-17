@@ -20,7 +20,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
      `undefined`: JavaScript throws a `TypeError` at those before the access,
      as the lowering's guard does (PROGRAM-TYPING, "a member of `null` or
      `undefined`"). An operand holding only those keeps its type. *)
-  let present t = match without_nullish t with Atoms [] -> t | p -> p in
+  let present t = match without_nullish t, t with
+    | Atoms [], Atoms (_ :: _ as xs) when List.for_all (function Nul | Undef -> true | _ -> false) xs -> Atoms []
+    | Atoms [], _ -> t
+    | p, _ -> p in
   match e.node with
     | Read (({node=Id name;_} as o),Name field) when List.mem_assoc (field_key name field) env ->
       let known = binding_type (List.assoc (field_key name field) env) in
