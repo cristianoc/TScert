@@ -2,6 +2,7 @@ import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Verification.Semantics.FootprintProvenance
 import Verification.Programs.FootprintTyping
+import Verification.Semantics.FootprintNatives
 import Verification.Semantics.HeapFacts
 import Verification.Types.PositiveNormalization
 
@@ -302,6 +303,31 @@ private def cellK : FactKind := .cell ⟨0, [.nul], "k"⟩
 #guard stable storeK cellK.support [(.cls .value, .any)]
 #guard !stable storeK cellK.support [(.field 0 "k", .any)]
 #guard stable storeK cellK.support [(.field 0 "k", .keep)]
+
+/-! ## Array mutators
+
+The removing mutators break a dense prefix: `pop` and `shift` of a dense
+array, `reverse` of one with a trailing hole, and a shorter length. The
+growing ones keep it, `reverse` of a fully dense array too, which the
+footprint of `reverse` does not claim. -/
+
+private def grows (a : Arr) (f : Arr → Arr) : Bool := Change.grow.holdsB a.next (.arr a.ls) (.arr (f a).ls)
+
+#guard !grows ⟨[some 0], 1⟩ Arr.pop
+#guard !grows ⟨[some 0, some 1], 2⟩ Arr.shift
+#guard !grows ⟨[some 0, none], 1⟩ Arr.reverse
+#guard !grows ⟨[some 0], 1⟩ (·.setLength 0)
+#guard grows ⟨[some 0, some 1], 2⟩ Arr.reverse
+#guard grows ⟨[some 0, none, some 2], 3⟩ Arr.push
+#guard grows ⟨[some 0, none, some 2], 3⟩ Arr.unshift
+#guard grows ⟨[some 0, none], 2⟩ (·.setLength 4)
+-- sort's writeback, judged from the entry store, after a comparator that removed both indices
+#guard Change.grow.holdsB 2 (.arr [some 0, some 1])
+  (.arr ((Arr.mk [] 2).writeback (itemCount [some 0, some 1] 2) 2).ls)
+-- and the step from the comparator's store is no `grow` of the entry store's prefix after a
+-- comparator that filled a hole the writeback deletes: [3, 1, hole, 2] sorted keeps 3 values
+#guard !present ((Arr.mk [some 0, some 1, some 5, some 3] 6).writeback
+  (itemCount [some 0, some 1, none, some 3] 4) 4).ls 3
 
 /-! ## The lemmas rest on the standard axioms
 
