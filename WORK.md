@@ -20,6 +20,9 @@ design, not its progress.
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
+| [Footprints](#footprints) | open: increments 1 and 2 of 6 done | the seven programs of [FOOTPRINTS](docs/FOOTPRINTS.md#seven-example-programs) are decided as stated there, and every framing rule is an instance of the stability check |
+| [The match iterator's state](#footprints) | open | a region over a hidden field states the match iterator's state |
+| [Element freshness](#footprints) | open | `freshElems` is a fact kind with its support lemma and its maintenance proved |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open | a Lean theorem composes units certified against each other's signatures |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
@@ -95,6 +98,20 @@ signature and its variadic extension, a module constant read as a value
 elsewhere, is not certified preserving: the selected call's evidence is no
 qualified application at the fixed signature. Keep the source targets and their
 negative controls when extending the body-effect checker.
+
+<a id="footprints"></a>
+**Footprints.** [FOOTPRINTS](docs/FOOTPRINTS.md) designs one mechanism for
+keeping heap-dependent facts across writes, calls and callbacks: each action
+states a footprint, and a fact survives it when the stability check accepts.
+It closes the effect inference gaps of [contract
+completeness](#restoring-completeness) by footprints relative to the code's
+entry heap and freshness stamps, and lets a `map` callback write state other
+than the mapped array. Its increments are listed in
+[FOOTPRINTS](docs/FOOTPRINTS.md#increments). Two pieces of the native and
+relational parts are open beside them: the match iterator's state, its own
+locations and its regex clone's, needs a region over a hidden field; and an
+array built in the code needs a maintained fact that its element locations
+are fresh, so that writes to its elements transport to nothing.
 
 <a id="keys-known-only-at-run-time"></a>
 **Keys known only at run time.** A write at a string key known only at run

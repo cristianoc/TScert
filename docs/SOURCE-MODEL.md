@@ -436,8 +436,9 @@ rule can still certify pure handlers. Qualified-call composition retains
 this distinction. No stronger external assumption is implicit here.
 
 The guarantee is sufficient but not necessary for safe dense
-`map`: mutation of unrelated state can also be safe. Future footprint-sensitive
-effects can express that without changing the inference/certification boundary.
+`map`: mutation of unrelated state can also be safe. [Footprints](FOOTPRINTS.md)
+designs effects that express that within the same inference/certification
+boundary.
 The body-effect checker recognizes a subset of programs satisfying the
 semantic contract. An unrecognized body therefore represents an inference or
 checking limit, not a restriction on the meaning of heap preservation.
