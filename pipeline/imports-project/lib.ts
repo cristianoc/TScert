@@ -307,3 +307,12 @@ export type KeysOf<T> = T extends unknown ? keyof T : never;
 /** A name spelled with `$`; the case namespace-import-value-import reads it
  * beside a namespace import named `lib$limit`. */
 export const limit$double: number = 3;
+/** Exports spelled as a library name and a function member; the case
+ * shadowed-library-names-value-import reads them through namespaces named
+ * `Object` and `lib`. */
+export function assign(n: number): string {
+  return `assigned ${n}`;
+}
+export function call(n: number): number {
+  return n + 1;
+}

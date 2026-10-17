@@ -307,6 +307,9 @@ export class Gate {
   /** Each occurrence of a namespace member (`namespace-members.mts`), a
    * member read or a qualified type name, by its span: the binding it reads. */
   namespaceUses = new Map<string, { member: NamespaceMember; use: MemberUse }>();
+  /** The names TypeScript binds to the standard library's declarations
+   * alone, among those the gate lowers specially (`libraryNames`), by span. */
+  readonly libraryNames = new Set<string>();
 
   constructor(file: SourceFile) {
     this.file = file;
@@ -317,6 +320,14 @@ export class Gate {
    * undefined for another node. */
   namespaceMember(node: Node): string | undefined {
     return this.namespaceUses.get(this.span(node).join(":"))?.member.local;
+  }
+
+  /** Whether TypeScript binds a name to the standard library's
+   * declarations alone: `Object` of `Object.assign`, or the member `call`,
+   * `apply` or `bind` of a function. A local, an import or a namespace
+   * member of that spelling is not. */
+  libraryName(node: Node): boolean {
+    return this.libraryNames.has(this.span(node).join(":"));
   }
 
   /** The leading `"use strict"` directives of a directive prologue: whether
@@ -1051,7 +1062,7 @@ export function parseFile(file: string, carriesContext = false,
   // stands for it.
   const imported = new Set<string>(importNodes.flatMap(node => {
     const bindings = node.importClause?.namedBindings;
-    return bindings && ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [];
+    return !bindings ? [] : ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [bindings.name.text];
   }));
   const rooted = new Set<string>([
     ...imported,
@@ -1179,6 +1190,18 @@ export function parseFile(file: string, carriesContext = false,
   if (!carriesContext) findInKeys(source);
   // The member names of `o.m.call(…)`, `.apply` and `.bind`: TypeScript
   // decides which is a method, whose receiver is its host.
+  // The names the gate lowers specially where they are the standard
+  // library's: TypeScript decides (`libraryName`).
+  const libraryNameNodes: Node[] = [];
+  const findLibraryNames = (node: Node): void => {
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
+      if (["call", "apply", "bind"].includes(node.name.text)) libraryNameNodes.push(node.name);
+      if (node.name.text === "assign" && ts.isIdentifier(node.expression) && node.expression.text === "Object")
+        libraryNameNodes.push(node.expression);
+    }
+    node.forEachChild(findLibraryNames);
+  };
+  if (!carriesContext) findLibraryNames(source);
   const receiverTargetNodes: Node[] = [];
   const findReceiverTargets = (node: Node): void => {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
@@ -1417,13 +1440,13 @@ export function parseFile(file: string, carriesContext = false,
       staticTypeNodes.length ||
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || elementReadNodes.length ||
+      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length ||
       regexpNodes.length || dispatchNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? elementReadNodes[0] ??
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ??
       regexpNodes[0] ?? dispatchNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
@@ -1496,6 +1519,8 @@ export function parseFile(file: string, carriesContext = false,
         hostIn: ([start, end]) => gate.hostIns.add(`${start}:${end}`),
         receiverTargets: receiverTargetNodes.map(node => gate.span(node)),
         methodTarget: ([start, end]) => gate.methodTargets.add(`${start}:${end}`),
+        libraryNames: libraryNameNodes.map(node => gate.span(node)),
+        libraryName: ([start, end]) => gate.libraryNames.add(`${start}:${end}`),
         elementReads: elementReadNodes.map(node => gate.span(node)),
         hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
         regexps: regexpNodes.map(node => gate.span(node)),

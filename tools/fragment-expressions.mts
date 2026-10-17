@@ -438,33 +438,14 @@ export function expr(this: Gate, node: Expression): Expr {
         args: node.arguments.map(a => gate.expr(a)) };
     if (
       ts.isPropertyAccessExpression(node.expression) &&
-      ts.isIdentifier(node.expression.expression) &&
-      node.expression.expression.text === "Object" &&
-      node.expression.name.text === "assign"
+      node.expression.name.text === "assign" &&
+      gate.libraryName(node.expression.expression)
     ) {
       if (node.questionDotToken || node.expression.questionDotToken)
         gate.fail(node, "an optional call of Object.assign is outside the fragment");
       // The callable form: an arrow and an object literal, at the two type
       // arguments written, or else at the two TypeScript infers.
       const callable = callableAssign(node) && (!node.typeArguments || node.typeArguments.length === 2);
-      // The fragment cannot assign to Object.assign or pass Object as a value.
-      // Reject any local declaration that could shadow the standard builtin.
-      const checkBinding = (n: Node): void => {
-        if (
-          (ts.isParameterDeclaration(n) ||
-            ts.isVariableDeclaration(n) ||
-            ts.isFunctionDeclaration(n)) &&
-          n.name &&
-          ts.isIdentifier(n.name) &&
-          n.name.text === "Object"
-        )
-          gate.fail(
-            n,
-            "shadowing Object is outside intrinsic callable initialization",
-          );
-        n.forEachChild(checkBinding);
-      };
-      checkBinding(gate.file);
       if (!callable) {
         // Copies onto a target: the target, then each source, copied as
         // it is evaluated. A spread among the arguments names sources
@@ -521,7 +502,8 @@ export function expr(this: Gate, node: Expression): Expr {
     }
     if (
       ts.isPropertyAccessExpression(node.expression) &&
-      node.expression.name.text === "apply"
+      node.expression.name.text === "apply" &&
+      gate.libraryName(node.expression.name)
     ) {
       // Function.prototype.apply reads its list as an array-like: its
       // length, then each index in order. It never iterates the list.
@@ -561,7 +543,8 @@ export function expr(this: Gate, node: Expression): Expr {
     }
     if (
       ts.isPropertyAccessExpression(node.expression) &&
-      ["call", "bind"].includes(node.expression.name.text)
+      ["call", "bind"].includes(node.expression.name.text) &&
+      gate.libraryName(node.expression.name)
     ) {
       if (
         node.questionDotToken ||
@@ -1020,9 +1003,8 @@ export function localArrow(this: Gate, node: Expression, seen = new Set<number>(
   if (
     ts.isCallExpression(node) &&
     ts.isPropertyAccessExpression(node.expression) &&
-    ts.isIdentifier(node.expression.expression) &&
-    node.expression.expression.text === "Object" &&
-    node.expression.name.text === "assign"
+    node.expression.name.text === "assign" &&
+    gate.libraryName(node.expression.expression)
   )
     // Its initializer is separately parsed through the full Object.assign
     // gate. Do not parse it again here: its body may refer back to this name.
@@ -1034,7 +1016,8 @@ export function localArrow(this: Gate, node: Expression, seen = new Set<number>(
   if (
     ts.isCallExpression(node) &&
     ts.isPropertyAccessExpression(node.expression) &&
-    node.expression.name.text === "bind"
+    node.expression.name.text === "bind" &&
+    gate.libraryName(node.expression.name)
   )
     return gate.localArrow(node.expression.expression, seen, followed, functions);
   if (!ts.isIdentifier(node)) return false;

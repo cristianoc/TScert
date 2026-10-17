@@ -687,6 +687,12 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   // Members of two namespace imports whose names differ only by where the
   // `$` stands: `lib.limit$double` is 3, `lib$limit.double(1)` is 2.
   assert.equal(runImporting("namespace-import-value-import", "twoMembers()"), 5);
+  // Names lowered specially only where they are the standard library's: a
+  // namespace `Object`'s `assign`, an export `call`, a local `Math`, a
+  // parameter `JSON` and an object's own `call` are ordinary bindings.
+  assert.equal(runImporting("shadowed-library-names-value-import", "`${assigned()}|${called()}`"), "assigned 1|2");
+  assert.equal(runExample("shadowed-library-names",
+    "[localMax(), parameterJson({ stringify: (n) => n * 10 }), ownCall()].join()"), "local 3,30,8");
   // A namespace member is an import binding: writing it throws.
   assert.throws(() => runImporting("invalid-namespace-member-write-value-import", "reset()"), /read only|read-only|Cannot assign/);
   // `map` over an array named only through declarations, its callback

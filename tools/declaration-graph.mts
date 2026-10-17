@@ -446,6 +446,12 @@ export function collectDeclarations(file: string, options: {
    * `methodTarget`. */
   receiverTargets?: readonly Span[];
   methodTarget?: (span: Span) => void;
+  /** Names the parser lowers specially where they are the standard
+   * library's (`Object` of `Object.assign`, the member `call`, `apply` or
+   * `bind` of a function): each TypeScript binds to declarations of the
+   * standard library alone is reported to `libraryName`. */
+  libraryNames?: readonly Span[];
+  libraryName?: (span: Span) => void;
   /** The client's element reads `e[k]`: each whose object TypeScript types
    * as arrays and tuples only and whose key as `number`, no literal, is
    * reported to `hostElement`, and the intrinsics, among them
@@ -1693,6 +1699,22 @@ export function collectDeclarations(file: string, options: {
         intrinsicsListed.add(name);
       }
       options.dispatch?.(span, name);
+    }
+    for (const span of options.libraryNames ?? []) {
+      const name = identifierAt(client, span);
+      if (!name) continue;
+      // A member name is the property its object's type has under it; any
+      // other name the declaration it is bound to.
+      const access = name.parent;
+      const object = access && ts.isPropertyAccessExpression(access) && access.name === name
+        ? checker.getTypeAtLocation(access.expression) : undefined;
+      const symbol = access && ts.isPropertyAccessExpression(access) && access.name === name
+        ? object && checker.getPropertyOfType(object, name.text) : checker.getSymbolAtLocation(name);
+      if (!symbol || symbol.flags & SymbolFlags.Alias || !symbol.declarations.length) continue;
+      if (symbol.declarations.every(d => {
+        const node = d.resolve();
+        return !!node && isLibraryModule(idOf(node.getSourceFile()));
+      })) options.libraryName?.(span);
     }
     for (const span of options.receiverTargets ?? []) {
       const name = identifierAt(client, span);

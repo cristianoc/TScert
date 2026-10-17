@@ -1127,7 +1127,7 @@ refused ([model limits](SOURCE-FRAGMENT.md#model-limits)).
 
 ### Calls through `Function.prototype.call`
 
-`f.call(r, ā)`, `f.apply(r, l)` and `f.bind(r, ā)` are the standard methods
+`f.call(r, ā)`, `f.apply(r, l)` and `f.bind(r, ā)`, where TypeScript binds the member to the standard library's `call`, `apply` or `bind`, are the standard methods
 where `f` is a known local function, $`\mathrm{fn}(f)`$; a function a caller
 supplies may own a `call` property. With $`\mathrm{vals}(x)`$ the values a
 local $`x`$ may hold, a `const`'s initializer, or a `let`'s initializer and the
