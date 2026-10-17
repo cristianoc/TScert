@@ -675,7 +675,8 @@ the restricted options and is certified at the empty footprint with
 handler, so it is certified at the empty footprint. `examplesOf`,
 `readRecord` and `group`'s `map` callback then compose normal-return
 footprints, with the [certified import](#certified-imports) of
-`parseRecord`. `exceptional-footprint-handler` shows the same composition
+`parseRecord`. `node-exec-restricted` shows the first steps, and
+`exceptional-footprint-handler` the same composition
 for callees that build and throw an error: a declaration, a constant's
 arrow, and a declaration whose handler rethrows.
 

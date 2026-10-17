@@ -238,6 +238,13 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("invalid-array-flat-map-value", "first()"), 1,
     "invalid-array-flat-map-value: the flattened array's number is returned at number[]");
   // An `env` value's `toString`, which the host runs before it reads `stdio`.
+  assert.equal(runImporting("node-exec-restricted", `JSON.stringify(outputs(["process.stdout.write('a')", "process.exit(1)"]))`),
+    '["a",""]', "node-exec-restricted: a failed command's throw caught as no output");
+  assert.equal(runImporting("invalid-node-exec-restricted-spread", `(() => {
+    const scripts = ["", "", ""];
+    const r = wrong(scripts, { encoding: "utf8", env: { X: { toString() { scripts.pop(); return "x"; } } } });
+    return r.length === 3 && !(2 in r);
+  })()`), true, "invalid-node-exec-restricted-spread: an env value's toString shrinks the mapped array");
   assert.equal(runImporting("invalid-node-exec-env-object", `(() => {
     const stdio = ["pipe", "pipe", "ignore"];
     const X = { toString() { stdio[1] = "ignore"; return "x"; } };

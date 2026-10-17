@@ -977,7 +977,7 @@ export function collectDeclarations(file: string, options: {
         if (!match) throw Error(`${what} is not declared as reviewed: ${entry.signature}`);
         const source = match.getSourceFile();
         const span: Span = [match.getStart(source), match.end];
-        const term: Extract<TypeTerm, { k: "function" }> = { k: "function", effect: ordinaryEffect, receiver: null,
+        const term: Extract<TypeTerm, { k: "function" }> = { k: "function", effect: entry.effect ?? ordinaryEffect, receiver: null,
           params: entry.stated.params, rest: entry.stated.rest ?? null, result: entry.stated.result, span };
         return { module: idOf(source), span, term };
       });
