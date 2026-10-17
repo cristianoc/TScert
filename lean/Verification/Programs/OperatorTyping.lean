@@ -5,7 +5,8 @@ import Verification.Programs.TypingBasics
 One rule types every binary operator (`arith`): each pair of operand clauses
 must make the operator answer (`binop`) for every pair of their members, all
 with one kind of result. Arithmetic takes two numbers or two bigints, never one
-of each; a bigint divisor (of `/` or `%`) must exclude zero, and a bigint exponent be
+of each, the operators `numberOnly` states on numbers alone (`&`, `|`, `<<`,
+`>>`, `>>>`) two numbers; a bigint divisor (of `/` or `%`) must exclude zero, and a bigint exponent be
 non-negative, since those throw. `+` also takes a string and a primitive other
 than a symbol, in either order, and concatenates. A relational operator takes
 two numeric operands, of either kind, or two strings. -/
@@ -81,7 +82,7 @@ def opResult (op : Arith) (c d : Clause α) : Option OpResult :=
   else if op == .add && (stringClause c && printableClause d || printableClause c && stringClause d)
   then some .str
   else if numberClause c && numberClause d then some .num
-  else if bigintClause c && bigintClause d then some .bigint
+  else if bigintClause c && bigintClause d && !op.numberOnly then some .bigint
   else none
 
 /-- The values of a result kind. -/
@@ -292,16 +293,16 @@ theorem opResult_sound {X : α → Fam} {P : α → ArgFam} {op : Arith} {c d : 
     · split at h
       · rename_i _ hops
         cases h
-        simp only [Bool.and_eq_true] at hops
-        obtain ⟨hc, hd⟩ := hops
+        simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hops
+        obtain ⟨⟨hc, hd⟩, hnum⟩ := hops
         obtain ⟨x, rfl⟩ := bigintClause_member hc hv
         obtain ⟨y, rfl⟩ := bigintClause_member hd hw
         cases hz : bigintArith op x y with
         | some z => exact .inl ⟨.bigint z, by simp [binop, hloose, hrel, heq, hz], z, rfl⟩
         | none =>
           refine .inr ?_
-          cases op <;> simp [Arith.relational] at hrel heq hloose <;> simp [bigintArith] at hz <;>
-            simp [binopThrows, hz]
+          cases op <;> simp [Arith.relational, Arith.numberOnly] at hrel heq hloose hnum <;>
+            simp [bigintArith] at hz <;> simp [binopThrows, hz]
       · cases h
 
 /-- Two operand types an operator answers for, pair by pair, with one kind

@@ -1,0 +1,13 @@
+{
+  // A project reading `../fake-lib/lib.augment.d.ts`, a file outside it named
+  // like a standard library file: the `*fake-lib*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "files": ["../fake-lib/lib.augment.d.ts"],
+  "include": ["../examples/*fake-lib*.ts"]
+}

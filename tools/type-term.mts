@@ -438,9 +438,8 @@ function readTypeTerm(scope: TermScope, node: TypeNode | undefined, at: Node | n
     const enumerated = scope.enumerated?.(node, span);
     if (enumerated) return enumerated;
   }
+  // A qualified name is the scope's to read (a namespace member), or to refuse.
   if (ts.isTypeReferenceNode(node)) {
-    if (node.typeName.kind !== ts.SyntaxKind.Identifier)
-      return scope.fail(node, "type reference outside the fragment");
     if (scope.awaited?.(node)) {
       const [argument, ...others] = node.typeArguments ?? [];
       if (!argument || others.length) return scope.fail(node, "Awaited requires one type argument");

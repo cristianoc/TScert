@@ -883,7 +883,9 @@ is refused by the generic-contract boundary.
 
 Write $`⟦\tau⟧`$ for the source term the declaration reader
 gives type syntax $`\tau`$ (`typeTerm`), and $`\mathit{lib}(N)`$ when every
-declaration TypeScript binds $`N`$ to is in a standard library file:
+declaration TypeScript binds $`N`$ to is in a standard library file, one
+the compiler's own library resolution gives the program
+(`isSourceFileDefaultLibrary`), whatever else is named like one:
 
 ```math
 \frac{\mathit{lib}(\mathtt{Array})}
@@ -1385,7 +1387,10 @@ and `String`, `Number`, `BigInt`, `Boolean` through the overlay
 (`array-prototype.mts`): only listed members, each read from the declaration
 whose text is the reviewed one, at the receiver the entry names (`readonly
 T[]` for `ReadonlyArray`, `T[]` for a mutator, the primitive for a
-primitive's member), without dropped parameters. An entry may state its
+primitive's member), without dropped parameters. `ArrayProto` joins a
+unit's declarations wherever an array or tuple type reaches it: one the file
+writes, or one a declaration it reads states (an imported value's type, a
+declared type's member, a library contract's result). An entry may state its
 signature family instead, with $`\omega`$ the entry of member $`m`$ of prototype
 $`p`$, and $`R_j`$ its reviewed receiver (defaulting to $`p`$):
 
@@ -2786,6 +2791,19 @@ member it does not initialize, which TypeScript leaves opaque:
 ```
 
 The type `E` is $`\bigcup_i\tau_i`$ there too.
+
+An enum another module declares, imported or reached through a declaration,
+is read by the same rule: its value is $`\mathcal O^{\circ}(E)`$, the object of
+its members, merged declarations together, which states nothing of the
+reverse mapping; `E.M` is the literal type of `M`'s value and `typeof E` is
+$`\mathcal O^{\circ}(E)`$. An imported `const enum` has no object to read and
+is refused as a value. At a position of a declaration of a
+[host package](COMPILER-API.md#host-declarations) the type `E` is
+`number` (reading rule 3): TypeScript admits any number at a numeric enum
+type, and the flag enums hold combinations of members, which are no member's
+value. A host enum is read as a value only where the contract lists it
+(`hostEnums` in [`compiler-api.mts`](../tools/compiler-api.mts)), whose
+runtime object `tests/compiler-api.mts` compares with the declaration (C1).
 
 ## Const assertions
 

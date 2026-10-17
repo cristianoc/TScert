@@ -51,7 +51,8 @@ export type CallCode =
   | { kind: "graph"; arity: number; exprs: Term[]; conts: [unknown, unknown][]; start: number; caps: Term[];
       mode: "construct" | "sloppy" | null; rest: boolean };
 /** Every binary operator, as `Arith` in Calculus.lean names them. */
-const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "lt", "le", "gt", "ge", "eq"] as const;
+const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "bitAnd", "bitOr", "shl", "shr", "ushr",
+  "lt", "le", "gt", "ge", "eq"] as const;
 type Operator = (typeof OPERATORS)[number];
 export type Term =
   | { kind: "nul" }

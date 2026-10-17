@@ -726,6 +726,26 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   // An imported computed alias's keys index the table that names them.
   assert.equal(runImporting("computed-alias-value-import", 'show("branch")'), "branch if");
   assert.equal(runImporting("invalid-computed-alias-value-import", 'only("branch")'), "branch");
+  // Members of two namespace imports whose names differ only by where the
+  // `$` stands: `lib.limit$double` is 3, `lib$limit.double(1)` is 2.
+  assert.equal(runImporting("namespace-import-value-import", "twoMembers()"), 5);
+  // Names lowered specially only where they are the standard library's: a
+  // namespace `Object`'s `assign`, an export `call`, a local `Math`, a
+  // parameter `JSON` and an object's own `call` are ordinary bindings.
+  assert.equal(runImporting("shadowed-library-names-value-import", "`${assigned()}|${called()}`"), "assigned 1|2");
+  assert.equal(runExample("shadowed-library-names",
+    "[localMax(), parameterJson({ stringify: (n) => n * 10 }), ownCall()].join()"), "local 3,30,8");
+  // An import bound to the name `undefined` reads the imported number.
+  assert.equal(runImporting("invalid-undefined-import-value-import", "read()"), 10);
+  // `Object.assign(1)` is the standard copy whatever a declaration augments:
+  // a `Number` object, not the string the augmenting declarations state.
+  for (const file of ["invalid-augmented-object-assign", "invalid-fake-lib-object-assign", "invalid-lib-collision-object-assign"])
+    assert.equal(runExample(file, "typeof assigned()"), "object", file);
+  // A namespace member is an import binding: writing it throws.
+  assert.throws(() => runImporting("invalid-namespace-member-write-value-import", "reset()"), /read only|read-only|Cannot assign/);
+  // `map` over an array named only through declarations, its callback
+  // shrinking it: the result has three positions, two present.
+  assert.equal(runImporting("invalid-array-through-declaration-value-import", "Object.keys(shrunk()).length"), 2);
   // A class has no plain call: calling it throws.
   assert.throws(() => runExample("invalid-class-as-function", "go()"), /cannot be invoked without 'new'/);
   // A construction in a static initializer reads a static not yet defined.

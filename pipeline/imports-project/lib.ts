@@ -284,6 +284,35 @@ export function isKind(x: unknown, k: "number"): x is number;
 export function isKind(x: unknown, k: "string" | "number"): boolean {
   return typeof x === k;
 }
+/** A function stating its receiver; the case
+ * invalid-namespace-import-receiver-value-import calls it through a
+ * namespace import. */
+export function limited(this: { limit: number } | undefined): number {
+  return this === undefined ? 0 : this.limit;
+}
+/** An array the case array-through-declaration-value-import reads without
+ * writing an array type itself. */
+export function trio(): readonly number[] {
+  return [1, 2, 3];
+}
+/** An array type the case invalid-array-through-declaration-value-import
+ * names without writing one, and a fresh array of it. */
+export type Numbers = number[];
+export function fresh(): Numbers {
+  return [1, 2, 3];
+}
 /** A conditional alias computing a union's keys; the case
  * computed-alias-value-import imports it. */
 export type KeysOf<T> = T extends unknown ? keyof T : never;
+/** A name spelled with `$`; the case namespace-import-value-import reads it
+ * beside a namespace import named `lib$limit`. */
+export const limit$double: number = 3;
+/** Exports spelled as a library name and a function member; the case
+ * shadowed-library-names-value-import reads them through namespaces named
+ * `Object` and `lib`. */
+export function assign(n: number): string {
+  return `assigned ${n}`;
+}
+export function call(n: number): number {
+  return n + 1;
+}

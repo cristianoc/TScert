@@ -110,7 +110,10 @@ inductive Tag where
 /-- The binary operators on primitive operands, JavaScript's own (`binop`
 gives their meaning). Arithmetic combines two numbers as the IEEE-754 double
 operation, or two bigints as the integer one: `pow` is `**`, `xor` is `^`,
-which `~x` is written with (`x ^ -1`). The relational operators compare two
+which `~x` is written with (`x ^ -1`). `bitAnd`, `bitOr`, `shl`, `shr` and
+`ushr` are `&`, `|`, `<<`, `>>` and `>>>` on two numbers, through `ToInt32`
+and `ToUint32`; on bigints they are stuck (`numberOnly`), and the typing
+admits them on numbers alone. The relational operators compare two
 numeric operands, number and bigint alike, or two strings, and answer a
 Boolean. Strict equality answers a Boolean where one operand is a
 primitive. A combination JavaScript throws on, or converts through anything
@@ -119,6 +122,7 @@ division, with the dividend's sign; on bigints the truncating remainder. -/
 inductive Arith where
   | add | sub | mul | div
   | pow | xor | rem
+  | bitAnd | bitOr | shl | shr | ushr
   | lt | le | gt | ge
   /-- Strict equality, `===`: a Boolean, where one operand is a primitive
   (`strictEquals`). -/
@@ -126,6 +130,12 @@ inductive Arith where
   /-- Abstract equality on primitives, nullish values and identified objects. -/
   | looseEq
   deriving Repr, DecidableEq, BEq
+
+/-- The bitwise operators the model states on numbers only: `&`, `|`, `<<`,
+`>>` and `>>>`. -/
+def Arith.numberOnly : Arith → Bool
+  | .bitAnd | .bitOr | .shl | .shr | .ushr => true
+  | _ => false
 
 /-- Whether an operator compares rather than computes. -/
 def Arith.relational : Arith → Bool
@@ -370,6 +380,32 @@ def intXor : Int → Int → Int
   | .negSucc a, .ofNat b => .negSucc (a ^^^ b)
   | .negSucc a, .negSucc b => .ofNat (a ^^^ b)
 
+/-- Two's-complement conjunction of two integers: `~a & ~b` is `~(a | b)`,
+and `a & ~b` clears `b`'s bits of `a`. -/
+def intAnd : Int → Int → Int
+  | .ofNat a, .ofNat b => .ofNat (a &&& b)
+  | .ofNat a, .negSucc b => .ofNat (a ^^^ (a &&& b))
+  | .negSucc a, .ofNat b => .ofNat (b ^^^ (a &&& b))
+  | .negSucc a, .negSucc b => .negSucc (a ||| b)
+
+/-- Two's-complement disjunction of two integers: `a | ~b` is
+`~(b & ~a)`, and `~a | ~b` is `~(a & b)`. -/
+def intOr : Int → Int → Int
+  | .ofNat a, .ofNat b => .ofNat (a ||| b)
+  | .ofNat a, .negSucc b => .negSucc (b ^^^ (a &&& b))
+  | .negSucc a, .ofNat b => .negSucc (a ^^^ (a &&& b))
+  | .negSucc a, .negSucc b => .negSucc (a &&& b)
+
+/-- `ToUint32` on the bits of a double: `ToInt32`'s value modulo 2^32. -/
+def toUint32 (x : UInt64) : Nat :=
+  let i := toInt32 x
+  if i < 0 then (i + 2 ^ 32).toNat else i.toNat
+
+/-- An integer modulo 2^32, read as signed: the 32-bit result of a shift. -/
+def wrapInt32 (i : Int) : Int :=
+  let u := i % 2 ^ 32
+  if 2 ^ 31 ≤ u then u - 2 ^ 32 else u
+
 /-- The double an integer in the 32-bit range denotes, exactly. -/
 def int32Bits (i : Int) : UInt64 :=
   (if i < 0 then -((-i).toNat.toFloat) else i.toNat.toFloat).toBits
@@ -425,6 +461,12 @@ def arithBits (op : Arith) (x y : UInt64) : UInt64 :=
     | .div => (a / b).toBits
     | .pow => (jsPow a b).toBits
     | .xor => int32Bits (intXor (toInt32 x) (toInt32 y))
+    | .bitAnd => int32Bits (intAnd (toInt32 x) (toInt32 y))
+    | .bitOr => int32Bits (intOr (toInt32 x) (toInt32 y))
+    -- The shift count is the right operand's `ToUint32`, modulo 32.
+    | .shl => int32Bits (wrapInt32 (toInt32 x * 2 ^ (toUint32 y % 32)))
+    | .shr => int32Bits (toInt32 x / 2 ^ (toUint32 y % 32))
+    | .ushr => int32Bits (toUint32 x / 2 ^ (toUint32 y % 32))
     | .rem => remBits x y
     | .lt | .le | .gt | .ge | .eq | .looseEq => (0.0 / 0.0 : Float).toBits
 
@@ -440,6 +482,7 @@ def bigintArith : Arith → Int → Int → Option Int
   | .pow, x, y => if y < 0 then none else some (x ^ y.toNat)
   | .xor, x, y => some (intXor x y)
   | .rem, x, y => if y = 0 then none else some (x.tmod y)
+  | .bitAnd, _, _ | .bitOr, _, _ | .shl, _, _ | .shr, _, _ | .ushr, _, _ => none
   | .lt, _, _ | .le, _, _ | .gt, _, _ | .ge, _, _ | .eq, _, _ | .looseEq, _, _ => none
 
 /-- The order of two doubles: none when either is NaN, and the two zeros

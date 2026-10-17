@@ -22,7 +22,9 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, membe
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
-  iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm } from "./intrinsics.mts";
+  iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
+  literalTerm, type EnumMemberValue } from "./intrinsics.mts";
+import { hostEnums, isHostFile } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -100,7 +102,6 @@ export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[
   return nodes.map((node, i) => (named.includes(i) ? keys?.(node) : null) ?? read(node));
 }
 
-const isLibraryModule = (module: string): boolean => module.startsWith("typescript/lib/");
 
 /** The configured project named on a command line: a tsconfig file, or the
  * directory holding one. */
@@ -164,19 +165,43 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
   }
 }
 
+/** Whether a part of the declaration document names an array or a tuple
+ * type, which Lean reads at `ArrayProto`. */
+function namesArray(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(namesArray);
+  if (typeof value !== "object" || value === null) return false;
+  if ("k" in value && (value.k === "array" || value.k === "tuple")) return true;
+  return Object.values(value).some(namesArray);
+}
+
 /** A module's identity: the client by its absolute path, a standard library
  * file by name, anything else by its real path relative to the project. */
-function moduleIds(clientFile: string, root: string): (file: SourceFile) => string {
+function moduleIds(clientFile: string, root: string, program: Program):
+    { idOf: (file: SourceFile) => string; libraryFile: (file: SourceFile) => boolean } {
   const client = realpathSync(clientFile);
   const projectRoot = realpathSync(root);
-  return file => {
+  // The standard library is the files the compiler's own library resolution
+  // gives the program (`isSourceFileDefaultLibrary`), whatever else is
+  // named like one; only names of that form are asked. Every library
+  // decision reads this membership.
+  const libraries = new Set(program.getSourceFileNames().filter(name => /^lib\..*\.d\.ts$/.test(basename(name)))
+    .flatMap(name => {
+      const file = program.getSourceFile(name);
+      return file && program.isSourceFileDefaultLibrary(file) ? [realpathSync(name)] : [];
+    }));
+  const libraryFile = (file: SourceFile): boolean => libraries.has(realpathSync(file.fileName));
+  // The identities are disjoint by construction: the client by its absolute
+  // path, a library file `typescript/lib/<file>`, any other file its path
+  // from the project root, written `./…` inside it and `../…` outside, so
+  // no other file's identity reads as a library file's.
+  const idOf = (file: SourceFile): string => {
     const path = realpathSync(file.fileName);
     if (path === client) return clientFile;
+    if (libraries.has(path)) return `typescript/lib/${basename(path)}`;
     const inside = relative(projectRoot, path).split(sep).join("/");
-    if (/^lib\..*\.d\.ts$/.test(basename(path)) && inside.startsWith("../"))
-      return `typescript/lib/${basename(path)}`;
-    return inside;
+    return inside.startsWith("../") ? inside : `./${inside}`;
   };
+  return { idOf, libraryFile };
 }
 
 /** What TypeScript binds `identifier` to, following import and export aliases. */
@@ -275,22 +300,40 @@ function computedAt(file: SourceFile, span: Span): TypeNode | null {
 }
 
 /** The client's named imports: each must name exactly one declaration. */
-function importBindings(client: SourceFile): { local: Identifier; imported: string;
-  specifier: string; span: Span; typeOnly: boolean }[] {
-  return client.statements.filter(ts.isImportDeclaration).flatMap(node => {
+/** A namespace member the parser found (`namespace-members.mts`): its
+ * binding, the export it names, and its occurrences, each by the span of the
+ * member read or qualified name and of the member's name. */
+export type NamespaceMemberSpans = { local: string; imported: string; specifier: string;
+  uses: { span: Span; name: Span; value: boolean; callee: boolean }[] };
+
+/** The client's imports, each the binding `name` the client reads, the
+ * identifier `at` TypeScript resolves to the export, and the span a refusal
+ * names: a named import's specifier and its import declaration, a namespace
+ * member's first occurrence (`members`). */
+function importBindings(client: SourceFile, members: readonly NamespaceMemberSpans[]): { name: string; at: Identifier;
+  imported: string; specifier: string; span: Span; typeOnly: boolean }[] {
+  const named = client.statements.filter(ts.isImportDeclaration).flatMap(node => {
     const span: Span = [node.getStart(client), node.end];
     const clause = node.importClause;
-    if (!clause || clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings) ||
-        !ts.isStringLiteral(node.moduleSpecifier))
-      throw new DeclarationError(span, "only named imports are resolved");
+    if (!clause || clause.name || !clause.namedBindings || !ts.isStringLiteral(node.moduleSpecifier))
+      throw new DeclarationError(span, "only named and namespace imports are resolved");
+    if (ts.isNamespaceImport(clause.namedBindings)) return [];
     const specifier = node.moduleSpecifier.text;
     // The unstable AST exposes this runtime field but omits it from the
     // ImportClause interface.
     const clauseTypeOnly = "isTypeOnly" in clause && clause.isTypeOnly === true;
-    return clause.namedBindings.elements.map(element => ({ local: element.name,
+    return clause.namedBindings.elements.map(element => ({ name: element.name.text, at: element.name,
       imported: element.propertyName?.text ?? element.name.text, specifier, span,
       typeOnly: clauseTypeOnly || element.isTypeOnly }));
   });
+  const namespaced = members.map(member => {
+    const [first] = member.uses;
+    const at = first ? identifierAt(client, first.name) : null;
+    if (!first || !at) throw new DeclarationError(first?.span ?? [0, 0], `TypeScript namespace member ${member.local} missing`);
+    return { name: member.local, at, imported: member.imported, specifier: member.specifier, span: first.span,
+      typeOnly: !member.uses.some(u => u.value) };
+  });
+  return [...named, ...namespaced];
 }
 
 /**
@@ -302,6 +345,12 @@ function importBindings(client: SourceFile): { local: Identifier; imported: stri
 export function collectDeclarations(file: string, options: {
   tsconfigPath?: string;
   client?: SourceFile;
+  /** The members the client reads through its namespace imports
+   * (`namespace-members.mts`): each joins as a named import of its export
+   * would, under its own binding; a call of one whose signatures state a
+   * `this` parameter is refused at the call, since it passes the namespace
+   * object as the receiver. */
+  namespaceMembers?: readonly NamespaceMemberSpans[];
   locals?: readonly Span[];
   /** The client's type-reference names that are neither imported nor its own
    * declarations: each that TypeScript binds to a global declaration becomes
@@ -411,6 +460,12 @@ export function collectDeclarations(file: string, options: {
    * `methodTarget`. */
   receiverTargets?: readonly Span[];
   methodTarget?: (span: Span) => void;
+  /** Names the parser lowers specially where they are the standard
+   * library's (`Object` of `Object.assign`, the member `call`, `apply` or
+   * `bind` of a function): each TypeScript binds to declarations of the
+   * standard library alone is reported to `libraryName`. */
+  libraryNames?: readonly Span[];
+  libraryName?: (span: Span) => void;
   /** The client's element reads `e[k]`: each whose object TypeScript types
    * as arrays and tuples only and whose key as `number`, no literal, is
    * reported to `hostElement`, and the intrinsics, among them
@@ -459,6 +514,9 @@ export function collectDeclarations(file: string, options: {
    * (PROGRAM-TYPING.md, "Enums"), or undefined where it computes none. */
   enums?: readonly Span[];
   enumMember?: (span: Span, value: string | number | undefined) => void;
+  /** Told each imported enum's local name and members: the client's
+   * annotations read its type and its members' literal types. */
+  importedEnum?: (local: string, members: readonly EnumMemberValue[]) => void;
   /** An ambient enum (`declare enum`, not `const`) joins the values as the
    * environment's object, at its members' object type (`enumMembersTerm`).
    * An enum with a member TypeScript computes no value for joins the
@@ -509,7 +567,7 @@ export function collectDeclarations(file: string, options: {
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
-    const idOf = moduleIds(clientFile, root);
+    const { idOf, libraryFile } = moduleIds(clientFile, root, program);
     // Everything the graph uses must be code TypeScript accepts: an error in a
     // used declaration or on the resolution path refuses it. Errors elsewhere in
     // those files, and in the client's function bodies, are not the graph's.
@@ -552,6 +610,69 @@ export function collectDeclarations(file: string, options: {
         clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
       return nodes;
     };
+    // The name a type reference reads: an identifier, or the member of a
+    // namespace import a qualified name `ns.T` reads, which TypeScript binds
+    // to the export it names (`namespace-members.mts`); null for any other
+    // qualified name.
+    const memberName = (name: ts.EntityName): Identifier | null => {
+      if (ts.isIdentifier(name)) return name;
+      if (!ts.isIdentifier(name.left)) return null;
+      const declaration = checker.getSymbolAtLocation(name.left)?.declarations[0]?.resolve();
+      return declaration && ts.isNamespaceImport(declaration) ? name.right : null;
+    };
+    // The enum a name denotes, every declaration TypeScript binds it to an
+    // enum's (merged enums are one), or null.
+    const enumsOf = (identifier: Identifier): ts.EnumDeclaration[] | null => {
+      const nodes = (targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve());
+      const enums = nodes.filter((n): n is ts.EnumDeclaration => !!n && ts.isEnumDeclaration(n));
+      return enums.length && enums.length === nodes.length ? enums : null;
+    };
+    // An enum's members, in order, each at the value TypeScript computes,
+    // `undefined` where it computes none.
+    const enumMembersOf = (enums: readonly ts.EnumDeclaration[], what: string): EnumMemberValue[] =>
+      enums.flatMap(e => {
+        clean(e, what);
+        return e.members.map(m => {
+          if (!ts.isIdentifier(m.name) && !ts.isStringLiteral(m.name)) throw Error(`an enum member of ${what} needs a plain name`);
+          const value = checker.getConstantValue(m);
+          if (typeof value === "number" && !Number.isFinite(value))
+            throw Error(`an enum member of ${what} that is NaN or infinite has no literal type`);
+          return { name: m.name.text, value };
+        });
+      });
+    // The type an enum's name denotes where `at` writes it
+    // (SOURCE-CONTRACTS.md, "Enums"; COMPILER-API.md, reading rule 3): at a
+    // position of a host declaration `number`, since TypeScript admits any
+    // number there and the flag enums hold combinations; elsewhere the union
+    // of its members' types.
+    const enumTypeAt = (identifier: Identifier, at: SourceFile, span: Span): TypeTerm | null => {
+      const enums = enumsOf(identifier);
+      if (!enums) return null;
+      const what = `${idOf(at)}#${identifier.text}`;
+      const members = enumMembersOf(enums, what);
+      if (isHostFile(at.fileName)) return { k: "atom", name: "number", span };
+      const parts = members.map((m): TypeTerm =>
+        m.value === undefined ? { k: "atom", name: "number", span } : literalTerm(m.value, span));
+      return parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span };
+    };
+    // `E.M`, an enum member's literal type, where `E` names an enum; and
+    // `typeof E`, the enum's object.
+    // The enum named directly or as a namespace member.
+    const enumerated = (node: TypeNode, span: Span): TypeTerm | null => {
+      if (ts.isTypeQueryNode(node) && !node.typeArguments?.length) {
+        const named = memberName(node.exprName);
+        const enums = named ? enumsOf(named) : null;
+        return named && enums ? enumMembersTerm(enumMembersOf(enums, named.text), span) : null;
+      }
+      if (!ts.isTypeReferenceNode(node) || !ts.isQualifiedName(node.typeName)) return null;
+      const owner = memberName(node.typeName.left);
+      const enums = owner ? enumsOf(owner) : null;
+      if (!owner || !enums) return null;
+      const name = node.typeName.right.text;
+      const member = enumMembersOf(enums, owner.text).find(m => m.name === name);
+      if (!member) throw Error(`${owner.text} has no member ${name}`);
+      return member.value === undefined ? { k: "atom", name: "number", span } : literalTerm(member.value, span);
+    };
     const resolveDeclaration = (identifier: Identifier, what: string): Node => {
       const nodes = resolveDeclarations(identifier, what);
       const [node] = nodes;
@@ -565,7 +686,7 @@ export function collectDeclarations(file: string, options: {
       const declarations = target?.declarations.map(d => d.resolve()) ?? [];
       const [only] = declarations;
       return declarations.length === 1 && !!only && ts.isTypeAliasDeclaration(only) &&
-        only.name.text === "Awaited" && isLibraryModule(idOf(only.getSourceFile()));
+        only.name.text === "Awaited" && libraryFile(only.getSourceFile());
     };
     const associatedAlias = (node: TypeAliasDeclaration, seen = new Set<TypeAliasDeclaration>()): boolean => {
       if (seen.has(node)) return false;
@@ -643,7 +764,7 @@ export function collectDeclarations(file: string, options: {
       const nodes = (targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve());
       const types: TypeDeclaration[] = [];
       for (const node of nodes) {
-        if (!node || !isLibraryModule(idOf(node.getSourceFile()))) return null;
+        if (!node || !libraryFile(node.getSourceFile())) return null;
         if (isTypeDeclaration(node)) types.push(node);
       }
       const [first] = types;
@@ -681,7 +802,7 @@ export function collectDeclarations(file: string, options: {
       const source = node.getSourceFile();
       const parts = partners.get(node) ?? [node];
       const library = ts.isInterfaceDeclaration(node) && !node.typeParameters?.length &&
-        parts.every(part => isLibraryModule(idOf(part.getSourceFile())));
+        parts.every(part => libraryFile(part.getSourceFile()));
       if (library && node.name.text === "Function") return { k: "callable", span: [node.getStart(source), node.end] };
       return library ? libraryRegExp(node.name.text, parts) : null;
     };
@@ -718,7 +839,7 @@ export function collectDeclarations(file: string, options: {
     // Whether a name denotes a standard library value, such as `Symbol`.
     const isLibraryValue = (name: Identifier): boolean => {
       const nodes = (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve());
-      return nodes.length > 0 && nodes.every(n => !!n && isLibraryModule(idOf(n.getSourceFile())));
+      return nodes.length > 0 && nodes.every(n => !!n && libraryFile(n.getSourceFile()));
     };
     const symbols: DeclarationIdentity[] = [];
     const symbolIndex = new Map<string, number>();
@@ -843,13 +964,19 @@ export function collectDeclarations(file: string, options: {
         literalKey: literalKeyOf,
         computed: (part, pos, read) => computedType(computedContext, part, pos, read),
         keys: keyTypeOf,
+        enumerated,
         fail: (_node, message) => { throw Error(`${message} in ${what}`); },
         named: (part, pos, read) => {
-          const name = part.typeName;
-          if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${what}`);
-          if (binders.includes(name.text)) {
+          const name = memberName(part.typeName);
+          if (!name) throw Error(`a qualified type reference in ${what}`);
+          if (ts.isIdentifier(part.typeName) && binders.includes(name.text)) {
             if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${name.text}`);
             return { k: "binder", name: name.text, span: pos };
+          }
+          const enumType = enumTypeAt(name, source, pos);
+          if (enumType) {
+            if (part.typeArguments?.length) throw Error(`an enum type takes no type arguments: ${name.text}`);
+            return enumType;
           }
           const known = library(name, `${idOf(source)}#${name.text}`);
           if (known) return libraryTerm(known, libraryArguments(known, part.typeArguments ?? [], read, keyTypeOf), pos,
@@ -894,6 +1021,21 @@ export function collectDeclarations(file: string, options: {
       if (!node) throw Error(`unresolved value ${what}`);
       const source = node.getSourceFile();
       const span: Span = [node.getStart(source), node.end];
+      // An enum declared elsewhere is its object, read by `ambient-enum`
+      // (SOURCE-CONTRACTS.md, "Enums"): its members, each at its value's
+      // literal type, `number` where TypeScript computes none. A host enum is
+      // read only where the contract lists it (`compiler-api.mts`, T5).
+      const enums = nodes.filter(ts.isEnumDeclaration);
+      if (enums.length) {
+        if (enums.length !== nodes.length) throw Error(`TypeScript found ${nodes.length} declarations for ${what}`);
+        if (enums.some(e => e.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword)))
+          throw Error(`the imported const enum ${what} has no object: its reads are its members' values, which TypeScript inlines`);
+        const name = enums[0]?.name.text ?? what;
+        if (enums.some(e => isHostFile(e.getSourceFile().fileName)) && !hostEnums.some(h => h.name === name))
+          throw Error(`the host enum ${name} is not one the compiler-API contract reads (compiler-api.mts)`);
+        return { declaration: { module: idOf(source), name, span }, construct: false, typeParams: [],
+          type: enumMembersTerm(enumMembersOf(enums, what), span) };
+      }
       if (nodes.length > 1) {
         const overloads = nodes.filter((n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && !n.body);
         if (!overloads.length || !nodes.every(ts.isFunctionDeclaration) || nodes.length - overloads.length > 1)
@@ -1080,31 +1222,39 @@ export function collectDeclarations(file: string, options: {
       }
       return completed;
     };
-    for (const binding of importBindings(client)) {
+    for (const binding of importBindings(client, options.namespaceMembers ?? [])) {
       try {
         // A function with overloads is its several declarations; any other
         // name must have one.
-        const nodes = resolveDeclarations(binding.local, binding.local.text);
+        const nodes = resolveDeclarations(binding.at, binding.name);
+        const enums = enumsOf(binding.at);
+        if (enums) {
+          options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name));
+          if (!binding.typeOnly)
+            values.push({ binding: { local: binding.name, imported: binding.imported,
+              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name) });
+          continue;
+        }
         const reviewed = moduleEntries(binding.specifier, binding.imported);
         if (!binding.typeOnly && reviewed.length) {
-          values.push({ binding: { local: binding.local.text, imported: binding.imported,
-            specifier: binding.specifier, span: binding.span }, ...moduleValue(nodes, reviewed, binding.local.text) });
+          values.push({ binding: { local: binding.name, imported: binding.imported,
+            specifier: binding.specifier, span: binding.span }, ...moduleValue(nodes, reviewed, binding.name) });
           continue;
         }
         const [node] = nodes;
         // Merged type declarations are one, as `lookup` reads them.
         if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration) && !nodes.every(isTypeDeclaration)))
-          throw Error(`TypeScript found ${nodes.length} declarations for ${binding.local.text}`);
+          throw Error(`TypeScript found ${nodes.length} declarations for ${binding.name}`);
         // A class is a type and, imported as a value, a constructor too.
         if (!binding.typeOnly && nodes.some(n => !ts.isTypeAliasDeclaration(n) && !ts.isInterfaceDeclaration(n)))
-          values.push({ binding: { local: binding.local.text, imported: binding.imported,
-            specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.local.text) });
+          values.push({ binding: { local: binding.name, imported: binding.imported,
+            specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name) });
         if (!nodes.some(isTypeDeclaration)) continue;
-        const declaration = lookup(binding.local, binding.local.text);
+        const declaration = lookup(binding.at, binding.name);
         // An imported alias TypeScript computes from its parameters has no
         // equation, as a local one has none: each application is a computed type.
         if (computedAlias(declaration, aliasOf)) continue;
-        roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.local.text,
+        roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.name,
           imported: binding.imported, specifier: binding.specifier, span: binding.span },
         declaration: identityOf(declaration) } });
       } catch (error) {
@@ -1112,6 +1262,18 @@ export function collectDeclarations(file: string, options: {
         throw new DeclarationError(binding.span, error instanceof Error ? error.message : String(error));
       }
     }
+    // A call of a namespace member passes the namespace object as the
+    // receiver, where a call of the binding it reads passes `undefined`: the
+    // two agree for a callee whose contract states no receiver, and the
+    // call of one that states its receiver is refused where it is written.
+    for (const member of options.namespaceMembers ?? [])
+      for (const use of member.uses.filter(u => u.callee)) {
+        const name = identifierAt(client, use.name);
+        const type = name ? checker.getTypeAtLocation(name) : undefined;
+        if (!name || !type) throw new DeclarationError(use.span, "TypeScript types no namespace member here");
+        if (checker.getSignaturesOfType(type, SignatureKind.Call).some(s => s.thisParameter !== undefined))
+          throw new DeclarationError(use.span, `the call of ${member.local} passes the namespace object as \`this\`, which its declared \`this\` parameter constrains`);
+      }
     // The client's ambient declarations (PROGRAM-TYPING.md,
     // "Imported, ambient and global values"):
     // each name joins the values like an import of the client's own
@@ -1161,7 +1323,7 @@ export function collectDeclarations(file: string, options: {
           declaration.getSourceFile().fileName === client.fileName) continue;
       try {
         if (ts.isTypeAliasDeclaration(declaration) && declaration.name.text === "Awaited" &&
-            isLibraryModule(idOf(declaration.getSourceFile()))) {
+            libraryFile(declaration.getSourceFile())) {
           resolutionContextAt ??= span;
           options.awaited?.(span);
           continue;
@@ -1198,7 +1360,7 @@ export function collectDeclarations(file: string, options: {
       const parts = (symbol?.declarations ?? []).map(d => d.resolve())
         .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
       const [first] = parts;
-      if (!first || !parts.every(part => isLibraryModule(idOf(part.getSourceFile()))))
+      if (!first || !parts.every(part => libraryFile(part.getSourceFile())))
         throw Error(`the standard library declares no ${name}`);
       for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#${name}`);
       partners.set(first, parts);
@@ -1227,7 +1389,7 @@ export function collectDeclarations(file: string, options: {
         const [property, ...more] = fields;
         if (!property) return null;
         if (more.length || !ts.isIdentifier(property.name) ||
-            !isLibraryModule(idOf(property.getSourceFile())) ||
+            !libraryFile(property.getSourceFile()) ||
             property.getText(property.getSourceFile()).trim() !== `readonly ${name}: unique symbol;`)
           throw Error(`Symbol.${name} is not declared as reviewed`);
         return symbolOf(property.name);
@@ -1331,7 +1493,7 @@ export function collectDeclarations(file: string, options: {
       const symbol = part.getSymbol();
       const named = symbol && Object.hasOwn(collections, symbol.name) ? collections[symbol.name] : undefined;
       const library = !!symbol?.declarations.length &&
-        symbol.declarations.every(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client)));
+        symbol.declarations.every(d => libraryFile(d.resolve()?.getSourceFile() ?? client));
       if (named && library) return named;
       // A match array is an array (`regexp.mts` reads `RegExpExecArray` and
       // `RegExpMatchArray` as tuple views), which the host builds with
@@ -1552,6 +1714,22 @@ export function collectDeclarations(file: string, options: {
       }
       options.dispatch?.(span, name);
     }
+    for (const span of options.libraryNames ?? []) {
+      const name = identifierAt(client, span);
+      if (!name) continue;
+      // A member name is the property its object's type has under it; any
+      // other name the declaration it is bound to.
+      const access = name.parent;
+      const object = access && ts.isPropertyAccessExpression(access) && access.name === name
+        ? checker.getTypeAtLocation(access.expression) : undefined;
+      const symbol = access && ts.isPropertyAccessExpression(access) && access.name === name
+        ? object && checker.getPropertyOfType(object, name.text) : checker.getSymbolAtLocation(name);
+      if (!symbol || symbol.flags & SymbolFlags.Alias || !symbol.declarations.length) continue;
+      if (symbol.declarations.every(d => {
+        const node = d.resolve();
+        return !!node && libraryFile(node.getSourceFile());
+      })) options.libraryName?.(span);
+    }
     for (const span of options.receiverTargets ?? []) {
       const name = identifierAt(client, span);
       const symbol = name && checker.getSymbolAtLocation(name);
@@ -1580,7 +1758,7 @@ export function collectDeclarations(file: string, options: {
       if (!first) continue;
       const at: Span = [first.getStart(client), first.end];
       try {
-        const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, clean, valueScope, partners,
+        const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, libraryFile, clean, valueScope, partners,
           overlay: globalsOverlay, test: (span, test) => options.globalTest?.(span, test),
           intrinsic: (span, name) => {
             listIntrinsics(span, [name]);
@@ -1688,11 +1866,11 @@ export function collectDeclarations(file: string, options: {
       // A hook the program's types state, not the one `Function.prototype`
       // holds, which a function value inherits rather than owns.
       const declaration = hook?.declarations[0]?.resolve();
-      if (!declaration || isLibraryModule(idOf(declaration.getSourceFile() ?? client))) continue;
+      if (!declaration || libraryFile(declaration.getSourceFile() ?? client)) continue;
       const key = declaration ? nameOf(declaration) : undefined;
       const target = key && ts.isComputedPropertyName(key) && ts.isPropertyAccessExpression(key.expression) &&
         ts.isIdentifier(key.expression.name) ? targetOf(checker, key.expression.name) : undefined;
-      if (target?.declarations.some(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client))))
+      if (target?.declarations.some(d => libraryFile(d.resolve()?.getSourceFile() ?? client)))
         options.hookTest?.(span);
     }
     for (const span of options.bindingReads ?? []) {
@@ -1759,7 +1937,7 @@ export function collectDeclarations(file: string, options: {
       const symbol = type.getAliasSymbol() ?? type.getSymbol();
       const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
       const [node] = nodes;
-      if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !isLibraryModule(idOf(node.getSourceFile()))) {
+      if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !libraryFile(node.getSourceFile())) {
         const arguments_ = type.getAliasTypeArguments();
         const actuals = arguments_.length ? arguments_ : isTypeReference(type) ? checker.getTypeArguments(type) : [];
         const args = actuals.map(argument => contextualTerm(argument, span));
@@ -1774,7 +1952,7 @@ export function collectDeclarations(file: string, options: {
       // `regexp.mts` reads it.
       const library = nodes.filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
       if (symbol && library.length && library.length === nodes.length &&
-          library.every(n => isLibraryModule(idOf(n.getSourceFile())))) {
+          library.every(n => libraryFile(n.getSourceFile()))) {
         const stated = libraryRegExp(symbol.name, library);
         if (stated) return stated;
       }
@@ -2049,7 +2227,7 @@ export function collectDeclarations(file: string, options: {
           const node = lookup(name, name.text);
           return partners.get(node) ?? [node];
         },
-        library: node => isLibraryModule(idOf(node.getSourceFile())),
+        library: node => libraryFile(node.getSourceFile()),
         read: (node, binder) => typeTerm(sweepScope(node, binder), node),
         reference: (name, args) => {
           const node = lookup(name, name.text);
@@ -2113,14 +2291,33 @@ export function collectDeclarations(file: string, options: {
         ({ node, span: values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0] })),
       ...contextualStarts,
     ];
-    for (const { node: start, span } of starts) {
-      try {
-        collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
-          libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
-          keys: keyTypeOf, alias: aliasOf, awaited });
-      } catch (error) {
-        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+    const collectFrom = (list: readonly { node: TypeDeclaration; span: Span }[]): void => {
+      for (const { node: start, span } of list) {
+        try {
+          collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
+            enumType: enumTypeAt, enumerated, memberName, identityOf, libraryFile, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+            libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
+            keys: keyTypeOf, alias: aliasOf, awaited });
+        } catch (error) {
+          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        }
       }
+    };
+    collectFrom(starts);
+    // An array type reaching the unit only through a declaration (an
+    // imported value's, a declared type's member, a library contract's) is
+    // read at `Array.prototype`'s contract as one the client writes is; the
+    // declarations that contract names join the graph.
+    if (!arrayProto.length &&
+        [values, definitions, applications, selections, primitiveProtos, regexpDefinitions].some(namesArray)) {
+      const at = values[0]?.binding.span ?? roots[0]?.root.binding.span ?? [0, 0];
+      const from = valueStarts.length;
+      try {
+        arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
+      } catch (error) {
+        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
+      }
+      collectFrom(valueStarts.slice(from).map(node => ({ node, span: at })));
     }
     definitions.push(...selections, ...primitiveProtos, ...regexpDefinitions, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
@@ -2218,6 +2415,8 @@ const ambientSpecifier = "ambient";
 type SelectionContext = {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (file: SourceFile) => string;
+  /** Whether a file is the standard library's (`moduleIds`). */
+  libraryFile: (file: SourceFile) => boolean;
   clean: (node: Node, what: string) => void;
   valueScope: (node: Node, what: string) => TermScope;
   partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
@@ -2345,7 +2544,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
   // A standard library global is read through the reviewed overlay: a
   // signature it does not list, with exactly the text reviewed, is refused.
-  const library = variables.every(v => isLibraryModule(context.identityOf(v.getSourceFile())));
+  const library = variables.every(v => context.libraryFile(v.getSourceFile()));
   // An entry stating several forms states construct signatures: each form is
   // one, under the entry's binders, which every form names alike. Read
   // anywhere else, or empty, the list is refused rather than an arm dropped.
@@ -2807,6 +3006,8 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
+  /** Whether a file is the standard library's (`moduleIds`). */
+  libraryFile: (file: SourceFile) => boolean;
   symbol: (written: Identifier | ts.PropertyAccessExpression) => number;
   literalKey: (written: Identifier | ts.PropertyAccessExpression) => string | null;
   privateName: (name: ts.PrivateIdentifier) => number;
@@ -2827,6 +3028,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   parameters: (declaration: Node) => readonly MergedParameter[];
   /** An application's arguments completed with its defaults. */
   complete: (declaration: Node, written: readonly TypeTerm[], use: Node | null, what: string) => TypeTerm[];
+  /** The type an enum's name denotes where a file writes it, or null for a
+   * name that is no enum's. */
+  enumType: (identifier: Identifier, at: SourceFile, span: Span) => TypeTerm | null;
+  /** An enum member's literal type `E.M`, or `typeof E`. */
+  enumerated: NonNullable<TermScope["enumerated"]>;
+  /** The name a type reference reads, a namespace member's included. */
+  memberName: (name: ts.EntityName) => Identifier | null;
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -2901,11 +3109,18 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       privateName: context.privateName,
       keys: context.keys,
       computed,
+      enumerated: context.enumerated,
       fail: (_node, message) => { throw Error(`${message} in ${identity.module}#${identity.name}`); },
       named: (part, pos, read) => {
-        const name = part.typeName;
-        if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${identity.module}#${identity.name}`);
-        const index = names.indexOf(name.text);
+        const name = context.memberName(part.typeName);
+        if (!name) throw Error(`a qualified type reference in ${identity.module}#${identity.name}`);
+        const own = ts.isIdentifier(part.typeName) && names.includes(name.text);
+        const enumType = own ? null : context.enumType(name, source, pos);
+        if (enumType) {
+          if (part.typeArguments?.length) throw Error(`an enum type takes no type arguments: ${name.text}`);
+          return enumType;
+        }
+        const index = own ? names.indexOf(name.text) : -1;
         if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
         if (part.typeArguments?.length)
           throw Error(`type parameter applied as constructor: ${name.text}`);
@@ -2939,7 +3154,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // A standard library interface read through the overlay: only its listed
     // members, and no base.
     const overlaid = ts.isInterfaceDeclaration(node) && Object.hasOwn(interfaceOverlay, node.name.text) &&
-        parts.every(part => isLibraryModule(identityOf(part).module))
+        parts.every(part => context.libraryFile(part.getSourceFile()))
       ? interfaceOverlay[node.name.text] : undefined;
     if (overlaid && ts.isInterfaceDeclaration(node)) {
       definitions.push({ declaration: identity, parameters, bases: [],
@@ -2972,8 +3187,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // promise owns none of those keys. The ordinary prototype/own-key
     // contracts preserve this requirement through structural writable aliases.
     if (parts.some(part => ts.isInterfaceDeclaration(part) && part.name.text === "Promise" &&
-        isLibraryModule(identityOf(part).module))) {
-      if (parts.some(part => !isLibraryModule(identityOf(part).module)))
+        context.libraryFile(part.getSourceFile()))) {
+      if (parts.some(part => !context.libraryFile(part.getSourceFile())))
         scope.fail(node, "a source augmentation of native Promise is outside the fragment: native factories must meet the built-in reviewed Promise contract");
       if (expression.k !== "object" || expression.prototype || expression.stringIndex ||
           expression.numberIndex || expression.symbolIndex || expression.calls.length)

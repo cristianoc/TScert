@@ -78,6 +78,30 @@ infinities compare by sign, and distinct finite doubles stay distinct. -/
 #guard !(numberEqual 0x7ff0000000000000 0xfff0000000000000)
 #guard !(numberEqual 0x3ff0000000000000 0x3ff0000000000001)
 
+/-! The bitwise operators on numbers, each case's expected value Node's:
+`5 & 3`, `-1 & 255`, `5 | 3`, `-8 | 3`, `1 << 31`, `1 << 32`, `1 << -1`,
+`-8 >> 1`, `-(2 ** 31) >> 31`, `-1 >>> 0`, `-8 >>> 28`, `(2 ** 32 + 5) & 7`,
+`NaN | 0`, `3.7 | 0`, `-3.7 | 0`, `2 ** 31 | 0`. -/
+
+private def bitwise (op : Arith) (x y : Float) : Float := Float.ofBits (arithBits op x.toBits y.toBits)
+
+#guard bitwise .bitAnd 5 3 == 1
+#guard bitwise .bitAnd (-1) 255 == 255
+#guard bitwise .bitOr 5 3 == 7
+#guard bitwise .bitOr (-8) 3 == -5
+#guard bitwise .shl 1 31 == -2147483648
+#guard bitwise .shl 1 32 == 1
+#guard bitwise .shl 1 (-1) == -2147483648
+#guard bitwise .shr (-8) 1 == -4
+#guard bitwise .shr (-2147483648) 31 == -1
+#guard bitwise .ushr (-1) 0 == 4294967295
+#guard bitwise .ushr (-8) 28 == 15
+#guard bitwise .bitAnd 4294967301 7 == 5
+#guard bitwise .bitOr (0.0 / 0.0) 0 == 0
+#guard bitwise .bitOr 3.7 0 == 3
+#guard bitwise .bitOr (-3.7) 0 == -3
+#guard bitwise .bitOr 2147483648 0 == -2147483648
+
 /-! ## Primitive loose equality -/
 
 #guard primitiveEquals .nul .undef

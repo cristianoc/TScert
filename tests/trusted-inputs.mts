@@ -80,22 +80,22 @@ function fixtureProject(files: Record<string, string>) {
   const ast = project.parse('import type { Box } from "@fixture/barrel";\n' +
     "export function read(box: Box, global: GlobalBox): boolean { return box.flag && global.flag; }\n");
   const root = must(ast.declarations.roots[0], "the barrel's name");
-  assert.equal(root.declaration.module, "box.ts");
+  assert.equal(root.declaration.module, "./box.ts");
   assert.equal(root.binding.kind === "import" && root.binding.specifier, "@fixture/barrel");
   // A second global declaration merges with the first, as TypeScript merges
   // it: one equation with both declarations' members, identified by the first.
   const global = must(ast.declarations.definitions.find((d) => d.declaration.name === "GlobalBox"), "GlobalBox");
-  assert.equal(global.declaration.module, "global.d.ts");
+  assert.equal(global.declaration.module, "./global.d.ts");
   assert(global.expression?.k === "object");
   assert.deepEqual(global.expression.fields.map((f) => f.name), ["flag", "other"]);
   // Two star reexports of one name: TypeScript reports TS2308 on the barrel
   // (and would bind the first); the import is refused there.
   assert.throws(() => project.graphOf('import type { Box } from "@fixture/twice";'),
-    /TypeScript reports an error in twice.ts on the path to Box: .*already exported a member named 'Box'/);
+    /TypeScript reports an error in \.\/twice\.ts on the path to Box: .*already exported a member named 'Box'/);
   // An interface TypeScript rejects is not a contract: refused, not interpreted
   // as the empty conjunction of its incompatible fields.
   assert.throws(() => project.graphOf("import type { Wrong } from './wrong.js';"),
-    /TypeScript reports an error in wrong.ts#Wrong: .*incorrectly extends/);
+    /TypeScript reports an error in \.\/wrong\.ts#Wrong: .*incorrectly extends/);
   process.stdout.write("imports resolved as TypeScript binds them; TypeScript's errors on their path refused\n");
 }
 

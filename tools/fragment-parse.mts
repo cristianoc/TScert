@@ -15,7 +15,7 @@
  * are in fragment-support.mts. All five are this one trusted program. The fragment it accepts is stated in
  * ../AGENTS.md and, as a grammar, in the pull request description.
  */
-import { API } from "typescript/unstable/sync";
+import { API, type Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
@@ -34,13 +34,15 @@ import { enclosingBinders } from "./computed-types.mts";
 import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
-import { asyncCompleteName, asyncReturnName, awaitName, forInName, iterateForInName, iterateName, literalTerm } from "./intrinsics.mts";
+import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
+  type EnumMemberValue } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writtenElement } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
 import * as expressions from "./fragment-expressions.mts";
 import * as statements from "./fragment-statements.mts";
 import * as guards from "./fragment-guards.mts";
+import { memberUses, namespaceMembers, type MemberUse, type NamespaceMember } from "./namespace-members.mts";
 
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.
@@ -103,7 +105,7 @@ export function openText(absolute: string, text: string): SourceFile {
   return file;
 }
 
-function openFile(absolute: string, text: string): SourceFile {
+function openFile(absolute: string, text: string): { file: SourceFile; checker: Checker } {
   contents.set(absolute, text);
   const project = projectFor(absolute);
   const syntax = project.program.getSyntacticDiagnostics(absolute);
@@ -112,7 +114,7 @@ function openFile(absolute: string, text: string): SourceFile {
   const file = project.program.getSourceFile(absolute);
   if (!file)
     throw new Error(`gate: the compiler produced no tree for ${absolute}`);
-  return file;
+  return { file, checker: project.checker };
 }
 
 /** Release the compiler. A long-lived caller may parse again afterwards. */
@@ -287,6 +289,9 @@ export class Gate {
   /** The file's enums by name (PROGRAM-TYPING.md, "Enums"), each member's value as
    * TypeScript computes it, once the declaration graph has been read. */
   readonly enums = new Map<string, EnumInfo>();
+  /** The enums the file imports, by local name, with their members as the
+   * declaration graph read them. */
+  readonly importedEnums = new Map<string, readonly EnumMemberValue[]>();
   /** Reads of a `const enum` member TypeScript writes as the member's value,
    * by span: that value. */
   readonly constEnumReads = new Map<string, string | number>();
@@ -299,9 +304,36 @@ export class Gate {
   /* Whether the function whose body is being read is async: its returns
      settle the promise its call returned (`intrinsics.mts`). */
   asyncBody = false;
+  /** Each occurrence of a namespace member (`namespace-members.mts`), a
+   * member read or a qualified type name, by its span: the binding it reads. */
+  namespaceUses = new Map<string, { member: NamespaceMember; use: MemberUse }>();
+  /** The names TypeScript binds to the standard library's declarations
+   * alone, among those the gate lowers specially (`libraryNames`), by span. */
+  readonly libraryNames = new Set<string>();
+  /** The identifiers spelled `undefined` that TypeScript binds to the global
+   * `undefined`, by span: those alone read the value `undefined`. */
+  readonly globalUndefined = new Set<string>();
+  /** The global `Object`s of `Object.assign` calls, which no global value
+   * stands for: each is the intrinsic or refused, by span. */
+  readonly assignObjects = new Set<string>();
+
   constructor(file: SourceFile) {
     this.file = file;
     this.scope = this.termScope();
+  }
+
+  /** The binding a namespace member read or qualified type name reads, or
+   * undefined for another node. */
+  namespaceMember(node: Node): string | undefined {
+    return this.namespaceUses.get(this.span(node).join(":"))?.member.local;
+  }
+
+  /** Whether TypeScript binds a name to the standard library's
+   * declarations alone: `Object` of `Object.assign`, or the member `call`,
+   * `apply` or `bind` of a function. A local, an import or a namespace
+   * member of that spelling is not. */
+  libraryName(node: Node): boolean {
+    return this.libraryNames.has(this.span(node).join(":"));
   }
 
   /** The leading `"use strict"` directives of a directive prologue: whether
@@ -571,6 +603,24 @@ export class Gate {
           const found = this.enumMembers(node.typeName.left.text).find((m) => m.name === member);
           if (found) return found.value === null ? { k: "atom", name: "number", span } : literalTerm(found.value, span);
         }
+        // An imported enum's, at its members as the declaration graph read
+        // them (`ambient-enum`); the enum named directly or as a namespace
+        // member.
+        const enumName = (name: Node): string | undefined =>
+          ts.isIdentifier(name) ? (this.hasTypeParam(name.text) ? undefined : name.text) : this.namespaceMember(name);
+        if (ts.isTypeQueryNode(node) && !node.typeArguments?.length) {
+          const named = enumName(node.exprName);
+          const imported = named === undefined ? undefined : this.importedEnums.get(named);
+          if (imported) return enumMembersTerm(imported, span);
+        }
+        if (ts.isTypeReferenceNode(node) && ts.isQualifiedName(node.typeName)) {
+          const named = enumName(node.typeName.left);
+          const imported = named === undefined ? undefined : this.importedEnums.get(named);
+          const member = node.typeName.right.text;
+          const found = imported?.find((m) => m.name === member);
+          if (imported && !found) return this.fail(node, `${named ?? ""} has no member ${member}`);
+          if (found) return found.value === undefined ? { k: "atom", name: "number", span } : literalTerm(found.value, span);
+        }
         return null;
       },
       symbol: (name) => {
@@ -605,7 +655,7 @@ export class Gate {
       },
       named: (node, span, read) => {
         const name = ts.isIdentifier(node.typeName) ? node.typeName.text
-          : this.fail(node, "type reference outside the fragment");
+          : this.namespaceMember(node.typeName) ?? this.fail(node, "type reference outside the fragment");
         // An application of an alias TypeScript computes from its parameters
         // is a computed type, evaluated where it is written.
         const computed = this.hasTypeParam(name) ? undefined : this.computedTypes.get(`${span[0]}:${span[1]}`);
@@ -616,6 +666,15 @@ export class Gate {
         if (this.enums.has(name) && !this.hasTypeParam(name)) {
           if (node.typeArguments?.length) this.fail(node, "an enum type takes no type arguments");
           return this.enumTerm(name, span);
+        }
+        // An imported enum's type in the file's annotations: the union of
+        // its members' types (`ambient-enum`).
+        const imported = this.importedEnums.get(name);
+        if (imported && !this.hasTypeParam(name)) {
+          if (node.typeArguments?.length) this.fail(node, "an enum type takes no type arguments");
+          const parts = imported.map((m): TypeTerm =>
+            m.value === undefined ? { k: "atom", name: "number", span } : literalTerm(m.value, span));
+          return parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span };
         }
         const library = this.libraryTypes.get(name);
         if (library !== undefined && !this.hasTypeParam(name))
@@ -875,8 +934,24 @@ export function parseFile(file: string, carriesContext = false,
   seen?: (diagnostic: SeenDiagnostic) => void): Ast {
   const absolute = resolve(file);
   const text = readFileSync(absolute, "utf8");
-  const source = openFile(absolute, text);
+  const { file: source, checker } = openFile(absolute, text);
   const gate = new Gate(source);
+  // The members read through namespace imports, each a binding of its own.
+  const members = namespaceMembers(source, checker, (node, message) => gate.fail(node, message));
+  gate.namespaceUses = memberUses(members, source);
+  const memberNodes = [...gate.namespaceUses.values()].map(({ use }) => use.node);
+  // Each `undefined` the file reads, decided by what TypeScript binds it to.
+  const undefinedNodes: Identifier[] = [];
+  const findUndefined = (node: Node): void => {
+    if (ts.isTypeNode(node)) return;
+    if (ts.isIdentifier(node) && node.text === "undefined") undefinedNodes.push(node);
+    node.forEachChild(findUndefined);
+  };
+  findUndefined(source);
+  checker.getSymbolAtLocation(undefinedNodes).forEach((symbol, i) => {
+    const node = undefinedNodes[i];
+    if (node && symbol && checker.isUndefinedSymbol(symbol)) gate.globalUndefined.add(gate.span(node).join(":"));
+  });
   const aliasNodes: TypeAliasDeclaration[] = [];
   const interfaceNodes: InterfaceDeclaration[] = [];
   const classNodes: ClassDeclaration[] = [];
@@ -1005,7 +1080,7 @@ export function parseFile(file: string, carriesContext = false,
   // stands for it.
   const imported = new Set<string>(importNodes.flatMap(node => {
     const bindings = node.importClause?.namedBindings;
-    return bindings && ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [];
+    return !bindings ? [] : ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [bindings.name.text];
   }));
   const rooted = new Set<string>([
     ...imported,
@@ -1074,6 +1149,7 @@ export function parseFile(file: string, carriesContext = false,
       const parent = node.parent;
       const intrinsic = node.text === "Object" && ts.isPropertyAccessExpression(parent) &&
         parent.expression === node && parent.name.text === "assign";
+      if (intrinsic) gate.assignObjects.add(gate.span(node).join(":"));
       if (childOf(parent, "name") !== node && childOf(parent, "propertyName") !== node &&
           childOf(parent, "label") !== node && !intrinsic)
         globalValueNodes.push(node);
@@ -1133,6 +1209,18 @@ export function parseFile(file: string, carriesContext = false,
   if (!carriesContext) findInKeys(source);
   // The member names of `o.m.call(…)`, `.apply` and `.bind`: TypeScript
   // decides which is a method, whose receiver is its host.
+  // The names the gate lowers specially where they are the standard
+  // library's: TypeScript decides (`libraryName`).
+  const libraryNameNodes: Node[] = [];
+  const findLibraryNames = (node: Node): void => {
+    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
+      if (["call", "apply", "bind"].includes(node.name.text)) libraryNameNodes.push(node.name);
+      if (node.name.text === "assign" && ts.isIdentifier(node.expression) && node.expression.text === "Object")
+        libraryNameNodes.push(node.expression, node.name);
+    }
+    node.forEachChild(findLibraryNames);
+  };
+  if (!carriesContext) findLibraryNames(source);
   const receiverTargetNodes: Node[] = [];
   const findReceiverTargets = (node: Node): void => {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
@@ -1371,27 +1459,29 @@ export function parseFile(file: string, carriesContext = false,
       staticTypeNodes.length ||
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || elementReadNodes.length ||
+      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length ||
       regexpNodes.length || dispatchNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? elementReadNodes[0] ??
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ??
       regexpNodes[0] ?? dispatchNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
     // import is an assumption at the type its declaration states.
     for (const node of importNodes) {
       const clause = node.importClause;
-      if (!clause || clause.name || !clause.namedBindings ||
-          !ts.isNamedImports(clause.namedBindings))
-        gate.fail(node, "only named imports are in the source fragment");
+      if (!clause || clause.name || !clause.namedBindings)
+        gate.fail(node, "only named and namespace imports are in the source fragment");
     }
     // TypeScript resolves every name, in the project that owns the file or the
     // one named explicitly: the declaration graph is the compiler's.
     try {
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
+        namespaceMembers: [...members.values()].map(m => ({ local: m.local, imported: m.imported,
+          specifier: m.specifier, uses: m.uses.map(u => ({ span: gate.span(u.node), name: gate.span(u.name),
+            value: u.value, callee: u.callee })) })),
         locals: localNodes.map(node => gate.span(node)),
         globals: globalNodes.map(node => gate.span(node)),
         globalValues: globalValueNodes.map(node => gate.span(node)),
@@ -1448,6 +1538,8 @@ export function parseFile(file: string, carriesContext = false,
         hostIn: ([start, end]) => gate.hostIns.add(`${start}:${end}`),
         receiverTargets: receiverTargetNodes.map(node => gate.span(node)),
         methodTarget: ([start, end]) => gate.methodTargets.add(`${start}:${end}`),
+        libraryNames: libraryNameNodes.map(node => gate.span(node)),
+        libraryName: ([start, end]) => gate.libraryNames.add(`${start}:${end}`),
         elementReads: elementReadNodes.map(node => gate.span(node)),
         hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
         regexps: regexpNodes.map(node => gate.span(node)),
@@ -1472,6 +1564,7 @@ export function parseFile(file: string, carriesContext = false,
             for (const m of info.members) if (m.span[0] === start && m.span[1] === end) m.value = value;
         },
         enumMemberRead: ([start, end], member) => gate.enumMemberReads.set(`${start}:${end}`, member.join(":")),
+        importedEnum: (local, members) => gate.importedEnums.set(local, members),
         constEnumReads: constEnumNodes.map(node => gate.span(node)),
         constEnumRead: ([start, end], value) => gate.constEnumReads.set(`${start}:${end}`, value),
         library: ([start, end], library) => {
@@ -1491,7 +1584,7 @@ export function parseFile(file: string, carriesContext = false,
       gate.symbolIdentities = declarations.symbols;
     } catch (error) {
       const at = error instanceof DeclarationError
-        ? [...importNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
+        ? [...importNodes, ...memberNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
             ...classTestNodes, ...classReadNodes, ...contextualNodes, ...assignNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,

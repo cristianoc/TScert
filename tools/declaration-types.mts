@@ -24,9 +24,12 @@ export type CallPromise = { guards: { param: number } } | { asserts: { param: nu
 export type CallEffect = {
   footprint: ClosedFootprint; promise: CallPromise | null; fresh: boolean; receiverStore: boolean; onThrow: boolean;
 };
-/** One type alias or interface: its module (a path relative to the project's
- * tsconfig, the client's absolute path, or `typescript/lib/<file>`), its name
- * and its span there. */
+/** One type alias or interface: its module, its name and its span there. The
+ * module identities are disjoint by construction: the client's absolute
+ * path; `typescript/lib/<file>` for a file the compiler's library resolution
+ * gives the program, and no other; any other file's path from the project's
+ * tsconfig, `./…` inside it and `../…` outside. A `typescript/lib/` module is
+ * thus a standard library file, which the wire's readers rely on. */
 export type DeclarationIdentity = {
   module: string;
   name: string;

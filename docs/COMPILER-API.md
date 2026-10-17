@@ -9,7 +9,11 @@ audited corrections where a declaration cannot be its own contract, the
 assumptions the result is relative to, the restrictions it imposes, and the
 tests that exercise it.
 
-The rules below are a design. The pipeline does not implement them, and
+The pipeline implements namespace imports
+([derived source forms](SOURCE-ELABORATION.md#derived-source-forms)), host
+enums (reading rule 3, [enums](SOURCE-CONTRACTS.md#enums)), the check C1 and
+the bitwise operators;
+the other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
 [Source contracts](SOURCE-CONTRACTS.md), the record clauses of
@@ -615,16 +619,24 @@ promise may be a union of node shapes.
 ## Namespace imports and bitwise operators
 
 `import * as ns from M`, where every occurrence of `ns` is a member read
-`ns.x` or a qualified type name `ns.T`, is the named import of each `x` and
-`T`: a module namespace object's members are immutable bindings
-([ECMA-262](REFERENCES.md#ecma-262)). Any other use of `ns` is refused.
+`ns.x` or a qualified type name `ns.T`, reads each member as a binding of its
+own, the export the checker binds it to, at its own span: a module namespace
+object's members are immutable bindings
+([ECMA-262](REFERENCES.md#ecma-262)). Any other use of `ns` and a write of a
+member are refused, and
+so is a call `ns.f(…)` of a member whose signatures state a `this`
+parameter, since the call passes the namespace object as the receiver
+(`namespace-import` in
+[derived source forms](SOURCE-ELABORATION.md#derived-source-forms)).
 
 `a & b`, `a | b`, `a ^ b`, `~a`, `a << b`, `a >> b` and `a >>> b` with
 operands of type `number` evaluate `ToInt32` or `ToUint32` of numbers, run
-no client code and give a `number`; operands that may be objects or bigints
-are refused. A flag test `(t.flags & TypeFlags.Union) !== 0` is arithmetic on
-numbers and a comparison. Its Lean obligations are a step rule and its
-typing rule.
+no client code and give a `number`; operands that may be objects are
+refused, and so are bigints but for `^`, which also takes two bigint
+operands, and `~`, which also takes one: the calculus's `xor` states both. A flag test `(t.flags & TypeFlags.Union) !== 0`
+is arithmetic on numbers and a comparison. The operators are the calculus's
+binary operators, with their step rule and the one typing rule `arith`
+([judgments](PROGRAM-TYPING.md#judgments-and-constructor-views)).
 
 ## Binding the contract to the implementation
 
@@ -657,9 +669,11 @@ as regression evidence.
   executable fails the suite, and the contract is reviewed again, whether or
   not the declarations changed.
 
-- **C1, enums.** For every enum the contract reads, every member of its
-  `.enum.d.ts` equals the value of the runtime object Node loads for
-  `#enums/<name>` under the `default` condition, and the member names agree.
+- **C1, enums.** For every enum the contract reads (`hostEnums`), every
+  member of its `.enum.d.ts` is an integer literal equal to the value of the
+  runtime object Node loads for `#enums/<name>` under the `default`
+  condition, the object's keys are the members and their reverse mappings,
+  and the entry points exporting the enum export that object.
 - **C2, guards.** The guard check reads every exported guard: the bodies
   outside the accepted syntax are exactly the refused list, and execution on
   every kind (and on every number in a range around $`\mathcal K`$ for
@@ -732,7 +746,7 @@ Behaviours excluded because soundness needs it:
 | R2  | No client value meets a host type; host values come only from the package         | Passing a forged node, type or symbol to the API (an object literal, a spread or `Object.assign` copy of a node, a class implementing `ts.Node`); the node factory               |
 | R3  | A host guard narrows to what its implementation accepts                           | Relying on `isTypeAliasDeclaration`, `isImportDeclaration`, `isAnyImportSyntax` excluding JavaScript kinds; relying on `isExpression` matching the declarations' category       |
 | R4  | A host enum type at a package position is `number`                                | Exhaustive reasoning over flag values (`switch (node.flags)` with a case per member and no default)                                                                              |
-| R5  | Bitwise operators take `number` operands only                                     | `obj & 1` (runs `valueOf`), `1n & x`                                                                                                                                             |
+| R5  | Bitwise operators take `number` operands only, but `^`, which also takes two bigint operands, and `~`, which also takes one | `obj & 1` (runs `valueOf`), `1n & x`                                                                                                                  |
 | R6  | An abstract node type is the union of the shapes below it, with brands optional   | Using a brand member as evidence (`"_expressionBrand" in n`)                                                                                                                     |
 | R7  | Every admitted `API` instance runs the executable the package selects             | `new API({ tsserverPath })`, `pipe` options, `API.fromLSPConnection`                                                                                                             |
 
@@ -743,7 +757,7 @@ JavaScript and could be admitted with more machinery:
 | --- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | L1  | A guard outside the accepted syntax is refused at its use               | `isLeftHandSideExpression`, `isUnaryExpression` as narrowings       |
 | L2  | A node list admits only the operations of its table                     | `nodes.pos`, `nodes.at(i)`, `for…in` over a node list               |
-| L3  | A namespace import is used only through member reads and qualified type names | `const m = ts`, `ts[name]`, passing `ts`                      |
+| L3  | A namespace import is used only through member reads and qualified type names, each member one binding; a member stating a `this` parameter is not called through it | `const m = ts`, `ts[name]`, passing `ts`, `ts.f()` for `f(this: X)` |
 | L4  | A member whose read allocates is refused at its read; it could be stated as a host operation returning a fresh array | Reading `node.jsDoc`  |
 | L5  | A host parameter of a branded type is refused; an opaque primitive type would admit the package's own values | Passing a `Path` back to `getSourceFileMetadataByPath` |
 | L6  | A host class member outside its named view is refused at its use        | Calling a `Checker` method the view does not list                   |

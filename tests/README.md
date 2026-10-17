@@ -18,7 +18,15 @@ the controls no case can make, by `pipeline/test.mts`. Two families in
 Cases naming a project read their imports from it:
 `pipeline/imports-project/` supplies value imports, and
 `pipeline/library-project/` is a typed library of reactive collections
-(`collections.ts`) with Node's pinned types, read by the `collections-*` cases.
+(`collections.ts`) with Node's pinned types, read by the `collections-*` cases;
+`pipeline/compiler-api-project/` resolves the compiler API, the package
+`typescript` the front end pins, for the `*compiler-api*` cases;
+`pipeline/augmented-project/` augments `ObjectConstructor` from a module of
+its own, and `pipeline/fake-lib-project/` reads `pipeline/fake-lib/`, a file
+named like a standard library file, for the `*augmented*` and `*fake-lib*`
+cases; `pipeline/lib-collision-project/` holds one at
+`typescript/lib/lib.augment.d.ts`, the path a standard library identity is
+printed with, for the `*lib-collision*` case.
 Lean tests build alongside the implementation in `lean/Verification/Tests/`.
 
 This directory holds the suites that check the repository around the pipeline:
@@ -29,6 +37,7 @@ This directory holds the suites that check the repository around the pipeline:
 | [`json-field-names.mts`](json-field-names.mts) | TypeScript, Lean and OCaml use the same JSON field names. |
 | [`node-runs.mts`](node-runs.mts) | The examples and native-contract counterexamples run under Node with the outcomes the cases state. |
 | [`trusted-inputs.mts`](trusted-inputs.mts) | The front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay. |
+| [`compiler-api.mts`](compiler-api.mts) | The compiler-API contract against the installed package: the host enums' declared values are their runtime values (C1). |
 | [`rule-inventory.mts`](rule-inventory.mts) / `rule-inventory.snap` | The rules REQUEST-PROTOCOL documents are the rules Lean declares. |
 
 ## Adding a case

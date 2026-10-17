@@ -33,7 +33,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 21 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 31 of 306 verify in `tools/`, 21 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -285,21 +285,27 @@ probe's correspondence to the application.
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 266 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 306 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
-The first blockers, by the number of slices each stops (2026-10-16):
+The first blockers, by the number of slices each stops (2026-10-17):
 
-- a namespace import, `import * as ts` (126);
-- a missing annotation, or a value TypeScript types `any` (35);
-- the compiler API's own declarations, `SyntaxKind`, `TypeFlags`,
-  `NodeFlags`, `SymbolFlags` (13);
-- library globals absent from the overlay or refused: the global function
-  `parseInt` (3), `Reflect` (2, [refused](docs/SOURCE-FRAGMENT.md)),
-  `Array.from`, `Object.fromEntries`, `new RegExp` (1 each);
-- a type reference to the parser's `EnumMember` (5), module-level `let` and
-  `var` (5), a mapped type whose value names its key (3).
+- a value imported from the front end's own modules that is no annotated
+  constant, function or class: an unannotated arrow such as `nameOf`, a
+  constant such as `asyncCompleteName` or `promiseEffect` (76);
+- the compiler API's `NodeArray`, which extends the standard library's
+  `ReadonlyArray`, there read as a plain interface because `@types/node`
+  merges an interface of its own into it ("duplicate field name in a
+  record", 64); without that merge, extending a library array is refused;
+- the parser's `Gate` class (30);
+- a missing annotation, or a value TypeScript types `any` (29);
+- the compiler API's host classes read member-complete, `Checker` and
+  `Symbol` (11); library globals absent from the overlay or refused (10):
+  the global function `parseInt`, `Reflect`
+  ([refused](docs/SOURCE-FRAGMENT.md)), `Array.from`, `Object.fromEntries`,
+  `new RegExp`, `JSON.stringify` with an indent; Node's modules, `path` and
+  `fs` (9); module-level `let` and `var` (5); a default import (3).
 
-Seven slices reach the producer and fail there, and twenty-two fail in
+Ten slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
 dump, 21 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
 the same-file declarations it uses). The first blockers of the others in
@@ -379,9 +385,8 @@ against the fragment (2026-10-16) gives the work, each item its own design:
 - **Classes and `this` parameters.** The parser's `Gate` class, the functions
   of `fragment-*.mts` declaring `this: Gate` (198 reads of `this`), and the
   error classes extending `Error`.
-- **Imports between the repository's modules.** Namespace and default
-  imports, and a value imported from another module certified against its
-  signature, which [module composition](#module-composition) proves sound.
+- **Imports between the repository's modules.** Default imports, and a
+  value imported from another module certified against its signature, which [module composition](#module-composition) proves sound.
 - **The code's own departures from the fragment.** Downcasting `as`
   assertions and module-level `let`: the code changes to meet the fragment.
 - **Proof precision.** Of the slices past the gate, about half fail in

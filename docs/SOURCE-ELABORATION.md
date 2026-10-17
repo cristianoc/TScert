@@ -202,6 +202,31 @@ reads); a pattern element may name one bound before it in the pattern:
      {\text{refused (temporal dead zone)}}
 ```
 
+**Namespace imports.** A module namespace object's members are the module's
+export bindings, read as an import binding reads them
+([ECMA-262](REFERENCES.md#ecma-262)). So in `import * as ns from M`, where
+every mention TypeScript binds to `ns` is a member read `ns.x` or a qualified
+type name `ns.T`, each member is a binding of the file, named `ns.x`, which no
+identifier spells, bound to the export of $`M`$ that TypeScript binds the
+member to, as a named import of it is:
+
+```math
+\frac{\mathrm{mentions}(ns)\subseteq\{\,ns.x_1,\ldots,ns.x_n\,\}\quad \Gamma(x_i@M)=T_i}
+     {\Gamma(ns.x_i)=T_i}\ \textsf{namespace-import}
+```
+
+A read of `ns.x` is a read of that binding, at its own span and spelling,
+and a qualified type name `ns.T` names the declaration the export is; a
+member used only in types imports no value. A refusal about a member names
+its use (`namespace-members.mts`; the declaration graph resolves each
+member through the checker). A call `ns.f(a)` passes the namespace object as
+the receiver, where a call of the binding passes `undefined`; the two agree
+for a callee whose signatures state no `this` parameter, and a call of one
+that does is refused where it is written. Any other mention of `ns`
+(`const m = ns`, `ns[k]`, `ns?.x`, `{ ns }`, an export) is refused at the
+mention, and so is a write of a member, which JavaScript refuses with a
+`TypeError`.
+
 **A `let` nothing assigns.** A `let` statement whose bindings are all
 initialized and which no assignment, compound or logical assignment, update,
 destructuring assignment or `for` head in their scope writes (closures
@@ -1118,7 +1143,7 @@ refused ([model limits](SOURCE-FRAGMENT.md#model-limits)).
 
 ### Calls through `Function.prototype.call`
 
-`f.call(r, ā)`, `f.apply(r, l)` and `f.bind(r, ā)` are the standard methods
+`f.call(r, ā)`, `f.apply(r, l)` and `f.bind(r, ā)`, where TypeScript binds the member to the standard library's `call`, `apply` or `bind`, are the standard methods
 where `f` is a known local function, $`\mathrm{fn}(f)`$; a function a caller
 supplies may own a `call` property. With $`\mathrm{vals}(x)`$ the values a
 local $`x`$ may hold, a `const`'s initializer, or a `let`'s initializer and the

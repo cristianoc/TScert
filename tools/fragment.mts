@@ -12,8 +12,9 @@ import type { Span } from "./span.mts";
 /** The name an optional chain's body reads its saved receiver by; no source
  * identifier is spelled so (Fragment.lean's `chainName`). */
 export const CHAIN = "?.";
-/** The arithmetic a compound assignment may perform. */
-export type ArithOp = "add" | "sub" | "mul" | "div" | "pow" | "rem";
+/** The arithmetic a compound assignment may perform: the bitwise operators
+ * `&`, `|`, `^`, `<<`, `>>` and `>>>` among them. */
+export type ArithOp = "add" | "sub" | "mul" | "div" | "pow" | "rem" | "bitAnd" | "bitOr" | "xor" | "shl" | "shr" | "ushr";
 /** Every binary operator on primitive operands: arithmetic, and the
  * relational comparisons `<`, `<=`, `>`, `>=`. */
 export type BinaryOp = ArithOp | "lt" | "le" | "gt" | "ge";
