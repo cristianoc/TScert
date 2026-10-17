@@ -1564,42 +1564,43 @@ where the native is modelled and audited otherwise:
 | `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: any, store: keep}` | they run no code and write only the receiver's internal slots, which hold no array store (audited) |
 
 
-**Design: a non-empty `split`.** `String.prototype.split` with a string
+**A non-empty `split`.** `String.prototype.split` with a non-empty string
 separator and no limit returns at least one element: the separator is no
-`RegExp`, so no `[Symbol.split]` runs, and ECMA-262's `split` returns
-`[S]` where the separator does not occur, so `"".split("\n")` is `[""]`
+`RegExp`, so no `[Symbol.split]` runs, and ECMA-262's `split` returns `[S]`
+where the separator does not occur, so `"".split("\n")` is `[""]`
 ([ECMA-262](REFERENCES.md#ecma-262), `String.prototype.split`). It returns
-`[]` in two cases only: a limit of `0`, and an empty receiver with an empty
-separator (`"".split("")`). `dev/record-render.mts`'s `parseRecord` reads
-element 0 of `text.trimEnd().split("\n")` as a string, which the fragment
-reads at `string | undefined`. The design states a further form of `split`, as a prototype member's
-overlay entry lists its forms ([prototype contracts](#prototype-contracts)), whose
-result is the tuple of one required position and a rest,
-`[string, ...string[]]`, the representation the fragment already has for an
-array with a known prefix (a position read at its index is its type,
-`elemReadPlan`):
+`[]` in two cases only: a limit whose `ToUint32` is `0`, and an empty
+receiver with an empty separator (`"".split("")`). The overlay states, beside
+the general form, one further form ([prototype contracts](#prototype-contracts),
+the forms of a member without binders being their intersection), whose
+separator is the union $`\Lambda`$ of the non-empty string literals written in
+the separators of the source's `split` calls that pass no limit
+(`splitSeparators`), and whose result is the tuple of one required position
+and a rest, the representation the fragment has for an array with a known
+prefix (a position read at its index is its type, `elemReadPlan`):
 
 ```math
-\mathtt{split}\colon(\lambda)\Rightarrow[\mathtt{string},\ \ldots\mathtt{string}]
-\qquad \lambda\ 	ext{a string literal other than}\ 	exttt{""}
+\mathtt{split}\colon(\Lambda)\Rightarrow[\mathtt{string},\ \ldots\mathtt{string}]
+\qquad \Lambda=\lambda_1\mid\cdots\mid\lambda_n,\ \text{each}\ \lambda_i\ \text{a string literal other than}\ \texttt{""}
 ```
 
-A separator's literal is a singleton type, and no type states "a non-empty
-string", so the form is stated per literal: for each string literal other
-than `""` a call's separator is claimed at, one form at that literal's
-singleton, with no limit parameter, so a call passing a limit takes the
-general form. A limit known to be at least `1` would need a number type of
-that bound, which the fragment has only as literals: a form per numeric
-literal at least `1` is left out until a program needs it. The forms are
-collected as intrinsics are, only for the literals a source's calls use
-([dependency collection](#native-footprints)). A `RegExp` separator keeps the
-general form: an empty receiver and a pattern matching the empty string give
-`[]`. The forms state the same footprint and fresh result as the general
-one. Controls: `"".split("")` and `s.split("")` refused at a non-empty
-reading, `split(sep, 0)` at the general form, a separator of a union with
-`""`, and a forged claim of the form at `""` through production and
-consumption, each with a Node run.
-
+The form holds at any union of non-empty separators; which literals are
+collected bounds only which calls it serves. Its result's store contract has
+a required position, which forbids a removal, so the producer proposes the
+form only for a call whose result nothing shrinks (`Source.unshrunk`): read
+by index at once, or bound to an unannotated constant every use of which
+reads it (an element, its `length`, a member that reads, an iteration); any
+other call takes the general form, and Lean checks whichever is proposed. It has no limit parameter, so a
+call passing a limit takes the general form: a limit is not stated, since a
+numeric literal of at least `1` does not exclude `[]`, `ToUint32` reducing it
+modulo $`2^{32}`$ (`split(",", 4294967296)` is `[]`). A `RegExp` separator
+keeps the general form: an empty receiver and a pattern matching the empty
+string give `[]`. The form states the same footprint and fresh result as the
+general one (audited). Controls: `split-non-empty` (a literal and a union of
+literals), `invalid-split-empty-separator`, `invalid-split-limit` (beside a
+stated form for the same separator), `invalid-split-string-separator`, each
+with a Node run, and a separator forged at `string`, refused in search and in
+checking (`pipeline/test.mts`).
 
 What is proved and what is audited:
 

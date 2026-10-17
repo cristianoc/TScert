@@ -30,7 +30,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 19 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 20 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -256,7 +256,7 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 19 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
+dump, 20 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
 the same-file declarations it uses). The first blockers of the others in
 `dev/`, with the functions each stops directly and through callees:
 
@@ -266,11 +266,6 @@ the same-file declarations it uses). The first blockers of the others in
   imported function's effect needs a contract its own module's
   certification establishes ([module composition](#module-composition))
   (group: 1);
-- in parseRecord, element 0 of `text.trimEnd().split("\n")` stored at a
-  `string` field (`subject: lines[0]`): an element read is `T | undefined`,
-  and a non-empty `split` is designed in
-  [SOURCE-CONTRACTS](docs/SOURCE-CONTRACTS.md#native-footprints) ("a
-  non-empty `split`") (parseRecord: 1);
 - in lowering-dump, a mapped type whose value names its key, `SHOW_STEP`'s
   `{ [K in KeysOf<Step>]: (a: Extract<Step, Record<K, unknown>>[K]) => string }`,
   refuses the file; showStep's assertions, which state what `decodeNode`

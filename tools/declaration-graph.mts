@@ -20,7 +20,7 @@ import { childrenOf, nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
-  type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
+  splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm } from "./intrinsics.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
@@ -1298,7 +1298,7 @@ export function collectDeclarations(file: string, options: {
     }
     for (const [kind, at] of primitives) {
       try {
-        const definition = primitivePrototype(checker, client, overlayLibrary, kind);
+        const definition = primitivePrototype(checker, client, overlayLibrary, kind, splitSeparators(client));
         primitiveProtos.push(definition);
         const name = primitivePrototypeName(kind);
         values.push({ binding: { local: name, imported: name, specifier: prototypeSpecifier, span: at },

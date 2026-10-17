@@ -27,7 +27,7 @@
 import { SymbolFlags, type Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
-import { signatures, type TermScope } from "./type-term.mts";
+import { oneTerm, signatures, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
@@ -500,11 +500,45 @@ export function arrayPrototype(checker: Checker, at: Node, library: OverlayLibra
 /** A primitive's prototype contract, `StringProto` for `String.prototype`: a
  * record of readonly members, each of whose signatures takes the primitive
  * as its receiver. */
+/** The non-empty string literals written in the separator of a `split`
+ * call of `source` that passes no limit. Which literals are collected bounds
+ * only which calls the non-empty form serves: the form holds at any union of
+ * non-empty separators. */
+export function splitSeparators(source: Node): string[] {
+  const found = new Set<string>();
+  const literals = (n: Node): void => {
+    if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) && n.text !== "") found.add(n.text);
+    n.forEachChild(literals);
+  };
+  const visit = (n: Node): void => {
+    if (ts.isCallExpression(n) && n.arguments.length === 1 && ts.isPropertyAccessExpression(n.expression) &&
+        n.expression.name.text === "split") {
+      const [separator] = n.arguments;
+      if (separator) literals(separator);
+    }
+    n.forEachChild(visit);
+  };
+  visit(source);
+  return [...found].sort();
+}
+
+/** `split` at a union of non-empty string separators and no limit returns at
+ * least one element (SOURCE-CONTRACTS.md, "a non-empty `split`"): ECMA-262's
+ * `split` returns `[S]` where the separator does not occur, and `[]` only for
+ * a limit whose `ToUint32` is 0 or an empty receiver at an empty separator. */
+const nonEmptySplit = (separators: readonly string[]): { params: TypeTerm[]; result: TypeTerm }[] => separators.length ? [{
+  params: [{ k: "union", span: at, parts: separators.map((text): TypeTerm => ({ k: "literal", name: "string", text, span: at })) }],
+  result: { k: "tuple", presence: "dense", readonly: false, optional: [], span: at,
+    required: [atomOf("string")], rest: atomOf("string") } }] : [];
+
 export function primitivePrototype(checker: Checker, at: Node, library: OverlayLibrary,
-    kind: PrimitiveKind, entries: readonly OverlayEntry[] = primitiveOverlay[kind]): TypeDefinition {
+    kind: PrimitiveKind, separators: readonly string[] = [],
+    entries: readonly OverlayEntry[] = primitiveOverlay[kind]): TypeDefinition {
   // A string's own keys are its `length` and its indices: never the prototype's.
   const owned = entries.find(e => kind === "string" && (e.name === "length" || /^\d/.test(e.name)));
   if (owned) throw Error(`a string owns '${owned.name}'; String.prototype's does not answer for it`);
+  entries = entries.map(e => kind === "string" && e.name === "split" && e.stated
+    ? { ...e, stated: [...nonEmptySplit(separators), ...e.stated] } : e);
   return prototype(checker, at, library, { identity: primitiveProtoIdentity(kind), binders: [], entries,
     effect: emptyEffect, receiver: () => ({ k: "atom", name: kind, span: [0, 0] }) });
 }
@@ -575,12 +609,14 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
       : signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span, false, stated)
           .map(f => ({ ...f, effect: entry.effect ?? proto.effect }));
     const [first] = forms;
-    if (!first || (!binders.length && forms.length !== 1))
+    if (!first)
       throw Error(`${entry.from}.${entry.name} requires a nonempty supported signature family`);
+    // Several forms of a member without binders are their intersection
+    // (`split`'s non-empty form beside its general one).
     const type: TypeTerm = binders.length
       ? { k: "scheme", binders: binders.map(name => ({ name, bound: entry.bounds?.[name] ?? null, resolution: null, default: null, span })),
           signatures: forms.map(f => ({ ...f, receiver: f.receiver ?? receiver })), span }
-      : { ...first, receiver: first.receiver ?? receiver };
+      : oneTerm(forms.map(f => ({ ...f, receiver: f.receiver ?? receiver })), span);
     const key = ts.isComputedPropertyName(member.name) &&
         (ts.isPropertyAccessExpression(member.name.expression) || ts.isIdentifier(member.name.expression))
       ? { symbol: library.symbol(member.name.expression) } : entry.name;

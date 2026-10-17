@@ -110,6 +110,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("invalid-nullish-member-reads", `typeof label({ n: 1 })`), "number",
     "invalid-nullish-member-reads: the member is a number");
   assert.throws(() => runExample("nullish-member-write-refused", "reset(undefined)"), /Cannot set properties/);
+  assert.equal(runExample("split-non-empty", `[firstLine("").subject, firstField("a;b", true), firstWord("x y"), lastLines(["a", "b\\nc"])].join("|")`), "|a|X|2");
+  assert.equal(runExample("invalid-split-empty-separator", `String(first(""))`), "undefined");
+  assert.equal(runExample("invalid-split-limit", `[first("a,b", 0), first("a,b", 4294967296)].map(String).join()`), "undefined,undefined");
+  assert.equal(runExample("invalid-split-string-separator", `String(first("", ""))`), "undefined");
   assert.equal(runExample("cell-truthiness-narrowing", `named(["x"], { name: "a", block: [] }) + blocks(["p", "q"], { name: "", block: [] })`), "atrue3");
   assert.equal(runExample("invalid-cell-truthiness-narrowing", `String(kept({ name: "a" }))`), "undefined",
     "invalid-cell-truthiness-narrowing: the reset cell returns undefined at a Section");

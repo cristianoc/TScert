@@ -1078,8 +1078,8 @@ writable store. The outer store field is also a view for a readonly array. `arrL
 required position named by a literal index, `elemOpt` an optional or rest
 position, adding `undefined`, and `elemAny` any numeric index into a
 homogeneous array, adding `undefined` (a native result with a required
-position, such as the designed non-empty `split`, `[string, ...string[]]`,
-is read by `elem` at index 0: [a non-empty `split`](SOURCE-CONTRACTS.md#native-footprints));
+position, such as a non-empty `split`'s, `[string, ...string[]]`, is read by
+`elem` at index 0: [a non-empty `split`](SOURCE-CONTRACTS.md#native-footprints));
 `setElem` writes a named position into
 its location, or a fresh one the new store records, keeping the contract for
 every alias; `len` reads the length. The source read `a.length` of an

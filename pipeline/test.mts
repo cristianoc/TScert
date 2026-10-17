@@ -1306,6 +1306,28 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // `split`'s non-empty form is selected by its separator's type: the
+  // separator `"\n"` forged at `string` takes the general form, whose first
+  // element may be undefined, so search refuses it, and checking the honest
+  // evidence, which selected the non-empty form, refuses it there.
+  const artifacts = run("split-non-empty");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf('"\\n"');
+  const separator = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at),
+    "the separator's claim");
+  const str = claims.types.findIndex(row => JSON.stringify(row) === JSON.stringify(["str"]));
+  assert.ok(str >= 0 && Array.isArray(separator.type) && !separator.type.includes(str));
+  separator.type = [str];
+  const input = writeClaims(artifacts, "forged-split-separator", claims);
+  const produce = produceWith(artifacts, input, "forged-split-separator");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject|source expression obligation/);
+  process.stdout.write("forged split separator: a separator claimed at string refused in search and in checking\n");
+}
+
+{
   // A receiver claimed without its `undefined` takes no nullish guard: the
   // read of `b` in `b.n`, a parameter that may be absent, forged at the box
   // alone, is refused in search, and checking the honest evidence, whose

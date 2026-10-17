@@ -997,7 +997,72 @@ and stmt binders j =
   | "if" -> If (expr binders (field "cond" j),List.map (stmt binders) (items "then" j),
       match field "else_" j with Null -> [] | xs -> List.map (stmt binders) (list xs))
   | k -> unsupported ("statement " ^ k) in {span=field "pos" j;statement}
-let decode ast =
+(* The calls whose array result nothing shrinks: read by index at once, or
+   bound to a constant every use of which reads it (an element, its length,
+   a member that reads, an iteration). A signature whose result has required
+   positions, `split`'s non-empty form, is proposed only there: such a store
+   contract forbids a removal. A proposal; Lean checks every call. *)
+let reading_members = ["map";"filter";"every";"some";"forEach";"join";"slice";"at";"indexOf";
+  "lastIndexOf";"includes";"find";"findIndex";"flatMap";"reduce";"reduceRight";"entries";"keys";"values"]
+let rec reads_only name (e:expr) = match e.node with
+  | Id n -> n <> name
+  | Index ({node=Id n;_},k) when n = name -> reads_only name k
+  (* An element at a computed index, read through `%ElementAt%`. *)
+  | Call ({node=Id "%ElementAt%";_},_,{node=Id n;_} :: rest,_,_) when n = name ->
+    List.for_all (reads_only name) rest
+  | Read ({node=Id n;_},Name "length") when n = name -> true
+  | Invoke ({node=Read ({node=Id n;_},Name m);_},args,_,_) when n = name && List.mem m reading_members ->
+    List.for_all (reads_only name) args
+  | IndexWrite ({node=Id n;_},_,_) | Write ({node=Id n;_},_,_) when n = name -> false
+  | _ -> List.for_all (reads_only name) (children e)
+and stmts_read_only name ss = List.for_all (fun s -> match s.statement with
+  | ForOf (_,_,_,{node=Id n;_},b) when n = name -> stmts_read_only name b
+  | If (c,a,b) -> reads_only name c && stmts_read_only name (a @ b)
+  | While (c,b,u) -> reads_only name c && stmts_read_only name (b @ u)
+  | Block (_,b) -> stmts_read_only name b
+  | ForOf (_,_,_,i,b) -> reads_only name i && stmts_read_only name b
+  | Try (b,h,f) -> stmts_read_only name (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
+  | Closing (c,b) -> stmts_read_only name (b @ c)
+  | _ -> List.for_all (reads_only name) (statement_children s)) ss
+let unshrunk : Json.t list ref = ref []
+let rec collect_unshrunk_expr (e:expr) =
+  (match e.node with
+   | Index (({node=(Call _ | Invoke _);_} as c),_)
+   | Call ({node=Id "%ElementAt%";_},_,({node=(Call _ | Invoke _);_} as c) :: _,_,_) -> unshrunk := c.pos :: !unshrunk
+   | _ -> ());
+  List.iter collect_unshrunk_expr (children e);
+  match e.node with
+  | BlockBody ss -> collect_unshrunk_stmts ss
+  | _ -> ()
+and collect_unshrunk_stmts = function
+  | [] -> ()
+  | s :: rest ->
+    (match s.statement with
+     | Declare (false,[(name,None,({node=(Call _ | Invoke _);_} as init))]) when stmts_read_only name rest ->
+       unshrunk := init.pos :: !unshrunk
+     | _ -> ());
+    (match s.statement with
+     | If (_,a,b) -> collect_unshrunk_stmts a; collect_unshrunk_stmts b
+     | While (_,b,u) -> collect_unshrunk_stmts b; collect_unshrunk_stmts u
+     | Block (_,b) | ForOf (_,_,_,_,b) -> collect_unshrunk_stmts b
+     | Try (b,h,f) -> collect_unshrunk_stmts b;
+       Option.iter (fun (_,hs) -> collect_unshrunk_stmts hs) h; Option.iter collect_unshrunk_stmts f
+     | Closing (c,b) -> collect_unshrunk_stmts b; collect_unshrunk_stmts c
+     | _ -> ());
+    List.iter collect_unshrunk_expr (match s.statement with
+      | If (c,_,_) | While (c,_,_) -> [c]
+      | ForOf (_,_,_,i,_) -> [i]
+      | Block _ | Try _ | Closing _ -> []
+      | _ -> statement_children s);
+    collect_unshrunk_stmts rest
+
+let rec decode ast =
+  let program = decode_program ast in
+  unshrunk := [];
+  List.iter (fun (f:fn) -> collect_unshrunk_stmts f.body) program.functions;
+  collect_unshrunk_stmts program.init;
+  program
+and decode_program ast =
   let document = field "declarations" ast in
   let arity = List.map (fun definition ->
     let parameters = items "parameters" definition in

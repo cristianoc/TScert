@@ -593,6 +593,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           List.for_all Fun.id (List.mapi (fun i (arg,(t,built)) -> match param_at s i with
             | Some p -> built = Some p || plausible_subtype t p || offer_to arg p <> None
             | None -> false) (List.combine args actuals))) usable in
+        (* A result with required positions forbids a removal from it: it is
+           proposed only where nothing shrinks the array (`Source.unshrunk`). *)
+        let required (s:Semantic.signature) = match s.result with
+          | Atoms [Shape {elements=Some {required=_::_;_};_}] -> true
+          | _ -> false in
+        let matching = if List.mem site !Source.unshrunk then matching
+          else match List.filter (fun s -> not (required s)) matching with
+            | [] -> matching
+            | kept -> kept in
         (match matching,usable with
          | s :: _,_ -> offer s; s.result
          | [],(first :: rest) when List.for_all (fun (s:Semantic.signature) ->

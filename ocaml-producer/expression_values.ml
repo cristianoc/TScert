@@ -366,12 +366,25 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
     | Conditional (c,a,b) -> ignore (expr env c);
       let empty (e:expr) = match e.node with ArrayLiteral ([],_) -> true | _ -> false in
       let array = function Atoms [Shape {elements=Some _;fields=[];calls=[];indexes=[]}] -> true | _ -> false in
+      (* An arm with required positions, a non-empty `split`'s, beside the
+         empty literal: both at the readonly array of its elements, which
+         the empty literal and the positions each meet. *)
+      let view other = match other with
+        | Atoms [Shape {elements=Some ({required=_::_;_} as s);fields=[];calls=[];indexes=[]}] ->
+          let element = List.fold_left union (Atoms []) (s.required @ s.optional_elements @ Option.to_list s.rest) in
+          Some (Semantic.array {required=[];optional_elements=[];rest=Some element;readonly=true;presence=Semantic.Readable})
+        | _ -> None in
       let at_other other e = if array other then expr ~expected:other env e else expr env e in
+      let viewed full = Option.bind (quietly (fun () -> expr env full)) view in
       (match expected with
        | None when empty b && not (empty a) ->
-         let left = expr env a in union left (at_other left b)
+         (match viewed a with
+          | Some v -> ignore (expr ~expected:v env a); ignore (expr ~expected:v env b); v
+          | None -> let left = expr env a in union left (at_other left b))
        | None when empty a && not (empty b) ->
-         let right = expr env b in union (at_other right a) right
+         (match viewed b with
+          | Some v -> ignore (expr ~expected:v env a); ignore (expr ~expected:v env b); v
+          | None -> let right = expr env b in union (at_other right a) right)
        | _ ->
          let left = expr ?expected env a in
          let right = expr ?expected env b in union left right)
