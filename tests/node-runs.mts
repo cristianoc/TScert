@@ -80,6 +80,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "map-literal-at-expected-element: each token's kind is one the type names");
   assert.equal(runExample("invalid-map-literal-outside-element", `tokens([" "])[0].kind`), "space",
     "invalid-map-literal-outside-element: the actual source returns a kind its type does not name");
+  assert.equal(runExample("typeof-named-union", `[showKey("a"), showKey({ symbol: 2 }), symbolOf({ symbol: 3 }), symbolOf("x")].join()`),
+    "a,sym#2,3,-1", "typeof-named-union: each arm reads its own representation");
   assert.equal(runExample("logical-narrowing-past-reads",
     `[safeInteger(3), safeInteger("3"), shorter(1, "ab"), digits("12"), digits(12), nonNegative(4), untested(2, "a")].join()`),
     "true,false,true,true,false,4,true", "logical-narrowing-past-reads: each test guards its operand");

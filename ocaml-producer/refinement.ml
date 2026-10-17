@@ -57,6 +57,25 @@ let rec typeof_slice shape holds = function
   | Union ts -> List.fold_left union (Atoms []) (List.map (typeof_slice shape holds) ts)
   | Meet (t,_) when typeof_slice shape holds t = Atoms [] -> Atoms []
   | t -> t
+(* A declaration's arm stays on both arms of a `typeof` test, its shape not
+   known there. Where the test decides some atom of its definition, the
+   definition's atoms are sliced instead: `Key = string | { sym: number }`
+   where `typeof k === "string"` fails is `{ sym: number }`. A type with a
+   type parameter or an intersection stays as the plain slice leaves it. *)
+let typeof_refine declarations shape holds t =
+  let sliced = typeof_slice shape holds t in
+  let rec plain = function
+    | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
+  let rec named = function
+    | Atoms xs -> List.exists (function Named _ -> true | _ -> false) xs
+    | Union ts -> List.exists named ts | Rigid _ | Meet _ -> false in
+  if not (plain sliced && named sliced) then sliced else
+  match (try Some (flat_atoms declarations sliced) with Json.Error _ -> None) with
+  | None -> sliced
+  | Some atoms ->
+    (match typeof_slice shape holds (Atoms atoms) with
+     | Atoms kept when List.length kept < List.length atoms -> Atoms kept
+     | _ -> sliced)
 (* Where `Array.isArray` holds, an open record's arm and `unknown`'s are an
    array of the built-ins: record types and `unknown` are of values meeting the
    array invariant, so one owning an array's store holds a possibly sparse
@@ -239,7 +258,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
         state.shape_tests := (name,shape) :: !(state.shape_tests)
       | _ -> ());
     let env = refine_value env name (if shape = "array" && truth = equal then array_slice declarations
-      else typeof_slice shape (truth = equal)) in
+      else typeof_refine declarations shape (truth = equal)) in
     env
   | HasKey ({node=Literal (LString key);_},{node=Id name;_}) ->
     refine_value env name (key_slice key truth)
@@ -252,7 +271,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
      | _ -> ());
     refine_value env name (key_slice key truth)
   | TypeofTest (shape,equal,{node=Read ({node=Id name;_},Name field);_}) ->
-    refine_field env name field (typeof_slice shape (truth = equal))
+    refine_field env name field (typeof_refine declarations shape (truth = equal))
   (* `x == null` holds of null and undefined alike. *)
   | Equality ((LooseEqual | LooseUnequal as op),{node=Id name;_},{node=Literal (LNull | LUndefined);_})
   | Equality ((LooseEqual | LooseUnequal as op),{node=Literal (LNull | LUndefined);_},{node=Id name;_}) ->
