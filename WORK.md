@@ -262,13 +262,28 @@ the same-file declarations it uses). The first blockers of the others in
 
 - a `map` callback (`readRecord`) whose calls state no footprint: Node's
   `execFileSync`, whose overlay entry states none, and the imported
-  `parseRecord`, read at its declared type (group: 1);
-- an element read a length guards (`paragraphs[paragraphs.length - 1]`,
-  `guarded-element-read-refused`; parseTrailers, parseRecord: 2);
-- a mapped type whose value names its key, `SHOW_STEP`'s
+  `parseRecord`, read at its declared type, which states no effect; an
+  imported function's effect needs a contract its own module's
+  certification establishes ([module composition](#module-composition))
+  (group: 1);
+- a member of a value whose type admits `undefined`, read where JavaScript
+  throws on `undefined` (`paragraphs[paragraphs.length - 1].split("\n")`,
+  `guarded-element-read-refused`), designed in
+  [PROGRAM-TYPING](docs/PROGRAM-TYPING.md#judgments-and-constructor-views)
+  ("a member of `null` or `undefined`"), with RegExp `test` at
+  `string | undefined` and a compound assignment to an element beside it
+  (parseTrailers: 1);
+- in parseRecord, beside those reads, an unguarded element read stored at a
+  `string` field (`subject: lines[0]`), refused: an element read is
+  `T | undefined`; and a `let` holding an object narrowed by the truthiness
+  of an optional chain on it (`if (current?.block.length) current.block…`)
+  (parseRecord: 1);
+- in lowering-dump, a mapped type whose value names its key, `SHOW_STEP`'s
   `{ [K in KeysOf<Step>]: (a: Extract<Step, Record<K, unknown>>[K]) => string }`,
-  then showStep's two assertions, which state what `decodeNode` checked, and
-  printGraph's missing return annotation (printGraph, showStep: 2).
+  refuses the file; showStep's assertions, which state what `decodeNode`
+  checked, are obligations its values do not meet, and printGraph has no
+  return annotation, which a module function's value requires
+  ([SOURCE-FRAGMENT](docs/SOURCE-FRAGMENT.md)) (printGraph, showStep: 2).
 
 In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
 verify; the others stop at a namespace import, Node's `Buffer` type, `join`

@@ -1200,6 +1200,47 @@ record or dictionary owning $`\sigma`$ are built-in arrays
 reads; on the false edge `tagSlice` drops the array labels. The test reads
 no heap, and each arm is JavaScript's read for the values reaching it.
 
+**Design: a member of `null` or `undefined`.** JavaScript's read of a
+member of `null` or `undefined`, `x.k` and `x[i]`, a method call's
+included, throws a `TypeError` before reading anything. The dispatch above
+sends such a value to the object read, where it is stuck, so a read whose
+operand's type admits `null` or `undefined` beside other values is refused
+(`field read on non-object`; `guarded-element-read-refused`: an element a
+length guards, `paragraphs[paragraphs.length - 1].split("\n")`). The
+design adds the nullish arm to the dispatch, before the others:
+
+```math
+\mathsf{if}\ \mathsf{isNullish}(x)\ \mathsf{then}\ \mathsf{throw}\;\mathit{err}\ \mathsf{else}\ \cdots,
+\qquad
+\mathit{err}=\mathsf{makeAt}\;\mathsf{absent}\;[\,]\;[\,]
+```
+
+with $`\mathit{err}`$ a fresh object owning no key, the error object
+`binopThrows` throws for the `TypeError` instance
+([throws](SOURCE-MODEL.md#throws)). It is typed by existing rules only:
+`ifTag` on $`\mathsf{isNullish}`$ selects the arm, `throw` has every type, and
+the other arms read at $`\mathsf{tagSlice}_G(B,\mathsf{isNullish},\mathsf{false})`$.
+So a read is typed at its operand's non-nullish values, and a run reaching
+`null` or `undefined` throws, an outcome the safety statement admits; a
+handler binds the thrown value at `unknown`. The arm is emitted only where
+the operand's type admits a nullish value, so every read the fragment types
+today lowers as it does. Scope: member reads, index reads and method calls
+through the shared dispatch (the producer's `field read on non-object`
+refusal lifts there), and the element write `x[i] = v`, `x.k = v` on a
+nullish base, which JavaScript also throws. Not changed: a read whose
+operand holds no object and no primitive member at all (`undefined` alone),
+which stays refused as it reads nothing. Controls: a guarded and an unguarded
+element read whose run throws under Node, a handler around one, and a
+forged claim reading the nullish arm at a member type.
+
+`dev/record-render.mts`'s `parseTrailers` needs the design and two
+extensions beside it: RegExp `test` and `exec` stated at `string | undefined`
+(`ToString` of `undefined` is `"undefined"` and runs no code; an audited row
+of [native footprints](SOURCE-CONTRACTS.md#native-footprints)) and a compound
+assignment to an element, `e[1] += s` (an ordinary lowering, base and index
+evaluated once). `parseRecord` also stores an unguarded `lines[0]` at a
+`string` field, which stays refused: an element read is `T | undefined`.
+
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
 bigints, for string concatenation, relational comparison and equality alike ([its
 meaning](SEMANTICS.md#operational-language), `binop`). A clause pair
