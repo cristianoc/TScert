@@ -1897,26 +1897,39 @@ unrestricted in its effect. The entries:
   option the host reads it validates without converting, throwing on a type
   it does not accept: an object at each such key ran no code of the client's
   under Node 25.2.1.
-- `execFileSync` has a second stated form, the **restricted form**, at
-  options without `env` and with an explicit `stdio`:
+- `execFileSync` has a second stated form, the **restricted form**. Its
+  options state every key the synchronous path reads, each at a type Node
+  validates without running code of the client's:
   $`(\mathtt{string},\ \mathtt{readonly\ string[]},\ O_r)\Rightarrow\mathtt{string}`$ with
 
-  `O_r = { encoding: "utf8"; input?: string; maxBuffer?: number; stdio: readonly [S, "pipe", S] }`.
+  `O_r = { encoding: "utf8"; stdio: readonly [S, "pipe", S]; input?: string; maxBuffer?: number; env?: undefined; shell?: false; cwd?: string; argv0?: string; detached?: boolean; uid?: number; gid?: number; windowsHide?: boolean; windowsVerbatimArguments?: boolean; timeout?: number; killSignal?: string | number }`.
 
-  It states the empty footprint on normal return and on a throw
-  ([exceptional exits](SOURCE-MODEL.md#certified-imports)). A call meeting
-  only the first form keeps an unrestricted effect. The audit of Node
-  25.2.1's `lib/child_process.js` and `lib/internal/child_process.js` covers
-  every write the call makes before it returns or throws:
+  A record type is open, so a key it does not name may hold any value; a key
+  it names at `undefined` or `false` is absent or holds that value. The form
+  states the empty footprint on normal return. A call meeting only the first
+  form keeps an unrestricted effect. The audit of Node 25.2.1's
+  `lib/child_process.js` and `lib/internal/child_process.js` covers every
+  write the call makes before it returns, and before each throw: a
+  validation error, a failure to spawn, and a failed command.
 
   - `normalizeExecFileArgs` and `normalizeSpawnArguments` copy `args`
     (`ArrayPrototypeSlice`) and the options (an object spread) into fresh
     objects.
-  - Without `options.env`, the environment is a fresh copy of `process.env`.
-    `copyProcessEnvToEnv` writes `NODE_V8_COVERAGE` into it, and, under the
-    permission model, `copyPermissionModelFlagsToEnv` writes `NODE_OPTIONS`.
-    With `options.env`, both write into the caller's object, which is why the
-    restricted form states no `env`.
+  - `env` is absent or `undefined`, so the environment is a fresh copy of
+    `process.env`. `copyProcessEnvToEnv` writes `NODE_V8_COVERAGE` into it,
+    and, under the permission model, `copyPermissionModelFlagsToEnv` writes
+    `NODE_OPTIONS`. With `options.env`, both write into the caller's object,
+    and the host converts each of its values to a string, which runs an
+    object value's `toString`.
+  - `shell` is absent or `false`. A string or `true` runs
+    `process.emitWarning` when arguments are passed, whose `warning`
+    listeners are client code.
+  - `cwd` is a string, which `getValidatedPath` checks as is; an object
+    would be read as a file URL and its `pathname` converted.
+  - `detached`, `uid`, `gid`, `argv0`, `windowsHide`,
+    `windowsVerbatimArguments`, `timeout`, `maxBuffer` and `killSignal` are
+    validated by type and range. A rejected value throws an error built from
+    a primitive, after only the copies above were written.
   - `getValidStdio` pushes `undefined` into the caller's `stdio` array while
     it is shorter than 3. The stated tuple has length 3, so no push happens.
     Its reduction is a fresh array, which `spawnSync` stores before it writes
@@ -1924,12 +1937,12 @@ unrestricted in its effect. The entries:
   - `execFileSync` writes the child's standard error through
     `process.stderr` when `stdio` is omitted. The restricted form requires
     `stdio`.
-  - The thrown error is the fresh `ret.error` or a fresh `genericNodeError`,
-    with `ObjectAssign` copying the result onto it.
-  - Every other step validates or converts primitives and runs no code of
-    the client's: the input is a string (`Buffer.from`), and `for…in` over
-    the environment copy reads `Object.prototype`, which holds no enumerable
-    key under the [ordinary-prototype assumption](SOURCE-MODEL.md#exact-contracts-and-native-effects).
+  - The input is a string (`Buffer.from`), and the outputs are decoded at
+    `"utf8"`. The thrown error is the fresh `ret.error` or a fresh
+    `genericNodeError`, with `ObjectAssign` copying the result onto it.
+  - `for…in` over the environment copy reads `Object.prototype`, which
+    holds no enumerable key under the
+    [ordinary-prototype assumption](SOURCE-MODEL.md#exact-contracts-and-native-effects).
 
   The form also assumes that `NODE_DEBUG` does not name `child_process`:
   `debuglog` would otherwise write the options through `process.stderr`.
