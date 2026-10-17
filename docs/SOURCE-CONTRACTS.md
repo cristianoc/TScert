@@ -1564,6 +1564,43 @@ where the native is modelled and audited otherwise:
 | `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: any, store: keep}` | they run no code and write only the receiver's internal slots, which hold no array store (audited) |
 
 
+**Design: a non-empty `split`.** `String.prototype.split` with a string
+separator and no limit returns at least one element: the separator is no
+`RegExp`, so no `[Symbol.split]` runs, and ECMA-262's `split` returns
+`[S]` where the separator does not occur, so `"".split("\n")` is `[""]`
+([ECMA-262](REFERENCES.md#ecma-262), `String.prototype.split`). It returns
+`[]` in two cases only: a limit of `0`, and an empty receiver with an empty
+separator (`"".split("")`). `dev/record-render.mts`'s `parseRecord` reads
+element 0 of `text.trimEnd().split("\n")` as a string, which the fragment
+reads at `string | undefined`. The design states a further form of `split`, as a prototype member's
+overlay entry lists its forms ([prototype contracts](#prototype-contracts)), whose
+result is the tuple of one required position and a rest,
+`[string, ...string[]]`, the representation the fragment already has for an
+array with a known prefix (a position read at its index is its type,
+`elemReadPlan`):
+
+```math
+\mathtt{split}\colon(\lambda)\Rightarrow[\mathtt{string},\ \ldots\mathtt{string}]
+\qquad \lambda\ 	ext{a string literal other than}\ 	exttt{""}
+```
+
+A separator's literal is a singleton type, and no type states "a non-empty
+string", so the form is stated per literal: for each string literal other
+than `""` a call's separator is claimed at, one form at that literal's
+singleton, with no limit parameter, so a call passing a limit takes the
+general form. A limit known to be at least `1` would need a number type of
+that bound, which the fragment has only as literals: a form per numeric
+literal at least `1` is left out until a program needs it. The forms are
+collected as intrinsics are, only for the literals a source's calls use
+([dependency collection](#native-footprints)). A `RegExp` separator keeps the
+general form: an empty receiver and a pattern matching the empty string give
+`[]`. The forms state the same footprint and fresh result as the general
+one. Controls: `"".split("")` and `s.split("")` refused at a non-empty
+reading, `split(sep, 0)` at the general form, a separator of a union with
+`""`, and a forged claim of the form at `""` through production and
+consumption, each with a Node run.
+
+
 What is proved and what is audited:
 
 - **Proved** of the array mutators' specification steps (`Set` of an index,
