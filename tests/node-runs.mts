@@ -88,6 +88,9 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "set-string-construction: three letters, an \"a\" and a 1");
   assert.equal(runExample("invalid-set-string-at-number", `typeof [...digits("12")][0]`), "string",
     "invalid-set-string-at-number: the set at number holds strings");
+  assert.equal(runExample("conditional-empty-array", `lineCount("a\\nb", true) + lineCount("a", false)`), 2);
+  assert.equal(runExample("invalid-conditional-empty-array", `typeof lengths("a")[0]`), "string",
+    "invalid-conditional-empty-array: the elements are strings");
   assert.equal(runExample("flat-map-union-returns", `shown(new Map([["Lean", "x"]]))`), "Lean=x");
   assert.equal(runExample("invalid-flat-map-union-returns", `JSON.stringify(shown(new Map([["Parts", "ab"]])))`), "[2]",
     "invalid-flat-map-union-returns: the elements are numbers");

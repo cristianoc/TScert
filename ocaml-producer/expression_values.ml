@@ -360,9 +360,21 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
             | Atoms [Shape shape] when promises <> [] -> Atoms [Shape {shape with calls=shape.calls @ promises}]
             | t -> t))
       | _ -> Proposal_diagnostics.unsupported "bind requires a single arrow and a valid argument prefix")
+    (* An empty array literal in an arm no type is expected at is built at
+       the other arm's type, as TypeScript types `c ? xs : []`: a fresh
+       array may take any element contract. *)
     | Conditional (c,a,b) -> ignore (expr env c);
-      let left = expr ?expected env a in
-      let right = expr ?expected env b in union left right
+      let empty (e:expr) = match e.node with ArrayLiteral ([],_) -> true | _ -> false in
+      let array = function Atoms [Shape {elements=Some _;fields=[];calls=[];indexes=[]}] -> true | _ -> false in
+      let at_other other e = if array other then expr ~expected:other env e else expr env e in
+      (match expected with
+       | None when empty b && not (empty a) ->
+         let left = expr env a in union left (at_other left b)
+       | None when empty a && not (empty b) ->
+         let right = expr env b in union (at_other right a) right
+       | _ ->
+         let left = expr ?expected env a in
+         let right = expr ?expected env b in union left right)
     (* The left operand's values other than null and undefined, a type
        parameter's the meet of it with its bound's, `T ⊓ number` for
        `T extends number | null`, where the bound states them. *)
