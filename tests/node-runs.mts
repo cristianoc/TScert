@@ -42,6 +42,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
       expected, `${file}: the result is dense`);
   assert.equal(runExample("invalid-map-unstable-pop", "Object.keys(shrink([1, 2, 3])).length"), 2,
     "invalid-map-unstable-pop: the result has three positions, two present");
+  assert.equal(runExample("map-unstable-pop-sparse", "Object.keys(shrink([1, 2, 3])).length"), 2,
+    "map-unstable-pop-sparse: the result has three positions, two present");
   assert.equal(runExample("invalid-map-optional-pop", "Object.keys(drained([1, 2, 3], undefined)).length"), 2,
     "invalid-map-optional-pop: the result has three positions, two present");
   assert.equal(runExample("invalid-map-class-constructor-pop", "Object.keys(shrinkAll([1, 2, 3])).length"), 2,

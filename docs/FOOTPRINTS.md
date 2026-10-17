@@ -170,9 +170,13 @@ stable set are `push` and `unshift` (`{value: any, store: grow}`), a native
 regex's members, the array iterator, `new Set` and `new Map`, and the
 collections' and dates' mutators (each at most `{value: any, store: keep}`);
 outside it are `pop`, `shift`, `reverse` and every native stated
-unrestricted. `map` states its callback's footprint, one signature per closed
-footprint, and gives a dense result from a dense receiver at the four of the
-stable set.
+unrestricted. `map` has five signatures: one per footprint `ε` of the stable
+set, which takes a dense receiver and a callback within `ε`, gives a dense
+result and states `ε` as its own; and an unrestricted one, which takes any
+receiver and any callback, gives a result that may hold holes and states no
+footprint. So a callback changing stores beyond `grow`, such as one within
+`{value: keep, store: any}`, or a sparse receiver gives a `map` call with no
+footprint.
 
 ## The rule users see
 

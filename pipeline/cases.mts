@@ -299,6 +299,7 @@ export const cases: Case[] = [
     /no derivation of its return-contract claim/),
   negative("invalid-map-class-constructor-pop", "a `map` callback constructing a class whose constructor pops the mapped array: the construct signature states the ordinary effect, so the result is sparse",
     /no derivation of its return-contract claim/),
+  positive("map-unstable-pop-sparse", "program 7 at a result type admitting holes: the callback pops the array being mapped, so `map` takes its signature with holes, which `(number | undefined)[]` admits"),
   negative("invalid-map-unstable-pop", "a `map` callback popping the array being mapped: `pop` may change any store, so only the signature with holes applies and the result is not `number[]`",
     /no derivation of its return-contract claim/),
   positive("callback-effects", "Certified heap preservation survives returning, binding and calling a callback, with checked reads and fresh allocation"),

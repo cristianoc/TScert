@@ -1222,21 +1222,27 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
 // the empty one; one calling a member stated unrestricted (`pop` on the source
 // beside a string's `trim` or alone) or beyond the footprint (a global regex's
 // `test`) is refused at its own typing, even at the footprint `map`'s dense
-// signature accepts.
+// signature accepts. A refused control marked `consumed` also checks the
+// fixture's honest evidence against the forged claim, which must refuse; its
+// fixture verifies, so that evidence exists: program 7 at a result type
+// admitting holes (`map-unstable-pop-sparse`) is consumed so. A negative
+// fixture has no evidence, and its control is production only.
 const keepAll: ClosedFootprint = { value: "keep", store: "keep" };
 const writeValues: ClosedFootprint = { value: "any", store: "keep" };
 const growStores: ClosedFootprint = { value: "any", store: "grow" };
-for (const [file, marker, arity, accepted, footprint] of [
-  ["closure-result-contract", "(p: number", 2, true, keepAll], ["closure-graph-captured-cell", "(): void", 0, false, keepAll],
-  ["invalid-map-primitive-method-mutation", "(x: string)", 3, false, keepAll],
-  ["map-stable-regexp-test", "(l) => word", 3, false, keepAll],
-  ["map-stable-collection-write", "(name) =>", 3, false, keepAll],
-  ["map-stable-collection-write", "(name) =>", 3, true, writeValues],
-  ["map-stable-set", "(ys: readonly", 3, false, keepAll],
-  ["map-stable-set", "(ys: readonly", 3, true, writeValues],
-  ["map-stable-outer-cell", "(x: number)", 3, false, keepAll],
-  ["map-stable-outer-cell", "(x: number)", 3, true, writeValues],
-  ["invalid-map-unstable-pop", "(x: number)", 3, false, growStores],
+for (const [file, marker, arity, accepted, footprint, consumed] of [
+  ["closure-result-contract", "(p: number", 2, true, keepAll, true],
+  ["closure-graph-captured-cell", "(): void", 0, false, keepAll, true],
+  ["invalid-map-primitive-method-mutation", "(x: string)", 3, false, keepAll, false],
+  ["map-stable-regexp-test", "(l) => word", 3, false, keepAll, true],
+  ["map-stable-collection-write", "(name) =>", 3, false, keepAll, true],
+  ["map-stable-collection-write", "(name) =>", 3, true, writeValues, true],
+  ["map-stable-set", "(ys: readonly", 3, false, keepAll, true],
+  ["map-stable-set", "(ys: readonly", 3, true, writeValues, true],
+  ["map-stable-outer-cell", "(x: number)", 3, false, keepAll, true],
+  ["map-stable-outer-cell", "(x: number)", 3, true, writeValues, true],
+  ["invalid-map-unstable-pop", "(x: number)", 3, false, growStores, false],
+  ["map-unstable-pop-sparse", "(x: number)", 3, false, growStores, true],
 ] as const) {
   const artifacts = run(file);
   const claims = readClaims(artifacts);
@@ -1270,8 +1276,10 @@ for (const [file, marker, arity, accepted, footprint] of [
     // forged claim is a located footprint refusal: at a node of the closure
     // search named, or of a unit whose call of it the forged type no longer
     // admits at the signature the evidence selected.
-    const callable = failure.source?.sourceMap?.pos;
-    if (callable && existsSync(join(artifacts, "evidence.json"))) {
+    const callable = must(failure.source?.sourceMap?.pos, "the failed callable's source location");
+    assert.equal(existsSync(join(artifacts, "evidence.json")), consumed,
+      `${file}: a consumed control needs the fixture's honest evidence, a production-only one has none`);
+    if (consumed) {
       const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
       const refused = /source effect refusal at \[(\d+),(\d+)\): the footprint claimed for (a closure|')/.exec(checked);
       assert.ok(refused, checked);
@@ -1280,7 +1288,7 @@ for (const [file, marker, arity, accepted, footprint] of [
           `checking refused at [${refused[1]},${refused[2]}), outside the closure [${callable[0]},${callable[1]})`);
     }
   }
-  process.stdout.write(`callback footprint claim {${footprint.value}, ${footprint.store}}, ${file}: ${accepted ? "certified" : "refused"}\n`);
+  process.stdout.write(`callback footprint claim {${footprint.value}, ${footprint.store}}, ${file}: ${accepted ? "certified" : consumed ? "refused in search and in checking" : "refused in search"}\n`);
 }
 
 {
@@ -1370,7 +1378,8 @@ for (const [file, marker, arity, accepted, footprint] of [
   // `[Symbol.replace]` states it. A global regex's does not: an instance of
   // the dispatch claimed preserving at that target, with the callback
   // claimed preserving through it, is refused at the callback's typing,
-  // whatever the producer proposes.
+  // whatever the producer proposes, and checking the honest evidence against
+  // the forged claims is a footprint refusal.
   const artifacts = run("map-stable-regexp-replace");
   const claims = readClaims(artifacts);
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
@@ -1392,7 +1401,10 @@ for (const [file, marker, arity, accepted, footprint] of [
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   const failure = readDiagnostic(produce.stdout + produce.stderr);
   assert.ok(failure && failure.kind === "node-typing", "a forged dispatch effect must fail at a node's typing");
-  process.stdout.write("forged dispatch effect: a global regex's replacement refused\n");
+  assert.ok(existsSync(join(artifacts, "evidence.json")), "the fixture's honest evidence");
+  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts),
+    /source effect refusal at \[\d+,\d+\): the footprint claimed for/);
+  process.stdout.write("forged dispatch effect: a global regex's replacement refused in search and in checking\n");
 }
 
 {

@@ -1549,7 +1549,8 @@ where the native is modelled and audited otherwise:
 | --- | --- | --- |
 | `push`, `unshift` | `{value: any, store: grow}` | proved of the specification steps: `Arr.push_grow`, `Arr.unshift_grow`, `array_native_post`; that each changes nothing but its store and element contents is audited |
 | `pop`, `shift`, `reverse` | `{value: any, store: any}` | each can remove a present index (controls in `FootprintControls.lean`) |
-| `map` at a callback within `ε` | `ε` | one signature per closed footprint (finite expansion over the six); a dense receiver gives a dense result for the four of the stable set (`map_rely`), any other a result with holes; `map` reads its receiver and allocates its result (audited) |
+| `map` at a dense receiver and a callback within `ε`, `ε` one of the four of the stable set | `ε` | one signature per such `ε`, with a dense result (`map_rely`); `map` reads its receiver and allocates its result (audited) |
+| `map` at any receiver and any callback | `{value: any, store: any}` | the unrestricted signature, with a result that may hold holes |
 | a global or sticky native regex's `exec`, `test`, `[Symbol.match]`, `[Symbol.replace]` at a string | `{value: any, store: keep}` | they write only `lastIndex`, a number (audited) |
 | a native regex's other members, a regex neither global nor sticky | the empty footprint | they write nothing (audited) |
 | `%Dispatch:replace%` | its target member's footprint | one signature per closed footprint (audited, as its target's) |

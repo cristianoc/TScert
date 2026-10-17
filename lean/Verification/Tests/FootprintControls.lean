@@ -9,8 +9,10 @@ import Verification.Types.PositiveNormalization
 /-! Controls for the footprint lemmas. Each counterexample a design review
 found against an earlier statement is a theorem refuting that statement, so a
 definition changed back to the false form fails here. The file ends with the
-axiom check of every footprint theorem, which nothing in the acceptance path
-uses yet. -/
+axiom check of every footprint theorem. The acceptance path uses the
+closed-footprint theorems (their composition, `Closed.Holds.trans`, and order,
+through `GraphCode.goto_bounded` and `checkJson_safe`), whose axioms
+`AxiomCheck.lean` also checks. -/
 namespace Verification.Footprints.Controls
 
 /-- Slot 0 holds an array whose store is location 0. -/
