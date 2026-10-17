@@ -31,7 +31,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
            does not state; the field holds it at its annotation. *)
         let t = match expr env value with
           | Atoms [Shape ({calls;_} as s)] ->
-            Atoms [Shape {s with calls=List.map (fun (c:Semantic.signature) -> {c with call_effect=Unrestricted}) calls}]
+            Atoms [Shape {s with calls=List.map (fun (c:Semantic.signature) -> {c with call_effect=Semantic.ordinary_effect}) calls}]
           | t -> t in
         {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) statics in
   match e.node with
@@ -49,7 +49,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | _ -> expr ~expected:result inner body in
       (* A class offered construct signatures giving other instances is
          claimed at them too, beside its own; Lean checks the body at each. *)
-      let own = {call_effect=Unrestricted;quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result} in
+      let own = {call_effect=Semantic.ordinary_effect;quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result} in
       let extra = Option.value (List.assoc_opt e.pos offered) ~default:[] in
       (* A fresh constructor gives, first, the instance it allocates. *)
       let fresh_sig = if fresh then [{own with result=allocated_type}] else [] in
@@ -109,29 +109,43 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          `undefined` there, and Lean checks each omitted position admits it. *)
       let written (s:Semantic.signature) = List.filteri (fun i _ -> i < count) s.params in
       (match constructor with
-       | Atoms [Ctors ([signature],_)] when signature.quantified <> [] ->
+       | Atoms [Ctors ((first :: _ as signatures),_)] when first.quantified <> [] ->
          (* A generic class: its instance is the one the explicit type
             arguments name, or is inferred from the actuals, as a generic
-            call's is. *)
-         if count > List.length signature.params then
+            call's is. Its construct signatures share its binders; the
+            proposal is at the first taking the actuals whose instance admits
+            them, and Lean checks the construction at the signature it
+            selects, with every argument's obligation. *)
+         let fitting = List.filter (fun (s:Semantic.signature) -> count <= List.length s.params) signatures in
+         if fitting = [] then
            Proposal_diagnostics.unsupported "no construct signature takes this many arguments";
-         let substitution,result =
+         let actuals = if types <> [] then [] else actual_types () in
+         let instance_at (signature:Semantic.signature) =
            if types <> [] then begin
              if List.length types <> List.length signature.quantified then
                Proposal_diagnostics.unsupported "explicit type arguments must name every class type parameter";
              let substitution = List.map2 (fun (q:Semantic.quantifier) t -> q.identity,ValueArgument t)
                signature.quantified types in
              let instance = Inference.substitute_signature substitution {signature with quantified=[]} in
-             contextual_actuals (written instance);
-             substitution,instance.result
+             substitution,instance
            end else
              let missing = List.length signature.params - count in
              let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver:Semantic.top ?expected signature
-               (actual_types () @ List.init missing (fun _ -> Atoms [Undef])) in
-             inferred.substitution,inferred.result in
+               (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
+             inferred.substitution,
+             Inference.substitute_signature inferred.substitution {signature with quantified=[]} in
+         let admits (instance:Semantic.signature) =
+           types <> [] || List.for_all2 plausible_subtype actuals (written instance) in
+         let chosen = match List.find_map (fun s -> match quietly (fun () -> instance_at s) with
+             | Some (substitution,instance) when admits instance -> Some (substitution,instance)
+             | _ -> None) fitting with
+           | Some c -> c
+           | None -> instance_at (List.hd fitting) in
+         let substitution,instance = chosen in
+         if types <> [] then contextual_actuals (written instance);
          instance_of callee substitution;
          publish_substitution e.pos (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution);
-         result
+         instance.result
        | Atoms [Ctors (signatures,_)] ->
          if types <> [] then Proposal_diagnostics.unsupported "explicit type arguments to a class that takes none";
          let exact,short = List.partition (fun (s:Semantic.signature) ->
@@ -218,24 +232,27 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
            | None,Some element -> List.rev fixed,Some element
            | _ -> Proposal_diagnostics.unsupported "a rest parameter needs a tuple of required positions or an array")
         | [] -> Proposal_diagnostics.unsupported "a rest parameter needs a parameter" in
-      let values = List.filter_map (fun (name,b) -> match b with
-        | Value _ | Local _ -> Some name | Storage _ -> None) inner @ module_names in
-      (* A call's callee is preserving where every signature it may take
-         states it: the one the call's instance projects from a value's
-         quantified overloads, else all of its type's. *)
+      let readable = List.map fst inner @ module_names in
+      (* A call or a construction changes at most what every signature its
+         callee may take states: the one the call's instance projects from a
+         value's quantified overloads, else all of its type's. *)
       let callable (callee:expr) =
         match (match latest_instance callee.pos with Some t -> Some t | None -> latest_claim callee.pos) with
         | Some t -> (match declared_head declarations [] t with
-          | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] -> calls <> [] &&
-            List.for_all (fun (s:signature) -> s.call_effect=PreservesInputHeap &&
-              s.variadic=None && s.rest_pack=None) calls
-          | _ -> false)
-        | None -> false in
+          | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] | Atoms [Ctors (calls,_)]
+            when calls <> [] && List.for_all (fun (s:signature) -> s.quantified=[] && s.rest_pack=None) calls ->
+            Some (List.map (fun (s:signature) -> s.call_effect) calls)
+          | _ -> None)
+        | None -> None in
       (* Rest entries have a separate wrapper; its signature transport remains
          conservative until that lowering carries the inferred effect too. *)
-      let call_effect = if not rest && heap_preserving_expr ~callable values body &&
-        List.for_all (fun (_,d) -> heap_preserving_expr ~callable values d) defaults
-        then PreservesInputHeap else Unrestricted in
+      let iteration name = Option.bind (module_type name) iteration_footprint in
+      let bound = if rest then None else
+        List.fold_left (fun acc (_,d) -> join_bound acc (footprint_expr ~callable ~iteration ~readable d))
+          (footprint_expr ~callable ~iteration ~readable body) defaults in
+      let call_effect = match bound with
+        | Some footprint -> {Semantic.ordinary_effect with footprint; fresh=fresh_result ~callable body}
+        | None -> Semantic.ordinary_effect in
       let own = match element with
         | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result
         | None -> quantified_arrow ~call_effect ~receiver quantified params result in

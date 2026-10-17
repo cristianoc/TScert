@@ -321,9 +321,11 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
       let n = List.length args in
       let kept (plain:Semantic.signature) = match callee with
         | Atoms [Shape {calls;_}] -> List.filter_map (fun (s:Semantic.signature) ->
-            let shifted = match s.call_effect with
-              | Guards p when p >= n -> Some (Semantic.Guards (p - n))
-              | Asserts p when p >= n -> Some (Semantic.Asserts (p - n))
+            let shifted = match s.call_effect.promise with
+              | Some (Semantic.Guards p) when p >= n ->
+                Some {s.call_effect with promise=Some (Semantic.Guards (p - n))}
+              | Some (Semantic.Asserts p) when p >= n ->
+                Some {s.call_effect with promise=Some (Semantic.Asserts (p - n))}
               | _ -> None in
             (match shifted with
              | Some promise when s.params=plain.params && s.receiver=plain.receiver && s.variadic=None
@@ -358,9 +360,34 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
             | Atoms [Shape shape] when promises <> [] -> Atoms [Shape {shape with calls=shape.calls @ promises}]
             | t -> t))
       | _ -> Proposal_diagnostics.unsupported "bind requires a single arrow and a valid argument prefix")
+    (* An empty array literal in an arm no type is expected at is built at
+       the other arm's type, as TypeScript types `c ? xs : []`: a fresh
+       array may take any element contract. *)
     | Conditional (c,a,b) -> ignore (expr env c);
-      let left = expr ?expected env a in
-      let right = expr ?expected env b in union left right
+      let empty (e:expr) = match e.node with ArrayLiteral ([],_) -> true | _ -> false in
+      let array = function Atoms [Shape {elements=Some _;fields=[];calls=[];indexes=[]}] -> true | _ -> false in
+      (* An arm with required positions, a non-empty `split`'s, beside the
+         empty literal: both at the readonly array of its elements, which
+         the empty literal and the positions each meet. *)
+      let view other = match other with
+        | Atoms [Shape {elements=Some ({required=_::_;_} as s);fields=[];calls=[];indexes=[]}] ->
+          let element = List.fold_left union (Atoms []) (s.required @ s.optional_elements @ Option.to_list s.rest) in
+          Some (Semantic.array {required=[];optional_elements=[];rest=Some element;readonly=true;presence=Semantic.Readable})
+        | _ -> None in
+      let at_other other e = if array other then expr ~expected:other env e else expr env e in
+      let viewed full = Option.bind (quietly (fun () -> expr env full)) view in
+      (match expected with
+       | None when empty b && not (empty a) ->
+         (match viewed a with
+          | Some v -> ignore (expr ~expected:v env a); ignore (expr ~expected:v env b); v
+          | None -> let left = expr env a in union left (at_other left b))
+       | None when empty a && not (empty b) ->
+         (match viewed b with
+          | Some v -> ignore (expr ~expected:v env a); ignore (expr ~expected:v env b); v
+          | None -> let right = expr env b in union (at_other right a) right)
+       | _ ->
+         let left = expr ?expected env a in
+         let right = expr ?expected env b in union left right)
     (* The left operand's values other than null and undefined, a type
        parameter's the meet of it with its bound's, `T ⊓ number` for
        `T extends number | null`, where the bound states them. *)

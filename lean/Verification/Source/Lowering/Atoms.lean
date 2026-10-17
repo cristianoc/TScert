@@ -40,6 +40,33 @@ new observation of their source expression. -/
       let facts ← pointwise.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
       checkpoint source (A::Γ) facts next (scope := held ⟨"",some source⟩ :: scope)
 
+/-- JavaScript throws a `TypeError` at a member access of `null` or
+`undefined`, before the access (PROGRAM-TYPING, "a member of `null` or
+`undefined`"). The operand in slot `o` of `K` is tested: a nullish one
+throws a fresh object owning no key, the abstraction `binopThrows` throws for
+the error, and the others continue at `next`, emitted for `K` with slot `o`
+refined to the values other than `null` and `undefined`. -/
+@[nospecialize] def nullishGuard (pos : Span) (K : List (Ty Tree)) (o : Nat) (N : Ty Tree)
+    (scope : List (ScopeBinding Tree)) (next : Target) : Compiler Target := do
+  let refined := fun (t : Target) => (⟨t.label, some ((t.mapping.getD (List.range K.length)).map
+    (fun i => if i == o then 0 else i+1))⟩ : Target)
+  let Δ := K.set o N
+  let E ← lower (SourceTypes.use (.refs [] [] [] [] [] [⟨true, []⟩]))
+  recordHints [E]
+  let raise ← emitAt pos (.throw (.var 0)) .ret ([E] :: Δ) [] "nullish-member"
+    (scope := held ⟨"",some pos⟩ :: scope)
+  let raise ← emitAt pos (.makeAt .absent [] []) (.bind raise) Δ [E] "nullish-member" (scope := scope)
+  let some B := K[o]? | throw "internal nullish guard slot"
+  emitAt pos (.var o) (.tagBind .isNullish (refined raise) (refined next)) K B "tag-dispatch" (scope := scope)
+
+/-- `next`, emitted for `K` with slot `o` at `F`, behind a nullish guard
+where `split` holds one. -/
+@[nospecialize] def guarded (pos : Span) (K : List (Ty Tree)) (o : Nat) (split : Option (Ty Tree × Ty Tree))
+    (scope : List (ScopeBinding Tree)) (next : Target) : Compiler Target :=
+  match split with
+  | none => pure next
+  | some (N, _) => nullishGuard pos K o N scope next
+
 /-- Call lowering compiles its operands through the supplied atomic compiler. -/
 @[nospecialize] private def compileCall
     (compile : List (ScopeBinding Tree) → List (Ty Tree) → Fragment.Expr → Target → Compiler Target)
@@ -53,6 +80,15 @@ new observation of their source expression. -/
         | throw "internal execution plan: missing saved call receiver"
       let some O := Γ[i]? | throw "internal execution plan: saved receiver type"
       pure (some (i, O))
+  -- A method of a nullish object throws before the member is read, the key
+  -- evaluated first: the object is read past a guard (`nullishGuard`).
+  let objSplit : Option (Ty Tree × Ty Tree) ← match e with
+    | .invoke _ (.read _ _ o) _ _ _ | .invoke _ (.index _ _ o _) _ _ _ | .invoke _ (.elemAt _ o _) _ _ _ => do
+      pure (nullishSplit (SourceTypes.graph (← table)) (← exprType fc o))
+    | _ => pure none
+  let objectType := fun (o : Fragment.Expr) => do
+    let O ← exprType fc o
+    pure ((objSplit.map (·.2)).getD O)
   let sourceArgs := match original with
     | .call _ _ xs _ _ | .invoke _ _ xs _ _ | .callWithReceiver _ _ _ xs => xs
     | _ => args
@@ -67,12 +103,12 @@ new observation of their source expression. -/
   -- saved slots sit where a plain call's one callee slot does.
   let method : Option (Fragment.Expr × Option Fragment.Expr × (Tm → Tm)) ← match e with
     | .invoke _ (.read _ fld o) _ _ typeArgs => do
-      let O ← exprType fc o
+      let O ← objectType o
       explicitInstance e.span O (← exprType fc callee) fld typeArgs
       let G := SourceTypes.graph (← table)
       pure (some (o, none, memberHead G O fld))
     | .invoke _ (.index _ (some fld) o key) _ _ typeArgs => do
-      let O ← exprType fc o
+      let O ← objectType o
       explicitInstance e.span O (← exprType fc callee) fld typeArgs
       let G := SourceTypes.graph (← table)
       pure (some (o, some key, memberHead G O fld))
@@ -97,7 +133,7 @@ new observation of their source expression. -/
   let dispatch : Option PropKey ← if savedReceiver.isSome then executionDispatch fc original
     else match e, method, callee with
     | .invoke _ _ _ [] _, some (o, none, _), .read _ fld _ => do
-      let O ← exprType fc o
+      let O ← objectType o
       let plain : Fragment.Expr → Bool := fun a => match a with
         | .var .. | .lit .. => true
         | _ => false
@@ -107,9 +143,9 @@ new observation of their source expression. -/
     | _, _, _ => pure none
   let headTys : List (Ty Tree) ← match method, dispatch with
     | none, _ => pure [headType]
-    | some (o, _, _), some _ => do pure [← exprType fc o]
+    | some (o, _, _), some _ => do pure [← objectType o]
     | some (o, key, _), none => do
-      let O ← exprType fc o
+      let O ← objectType o
       let keyTy ← key.mapM (exprType fc)
       pure (B :: keyTy.toList ++ [O])
   let headScope := match method, dispatch with
@@ -311,7 +347,9 @@ new observation of their source expression. -/
     else compile sc ctx arg next) reads
   match method, dispatch with
   | none, _ => compile scope Γ callee right
-  | some (o, _, _), some _ => compile scope Γ o right
+  | some (o, _, _), some _ =>
+    let O₀ ← exprType fc o
+    compile scope Γ o (← guarded o.span (O₀::Γ) 0 objSplit (held ⟨"",some o.span⟩ :: scope) right)
   | some (o, key, readTerm), none =>
     -- The method is read from the saved object, below any saved key; a
     -- primitive's, by its shape (`dispatchTerm`).
@@ -325,11 +363,12 @@ new observation of their source expression. -/
       else dispatchTerm arms.2 arms.1 objSlot (.readAt arms.1 (.var objSlot))
     let read ← emitAt callee.span term (.bind ⟨right.label, none⟩)
       (saved ++ Γ) B (scope := headScope.drop 1 ++ scope)
+    let O₀ ← exprType fc o
+    let read ← guarded callee.span (saved.dropLast ++ [O₀] ++ Γ) objSlot objSplit (headScope.drop 1 ++ scope) read
     let afterObject ← match key with
       | none => pure read
       | some key => do
-        let some O := headTys.getLast? | throw "internal method call slots"
-        compile (held ⟨"",some o.span⟩ :: scope) (O::Γ) key read
+        compile (held ⟨"",some o.span⟩ :: scope) (O₀::Γ) key read
     compile scope Γ o afterObject
 
 /-- Each expression leaves its result in slot zero and preserves the original
@@ -380,7 +419,11 @@ Mappings discard only the temporaries introduced by this expression. -/
     compileAtom recursive fc scope Γ rhs write
   | .lit _ v => emitAt e.span (← SourceTypes.value v) (.bind next) Γ A (scope := scope)
   | .read _ fld a =>
-    let B ← exprType fc a
+    let B₀ ← exprType fc a
+    -- A nullish operand throws before the read; the read is of the others.
+    let split := nullishSplit (SourceTypes.graph (← table)) B₀
+    let B := (split.map (·.2)).getD B₀
+    let behind := fun (t : Target) => guarded e.span (B₀::Γ) 0 split (held ⟨"",some a.span⟩ :: scope) t
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
     -- An array's `length` is its store's, read as a number; a primitive's
@@ -413,7 +456,7 @@ Mappings discard only the temporaries introduced by this expression. -/
         (fun i => if i == 0 then 0 else i+1))⟩ : Target)
       let test ← emitAt e.span (.var 0) (.tagBind .isArray (refined array) (refined other)) (B::Γ) B
         "tag-dispatch" (scope := receiver :: scope)
-      return ← compileAtom recursive fc scope Γ a test
+      return ← compileAtom recursive fc scope Γ a (← behind test)
     -- `length` through a view admits an array: the read tests the receiver
     -- (`lenView`).
     let object := if fld == "length" && arraysOnly G B
@@ -431,10 +474,10 @@ Mappings discard only the temporaries introduced by this expression. -/
           (scope := held ⟨"",some e.span⟩ :: held ⟨"",some a.span⟩ :: scope)
         let store ← emitAt e.span (.readAt SourceTypes.storeField (.var 0)) (.bind length) (B::Γ) S
           (scope := held ⟨"",some a.span⟩ :: scope)
-        return ← compileAtom recursive fc scope Γ a store
+        return ← compileAtom recursive fc scope Γ a (← behind store)
     let node ← emitAt e.span (dispatchTerm arms fld 0 object) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
-    compileAtom recursive fc scope Γ a node
+    compileAtom recursive fc scope Γ a (← behind node)
   | .not _ a =>
     let B ← exprType fc a
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
@@ -658,7 +701,20 @@ Mappings discard only the temporaries introduced by this expression. -/
     let afterReceiver ← compileAtom recursive fc (held ⟨"",some callee.span⟩ :: scope) (B::Γ) receiver afterList
     compileAtom recursive fc scope Γ callee afterReceiver
   | .call _ callee args _ _ | .callWithReceiver _ callee _ args | .invoke _ callee args _ _ =>
-    compileCall (compileAtom recursive fc) fc scope Γ e callee args A next
+    -- A method of a saved object that may be nullish throws before the
+    -- actuals are evaluated: the saved slot is read past a guard, and the
+    -- call made with it refined.
+    let G := SourceTypes.graph (← table)
+    let saved? ← match (← savedReceiver) with
+      | some name => match resolve scope name with
+        | some (i, .value) => pure ((Γ[i]?).bind fun O => (nullishSplit G O).map (i, ·))
+        | _ => pure none
+      | none => pure none
+    match saved? with
+    | some (i, (N, F)) =>
+      let call ← compileCall (compileAtom recursive fc) fc scope (Γ.set i F) e callee args A next
+      nullishGuard e.span Γ i N scope call
+    | none => compileCall (compileAtom recursive fc) fc scope Γ e callee args A next
   | .arrayLit _ elems spreads =>
     -- The elements, in order, then the store they fill, then the array
     -- object holding it: two nodes, so the allocation's slots are variables.
@@ -709,7 +765,10 @@ Mappings discard only the temporaries introduced by this expression. -/
         ((elems.take i |>.map fun a => held ⟨"",some a.span⟩).reverse ++ scope)
         ((As.take i).reverse ++ Γ) arg next) store
   | .elemAt _ receiver key =>
-    let B ← exprType fc receiver
+    let B₀ ← exprType fc receiver
+    -- The key is evaluated, then a nullish operand throws.
+    let split := nullishSplit (SourceTypes.graph (← table)) B₀
+    let B := (split.map (·.2)).getD B₀
     let K ← exprType fc key
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
@@ -731,7 +790,8 @@ Mappings discard only the temporaries introduced by this expression. -/
         | none =>
           let term := Tm.elemAt (.readAt SourceTypes.storeField (.var 1)) index
           emitAt e.span term (.bind drop) (K::B::Γ) A (scope := temporaries)
-    let right ← compileAtom recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
+    let node ← guarded e.span (K::B₀::Γ) 1 split temporaries node
+    let right ← compileAtom recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B₀::Γ) key node
     compileAtom recursive fc scope Γ receiver right
   | .elemWrite _ receiver key rhs =>
     -- The store is read, the element set, and the store written back: one
@@ -751,18 +811,24 @@ Mappings discard only the temporaries introduced by this expression. -/
     let middle ← compileAtom recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key right
     compileAtom recursive fc scope Γ receiver middle
   | .index _ (some fld) receiver key =>
-    let B ← exprType fc receiver
+    let B₀ ← exprType fc receiver
     let K ← exprType fc key
+    -- The key is evaluated, then a nullish operand throws.
+    let split := nullishSplit (SourceTypes.graph (← table)) B₀
+    let B := (split.map (·.2)).getD B₀
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
     let temporaries := held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope
     let arms ← primitiveArms temporaries (K::B::Γ) B fld
     let node ← emitAt e.span (dispatchTerm arms fld 1 (.readAt fld (.var 1))) (.bind drop) (K::B::Γ) A
       (scope := temporaries)
-    let right ← compileAtom recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
+    let node ← guarded e.span (K::B₀::Γ) 1 split temporaries node
+    let right ← compileAtom recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B₀::Γ) key node
     compileAtom recursive fc scope Γ receiver right
   | .index _ none receiver key =>
-    let B ← exprType fc receiver
+    let B₀ ← exprType fc receiver
+    let split := nullishSplit (SourceTypes.graph (← table)) B₀
+    let B := (split.map (·.2)).getD B₀
     let K ← exprType fc key
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+2))⟩
@@ -780,7 +846,8 @@ Mappings discard only the temporaries introduced by this expression. -/
       | none => pure (.indexAt (.var 1) (.var 0))
     let node ← emitAt e.span term (.bind drop) (K::B::Γ) A
       (scope := temporaries)
-    let right ← compileAtom recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key node
+    let node ← guarded e.span (K::B₀::Γ) 1 split temporaries node
+    let right ← compileAtom recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B₀::Γ) key node
     compileAtom recursive fc scope Γ receiver right
   | .indexWrite _ (some fld) receiver key rhs =>
     let B ← exprType fc receiver
@@ -865,11 +932,20 @@ The call atom retains source metadata for spread and primitive dispatch checks. 
     (operation : SourceExecution.Operation) (next : Target) : Compiler Target := do
   match operation with
   | .methodRead original receiver key call =>
-    let (A, term) ← executionMethod fc scope Γ original receiver key call
+    -- A nullish receiver throws before the member is read: the saved slot
+    -- is read past a guard, the read made with it refined.
+    let some (i, .value) := resolve scope receiver.name
+      | throw "internal execution plan: missing saved method receiver"
+    let split := (Γ[i]?).bind (nullishSplit (SourceTypes.graph (← table)))
+    let Δ := match split with
+      | some (_, F) => Γ.set i F
+      | none => Γ
+    let (A, term) ← executionMethod fc scope Δ original receiver key call
     if let .bindWithReceiver .. := call then
       let B ← exprType fc original
-      obligation original.span ⟨Γ,term,B⟩ none "expression-claim" scope
-    emitAt original.span term (.bind next) Γ A (scope := scope)
+      obligation original.span ⟨Δ,term,B⟩ none "expression-claim" scope
+    let read ← emitAt original.span term (.bind next) Δ A (scope := scope)
+    guarded original.span Γ i split scope read
   | .invokeSaved original prepared receiver method =>
     let .invoke pos _ args spreads typeArgs := prepared
       | throw "internal execution plan: expected a saved invocation"

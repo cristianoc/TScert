@@ -363,7 +363,10 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
         List.iter (fun x -> match List.filter (matches x) ys with
           | [y] -> constrain (Atoms [x]) (Atoms [y])
           | _ -> ()) xs
-      (* A union is below a type where each of its parts is. *)
+      (* A union is below a type where each of its parts is: a union of
+         atoms at one atom, such as the arrays a callback's returns give at
+         the array its result is (`[] | [k]` at `readonly U[]`). *)
+      | Atoms (_::_::_ as xs),Atoms [_] -> List.iter (fun x -> constrain (Atoms [x]) right) xs
       | Union parts,_ -> List.iter (fun part -> constrain part right) parts
       (* A type below a union of several bare binders, `T | U`, is taken
          below each: an instance at least as wide as the one needed. *)

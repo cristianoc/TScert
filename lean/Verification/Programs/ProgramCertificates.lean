@@ -319,8 +319,9 @@ inductive Rule (ι : Type) where
   | bindMember (proofs : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι))
       (rests : List (List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι × PositiveCertificates.SubtypeChoices ι))
       (receivers : List (PositiveCertificates.SubtypeChoices ι))
-  /-- `new`: the constructor, then the actuals in order. -/
-  | construct
+  /-- `new`: the constructor, then the actuals in order, at the selected
+  construct signature, whose effect is `effect`. -/
+  | construct (effect : Effect)
   /-- `new` at a variadic construct signature: how many actuals are fixed,
   which later ones are spreads, and the rest type the further ones fit. -/
   | constructRest (fixed : Nat) (spreads : List Bool) (rest : Ty ι)
@@ -409,9 +410,11 @@ static fields, exactly `P`. -/
     (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
     (start : Nat) (Cs : List (Ty ι)) (P : List (PropKey × Ty ι)) : Bool :=
   match expand G A with
-  | [.ctors L S P' []] => (P' == P && L.all fun p => codes ⟨arity, E, K, start, Cs, ⟨U, p.1, p.2, .unrestricted⟩, none⟩) &&
-      S.all fun s => match restElem G s.2.1 with
-        | some El => codes ⟨arity, E, K, start, Cs, ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩, none⟩
+  | [.ctors L S P' []] =>
+      (P' == P && L.all fun p => codes ⟨arity, E, K, start, Cs, ⟨U, p.arguments, p.result, p.effect⟩, none⟩) &&
+      S.all fun s => s.effect.plain && match restElem G s.arguments.2 with
+        | some El => codes ⟨arity, E, K, start, Cs,
+            ⟨U, ctorRestParams arity s.arguments.1 El U, s.result, s.effect⟩, none⟩
         | none => false
   | _ => false
 
@@ -432,7 +435,7 @@ parameter within the member's, then the member's result within the claimed. -/
     (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι) : Prop :=
   q.arguments.length = c.arguments.length ∧ ps.1.length = c.arguments.length ∧
     (∀ x ∈ (q.arguments.zip c.arguments).zip ps.1, PositiveCertificates.checkUsing G images x.1.1 x.1.2 x.2 = true) ∧
-    PositiveCertificates.checkUsing G images c.result q.result ps.2 = true ∧ c.effect.covers q.effect = true
+    PositiveCertificates.checkUsing G images c.result q.result ps.2 = true ∧ (c.effect.drop 0).covers q.effect = true
 
 instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
     (q c ps) : Decidable (CallProofsUsing G images q c ps) := by
@@ -456,7 +459,7 @@ member's, then the member's result within the claimed. -/
   q.arguments.1.length = c.arguments.1.length ∧ ps.1.length = c.arguments.1.length ∧
     (∀ x ∈ (q.arguments.1.zip c.arguments.1).zip ps.1, PositiveCertificates.checkUsing G images x.1.1 x.1.2 x.2 = true) ∧
     PositiveCertificates.checkUsing G images q.arguments.2 c.arguments.2 ps.2.1 = true ∧
-    PositiveCertificates.checkUsing G images c.result q.result ps.2.2 = true ∧ c.effect.covers q.effect = true
+    PositiveCertificates.checkUsing G images c.result q.result ps.2.2 = true ∧ (c.effect.drop 0).covers q.effect = true
 
 instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
     (q c ps) : Decidable (RestProofsUsing G images q c ps) := by
@@ -476,7 +479,7 @@ theorem RestProofsUsing.covered [DecidableEq ι] {G : NormalGraph ι}
     (images : PositiveCertificates.InstanceImageCheck G) (q : Arrow (Ty ι)) (c : MethodArrow (Ty ι))
     (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι) : CheckResult ι Unit :=
   (CheckResult.ofBool (decide (q.arguments.length = c.arguments.length ∧
-    ps.1.length = c.arguments.length) && c.effect.covers q.effect)).bind fun _ =>
+    ps.1.length = c.arguments.length) && (c.effect.drop 0).covers q.effect)).bind fun _ =>
     (CheckResult.all ((q.arguments.zip c.arguments).zip ps.1) fun x =>
       checkSubtypeUsing G images x.1.1 x.1.2 x.2).bind fun _ =>
       checkSubtypeUsing G images c.result q.result ps.2
@@ -499,7 +502,7 @@ theorem checkCallProofs_accepted [DecidableEq ι] (G : NormalGraph ι)
     (ps : List (PositiveCertificates.SubtypeChoices ι) × PositiveCertificates.SubtypeChoices ι ×
       PositiveCertificates.SubtypeChoices ι) : CheckResult ι Unit :=
   (CheckResult.ofBool (decide (q.arguments.1.length = c.arguments.1.length ∧
-    ps.1.length = c.arguments.1.length) && c.effect.covers q.effect)).bind fun _ =>
+    ps.1.length = c.arguments.1.length) && (c.effect.drop 0).covers q.effect)).bind fun _ =>
     (CheckResult.all ((q.arguments.1.zip c.arguments.1).zip ps.1) fun x =>
       checkSubtypeUsing G images x.1.1 x.1.2 x.2).bind fun _ =>
     (checkSubtypeUsing G images q.arguments.2 c.arguments.2 ps.2.1).bind fun _ =>
@@ -1154,14 +1157,14 @@ declared bounds. -/
   -- The constructor, the actual premises in order, then one premise per
   -- position the signature declares and `new` omits, proving `undefined`
   -- there, as for `.app`.
-  | .construct =>
+  | .construct e =>
     match j.term, ps with
     | .construct f args, jf :: jas =>
       jf.context = j.context ∧ jf.term = f ∧ (jas.take args.length).map Sequent.term = args ∧
       (∀ ja ∈ jas.drop args.length, ja.term = .undef) ∧
       (∀ ja ∈ jas, ja.context = j.context) ∧
       match expand G jf.type with
-      | [.ctors L _ _ _ _] => (jas.map Sequent.type, j.type) ∈ L
+      | [.ctors L _ _ _ _] => ⟨(), jas.map Sequent.type, j.type, e⟩ ∈ L ∧ e.plain = true
       | _ => False
     | _, _ => False
   -- The constructor, the fixed actuals, then one premise per further part:
@@ -1175,7 +1178,8 @@ declared bounds. -/
         (flags.zip (jas.drop k)).map (fun q => spreadTerm (q.1, q.2.term)) ∧
       RestParts G P ((flags.zip (jas.drop k)).map fun q => (q.1, q.2.type)) ∧
       match expand G jf.type with
-      | [.ctors _ S _ _ _] => ((jas.take k).map Sequent.type, P, j.type) ∈ S
+      | [.ctors _ S _ _ _] => ∃ s ∈ S, s.arguments = ((jas.take k).map Sequent.type, P) ∧
+          s.result = j.type ∧ s.effect.plain = true
       | _ => False
     | _, _ => False
   | .sub proof =>
@@ -1240,7 +1244,7 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
     | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
     | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
     | .unionVar .. | .callCallable .. | .readCallable | .readBagView | .writeCallable | .arrParts ..
-    | .callRest .. | .callPacked .. | .bindE | .bindRestE | .construct | .constructRest .. | .throw | .merge
+    | .callRest .. | .callPacked .. | .bindE | .bindRestE | .construct .. | .constructRest .. | .throw | .merge
     | .makeKey
     | .lenView .. =>
       CheckResult.ofBool (decide (LocalUsing G images j r ps codes))
@@ -1595,9 +1599,10 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         (fun p hp' => by rw [hfst]; exact hcodes _ (hok p hp') G.env)
         (fun s hs => by
           have h := hokS s hs
+          obtain ⟨hpl, h⟩ := h
           split at h
           · rename_i El hel
-            exact ⟨El, hel, by rw [hfst]; exact hcodes _ h G.env⟩
+            exact ⟨hpl, El, hel, by rw [hfst]; exact hcodes _ h G.env⟩
           · contradiction)
         hlt hcap
       rw [hfst', hsnd] at this
@@ -2192,9 +2197,10 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
           ++ (jas.drop args.length).map Sequent.type = jas.map Sequent.type := by
         simp only [List.map_map, Function.comp_def]
         rw [← List.map_append, List.take_append_drop]
+      obtain ⟨hpm, hpl⟩ := hL
       have hc := HasTyUsing.construct (xs := (jas.take args.length).map fun ja => (ja.type, ja.term))
         (Us := (jas.drop args.length).map Sequent.type) hf he
-        (by rw [hsplit]; exact hL) hxs hu
+        (by rw [hsplit]; exact hpm) hpl hxs hu
       simpa only [List.map_map, Function.comp_def, hterms] using hc
     · contradiction
   · rename_i k flags P _ _ f args jf jas
@@ -2203,9 +2209,10 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [hΓf, htf] at hf
     split at hL
     · rename_i L S he
+      obtain ⟨⟨⟨⟩, sa, sr, se⟩, hsm, rfl, rfl, hpl⟩ := hL
       have := HasTyUsing.constructRest (xs := (jas.take k).map fun ja => (ja.type, ja.term)) (P := P)
         (parts := (flags.zip (jas.drop k)).map fun q => (q.1, q.2.type, q.2.term)) hf he
-        (by simpa [List.map_map, Function.comp_def] using hL)
+        (by simpa [List.map_map, Function.comp_def] using hsm) hpl
         (by
           intro p hm
           obtain ⟨ja, hja, rfl⟩ := List.mem_map.mp hm

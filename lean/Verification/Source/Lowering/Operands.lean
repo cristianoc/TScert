@@ -42,7 +42,7 @@ for the synthetic copy. -/
         if T.optional.isEmpty && T.rest.isNone then return S
     -- Into a variadic construct signature's element rest, a copy at that
     -- element type.
-    if let [.ctors _ ((_, P, _) :: _) _ _ _] := PositiveRules.expand G B then
+    if let [.ctors _ (⟨_, (_, P), _, _⟩ :: _) _ _ _] := PositiveRules.expand G B then
       if let some E := PositiveRules.restElem G P then
         let C ← lower (SourceTypes.use (.list ⟨[], [], some E, false, .dense⟩ []))
         recordHints [C]
@@ -127,10 +127,12 @@ dispatch retains its receiver as the correlated dispatch value. -/
     (_key : Option SourceExecution.Saved) (call : Fragment.Expr) : Compiler (Ty Tree × Tm) := do
   let some (i, .value) := resolve scope receiver.name
     | throw "internal execution plan: missing saved method receiver"
-  let O ← exprType fc (.var receiver.source receiver.name)
+  let O₀ ← exprType fc (.var receiver.source receiver.name)
   let B ← exprType fc original
   let typeArgs := match call with | .invoke _ _ _ _ ts => ts | _ => []
   let G := SourceTypes.graph (← table)
+  -- The member is read past the receiver's nullish guard (`nullishGuard`).
+  let O := ((nullishSplit G O₀).map (·.2)).getD O₀
   let resolved ← comparisonsExpr fc original
   let (fld, read) ← match resolved with
     | .read _ fld _ | .index _ (some fld) _ _ => do

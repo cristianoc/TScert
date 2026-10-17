@@ -1,12 +1,18 @@
 // String members that throw on some arguments, read as declared (`repeat`
-// of a negative count, `normalize` of an unknown form: `RangeError`s), and
+// of a negative count, `normalize` of an unknown form, `padStart` and
+// `padEnd` past the string limit: `RangeError`s), and
 // those whose declarations admit a `RegExp`, stated at a string pattern
 // (`split`, `replace`, `replaceAll`); `toLocaleString` takes locales as a
 // tag or a readonly array of tags.
 function strings(s: string, n: number): string {
   const parts: string[] = s.split(",");
   const two = s.split(",", 2);
-  const r = s.repeat(n) + s.normalize() + s.normalize("NFC");
+  const r =
+    s.repeat(n) +
+    s.normalize() +
+    s.normalize("NFC") +
+    s.padStart(n) +
+    s.padEnd(n, "-");
   return (
     r +
     s.replace("a", "b") +

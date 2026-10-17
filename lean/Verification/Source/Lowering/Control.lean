@@ -104,8 +104,8 @@ callee's signature at the call (`PromiseCalls.promiseCall_sound`). -/
       | some (_, A) => A.all D.contains
       | none => true
     | _ => true
-  let promises := sigs.filterMap fun (Ds, T, effect) => match effect, asserts with
-    | .guards p, false | .asserts p, true => some (Ds, T, p)
+  let promises := sigs.filterMap fun (Ds, T, effect) => match effect.promise, asserts with
+    | some (.guards p), false | some (.asserts p), true => some (Ds, T, p)
     | _, _ => none
   let chosen := match promises with
     | [one] => [one]
@@ -144,7 +144,11 @@ leaves its operand that value alone, which `tagMember` checks on the edge. -/
         | some l => Γ.set i [l]
         | none => Γ.set i sliced
     else if let some i := testedSlot scope Γ cond then
-      Γ.set i (if answer then [Labels.tru] else [Labels.fls])
+      -- A tested Boolean is the outcome; any other tested value is of the
+      -- labels its truthiness admits.
+      if BranchRefinement.onlyBoolean G (Γ[i]?.getD []) then
+        Γ.set i (if answer then [Labels.tru] else [Labels.fls])
+      else Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) .truthy answer)
     else Γ
 where
   /-- Two paths' contexts over the same slots: a slot either path leaves at

@@ -26,6 +26,8 @@
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { asyncCompleteName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
   symbolKeyForName } from "./intrinsics.mts";
+import { emptyEffect } from "./type-graph.mts";
+import type { CallEffect } from "./type-graph.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
@@ -69,14 +71,14 @@ export type GlobalEntry = {
    * parameters, which a call may not exceed, and its result. What the host
    * does at these arguments, stated as a type. For a property, its type is
    * the result. */
-  stated?: Stated | ((library: LibraryReference) => Stated);
+  stated?: Stated | Stated[] | ((library: LibraryReference) => Stated | Stated[]);
   /** Declarations the stated signature names that no library declares, such
    * as `JsonValue`: they join the document when the entry is read. */
   definitions?: TypeDefinition[];
   /** The effect the read signature states, where reviewed: a call at the
    * parameters it states runs no client code and leaves every location it
    * did not allocate as it was. Absent, the signature states none. */
-  effect?: "preservesInputHeap";
+  effect?: CallEffect;
 };
 
 const at: [number, number] = [0, 0];
@@ -153,14 +155,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // client code; an object's conversion calls its `toString` or `valueOf`,
   // which may throw or return an object, and then `String` throws.
   // At a primitive it writes nothing, so it states heap preservation.
-  { global: "String", signature: "(value?: any): string;", effect: "preservesInputHeap",
+  { global: "String", signature: "(value?: any): string;", effect: emptyEffect,
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
   // `Number(v)` converts a primitive without running client code: a bigint
   // to the nearest number, a symbol throws a TypeError, an outcome. An
   // object's conversion calls its `Symbol.toPrimitive`, `valueOf` or
   // `toString`, client code, so the parameter is stated at the primitives,
   // where the call writes nothing and states heap preservation.
-  { global: "Number", signature: "(value?: any): number;", effect: "preservesInputHeap",
+  { global: "Number", signature: "(value?: any): number;", effect: emptyEffect,
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
   // `Boolean(v)` is ToBoolean of its first argument, which reads no property
   // and runs no code of any value's, and ignores every further argument;
@@ -169,7 +171,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `(value: unknown, ...rest: unknown[]) => boolean`. The declaration
   // promises no narrowing, and none is stated: its result is a Boolean, which
   // a guard's promise is not. It writes nothing: heap preservation.
-  { global: "Boolean", signature: "<T>(value?: T): boolean;", value: true, effect: "preservesInputHeap",
+  { global: "Boolean", signature: "<T>(value?: T): boolean;", value: true, effect: emptyEffect,
     stated: { binders: [], params: [atom("unknown")], rest: atom("unknown"), result: atom("boolean") } },
   // `Math.max(...vs)` and `Math.min(...vs)` convert every argument with
   // ToNumber before comparing: a primitive without running code (`undefined`
@@ -178,30 +180,32 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `valueOf` or `toString`, code of the client's. So each argument is
   // stated at the primitives, a hole a spread reads (`undefined`) included.
   // The result is a number: `NaN` if any argument converts to `NaN`, and
-  // `-Infinity` (`max`) or `Infinity` (`min`) of no argument.
-  ...["max", "min"].map((member): GlobalEntry => ({ global: "Math", member,
+  // `-Infinity` (`max`) or `Infinity` (`min`) of no argument. At primitives
+  // they run no code and write nothing: the empty footprint, as the
+  // `String` conversions below.
+  ...["max", "min"].map((member): GlobalEntry => ({ global: "Math", member, effect: emptyEffect,
     signature: `${member}(...values: number[]): number;`,
     stated: { binders: [], params: [], rest: primitive, result: atom("number") } })),
   // `String.fromCodePoint(...cs)` converts every argument with ToNumber, as
   // `Math.max` does, and throws a RangeError where the number is no integer
   // from 0 to 0x10FFFF, an outcome; otherwise its result is a string.
-  { global: "String", member: "fromCodePoint", signature: "fromCodePoint(...codePoints: number[]): string;",
+  { global: "String", member: "fromCodePoint", signature: "fromCodePoint(...codePoints: number[]): string;", effect: emptyEffect,
     stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
   // `String.fromCharCode(...cs)` likewise, each number taken modulo 2^16 to a
   // code unit, which never throws.
-  { global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;",
+  { global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;", effect: emptyEffect,
     stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
   // Tests of a number that convert nothing: `false` for any argument that is
   // not a number, an object included, whose methods are never read. They
   // write nothing.
-  { global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;", effect: "preservesInputHeap" },
-  { global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: "preservesInputHeap" },
+  { global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;", effect: emptyEffect },
+  { global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: emptyEffect },
   { global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;",
-    effect: "preservesInputHeap" },
+    effect: emptyEffect },
   // SameValue of the two arguments: identity of objects, equality of
   // primitives, no conversion and no client code, and no write. `any` is
   // read as `unknown`.
-  { global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: "preservesInputHeap" },
+  { global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
   // (no getter is called). ES5 declares it at `object`, ES2015 at `{}`.
@@ -297,16 +301,25 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `new Set<T>(xs)` is a fresh set of the array's elements, `new Set<T>()`
   // an empty one, at every `T`. An array's iterator is the host's, which
   // runs no client code; any other iterable's is the client's, so the
-  // parameter is stated at an array (`Set<T>`: `array-prototype.mts`).
-  ...["new <T = any>(values?: readonly T[] | null): Set<T>;", "new <T>(iterable?: Iterable<T> | null): Set<T>;"]
-    .map((signature): GlobalEntry => ({ global: "Set", signature,
-      stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
-        result: library("Set", [binder("T")]) }) })),
+  // parameter is stated at an array (`Set<T>`: `array-prototype.mts`). The
+  // construction reads the array and allocates, so it states the empty
+  // footprint; so does `new Map`'s. The iterable overload is stated at an
+  // array and, separately, at a string, whose iterator is the host's too:
+  // `new Set(s)` is a fresh set of the string's code points, a
+  // `Set<string>`. One form at `readonly T[] | string` would be false at
+  // `T := number`.
+  { global: "Set", signature: "new <T = any>(values?: readonly T[] | null): Set<T>;", effect: emptyEffect,
+    stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
+      result: library("Set", [binder("T")]) }) },
+  { global: "Set", signature: "new <T>(iterable?: Iterable<T> | null): Set<T>;", effect: emptyEffect,
+    stated: library => [
+      { binders: ["T"], params: [optional(readonlyArray(binder("T")))], result: library("Set", [binder("T")]) },
+      { binders: ["T"], params: [atom("string")], result: library("Set", [atom("string")]) }] },
   // `new Map<K, V>(es)` is a fresh map of the array's pairs, each read at
   // its indices 0 and 1, and `new Map()` an empty one, at every `K` and `V`.
   ...["new (): Map<any, any>;", "new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;",
     "new <K, V>(iterable?: Iterable<readonly [K, V]> | null): Map<K, V>;"]
-    .map((signature): GlobalEntry => ({ global: "Map", signature,
+    .map((signature): GlobalEntry => ({ global: "Map", signature, effect: emptyEffect,
       stated: library => ({ binders: ["K", "V"],
         params: [optional(readonlyArray({ k: "tuple", presence: "dense", readonly: true, required: [binder("K"), binder("V")],
           optional: [], rest: null, span: at }))],

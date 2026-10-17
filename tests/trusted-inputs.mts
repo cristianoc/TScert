@@ -132,6 +132,29 @@ function fixtureProject(files: Record<string, string>) {
 }
 
 {
+  // A string's `split` gives an array, so a source calling one collects the
+  // array prototype; a structural `split`, of an object's own member, does
+  // not: the receiver's type decides, as for a primitive's prototype.
+  const dir = mkdtempSync(join(tmpdir(), "tscert-fixture-split-dependency-"));
+  const files = {
+    structural: "export function f(x: { split(): number }): number { return x.split(); }\n",
+    string: "export function g(s: string): number { return s.split(\",\").length; }\n",
+  };
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+    module: "Node16", moduleResolution: "Node16", types: [] }, include: ["*.ts"] }));
+  const arrayProtoLoaded = (name: keyof typeof files, receiver: string): boolean => {
+    writeFileSync(join(dir, `${name}.ts`), files[name]);
+    const at = files[name].indexOf(`${receiver}.split`);
+    const doc = collectDeclarations(join(dir, `${name}.ts`), { tsconfigPath: join(dir, "tsconfig.json"),
+      memberReceivers: [[at, at + receiver.length]] });
+    return doc.definitions.some(d => d.declaration.module === "tscert/array-prototype");
+  };
+  assert.equal(arrayProtoLoaded("structural", "x"), false, "a structural split loads no array prototype");
+  assert.equal(arrayProtoLoaded("string", "s"), true, "a string's split loads the array prototype");
+  process.stdout.write("split dependency: a string's split collects the array prototype, a structural one does not\n");
+}
+
+{
   const arrays = join(pipelineDir, "examples", "values.ts");
   const doc = collectDeclarations(arrays, { arrays: [0, 0] });
   const proto = doc.definitions.find(d => d.declaration.module === "tscert/array-prototype");

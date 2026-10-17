@@ -28,7 +28,7 @@ private def callableShape (a : Json) : Except String (Json × List Json × Json 
   let args ← jArr a "params"
   let effect ← match effect with
     | some e => fromJson? e
-    | none => pure .unrestricted
+    | none => pure .ordinary
   return (← jField a "this", args, ← jField a "result", rest, effect)
 
 /-- The positions a rest parameter stands for: the required elements of its
@@ -102,15 +102,22 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
       -- A construct signature: what a class meets and no plain function does.
       -- A generic class's instances form one conjunction: each is a signature.
       -- A generic class's static fields, the same in each, name none of its
-      -- binders: the first's are the class value's.
+      -- binders: the first's are the class value's. A signature without an
+      -- effect states the ordinary one, as a function atom's does.
       let parts ← (← CellClaims.conjuncts atom).mapM fun a => do
         let hasStatics := (a.getObjVal? "statics").isOk
-        fieldsExactly a (["a", "params", "result"] ++ (if hasStatics then ["statics"] else []))
+        let effect := (a.getObjVal? "effect").toOption
+        fieldsExactly a (["a", "params", "result"] ++ (if hasStatics then ["statics"] else []) ++
+          (if effect.isSome then ["effect"] else []))
+        let effect : CallEffects.Effect ← match effect with
+          | some e => fromJson? e
+          | none => pure .ordinary
         let statics ← if !hasStatics then pure [] else (← jArr a "statics").mapM fun f => do
           let readonly := (f.getObjVal? "readonly").isOk
           fieldsExactly f (["name", "type"] ++ (if readonly then ["readonly"] else []))
           return (← PropKey.decode (← jField f "name"), readonly, ← callableType (← jField f "type"))
-        return ((← (← jArr a "params").mapM callableType, ← callableType (← jField a "result")), statics)
+        return ((⟨(), ← (← jArr a "params").mapM callableType, ← callableType (← jField a "result"),
+          effect⟩ : CallEffects.MethodArrow (Ty Tree)), statics)
       let statics := (parts.head?.map (·.2)).getD []
       if parts.any (·.2 != statics) then throw "a class value's instances state the same static fields"
       let fields := statics.filterMap fun (k, r, t) => if r then none else some (k, t)
@@ -266,8 +273,8 @@ private def callableObject (atom : Json) : SourceTypes.Lowering Tree := do
   if !CellUnion.invariant c then
     throw "callable field requires an invariant read/write contract"
   match E with
-  | none => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [⟨Rc,Ds,R,.unrestricted⟩] [])
-  | some E => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [] [⟨Rc,(Ds,E),R,.unrestricted⟩])
+  | none => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [⟨Rc,Ds,R,.ordinary⟩] [])
+  | some E => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [] [⟨Rc,(Ds,E),R,.ordinary⟩])
 
 /-- Validate every union arm. Record alternatives may absorb a redundant
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).

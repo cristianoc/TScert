@@ -23,7 +23,7 @@ and plain_type (g:Source.fn) =
   | true,_::before when g.rest_pack <> None ->
     Atoms [Shape {fields=[];indexes=[];elements=None;calls=[{quantified=g.quantified;receiver;
       params=List.rev before;variadic=None;rest_pack=Option.map (fun r -> PackParameter r) g.rest_pack;
-      result=g.result;call_effect=Unrestricted}]}]
+      result=g.result;call_effect=Semantic.ordinary_effect}]}]
   | true,last::before ->
     (match Semantic.tuple_positions ~readonly:true last,Semantic.array_element ~readonly:true last with
      | Some positions,_ -> quantified_arrow ~receiver g.quantified (List.rev before @ positions) g.result

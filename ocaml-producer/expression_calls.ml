@@ -76,8 +76,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let receiver_type = match receiver, target.node with
         | Some r, _ -> expr env r
         | None, (Read (o,_) | Index (o,_)) when (match e.node with Invoke _ -> true | _ -> false) ->
+          (* The object past the member read's guard: values other than
+             `null` and `undefined`, at which the read throws. *)
           (match latest_claim o.pos with
-           | Some t -> t
+           | Some t -> (match Semantic.without_nullish t with Atoms [] -> t | p -> p)
            | None -> Atoms [Undef])
         | None, _ -> Atoms [Undef] in
       (* A closure passed where a callback is offered more parameters than it
@@ -94,13 +96,14 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            value; adding ignored parameters cannot manufacture an effect.
            Overload selection uses this type, never the callback's body. *)
         let supplies_effect (offered:Semantic.signature) =
-          offered.call_effect=Unrestricted ||
+          offered.call_effect=Semantic.ordinary_effect ||
           let known = match arg.node with
             | Id name -> quietly (fun () -> resolve env name)
             | _ -> latest_claim arg.pos in
           match known with
           | Some (Atoms [Shape {calls;_}]) -> List.exists (fun (s:Semantic.signature) ->
-              s.call_effect=offered.call_effect) calls
+              (* A fresh result the offer does not state is not asked for. *)
+              {s.call_effect with fresh=s.call_effect.fresh && offered.call_effect.fresh}=offered.call_effect) calls
           | _ -> false in
         let offered arity = match param with
           | Atoms [Shape {calls=[offered];fields=[];indexes=[];elements=None}] as t
@@ -148,6 +151,76 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           match List.map (fun s -> param_at s i) candidates with
           | Some p :: rest when List.for_all (fun q -> q = Some p) rest ->
             expr ~expected:p env arg,Some p
+          | _ -> expr env arg,None) args in
+      (* Quantified overloads whose receiver or result places a binder where
+         the call's receiver or expected type places a type: the binder is that
+         type for typing the actuals, as TypeScript infers from the return
+         position first. A
+         callback actual is typed at the parameter the candidates share once
+         their call effects are set aside: the overloads of a callback member
+         differ only in the footprint they state, and the actual's own is
+         inferred from its body. The proposal is untrusted; Lean checks the
+         instance and every actual. *)
+      let seeded_actuals (candidates:Semantic.signature list) =
+        let rec bind (pattern:ty) (actual:ty) = match pattern,declared_head declarations [] actual with
+          | Rigid r,_ -> [r,actual]
+          | Atoms [Shape {elements=Some p;calls=[];_}],Atoms [Shape {elements=Some a;_}]
+              when p.required=[] && p.optional_elements=[] && a.required=[] && a.optional_elements=[] ->
+            (match p.rest,a.rest with Some p,Some a -> bind p a | _ -> [])
+          | _ -> [] in
+        let seed (s:Semantic.signature) =
+          let own = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
+          let found = bind s.receiver receiver_type @ (match expected with
+            | Some t -> bind s.result t
+            | None -> []) in
+          let seeds = List.filter_map (fun (r,t) ->
+            if List.mem r own then Some (r,ValueArgument t) else None) found in
+          {s with params=List.map (Inference.substitute seeds) s.params} in
+        let plain = function
+          | Atoms [Shape ({calls=_::_;_} as sh)] -> Atoms [Shape {sh with calls=List.map (fun (c:Semantic.signature) ->
+              {c with call_effect=Semantic.ordinary_effect}) sh.calls}]
+          | t -> t in
+        let candidates = List.map seed candidates in
+        (* A parameter still naming a candidate's own binder, one neither
+           the receiver nor the expected result fixes, is no type to check a
+           callback at. *)
+        let unbound p = List.for_all (fun (c:Semantic.signature) ->
+          let own = List.map (fun (q:Semantic.quantifier) -> q.identity,ValueArgument (Atoms [])) c.quantified in
+          Inference.substitute own p = p) candidates in
+        (* A module function discarding the actuals past its parameters,
+           passed by name, is typed at the shared parameter at its own
+           effect: its slot meets that signature, which binds more
+           parameters, and the overload stating its effect is the call's. *)
+        let own_signature (arg:expr) = match arg.node with
+          | Id n when not (List.mem_assoc n env) && module_arity n = Some Module_contract.Discards ->
+            (match (try module_type n with Json.Error _ -> None) with
+             | Some (Atoms [Shape {calls=[own];_}]) when own.quantified=[] && own.variadic=None
+                 && own.rest_pack=None -> Some own
+             | _ -> None)
+          | _ -> None in
+        (* The parameter at the function's own effect; where it still names
+           a binder, the function's own signature extended to its
+           positions, whose result fixes it. *)
+        let at_own (own:Semantic.signature) = function
+          | Atoms [Shape ({calls=[c];_} as sh)] as t when not (unbound t)
+              && List.length own.params <= List.length c.params ->
+            Atoms [Shape {sh with calls=[{c with call_effect=own.call_effect;receiver=own.receiver;
+              params=own.params @ List.filteri (fun i _ -> i >= List.length own.params) c.params;
+              result=own.result}]}]
+          | Atoms [Shape ({calls=_::_;_} as sh)] -> Atoms [Shape {sh with calls=List.map (fun (c:Semantic.signature) ->
+              {c with call_effect=own.call_effect}) sh.calls}]
+          | t -> t in
+        List.mapi (fun i arg ->
+          match List.map (fun s -> param_at s i) candidates with
+          | Some p :: rest when List.for_all (fun q -> q = Some p) rest ->
+            expr ~expected:p env arg,Some p
+          | Some p :: rest when own_signature arg <> None
+              && List.for_all (fun q -> Option.map plain q = Some (plain p)) rest ->
+            expr ~expected:(at_own (Option.get (own_signature arg)) (plain p)) env arg,None
+          | Some p :: rest when (match arg.node with Lambda _ -> true | _ -> false)
+              && unbound (plain p)
+              && List.for_all (fun q -> Option.map plain q = Some (plain p)) rest ->
+            expr ~expected:(plain p) env arg,None
           | _ -> expr env arg,None) args in
       let offer ?(substitute=Fun.id) (s:Semantic.signature) =
         List.iteri (fun i arg -> Option.iter (fun p ->
@@ -453,7 +526,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           when not spread && List.for_all (fun (s:Semantic.signature) ->
             s.quantified<>[] && s.variadic=None && s.rest_pack=None) calls ->
         let usable = List.filter callable calls in
-        let actuals = shared_actuals usable in
+        let actuals = seeded_actuals usable in
         let proposals = List.filter_map (fun (s:Semantic.signature) ->
           Option.map (fun (substitution,result) -> s,substitution,result)
             (quietly (fun () -> infer_explicit ~receiver:receiver_type ?expected s
@@ -467,8 +540,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | None -> false) (List.combine args actuals)) in
         (* A signature requiring an actual's member to state an effect is not
            the call's where that member, as the actual's type states it, has a
-           signature without it (`%Dispatch:m%` at a regex whose member writes
-           its `lastIndex`). *)
+           signature whose effect it does not cover (`%Dispatch:m%` at a regex
+           whose member may change anything). *)
         let member_effects ((s:Semantic.signature),substitution,_) =
           let calls_of (t:ty) = match declared_head declarations [] t with
             | Atoms [Shape {calls;_}] -> calls
@@ -478,10 +551,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | Some p,Atoms [Shape actual] ->
               (match declared_head declarations [] (Inference.substitute substitution p) with
                | Atoms [Shape wanted] -> List.for_all (fun (w:Semantic.field) ->
-                   List.for_all (fun (c:Semantic.signature) -> c.call_effect<>PreservesInputHeap ||
+                   List.for_all (fun (c:Semantic.signature) ->
                      match List.find_opt (fun (a:Semantic.field) -> a.name=w.name) actual.fields with
                      | Some a -> List.for_all (fun (d:Semantic.signature) ->
-                         d.call_effect=PreservesInputHeap) (calls_of a.read)
+                         Semantic.effect_covers d.call_effect c.call_effect) (calls_of a.read)
                      | None -> true) (calls_of w.read)) wanted.fields
                | _ -> true)
             | _ -> true) (List.combine args actuals)) in
@@ -520,6 +593,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           List.for_all Fun.id (List.mapi (fun i (arg,(t,built)) -> match param_at s i with
             | Some p -> built = Some p || plausible_subtype t p || offer_to arg p <> None
             | None -> false) (List.combine args actuals))) usable in
+        (* A result with required positions forbids a removal from it: it is
+           proposed only where nothing shrinks the array (`Source.unshrunk`). *)
+        let required (s:Semantic.signature) = match s.result with
+          | Atoms [Shape {elements=Some {required=_::_;_};_}] -> true
+          | _ -> false in
+        let matching = if List.mem site !Source.unshrunk then matching
+          else match List.filter (fun s -> not (required s)) matching with
+            | [] -> matching
+            | kept -> kept in
         (match matching,usable with
          | s :: _,_ -> offer s; s.result
          | [],(first :: rest) when List.for_all (fun (s:Semantic.signature) ->

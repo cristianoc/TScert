@@ -10,7 +10,8 @@ runs in, the built-in prototype type, allocation against the built-ins'
 invariant, and the checked code entries the typing judgement cites. -/
 namespace Verification.ProgramTyping
 open PositiveNormalization PositiveGraphs PositiveRules Tower
-open CallEffects (Arrow RestArrow MethodArrow MethodRestArrow Contract Effect PromiseWith)
+open CallEffects (Arrow RestArrow MethodArrow MethodRestArrow Contract Effect PromiseWith ctorsT ctorsT_adm
+  ctorRestsT ctorRestsT_adm)
 open HeapObservations (SafePost)
 
 variable {ι : Type}
@@ -365,9 +366,9 @@ def frameOffset : Option α → Nat
 /-- The frame slot holding the actual a promise is about, past `offset`
 slots: what an entry environment `envOf L .nul` holds there. -/
 def framePromised (e : CallEffects.Effect) (offset : Nat) (L : List Tm) : Tm :=
-  match e with
-  | .guards p | .asserts p => envOf L .nul (offset + p)
-  | _ => .undef
+  match e.promise with
+  | some p => envOf L .nul (offset + p.param)
+  | none => .undef
 
 /-- A frame of code binding `arity` parameters holds a promised actual among
 them, as the call passed it. -/
@@ -375,11 +376,10 @@ theorem framePromised_params {e : CallEffects.Effect} {arity : Nat} (h : e.below
     (pre : List Tm) (args vs : List Tm) :
     framePromised e pre.length (pre ++ CallArguments.parameters arity args ++ vs) = e.promised args := by
   rw [← CallEffects.Effect.promised_frame h args vs]
-  cases e with
-  | unrestricted | preservesInputHeap => rfl
-  | guards p | asserts p =>
-    simp only [CallEffects.Effect.below, decide_eq_true_eq] at h
-    have hlen : p < (CallArguments.parameters arity args ++ vs).length := by
+  rcases e with ⟨c, _ | q⟩
+  · rfl
+  · simp only [CallEffects.Effect.below, decide_eq_true_eq] at h
+    have hlen : q.param < (CallArguments.parameters arity args ++ vs).length := by
       have := CallEffects.Effect.parameters_length arity args
       simp [this]; omega
     simp only [framePromised, envOf, CallEffects.Effect.promised, List.append_assoc,
@@ -400,7 +400,7 @@ def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
   ∀ n W h L, EnvOk G (codeFrame arity row Cs store) (envOf L .nul) n W → WorldAdm W →
     HeapOk n W h → CallArguments.Values L →
       SafePost (excOf G) (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset store) L))
-        (row.effect.post h) n W h (.goto E K start L .nul)
+        (fun after v => ∀ r, row.effect.post r h after v) n W h (.goto E K start L .nul)
 
 /-- A graph code the certificate of a unit has checked at one signature: the
 code, its captures' types, the signature, and, for code collecting a rest, the
@@ -496,7 +496,7 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
     {j : Nat} (hj : j < n) {U : WorldT j} (hx : WExt (trunc j (Nat.le_of_lt hj) W) U)
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args) :
-    SafePost (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args)) (row.effect.post heap) j U heap
+    SafePost (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args)) (row.effect.post r heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_of_lt hj) hx hr ha) hu hh (by
     intro v hv
@@ -508,7 +508,8 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
       · exact hvalues v hv)
   have hp := framePromised_params hs.2.1 [r] args vs
   simp only [List.length_singleton, List.singleton_append] at hp
-  rwa [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp] at hsafe
+  rw [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp] at hsafe
+  exact HeapObservations.weaken (fun _ _ h => h r) hsafe
 
 /-- Graph code with captured values meets its fixed signatures, where its
 kind binds each signature's receivers. -/
@@ -639,12 +640,13 @@ theorem adm_transfer2 {A : Fam} (hA : Adm A) {j i k : Nat} {U : WorldT j} {X : W
 the construct step then enters the class's body, which the constructor's
 signature makes safe one level down. The signature may declare trailing
 positions `Us` the source omits: each admits `undefined`, which is what the
-step binds there, so the body entered is the one the padded list enters. -/
-theorem construct_safe {B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
+step binds there, so the body entered is the one the padded list enters. The
+signature's effect is plain, so its result operand is the result's type. -/
+theorem construct_safe {B : Fam} {e : Effect} (he : e.plain = true) (xs : List (Fam × Tm)) (Us : List Fam)
     (hA : ∀ p ∈ xs, Adm p.1) (hAv : ∀ p ∈ xs, ValOnly p.1)
     (hUA : ∀ A ∈ Us, Adm A)
     {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe Ξ (ctorsT Ξ [(xs.map Prod.fst ++ Us, B)]) n W heap f)
+    (hf : Safe Ξ (ctorsT Ξ [⟨(), xs.map Prod.fst ++ Us, B, e⟩]) n W heap f)
     (ha : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2)
     (hu : ∀ A ∈ Us, FutureSafe Ξ A n W .undef) :
     Safe Ξ B n W heap (.construct f (xs.map Prod.snd)) := by
@@ -681,7 +683,7 @@ theorem construct_safe {B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
       · exact hvals a h
       · rw [hpad a h]; rfl
     obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc', rfl⟩, hsafe⟩ :=
-      hc.2 _ (List.mem_singleton_self _) k (Nat.lt_succ_self k) (trunc k (Nat.le_succ k) V)
+      (hc.2 _ (List.mem_singleton_self _)).erase he k (Nat.lt_succ_self k) (trunc k (Nat.le_succ k) V)
         (WExt_refl _) (WorldAdm_trunc _ hv') heap3 (HeapOk_trunc k V heap3 hok3) _ hpvals
         (ArgsT_transfer hAm hall k (Nat.le_succ k) _ (WExt_refl _))
     rw [CallArguments.construction_pad hc' _ _ hpad] at hsafe

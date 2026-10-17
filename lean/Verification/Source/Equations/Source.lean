@@ -12,14 +12,17 @@ function's signature (receiver, parameters, rest element and result), a
 construct signature (parameters and result), or any other type. -/
 inductive GenericType where
   | function (receiver : Option Union) (params : List Union) (rest : Option Union) (result : Union)
-  /-- A generic class: its construct signature, and its static fields, each
-  readonly or not, which name none of its binders. -/
-  | construct (params : List Union) (result : Union) (statics : List (PropKey × Bool × Union) := [])
+  /-- A generic class: its construct signatures, each its parameters, result
+  and effect, every instance meeting all of them, and its static fields,
+  each readonly or not, which name none of its binders. -/
+  | construct (signatures : List (List Union × Union × CallEffects.Effect))
+      (statics : List (PropKey × Bool × Union) := [])
   | other (type : Union)
 
 def GenericType.map (f : Union → Union) : GenericType → GenericType
   | .function r ps e res => .function (r.map f) (ps.map f) (e.map f) (f res)
-  | .construct ps res fs => .construct (ps.map f) (f res) (fs.map fun (k, r, t) => (k, r, f t))
+  | .construct ss fs => .construct (ss.map fun (ps, res, e) => (ps.map f, f res, e))
+      (fs.map fun (k, r, t) => (k, r, f t))
   | .other t => .other (f t)
 
 /-- A generic module value: a generic module function, a generic class or a
@@ -65,7 +68,8 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
   match (term.getObjValAs? String "k").toOption with
   | some "function" =>
     fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
-    if (← str term "effect") != "unrestricted" then return .other (← lowerType ctx term)
+    let effect : CallEffects.Effect ← fromJson? (← field term "effect")
+    if effect != .ordinary then return .other (← lowerType ctx term)
     let recv ← field term "receiver"
     let receiver ← if recv == .null then pure none else some <$> lowerType ctx recv
     let params ← (← arr term "params").toList.mapM (lowerType ctx)
@@ -74,9 +78,32 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
     if kindOf restTerm == some "pack" then return .other (← lowerType ctx term)
     let rest ← if restTerm == .null then pure none else some <$> lowerType ctx restTerm
     return .function receiver params rest (← lowerType ctx (← field term "result"))
-  | some "constructor" =>
+  | some "constructor" => constructorType term
+  -- Several construct signatures of one generic class, under its binders:
+  -- each a construct signature, all with the same static fields.
+  | some "intersection" =>
+    let parts ← arr term "parts"
+    if parts.isEmpty || !parts.all (kindOf · == some "constructor") then return .other (← lowerType ctx term)
+    fieldsExactly term ["k", "parts", "span"]
+    let forms ← parts.toList.mapM constructorType
+    let mut signatures := []
+    let mut statics : Option (List (PropKey × Bool × Union)) := none
+    for form in forms do
+      match form with
+      | .construct ss fs =>
+        if statics.isSome && statics != some fs then
+          throw s!"{ctx.site}: a generic class's construct signatures state the same static fields"
+        statics := some fs
+        signatures := signatures ++ ss
+      | _ => return .other (← lowerType ctx term)
+    return .construct signatures (statics.getD [])
+  | _ => return .other (← lowerType ctx term)
+where
+  constructorType (term : Json) : M GenericType := do
     let hasStatics := (term.getObjVal? "statics").isOk
-    fieldsExactly term (["k", "params", "rest", "result", "span"] ++ (if hasStatics then ["statics"] else []))
+    fieldsExactly term (["k", "params", "rest", "result", "effect", "span"] ++
+      (if hasStatics then ["statics"] else []))
+    let effect : CallEffects.Effect ← fromJson? (← field term "effect")
     if (← field term "rest") != .null then return .other (← lowerType ctx term)
     let params ← (← arr term "params").toList.mapM (lowerType ctx)
     let statics ← if !hasStatics then pure [] else (← arr term "statics").toList.mapM fun f => do
@@ -86,8 +113,7 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
         if (← field f "readonly") != .bool true then
           throw s!"{ctx.site}: a static field's readonly mark is `true`, left out otherwise"
       return (← PropKey.decode (← field f "name"), readonly, ← lowerType ctx (← field f "type"))
-    return .construct params (← lowerType ctx (← field term "result")) statics
-  | _ => return .other (← lowerType ctx term)
+    return .construct [(params, ← lowerType ctx (← field term "result"), effect)] statics
 
 /-- A type term with each rest typed by one of `names` typed by its packed
 name instead. A nested scheme binding the name hides it. -/
@@ -211,7 +237,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
           throw s!"{path}: a generic module function's type needs every parameter's and its result's annotation"
         return .other (← lowerType ctx (Json.mkObj [("k", .str "function"), ("receiver", .null),
           ("params", .arr (params.pop.map (·.getObjValD "type"))), ("rest", params.back!.getObjValD "type"),
-          ("result", f.getObjValD "retType"), ("effect", .str "unrestricted"),
+          ("result", f.getObjValD "retType"), ("effect", toJson CallEffects.Effect.ordinary),
           ("span", toJson (← (fromJson? (← field f "namePos") : Except String (Nat × Nat))))]))
       let mut params := []
       let mut rest := none

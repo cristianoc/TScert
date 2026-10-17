@@ -787,8 +787,10 @@ slots are introduced only after the operand supplying their type is checked. -/
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr recursive fc scope Γ a
     -- As for a call: a signature declaring exactly the actuals written, or a
     -- longer one whose remaining positions admit `undefined`.
-    let ⟨_, Ds, R, _⟩ ← selectSignature G (L.map fun (Ds, R) => ⟨[Labels.undef], Ds, R, .unrestricted⟩) (actuals.map (·.type))
-    pure (DirectProof.node Γ (.construct callee.term (actuals.map (·.term))) R .construct
+    -- A plain signature's result operand is the result's type.
+    let ⟨_, Ds, R, effect⟩ ← selectSignature G ((L.filter (·.effect.plain)).map (·.withReceiver [Labels.undef]))
+      (actuals.map (·.type))
+    pure (DirectProof.node Γ (.construct callee.term (actuals.map (·.term))) R (.construct effect)
       (callee :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
         ++ omittedPremises Γ Ds actuals.length))
   -- A closure's body is a graph, as a function body is: statements, or an

@@ -728,7 +728,7 @@ def writeOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : Option (List Atom
     ⟨0,[.nul],valueField⟩ :: HeapFacts.shift k.values,
     HeapLinks.stable (HeapKnowledge.shift k).links⟩
 
-private theorem write_inv {f h a b h' t} (ha : isVal a = true) (hb : isVal b = true)
+theorem write_inv {f h a b h' t} (ha : isVal a = true) (hb : isVal b = true)
     (hs : Step h (.writeAt f a b) h' t) :
     ∃ flds c oid l, a = .objAt flds c oid ∧ flds.lookup f = some l ∧ l < h.length ∧
       h' = h.set l b ∧ t = .nul := by

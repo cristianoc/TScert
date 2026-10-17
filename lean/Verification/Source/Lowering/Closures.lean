@@ -151,10 +151,10 @@ signature's frame, whose certificate the unit's code table records. -/
     let ⟨Rt, Di, Ri, effect⟩ := sig
     -- A promise signature's result operand is the promise's type; its body
     -- returns a type guard's Boolean, an assertion function's `undefined`.
-    let Ri ← match effect with
-      | .guards _ => pure [← lower (SourceTypes.use .bool)]
-      | .asserts _ => pure [Labels.undef]
-      | .unrestricted | .preservesInputHeap => pure Ri
+    let Ri ← match effect.promise with
+      | some (.guards _) => pure [← lower (SourceTypes.use .bool)]
+      | some (.asserts _) => pure [Labels.undef]
+      | none => pure Ri
     let row := match s.overlays[i]? with
       | some o => fc.withOverlay o
       | none => fc
@@ -169,7 +169,7 @@ signature's frame, whose certificate the unit's code table records. -/
         pure (name, .tuple ((Di.drop s.fixedParams.length).take s.restElements) S restTy)
     let (P, start, claims, source) ←
       closureCode recursive row s.pos receiver ps restEntry s.defaults s.order s.captures Cs Rt Ri s.body
-        (match effect with | .guards _ => true | _ => false)
+        (match effect.promise with | some (.guards _) => true | _ => false)
     match code with
     | some c =>
       if c != (P, start) then

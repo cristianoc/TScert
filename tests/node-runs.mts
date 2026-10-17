@@ -25,26 +25,142 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   // The step calling the closure constant reads `LIMIT` before it holds a value.
   assert.throws(() => runExample("invalid-initialization-closure-call", "scaled(1)"), /before initialization/,
     "invalid-initialization-closure-call: the module throws a ReferenceError while it initializes");
+  // `map` over stable callbacks returns dense arrays; a callback popping the
+  // array it maps leaves a hole below the result's length.
+  for (const [file, call, expected] of [
+    ["map-stable-local-counter", `lengths(["ab", "c"])`, "[2,1]"],
+    ["map-stable-push", "twice([1, 2])", "[[1,1],[2,2]]"],
+    ["map-stable-helper", `counts(["ab", "c"])`, "[2,1]"],
+    ["map-stable-outer-cell", "runningTotals([1, 2, 3])", "[1,3,6]"],
+    ["map-stable-for-of", "doubled([[1, 2], [3]])", "[[2,4],[6]]"],
+    ["map-stable-for-of", "proses([\"a `b` c\"])", '["a   c"]'],
+    ["map-stable-collection-write", `seen(["a", "b"], new Map())`, '["a","b"]'],
+    ["map-stable-set", `distinct([["a", "b", "a"], []])`, "[2,0]"],
+    ["map-stable-spread", "padded([[1], [2, 3]])", "[[0,1,0],[0,2,3,0]]"],
+    ["map-stable-named-callback", `[escapedAll(["a&b", "c"])]`, '["a&amp;b,c"]'],
+    ["map-stable-named-declaration", `escapedAll(["a&b", "c"])`, '["a&amp;b","c"]'],
+    ["map-stable-named-declaration", `widths(["ab", ""])`, "[2,0]"],
+    ["map-stable-named-declaration", `joinedWidths(["ab", ""]).split(",")`, '["2","0"]'],
+    ["map-stable-fresh-store", `heads(["a   b", " c "])`, '["a","c"]'],
+    ["map-stable-fresh-store", `lasts(["a,b", "c"])`, '["b","c"]'],
+    ["map-stable-fresh-store", `backwards(["a,bc", "c"])`, '["2,1","1"]'],
+    ["map-stable-fresh-store", `sizes(["a   b", ""])`, "[2,0]"],
+    ["map-stable-spread-call", "peaks([[1, 5], []])", "[5,0]"],
+    ["map-stable-spread-call", "boxedPeaks([{ values: [3, 200] }])", "[3]"],
+    ["map-stable-spread", `matchCounts(["aba", "b"])`, "[2,0]"],
+    ["map-stable-spread", `distinctCounts([["a", "a"], []])`, "[1,0]"],
+    ["map-stable-spread", `codePoints(["h\u00e9llo"])`, "[5]"],
+    ["map-stable-optional-chain", `lastWords([[{ kind: "w", text: "a" }, { kind: "space", text: " " }], []])`, "[0,-1]"],
+  ] as const)
+    assert.equal(runExample(file, `((r) => Object.keys(r).length === r.length && JSON.stringify(r))(${call})`),
+      expected, `${file}: the result is dense`);
+  assert.equal(runExample("invalid-map-unstable-pop", "Object.keys(shrink([1, 2, 3])).length"), 2,
+    "invalid-map-unstable-pop: the result has three positions, two present");
+  assert.equal(runExample("map-unstable-pop-sparse", "Object.keys(shrink([1, 2, 3])).length"), 2,
+    "map-unstable-pop-sparse: the result has three positions, two present");
+  assert.equal(runExample("invalid-map-optional-pop", "Object.keys(drained([1, 2, 3], undefined)).length"), 2,
+    "invalid-map-optional-pop: the result has three positions, two present");
+  assert.equal(runExample("invalid-map-class-constructor-pop", "Object.keys(shrinkAll([1, 2, 3])).length"), 2,
+    "invalid-map-class-constructor-pop: the result has three positions, two present");
   // The callback's `set` writes the map it captures.
-  assert.equal(runExample("invalid-map-collection-write-callback",
+  assert.equal(runExample("map-stable-collection-write",
     `(() => { const counts = new Map(); seen(["a", "a"], counts); return counts.get("a"); })()`), 2,
-    "invalid-map-collection-write-callback: the callback's call writes the map");
+    "map-stable-collection-write: the callback's call writes the map");
   // The declaration called by the callback writes the counter it is passed.
   assert.equal(runExample("invalid-declaration-write-callback",
     `(() => { const counter = { n: 0 }; counted(["a", "b"], counter); return counter.n; })()`), 2,
     "invalid-declaration-write-callback: the declaration's call writes its parameter's field");
   // The `filter` callback's `push` writes the array it captures.
-  assert.equal(runExample("invalid-filter-writing-callback",
-    `(() => { const kept = []; words(["a b", "c"], kept); return kept.join(); })()`), "a,b,c",
-    "invalid-filter-writing-callback: the callback's call writes the array it captures");
+  assert.equal(runExample("map-stable-filter-push",
+    `(() => { const kept = []; const r = words(["a b", "c"], kept); return kept.join() + ":" + Object.keys(r).length; })()`), "a,b,c:2",
+    "map-stable-filter-push: the callback's call writes the array it captures, and the result is dense");
+  assert.equal(runExample("invalid-map-named-callback-pop", "Object.keys(drained()).length"), 2,
+    "invalid-map-named-callback-pop: the result has three positions, two present");
+  assert.equal(runExample("map-literal-at-expected-element", `tokens(["\`a\`", "b"]).map(t => t.kind).join()`), "code,word",
+    "map-literal-at-expected-element: each token's kind is one the type names");
+  assert.equal(runExample("invalid-map-literal-outside-element", `tokens([" "])[0].kind`), "space",
+    "invalid-map-literal-outside-element: the actual source returns a kind its type does not name");
+  assert.equal(runExample("logical-truth-narrowing", `[guarded("b", "x"), chosen("a", "x"), chosen("b", ""), classOf("kw", "e")].join()`),
+    'b,,,<span class="m-kw">e</span>', "logical-truth-narrowing: the guarded branches see `r` at \"b\"");
+  assert.equal(runExample("invalid-logical-truth-or-narrowing", `chosen("a", "x")`), "a",
+    "invalid-logical-truth-or-narrowing: the actual source returns \"a\" at a \"b\" contract");
+  assert.equal(runExample("set-string-construction", `letters("banana", [1, 2])`), 5,
+    "set-string-construction: three letters, an \"a\" and a 1");
+  assert.equal(runExample("invalid-set-string-at-number", `typeof [...digits("12")][0]`), "string",
+    "invalid-set-string-at-number: the set at number holds strings");
+  assert.equal(runExample("conditional-empty-array", `lineCount("a\\nb", true) + lineCount("a", false)`), 2);
+  assert.equal(runExample("invalid-conditional-empty-array", `typeof lengths("a")[0]`), "string",
+    "invalid-conditional-empty-array: the elements are strings");
+  // A member access of null or undefined throws a TypeError, in the order
+  // `nullish-member-order` states.
+  assert.equal(runExample("nullish-member-reads",
+    `JSON.stringify([lastLines(["a", "b\\nc"]), trimEnd(["x", " "]), size({ n: 2, tags: [] }), upper("a"), caught(undefined), startsBlank([]), appended([["k", "v"]], "w")])`),
+    '[["b","c"],["x"],2,"A",-1,false,"vw"]');
+  for (const call of ["size(undefined)", "upper(null)", "tagAt(undefined, 0)", "lastLines([\"a\", undefined])", "appended([], \"w\")"])
+    assert.throws(() => runExample("nullish-member-reads", call), /TypeError|Cannot read properties|Cannot set properties/, call);
+  assert.equal(runExample("nullish-member-order",
+    `(() => { const log = []; try { keyFirst(undefined, log); } catch (e) { return e instanceof TypeError && log.join(); } })()`), "key");
+  assert.equal(runExample("nullish-member-order",
+    `(() => { const log = []; try { argumentsSkipped(null, log); } catch (e) { return e instanceof TypeError && log.join(); } })()`), "");
+  assert.equal(runExample("nullish-member-order",
+    `(() => { const log = []; try { bumped(undefined, log); } catch (e) { return e instanceof TypeError && log.join(); } })()`), "key");
+  assert.equal(runExample("nullish-member-order",
+    `(() => { const log = []; return [optionalKey(undefined, log), log.length, optionalKey({ n: 3, tags: [] }, log), log.join()]; })().join()`), ",0,3,key");
+  assert.throws(() => runExample("nullish-member-order", "chained(undefined)"), /Cannot read properties/);
+  assert.equal(runExample("invalid-nullish-member-reads", `typeof label({ n: 1 })`), "number",
+    "invalid-nullish-member-reads: the member is a number");
+  assert.throws(() => runExample("nullish-member-write-refused", "reset(undefined)"), /Cannot set properties/);
+  assert.equal(runExample("split-non-empty", `[firstLine("").subject, firstField("a;b", true), firstWord("x y"), lastLines(["a", "b\\nc"])].join("|")`), "|a|X|2");
+  assert.equal(runExample("split-non-empty", `[lineCount("a\\nb", true), lineCount("a", false), popped("a,b"), aliasShrunk("a"), annotated("a,b")].join()`), "2,0,1,0,2");
+  assert.equal(runExample("invalid-split-alias-shrink", `String(first("a"))`), "undefined");
+  assert.equal(runExample("invalid-split-element-write", `String(first("a", undefined))`), "undefined");
+  assert.equal(runExample("split-array-members", `joined("a,b")`), "a;b");
+  assert.equal(runExample("invalid-split-empty-separator", `String(first(""))`), "undefined");
+  assert.equal(runExample("invalid-split-limit", `[first("a,b", 0), first("a,b", 4294967296)].map(String).join()`), "undefined,undefined");
+  assert.equal(runExample("invalid-split-string-separator", `String(first("", ""))`), "undefined");
+  assert.equal(runExample("cell-truthiness-narrowing", `named(["x"], { name: "a", block: [] }) + blocks(["p", "q"], { name: "", block: [] })`), "atrue3");
+  assert.equal(runExample("invalid-cell-truthiness-narrowing", `String(kept({ name: "a" }))`), "undefined",
+    "invalid-cell-truthiness-narrowing: the reset cell returns undefined at a Section");
+  assert.equal(runExample("logical-string-values", `[both("x"), both(""), either("", "y"), joined("a", "b"), fallback("", "c")].join()`), "1,0,1,b,c");
+  assert.equal(runExample("invalid-logical-string-values", `JSON.stringify(length("", 3))`), '""',
+    "invalid-logical-string-values: the empty string, no number");
+  assert.equal(runExample("flat-map-union-returns", `shown(new Map([["Lean", "x"]]))`), "Lean=x");
+  assert.equal(runExample("invalid-flat-map-union-returns", `JSON.stringify(shown(new Map([["Parts", "ab"]])))`), "[2]",
+    "invalid-flat-map-union-returns: the elements are numbers");
+  for (const file of ["invalid-map-fresh-alias", "invalid-map-fresh-join", "invalid-map-fresh-reassigned",
+    "invalid-map-fresh-parameter"])
+    assert.equal(runExample(file, `Object.keys(drained(["a", "b", "c"])).length`), 2,
+      `${file}: the result has three positions, two present`);
+  assert.equal(runExample("map-fresh-handler-refused", `JSON.stringify(firsts(["ab", "c"]))`), '["a",""]',
+    "map-fresh-handler-refused: no throw, a dense result");
+  assert.equal(runExample("invalid-map-handler-after-pop", `Object.keys(drained(["a", "b", "c"])).length`), 2,
+    "invalid-map-handler-after-pop: the result has three positions, two present");
+  for (const call of ["aliased", "joined", "reassigned", "dropped"])
+    assert.equal(runExample("map-fresh-controls-sparse", `Object.keys(${call}(["a", "b", "c"])).length`), 2,
+      `map-fresh-controls-sparse: ${call}'s result has three positions, two present`);
+  assert.equal(runExample("invalid-map-spread-call-pop", "Object.keys(totals([[9]])).length"), 2,
+    "invalid-map-spread-call-pop: the result has three positions, two present");
+  assert.equal(runExample("invalid-map-spread-pop", "Object.keys(drained([1, 2, 3])).length"), 2,
+    "invalid-map-spread-pop: the result has three positions, two present");
+  assert.equal(runExample("invalid-map-filter-pop", "Object.keys(trimmed([\"a\", \"b\", \"c\"])).length"), 2,
+    "invalid-map-filter-pop: the result has three positions, two present");
+  assert.equal(runExample("find-stable-counter", `firstLong(["ab", "abcd", "x"])`), 6,
+    "find-stable-counter: two visits and a found element of length four");
   // `map` passes the index to the constant's second parameter, whose `tag`
   // is undefined.
   assert.equal(runExample("invalid-annotated-constant-callback", `tags(["a"])[0]`), undefined,
     "invalid-annotated-constant-callback: the actual source returns undefined at string");
   // `test` of a global regex leaves `lastIndex` where the match ended: the
   // same line tests true, then false.
-  assert.equal(runExample("invalid-regexp-global-callback-effect", `marks(["ab", "ab"]).join()`), "true,false",
-    "invalid-regexp-global-callback-effect: the callback's call writes the regex it captures");
+  assert.equal(runExample("map-stable-regexp-test", `marks(["ab", "ab"]).join()`), "true,false",
+    "map-stable-regexp-test: the callback's call writes the regex it captures, and the result is dense");
+  assert.equal(runExample("invalid-map-structural-replace", `(() => {
+      const xs = ["a", "b", "c"];
+      const out = rewrite(xs, { [Symbol.replace](s, r) { xs.pop(); return r; } });
+      return out.length + ":" + Object.keys(out).length;
+    })()`), "3:2", "invalid-map-structural-replace: a structural replacement pops the mapped array, leaving a hole");
+  assert.equal(runExample("map-stable-regexp-replace", `JSON.stringify(collapsed(["a  b", "c\\td"]))`), '["a b","c d"]',
+    "map-stable-regexp-replace: each call replaces through a regex the literal allocates");
   // `Number` of an object calls its `valueOf`, which here writes `seen.value`.
   // A guard's promise, which TypeScript does not check: lying guards, of a
   // primitive, through a parameter's default and of an object, a lying
@@ -565,6 +681,12 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runImporting("unique-symbol-reexport-value-import", "same()"), true);
   assert.equal(runImporting("unique-symbol-registry-value-import", "same()"), true);
   assert.equal(runImporting("invalid-unique-symbol-value-import", "held === brand"), false);
+  // An imported computed alias's keys index the table that names them.
+  assert.equal(runImporting("computed-alias-value-import", 'show("branch")'), "branch if");
+  assert.equal(runImporting("invalid-computed-alias-value-import", 'only("branch")'), "branch");
+  // `map` over an array named only through declarations, its callback
+  // shrinking it: the result has three positions, two present.
+  assert.equal(runImporting("invalid-array-through-declaration-value-import", "Object.keys(shrunk()).length"), 2);
   // A class has no plain call: calling it throws.
   assert.throws(() => runExample("invalid-class-as-function", "go()"), /cannot be invoked without 'new'/);
   // A construction in a static initializer reads a static not yet defined.
@@ -636,4 +758,72 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(JSON.stringify(runExample("regexp-literals", `[assignment("k=v"), digits("-"), escape("<\`a\`>"),
     words(" a b "), tokens("ab 12"), count("a1b22")]`)),
     JSON.stringify([["k", "v"], "none", "&lt;<code>a</code>>", ["a", "b"], "<w>ab</w>12@3", 3]));
+}
+{
+  // Native footprints (SOURCE-CONTRACTS.md, "Native footprints"): what each
+  // array mutator does to `map`'s result when its callback calls it on the
+  // array being mapped. The removing ones leave holes; the growing ones and
+  // element writes leave none.
+  const holes = (call: (xs: number[], i: number) => unknown): number => {
+    const xs = [1, 2, 3];
+    const ys = xs.map((x, i) => { call(xs, i); return x; });
+    return ys.length - Object.keys(ys).length;
+  };
+  const removing: [string, (xs: number[], i: number) => unknown][] = [
+    ["pop", (xs) => xs.pop()],
+    ["shift", (xs) => xs.shift()],
+    ["reverse after growth", (xs, i) => { if (i === 0) { xs.length = 5; xs.reverse(); } }],
+    ["a shorter length", (xs, i) => { if (i === 0) xs.length = 1; }],
+    ["splice removing", (xs, i) => { if (i === 0) xs.splice(1, 1); }],
+    ["delete", (xs, i) => { if (i === 0) delete xs[1]; }],
+  ];
+  for (const [name, call] of removing) assert.ok(holes(call) > 0, `${name} in map's callback leaves a hole`);
+  const growing: [string, (xs: number[], i: number) => unknown][] = [
+    ["push", (xs) => xs.push(9)],
+    ["unshift", (xs) => xs.unshift(9)],
+    ["sort", (xs) => xs.sort((a, b) => b - a)],
+    ["an element write", (xs, i) => { xs[i] = 7; }],
+    ["a longer length", (xs, i) => { if (i === 0) xs.length = 5; }],
+    ["splice inserting", (xs, i) => { if (i === 0) xs.splice(1, 0, 8); }],
+  ];
+  for (const [name, call] of growing) assert.equal(holes(call), 0, `${name} in map's callback leaves no hole`);
+  // A nested `map` is part of the outer callback: its callback's `pop` leaves
+  // holes in the outer result, its `push` none.
+  assert.ok(holes((xs) => xs.map((x) => { xs.pop(); return x; })) > 0, "a nested map's pop leaves a hole");
+  assert.equal(holes((xs) => xs.map((x) => { xs.push(x); return x; })), 0, "a nested map's push leaves none");
+  // `sort`'s writeback deletes every index from its snapshot's count up to
+  // the length it read first: index 3, which held a value, is a hole after.
+  const ys: number[] = [3, 1];
+  ys[3] = 2;
+  ys.sort((a, b) => { ys[2] = 0; return a - b; });
+  assert.deepEqual([Object.keys(ys), ys.length], [["0", "1", "2"], 4], "sort's writeback deletes past its count");
+  // `unshift` ends by setting the length: a trailing hole stays one.
+  const trailing: number[] = [1];
+  trailing.length = 2;
+  trailing.unshift(9);
+  assert.deepEqual([trailing.length, Object.keys(trailing)], [3, ["0", "1"]], "unshift keeps a trailing hole");
+  // An element-returning or receiver-returning native returns an existing
+  // value, never a fresh one; `map` allocates its result.
+  const old = [1];
+  const nested = [old];
+  assert.equal(nested.find(() => true), old, "find returns an existing element");
+  assert.equal(nested.at(0), old, "at returns an existing element");
+  assert.equal(nested.sort(), nested, "sort returns its receiver");
+  assert.equal(nested.reverse(), nested, "reverse returns its receiver");
+  assert.notEqual(nested.map((x) => x), nested, "map allocates its result");
+  // A Set iterator reads the set's state at each step: it sees a later `add`.
+  const set = new Set([1]);
+  const values = set.values();
+  values.next();
+  set.add(2);
+  assert.equal(values.next().value, 2, "a Set iterator observes the set's state");
+  // A regex literal is a fresh object at each evaluation; one regex shared
+  // keeps its `lastIndex` between calls; `replace` of a global regex writes it.
+  const shared = /a/g;
+  assert.deepEqual([shared.test("a"), shared.test("a")], [true, false], "a shared global regex keeps lastIndex");
+  const literal = (): boolean => /a/g.test("a");
+  assert.deepEqual([literal(), literal()], [true, true], "a regex literal is fresh at each evaluation");
+  const global = /&/g;
+  global.lastIndex = 2;
+  assert.deepEqual(["a&b&".replace(global, "+"), global.lastIndex], ["a+b+", 0], "replace writes lastIndex");
 }

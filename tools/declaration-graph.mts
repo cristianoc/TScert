@@ -21,7 +21,7 @@ import { childrenOf, nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
-  type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
+  splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
@@ -36,6 +36,7 @@ import { computedType, enclosingBinders, inferredTerm, literalUnion, type Comput
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
+import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -1053,7 +1054,8 @@ export function collectDeclarations(file: string, options: {
         const identity = identityOf(node);
         valueStarts.push(node);
         const nameSpan: Span = [node.name.getStart(source), node.name.end];
-        return { declaration: identity, construct: true, typeParams, type: { k: "constructor", params, rest: null,
+        return { declaration: identity, construct: true, typeParams, type: { k: "constructor",
+          effect: ordinaryEffect, params, rest: null,
           result: { k: "reference", reference: { name: node.name.text, span: nameSpan,
             arguments: names.map(() => nameSpan), target: identity },
             args: names.map(name => ({ k: "binder", name, span: nameSpan })), span: nameSpan }, span } };
@@ -1075,7 +1077,7 @@ export function collectDeclarations(file: string, options: {
         if (!match) throw Error(`${what} is not declared as reviewed: ${entry.signature}`);
         const source = match.getSourceFile();
         const span: Span = [match.getStart(source), match.end];
-        const term: Extract<TypeTerm, { k: "function" }> = { k: "function", effect: "unrestricted", receiver: null,
+        const term: Extract<TypeTerm, { k: "function" }> = { k: "function", effect: ordinaryEffect, receiver: null,
           params: entry.stated.params, rest: entry.stated.rest ?? null, result: entry.stated.result, span };
         return { module: idOf(source), span, term };
       });
@@ -1207,6 +1209,9 @@ export function collectDeclarations(file: string, options: {
             specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.local.text) });
         if (!nodes.some(isTypeDeclaration)) continue;
         const declaration = lookup(binding.local, binding.local.text);
+        // An imported alias TypeScript computes from its parameters has no
+        // equation, as a local one has none: each application is a computed type.
+        if (computedAlias(declaration, aliasOf)) continue;
         roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.local.text,
           imported: binding.imported, specifier: binding.specifier, span: binding.span },
         declaration: identityOf(declaration) } });
@@ -1389,29 +1394,37 @@ export function collectDeclarations(file: string, options: {
       if (!regexpDefinitions.length) regexpDefinitions.push(nativeIteratorDefinition(keys));
       return keys;
     };
-    let arrayProto: TypeDefinition[] = [];
-    if (options.arrays) {
-      try {
-        arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
-      } catch (error) {
-        throw new DeclarationError(options.arrays, error instanceof Error ? error.message : String(error));
-      }
-    }
     // A primitive's members are read through its wrapper's prototype: its
     // contract joins the definitions, and the built-in prototype the values,
-    // an assumption at that contract as an import is at its type.
+    // an assumption at that contract as an import is at its type. A string's
+    // `split` gives an array, whose members the array prototype states.
     const primitiveProtos: TypeDefinition[] = [];
     const primitives = new Map<PrimitiveKind, Span>();
+    let stringSplit: Span | undefined;
     for (const span of options.memberReceivers ?? []) {
       const receiver = expressionAt(client, span);
       if (!receiver) throw new DeclarationError(span, "TypeScript member receiver missing");
       const type = checker.getTypeAtLocation(receiver);
-      for (const kind of type ? primitivesOf(type) : [])
+      const kinds = type ? primitivesOf(type) : [];
+      for (const kind of kinds)
         if (!primitives.has(kind)) primitives.set(kind, span);
+      const member = receiver.parent;
+      if (kinds.includes("string") && member && ts.isPropertyAccessExpression(member) &&
+          member.name.text === "split" && member.parent && ts.isCallExpression(member.parent))
+        stringSplit ??= span;
+    }
+    let arrayProto: TypeDefinition[] = [];
+    const arraysAt = options.arrays ?? stringSplit;
+    if (arraysAt) {
+      try {
+        arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
+      } catch (error) {
+        throw new DeclarationError(arraysAt, error instanceof Error ? error.message : String(error));
+      }
     }
     for (const [kind, at] of primitives) {
       try {
-        const definition = primitivePrototype(checker, client, overlayLibrary, kind);
+        const definition = primitivePrototype(checker, client, overlayLibrary, kind, splitSeparators(client));
         primitiveProtos.push(definition);
         const name = primitivePrototypeName(kind);
         values.push({ binding: { local: name, imported: name, specifier: prototypeSpecifier, span: at },
@@ -1617,8 +1630,11 @@ export function collectDeclarations(file: string, options: {
         try {
           values.push({ binding: { local: name, imported: name, specifier: intrinsicModule, span },
             declaration: { module: intrinsicModule, name, span: [0, 0] }, construct: false, typeParams: [],
-            // Evaluating a literal allocates the regex and runs no code.
-            type: { k: "function", effect: "preservesInputHeap", receiver: null, params: [], rest: null,
+            // Evaluating a literal allocates the regex and runs no code. Its
+            // footprint is empty and its result fresh: every own location of
+            // the regex, `lastIndex` its only mutable one, is allocated by
+            // this evaluation (SOURCE-CONTRACTS.md, "Native footprints").
+            type: { k: "function", effect: emptyEffect, receiver: null, params: [], rest: null,
               result: nativeRegExp(shape, nativeMatches()), span: [0, 0] } });
         } catch (error) {
           throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
@@ -1943,7 +1959,7 @@ export function collectDeclarations(file: string, options: {
         if (!bagType || bagType.k !== "object")
           throw Error(`TypeScript infers Object.assign's source as ${checker.typeToString(source)}, not an object ` +
             "literal's record of literals and primitives");
-        options.assignTypes?.(span, { bagType, functionType: { k: "function", effect: "unrestricted", receiver: null,
+        options.assignTypes?.(span, { bagType, functionType: { k: "function", effect: ordinaryEffect, receiver: null,
           params, rest: null, result: contextualTerm(returned, span), span } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
@@ -2050,7 +2066,7 @@ export function collectDeclarations(file: string, options: {
     for (const span of options.computed ?? []) {
       const node = computedAt(client, span);
       if (!node) throw new DeclarationError(span, "TypeScript computed type missing");
-      // A global type's application is computed when the alias it names is.
+      // A global or an imported type's application is computed when the alias it names is.
       const alias = ts.isTypeReferenceNode(node) ? aliasOf(node) : null;
       if (ts.isTypeReferenceNode(node) && !(alias && computedAlias(alias, aliasOf))) continue;
       const what = `${idOf(client)}#${node.getText(client)}`;
@@ -2467,15 +2483,33 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   // A standard library global is read through the reviewed overlay: a
   // signature it does not list, with exactly the text reviewed, is refused.
   const library = variables.every(v => isLibraryModule(context.identityOf(v.getSourceFile())));
-  const reviewed = (member: string | undefined, node: Node, what: string):
-      (Omit<GlobalEntry, "stated"> & { stated?: Stated }) | undefined => {
+  // An entry stating several forms states construct signatures: each form is
+  // one, under the entry's binders, which every form names alike. Read
+  // anywhere else, or empty, the list is refused rather than an arm dropped.
+  const reviewedForms = (member: string | undefined, node: Node, what: string):
+      (Omit<GlobalEntry, "stated"> & { forms?: Stated[] }) | undefined => {
     if (!library) return undefined;
     const text = node.getText(node.getSourceFile()).trim();
     const entry = globalEntry(context.overlay, name, member, text);
     if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
     for (const definition of entry.definitions ?? []) context.define(definition);
-    const stated = entry.stated;
-    return { ...entry, stated: typeof stated === "function" ? stated(context.library) : stated };
+    const { stated: written, ...rest } = entry;
+    const stated = typeof written === "function" ? written(context.library) : written;
+    if (stated === undefined) return rest;
+    const forms = Array.isArray(stated) ? stated : [stated];
+    const [first] = forms;
+    if (!first) throw Error(`${what} states an empty list of forms`);
+    if (forms.some(f => JSON.stringify(f.binders) !== JSON.stringify(first.binders)))
+      throw Error(`${what} states forms under different binders`);
+    return { ...rest, forms };
+  };
+  const reviewed = (member: string | undefined, node: Node, what: string):
+      (Omit<GlobalEntry, "stated"> & { stated?: Stated }) | undefined => {
+    const entry = reviewedForms(member, node, what);
+    if (!entry) return undefined;
+    const { forms, ...rest } = entry;
+    if (forms && forms.length > 1) throw Error(`${what} states several forms, read only as construct signatures`);
+    return { ...rest, ...(forms?.[0] ? { stated: forms[0] } : {}) };
   };
   // The interface the variable is annotated with, a plain or qualified name.
   const annotation = declaration.type;
@@ -2601,7 +2635,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           const stated = entry.stated;
           for (const call of calls) boundedArguments(call, stated, what);
           const at = spanOf(overload);
-          const form: FunctionTerm = { k: "function", effect: entry.effect ?? "unrestricted", receiver: { k: "self", span: at }, params: stated.params,
+          const form: FunctionTerm = { k: "function", effect: entry.effect ?? ordinaryEffect, receiver: { k: "self", span: at }, params: stated.params,
             rest: stated.rest ?? null, result: stated.result, span: at };
           // A generic statement is a scheme over its binders, as a generic
           // interface method is.
@@ -2668,8 +2702,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           throw Error(`${what} is read with at most ${stated.params.length} argument(s)`);
         context.construct(spanOf(call));
       }
-      calledConstructs.push({ binders: stated.binders, type: { k: "constructor", params: stated.params, rest: null,
-        result: stated.result, span: spanOf(signature) } });
+      calledConstructs.push({ binders: stated.binders, type: { k: "constructor", effect: entry.effect ?? ordinaryEffect,
+        params: stated.params, rest: null, result: stated.result, span: spanOf(signature) } });
       return [];
     }
     // A call signature the overlay states instead of the declared one, as a
@@ -2679,7 +2713,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       if (stated.binders.length) throw Error(`${what} is stated with binders, which a call signature cannot hold`);
       for (const call of calls) boundedArguments(call, stated, what);
       const at = spanOf(signature);
-      return [{ k: "function", effect: entry.effect ?? "unrestricted", receiver: null, params: stated.params,
+      return [{ k: "function", effect: entry.effect ?? ordinaryEffect, receiver: null, params: stated.params,
         rest: stated.rest ?? null, result: stated.result, span: at } satisfies FunctionTerm];
     }
     return forms(signature, name, what, entry).map(form => {
@@ -2701,7 +2735,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   }
   const whatNew = `new ${name}(…)`;
   const constructForms = [...calledConstructs, ...[...built].flatMap(([signature, expressions]) => {
-    const entry = reviewed(undefined, signature, whatNew);
+    const entry = reviewedForms(undefined, signature, whatNew);
     const span = spanOf(signature);
     // A construct of an intrinsic stating the same step, `new Promise(e)`:
     // each is reported, with its arguments as written, and joins no value.
@@ -2713,14 +2747,15 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       }
       return [];
     }
-    if (entry?.stated) {
-      const stated = entry.stated;
+    if (entry?.forms) {
+      const forms = entry.forms;
+      const most = Math.max(...forms.map(f => f.params.length));
       for (const expression of expressions)
-        if ((expression.arguments?.length ?? 0) > stated.params.length ||
-            expression.arguments?.some(ts.isSpreadElement))
-          throw Error(`${whatNew} is read with at most ${stated.params.length} argument(s)`);
-      return [{ binders: stated.binders,
-        type: { k: "constructor", params: stated.params, rest: null, result: stated.result, span } satisfies TypeTerm }];
+        if ((expression.arguments?.length ?? 0) > most || expression.arguments?.some(ts.isSpreadElement))
+          throw Error(`${whatNew} is read with at most ${most} argument(s)`);
+      return forms.map(stated => ({ binders: stated.binders,
+        type: { k: "constructor", effect: entry.effect ?? ordinaryEffect, params: stated.params, rest: null,
+          result: stated.result, span } satisfies TypeTerm }));
     }
     if (signature.typeParameters?.length) throw Error(`${whatNew} is generic`);
     context.clean(signature, where(signature, name));
@@ -2729,7 +2764,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         if (form.receiver) throw Error(`${whatNew} states its receiver`);
         const binders: string[] = [];
         return { binders,
-          type: { k: "constructor", params: form.params, rest: form.rest, result: form.result, span } satisfies TypeTerm };
+          type: { k: "constructor", effect: form.effect, params: form.params, rest: form.rest, result: form.result,
+            span } satisfies TypeTerm };
       });
   })];
   if (valueUses.length && constructForms.length)
@@ -2747,9 +2783,13 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     if (distinct.length === 1 && only)
       return { construct: { declaration: identity, typeParams: only.binders.map(name => ({ name, bound: null, resolution: null })),
         type: only.type } };
-    if (distinct.some(f => f.binders.length)) throw Error(`${whatNew} selects several generic signatures`);
+    // Several signatures under the same binders are one generic class's,
+    // every instance meeting each; under different ones they are refused.
+    const binders = only?.binders ?? [];
+    if (distinct.some(f => JSON.stringify(f.binders) !== JSON.stringify(binders)))
+      throw Error(`${whatNew} selects several signatures under different binders`);
     const span = spanOf(first);
-    return { construct: { declaration: identity, typeParams: [],
+    return { construct: { declaration: identity, typeParams: binders.map(name => ({ name, bound: null, resolution: null })),
       type: { k: "intersection", parts: distinct.map(f => f.type), span } } };
   }
   // A global read only through tests is not a value.

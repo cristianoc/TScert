@@ -36,9 +36,11 @@ open S
          let instance = Inference.substitute substitution
            (Atoms [Shape {shape with calls=[{signature with quantified=[]}]}]) in
          publish_instance callee.pos instance
-       | Some (Atoms [Ctors ([signature],statics)]) ->
+       | Some (Atoms [Ctors ((_ :: _ as signatures),statics)]) ->
+         (* A generic class's instance meets each of its construct signatures. *)
          let instance = Inference.substitute substitution
-           (Atoms [Ctors ([{signature with quantified=[]}],statics)]) in
+           (Atoms [Ctors (List.map (fun (signature:Semantic.signature) -> {signature with quantified=[]}) signatures,
+             statics)]) in
          publish_instance callee.pos instance
        | _ -> ())
     | _ -> ()

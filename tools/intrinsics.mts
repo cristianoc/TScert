@@ -77,6 +77,7 @@
 import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots } from "./type-term.mts";
+import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
 export const awaitName = "%Await%";
@@ -115,7 +116,7 @@ const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span });
 const binder: TypeTerm = { k: "binder", name: "T", span };
 const either = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", span, parts });
 const fn = (params: TypeTerm[], result: TypeTerm): Signature =>
-  ({ k: "function", effect: "unrestricted", receiver: null, params, rest: null, result, span });
+  ({ k: "function", effect: ordinaryEffect, receiver: null, params, rest: null, result, span });
 /** The values no object is: a promise resolved with one settles to it. */
 const primitives: AtomName[] = ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"];
 const primitive: TypeTerm = { k: "union", span, parts: primitives.map(atom) };
@@ -165,6 +166,12 @@ const step: Signature = stepOf(binder);
  *
  * A spread form, `%Spread:K%` for `%Iterate:K%` (`spreadName`), takes the
  * same parameter and gives the fresh array of what the step yields.
+ *
+ * Each runs no client code. Creating a step allocates it: the empty
+ * footprint. A step, and a spread, which steps to the end, write only the
+ * iterator's own position and, for a match iterator, its clone's
+ * `lastIndex`, each a number, and allocate what they yield:
+ * `{value: any, store: keep}` (SOURCE-CONTRACTS.md, "Native footprints").
  * `library` gives a reference to a standard library interface at arguments,
  * `nativeMatches` the native match iterator of an element type.
  * Each is listed only for a file that iterates such a value. */
@@ -186,8 +193,10 @@ export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" |
     : (() => { throw Error(`no iteration intrinsic ${name}`); })();
   // The step, or, for a spread, the fresh array of what the step yields until
   // it yields `null`, as `...` collects it.
-  return { name, typeParams, type: fn([param],
-    spread ? { k: "array", presence: "dense", readonly: false, element, span } : stepOf(element)) };
+  const changesValues = footprintEffect({ value: "any", store: "keep" });
+  return { name, typeParams, type: spread
+    ? { ...fn([param], { k: "array", presence: "dense", readonly: false, element, span }), effect: changesValues }
+    : { ...fn([param], { ...stepOf(element), effect: changesValues }), effect: emptyEffect } };
 }
 
 /** The spread form of an iteration intrinsic: `...x` in an argument list, over
@@ -283,8 +292,13 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // a fresh promise: a promise of the input's observation.
     [promiseResolveName]: () => ({ typeParams: [awaitable], type: fn([input], promise(observed)) }),
     [asyncCompleteName]: () => ({ typeParams: [], type: fn([], promise(atom("void"))) }),
+    // The array's iterator, fresh: creating it changes nothing, and its
+    // state is its own position, a number. Each step reads the array's
+    // current length and an element, and writes only that position:
+    // `{value: any, store: keep}` (SOURCE-CONTRACTS.md, "Native footprints").
     [iterateName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
-      type: fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }], step) }),
+      type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }],
+        { ...step, effect: footprintEffect({ value: "any", store: "keep" }) }), effect: emptyEffect } }),
     [promiseAllName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: promise(binder), span }],
         promise({ k: "array", presence: "dense", readonly: false, element: binder, span })) }),
@@ -317,7 +331,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // `Array.prototype` nor `Object.prototype` owns one, so no getter runs.
     [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
-        either(binder, atom("undefined"))), effect: "preservesInputHeap" } }),
+        either(binder, atom("undefined"))), effect: emptyEffect } }),
   };
   return [...needed].map(name => {
     const make = definitions[name];

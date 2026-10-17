@@ -1084,8 +1084,9 @@ A **computed alias** is a generic alias whose equation is a computed form or
 an application of another computed alias (`computedAlias`): `type
 ElementOf<T> = T[number]`, `type Keys<T> = keyof T`. Over its parameters it
 is known only at an application, so it has no equation of its own, and an
-application of it is a computed type, evaluated where it is written, its
-equation read with the parameters as the arguments:
+application of it, declared in the file or imported, is a computed type,
+evaluated where it is written, its equation read with the parameters as the
+arguments:
 
 ```math
 \frac{A\langle\vec X\rangle=\tau\ \text{a computed alias}\quad
@@ -1399,9 +1400,9 @@ $`p`$, and $`R_j`$ its reviewed receiver (defaulting to $`p`$):
 ```
 
 Each signature states an effect $`\epsilon_j`$: the entry's own, else its
-prototype's, `preservesInputHeap` for `StringProto`, `NumberProto`,
-`BigIntProto` and `BooleanProto` and `unrestricted` for `ArrayProto`. A
-signature states `preservesInputHeap` where the member, called at it, runs no
+prototype's, the empty footprint for `StringProto`, `NumberProto`,
+`BigIntProto` and `BooleanProto` and the footprint `all: any` for `ArrayProto`. A
+signature states the empty footprint where the member, called at it, runs no
 client code but callbacks whose own signatures state the same, and writes no
 location the call did not allocate. Every primitive member listed meets this:
 its receiver is a primitive, it converts only primitives (a string search
@@ -1411,18 +1412,17 @@ result. Of `ArrayProto`, `slice`, `join`, `toString`, `indexOf`,
 `lastIndexOf`, `includes`, `at` and `[Symbol.iterator]` state it: they read
 the receiver, convert only numbers and elements meeting the conversion
 contract below, compare by strict equality or SameValueZero, and allocate
-only their result; so do the overloads of `map`, `find`, `findIndex`,
-`filter`, `some`, `every` and `forEach` that take a preserving callback,
-which they call, the ordinary construction below allocating `map`'s and
-`filter`'s results. Each of these members reads the length once and the
-receiver's own numeric keys, data properties (`numericOwn`), so beside the
-callback it runs no client code; each has a second signature at an
-unrestricted callback, stating no effect (`array-preserving-callbacks`,
-`invalid-filter-writing-callback`):
+only their result. `find`, `findIndex`, `filter`, `some`, `every`,
+`forEach` and `flatMap` call a callback; each reads the length once and the
+receiver's own numeric keys, data properties (`numericOwn`), and allocates
+only its result by ordinary construction, so beside the callback it runs no
+client code and is within the callback's footprint: it has one signature per
+closed footprint $`\varepsilon`$ (`array-preserving-callbacks`,
+`map-stable-filter-push`, `invalid-map-filter-pop`):
 
 ```math
-\frac{m\in\{\mathsf{filter},\mathsf{some},\mathsf{every},\mathsf{forEach}\}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\mathsf{preservesInputHeap}}\mathtt{unknown}}
-     {\mathit{xs}.m(f):R_m\;!\;\mathsf{preservesInputHeap}}\ \textsf{native-preserving-callback}
+\frac{m\in\{\mathsf{filter},\mathsf{some},\mathsf{every},\mathsf{forEach}\}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon}\mathtt{unknown}}
+     {\mathit{xs}.m(f):R_m\;!\;\varepsilon}\ \textsf{native-callback}
 ```
 
 with $`R_m`$ the member's result: $`T[\,]`$, `boolean`, `boolean`,
@@ -1435,9 +1435,23 @@ The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source
 annotations are still translated in full. `join` bounds `T` to the conversion
 contract below,
-unrestricted `find`/`findIndex` callbacks receive `T | undefined`, and unrestricted
-`map` callbacks produce a sparse result. Qualified overloads require a certified
-`preservesInputHeap` callback and respectively pass `T` or promise a dense result.
+`find` and `findIndex` visit every index below the length they read first.
+At a callback whose footprint keeps array stores (`store: keep`), the
+receiver's length stays as it was, so they pass `T` (`find-stable-counter`);
+at any other a store may shrink, and they pass `T | undefined`
+(`invalid-native-find-mutation`). `map` relies on every index below the length it captured staying
+present until it tests it, a fact every closed footprint whose change to stores
+is at most `grow` keeps (`map_rely`, `denseCheck_stable`): at each such
+footprint $`\varepsilon`$, a dense receiver and a callback within
+$`\varepsilon`$ give a dense result, and the call is within $`\varepsilon`$,
+since beside the callback `map` reads the receiver and allocates its result.
+Any other callback gives a result that may hold holes:
+
+```math
+\frac{\varepsilon.\mathit{store}\sqsubseteq\mathsf{grow}\quad \mathit{xs}:\mathsf{dense}\ T[\,]\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon}U}
+     {\mathit{xs}.\mathsf{map}(f):U[\,]\;!\;\varepsilon}\ \textsf{map-stable-callback}
+```
+
 Source `U[]` requires readability; the fresh qualified map result may choose that
 lifetime contract even when its initial contents are physically dense.
 `flatMap` appends the present elements of each array its callback returns,
@@ -1514,14 +1528,112 @@ other signature or its receiver condition from the declared scheme.
 ```
 
 a supertype of the declared interface. A member's signatures state the
-entry's effect: `preservesInputHeap` for the readers, `has`, `get`, `keys`,
+entry's effect: the empty footprint for the readers, `has`, `get`, `keys`,
 `values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`,
-`toString` and `toISOString`, none for the members that change the
-collection or the date or call a callback. $`⟦m⟧_\omega`$ drops
+`toString` and `toISOString`; `{value: any, store: keep}` for the members
+that change the collection or the date, `add`, `set`, `delete`, `clear` and
+`setTime`, which compare by SameValueZero or take a number, run no code and
+write only the receiver's internal slots, which hold no array store; none for
+`forEach`, which calls a callback. `new Set` and `new Map` of an array or of
+nothing state the empty footprint on their construct signatures: they read the
+array through the host's iterator and allocate. $`⟦m⟧_\omega`$ drops
 `thisArg`, reads a `this` result as the receiver, and reads a declared
 iterator result as `Iterator<T>`, which it extends. A property is a readonly
 view. A string's own `length` and indices are the calculus's `lenStr` and
 `elemStr`, never the prototype's; `s[i]` is `string | undefined`.
+
+### Native footprints
+
+A native's **footprint** is the closed footprint its signatures state
+([FOOTPRINTS](FOOTPRINTS.md#changes-and-footprints)): for the locations that
+existed before a call, the change the call may make to those holding a value
+and to those holding an array store. Each row states its argument, proved
+where the native is modelled and audited otherwise:
+
+| Native | Footprint | Argument |
+| --- | --- | --- |
+| `push`, `unshift` | `{value: any, store: grow}` | proved of the specification steps: `Arr.push_grow`, `Arr.unshift_grow`, `array_native_post`; that each changes nothing but its store and element contents is audited |
+| `pop`, `shift`, `reverse` | `{value: any, store: keep}` but for the receiver's store (`receiverStore`) | each changes only its receiver's store, which it can make lose a present index (controls in `FootprintControls.lean`), and element contents (audited) |
+| `filter`, `map`, `flatMap`, `slice`, a string's `split` | a fresh result, beside the rows' footprints | each allocates its result by ordinary construction, a store no earlier heap held (audited) |
+| `map` at a dense receiver and a callback within `ε`, `ε` one of the four of the stable set | `ε` | one signature per such `ε`, with a dense result (`map_rely`); `map` reads its receiver and allocates its result (audited) |
+| `map` at any receiver and any callback | `{value: any, store: any}` | the unrestricted signature, with a result that may hold holes |
+| a global or sticky native regex's `exec`, `test`, `[Symbol.match]`, `[Symbol.replace]` at a string | `{value: any, store: keep}` | they write only `lastIndex`, a number (audited) |
+| a native regex's other members, a regex neither global nor sticky | the empty footprint | they write nothing (audited) |
+| `%Dispatch:replace%` | its target member's footprint | one signature per closed footprint (audited, as its target's) |
+| an iteration intrinsic, `%Iterate%` over an array and those over a string, a `Set`, a `Map`, a host iterator and a native match iterator; its step; a spread form `%Spread:K%` | the empty footprint; `{value: any, store: keep}`; `{value: any, store: keep}` | they run no client code; a step writes only the iterator's position and, for a match iterator, its clone's `lastIndex`, each a number, and allocates what it yields (audited) |
+| `Math.max`, `Math.min`, `String.fromCodePoint`, `String.fromCharCode` at primitives | the empty footprint | they convert primitives, which runs no code, and allocate only their result (audited) |
+| `forEach`, `every`, `some`, `filter`, `find`, `findIndex`, `flatMap` at a callback within `ε` | `ε` | one signature per closed footprint; beside the callback each reads the receiver and allocates only its result (audited) |
+| `new Set`, `new Map` of an array or nothing | the empty footprint | they read the array through the host's iterator and allocate (audited) |
+| `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: any, store: keep}` | they run no code and write only the receiver's internal slots, which hold no array store (audited) |
+
+
+**A non-empty `split`.** `String.prototype.split` with a non-empty string
+separator and no limit returns at least one element: the separator is no
+`RegExp`, so no `[Symbol.split]` runs, and ECMA-262's `split` returns `[S]`
+where the separator does not occur, so `"".split("\n")` is `[""]`
+([ECMA-262](REFERENCES.md#ecma-262), `String.prototype.split`). It returns
+`[]` in two cases only: a limit whose `ToUint32` is `0`, and an empty
+receiver with an empty separator (`"".split("")`). The overlay states, beside
+the general form, one further form ([prototype contracts](#prototype-contracts),
+the forms of a member without binders being their intersection), whose
+separator is the union $`\Lambda`$ of the non-empty string literals written in
+the separators of the source's `split` calls that pass no limit
+(`splitSeparators`), and whose result is the tuple of one required position
+and a rest, the representation the fragment has for an array with a known
+prefix (a position read at its index is its type, `elemReadPlan`):
+
+```math
+\mathtt{split}\colon(\Lambda)\Rightarrow[\mathtt{string},\ \ldots\mathtt{string}]
+\qquad \Lambda=\lambda_1\mid\cdots\mid\lambda_n,\ \text{each}\ \lambda_i\ \text{a string literal other than}\ \texttt{""}
+```
+
+The form holds at any union of non-empty separators; which literals are
+collected bounds only which calls it serves. A call of a string's `split`,
+its receiver's type deciding as for a primitive's prototype, collects the
+array prototype its result's members need; a structural `split` does not
+(`tests/trusted-inputs.mts`). Its result's store contract has
+a required position, which forbids a removal, so the producer proposes the
+form only for a call whose result nothing shrinks (`Source.unshrunk`): read
+by index at once, or bound to an unannotated constant every use of which
+reads it (an element, its `length`, a member that reads, an iteration),
+directly or as a conditional's arm; any other call takes the general form,
+and Lean checks whichever is proposed: a shrunk, aliased or annotated result
+forged at the non-empty form is refused in search and in checking
+(`pipeline/test.mts`). It has no limit parameter, so a
+call passing a limit takes the general form: a limit is not stated, since a
+numeric literal of at least `1` does not exclude `[]`, `ToUint32` reducing it
+modulo $`2^{32}`$ (`split(",", 4294967296)` is `[]`). A `RegExp` separator
+keeps the general form: an empty receiver and a pattern matching the empty
+string give `[]`. The form states the same footprint and fresh result as the
+general one (audited). Controls: `split-non-empty` (a literal and a union of
+literals, a conditional's arm, results popped, aliased and annotated),
+`invalid-split-empty-separator`, `invalid-split-limit` (beside a stated form
+for the same separator), `invalid-split-string-separator`,
+`invalid-split-alias-shrink`, `invalid-split-element-write`, each with a Node
+run, and a separator forged at `string`, refused in search and in
+checking (`pipeline/test.mts`).
+
+What is proved and what is audited:
+
+- **Proved** of the array mutators' specification steps (`Set` of an index,
+  `Delete`, a length change, in the order ECMA-262 gives them;
+  `lean/Verification/Semantics/FootprintNatives.lean`): `push`, `unshift`, a
+  longer length and `sort` over the whole call change the store by `grow`
+  (`Arr.push_grow`, `Arr.unshift_grow`, `Arr.setLength_grow`, `sort_grow`);
+  `pop`, `shift`, `reverse` of a store with a hole and a shorter length do
+  not (controls in `Tests/FootprintControls.lean`). `array_native_post`
+  turns a store change by `grow`, with element contents the only other old
+  locations changed, into the footprint's postcondition. `map_rely` proves
+  `map`'s density below its captured length at every presence test from
+  callbacks within the stable set ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
+- **Audited** for every row: that the native changes no old location beyond
+  its footprint; for an array mutator, that it changes nothing but its store
+  and element contents, and for `map`, that it tests presence only between
+  callbacks. These are host assumptions, with the Node runs of
+  `tests/node-runs.mts` as their counterexample controls: each removing
+  mutator in a `map` callback leaves a hole and each growing one none; a
+  regex literal is fresh at each evaluation, and a shared global regex keeps
+  `lastIndex`; a `Map` written by a callback holds what it wrote.
 
 ## Library globals
 
@@ -1549,6 +1661,34 @@ scheme over its binders, host-relative) or a property (its type the result):
       |\vec a|\le|\vec P|\ \text{for each}\ \mathsf{new}\ x(\vec a)\ \text{selecting}\ s}
      {⟦s⟧_\Omega=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R}\ \textsf{library-construct}
 ```
+
+**Several stated forms of one declaration.** TypeScript resolves
+`new Set("∀∃λΛμ")` to `new <T>(iterable?: Iterable<T> | null): Set<T>`. One
+stated form cannot cover both an array and a string: a parameter
+`readonly T[] | string` with result `Set<T>` is false at `T := number`, and
+`Iterable<T>` admits client iterators, which run code. An entry may state a
+list of forms, each a signature the host meets, under the entry's binders,
+a form naming none of them included:
+
+```math
+\frac{\omega.\mathit{stated}=[\forall\vec X.\ \mathsf{new}(\vec P_1)\Rightarrow R_1,\ \ldots,\ \forall\vec X.\ \mathsf{new}(\vec P_n)\Rightarrow R_n]\quad n\ge 1}
+     {⟦s⟧_\Omega=\forall\vec X.\ \bigwedge_i\ \mathsf{new}(\vec P_i)\Rightarrow R_i}\ \textsf{library-construct-forms}
+```
+
+The value is a construct scheme with $`n`$ signatures, which every instance
+meets, as a native method's overloads are (`map`'s forms). `new` selects one
+per call: the construction rule requires the selected signature to be a
+member of the callee's with each argument's premise checked
+(`ProgramCertificates`, `construct`); no selection is accepted without them.
+`Set`'s iterable overload states `new <T>(values?: readonly T[] | null):
+Set<T>` and `new (values: string): Set<string>`, both at the empty footprint:
+the host iterates a string by its own iterator, which runs no client code
+(the assumption `%Iterate:String%` makes). Every form keeps its parameters,
+result, effect and binder substitution. The declaration's text matches the
+reviewed one exactly; every form is decoded, and an empty or malformed list,
+or an unsupported combination of binders, is refused, never an arm dropped
+(`set-string-construction`; `invalid-set-string-at-number`,
+`invalid-set-iterator-construction`, `invalid-set-excess-arguments`).
 
 An entry may read a call signature as the global's construct (`construct`),
 where the host's call runs the construct's steps: `Error(m)` called takes the
@@ -1595,8 +1735,8 @@ An entry may state that its signature preserves the input heap
 client code and writes no location it did not allocate:
 
 ```math
-\frac{⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow R\quad \omega.\mathit{effect}=\mathsf{preservesInputHeap}}
-     {⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow_{\mathsf{preservesInputHeap}} R}\ \textsf{library-effect}
+\frac{⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow R\quad \omega.\mathit{effect}=\emptyset}
+     {⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow_{\emptyset} R}\ \textsf{library-effect}
 ```
 
 `String` and `Number` of a primitive, `Number.isFinite`, `Number.isInteger`,
@@ -1760,6 +1900,55 @@ unrestricted in its effect. The entries:
   option the host reads it validates without converting, throwing on a type
   it does not accept: an object at each such key ran no code of the client's
   under Node 25.2.1.
+- `execFileSync` has a second stated form, the **restricted form**. Its
+  options state every key the synchronous path reads, each at a type Node
+  validates without running code of the client's:
+  $`(\mathtt{string},\ \mathtt{readonly\ string[]},\ O_r)\Rightarrow\mathtt{string}`$ with
+
+  `O_r = { encoding: "utf8"; stdio: readonly [S, "pipe", S]; input?: string; maxBuffer?: number; env?: undefined; shell?: false; cwd?: string; argv0?: string; detached?: boolean; uid?: number; gid?: number; windowsHide?: boolean; windowsVerbatimArguments?: boolean; timeout?: number; killSignal?: string | number }`.
+
+  A record type is open, so a key it does not name may hold any value; a key
+  it names at `undefined` or `false` is absent or holds that value. The form
+  states the empty footprint on normal return. A call meeting only the first
+  form keeps an unrestricted effect. The audit of Node 25.2.1's
+  `lib/child_process.js` and `lib/internal/child_process.js` covers every
+  write the call makes before it returns, and before each throw: a
+  validation error, a failure to spawn, and a failed command.
+
+  - `normalizeExecFileArgs` and `normalizeSpawnArguments` copy `args`
+    (`ArrayPrototypeSlice`) and the options (an object spread) into fresh
+    objects.
+  - `env` is absent or `undefined`, so the environment is a fresh copy of
+    `process.env`. `copyProcessEnvToEnv` writes `NODE_V8_COVERAGE` into it,
+    and, under the permission model, `copyPermissionModelFlagsToEnv` writes
+    `NODE_OPTIONS`. With `options.env`, both write into the caller's object,
+    and the host converts each of its values to a string, which runs an
+    object value's `toString`.
+  - `shell` is absent or `false`. A string or `true` runs
+    `process.emitWarning` when arguments are passed, whose `warning`
+    listeners are client code.
+  - `cwd` is a string, which `getValidatedPath` checks as is; an object
+    would be read as a file URL and its `pathname` converted.
+  - `detached`, `uid`, `gid`, `argv0`, `windowsHide`,
+    `windowsVerbatimArguments`, `timeout`, `maxBuffer` and `killSignal` are
+    validated by type and range. A rejected value throws an error built from
+    a primitive, after only the copies above were written.
+  - `getValidStdio` pushes `undefined` into the caller's `stdio` array while
+    it is shorter than 3. The stated tuple has length 3, so no push happens.
+    Its reduction is a fresh array, which `spawnSync` stores before it writes
+    the input pipe into it.
+  - `execFileSync` writes the child's standard error through
+    `process.stderr` when `stdio` is omitted. The restricted form requires
+    `stdio`.
+  - The input is a string (`Buffer.from`), and the outputs are decoded at
+    `"utf8"`. The thrown error is the fresh `ret.error` or a fresh
+    `genericNodeError`, with `ObjectAssign` copying the result onto it.
+  - `for…in` over the environment copy reads `Object.prototype`, which
+    holds no enumerable key under the
+    [ordinary-prototype assumption](SOURCE-MODEL.md#exact-contracts-and-native-effects).
+
+  The form also assumes that `NODE_DEBUG` does not name `child_process`:
+  `debuglog` would otherwise write the options through `process.stderr`.
 - `writeFileSync(file, data)` with a path and a string writes the string to
   the file as UTF-8 and returns `undefined`; a path it cannot write throws:
   $`(\mathtt{string},\ \mathtt{string})\Rightarrow\mathtt{undefined}`$.
@@ -1845,17 +2034,22 @@ $`g`$ and $`y`$ whether the flags hold `g` and `y`,
 
 ```math
 \epsilon_{N(\Sigma)}(m)=\begin{cases}
-\mathsf{preservesInputHeap} & m\in\{[@@\mathrm{search}],[@@\mathrm{split}],[@@\mathrm{matchAll}]\},\ \Sigma\ne\Sigma_\top\\
-\mathsf{preservesInputHeap} & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ \neg g,\ \neg y\\
-\mathsf{unrestricted} & \text{otherwise}
+\emptyset & m\in\{[@@\mathrm{search}],[@@\mathrm{split}],[@@\mathrm{matchAll}]\},\ \Sigma\ne\Sigma_\top\\
+\emptyset & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ \neg g,\ \neg y\\
+\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{keep}\} & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ g\lor y\\
+\top & \text{otherwise}
 \end{cases}
 ```
 
 `[@@search]` restores the `lastIndex` it saved, `[@@split]` and
 `[@@matchAll]` step a fresh clone, and a regex neither global nor sticky
-writes no `lastIndex`; one that is leaves it where its last match ended
-(`invalid-regexp-global-callback-effect`). At $`\Sigma_\top`$ the flags are
-not read, and no member states the effect.
+writes no `lastIndex`; one that is leaves it where its last match ended,
+changing one location, which holds a number by its contract
+(`map-stable-regexp-test`). At $`\Sigma_\top`$ the flags are not read, and
+no member states an effect. A native regex's `exec` and `test` take
+`string | undefined`: they convert their argument by `ToString`, which runs no
+code on `undefined` and gives `"undefined"` (`/^undefined$/.test(undefined)`
+is true); a structural regex's keep their declared `string` (audited).
 
 **Literals and dispatch.** Each evaluation of a literal allocates a regex;
 a call of `String.prototype`'s `match`, `matchAll`, `replace`, `replaceAll`,
@@ -1864,7 +2058,7 @@ returns what that method returns:
 
 ```math
 \frac{\Sigma=\mathsf{shape}(P,F)}
-     {⟦/P/F⟧=\%\mathrm{RegExp}{:}\Sigma\%()\qquad \%\mathrm{RegExp}{:}\Sigma\%\colon()\Rightarrow_{\mathsf{preservesInputHeap}} N(\Sigma)}\ \textsf{regexp-literal}
+     {⟦/P/F⟧=\%\mathrm{RegExp}{:}\Sigma\%()\qquad \%\mathrm{RegExp}{:}\Sigma\%\colon()\Rightarrow_{\emptyset} N(\Sigma)}\ \textsf{regexp-literal}
 ```
 
 ```math
@@ -1883,15 +2077,16 @@ as TypeScript types the receiver and the argument, evaluated as written, with
 ```
 
 and `match` and `search` as `split` without the limit, `replaceAll` as
-`replace` with the mark. Each states two signatures over the same binder:
-the one above, unrestricted, and the same at a target whose member states
-$`\mathsf{preservesInputHeap}`$, stating it too. Beside that member's call, the
-dispatch reads `o`'s members and converts only strings, so it writes nothing
-the member does not:
+`replace` with the mark. Each states one signature over the same binder per
+closed footprint $`\varepsilon`$: the one above at a target whose member
+states $`\varepsilon`$, stating it too, the one at $`\top`$ taking any
+target. Beside that member's call, the dispatch reads `o`'s members and
+converts only strings, so it writes nothing the member does not
+(`map-stable-regexp-replace`):
 
 ```math
 \frac{\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow Q\},\ \vec R)\Rightarrow S}
-     {\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow_{\mathsf{preservesInputHeap}} Q\},\ \vec R)\Rightarrow_{\mathsf{preservesInputHeap}} S}\ \textsf{dispatch-preserving}
+     {\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow_{\varepsilon} Q\},\ \vec R)\Rightarrow_{\varepsilon} S}\ \textsf{dispatch-footprint}
 ```
  `matchAll` and `replaceAll` first read
 `o[@@match]` and `o.flags` and convert `flags` (ECMA-262,

@@ -10,7 +10,7 @@
  */
 
 import type { Span } from "./span.mts";
-import type { CallEffect, Labels, Row } from "./type-graph.mts";
+import type { CallEffect, ClosedFootprint, Labels, Row } from "./type-graph.mts";
 import type { SourceTypeParameter } from "./declaration-types.mts";
 export type { Row } from "./type-graph.mts";
 
@@ -119,9 +119,9 @@ interface FunctionClaims<L = Label> {
   params: NamedPoint<L>[];
   result: ClaimType<L>;
   contracts: StorageContract<L>[];
-  /** The effect proposed for the declaration's signature, which its unit's
-   * graph must establish: `unrestricted` or `preservesInputHeap`. */
-  effect: CallEffect;
+  /** The footprint proposed for the declaration's signature, which its
+   * unit's graph must establish. */
+  footprint: ClosedFootprint;
   entries: EntryClaim<L>[];
   expressions: ExpressionClaim<L>[];
   /** One interior claim set per advertised signature of the closure at pos. */

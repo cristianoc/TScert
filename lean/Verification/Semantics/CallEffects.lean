@@ -1,27 +1,49 @@
 import Verification.Semantics.HeapObservations
 import Verification.Semantics.Purity
+import Verification.Semantics.ClosedFootprints
 
 /-! Call postconditions qualify the same receiver/arguments/result contract
 as ordinary arrows. They concern calls admitted by that contract, not every
-untyped invocation of a function. Fresh allocation is permitted; preserving
-the input heap means keeping its existing locations unchanged on return.
-Throws carry no return postcondition, just as in `SafePost`. -/
+untyped invocation of a function. A call's footprint states which old
+locations a normal return may have changed, and how; fresh allocation is
+always permitted. Throws carry no return postcondition, just as in
+`SafePost`. -/
 namespace Verification.CallEffects
 open HeapObservations
 
-/-- What a call signature guarantees beyond its contract. The first two are
-heap effects: the signature's result operand is the result's type. A promise
-qualifies an argument instead: its result operand is the promise's type.
-`guards p` is a type guard's, `(x: A) => x is T`: the result is `true` or
-`false`, and a `true` result leaves the actual at `p` in the result operand.
-`asserts p` is an assertion function's, `(x: A) => asserts x is T`: a normal
-return is `undefined`, and leaves the actual at `p` in the result operand. -/
-inductive Effect where
-  | unrestricted
-  | preservesInputHeap
+/-- A promise about the actual at `param`, whose type is then the signature's
+result operand. `guards p` is a type guard's, `(x: A) => x is T`: the result
+is `true` or `false`, and a `true` result leaves the actual at `p` in the
+result operand. `asserts p` is an assertion function's,
+`(x: A) => asserts x is T`: a normal return is `undefined`, and leaves the
+actual at `p` in the result operand. -/
+inductive TypePromise where
   | guards (param : Nat)
   | asserts (param : Nat)
   deriving Repr, DecidableEq
+
+def TypePromise.param : TypePromise → Nat
+  | .guards p | .asserts p => p
+
+/-- What a call signature guarantees beyond its contract: a closed footprint
+(`Footprints.Closed`) bounding the change from its entry heap to the heap a
+normal return leaves, and an optional promise. Without a promise the
+signature's result operand is the result's type. `fresh` states that a normal
+return's value has an array store allocated by the call; `receiverStore` that
+the footprint bounds every old location but the receiver's array store, which
+the call may change arbitrarily. -/
+structure Effect where
+  footprint : Footprints.Closed
+  promise : Option TypePromise
+  fresh : Bool
+  receiverStore : Bool
+  deriving Repr, DecidableEq
+
+/-- A signature with a footprint and no promise. -/
+def Effect.ofFootprint (c : Footprints.Closed) : Effect := ⟨c, none, false, false⟩
+
+/-- An ordinary arrow's guarantee: none beyond its contract. -/
+def Effect.ordinary : Effect := .ofFootprint .top
 
 /-- One qualified call contract. `Args` distinguishes fixed argument lists
 from a fixed prefix followed by an argument-pack contract. Mapping the type
@@ -117,81 +139,141 @@ theorem MethodRestArrow.map_of_operands {f : α → α} {s : MethodRestArrow α}
 /-- Deliberate forgetting, for ordinary call elimination. -/
 def Arrow.plain (s : Arrow α) : α × List α × α := (s.receiver, s.arguments, s.result)
 
-def Effect.post : Effect → Heap → Post
-  | .unrestricted, _ | .guards _, _ | .asserts _, _ => fun _ _ => True
-  | .preservesInputHeap, before => fun after _ => before.IsPrefix after
+/-- What a signature's footprint states of a call with receiver `r`: on every
+old location, or, with `receiverStore`, on every one but `r`'s store. -/
+def Effect.within (e : Effect) (r : Tm) (before after : Heap) : Prop :=
+  if e.receiverStore then e.footprint.HoldsOn (fun l => Footprints.storeOf r ≠ some l) before after
+  else e.footprint.Holds before after
 
-/-- Whether the signature's result operand is the result's type: a heap
-effect's, never a promise's. -/
-def Effect.plain : Effect → Bool
-  | .unrestricted | .preservesInputHeap => true
-  | .guards _ | .asserts _ => false
+/-- A signature's normal-return postcondition for a call with receiver `r`,
+from the heap the call starts in: its footprint, and, where it states one, a
+fresh store for the result. -/
+def Effect.post (e : Effect) (r : Tm) : Heap → Post := fun before after v =>
+  e.within r before after ∧ (e.fresh = true → Footprints.FreshAt before.length v)
+
+theorem Effect.within_of_holds {e : Effect} {r : Tm} {before after : Heap}
+    (h : e.footprint.Holds before after) : e.within r before after := by
+  unfold Effect.within
+  split
+  · exact h.on _
+  · exact h
+
+/-- What a footprint on the locations below `b` follows from: the footprint
+anywhere, or on every location but a store allocated after `b`. -/
+theorem Effect.within_below {e : Effect} {r : Tm} {b : Nat} {before after : Heap}
+    (h : e.within r before after) (hr : e.receiverStore = true → Footprints.FreshAt b r) :
+    e.footprint.HoldsOn (· < b) before after := by
+  unfold Effect.within at h
+  split at h
+  · rename_i hs
+    exact h.below_fresh (hr hs)
+  · exact h.on _
+
+theorem Effect.within_holds {e : Effect} {r : Tm} {before after : Heap}
+    (h : e.within r before after) (hr : e.receiverStore = false) : e.footprint.Holds before after := by
+  simpa [Effect.within, hr] using h
+
+theorem Effect.within_top {e : Effect} {r : Tm} {before after : Heap}
+    (h : e.within r before after) : Footprints.Closed.top.Holds before after := by
+  unfold Effect.within at h
+  split at h
+  · exact h.top
+  · exact Footprints.Closed.holds_top.mpr (Footprints.Closed.holds_iff.mp h).1
+
+@[simp] theorem Effect.post_ofFootprint (c : Footprints.Closed) (r : Tm) (before after : Heap) (v : Val) :
+    (Effect.ofFootprint c).post r before after v ↔ c.Holds before after := by
+  simp [Effect.post, Effect.within, Effect.ofFootprint]
+
+/-- Whether the signature's result operand is the result's type: a
+signature's without a promise. -/
+def Effect.plain (e : Effect) : Bool := e.promise.isNone
 
 /-- The actual a promise is about: the one at its parameter, `undefined` where
-the call passes none. A heap effect is about none. -/
-def Effect.promised : Effect → List Tm → Tm
-  | .guards p, args | .asserts p, args => args.getD p .undef
-  | .unrestricted, _ | .preservesInputHeap, _ => .undef
+the call passes none. A signature without a promise is about none. -/
+def Effect.promised (e : Effect) (args : List Tm) : Tm :=
+  match e.promise with
+  | some p => args.getD p.param .undef
+  | none => .undef
 
-/-- What a call's result meets, given the signature's result operand `R` and
-the promised actual `a`. -/
-def Effect.result : Effect → Fam → Tm → Fam
-  | .unrestricted, R, _ | .preservesInputHeap, R, _ => R
+/-- What a promised result meets, given the result operand `T` and the
+promised actual `a`. -/
+def TypePromise.result : TypePromise → Fam → Tm → Fam
   | .guards _, T, a => fun k W u => (u = .tru ∧ T k W a) ∨ u = .fls
   | .asserts _, T, a => fun k W u => u = .undef ∧ T k W a
 
-@[simp] theorem Effect.result_unrestricted (R : Fam) (a : Tm) : Effect.unrestricted.result R a = R := rfl
-@[simp] theorem Effect.result_preservesInputHeap (R : Fam) (a : Tm) :
-    Effect.preservesInputHeap.result R a = R := rfl
+/-- What a call's result meets, given the signature's result operand `R` and
+the promised actual `a`. -/
+def Effect.result (e : Effect) (R : Fam) (a : Tm) : Fam :=
+  match e.promise with
+  | some p => p.result R a
+  | none => R
 
-theorem Effect.result_plain {e : Effect} (h : e.plain = true) (R : Fam) (a : Tm) : e.result R a = R := by
-  cases e <;> simp_all [Effect.plain, Effect.result]
+theorem Effect.result_none {e : Effect} (h : e.promise = none) (R : Fam) (a : Tm) : e.result R a = R := by
+  simp [Effect.result, h]
+
+@[simp] theorem Effect.result_ofFootprint (c : Footprints.Closed) (R : Fam) (a : Tm) :
+    (Effect.ofFootprint c).result R a = R := rfl
+
+theorem Effect.result_plain {e : Effect} (h : e.plain = true) (R : Fam) (a : Tm) : e.result R a = R :=
+  Effect.result_none (by simpa [Effect.plain] using h) R a
 
 theorem Effect.result_mono (e : Effect) {R T : Fam} {a : Tm} {k W u}
     (h : ∀ u, R k W u → T k W u) (hr : ∀ a', R k W a' → T k W a') :
     e.result R a k W u → e.result T a k W u := by
-  cases e with
-  | unrestricted | preservesInputHeap => exact h u
-  | guards _ => exact fun hu => hu.imp (fun ⟨hu, ha⟩ => ⟨hu, hr a ha⟩) id
-  | asserts _ => exact fun ⟨hu, ha⟩ => ⟨hu, hr a ha⟩
+  unfold Effect.result
+  match e.promise with
+  | none => exact h u
+  | some (.guards _) => exact fun hu => hu.imp (fun ⟨hu, ha⟩ => ⟨hu, hr a ha⟩) id
+  | some (.asserts _) => exact fun ⟨hu, ha⟩ => ⟨hu, hr a ha⟩
 
 theorem Effect.result_agree (e : Effect) {R T : Fam} {a : Tm} {n}
     (h : Agree R T n) : Agree (e.result R a) (e.result T a) n := by
   intro m hm W u
-  cases e with
-  | unrestricted | preservesInputHeap => exact h m hm W u
-  | guards _ => exact or_congr (and_congr Iff.rfl (h m hm W a)) Iff.rfl
-  | asserts _ => exact and_congr Iff.rfl (h m hm W a)
+  unfold Effect.result
+  match e.promise with
+  | none => exact h m hm W u
+  | some (.guards _) => exact or_congr (and_congr Iff.rfl (h m hm W a)) Iff.rfl
+  | some (.asserts _) => exact and_congr Iff.rfl (h m hm W a)
 
 /-- A promise's parameter, counted after `n` saved actuals: what a bound
 signature promises of its own actuals. Defined where the promise is about one
 of them. -/
-def Effect.drop (n : Nat) : Effect → Effect
+def TypePromise.drop (n : Nat) : TypePromise → TypePromise
   | .guards p => .guards (p - n)
   | .asserts p => .asserts (p - n)
-  | e => e
+
+def Effect.drop (n : Nat) (e : Effect) : Effect :=
+  ⟨if e.receiverStore then .top else e.footprint, e.promise.map (TypePromise.drop n), e.fresh, false⟩
 
 /-- Whether binding `n` actuals keeps the promise about an actual of the
 bound call. -/
-def Effect.keeps (n : Nat) : Effect → Bool
-  | .guards p | .asserts p => n ≤ p
-  | _ => true
+def Effect.keeps (n : Nat) (e : Effect) : Bool :=
+  match e.promise with
+  | some p => n ≤ p.param
+  | none => true
 
-@[simp] theorem Effect.drop_zero (e : Effect) : e.drop 0 = e := by cases e <;> rfl
+theorem Effect.drop_zero {e : Effect} (h : e.receiverStore = false) : e.drop 0 = e := by
+  rcases e with ⟨c, _ | (_ | _), f, s⟩ <;> simp_all [Effect.drop, TypePromise.drop]
 
 @[simp] theorem Effect.keeps_zero (e : Effect) : e.keeps 0 = true := by
-  cases e <;> simp [Effect.keeps]
+  simp [Effect.keeps]
+  split <;> simp
 
 theorem Effect.promised_drop {e : Effect} {pre args : List Tm} (h : e.keeps pre.length = true) :
     (e.drop pre.length).promised args = e.promised (pre ++ args) := by
-  cases e <;> simp_all [Effect.keeps, Effect.drop, Effect.promised, List.getD_eq_getElem?_getD,
-    List.getElem?_append_right]
+  rcases e with ⟨c, _ | (p | p), f, s⟩ <;>
+    simp only [Effect.keeps, Effect.drop, Effect.promised, TypePromise.drop, TypePromise.param,
+      Option.map] at h ⊢
+  all_goals
+    have h' : pre.length ≤ p := of_decide_eq_true h
+    simp [List.getD_eq_getElem?_getD, List.getElem?_append_right h']
 
 /-- Whether a promise is about one of the first `n` parameters, the ones code
 of arity `n` binds. -/
-def Effect.below (n : Nat) : Effect → Bool
-  | .guards p | .asserts p => p < n
-  | _ => true
+def Effect.below (n : Nat) (e : Effect) : Bool :=
+  match e.promise with
+  | some p => p.param < n
+  | none => true
 
 private theorem parameters_getD : ∀ (n : Nat) (args : List Tm) (p : Nat), p < n →
     (CallArguments.parameters n args).getD p .undef = args.getD p .undef
@@ -211,61 +293,92 @@ theorem Effect.parameters_length : ∀ (n : Nat) (args : List Tm), (CallArgument
 /-- Code binding `n` parameters holds a promised actual among them. -/
 theorem Effect.promised_frame {e : Effect} {n : Nat} (h : e.below n = true) (args vs : List Tm) :
     e.promised (CallArguments.parameters n args ++ vs) = e.promised args := by
-  cases e with
-  | unrestricted | preservesInputHeap => rfl
-  | guards p | asserts p =>
-    simp only [Effect.below, decide_eq_true_eq] at h
-    simp only [Effect.promised]
-    rw [← parameters_getD n args p h, List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD,
+  unfold Effect.promised
+  unfold Effect.below at h
+  split
+  · rename_i p hp
+    rw [hp] at h
+    simp only [decide_eq_true_eq] at h
+    rw [← parameters_getD n args p.param h, List.getD_eq_getElem?_getD, List.getD_eq_getElem?_getD,
       List.getElem?_append_left (by rw [Effect.parameters_length]; exact h)]
+  · rfl
 
 /-- Actuals past those code binds do not change what it promises about. -/
 theorem Effect.promised_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm : n ≤ m) (args : List Tm) :
     e.promised (args.take m) = e.promised args := by
-  cases e with
-  | unrestricted | preservesInputHeap => rfl
-  | guards p | asserts p =>
-    simp only [Effect.below, decide_eq_true_eq] at h
-    simp only [Effect.promised, List.getD_eq_getElem?_getD, List.getElem?_take]
+  unfold Effect.promised
+  unfold Effect.below at h
+  split
+  · rename_i p hp
+    rw [hp] at h
+    simp only [decide_eq_true_eq] at h
+    simp only [List.getD_eq_getElem?_getD, List.getElem?_take]
     rw [if_pos (by omega)]
+  · rfl
 
 theorem Effect.result_drop (e : Effect) (n : Nat) (R : Fam) (a : Tm) :
     (e.drop n).result R a = e.result R a := by
-  cases e <;> rfl
+  rcases e with ⟨c, _ | (_ | _), f, s⟩ <;> rfl
 
-theorem Effect.post_drop (e : Effect) (n : Nat) : (e.drop n).post = e.post := by
-  cases e <;> rfl
+/-- A bound call forwards to its target with the receiver it saved: the
+target's postcondition at that receiver is the bound signature's at any. -/
+theorem Effect.post_drop {e : Effect} (n : Nat) {rv r : Tm} {before after : Heap} {v : Val}
+    (h : e.post rv before after v) : (e.drop n).post r before after v := by
+  refine ⟨?_, h.2⟩
+  unfold Effect.drop Effect.within
+  by_cases hs : e.receiverStore = true
+  · simp only [hs, if_true, Bool.false_eq_true, if_false]
+    exact Effect.within_top h.1
+  · simp only [Bool.not_eq_true] at hs
+    simp only [hs, Bool.false_eq_true, if_false]
+    exact Effect.within_holds h.1 hs
 
-/-- Fresh entry allocation composes with preservation of the body's input heap. -/
-theorem Effect.post_prefix (effect : Effect) {before middle after : Heap} {v : Val}
-    (hprefix : before.IsPrefix middle) : effect.post middle after v → effect.post before after v := by
-  cases effect with
-  | unrestricted | guards _ | asserts _ => exact id
-  | preservesInputHeap => exact fun h => hprefix.trans h
+/-- Fresh entry allocation composes with the body's footprint. -/
+theorem Effect.post_prefix (effect : Effect) {r : Tm} {before middle after : Heap} {v : Val}
+    (hprefix : before.IsPrefix middle) : effect.post r middle after v → effect.post r before after v := by
+  rintro ⟨hw, hf⟩
+  refine ⟨?_, fun h => (hf h).lower hprefix.length_le⟩
+  unfold Effect.within at hw ⊢
+  split
+  · rename_i hs; simp only [hs, if_true] at hw; exact hw.prefix_left hprefix
+  · rename_i hs; simp only [hs, Bool.false_eq_true, if_false] at hw; exact hw.prefix_left hprefix
 
-/-- Conjoining two guarantees for the same call retains both. This is a
-meet in the order of contracts: heap preservation is stronger than the
-unrestricted guarantee. -/
-def Effect.meet : Effect → Effect → Effect
-  | .preservesInputHeap, _ => .preservesInputHeap
-  | .unrestricted, other => other
-  | e, _ => e
+/-- Conjoining two guarantees for the same call retains both: the meet of
+their footprints, with the promise they share, a fresh result where either
+states one. -/
+def Effect.meet (a b : Effect) : Effect :=
+  ⟨a.footprint.meet b.footprint, a.promise, a.fresh || b.fresh, a.receiverStore⟩
 
-/-- Two guarantees whose results mean the same: two heap effects, or one
-promise twice. Only these combine. -/
-def Effect.sameResult : Effect → Effect → Bool
-  | .guards p, .guards q | .asserts p, .asserts q => p == q
-  | a, b => a.plain && b.plain
+/-- Two guarantees whose results mean the same: the same promise, or none,
+and footprints over the same locations. Only these combine. -/
+def Effect.sameResult (a b : Effect) : Bool := a.promise == b.promise && a.receiverStore == b.receiverStore
 
-theorem Effect.post_meet {a b : Effect} (hs : a.sameResult b = true) (before after : Heap) (value : Val) :
-    (a.meet b).post before after value ↔ a.post before after value ∧ b.post before after value := by
-  cases a <;> cases b <;> simp_all [Effect.meet, Effect.post, Effect.sameResult, Effect.plain]
+theorem Effect.post_meet {a b : Effect} (hs : a.sameResult b = true) (r : Tm) (before after : Heap) (value : Val) :
+    (a.meet b).post r before after value ↔ a.post r before after value ∧ b.post r before after value := by
+  simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
+  have hw : (a.meet b).within r before after ↔ a.within r before after ∧ b.within r before after := by
+    unfold Effect.within Effect.meet
+    rw [← hs.2]
+    split
+    · exact Footprints.Closed.holdsOn_meet
+    · exact Footprints.Closed.holds_meet
+  have hf : (a.meet b).fresh = (a.fresh || b.fresh) := rfl
+  unfold Effect.post
+  rw [hw, hf, Bool.or_eq_true]
+  constructor
+  · rintro ⟨⟨ha, hb⟩, hf⟩
+    exact ⟨⟨ha, fun h => hf (.inl h)⟩, ⟨hb, fun h => hf (.inr h)⟩⟩
+  · rintro ⟨⟨ha, hfa⟩, ⟨hb, hfb⟩⟩
+    exact ⟨⟨ha, hb⟩, fun h => h.elim hfa hfb⟩
 
 theorem Effect.meet_same {a b : Effect} (hs : a.sameResult b = true) :
     (a.meet b).result = a.result ∧ (a.meet b).promised = a.promised ∧
       b.result = a.result ∧ b.promised = a.promised := by
-  cases a <;> cases b <;> simp [Effect.sameResult, Effect.plain] at hs <;> (try subst hs) <;>
-    exact ⟨rfl, rfl, rfl, rfl⟩
+  simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
+  replace hs := hs.1
+  refine ⟨rfl, rfl, ?_, ?_⟩
+  · funext R x; simp [Effect.result, hs]
+  · funext args; simp [Effect.promised, hs]
 
 /-- The arrow equation, with a heap postcondition relative to this call's
 entry heap. The input and result contracts are exactly those of `Promise`.
@@ -278,7 +391,7 @@ def PromiseWith (Ξ : Fam) (effect : Effect)
     WorldAdm U → ∀ (heap : Heap), HeapOk j U heap → ∀ r, isVal r = true → Rc j U r →
       ∀ args, CallArguments.Values args → Acc j U args →
         ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧
-          SafePost Ξ (effect.result R (effect.promised args)) (effect.post heap) j U heap result
+          SafePost Ξ (effect.result R (effect.promised args)) (effect.post r heap) j U heap result
 
 /-- A heap effect's signature is an ordinary arrow once its postcondition is
 forgotten. A promise's is not: its result operand is not the result's type. -/
@@ -302,36 +415,62 @@ theorem PromiseWith.mono {effect Acc Rc R n W W' v} (hx : WExt W W')
 
 /-- Effect coverage is implication of the normal-return postcondition and of
 what the result meets, at every result operand. There is deliberately no rule
-strengthening an unrestricted signature, and none relating a promise to a heap
-effect, whose result operands mean different things. -/
+relating a promise to a signature without one, whose result operands mean
+different things. -/
 def Effect.Covers (source target : Effect) : Prop :=
-  (∀ before after value, source.post before after value → target.post before after value) ∧
+  (∀ r before after value, source.post r before after value → target.post r before after value) ∧
   ∀ R args k W u, source.result R (source.promised args) k W u → target.result R (target.promised args) k W u
 
-def Effect.covers : Effect → Effect → Bool
-  | .preservesInputHeap, .unrestricted | .preservesInputHeap, .preservesInputHeap => true
-  | .unrestricted, .unrestricted => true
-  | .guards p, .guards q | .asserts p, .asserts q => p == q
-  | _, _ => false
+/-- A smaller footprint and the same promise; a fresh result where the other
+states one; and the receiver's store excepted only where the other excepts
+it or lets everything change. -/
+def Effect.covers (a b : Effect) : Bool :=
+  a.footprint.le b.footprint && a.promise == b.promise && (!b.fresh || a.fresh) &&
+    (!a.receiverStore || b.receiverStore || b.footprint == .top)
 
 theorem Effect.covers_sound {a b : Effect} (h : a.covers b = true) : a.Covers b := by
-  cases a <;> cases b <;> simp_all [Effect.covers, Effect.Covers, Effect.post, Effect.result, Effect.promised]
+  simp only [Effect.covers, Bool.and_eq_true] at h
+  obtain ⟨⟨⟨hle, hp⟩, hf⟩, hs⟩ := h
+  simp only [beq_iff_eq] at hp
+  refine ⟨fun r before after v ⟨hw, hfr⟩ => ⟨?_, fun hb => hfr ?_⟩, fun R args k W u hu => ?_⟩
+  · unfold Effect.within at hw ⊢
+    by_cases ha : a.receiverStore = true
+    · simp only [ha, if_true] at hw
+      by_cases hbs : b.receiverStore = true
+      · simp only [hbs, if_true]; exact hw.mono hle
+      · simp only [Bool.not_eq_true] at hbs
+        have htop : b.footprint = .top := by
+          rw [ha, hbs] at hs
+          simpa using hs
+        simp only [hbs, Bool.false_eq_true, if_false]
+        rw [htop]; exact hw.top
+    · simp only [Bool.not_eq_true] at ha
+      simp only [ha, Bool.false_eq_true, if_false] at hw
+      split
+      · exact (hw.mono hle).on _
+      · exact hw.mono hle
+  · rw [hb] at hf; simpa using hf
+  · simpa [Effect.result, Effect.promised, hp] using hu
 
-theorem Effect.Covers.refl (e : Effect) : e.Covers e := ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+theorem Effect.Covers.refl (e : Effect) : e.Covers e := ⟨fun _ _ _ _ h => h, fun _ _ _ _ _ h => h⟩
 
 /-- Two executions' results combine as the results of their operands do. -/
 theorem Effect.cross_result (e : Effect) {B C D : Fam} {a : Tm} {n}
     (h : CrossCompatUpTo n B C D) : CrossCompatUpTo n (e.result B a) (e.result C a) (e.result D a) := by
   intro j hj W W' heap hok hok' u hb hc
-  cases e with
-  | unrestricted | preservesInputHeap => exact h j hj W W' heap hok hok' u hb hc
-  | guards _ =>
+  unfold Effect.result at hb hc ⊢
+  match hp : e.promise with
+  | none => rw [hp] at hb hc; exact h j hj W W' heap hok hok' u hb hc
+  | some (.guards _) =>
+    rw [hp] at hb hc
     rcases hb with ⟨rfl, hb⟩ | rfl
     · rcases hc with ⟨-, hc⟩ | hc
       · exact .inl ⟨rfl, h j hj W W' heap hok hok' a hb hc⟩
       · cases hc
     · exact .inr rfl
-  | asserts _ => exact ⟨hb.1, h j hj W W' heap hok hok' a hb.2 hc.2⟩
+  | some (.asserts _) =>
+    rw [hp] at hb hc
+    exact ⟨hb.1, h j hj W W' heap hok hok' a hb.2 hc.2⟩
 
 theorem PromiseWith.weaken' {Ξ Ξ' : Fam} {effect effect' Acc Acc' Rc Rc' R T k W v}
     (he : effect.Covers effect')
@@ -345,7 +484,7 @@ theorem PromiseWith.weaken' {Ξ Ξ' : Fam} {effect effect' Acc Acc' Rc Rc' R T k
     h j hj U hx hu heap hh r hrv (hrecv j hj U r hr) args hv (hacc j hj U args ha)
   exact ⟨result, hi, consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2 T args m U' u
-      (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu)) (he.1 heap) hs⟩
+      (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu)) (he.1 r heap) hs⟩
 
 theorem PromiseWith.weaken {Ξ : Fam} {effect effect' Acc Acc' Rc Rc' R T k W v}
     (he : effect.Covers effect')
@@ -382,6 +521,167 @@ theorem PromiseWith.congr {Ξ Ξ' : Fam} {effect Acc Acc' Rc Rc' R T n W v}
       (fun j hj U args => (hacc j hj U args).mp)
       (fun j hj U u => (hres j hj U u).mpr)
 
+/-! ### Construct signatures -/
+
+/-- The promise of one construct signature, independent of argument-list
+syntax: constructing the value, in any strictly future world, with actuals
+`P` admits, runs a body safe at the result whose normal return meets the
+signature's effect, from the heap the construction starts in. -/
+def ConstructPromise (Ξ : Fam) (effect : Effect) (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k)
+    (v : Val) : Prop :=
+  ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+    WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+      ∀ args, CallArguments.Values args → P j U args →
+        ∃ result, ConstructsTo v args result ∧
+          SafePost Ξ (effect.result R (effect.promised args)) (effect.post .undef heap) j U heap result
+
+theorem ConstructPromise.down {effect P R n W v}
+    (h : ConstructPromise Ξ effect P R (n + 1) W v) :
+    ConstructPromise Ξ effect P R n (trunc n (Nat.le_succ n) W) v := by
+  intro j hj U hx hu heap hh args hv ha
+  exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha
+
+theorem ConstructPromise.mono {effect P R n W W' v} (hx : WExt W W')
+    (h : ConstructPromise Ξ effect P R n W v) : ConstructPromise Ξ effect P R n W' v := by
+  intro j hj U hy hu heap hh args hv ha
+  exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha
+
+theorem ConstructPromise.weaken' {Ξ Ξ' : Fam} {effect effect' P P' R T k W v}
+    (he : effect.Covers effect')
+    (hexc : ∀ j, j < k → ∀ U u, Ξ j U u → Ξ' j U u)
+    (hacc : ∀ j, j < k → ∀ U args, P' j U args → P j U args)
+    (hres : ∀ j, j < k → ∀ U u, R j U u → T j U u)
+    (h : ConstructPromise Ξ effect P R k W v) : ConstructPromise Ξ' effect' P' T k W v := by
+  intro j hj U hx hu heap hh args hv ha
+  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv (hacc j hj U args ha)
+  exact ⟨result, hc, consequence_below' (fun m hm => hexc m (by omega))
+    (fun m hm U' u hu => he.2 T args m U' u
+      (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu)) (he.1 .undef heap) hs⟩
+
+theorem ConstructPromise.congr {Ξ Ξ' : Fam} {effect P P' R T n W v}
+    (hexc : Agree Ξ Ξ' n)
+    (hacc : ∀ j, j < n → ∀ U args, P j U args ↔ P' j U args)
+    (hres : Agree R T n) :
+    ConstructPromise Ξ effect P R n W v ↔ ConstructPromise Ξ' effect P' T n W v := by
+  constructor <;> intro h
+  · exact h.weaken' (Effect.Covers.refl _)
+      (fun j hj U u => (hexc j hj U u).mp)
+      (fun j hj U args => (hacc j hj U args).mpr)
+      (fun j hj U u => (hres j hj U u).mp)
+  · exact h.weaken' (Effect.Covers.refl _)
+      (fun j hj U u => (hexc j hj U u).mpr)
+      (fun j hj U args => (hacc j hj U args).mp)
+      (fun j hj U u => (hres j hj U u).mpr)
+
+/-- A plain signature's promise gives a safe construction once its
+postcondition is forgotten. -/
+theorem ConstructPromise.erase {effect P R k W v} (hp : effect.plain = true)
+    (h : ConstructPromise Ξ effect P R k W v) :
+    ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+        ∀ args, CallArguments.Values args → P j U args →
+          ∃ result, ConstructsTo v args result ∧ Safe Ξ R j U heap result := by
+  intro j hj U hx hu heap hh args hv ha
+  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv ha
+  rw [Effect.result_plain hp] at hs
+  exact ⟨result, hc, HeapObservations.erase hs⟩
+
+/-- A safe construction meets the ordinary effect, which states no more. -/
+theorem ConstructPromise.ordinary {P R k W v}
+    (h : ∀ (j : Nat) (hj : j < k) (U : WorldT j),
+      WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
+        ∀ args, CallArguments.Values args → P j U args →
+          ∃ result, ConstructsTo v args result ∧ Safe Ξ R j U heap result) :
+    ConstructPromise Ξ Effect.ordinary P R k W v := by
+  intro j hj U hx hu heap hh args hv ha
+  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv ha
+  exact ⟨result, hc, HeapObservations.weaken (fun _ _ h => (Effect.post_ofFootprint _ _ _ _ _).mpr h)
+    (Footprints.Closed.top_safe hs)⟩
+
+/-- **Construct signatures.** Values meeting every signature `(parameters,
+result)` under `new`, each with its effect (`ConstructPromise`). The code is
+construct-only, so a plain call cannot run it, and no code without
+`[[Construct]]` is one. As for call signatures, the promise is about the term
+after the step, which is what lets the signature's variance be used only
+below the current level. -/
+def ctorsT (Ξ : Fam) (L : List (MethodArrow Fam)) : Fam := fun k W v =>
+  Constructible v ∧ ∀ p ∈ L, ConstructPromise Ξ p.effect (ArgsT p.arguments) p.result k W v
+
+theorem ctorsT_adm (L : List (MethodArrow Fam)) : Adm (ctorsT Ξ L) :=
+  ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
+   fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
+
+/-- A variadic construct signature: its fixed parameters, then, as one
+argument pack, the rest. -/
+abbrev CtorRestSignature := Contract Unit (List Fam × ArgFam) Fam
+
+/-- **Variadic construct signatures** `(parameters, rest, result)`: as
+`ctorsT`, for the lists `CtorRest` admits. -/
+def ctorRestsT (Ξ : Fam) (S : List CtorRestSignature) : Fam := fun k W v =>
+  Constructible v ∧ ∀ s ∈ S,
+    ConstructPromise Ξ s.effect (CtorRest s.arguments.1 s.arguments.2) s.result k W v
+
+theorem ctorRestsT_adm (S : List CtorRestSignature) : Adm (ctorRestsT Ξ S) :=
+  ⟨fun _ _ _ h => ⟨h.1, fun p hp => (h.2 p hp).down⟩,
+   fun _ _ _ hx _ h => ⟨h.1, fun p hp => (h.2 p hp).mono hx⟩⟩
+
+theorem ctorRestsT_append (S T : List CtorRestSignature) (k : Nat) (W : WorldT k) (v : Val) :
+    ctorRestsT Ξ (S ++ T) k W v ↔ ctorRestsT Ξ S k W v ∧ ctorRestsT Ξ T k W v := by
+  simp only [ctorRestsT, List.mem_append, or_imp, forall_and]
+  constructor
+  · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
+  · rintro ⟨⟨hc, hl⟩, -, hm⟩; exact ⟨hc, hl, hm⟩
+
+theorem ctorsT_select {L n W v p} (hf : ctorsT Ξ L n W v) (hp : p ∈ L) : ctorsT Ξ [p] n W v :=
+  ⟨hf.1, fun q hq => by cases List.mem_singleton.mp hq; exact hf.2 p hp⟩
+
+theorem ctorsT_append (L M : List (MethodArrow Fam)) (k : Nat) (W : WorldT k) (v : Val) :
+    ctorsT Ξ (L ++ M) k W v ↔ ctorsT Ξ L k W v ∧ ctorsT Ξ M k W v := by
+  simp only [ctorsT, List.mem_append, or_imp, forall_and]
+  constructor
+  · rintro ⟨hc, hl, hm⟩; exact ⟨⟨hc, hl⟩, hc, hm⟩
+  · rintro ⟨⟨hc, hl⟩, -, hm⟩; exact ⟨hc, hl, hm⟩
+
+theorem ctorsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → MethodArrow Fam) {n : Nat}
+    (hΞ : Agree Ξ Ξ' n)
+    (h : ∀ x ∈ l, (f x).effect = (g x).effect ∧ ArgsAgree n (f x).arguments (g x).arguments ∧
+      Agree (f x).result (g x).result n)
+    (W : WorldT n) (v : Val) : ctorsT Ξ (l.map f) n W v ↔ ctorsT Ξ' (l.map g) n W v := by
+  unfold ctorsT
+  refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩ <;>
+    obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
+  · have hp := hs (f x) (List.mem_map_of_mem hm)
+    rw [(h x hm).1] at hp
+    exact (ConstructPromise.congr hΞ (fun j hj U args => ArgsT_congr (h x hm).2.1 hj U args)
+      (h x hm).2.2).mp hp
+  · have hp := hs (g x) (List.mem_map_of_mem hm)
+    rw [← (h x hm).1] at hp
+    exact (ConstructPromise.congr hΞ (fun j hj U args => ArgsT_congr (h x hm).2.1 hj U args)
+      (h x hm).2.2).mpr hp
+
+theorem ctorRestsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → CtorRestSignature) {n : Nat}
+    (hΞ : Agree Ξ Ξ' n)
+    (h : ∀ x ∈ l, (f x).effect = (g x).effect ∧ ArgsAgree n (f x).arguments.1 (g x).arguments.1 ∧
+      Agree (f x).arguments.2 (g x).arguments.2 n ∧ Agree (f x).result (g x).result n)
+    (W : WorldT n) (v : Val) : ctorRestsT Ξ (l.map f) n W v ↔ ctorRestsT Ξ' (l.map g) n W v := by
+  unfold ctorRestsT
+  have hacc : ∀ x ∈ l, ∀ j, j < n → ∀ U args,
+      CtorRest (f x).arguments.1 (f x).arguments.2 j U args ↔
+        CtorRest (g x).arguments.1 (g x).arguments.2 j U args := by
+    intro x hm j hj U args
+    have hl := ArgsAgree_length (h x hm).2.1
+    unfold CtorRest
+    rw [hl]
+    exact and_congr Iff.rfl (and_congr (ArgsT_congr (h x hm).2.1 hj U _) ((h x hm).2.2.1 j hj U _))
+  refine and_congr Iff.rfl ⟨fun hs p hp => ?_, fun hs p hp => ?_⟩ <;>
+    obtain ⟨x, hm, rfl⟩ := List.mem_map.mp hp
+  · have hp := hs (f x) (List.mem_map_of_mem hm)
+    rw [(h x hm).1] at hp
+    exact (ConstructPromise.congr hΞ (hacc x hm) (h x hm).2.2.2).mp hp
+  · have hp := hs (g x) (List.mem_map_of_mem hm)
+    rw [← (h x hm).1] at hp
+    exact (ConstructPromise.congr hΞ (hacc x hm) (h x hm).2.2.2).mpr hp
+
 /-- Combining result guarantees retains the effects established for this call
 domain by either premise. World-sensitive results still require the same
 cross-world compatibility as ordinary arrows. Effects concern the shared final
@@ -400,7 +700,7 @@ theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
   rw [hr2, hp2] at hsc
   rw [hr1, hp1]
   exact ⟨b, hib, HeapObservations.weaken
-    (fun heap' value hpost => (Effect.post_meet hs heap heap' value).mpr hpost)
+    (fun heap' value hpost => (Effect.post_meet hs r heap heap' value).mpr hpost)
     (cross_upto j (Effect.cross_result effect (hcross j hj)) U U heap b hh hh hsb hsc)⟩
 
 /-- Binding saves a receiver and argument prefix, then forwards without
@@ -437,8 +737,9 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
       · exact hargs a hm
     obtain ⟨res, hinv, hsafe⟩ := ht i hi _ hxU hu' heap hh' rv hrv hr'
       (pre ++ args) hall (hprefix i hi _ hxU args ha')
-    rw [Effect.result_drop, Effect.post_drop, Effect.promised_drop hkeeps]
-    exact .inr ⟨_, heap, res, WExt_refl _, hu', hinv.step heap, hh', hsafe⟩
+    rw [Effect.result_drop, Effect.promised_drop hkeeps]
+    exact .inr ⟨_, heap, res, WExt_refl _, hu', hinv.step heap, hh',
+      HeapObservations.weaken (fun _ _ h => Effect.post_drop pre.length h) hsafe⟩
 
 /-- Application consumes a qualified signature, without inspecting the
 callee's implementation. Its entry heap is after actual evaluation. -/
@@ -447,7 +748,7 @@ theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
     (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
     (hw : WorldAdm W) (hh : HeapOk n W heap) :
-    SafePost Ξ (effect.result R (effect.promised vs)) (effect.post heap) n W heap (.invoke f r vs) := by
+    SafePost Ξ (effect.result R (effect.promised vs)) (effect.post r heap) n W heap (.invoke f r vs) := by
   cases n with
   | zero => trivial
   | succ n =>
@@ -458,30 +759,61 @@ theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     exact .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
       HeapOk_trunc n W heap hh, hs⟩
 
+/-- A construction of a class value with value actuals takes one step to the
+body its signature makes safe, meeting the signature's effect from the heap
+it starts in. The signature may declare trailing positions the construction
+omits: each admits `undefined`, which the step binds there. The signature's
+effect is plain, so its result operand is the result's type. -/
+theorem construct_safe {effect : Effect} (hpl : effect.plain = true) {P : ArgFam} {R : Fam}
+    (hP : Adm P) {n W heap v vs pad}
+    (hf : ConstructPromise Ξ effect P R n W v) (hv : CallArguments.Values vs)
+    (hpad : ∀ a ∈ pad, a = .undef) (ha : P n W (vs ++ pad))
+    (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    SafePost Ξ R (effect.post .undef heap) n W heap (.construct v vs) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    let U := trunc n (Nat.le_succ n) W
+    have hvp : CallArguments.Values (vs ++ pad) := by
+      intro a h
+      rcases List.mem_append.mp h with h | h
+      · exact hv a h
+      · rw [hpad a h]; rfl
+    obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc, rfl⟩, hs⟩ := hf n (Nat.lt_succ_self n) U (WExt_refl _)
+      (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) _ hvp
+      (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
+    rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_plain hpl] at hs
+    exact .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
+      CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh, hs⟩
+
 /-- An operational invariant that only appends fresh locations supplies
 the normal-return preservation postcondition, supplementing ordinary safety.
 The safety proof supplies the same worlds and result contract at every step. -/
-theorem prefix_safe {P : Tm → Prop} {R : Fam}
+theorem prefix_safe {P : Tm → Prop} {R : Fam} {r : Tm}
     (hstep : ∀ {h t h' t'}, P t → Step h t h' t' → h.IsPrefix h' ∧ P t') :
     ∀ {n W heap t}, P t → Safe Ξ R n W heap t →
-      SafePost Ξ R (Effect.preservesInputHeap.post heap) n W heap t := by
+      SafePost Ξ R ((Effect.ofFootprint .empty).post r heap) n W heap t := by
   intro n
   induction n with
   | zero => intros; trivial
   | succ n ih =>
     intro W heap t hp hs
     rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
-    · exact .inl (.inl ⟨hv, ht, ⟨[], by simp⟩⟩)
+    · exact .inl (.inl ⟨hv, ht, (Effect.post_ofFootprint _ _ _ _ _).mpr
+        (Footprints.Closed.holds_empty.mpr ⟨[], by simp⟩)⟩)
     · exact .inl (.inr hth)
     · obtain ⟨hprefix, hp'⟩ := hstep hp step
       exact .inr ⟨U, h', t', hx, hu, step, hh,
-        HeapObservations.weaken (fun _ _ hpost => hprefix.trans hpost) (ih hp' hs)⟩
+        HeapObservations.weaken (fun _ _ hpost => (Effect.post_ofFootprint _ _ _ _ _).mpr
+          (Footprints.Closed.holds_empty.mpr
+          (hprefix.trans (Footprints.Closed.holds_empty.mp ((Effect.post_ofFootprint _ _ _ _ _).mp hpost)))))
+          (ih hp' hs)⟩
 
 /-- The conservative executable purity check enriches independently proved
 safety. It cannot manufacture safety or a return type on its own. -/
-theorem pure_safe {R : Fam} {n W heap t}
+theorem pure_safe {R : Fam} {r : Tm} {n W heap t}
     (hp : Purity.PureRun t) (hs : Safe Ξ R n W heap t) :
-    SafePost Ξ R (Effect.preservesInputHeap.post heap) n W heap t :=
+    SafePost Ξ R ((Effect.ofFootprint .empty).post r heap) n W heap t :=
   prefix_safe Purity.CollectingRun.step (.pure hp) hs
 
 def callsT (Ξ : Fam) (L : List (Arrow Fam)) : Fam := fun k W v =>

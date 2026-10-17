@@ -6,13 +6,24 @@ let items k j = list (field k j)
 let natural j = match j with
   | Number n -> (match int_of_string_opt n with Some i when i >= 0 -> i | _ -> fail "expected a natural number")
   | _ -> fail "expected a natural number"
-(* A signature's effect, as the wire spells it: a heap effect's name, or a
-   promise naming its parameter. *)
-let effect_of = function
-  | String "unrestricted" -> Unrestricted
-  | String "preservesInputHeap" -> PreservesInputHeap
+(* A closed footprint and a signature's effect, as the wire spells them. *)
+let change_of allowed j =
+  match List.assoc_opt (str j) ["keep",Keep;"grow",Grow;"any",Any] with
+  | Some d when List.mem d allowed -> d
+  | _ -> unsupported "unknown footprint change"
+let footprint_of j = match j with
+  | Object fields when List.sort String.compare (List.map fst fields) = ["store";"value"] ->
+    {on_value=change_of [Keep;Any] (field "value" j);on_store=change_of [Keep;Grow;Any] (field "store" j)}
+  | _ -> unsupported "invalid footprint"
+let promise_of = function
   | Object [("guards",Object [("param",p)])] -> Guards (natural p)
   | Object [("asserts",Object [("param",p)])] -> Asserts (natural p)
+  | _ -> unsupported "unknown callable promise"
+let effect_of j = match j with
+  | Object fields when List.sort String.compare (List.map fst fields) = ["footprint";"fresh";"promise";"receiverStore"] ->
+    {footprint=footprint_of (field "footprint" j);
+     promise=(match field "promise" j with Null -> None | p -> Some (promise_of p));
+     fresh=boolean (field "fresh" j); receiver_store=boolean (field "receiverStore" j)}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None
@@ -218,7 +229,7 @@ let rec source_type ctx j =
           let readonly = List.mem_assoc "readonly" (obj f) in
           {name=property_key (field "name" f);optional=false;read=t;write=(if readonly then None else Some t);
            host=false;receivers=[]}) (list fs) in
-    Atoms [Ctors ([{call_effect=Unrestricted;quantified=[];receiver=top;params=List.map recur (items "params" j);
+    Atoms [Ctors ([{call_effect=effect_of (field "effect" j);quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;rest_pack;result=recur (field "result" j)}],statics)]
   | "function" ->
     let receiver = match field "receiver" j with Null -> top | source -> recur source in
@@ -404,7 +415,7 @@ let guard_of binders = function
   | Null -> None
   | j ->
     let param = natural (field "param" j) in
-    Some ((if boolean (field "asserts" j) then Asserts param else Guards param),
+    Some (promise_effect (if boolean (field "asserts" j) then Asserts param else Guards param),
       source_type binders (field "type" j))
 let span_start j = match list j with
   | Number n :: _ -> int_of_string n
@@ -675,65 +686,148 @@ let rec assigns name s = match s.statement with
     (body @ (match handler with Some (_,h) -> h | None -> []) @ Option.value finalizer ~default:[])
   | Closing (close,body) -> List.exists (assigns name) (body @ close)
   | Break _ | Continue -> false
-(* A definition-level proposal, never a call-site assumption. This first
-   analysis proposes pure operations, field and element reads and fresh
-   allocations.
-   Creation does not execute a closure's code. Calls consume their inferred
-   qualified contracts; Lean independently checks the selected call evidence.
+(* A definition-level proposal, never a call-site assumption: the closed
+   footprint a body's runs stay within, or [None] where the analysis cannot
+   bound them. Reads, tests, arithmetic and fresh allocations change nothing;
+   an assignment to a variable changes at most a cell holding a value, which
+   [cell_write] bounds; a call or a construction changes at most what every
+   signature its callee may take states ([callable]: call signatures, or
+   construct signatures). Creation does not execute a closure's code. Lean
+   checks every node of the body against the proposed footprint, and each
+   call at the signature it selects.
    Every constructor is listed so extensions require a decision here. *)
-let rec heap_preserving_expr ~callable values (e:expr) =
-  let pure = heap_preserving_expr ~callable values in
+let join_change a b = match a,b with
+  | Any,_ | _,Any -> Any | Grow,_ | _,Grow -> Grow | Keep,Keep -> Keep
+let join_footprint a b =
+  {on_value=join_change a.on_value b.on_value;on_store=join_change a.on_store b.on_store}
+let join_bound a b = match a,b with Some a,Some b -> Some (join_footprint a b) | _ -> None
+let cell_write = Some {on_value=Any;on_store=Keep}
+(* The footprint a `for...of` runs its iteration within, read off the
+   iteration intrinsic's type: its call, which creates the iterator, then
+   each call of the step the iterator is. *)
+let iteration_footprint (t:ty) : footprint option =
+  let join_calls calls = List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint)
+    empty_footprint calls in
+  match t with
+  | Atoms [Shape {calls=(_ :: _ as calls);_}] ->
+    List.fold_left (fun acc (s:signature) -> join_bound acc (match s.result with
+      | Atoms [Shape {calls=(_ :: _ as steps);_}] -> Some (join_footprint s.call_effect.footprint (join_calls steps))
+      | _ -> None)) (Some empty_footprint) calls
+  | _ -> None
+(* The footprint of a call at every signature its callee may take: each
+   signature's, or, where it excepts its receiver's store and the receiver's
+   store is not one the run allocated, the one letting everything change. *)
+let effects_footprint ~receiver_fresh (effects:call_effect list) =
+  List.fold_left (fun acc (e:call_effect) -> join_footprint acc
+    (if e.receiver_store && not receiver_fresh then top_footprint else e.footprint)) empty_footprint effects
+(* A value whose array store the run allocated: a constant holding one, or a
+   call every signature of whose callee states a fresh result. Lean's facts
+   follow slots of the graph, which a constant's binding is. *)
+let fresh_expr ~callable ~fresh (e:expr) = match e.node with
+  | Id name -> List.mem name fresh
+  | Call (callee,_,_,_,_) | Invoke (callee,_,_,_) ->
+    (match callable callee with
+     | Some (_ :: _ as effects) -> List.for_all (fun (e:call_effect) -> e.fresh) effects
+     | _ -> false)
+  | _ -> false
+let rec footprint_expr ?(fresh=[]) ~callable ~iteration ~readable (e:expr) : footprint option =
+  let go = footprint_expr ~fresh ~callable ~iteration ~readable in
+  let calls ?(receiver_fresh=false) callee =
+    Option.map (effects_footprint ~receiver_fresh) (callable callee) in
+  let all es = List.fold_left (fun acc e -> join_bound acc (go e)) (Some empty_footprint) es in
   match e.node with
-  | Id name -> List.mem name values
-  | Literal _ -> true
-  | Not a | TypeofTest (_,_,a) | Cast (_,_,a) -> pure a
-  | Arith (_,a,b) | Comma (a,b) -> pure a && pure b
-  | Logical (_,a,b) | Coalesce (a,b) -> pure a && pure b
-  | Conditional (c,a,b) -> pure c && pure a && pure b
+  | Id name -> if List.mem name readable then Some empty_footprint else None
+  | Literal _ -> Some empty_footprint
+  | Not a | TypeofTest (_,_,a) | Cast (_,_,a) -> go a
+  | Arith (_,a,b) | Comma (a,b) -> all [a;b]
+  | Logical (_,a,b) | Coalesce (a,b) -> all [a;b]
+  | Conditional (c,a,b) -> all [c;a;b]
   (* A read changes no location: Lean's inspection rule admits any read of a
      field or an element, ordinary safety supplying that it does not stick. *)
-  | Read (a,_) -> pure a
-  | Index (a,b) | Equality (_,a,b) -> pure a && pure b
-  | Alloc fields -> List.for_all (fun (_,e) -> pure e) fields
-  | ArrayLiteral (es,spreads) -> spreads=[] && List.for_all pure es
-  | Lambda _ -> true
-  | Call (callee,receiver,args,spreads,_) -> spreads=[] &&
-    pure callee && Option.fold ~none:true ~some:pure receiver &&
-    List.for_all pure args && callable callee
+  | Read (a,_) -> go a
+  | Index (a,b) | Equality (_,a,b) -> all [a;b]
+  | Alloc fields -> all (List.map snd fields)
+  (* A spread part reads its operand's store, an array; the parser writes a
+     spread of any other iterable as its spread intrinsic's call, whose
+     signature states its footprint. *)
+  | ArrayLiteral (es,_) -> all es
+  | Lambda _ -> Some empty_footprint
+  (* A variable's new value goes to its slot, or to its cell, a location
+     holding a value (Lean's typed write rule). *)
+  | Assign (_,v) -> join_bound cell_write (go v)
+  | Update (_,{node=Id _;_},r,_) -> join_bound cell_write (all (Option.to_list r))
+  (* A spread argument reads its operand's store, as an array literal's
+     spread part does. *)
+  | Call (callee,receiver,args,_,_) ->
+    join_bound (all (callee :: Option.to_list receiver @ args)) (calls callee)
   (* A method call reads the member off its receiver (through a primitive's
-     prototype, for a primitive) and invokes it: preserving when the member's
-     signatures all state it. *)
-  | Invoke ({node=Read (o,_);_} as callee,args,spreads,_) -> spreads=[] &&
-    pure o && List.for_all pure args && callable callee
-  | BlockBody body -> heap_preserving_stmts ~callable values body
+     prototype, for a primitive) and invokes it: a member excepting its
+     receiver's store is within its footprint where the receiver is a
+     constant holding a store the run allocated. *)
+  | Invoke ({node=Read (o,_);_} as callee,args,_,_) ->
+    let receiver_fresh = match o.node with Id name -> List.mem name fresh | _ -> false in
+    join_bound (all (o :: args)) (calls ~receiver_fresh callee)
+  (* A construction changes at most what every construct signature its
+     callee may take states. *)
+  | New (callee,_,args,spreads) ->
+    if spreads<>[] then None else join_bound (all (callee :: args)) (calls callee)
+  (* An optional chain runs its receiver once, then its body, which reads
+     the receiver as `?.`, where the receiver is present. *)
+  | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~callable ~iteration ~readable:("?." :: readable) b)
+  | BlockBody body -> footprint_stmts ~fresh ~callable ~iteration ~readable body
   | Unary _ | HasKey _ | InstanceTest _ | Build _
-  | Write _ | Assign _ | Update _ | LogicalAssign _ | NullishAssign _
-  | ArrayAssign _ | Invoke _ | Apply _ | Ctor _ | New _
-  | Optional _ | IndexWrite _ | Bind _ | ObjectAssign _
-  | WithFields _ -> false
-and heap_preserving_stmts ~callable values = function
-  | [] -> true
+  | Write _ | Update _ | LogicalAssign _ | NullishAssign _
+  | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
+  | IndexWrite _ | Bind _ | ObjectAssign _
+  | WithFields _ -> None
+and footprint_stmts ?(fresh=[]) ~callable ~iteration ~readable = function
+  | [] -> Some empty_footprint
   | s::rest ->
-    let pure = heap_preserving_expr ~callable values in
-    let unchanged () = heap_preserving_stmts ~callable values rest in
+    let go = footprint_expr ~fresh ~callable ~iteration ~readable in
+    let block ?(fresh=fresh) readable body = footprint_stmts ~fresh ~callable ~iteration ~readable body in
+    let tail () = block readable rest in
     match s.statement with
-    | Declare (false,bindings) ->
-      let rec add values = function
-        | [] -> heap_preserving_stmts ~callable values rest
-        | (name,_,init)::more -> heap_preserving_expr ~callable values init && add (name::values) more in
-      add values bindings
-    | Return e | Effect e | Throw e -> pure e && unchanged ()
-    | If (c,a,b) -> pure c && heap_preserving_stmts ~callable values a &&
-        heap_preserving_stmts ~callable values b && unchanged ()
-    | Block (_,body) -> heap_preserving_stmts ~callable values body && unchanged ()
-    | Break _ | Continue -> unchanged ()
+    | Declare (mutable_,bindings) ->
+      let rec add fresh readable acc = function
+        | [] -> join_bound acc (block ~fresh readable rest)
+        | (name,_,init)::more ->
+          let fresh = if not mutable_ && fresh_expr ~callable ~fresh init then name :: fresh
+            else List.filter ((<>) name) fresh in
+          add fresh (name::readable) (join_bound acc (footprint_expr ~fresh ~callable ~iteration ~readable init)) more in
+      add fresh readable (Some empty_footprint) bindings
+    | Return e | Effect e | Throw e -> join_bound (go e) (tail ())
+    | If (c,a,b) -> join_bound (go c) (join_bound (block readable a) (join_bound (block readable b) (tail ())))
+    | Block (_,body) -> join_bound (block readable body) (tail ())
+    | While (c,body,update) ->
+      join_bound (go c) (join_bound (block readable (body @ update)) (tail ()))
+    | Break _ | Continue -> tail ()
     (* A pattern without a rest reads fields and positions of its
        initializer's value and binds them. *)
     | Destructure (target,d,init) when pattern_reads target ->
-      pure init && Option.fold ~none:true ~some:pure d &&
-      List.for_all pure (pattern_defaults target) &&
-      heap_preserving_stmts ~callable (pattern_names target @ values) rest
-    | Declare (true,_) | Destructure _ | While _ | ForOf _ | Try _ | Closing _ -> false
+      List.fold_left join_bound (go init)
+        (Option.to_list (Option.map go d) @ List.map go (pattern_defaults target) @
+         [footprint_stmts ~fresh:(List.filter (fun n -> not (List.mem n (pattern_names target))) fresh)
+            ~callable ~iteration ~readable:(pattern_names target @ readable) rest])
+    | ForOf (name,_,iterate,iterable,body) ->
+      join_bound (go iterable) (join_bound (iteration iterate)
+        (join_bound (block ~fresh:(List.filter ((<>) name) fresh) (name::readable) body) (tail ())))
+    | Destructure _ | Try _ | Closing _ -> None
+
+(* Whether every normal return of a body returns a value whose array store
+   the run allocated: an expression body that is one, or a block of
+   declarations and expression statements ending in a `return` of one. *)
+let fresh_result ~callable (body:expr) =
+  let rec returns fresh = function
+    | [{statement=Return e;_}] -> fresh_expr ~callable ~fresh e
+    | {statement=Declare (mutable_,bindings);_} :: rest ->
+      returns (List.fold_left (fun fresh (name,_,init) ->
+        if not mutable_ && fresh_expr ~callable ~fresh init then name :: fresh
+        else List.filter ((<>) name) fresh) fresh bindings) rest
+    | {statement=Effect _;_} :: rest -> returns fresh rest
+    | _ -> false in
+  match body.node with
+  | BlockBody stmts -> returns [] stmts
+  | _ -> fresh_expr ~callable ~fresh:[] body
 
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow | "rem" -> Rem
@@ -906,7 +1000,78 @@ and stmt binders j =
   | "if" -> If (expr binders (field "cond" j),List.map (stmt binders) (items "then" j),
       match field "else_" j with Null -> [] | xs -> List.map (stmt binders) (list xs))
   | k -> unsupported ("statement " ^ k) in {span=field "pos" j;statement}
-let decode ast =
+(* The calls whose array result nothing shrinks: read by index at once, or
+   bound to a constant every use of which reads it (an element, its length,
+   a member that reads, an iteration). A signature whose result has required
+   positions, `split`'s non-empty form, is proposed only there: such a store
+   contract forbids a removal. A proposal; Lean checks every call. *)
+let reading_members = ["map";"filter";"every";"some";"forEach";"join";"slice";"at";"indexOf";
+  "lastIndexOf";"includes";"find";"findIndex";"flatMap";"reduce";"reduceRight";"entries";"keys";"values"]
+let rec reads_only name (e:expr) = match e.node with
+  | Id n -> n <> name
+  | Index ({node=Id n;_},k) when n = name -> reads_only name k
+  (* An element at a computed index, read through `%ElementAt%`. *)
+  | Call ({node=Id "%ElementAt%";_},_,{node=Id n;_} :: rest,_,_) when n = name ->
+    List.for_all (reads_only name) rest
+  | Read ({node=Id n;_},Name "length") when n = name -> true
+  | Invoke ({node=Read ({node=Id n;_},Name m);_},args,_,_) when n = name && List.mem m reading_members ->
+    List.for_all (reads_only name) args
+  | IndexWrite ({node=Id n;_},_,_) | Write ({node=Id n;_},_,_) when n = name -> false
+  | _ -> List.for_all (reads_only name) (children e)
+and stmts_read_only name ss = List.for_all (fun s -> match s.statement with
+  | ForOf (_,_,_,{node=Id n;_},b) when n = name -> stmts_read_only name b
+  | If (c,a,b) -> reads_only name c && stmts_read_only name (a @ b)
+  | While (c,b,u) -> reads_only name c && stmts_read_only name (b @ u)
+  | Block (_,b) -> stmts_read_only name b
+  | ForOf (_,_,_,i,b) -> reads_only name i && stmts_read_only name b
+  | Try (b,h,f) -> stmts_read_only name (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
+  | Closing (c,b) -> stmts_read_only name (b @ c)
+  | _ -> List.for_all (reads_only name) (statement_children s)) ss
+let unshrunk : Json.t list ref = ref []
+let rec collect_unshrunk_expr (e:expr) =
+  (match e.node with
+   | Index (({node=(Call _ | Invoke _);_} as c),_)
+   | Call ({node=Id "%ElementAt%";_},_,({node=(Call _ | Invoke _);_} as c) :: _,_,_) -> unshrunk := c.pos :: !unshrunk
+   | _ -> ());
+  List.iter collect_unshrunk_expr (children e);
+  match e.node with
+  | BlockBody ss -> collect_unshrunk_stmts ss
+  | _ -> ()
+and collect_unshrunk_stmts = function
+  | [] -> ()
+  | s :: rest ->
+    (match s.statement with
+     | Declare (false,[(name,None,({node=(Call _ | Invoke _);_} as init))]) when stmts_read_only name rest ->
+       unshrunk := init.pos :: !unshrunk
+     (* A conditional's call arm, the value the constant holds where it is
+        taken. *)
+     | Declare (false,[(name,None,{node=Conditional (_,a,b);_})]) when stmts_read_only name rest ->
+       List.iter (fun (arm:expr) -> match arm.node with
+         | Call _ | Invoke _ -> unshrunk := arm.pos :: !unshrunk
+         | _ -> ()) [a;b]
+     | _ -> ());
+    (match s.statement with
+     | If (_,a,b) -> collect_unshrunk_stmts a; collect_unshrunk_stmts b
+     | While (_,b,u) -> collect_unshrunk_stmts b; collect_unshrunk_stmts u
+     | Block (_,b) | ForOf (_,_,_,_,b) -> collect_unshrunk_stmts b
+     | Try (b,h,f) -> collect_unshrunk_stmts b;
+       Option.iter (fun (_,hs) -> collect_unshrunk_stmts hs) h; Option.iter collect_unshrunk_stmts f
+     | Closing (c,b) -> collect_unshrunk_stmts b; collect_unshrunk_stmts c
+     | _ -> ());
+    List.iter collect_unshrunk_expr (match s.statement with
+      | If (c,_,_) | While (c,_,_) -> [c]
+      | ForOf (_,_,_,i,_) -> [i]
+      | Block _ | Try _ | Closing _ -> []
+      | _ -> statement_children s);
+    collect_unshrunk_stmts rest
+
+let rec decode ast =
+  let program = decode_program ast in
+  unshrunk := [];
+  List.iter (fun (f:fn) -> collect_unshrunk_stmts f.body) program.functions;
+  collect_unshrunk_stmts program.init;
+  program
+and decode_program ast =
   let document = field "declarations" ast in
   let arity = List.map (fun definition ->
     let parameters = items "parameters" definition in
@@ -992,7 +1157,9 @@ let decode ast =
        | t,[] -> t
        | Atoms [Shape ({calls=_ :: _ as calls;_} as shape)],_ ->
          Atoms [Shape {shape with calls=List.map (fun (call:signature) -> {call with quantified}) calls}]
-       | Atoms [Ctors ([signature],statics)],_ -> Atoms [Ctors ([{signature with quantified}],statics)]
+       (* A generic class: every construct signature under its binders. *)
+       | Atoms [Ctors ((_ :: _ as signatures),statics)],_ ->
+         Atoms [Ctors (List.map (fun (signature:signature) -> {signature with quantified}) signatures,statics)]
        | _ -> unsupported "a generic imported value must be one callable"))
       (items "values" document);
     functions=List.mapi (fun scope f ->

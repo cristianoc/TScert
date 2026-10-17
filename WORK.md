@@ -20,8 +20,10 @@ design, not its progress.
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
+| [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
-| [Module composition](#module-composition) | open | a Lean theorem composes units certified against each other's signatures |
+| [Module composition](#module-composition) | open: certified imports designed (2026-10-17) | a Lean theorem composes units certified against each other's signatures |
+| [Exceptional footprints](#exceptional-footprints) | waiting for the owner | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
@@ -29,7 +31,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 28 of 296 verify in `tools/`, 7 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 31 of 304 verify in `tools/`, 21 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -83,18 +85,35 @@ effect. A program with an arbitrary callback promising readable `U[]` for every
 Effect inference remains conservative for some rest wrappers, call forms and
 nested heap operations. Expression scheduling alone does not supply the missing
 effect derivation. Code that writes only locations it allocated preserves the
-heap it was called with, but each node of its graph is checked preserving
-from its own entry heap: a write of a `let` cell the code allocated, a
-mutator called on an array it allocated, and a global regex literal's
-`[Symbol.replace]`, which writes the `lastIndex` of the regex just created
-(`regexp-fresh-global-replace-refused`), are refused. Certifying them needs
-the postcondition relative to the code's entry heap, the knowledge of which
-locations were allocated since, and call effects stating which locations a
-call may write (its receiver's own). A call of a value holding a fixed
+heap it was called with, but a body's checked footprint separates only array
+stores the body allocated, through fresh results ([footprint
+precision](#footprints)). A call of a value holding a fixed
 signature and its variadic extension, a module constant read as a value
 elsewhere, is not certified preserving: the selected call's evidence is no
 qualified application at the fixed signature. Keep the source targets and their
 negative controls when extending the body-effect checker.
+
+<a id="footprints"></a>
+**Footprints.** [FOOTPRINTS](docs/FOOTPRINTS.md) states the mechanism: a
+construct's fact, the operations proved to keep it, stated as closed
+footprints, and Lean's node-by-node check that a callback, with what it
+calls, stays within one. The checked forms are inspections, typed writes of
+fields holding values, and fixed calls, variadic calls and constructions at
+a selected signature, `pop`, `shift` and `reverse` at a store the body
+allocated ([fresh array storage](docs/FOOTPRINTS.md#fresh-array-storage)).
+Left open:
+
+- the other application forms (a variadic construction, a call of a
+  callable object, a packed call) consume no footprint, so a bounded body
+  refuses them;
+- an array element write has no bound; the fragment writes elements only at
+  proved index singletons, and no measured program needs one.
+
+**Footprint precision** is deferred
+([FOOTPRINTS](docs/FOOTPRINTS.md#deferred-extra-precision)): separating one
+array from another beyond fresh storage, so that `pop` on an array literal
+the callback allocated is admitted; and a declaration's fresh result, which
+only closures state.
 
 <a id="keys-known-only-at-run-time"></a>
 **Keys known only at run time.** A write at a string key known only at run
@@ -111,6 +130,30 @@ merge result at the instance's row.
 <a id="module-composition"></a>
 **Module composition** as a Lean theorem: the step-indexed argument that
 units certified against each other's signatures compose.
+[Certified imports](docs/SOURCE-MODEL.md#certified-imports), over acyclic
+module graphs, check an imported function's code in the importer's run, at
+its effect-qualified signature. `checkJson_safe` keeps its statement.
+Combining a certified import's conclusion with the importer's is left to
+this theorem, plus the review obligation that the import binds the certified
+unit's closure ([the linking obligation](docs/SOURCE-MODEL.md#certified-imports)).
+
+<a id="exceptional-footprints"></a>
+**Exceptional footprints**, waiting for the owner's decision: a call's
+promise that its footprint also holds when it throws (`onThrow`), so a
+handler starts in a heap the footprint relates to its node's entry heap.
+`group` in `dev/` needs it at `at`'s catch of `git`, whose only call is
+`execFileSync`. Requirements:
+
+- a semantic extension: `SafePost` states no postcondition on a throw, so
+  `checkJson_safe` needs an exceptional conclusion tied to the exact CLI
+  success condition;
+- composition covering evaluation before the invocation, parameter
+  defaults, intermediate mutations, handlers and rethrows;
+- normal-return promises and freshness stay on normal edges: neither moves
+  onto an exceptional one;
+- a native states `onThrow` only where its audit covers every throw, as the
+  [restricted `execFileSync`](docs/SOURCE-CONTRACTS.md#library-modules)
+  audit does.
 
 <a id="iteration-left-open"></a>
 **Iteration left open.** An array pattern over a host
@@ -172,12 +215,12 @@ producer's arrow search builds no nested `combine`. An element read keeps no
 heap fact: it reads the heap only, but the value it finds is a value only
 where the store's contract says so, which the frame rule would have to take
 from the read's typing (a length is a number, and keeps them). An element
-read the code guards is read at the element type or `undefined`
-(`guarded-element-read-refused`): `out[out.length - 1]` under a nonzero
-length needs the index and the length related by arithmetic the typing does
-not decide, and `xs[0] !== undefined && known.has(xs[0])` needs a
-current-content fact about an element location, kept from the test to the
-second read, as a field path would need one (`o.a !== undefined &&
+read the code guards is read at the element type or `undefined`; a member of
+it is read past a nullish guard, which throws where JavaScript does, but the
+value itself passed on keeps `undefined`
+(`guarded-element-read-refused`): `xs[0] !== undefined && known.has(xs[0])`
+needs a current-content fact about an element location, kept from the test
+to the second read, as a field path would need one (`o.a !== undefined &&
 f(o.a)` is refused the same way). A `flatMap` callback returning a
 primitive or an array of primitives (`flat-map-scalar-result-refused`)
 needs a second signature quantifying a binder bounded by the primitives,
@@ -222,63 +265,63 @@ probe's correspondence to the application.
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 296 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 304 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-17):
 
+- a value imported from the front end's own modules that is no annotated
+  constant, function or class: an unannotated arrow such as `nameOf`, a
+  constant such as `asyncCompleteName` or `promiseEffect` (68);
 - the compiler API's `NodeArray`, which extends the standard library's
   `ReadonlyArray`, there read as a plain interface because `@types/node`
   merges an interface of its own into it ("duplicate field name in a
-  record", 61); without that merge, extending a library array is refused;
-- a value imported from the front end's own modules that is no annotated
-  constant, function or class: an unannotated arrow such as `nameOf`, a
-  constant such as `asyncCompleteName` (45);
+  record", 62); without that merge, extending a library array is refused;
 - the parser's `Gate` class (28) and its `CLASS_ACCESS` type (10);
-- library globals absent from the overlay or refused (26):
-  `JSON.stringify` with a replacer or an indent (17), the global function
-  `parseInt`, `Reflect` ([refused](docs/SOURCE-FRAGMENT.md)), `Array.from`,
-  `Object.fromEntries`, `new RegExp`;
-- a missing annotation, or a value TypeScript types `any` (24);
+- a missing annotation, or a value TypeScript types `any` (21);
 - the compiler API's host classes read member-complete, `Checker` and
-  `Symbol` (11); Node's modules, `path` and `fs` (9); module-level `let` and
-  `var` (5); a default import (3).
+  `Symbol` (11); library globals absent from the overlay or refused (10):
+  the global function `parseInt`, `Reflect`
+  ([refused](docs/SOURCE-FRAGMENT.md)), `Array.from`, `Object.fromEntries`,
+  `new RegExp`, `JSON.stringify` with an indent; Node's modules, `path` and
+  `fs` (9); module-level `let` and `var` (5); a default import (3).
 
-Six slices reach the producer and fail there, and twenty-one fail in
+Ten slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 7 verify; the first blockers there are a callback writing only
-locations it allocated, a `let` cell or a fresh regex's `lastIndex`, which
-the effect checker does not certify (see [contract
-completeness](#restoring-completeness); 8: effects, tests, math, mathRoles,
-lowering, rules, section and card, through `esc`, `highlight` and
-`afterRelation`), a `map` callback running a child process, whose effect
-no contract bounds to locations other than the source's (group), an element read a length
-guards (`paragraphs[paragraphs.length - 1]`, `guarded-element-read-refused`,
-2: parseTrailers, parseRecord), a conditional type over a type parameter, `KeysOf<T>` (2,
-lowering-dump), a closure claimed outside its parameter's contextual
-annotation (2: summary, pageBody), and a nested conditional of
-literals whose type the producer widens (mathTokens): the producer types a
-callback's object literal before it solves `map`'s `U` from the call's
-expected result, so the literal's fields widen to `string` and `U` becomes
-the union of the widened record and the expected element type, which no
-mutable array of the expected type admits. TypeScript solves `U` from the
-return context first and types the literal against it.
+dump, 21 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
+the same-file declarations it uses). The first blockers of the others in
+`dev/`, with the functions each stops directly and through callees:
 
-Behind the effect question the callback chains of `effects`, `mathRoles`
-and the five slices calling `math` stop at three more forms (2026-10-17,
-probes, and a copy of `record-render.mts` with its write forms replaced by
-write-free ones of the same types, which verifies 8 of 23): an optional
-chain, which the producer never proposes heap-preserving
-(`heap_preserving_expr`), in `afterRelation`'s condition; `new Set` of a
-string, the parameter the overlay states only at an array, in the module
-constants `BINDERS` and `RELATIONS`; and the literal widening of
-`mathTokens` above.
+- a `map` callback (`readRecord`) whose calls state no footprint: Node's
+  `execFileSync`, whose overlay entry states none, and the imported
+  `parseRecord`, read at its declared type, which states no effect; an
+  imported function's effect needs a contract its own module's
+  certification establishes ([module composition](#module-composition));
+  past both, `at`'s catch of `git`'s throw needs
+  [exceptional footprints](#exceptional-footprints) (group: 1);
+- in printGraph, `program.map(decodeNode)` passes an imported function as a
+  callback, which a signature binding more parameters may call with further
+  actuals; only a module function's own code is known to discard them
+  ([module composition](#module-composition)), and so is `showTerm`, which a callback calls. A certified import of
+  either needs its module's code to verify. In `control-flow` and
+  `calculus` (2026-10-17), `decodeTarget`, `decodeContinuation` and
+  `decodeNode` stop at a read of `map` on an array a field holds, which a
+  test does not narrow; `showTerm`, `showTag` and `showCode` at a member
+  read the producer and TypeScript disagree on; `nat`, `bitsOf`, `fields`
+  and `keyOf` at a `typeof` or record test that does not narrow `unknown`;
+  `constructorOf` and `decodeTag` at a record index by a string; and
+  `decodeTerm`, `decodeCode` and `termsOf` at a callback parameter
+  TypeScript types `any` (printGraph: 1).
+
+In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
+verify; the others stop at a namespace import, Node's `Buffer` type, `join`
+of `node:path`, `Number` read as a value, or a top-level block.
 
 Two forms of the record tools are rewritten for a verifier limit, not
 for a departure from the fragment; each rewrite is reverted when its limit
-lifts: element reads the code already guards, by a length or a test of the
-same element (`dedent`, `effects`, `mathRoles`' `afterRelation` and
-`textWord`; `guarded-element-read-refused`); and a `flatMap` callback
-returning a string (`card`; `flat-map-scalar-result-refused`).
+lifts: element reads the code already guards by a test of the same element
+(`mathRoles`' `afterRelation` and `textWord`; `guarded-element-read-refused`);
+and a `flatMap` callback returning a string (`card`;
+`flat-map-scalar-result-refused`).
 
 The goal is every function of the repository's own TypeScript verified:
 `tools/`, `pipeline/`, `tests/` and `dev/`, about 21,000 lines (the sources
@@ -325,8 +368,7 @@ against the fragment (2026-10-16) gives the work, each item its own design:
   of `fragment-*.mts` declaring `this: Gate` (198 reads of `this`), and the
   error classes extending `Error`.
 - **Imports between the repository's modules.** Default imports, and a
-  value imported from another module certified against its
-  signature, which [module composition](#module-composition) proves sound.
+  value imported from another module certified against its signature, which [module composition](#module-composition) proves sound.
 - **The code's own departures from the fragment.** Downcasting `as`
   assertions and module-level `let`: the code changes to meet the fragment.
 - **Proof precision.** Of the slices past the gate, about half fail in

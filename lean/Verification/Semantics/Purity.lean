@@ -202,6 +202,12 @@ def operandTerm : Tm → Bool
   | .var _ => true
   | t => isVal t
 
+/-- A store initializer an inspection admits: an operand, or a spread of a
+read, whose store's elements the literal reads in place of it. -/
+def initTerm : Tm → Bool
+  | .spread a => readTerm a
+  | t => operandTerm t
+
 /-- Computations that read the heap and only append to it: the pure forms,
 field, key and element reads, and allocations whose initializers are operands. A
 read gives the value its location holds; an allocation appends fresh
@@ -219,7 +225,7 @@ def inspectTerm : Tm → Bool
   | .indexAt a key => inspectTerm a && inspectTerm key
   | .elemAt a i => inspectTerm a && inspectTerm i
   | .makeAt _ _ inits => inits.all operandTerm
-  | .arrLit inits => inits.all operandTerm
+  | .arrLit inits => inits.all initTerm
   | t => isVal t
 
 theorem inspect_value {v : Tm} (hv : isVal v = true) : inspectTerm v = true := by
@@ -248,6 +254,33 @@ private theorem operand_subst {t a : Tm} {j : Nat} (ht : operandTerm t = true)
     intro hv
     cases u <;> simp_all [operandTerm]
 
+private theorem read_subst {t a : Tm} {j : Nat} (ht : readTerm t = true)
+    (ha : isVal a = true) : readTerm (subst j a t) = true := by
+  induction t using Tm.induct generalizing j
+  case var i =>
+    simp only [subst]
+    split
+    · exact read_value ha
+    · split <;> rfl
+  all_goals simp only [readTerm, subst, Bool.and_eq_true] at ht ⊢
+  all_goals first
+    | (simp_all; done)
+    | exact read_value (subst_value (by simpa [readTerm] using ht) _ _)
+    | (simp [isVal] at ht ⊢; done)
+
+private theorem init_of_operand {u : Tm} (h : operandTerm u = true) : initTerm u = true := by
+  cases u <;> simp_all [initTerm, operandTerm, isVal]
+
+private theorem init_subst {t a : Tm} {j : Nat} (ht : initTerm t = true)
+    (ha : isVal a = true) : initTerm (subst j a t) = true := by
+  by_cases hs : ∃ b, t = .spread b
+  · obtain ⟨b, rfl⟩ := hs
+    simp only [subst, initTerm]
+    exact read_subst (by simpa [initTerm] using ht) ha
+  · have ho : operandTerm t = true := by
+      cases t <;> simp_all [initTerm]
+    exact init_of_operand (operand_subst ho ha)
+
 private theorem operands_subst {xs : List Tm} {a : Tm} {j : Nat}
     (hx : xs.all operandTerm = true) (ha : isVal a = true) :
     (xs.map (subst j a)).all operandTerm = true := by
@@ -261,6 +294,8 @@ theorem inspect_subst {t a : Tm} {j : Nat}
     inspectTerm (subst j a t) = true := by
   have hop : ∀ (k : Nat) (x : Tm), operandTerm x = true → operandTerm (subst k a x) = true :=
     fun _ _ hx => operand_subst hx ha
+  have hin : ∀ (k : Nat) (x : Tm), initTerm x = true → initTerm (subst k a x) = true :=
+    fun _ _ hx => init_subst hx ha
   induction t using Tm.induct generalizing j
   case var i =>
     simp only [subst]
@@ -271,6 +306,7 @@ theorem inspect_subst {t a : Tm} {j : Nat}
     simp only [inspectTerm, subst, substArgs_eq_map, List.all_eq_true, List.mem_map, Bool.and_eq_true] at ht ⊢
   all_goals first
     | (rintro _ ⟨x, hx, rfl⟩; exact hop _ x (ht x hx))
+    | (rintro _ ⟨x, hx, rfl⟩; exact hin _ x (ht x hx))
     | (simp_all; done)
     | simp [isVal] at ht ⊢
 
@@ -278,6 +314,27 @@ theorem operand_no_step {a : Tm} (ho : operandTerm a = true) {h h' a'} : ¬ Step
   intro st
   cases a <;> simp only [operandTerm, isVal, Bool.false_eq_true] at ho <;>
     first | cases st | exact value_no_step (by simp [isVal]) st
+
+/-- The elements a store's locations hold are values, when the heap holds
+only values. -/
+theorem readElems_values {h : Heap} : ∀ {ls : List (Option Nat)} {vs : List Tm},
+    readElems h ls = some vs → (∀ (l : Nat) (v : Tm), h[l]? = some v → isVal v = true) →
+    ∀ v ∈ vs, isVal v = true
+  | [], vs, hr, _ => by simp [readElems] at hr; subst hr; simp
+  | none :: ls, vs, hr, hv => by
+    simp only [readElems, Option.map_eq_some_iff] at hr
+    obtain ⟨ws, hw, rfl⟩ := hr
+    intro v hm
+    rcases List.mem_cons.mp hm with rfl | hm
+    · rfl
+    · exact readElems_values hw hv v hm
+  | some l :: ls, vs, hr, hv => by
+    simp only [readElems, Option.bind_eq_some_iff, Option.map_eq_some_iff] at hr
+    obtain ⟨u, hu, ws, hw, rfl⟩ := hr
+    intro v hm
+    rcases List.mem_cons.mp hm with rfl | hm
+    · exact hv l v hu
+    · exact readElems_values hw hv v hm
 
 /-- A step of an inspection keeps the heap as a prefix and leaves an
 inspection, when the heap holds only values: a read gives a stored value, an
@@ -305,13 +362,35 @@ theorem inspect_step {h t h' t'} (hs : Step h t h' t') (hp : inspectTerm t = tru
     rename_i hg _ st _
     exact (operand_no_step (List.all_eq_true.mp (by simpa [inspectTerm] using hp) _
       (List.mem_of_getElem? hg)) st).elim
-  case arrArg =>
-    rename_i hg _ st _
-    exact (operand_no_step (List.all_eq_true.mp (by simpa [inspectTerm] using hp) _
-      (List.mem_of_getElem? hg)) st).elim
-  case arrSpread heq _ _ =>
+  case arrArg inits i h₀ h₁ a a' hg _ st _ =>
+    have hall : ∀ x ∈ inits, initTerm x = true := by simpa [inspectTerm] using hp
+    have ha := hall a (List.mem_of_getElem? hg)
+    by_cases hs : ∃ b, a = .spread b
+    · obtain ⟨b, rfl⟩ := hs
+      cases st with
+      | spreadC st' =>
+        rename_i b'
+        obtain ⟨rfl, hb'⟩ := read_step st' (by simpa [initTerm] using ha) hv
+        refine ⟨List.prefix_refl _, ?_⟩
+        simp only [inspectTerm, List.all_eq_true]
+        intro x hx
+        rcases List.mem_or_eq_of_mem_set hx with hx | rfl
+        · exact hall x hx
+        · simpa [initTerm] using hb'
+    · have ho : operandTerm a = true := by cases a <;> simp_all [initTerm]
+      exact (operand_no_step ho st).elim
+  case arrSpread pre post ls vs h₀ heq hpre hr =>
     subst heq
-    simp [inspectTerm, operandTerm, isVal] at hp
+    refine ⟨List.prefix_refl _, ?_⟩
+    obtain ⟨-, -, hpost⟩ : (∀ x ∈ pre, initTerm x = true) ∧ initTerm (.spread (.arr ls)) = true ∧
+        ∀ x ∈ post, initTerm x = true := by simpa [inspectTerm] using hp
+    have hval : ∀ {x : Tm}, isVal x = true → initTerm x = true := fun {x} hx =>
+      init_of_operand (by cases x <;> simp_all [operandTerm, isVal])
+    simp only [inspectTerm, List.all_eq_true, List.mem_append]
+    rintro x ((hx | hx) | hx)
+    · exact hval (hpre x hx)
+    · exact hval (readElems_values hr hv x hx)
+    · exact hpost x hx
   all_goals first
     | (simp only [inspectTerm, Bool.and_eq_true] at hp ⊢; done)
     | (simp only [inspectTerm, isVal, Bool.false_eq_true] at hp; done)

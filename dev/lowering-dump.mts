@@ -10,7 +10,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { showTag, showTerm, type KeysOf } from "../tools/calculus.mts";
+import { showTag, showTerm, unmatched } from "../tools/calculus.mts";
 import { decodeNode, type Continuation, type ProgramNode, type Target } from "../tools/control-flow.mts";
 import { verifier } from "../pipeline/verify-source.mts";
 
@@ -35,20 +35,18 @@ interface Unit { name: string; start: number; program: unknown[]; codes: { arity
 const units = JSON.parse(lowered.stdout) as Unit[];
 
 const to = (t: Target) => `n${t.label}`;
-type Step = Exclude<Continuation, "ret">;
-const SHOW_STEP: { [K in KeysOf<Step>]: (a: Extract<Step, Record<K, unknown>>[K]) => string } = {
-  bind: a => `→ ${to(a.next)}`,
-  effect: a => `→ ${to(a.next)} (value dropped)`,
-  branch: a => `if true → ${to(a.yes)}, else → ${to(a.no)}`,
-  branchBind: a => `if true → ${to(a.yes)}, else → ${to(a.no)} (value kept)`,
-  tagBind: a => `if ${showTag(a.test)} → ${to(a.yes)}, else → ${to(a.no)}`,
-};
 function showStep(k: Continuation): string {
-  if (k === "ret") return "return";
-  const key = Object.keys(k)[0] as KeysOf<Step>; // asserted: decodeNode checked the one key
-  return (SHOW_STEP[key] as (a: unknown) => string)((k as Record<string, unknown>)[key]); // asserted: the key selects its own argument
+  switch (k.kind) {
+    case "ret": return "return";
+    case "bind": return `→ ${to(k.next)}`;
+    case "effect": return `→ ${to(k.next)} (value dropped)`;
+    case "branch": return `if true → ${to(k.yes)}, else → ${to(k.no)}`;
+    case "branchBind": return `if true → ${to(k.yes)}, else → ${to(k.no)} (value kept)`;
+    case "tagBind": return `if ${showTag(k.test)} → ${to(k.yes)}, else → ${to(k.no)}`;
+    default: return unmatched(k);
+  }
 }
-function printGraph(start: number, program: unknown[]) {
+function printGraph(start: number, program: unknown[]): void {
   const nodes: ProgramNode[] = program.map(decodeNode);
   const width = Math.max(...nodes.map(n => showTerm(n.expression).length));
   nodes.forEach((n, i) => {

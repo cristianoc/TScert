@@ -116,7 +116,8 @@ the receiver:
 relation stays deterministic (`Step_det`). What a construct signature promises
 is in [the clause's meaning](POSITIVE-TYPES.md#functions-and-classes):
 the construct step's result is safe at the signature's result, one level below
-the budget, as a call's body is.
+the budget, and its normal return meets the signature's effect, as a call's
+body does.
 
 **Allocation from parts.** $\mathsf{merge}_\delta(a,b)$ (`Tm.merge`)
 evaluates $a$, then $b$ (`mergeC1`, `mergeC2`), then reads, in the heap as it
@@ -634,20 +635,32 @@ its conclusion `Safe` with
 All quantifiers and premises are unchanged: the guarantee holds at every future
 world and compatible entry heap, for every receiver and actual list admitted
 by that signature. Write the resulting family
-$\mathcal F_\epsilon(R_c,\mathcal A,R)$. The two initial postconditions are
+$\mathcal F_\epsilon(R_c,\mathcal A,R)$. An effect $`\epsilon = (\Phi, \pi, \varphi, \sigma)`$ is
+a [closed footprint](FOOTPRINTS.md#changes-and-footprints) $`\Phi`$, an
+optional promise $`\pi`$, and two Booleans: $`\varphi`$, a fresh result, and
+$`\sigma`$, the receiver's store excepted. Its postcondition, for a call
+with receiver $`r`$, is the footprint's, on every old location but $`r`$'s
+array store where $`\sigma`$, and the result's store allocated by the call
+where $`\varphi`$ (`Effect.post`):
 
 ```math
-Q_{\mathsf{unrestricted}}(h)(h',v)=\mathsf{True},\qquad
-Q_{\mathsf{preservesInputHeap}}(h)(h',v)=(h\preceq h'),
+Q_{\epsilon}(r,h)(h',v)=\mathsf{Post}_\Phi^{\,\neg\sigma\lor l\ne\mathsf{store}(r)}(h,h')\land
+(\varphi\Rightarrow \exists s.\ \mathsf{store}(v)=s\land |h|\le s),
 ```
 
-where $h\preceq h'$ means that $h'$ extends the heap list $h$ without changing
-any existing entry.
+where $`\mathsf{Post}_\Phi^{P}`$ is the footprint's postcondition on the old
+locations $`l`$ satisfying $`P`$ (`Closed.HoldsOn`) and $`\mathsf{store}(v)`$
+the location of $`v`$'s array store (`storeOf`).
 
-Two further effects promise something of one actual, the $`p`$-th, written
-$`v_p`$ (`undefined` where the call passes fewer). Their heap postcondition is
-$`\mathsf{True}`$, and they replace the result family $`R`$ by one relating the
-result to $`v_p`$, with $`R`$ the promise's type:
+Two footprints are its extremes: the empty one, $`Q_{(\emptyset,\pi)}(h)(h',v)=(h\preceq h')`$,
+where $h\preceq h'$ means that $h'$ extends the heap list $h$ without changing
+any existing entry (`Closed.holds_empty`), and the one letting every location
+change, $`Q_{(\top,\pi)}(h)(h',v)=(|h|\le|h'|)`$, which every run meets
+(`Closed.holds_top`, `Closed.top_safe`).
+
+A promise is about one actual, the $`p`$-th, written $`v_p`$ (`undefined`
+where the call passes fewer). It replaces the result family $`R`$ by one
+relating the result to $`v_p`$, with $`R`$ the promise's type:
 
 ```math
 R^{\mathsf{guards}\,p}(v) = (v=\mathsf{true}\land v_p\in R)\lor v=\mathsf{false},\qquad
@@ -655,8 +668,14 @@ R^{\mathsf{asserts}\,p}(v) = (v=\mathsf{undefined}\land v_p\in R).
 ```
 
 Membership of $`v_p`$ is taken at the world and heap of the return. One
-signature covers another only at the same effect, and a conjunction of
-signatures meets two of the same result family. These effects state a type
+signature covers another when its footprint is within the other's, their
+promises are the same, it states a fresh result where the other does, and it
+excepts the receiver's store only where the other does or lets everything
+change (`Effect.covers`); a conjunction of signatures with the same promise
+and exception meets their footprints (`Effect.meet`). A bound function
+forwards to its target with a saved receiver: its signature keeps the fresh
+result and lets everything change where the target's excepts the receiver's
+store (`Effect.drop`). The promises state a type
 guard's and an assertion function's promise
 ([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). Fresh allocation is allowed. This is a guarantee at normal
 return, not a ban on intermediate writes, a termination claim, or preservation

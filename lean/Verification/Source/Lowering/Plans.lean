@@ -477,6 +477,14 @@ bag, or an explicit union of cell contracts each naming the field. -/
     pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
       (.readAt fld (.var 0)) R (.unionVar 0) children))
 
+/-- A member access's operand type admitting `null` or `undefined` beside
+other values: the slice the access throws at and the slice it reads, where
+both hold values. -/
+@[nospecialize] def nullishSplit (G : PositiveGraphs.NormalGraph Tree) (B : Ty Tree) : Option (Ty Tree × Ty Tree) :=
+  let N := BranchRefinement.tagSlice G B .isNullish true
+  let F := BranchRefinement.tagSlice G B .isNullish false
+  if F.length < B.length && !F.isEmpty && !N.isEmpty then some (N, F) else none
+
 /-- How a member read reaches a primitive of one shape: a string's own
 `length`, or the member of its wrapper's prototype, held in slot `proto` at
 `P`, through a fresh wrapper of type `R` owning only its `[[proto]]` key. -/

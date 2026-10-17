@@ -19,6 +19,37 @@ namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 
+/-- The located refusal of a footprint a unit claims for its declaration, or
+for a closure of its code, that its graph and certificate do not establish:
+at the first node the node-by-node bound check refuses, else at the
+closure's region, else at the declaration. Search and checking report it
+alike. A check that ran out of search rounds is no refusal: it is left to the
+exhaustion diagnostic. -/
+private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String) (namePos : Span)
+    (r : SourceRequest σ ι) (c : Response ι) : Option String :=
+  let G := RequestJson.graph r.toRequest
+  let images := StoreView.images r.types
+  let firstBad (Φ : Footprints.Closed) (ret : Bool) (start : Nat) (P : Program) (C : Certificate ι)
+      (sourceMap : SourceMap) : Option SourceMapEntry :=
+    let facts := GraphCode.inferFresh G images P C start
+    ((P.zip C).zipIdx.find? fun ((node, point), l) =>
+      !GraphCode.nodeChecked G images Φ facts ret l node point).bind fun (_, l) => (sourceMap[l]?).bind id
+  let refuse (what : String) (pos : Span) :=
+    s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
+  let unit := effectResult r c
+  if !unit.accepted then
+    if unit.exhaustion.isSome then none else
+    some (refuse s!"'{name}'" (((firstBad r.footprint false r.start r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
+  else
+    (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
+      let code := GraphCode.effectCheckedResult G images q.entry C
+      if code.accepted || code.exhaustion.isSome then none else
+        let sourceMap := ((r.codeSources[i]?).map (·.sourceMap)).getD []
+        let place := firstBad q.entry.row.effect.footprint q.entry.row.effect.fresh q.entry.start
+            (GraphCode.program q.entry.exprs q.entry.conts) C sourceMap <|>
+          sourceMapRegion sourceMap
+        some (refuse s!"a closure in '{name}'" ((place.map (·.pos)).getD namePos))
+
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
     (budget : PositiveCertificates.SearchBudget := {}) : Except String Unit := do
   let (T, plans) ← extractPlans ast claims fileKey budget
@@ -28,7 +59,12 @@ def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
   let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← decodeStrict evidence
   let checked := checkRequestsResult rs b
   if checked.accepted then return ()
-  throw (validationFailure rs checked "source evidence does not justify the extracted program and exact claims")
+  -- An exhausted search is reported as such; a footprint the graph does not
+  -- establish is located; any other failure is the generic refusal.
+  let fallback := validationFailure rs checked "source evidence does not justify the extracted program and exact claims"
+  throw (if checked.exhaustion.isSome then fallback else
+    ((certified.zip b.functions).findSome? fun (plan, c) => match plan with
+      | .graph name namePos r => footprintRefusal name namePos r c).getD fallback)
 
 def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     (budget : PositiveCertificates.SearchBudget := {}) : Except String Json := do
@@ -43,18 +79,9 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
       (StoreView.images r.types) r.searchLabels (StoreView.valid r.types) r.nodePlans
     RequestJson.produceResponse r.toRequest fuel [] known r.sourceMap (some r.searchLabels) r.assertions
       r.cuts r.codeHints r.checker r.aliases
-  -- A declaration's claimed effect its graph does not establish is located at
-  -- the first node that does not preserve the heap, or at the declaration.
   for (plan, c) in frozen.zip cs do
     let .graph name namePos r := plan
-    if !(effectResult r c).accepted then
-      let G := RequestJson.graph r.toRequest
-      let images := StoreView.images r.types
-      let bad := ((r.program.zip c.certificate).zipIdx.find? fun ((node, point), _) =>
-        !GraphCode.compositionalChecked G images [node] [point]).bind fun (_, l) =>
-          (r.sourceMap[l]?).bind id
-      let pos := (bad.map (·.pos)).getD namePos
-      throw s!"source effect refusal at [{pos.1},{pos.2}): the heap preservation claimed for '{name}' is not established by its body"
+    if let some refusal := footprintRefusal name namePos r c then throw refusal
   let evidence := toJson (Bundle.mk cs es)
   let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← decodeStrict evidence
   let checked := checkRequestsResult rs b
@@ -80,8 +107,9 @@ def lowerJson (ast claims : Json) (fileKey : String) : Except String Json := do
 /-- Every extracted plan crosses the exhaustive certification boundary, and its
 graph request proves the enclosing execution safe at every assignment admitted
 by its source signature, including its descriptor contract when qualified. A
-unit whose declaration claims heap preservation, run as the code its graph
-describes, also leaves its entry heap a prefix of the heap it returns with.
+unit whose declaration claims a footprint other than the one letting every
+location change, run as the code its graph describes, also returns with a heap
+its footprint relates to its entry heap.
 The graph is `Equations.graph` of the equations the extracted store presents,
 validated by `Equations.ofRaw` (`freezePlans`). -/
 theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
@@ -100,13 +128,13 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument ρ))
             n W heap (.at r.start ρ)) ∧
       (∀ r c, (r,c) ∈ (CertifiedPlan.requests certified).zip b.functions →
-        r.effect = .preservesInputHeap →
+        r.footprint ≠ .top →
         ∀ η n W heap (L : List Tm) (d : Tm),
           EnvOk (reassign F.equations.graph η) r.inputs (envOf L d) n W →
           WorldAdm W → HeapOk n W heap → (∀ v ∈ L, isVal v = true) → isVal d = true →
           HeapObservations.SafePost (excOf (reassign F.equations.graph η))
             (meaning (reassign F.equations.graph η) r.result)
-            (CallEffects.Effect.preservesInputHeap.post heap) n W heap
+            (fun h' _ => r.footprint.Holds heap h') n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
               r.start L d)) := by
   unfold checkJson at h
@@ -136,7 +164,7 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
             · intro r c hm η admitted n W heap ρ he hw hh
               exact checkRequests_safe_at hx hm η admitted n W heap ρ he hw hh
             · intro r c hm heffect η n W heap L d he hw hh hvalues hd
-              exact checkRequests_preserving_at hx hm heffect η n W heap L d he hw hh hvalues hd
+              exact checkRequests_footprint_at hx hm heffect η n W heap L d he hw hh hvalues hd
           · simp only [checkRequests] at hx
             simp [hx] at h
 

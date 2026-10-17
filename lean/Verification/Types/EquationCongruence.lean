@@ -537,7 +537,7 @@ theorem Equations.scheme_step (equations : Equations) (apps : equations.Applicat
       intro e _
       exact equations.signature_expression_agree apps a b rfl η θ args As hlen e.1 e.2.1 e.2.1 e.2.2
     let tc : Clause (List (Expression equations.signature equations.signature[head])) :=
-      if construct then .ctors (sigs.map ctorOf) (rests.map ctorRestOf) else .arrs sigs rests
+      if construct then .ctors (sigs.map ctorOf) (rests.map ctorOf) else .arrs sigs rests
     have hbody : ∀ C hc, (make C hc).body =
         tc.map (fun es => es.flatMap (Expression.instantiate (Scope.mk head C hc))) := by
       intro C hc

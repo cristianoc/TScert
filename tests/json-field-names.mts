@@ -58,6 +58,7 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
 
 // Equation lowering reads declarations and claim labels across these owners.
 const equationReaders = [
+  "lean/Verification/Source/EffectJson.lean",
   "lean/Verification/Source/Equations/Trees.lean",
   "lean/Verification/Source/Equations/Declarations.lean",
   "lean/Verification/Source/Equations/ClaimWire.lean",

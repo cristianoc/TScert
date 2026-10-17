@@ -64,6 +64,13 @@ private def saved (root : Span) (origin : Span) (role : String := "value") : Bui
 
 private def readSaved (binding : Saved) : Expr := .var binding.source binding.name
 
+/-- A test: an expression whose value is a Boolean by its form. -/
+def testForm : Expr → Bool
+  | .shapeTest .. | .equality .. | .singletonTest .. | .not .. | .inKeys .. => true
+  | .arith _ op _ _ => op == .lt || op == .le || op == .gt || op == .ge || op == .eq
+  | .logical _ _ a b => testForm a && testForm b
+  | _ => false
+
 private def effect : Expr → Effect
   | .assign _ name _ rhs => .cellWrite name rhs.span
   | .construct .. | .call .. | .invoke .. | .callWithReceiver .. | .applyWithReceiver ..
@@ -139,20 +146,14 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
         pure (atom (.arrayLit pos (es.map readSaved) spreads))
     | .comma _ left right => operand root left "discard" fun _ => do
         operand root right "value" fun right => do pure (atom (.var e.span right.name))
-    | .logical _ andOp left right =>
-        let binding ← saved root left.span "condition"
-        let lhs ← expression root left
-        let rhs ← expression root right
-        let keep := atom (.var e.span binding.name)
-        pure (.choose e.span left.span .truthy binding lhs
-          (if andOp then rhs else keep) (if andOp then keep else rhs))
+    | .logical _ andOp left right => logical root e left right andOp "condition"
     | .coalesce _ left right =>
         let binding ← saved root left.span "condition"
         pure (.choose e.span left.span .nullish binding (← expression root left)
           (← expression root right) (atom (.var e.span binding.name)))
     | .ifBody _ condition yes no =>
         let binding ← saved root condition.span "condition"
-        pure (.choose e.span condition.span .truthy binding (← expression root condition)
+        pure (.choose e.span condition.span .truthy binding (← truthOf root condition)
           (← expression root yes) (← expression root no))
     | .optional _ mark receiver body =>
         let binding ← saved root mark "optional"
@@ -242,6 +243,38 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
         arrayAssignments root e array targets rest
   return .observe e.span core
 
+/-- `a && b` and `a || b`: the left operand, saved, then the right one where
+    it is truthy (`&&`) or falsy (`||`), else the saved left value. -/
+private partial def logical (root : Span) (e left right : Expr) (andOp : Bool) (role : String) :
+    Builder Plan := do
+  let binding ← saved root left.span role
+  let lhs ← expression root left
+  let rhs ← expression root right
+  let keep := Plan.atom e.span (.evaluate e (.var e.span binding.name) (effect e))
+  pure (.choose e.span left.span .truthy binding lhs
+    (if andOp then rhs else keep) (if andOp then keep else rhs))
+
+/-- A condition, whose truthiness alone its consumer reads. `&&` or `||`
+    whose left operand is no test (`testForm`) yields its left operand's
+    value where that decides; read for its truthiness, the operator's left
+    dispatch is its truthiness (role `truth`), whose arms rebind the
+    outcome, a Boolean. The plan's value is then that synthetic truth, never
+    the operator's value: it carries no source obligation, so it is placed
+    at an empty span no claim names, and the operands keep their own. -/
+private partial def truthOf (root : Span) (cond : Expr) : Builder Plan :=
+  match cond with
+  | .logical _ andOp left right =>
+    if testForm left then expression root cond
+    else do
+      let truth : Span := (cond.span.1, cond.span.1)
+      let binding ← saved root left.span "truth"
+      let lhs ← expression root left
+      let rhs ← expression root right
+      let keep := Plan.atom truth (.evaluate (.var truth binding.name) (.var truth binding.name) .none)
+      return .choose truth left.span .truthy binding lhs
+        (if andOp then rhs else keep) (if andOp then keep else rhs)
+  | _ => expression root cond
+
 private partial def callArguments (root : Span) (call : Expr) (args : List Expr) (spreads : List Nat) (index : Nat)
     (next : List Saved → Builder Plan) : Builder Plan :=
   match args with
@@ -306,5 +339,8 @@ end
 /-- The source expression's execution tree, with unique internal values scoped
     to this root. Construction consults syntax only. -/
 def build (e : Expr) : Plan := (expression e.span e).run' 0
+
+/-- A condition's execution tree: its truthiness alone is read. -/
+def buildCondition (e : Expr) : Plan := (truthOf e.span e).run' 0
 
 end Verification.SourceExecution

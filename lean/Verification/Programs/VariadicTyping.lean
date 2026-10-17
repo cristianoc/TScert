@@ -9,7 +9,8 @@ is among the element type's labels, and `undefined` must be among them when the
 store may have a hole. -/
 namespace Verification.ProgramTyping
 open PositiveNormalization PositiveGraphs PositiveRules Tower
-open CallEffects (Arrow RestArrow MethodArrow MethodRestArrow Contract Effect PromiseWith)
+open CallEffects (Arrow RestArrow MethodArrow MethodRestArrow Contract Effect PromiseWith ctorsT ctorsT_adm
+  ctorRestsT ctorRestsT_adm)
 open HeapObservations (SafePost)
 
 variable {ι : Type}
@@ -55,7 +56,7 @@ def CoveredCallUsing [DecidableEq ι] (G : NormalGraph ι)
     (c : MethodArrow (Ty ι)) : Prop :=
   q.arguments.length = c.arguments.length ∧
     (∀ x ∈ q.arguments.zip c.arguments, ∃ p, PositiveCertificates.checkUsing G images x.1 x.2 p = true) ∧
-    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ c.effect.covers q.effect = true
+    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ (c.effect.drop 0).covers q.effect = true
 
 /-- Parameters each within the member's, as families. -/
 theorem CoveredCallUsing.params [DecidableEq ι] {G : NormalGraph ι}
@@ -83,7 +84,7 @@ def CoveredRestUsing [DecidableEq ι] (G : NormalGraph ι)
   q.arguments.1.length = c.arguments.1.length ∧
     (∀ x ∈ q.arguments.1.zip c.arguments.1, ∃ p, PositiveCertificates.checkUsing G images x.1 x.2 p = true) ∧
     (∃ p, PositiveCertificates.checkUsing G images q.arguments.2 c.arguments.2 p = true) ∧
-    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ c.effect.covers q.effect = true
+    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ (c.effect.drop 0).covers q.effect = true
 
 /-- A checked proof is an inclusion of argument lists too: the argument
 component of the two types' meanings. -/
@@ -312,7 +313,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G s.receiver j U r)
     {args : List Tm} (hvals : CallArguments.Values args)
     (ha : ArgsRest (s.arguments.1.map (meaning G)) (argMeaning G s.arguments.2) j U args) :
-    SafePost (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args)) (s.effect.post heap) j U heap
+    SafePost (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args)) (s.effect.post r heap) j U heap
       (CallArguments.graphEntry arity E K start vs true r args) := by
   obtain ⟨hshort, hpack⟩ := ha
   simp only [List.length_map, hk] at hshort hpack
@@ -357,7 +358,8 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
           envOf (a :: r :: CallArguments.parameters arity args ++ vs) .nul := by
         funext i; cases i <;> rfl
       rw [← he]; exact henv
-    apply HeapObservations.weaken (fun heap'' v hp => s.effect.post_prefix hprefix hp)
+    apply HeapObservations.weaken (Q := fun heap'' v => ∀ r', s.fixed.effect.post r' heap' heap'' v)
+      (fun heap'' v hp => s.effect.post_prefix hprefix (hp r))
     have hpromised := framePromised_params (e := s.fixed.effect) hs.2.1 [a, r] args vs
     simp only [List.length_cons, List.length_nil, List.cons_append, List.nil_append] at hpromised
     rw [← show framePromised s.effect (frameOffset (some A)) (a :: r :: CallArguments.parameters arity args ++ vs) =
@@ -479,20 +481,21 @@ theorem offers_sem {G : NormalGraph ι} {arity E K start Cs rest vs n W} {kind :
       restsT_of_graphRest fs hkind hbS hs hlen hvs hsc hvalues⟩
 
 /-- **A class value's graph code** meets each construct signature it was
-checked at with `undefined` for its receiver: `new` enters it so. -/
+checked at, with its effect, with `undefined` for its receiver: `new` enters it
+so. -/
 theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty ι}
-    {L : List (List (Ty ι) × Ty ι)} (fs : List (PropKey × Nat))
-    (hs : ∀ p ∈ L, GraphCodeSpec G arity E K start Cs ⟨U, p.1, p.2, .unrestricted⟩)
+    {L : List (MethodArrow (Ty ι))} (fs : List (PropKey × Nat))
+    (hs : ∀ p ∈ L, GraphCodeSpec G arity E K start Cs ⟨U, p.arguments, p.result, p.effect⟩)
     (hu : Represents G U .undef)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    ctorsT (excOf G) (L.map fun p => (p.1.map (meaning G), meaning G p.2)) n W
+    ctorsT (excOf G) (L.map (MethodArrow.map (meaning G))) n W
       (.objAt fs (.graph arity E K start vs .construct) oid) := by
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj V hx hv heap hh args _ ha
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
   refine ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, ?_⟩
-  exact HeapObservations.erase (graph_invoke (row := ⟨U, p.1, p.2, .unrestricted⟩) (hs p hp) hvs hvalues hj hx hv hh
-    ((represents_back hu j V _) rfl) (ArgsShort_of_exact ha))
+  exact graph_invoke (row := ⟨U, p.arguments, p.result, p.effect⟩) (hs p hp) hvs hvalues hj hx hv hh
+    ((represents_back hu j V _) rfl) (ArgsShort_of_exact ha)
 
 /-- The row a class's graph code is checked at for a variadic construct
 signature with fixed parameters `Qs` and element rest `El`: the fixed
@@ -520,47 +523,48 @@ theorem ArgsShort_replicate {D : Fam} {j : Nat} {W : WorldT j} {r : Nat} {xs : L
 /-- Graph code of a class meets a variadic construct signature with an
 element rest when it meets the row `ctorRestParams` gives: construction binds
 the fixed actuals, then further ones up to its arity, padding with `undefined`,
-and discards the rest. -/
+and discards the rest. The signature's effect is plain, so its result
+operand is the result's type whichever actuals the body binds. -/
 theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty ι}
-    {S : List (List (Ty ι) × Ty ι × Ty ι)} (fs : List (PropKey × Nat))
-    (hs : ∀ s ∈ S, ∃ El, restElem G s.2.1 = some El ∧
-      GraphCodeSpec G arity E K start Cs ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩)
+    {S : List (MethodRestArrow (Ty ι))} (fs : List (PropKey × Nat))
+    (hs : ∀ s ∈ S, s.effect.plain = true ∧ ∃ El, restElem G s.arguments.2 = some El ∧
+      GraphCodeSpec G arity E K start Cs ⟨U, ctorRestParams arity s.arguments.1 El U, s.result, s.effect⟩)
     (hu : Represents G U .undef)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
-    ctorRestsT (excOf G) (S.map fun s => (s.1.map (meaning G), argMeaning G s.2.1, meaning G s.2.2)) n W
+    ctorRestsT (excOf G) (S.map (MethodRestArrow.mapWith (meaning G) (argMeaning G))) n W
       (.objAt fs (.graph arity E K start vs .construct) oid) := by
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, by simpa [Scoped] using hsc⟩, ?_⟩
   intro q hq j hj V hx hv heap hh args _ ha
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
-  obtain ⟨El, hel, hspec⟩ := hs s hsm
+  obtain ⟨hplain, El, hel, hspec⟩ := hs s hsm
   obtain ⟨hlen, hfix, hext⟩ := ha
-  have hlenQ : (s.1.map (meaning G)).length = s.1.length := by simp
-  rw [hlenQ] at hlen hfix hext
+  simp only [MethodRestArrow.mapWith, Contract.map, List.length_map] at hlen hfix hext ⊢
   have hel' := (restElem_args hel).mp hext
   let D : Ty ι := El ++ U
-  have hD : ∀ x ∈ args.drop s.1.length, meaning G D j V x :=
+  have hD : ∀ x ∈ args.drop s.arguments.1.length, meaning G D j V x :=
     fun x hx => (meaning_append G El U j V x).mpr (Or.inl (hel' x hx))
   have hDu : meaning G D j V .undef :=
     (meaning_append G El U j V _).mpr (Or.inr ((represents_back hu j V _) rfl))
   have hshort := ArgsShort_prefix hfix
-    (ArgsShort_replicate (r := arity - s.1.length) hD hDu)
-  have hle : arity ≤ (ctorRestParams arity s.1 El U).length := hspec.1
-  have hm : (ctorRestParams arity s.1 El U).length = s.1.length + (arity - s.1.length) := by
+    (ArgsShort_replicate (r := arity - s.arguments.1.length) hD hDu)
+  have hle : arity ≤ (ctorRestParams arity s.arguments.1 El U).length := hspec.1
+  have hm : (ctorRestParams arity s.arguments.1 El U).length = s.arguments.1.length + (arity - s.arguments.1.length) := by
     simp [ctorRestParams]
-  have hargs' : args.take s.1.length ++ (args.drop s.1.length).take (arity - s.1.length) =
-      args.take (s.1.length + (arity - s.1.length)) := by
+  have hargs' : args.take s.arguments.1.length ++ (args.drop s.arguments.1.length).take (arity - s.arguments.1.length) =
+      args.take (s.arguments.1.length + (arity - s.arguments.1.length)) := by
     rw [List.take_add]
   rw [hargs'] at hshort
-  have hsafe := graph_invoke (row := ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩) hspec hvs
+  have hsafe := graph_invoke (row := ⟨U, ctorRestParams arity s.arguments.1 El U, s.result, s.effect⟩) hspec hvs
     hvalues hj hx hv hh ((represents_back hu j V _) rfl)
-    (args := args.take (s.1.length + (arity - s.1.length)))
+    (args := args.take (s.arguments.1.length + (arity - s.arguments.1.length)))
     (by simpa [ctorRestParams, List.map_append, List.map_replicate] using hshort)
-  have hp : CallArguments.parameters arity (args.take (s.1.length + (arity - s.1.length))) =
+  have hp : CallArguments.parameters arity (args.take (s.arguments.1.length + (arity - s.arguments.1.length))) =
       CallArguments.parameters arity args := by
     rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
       Nat.min_eq_left (by omega), CallArguments.parameters_take]
   rw [hp] at hsafe
-  exact ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, HeapObservations.erase hsafe⟩
+  rw [Effect.result_plain hplain] at hsafe ⊢
+  exact ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, hsafe⟩
 
 /-- The parts a variadic call writes past its fixed actuals fit its rest. With
 a spread among them, the rest is an element rest, each plain part at its
@@ -852,9 +856,9 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
 /-- **Eliminating a variadic construct signature.** A ready construction whose
 fixed actuals meet the parameters and whose further ones form a pack of the
 rest takes one step to the class's body, safe at the result. -/
-theorem ctor_elim_rest {Ps : List Fam} {P : ArgFam} {R : Fam}
+theorem ctor_elim_rest {Ps : List Fam} {P : ArgFam} {R : Fam} {e : Effect} (hpl : e.plain = true)
     (hA : ∀ A ∈ Ps, Adm A) (hP : Adm P)
-    {n W v args extra heap} (hf : ctorRestsT Ξ [(Ps, P, R)] n W v)
+    {n W v args extra heap} (hf : ctorRestsT Ξ [⟨(), (Ps, P), R, e⟩] n W v)
     (ha : ArgsT Ps n W args) (he : P n W extra) (hvals : CallArguments.Values (args ++ extra))
     (hw : WorldAdm W) (hh : HeapOk n W heap) :
     Safe Ξ R n W heap (.construct v (args ++ extra)) := by
@@ -869,7 +873,7 @@ theorem ctor_elim_rest {Ps : List Fam} {P : ArgFam} {R : Fam}
       · rw [List.drop_left' hl]
         exact hP.down k W extra he
     obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc', rfl⟩, hsafe⟩ :=
-      hf.2 _ (List.mem_singleton_self _) k (Nat.lt_succ_self k) (trunc k (Nat.le_succ k) W)
+      (hf.2 _ (List.mem_singleton_self _)).erase hpl k (Nat.lt_succ_self k) (trunc k (Nat.le_succ k) W)
         (WExt_refl _) (WorldAdm_trunc _ hw) heap (HeapOk_trunc k W heap hh) _ hvals hrest
     exact Or.inr ⟨trunc k (Nat.le_succ k) W, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
       CallArguments.construction_step hc' hvals heap, HeapOk_trunc k W heap hh, hsafe⟩
@@ -878,13 +882,13 @@ theorem ctor_elim_rest {Ps : List Fam} {P : ArgFam} {R : Fam}
 actuals, then the further parts run left to right, each spread read where it
 is written; each further actual is at the element contract `E`, and actuals at
 `E` form a pack of the rest `P`. -/
-theorem construct_rest_safe {Ps : List Fam} {E R : Fam} {P : ArgFam}
+theorem construct_rest_safe {Ps : List Fam} {E R : Fam} {P : ArgFam} {e : Effect} (hpl : e.plain = true)
     (hA : ∀ A ∈ Ps, Adm A) (hAv : ∀ A ∈ Ps, ValOnly A) (hE : Adm E) (hEv : ValOnly E)
     (hP : Adm P) (hEP : ∀ k W xs, (∀ e ∈ xs, E k W e) → P k W xs)
     (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps) (parts : List (Option Fam × Tm))
     (hS : ∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ RestCalls.Spreads S E)
     {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe Ξ (ctorRestsT Ξ [(Ps, P, R)]) n W heap f)
+    (hf : Safe Ξ (ctorRestsT Ξ [⟨(), (Ps, P), R, e⟩]) n W heap f)
     (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe Ξ (p.1.getD E) n W p.2) :
     Safe Ξ R n W heap (.construct f (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
   apply bind (fun f => .construct f (xs.map Prod.snd ++ parts.map RestCalls.partTerm))
@@ -909,7 +913,7 @@ theorem construct_rest_safe {Ps : List Fam} {E R : Fam} {P : ArgFam}
     simpa only [trunc_trunc] using WExt_trunc hi hy
   have hfX := (ctorRestsT_adm _).mono i _ X hUX v
     ((ctorRestsT_adm _).down_le j i (Nat.le_trans hi hk) U v hfun)
-  exact ctor_elim_rest hA hP hfX (ArgsT_transfer hA hargs i hi X hz) (hEP i X extra hext)
+  exact ctor_elim_rest hpl hA hP hfX (ArgsT_transfer hA hargs i hi X hz) (hEP i X extra hext)
     (by
       intro a ha
       rcases List.mem_append.mp ha with ha | ha
@@ -919,12 +923,12 @@ theorem construct_rest_safe {Ps : List Fam} {E R : Fam} {P : ArgFam}
 /-- **A variadic construction writing no spread.** The constructor and every
 actual run left to right; the fixed ones meet the signature's parameters and
 the further ones, at `Qs`, form a pack of the rest `P`. -/
-theorem construct_pack_safe {Ps Qs : List Fam} {R : Fam} {P : ArgFam}
+theorem construct_pack_safe {Ps Qs : List Fam} {R : Fam} {P : ArgFam} {e : Effect} (hpl : e.plain = true)
     (hA : ∀ A ∈ Ps ++ Qs, Adm A) (hAv : ∀ A ∈ Ps ++ Qs, ValOnly A) (hP : Adm P)
     (hpack : ∀ k W extra, ArgsT Qs k W extra → P k W extra)
     (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps ++ Qs)
     {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
-    (hf : Safe Ξ (ctorRestsT Ξ [(Ps, P, R)]) n W heap f)
+    (hf : Safe Ξ (ctorRestsT Ξ [⟨(), (Ps, P), R, e⟩]) n W heap f)
     (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) :
     Safe Ξ R n W heap (.construct f (xs.map Prod.snd)) := by
   apply bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL Raises.constructL n W heap f hw hh hf
@@ -938,7 +942,7 @@ theorem construct_pack_safe {Ps Qs : List Fam} {R : Fam} {P : ArgFam}
   simp only [List.take_append_of_le_length (Nat.le_refl _), List.take_length,
     List.drop_append_of_le_length (Nat.le_refl _), List.drop_length, List.nil_append] at h1 h2
   have hfV := (ctorRestsT_adm _).mono k _ V hy v ((ctorRestsT_adm _).down_le j k hk U v hfun)
-  have := ctor_elim_rest (fun A h => hA A (List.mem_append_left _ h)) hP hfV h1 (hpack k V _ h2)
+  have := ctor_elim_rest hpl (fun A h => hA A (List.mem_append_left _ h)) hP hfV h1 (hpack k V _ h2)
     (by rw [List.take_append_drop]; exact ArgsT_values hAv hargs) hv' hok'
   rwa [List.take_append_drop] at this
 

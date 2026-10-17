@@ -26,10 +26,11 @@
  * library is refused here and reviewed again, never trusted silently. */
 import { SymbolFlags, type Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
-import type { ArrayPresence } from "./type-graph.mts";
 import type { Node } from "typescript/unstable/ast";
-import { signatures, type TermScope } from "./type-term.mts";
+import { oneTerm, signatures, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
+import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
 export type OverlayEntry = {
   /** The member's key on the prototype, as declared: a name, or a computed
@@ -68,7 +69,7 @@ export type OverlayEntry = {
    * allocate. A stated signature's own effect overrides it. */
   effect?: Effect;
 };
-type Effect = "unrestricted" | "preservesInputHeap";
+type Effect = CallEffect;
 
 const at: [number, number] = [0, 0];
 const atomOf = (name: "string" | "number" | "undefined" | "unknown" | "boolean" | "null" | "bigint" | "symbol"): TypeTerm => ({ k: "atom", name, span: at });
@@ -93,33 +94,61 @@ const maybeElement: TypeTerm = { k: "union", parts: [element, atomOf("undefined"
 const arrayOf = (value: TypeTerm, readonly: boolean, presence: ArrayPresence = "readable"): TypeTerm =>
   ({ k: "array", presence, readonly, element: value, span: at });
 const callback = (value: TypeTerm, result: TypeTerm,
-    effect: "unrestricted" | "preservesInputHeap"): TypeTerm =>
+    effect: CallEffect): TypeTerm =>
   ({ k: "function", effect, receiver: null, rest: null, span: at,
      params: [value, atomOf("number"), arrayOf(element, true)], result });
-const findingCallback = callback(maybeElement, atomOf("unknown"), "unrestricted");
-const preservingFind = callback(element, atomOf("unknown"), "preservesInputHeap");
+/** `find` and `findIndex` visit every index below the length they read
+ * first, present or not. At a callback that changes no array store, the
+ * receiver's store, and so its length, stays as it was, and each visit reads
+ * an element at the receiver's contract; at any other, a store may shrink
+ * (`grow` may drop indices past a hole), and a visit past the new length
+ * passes `undefined`. */
+const findCallback = (effect: CallEffect, footprint: ClosedFootprint): TypeTerm =>
+  callback(footprint.store === "keep" ? element : maybeElement, atomOf("unknown"), effect);
 const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
+/** A destructive member's: within `{value: any, store: keep}` but for its
+ * receiver's store, which it may change arbitrarily. */
+const receiverStoreEffect: CallEffect = { ...footprintEffect({ value: "any", store: "keep" }), receiverStore: true };
+/** The closed footprints that keep an array's dense prefixes: those whose
+ * change to array stores is at most `grow` (`stableDenseClosed`), smallest
+ * first. */
+const stableForDensity = closedFootprints.filter((f) => f.store !== "any");
+/** A callback member's signatures, one per closed footprint `ε`: called at a
+ * callback within `ε`, the member is within `ε`, since besides the callback
+ * it reads the receiver and allocates only its result. */
+const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootprint) =>
+    { params: TypeTerm[]; result: TypeTerm }, fresh = false) =>
+  closedFootprints.map((footprint) => {
+    const effect = footprintEffect(footprint);
+    return { ...signature(effect, footprint), effect: { ...effect, fresh } };
+  });
 
 export const overlay: readonly OverlayEntry[] = [
-  // At a callback preserving the input heap, `forEach` does, as `every`
-  // below: it reads the length once and the present elements, data
-  // properties, and writes nothing.
+  // `forEach` reads the length once and the present elements, data
+  // properties, and writes nothing beside its callback's calls, as `every`
+  // below: within the callback's footprint.
   { name: "forEach", from: "ReadonlyArray",
     signature: "forEach(callbackfn: (value: T, index: number, array: readonly T[]) => void, thisArg?: any): void;",
-    stated: [{ params: [callback(element, atomOf("unknown"), "preservesInputHeap")], result: atomOf("undefined"),
-        effect: "preservesInputHeap" },
-      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: atomOf("undefined") }] },
+    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
+      result: atomOf("undefined") })) },
   { name: "map", from: "ReadonlyArray",
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
-    // Under ordinary construction, a callback preserving the input heap
-    // leaves every original source position present throughout traversal.
-    // The unrestricted contract admits reentrancy and only promises presence
-    // at visited positions. Both are ordinary per-signature call contracts.
+    // `map` relies on every index below the length it captured staying
+    // present until it tests it. A callback whose footprint changes array
+    // stores at most by `grow` keeps that fact (FOOTPRINTS.md, "Natives":
+    // `map_rely`, `denseCheck_stable`), so at each such footprint a dense
+    // receiver gives a dense result, and the call's own footprint is the
+    // callback's: `map` reads the receiver and allocates its result, a fresh
+    // array, whose store its result is (each signature states it). Any
+    // other callback gives a result that may hold holes. These are ordinary
+    // per-signature call contracts.
     stated: [
-      { receiver: arrayOf(element, true, "dense"), params: [callback(element, mappedElement, "preservesInputHeap")],
-        result: arrayOf(mappedElement, false), effect: "preservesInputHeap" },
-      { params: [callback(element, mappedElement, "unrestricted")],
-        result: arrayOf(mappedElement, false, "sparse") },
+      ...stableForDensity.map((footprint) => ({
+        receiver: arrayOf(element, true, "dense"),
+        params: [callback(element, mappedElement, footprintEffect(footprint))],
+        result: arrayOf(mappedElement, false), effect: { ...footprintEffect(footprint), fresh: true } })),
+      { params: [callback(element, mappedElement, ordinaryEffect)],
+        result: arrayOf(mappedElement, false, "sparse"), effect: { ...ordinaryEffect, fresh: true } },
     ] },
   // `flatMap` calls the callback at each position still present when
   // visited, below the length read before the first call, and appends the
@@ -136,8 +165,8 @@ export const overlay: readonly OverlayEntry[] = [
       "        thisArg?: This,\n" +
       "    ): U[];",
     unbound: ["This"],
-    stated: [{ params: [callback(element, arrayOf(mappedElement, true, "sparse"), "unrestricted")],
-      result: arrayOf(mappedElement, false) }] },
+    stated: atEachFootprint((effect) => ({ params: [callback(element, arrayOf(mappedElement, true, "sparse"), effect)],
+      result: arrayOf(mappedElement, false) }), true) },
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
   // and a prototype member is read as one scheme with one signature
@@ -152,48 +181,48 @@ export const overlay: readonly OverlayEntry[] = [
   // Beside each callback's call, the member reads the length once, tests and
   // reads the receiver's own numeric keys, data properties (`numericOwn`),
   // and `filter` defines the kept elements on a fresh array (ordinary
-  // construction): it runs no other client code and writes no existing
-  // location. So at a callback preserving the input heap the member does,
-  // a signature of its own beside the declared one; `thisArg` is not stated.
+  // construction), whose store its result is: it runs no other client code
+  // and writes no existing location. So at a callback within a footprint the
+  // member is: a signature per closed footprint; `thisArg` is not stated.
   { name: "every", from: "ReadonlyArray",
     signature: "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
-    stated: [{ params: [preservingFind], result: atomOf("boolean"), effect: "preservesInputHeap" },
-      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: atomOf("boolean") }] },
+    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
+      result: atomOf("boolean") })) },
   { name: "some", from: "ReadonlyArray",
     signature: "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
-    stated: [{ params: [preservingFind], result: atomOf("boolean"), effect: "preservesInputHeap" },
-      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: atomOf("boolean") }] },
+    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
+      result: atomOf("boolean") })) },
   { name: "filter", from: "ReadonlyArray",
     signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
-    stated: [{ params: [preservingFind], result: arrayOf(element, false), effect: "preservesInputHeap" },
-      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: arrayOf(element, false) }] },
+    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
+      result: arrayOf(element, false) }), true) },
   // The members below, through `at`, read the receiver's elements, convert
   // only numbers (an index, a bound) and, for `join` and `toString`,
   // elements meeting the standard conversion contract, compare by strict
   // equality or SameValueZero, and allocate only their result: they run no
   // client code and write no existing location.
   { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];",
-    effect: "preservesInputHeap" },
+    effect: { ...emptyEffect, fresh: true } },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
-    bounds: { T: stringConvertible }, effect: "preservesInputHeap" },
+    bounds: { T: stringConvertible }, effect: emptyEffect },
   { name: "toString", from: "ReadonlyArray", signature: "toString(): string;",
-    bounds: { T: stringConvertible }, effect: "preservesInputHeap" },
+    bounds: { T: stringConvertible }, effect: emptyEffect },
   { name: "indexOf", from: "ReadonlyArray",
-    signature: "indexOf(searchElement: T, fromIndex?: number): number;", effect: "preservesInputHeap" },
+    signature: "indexOf(searchElement: T, fromIndex?: number): number;", effect: emptyEffect },
   { name: "lastIndexOf", from: "ReadonlyArray",
-    signature: "lastIndexOf(searchElement: T, fromIndex?: number): number;", effect: "preservesInputHeap" },
+    signature: "lastIndexOf(searchElement: T, fromIndex?: number): number;", effect: emptyEffect },
   { name: "includes", from: "ReadonlyArray",
-    signature: "includes(searchElement: T, fromIndex?: number): boolean;", effect: "preservesInputHeap" },
+    signature: "includes(searchElement: T, fromIndex?: number): boolean;", effect: emptyEffect },
   { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;",
-    effect: "preservesInputHeap" },
+    effect: emptyEffect },
   { name: "find", from: "ReadonlyArray",
     signature: "find(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): T | undefined;",
-    stated: [{ params: [preservingFind], result: maybeElement, effect: "preservesInputHeap" },
-      { params: [findingCallback], result: maybeElement }] },
+    stated: atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],
+      result: maybeElement })) },
   { name: "findIndex", from: "ReadonlyArray",
     signature: "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;",
-    stated: [{ params: [preservingFind], result: atomOf("number"), effect: "preservesInputHeap" },
-      { params: [findingCallback], result: atomOf("number") }] },
+    stated: atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],
+      result: atomOf("number") })) },
   // Mutators take a mutable array.
   { name: "sort", from: "Array",
     signature: "sort(compareFn?: (a: T, b: T) => number): this;",
@@ -201,7 +230,7 @@ export const overlay: readonly OverlayEntry[] = [
     // An explicit comparator avoids element coercion. Omitted/undefined
     // comparison instead requires the recursive standard-conversion view.
     stated: [
-      { params: [{ k: "function", effect: "unrestricted", receiver: null, params: [element, element], rest: null,
+      { params: [{ k: "function", effect: ordinaryEffect, receiver: null, params: [element, element], rest: null,
           result: atomOf("number"), span: at }],
         result: { k: "array", presence: "readable", readonly: false, element, span: at } },
       { receiver: { k: "intersection", parts: [
@@ -209,16 +238,27 @@ export const overlay: readonly OverlayEntry[] = [
           { k: "array", presence: "readable", readonly: true, element: stringConvertible, span: at }], span: at },
         params: [atomOf("undefined")], result: { k: "array", presence: "readable", readonly: false, element, span: at } },
     ] },
-  { name: "push", from: "Array", signature: "push(...items: T[]): number;" },
-  { name: "pop", from: "Array", signature: "pop(): T | undefined;" },
-  { name: "shift", from: "Array", signature: "shift(): T | undefined;" },
-  { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;" },
-  { name: "reverse", from: "Array", signature: "reverse(): T[];" },
+  // Footprints (SOURCE-CONTRACTS.md, "Native footprints"): `push` and
+  // `unshift` change the receiver's store by `grow` and only element
+  // contents beside it; `pop`, `shift` and `reverse` change the receiver's
+  // store arbitrarily and only element contents beside it: within
+  // `{value: any, store: keep}` but for the receiver's store
+  // (`receiverStore`); `sort` grows it over the whole call when its
+  // comparator's store changes do. The store relations are proved of the
+  // specification steps (FootprintNatives.lean); that each native changes
+  // nothing but its store and element contents is this entry's audit.
+  { name: "push", from: "Array", signature: "push(...items: T[]): number;",
+    effect: footprintEffect({ value: "any", store: "grow" }) },
+  { name: "pop", from: "Array", signature: "pop(): T | undefined;", effect: receiverStoreEffect },
+  { name: "shift", from: "Array", signature: "shift(): T | undefined;", effect: receiverStoreEffect },
+  { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;",
+    effect: footprintEffect({ value: "any", store: "grow" }) },
+  { name: "reverse", from: "Array", signature: "reverse(): T[];", effect: receiverStoreEffect },
   // Iteration: `ArrayIterator<T>` extends `IteratorObject<T,
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
   { name: "[Symbol.iterator]", from: "ReadonlyArray",
-    signature: "[Symbol.iterator](): ArrayIterator<T>;", resultAs: "Iterator", effect: "preservesInputHeap" },
+    signature: "[Symbol.iterator](): ArrayIterator<T>;", resultAs: "Iterator", effect: emptyEffect },
   // Not listed: `concat` names `ConcatArray`, and `values`, `keys` and
   // `entries` are not needed yet.
 ];
@@ -264,9 +304,11 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
     // `[Symbol.replace]` of the client's (a string primitive's lookup ends at
     // `String.prototype`, which has none), and `$` patterns in a string
     // replacement are string operations. A `RegExp`, and a replacer
-    // callback, are not stated. `split` gives a fresh array of strings;
-    // `replaceAll` of a non-global `RegExp` would throw.
+    // callback, are not stated. `split` gives a fresh array of strings,
+    // whose store its result is; `replaceAll` of a non-global `RegExp` would
+    // throw.
     { name: "split", from: "String", signature: "split(separator: string | RegExp, limit?: number): string[];",
+      effect: { ...emptyEffect, fresh: true },
       stated: [{ params: [atomOf("string"), optionalNumber],
         result: { k: "array", presence: "dense", readonly: false, element: atomOf("string"), span: at } }] },
     { name: "replace", from: "String", signature: "replace(searchValue: string | RegExp, replaceValue: string): string;",
@@ -277,6 +319,10 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
     { name: "codePointAt", from: "String", signature: "codePointAt(pos: number): number | undefined;" },
     { name: "trimStart", from: "String", signature: "trimStart(): string;" },
     { name: "trimEnd", from: "String", signature: "trimEnd(): string;" },
+    // The pad is a string; a length past the host's string limit is a
+    // `RangeError`.
+    { name: "padStart", from: "String", signature: "padStart(targetLength: number, padString?: string): string;" },
+    { name: "padEnd", from: "String", signature: "padEnd(targetLength: number, padString?: string): string;" },
     { name: "at", from: "String", signature: "at(index: number): string | undefined;" },
   ],
   number: [
@@ -325,21 +371,26 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
  * invalid date, an outcome); `[Symbol.toPrimitive]`, whose overloads take
  * hints, is not listed, nor the members taking locales.
  *
- * The readers state `preservesInputHeap`: `has` and `get` compare by
+ * The readers state the empty footprint: `has` and `get` compare by
  * SameValueZero and run no code, `keys`, `values`, `entries` and
  * `[Symbol.iterator]` allocate a fresh iterator, and `Date`'s getters,
  * `valueOf`, `toString` and `toISOString` read its time value. The members
- * that change a collection or a date, and `forEach`, which calls its
- * callback, state none. */
+ * that change a collection or a date (`add`, `set`, `delete`, `clear`,
+ * `setTime`) state `{value: any, store: keep}`: they compare keys by
+ * SameValueZero or take a number, run no code, and write only the receiver's
+ * internal slots, which hold values and no array store. `forEach`, which
+ * calls its callback, states none (SOURCE-CONTRACTS.md, "Native
+ * footprints"). */
+const changesValues = footprintEffect({ value: "any", store: "keep" });
 export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>> = {
   Set: [
-    { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true },
-    { name: "clear", from: "Set", signature: "clear(): void;" },
-    { name: "delete", from: "Set", signature: "delete(value: T): boolean;" },
+    { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true, effect: changesValues },
+    { name: "clear", from: "Set", signature: "clear(): void;", effect: changesValues },
+    { name: "delete", from: "Set", signature: "delete(value: T): boolean;", effect: changesValues },
     { name: "forEach", from: "Set",
       signature: "forEach(callbackfn: (value: T, value2: T, set: Set<T>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
-    { name: "has", from: "Set", signature: "has(value: T): boolean;", effect: "preservesInputHeap" },
+    { name: "has", from: "Set", signature: "has(value: T): boolean;", effect: emptyEffect },
     { name: "size", from: "Set", signature: "readonly size: number;" },
     // A host collection's tag, which its prototype holds: no object the
     // fragment builds has one (a literal or class writes no well-known
@@ -348,39 +399,40 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "[Symbol.toStringTag]", from: "Set", signature: "readonly [Symbol.toStringTag]: string;" },
     // As for arrays: `SetIterator<T>` is an `Iterator<T>`.
     { name: "[Symbol.iterator]", from: "Set", signature: "[Symbol.iterator](): SetIterator<T>;",
-      resultAs: "Iterator", effect: "preservesInputHeap" },
+      resultAs: "Iterator", effect: emptyEffect },
     // A `SetIterator<T>` is read as an `Iterator<T>` too; a `for...of` over
     // one steps it as the host's (`intrinsics.mts`).
-    { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "Iterator", effect: "preservesInputHeap" },
-    { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "Iterator", effect: "preservesInputHeap" },
-    { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator", effect: "preservesInputHeap" },
+    { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "Iterator", effect: emptyEffect },
+    { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "Iterator", effect: emptyEffect },
+    { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator", effect: emptyEffect },
   ],
   Map: [
-    { name: "clear", from: "Map", signature: "clear(): void;" },
-    { name: "delete", from: "Map", signature: "delete(key: K): boolean;" },
+    { name: "clear", from: "Map", signature: "clear(): void;", effect: changesValues },
+    { name: "delete", from: "Map", signature: "delete(key: K): boolean;", effect: changesValues },
     { name: "forEach", from: "Map",
       signature: "forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
     // TypeScript's own `V | undefined`: a key the map lacks reads nothing.
-    { name: "get", from: "Map", signature: "get(key: K): V | undefined;", effect: "preservesInputHeap" },
-    { name: "has", from: "Map", signature: "has(key: K): boolean;", effect: "preservesInputHeap" },
-    { name: "set", from: "Map", signature: "set(key: K, value: V): this;", resultIsReceiver: true },
+    { name: "get", from: "Map", signature: "get(key: K): V | undefined;", effect: emptyEffect },
+    { name: "has", from: "Map", signature: "has(key: K): boolean;", effect: emptyEffect },
+    { name: "set", from: "Map", signature: "set(key: K, value: V): this;", resultIsReceiver: true,
+      effect: changesValues },
     { name: "size", from: "Map", signature: "readonly size: number;" },
     { name: "[Symbol.toStringTag]", from: "Map", signature: "readonly [Symbol.toStringTag]: string;" },
     { name: "[Symbol.iterator]", from: "Map", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
-      resultAs: "Iterator", effect: "preservesInputHeap" },
-    { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "Iterator", effect: "preservesInputHeap" },
-    { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "Iterator", effect: "preservesInputHeap" },
-    { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator", effect: "preservesInputHeap" },
+      resultAs: "Iterator", effect: emptyEffect },
+    { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "Iterator", effect: emptyEffect },
+    { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "Iterator", effect: emptyEffect },
+    { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator", effect: emptyEffect },
   ],
   Date: [
     ...["valueOf", "getTime", "getFullYear", "getUTCFullYear", "getMonth", "getUTCMonth", "getDate",
       "getUTCDate", "getDay", "getUTCDay", "getHours", "getUTCHours", "getMinutes", "getUTCMinutes",
       "getSeconds", "getUTCSeconds", "getMilliseconds", "getUTCMilliseconds", "getTimezoneOffset"]
-      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): number;`, effect: "preservesInputHeap" })),
-    { name: "setTime", from: "Date", signature: "setTime(time: number): number;" },
+      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): number;`, effect: emptyEffect })),
+    { name: "setTime", from: "Date", signature: "setTime(time: number): number;", effect: changesValues },
     ...["toString", "toISOString"]
-      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;`, effect: "preservesInputHeap" })),
+      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;`, effect: emptyEffect })),
   ],
 };
 
@@ -420,7 +472,7 @@ type Prototype = {
   receiver: (from: string) => TypeTerm;
   entries: readonly OverlayEntry[];
   /** The effect a member's signatures state where its entry states none:
-   * `preservesInputHeap` where every listed member, at each signature the
+   * the empty footprint where every listed member, at each signature the
    * overlay reads, runs no client code and writes no location the call did
    * not allocate. */
   effect: Effect;
@@ -433,7 +485,7 @@ export function arrayPrototype(checker: Checker, at: Node, library: OverlayLibra
     entries: readonly OverlayEntry[] = overlay): TypeDefinition[] {
   const element: TypeTerm = { k: "binder", name: "T", span: [0, 0] };
   const result = prototype(checker, at, library, { identity: arrayProtoIdentity, binders: ["T"], entries,
-    effect: "unrestricted",
+    effect: ordinaryEffect,
     receiver: from => ({ k: "array", presence: "readable", readonly: from === "ReadonlyArray", element, span: [0, 0] }) });
   if (!entries.some(e => ["join", "toString", "sort"].includes(e.name))) return [result];
   const hook = library.wellKnownSymbol("toPrimitive");
@@ -452,13 +504,47 @@ export function arrayPrototype(checker: Checker, at: Node, library: OverlayLibra
 /** A primitive's prototype contract, `StringProto` for `String.prototype`: a
  * record of readonly members, each of whose signatures takes the primitive
  * as its receiver. */
+/** The non-empty string literals written in the separator of a `split`
+ * call of `source` that passes no limit. Which literals are collected bounds
+ * only which calls the non-empty form serves: the form holds at any union of
+ * non-empty separators. */
+export function splitSeparators(source: Node): string[] {
+  const found = new Set<string>();
+  const literals = (n: Node): void => {
+    if ((ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) && n.text !== "") found.add(n.text);
+    n.forEachChild(literals);
+  };
+  const visit = (n: Node): void => {
+    if (ts.isCallExpression(n) && n.arguments.length === 1 && ts.isPropertyAccessExpression(n.expression) &&
+        n.expression.name.text === "split") {
+      const [separator] = n.arguments;
+      if (separator) literals(separator);
+    }
+    n.forEachChild(visit);
+  };
+  visit(source);
+  return [...found].sort();
+}
+
+/** `split` at a union of non-empty string separators and no limit returns at
+ * least one element (SOURCE-CONTRACTS.md, "a non-empty `split`"): ECMA-262's
+ * `split` returns `[S]` where the separator does not occur, and `[]` only for
+ * a limit whose `ToUint32` is 0 or an empty receiver at an empty separator. */
+const nonEmptySplit = (separators: readonly string[]): { params: TypeTerm[]; result: TypeTerm }[] => separators.length ? [{
+  params: [{ k: "union", span: at, parts: separators.map((text): TypeTerm => ({ k: "literal", name: "string", text, span: at })) }],
+  result: { k: "tuple", presence: "dense", readonly: false, optional: [], span: at,
+    required: [atomOf("string")], rest: atomOf("string") } }] : [];
+
 export function primitivePrototype(checker: Checker, at: Node, library: OverlayLibrary,
-    kind: PrimitiveKind, entries: readonly OverlayEntry[] = primitiveOverlay[kind]): TypeDefinition {
+    kind: PrimitiveKind, separators: readonly string[] = [],
+    entries: readonly OverlayEntry[] = primitiveOverlay[kind]): TypeDefinition {
   // A string's own keys are its `length` and its indices: never the prototype's.
   const owned = entries.find(e => kind === "string" && (e.name === "length" || /^\d/.test(e.name)));
   if (owned) throw Error(`a string owns '${owned.name}'; String.prototype's does not answer for it`);
+  entries = entries.map(e => kind === "string" && e.name === "split" && e.stated
+    ? { ...e, stated: [...nonEmptySplit(separators), ...e.stated] } : e);
   return prototype(checker, at, library, { identity: primitiveProtoIdentity(kind), binders: [], entries,
-    effect: "preservesInputHeap", receiver: () => ({ k: "atom", name: kind, span: [0, 0] }) });
+    effect: emptyEffect, receiver: () => ({ k: "atom", name: kind, span: [0, 0] }) });
 }
 
 function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: Prototype): TypeDefinition {
@@ -527,12 +613,14 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
       : signatures(scope, parameters, entry.resultAs ? undefined : member.type, member, span, false, stated)
           .map(f => ({ ...f, effect: entry.effect ?? proto.effect }));
     const [first] = forms;
-    if (!first || (!binders.length && forms.length !== 1))
+    if (!first)
       throw Error(`${entry.from}.${entry.name} requires a nonempty supported signature family`);
+    // Several forms of a member without binders are their intersection
+    // (`split`'s non-empty form beside its general one).
     const type: TypeTerm = binders.length
       ? { k: "scheme", binders: binders.map(name => ({ name, bound: entry.bounds?.[name] ?? null, resolution: null, default: null, span })),
           signatures: forms.map(f => ({ ...f, receiver: f.receiver ?? receiver })), span }
-      : { ...first, receiver: first.receiver ?? receiver };
+      : oneTerm(forms.map(f => ({ ...f, receiver: f.receiver ?? receiver })), span);
     const key = ts.isComputedPropertyName(member.name) &&
         (ts.isPropertyAccessExpression(member.name.expression) || ts.isIdentifier(member.name.expression))
       ? { symbol: library.symbol(member.name.expression) } : entry.name;

@@ -265,7 +265,14 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
       let (T', label) := EquationStore.intern T [.arrs (parts.flatMap (·.1)) (parts.flatMap (·.2))]
       T := T'
       pure (Json.mkObj [("a", toJson "graph"), ("label", toJson label)])
-    | _ => pure (if instances.length == 1 then first else first.setObjVal! "and" (toJson instances.tail))
+    | _ =>
+      -- An instance with several signatures is a conjunction already: the
+      -- whole is one conjunction of every instance's signatures.
+      let parts := instances.flatMap fun i => (CellClaims.conjuncts i).toOption.getD [i]
+      match parts with
+      | [one] => pure one
+      | one :: more => pure (one.setObjVal! "and" (toJson more))
+      | [] => pure first
   return (T, Json.mkObj [("top", toJson false), ("atoms", toJson [callable])],
     calls.map (·.2.1), calls.map (·.1))
 
@@ -319,11 +326,10 @@ def moduleScheme (T : EquationStore.State) (g : Instantiable) :
   let ((callable, _), grown) ← g.instantiate (at_ reads) T
   let (A, grown) ← (Fragment.translate callable).run grown
   -- A generic function's call signatures, or a generic class's construct
-  -- signatures, each an arrow's arguments and result.
+  -- signatures, each an arrow's arguments, result and effect.
   let (L, S, construct) ← match PositiveRules.expand (SourceTypes.graph grown) A with
     | [.arrs L S] => pure (L, S, false)
-    | [.ctors L S _ _ _] => pure (L.map (fun (ps, r) => ⟨[], ps, r, .unrestricted⟩),
-        S.map (fun (ps, rest, r) => ⟨[], (ps, rest), r, .unrestricted⟩), true)
+    | [.ctors L S _ _ _] => pure (L.map (·.withReceiver []), S.map (·.withReceiver []), true)
     | _ => throw s!"'{g.name}' read as a value is not one callable or one class value"
   let (grown, label) := EquationStore.scheme grown ps L rows S construct
   return (grown, graph [label])

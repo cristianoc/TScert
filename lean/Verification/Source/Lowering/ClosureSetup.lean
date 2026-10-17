@@ -190,9 +190,9 @@ scheme row's variadic signatures. -/
               "a closure collecting a rest array needs its result annotation")
         let R ← lower (Fragment.callableType ret)
         let restPack ← lower (SourceTypes.use (.pack ⟨[], [], some E, false, .dense⟩ []))
-        let own ← lower (SourceTypes.use (.arrs [] [⟨Rsource, (sourceDs, [restPack]), R, .unrestricted⟩]))
+        let own ← lower (SourceTypes.use (.arrs [] [⟨Rsource, (sourceDs, [restPack]), R, .ordinary⟩]))
         recordHints [own]
-        pure ([(⟨Rsource, sourceDs, R, .unrestricted⟩, some [restPack])], [own])
+        pure ([(⟨Rsource, sourceDs, R, .ordinary⟩, some [restPack])], [own])
     | none => do
       let (L, S) ← match mode, scheme with
         | .ctor U, _ => match PositiveRules.expand G A with
@@ -201,12 +201,12 @@ scheme row's variadic signatures. -/
             -- binding the code's further positions at the element or
             -- `undefined` (`ProgramTyping.ctorRestParams`).
             let codeArity := fixedParams.length + restElements.length
-            let variadic ← S.mapM fun (Qs, P, Ri) => do
+            let variadic ← S.mapM fun ⟨_, (Qs, P), Ri, effect⟩ => do
               let some El := PositiveRules.restElem G P
                 | throw (locatedRefusal (← table) pos .bindingAnnotation
                     "a variadic construct signature needs an element rest")
-              pure (⟨U, ProgramTyping.ctorRestParams codeArity Qs El U, Ri, .unrestricted⟩ : Arrow (Ty Tree))
-            pure (L.map (fun (Di, Ri) => ⟨U, Di, Ri, .unrestricted⟩) ++ variadic, [])
+              pure (⟨U, ProgramTyping.ctorRestParams codeArity Qs El U, Ri, effect⟩ : Arrow (Ty Tree))
+            pure (L.map (·.withReceiver U) ++ variadic, [])
           | _ => throw "a class value's claim must name construct signatures"
         | .annotated F, _ => match PositiveRules.expand G F with
           | [.arrs L _] => pure (L, [])
@@ -266,9 +266,9 @@ scheme row's variadic signatures. -/
   -- within the written one.
   if let some g := guard then
     let promised ← lower (Fragment.translate g.type)
-    let effect : CallEffects.Effect := if g.asserts then .asserts g.param else .guards g.param
+    let promise : CallEffects.TypePromise := if g.asserts then .asserts g.param else .guards g.param
     let reason := "a guard closure's claim must offer its written promise over its annotated parameters"
-    let some row := rows.find? (fun r => r.effect == effect && r.arguments.length == arity)
+    let some row := rows.find? (fun r => r.effect.promise == some promise && r.arguments.length == arity)
       | throw (locatedRefusal T pos .bindingAnnotation reason)
     requireWithin T pos .bindingAnnotation Rsource row.receiver reason
     for (D, B) in row.arguments.zip sourceDs do

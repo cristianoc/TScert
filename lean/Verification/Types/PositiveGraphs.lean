@@ -207,7 +207,7 @@ structure SchemeRow (ι : Type) where
   /-- Associated slots are part of the generic contract. -/
   resolution : List ResolutionSlots := []
   /-- A construct scheme: its signatures are construct signatures, each an
-  arrow's arguments and result (`ctorOf`), and its members class values. -/
+  arrow's arguments, result and effect (`ctorOf`), and its members class values. -/
   construct : Bool := false
   deriving DecidableEq, Repr
 
@@ -914,19 +914,14 @@ noncomputable def instanceRestsWithArgs (D : ParameterAssignment k ι → List �
   let η' := assign η s.binders As
   s.variadic.map (RestArrow.mapWith (D η') (P η' (D η')))
 
-/-- A construct signature as an arrow states it: its arguments and its
-result. A construct signature has no receiver and no effect. -/
-def ctorOf (a : CallEffects.Contract α β γ) : β × γ := (a.arguments, a.result)
-
-/-- A variadic construct signature as a variadic arrow states it: its fixed
-parameters, its rest and its result. -/
-def ctorRestOf (r : CallEffects.Contract α (List β × δ) γ) : List β × δ × γ :=
-  (r.arguments.1, r.arguments.2, r.result)
+/-- A construct signature as an arrow states it: its arguments, its result
+and its effect. A construct signature has no receiver. -/
+def ctorOf (a : CallEffects.Contract α β γ) : CallEffects.Contract Unit β γ := a.withReceiver ()
 
 /-- What a scheme's instances meet, as a clause: its call signatures, or its
 construct signatures for a construct scheme. -/
 def SchemeRow.body (s : SchemeRow ι) : Clause (List ι) :=
-  if s.construct then .ctors (s.signatures.map ctorOf) (s.variadic.map ctorRestOf)
+  if s.construct then .ctors (s.signatures.map ctorOf) (s.variadic.map ctorOf)
   else .arrs s.signatures s.variadic
 
 /-- The signatures `L` and variadic signatures `S` of one value: call
@@ -934,7 +929,7 @@ signatures, as a call clause's are, or construct signatures, as a construct
 clause's are. -/
 noncomputable def sigsT (Ξ : Fam) (construct : Bool) (L : List (Arrow Fam))
     (S : List CallEffects.RestSignature) : Fam :=
-  if construct then interT (ctorsT Ξ (L.map ctorOf)) (ctorRestsT Ξ (S.map ctorRestOf))
+  if construct then interT (ctorsT Ξ (L.map ctorOf)) (ctorRestsT Ξ (S.map ctorOf))
   else interT (CallEffects.callsT Ξ L) (CallEffects.restsT Ξ S)
 
 theorem sigsT_adm (construct : Bool) (L : List (Arrow Fam)) (S : List CallEffects.RestSignature) :
@@ -962,9 +957,10 @@ theorem sigsT_congr {Ξ Ξ' : Fam} (construct : Bool) {α β : Type} (l : List �
   split
   · simp only [interT, List.map_map]
     exact and_congr
-      (ctorsT_congr l (ctorOf ∘ f) (ctorOf ∘ g) hexc (fun x hx => ⟨(h x hx).2.1, (h x hx).2.2⟩) W v)
-      (ctorRestsT_congr r (ctorRestOf ∘ f') (ctorRestOf ∘ g') hexc
-        (fun x hx => ⟨(h' x hx).2.1, (h' x hx).2.2.1, (h' x hx).2.2.2⟩) W v)
+      (ctorsT_congr l (ctorOf ∘ f) (ctorOf ∘ g) hexc
+        (fun x hx => ⟨he x hx, (h x hx).2.1, (h x hx).2.2⟩) W v)
+      (ctorRestsT_congr r (ctorOf ∘ f') (ctorOf ∘ g') hexc
+        (fun x hx => ⟨he' x hx, (h' x hx).2.1, (h' x hx).2.2.1, (h' x hx).2.2.2⟩) W v)
   · exact and_congr (CallEffects.callsT_congr l f g hexc he h W v) (CallEffects.restsT_congr r f' g' hexc he' h' W v)
 
 /-- One instance's contract: its fixed and its variadic signatures, as a call

@@ -102,13 +102,22 @@ def genericClaim (T : EquationStore.State) (θ : List (String × List Tree)) : G
         | some e => [("rest", c e)]
         | none => []) ++
       [("result", c res), ("construct", toJson "unknown"), ("array", toJson "unknown")])])]
-  | .construct ps res fs =>
+  | .construct ss fs =>
     let c (U : List Tree) : Json := graphClaim (normUnion (U.flatMap (rebind T θ)))
     let statics := fs.map fun (k, r, U) => Json.mkObj ([("name", toJson k), ("type", c U)] ++
       (if r then [("readonly", toJson true)] else []))
-    Json.mkObj [("top", toJson false), ("atoms", Json.arr #[Json.mkObj ([("a", toJson "constructor"),
-      ("params", Json.arr (ps.map c).toArray), ("result", c res)] ++
-      (if statics.isEmpty then [] else [("statics", Json.arr statics.toArray)]))])]
+    -- Each construct signature is an atom, the ordinary effect written by
+    -- leaving it out, as a function atom's; several are one conjunction.
+    let atom := fun ((ps, res, e) : List (List Tree) × List Tree × CallEffects.Effect) =>
+      Json.mkObj ([("a", toJson "constructor"), ("params", Json.arr (ps.map c).toArray), ("result", c res)] ++
+        (if e == .ordinary then [] else [("effect", toJson e)]) ++
+        (if statics.isEmpty then [] else [("statics", Json.arr statics.toArray)]))
+    let atoms := ss.map atom
+    let first := match atoms with
+      | [] => Json.mkObj []
+      | [one] => one
+      | one :: more => one.setObjVal! "and" (Json.arr more.toArray)
+    Json.mkObj [("top", toJson false), ("atoms", Json.arr #[first])]
   | .other U => graphClaim (normUnion (U.flatMap (rebind T θ)))
 
 /-- The argument lists of a binder typing both a value and a rest, at its

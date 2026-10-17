@@ -1,4 +1,4 @@
-import type { CallEffect, ArrayPresence } from "./type-graph.mts";
+import type { ArrayPresence } from "./type-graph.mts";
 /** The declaration document shared by the source parser, the Fragment AST
  * and readers. TypeScript's checker, under the source's configured project,
  * decides which declaration each name denotes; the document records the source
@@ -6,6 +6,21 @@ import type { CallEffect, ArrayPresence } from "./type-graph.mts";
  * producer's claim follows from them. This module has no runtime dependencies,
  * so importing its types does not pull the compiler into a reader's project. */
 import type { Span } from "./span.mts";
+/** A closed footprint (`Footprints.Closed`): the change a call may make, on
+ * normal return, to the locations of its entry heap holding a value and to
+ * those holding an array store. `keep` changes nothing, `grow` keeps every
+ * dense prefix of a store, `any` allows every change; on a value `grow` is
+ * `keep`. Fresh locations are unconstrained. */
+export type ClosedFootprint = { value: "keep" | "any"; store: "keep" | "grow" | "any" };
+/** A promise about the actual at `param`, whose type is then the signature's
+ * result: a type guard's or an assertion function's. */
+export type CallPromise = { guards: { param: number } } | { asserts: { param: number } };
+/** What a signature guarantees beyond its contract: its footprint, an
+ * optional promise, whether a normal return's value has an array store the
+ * call allocated (`fresh`), and whether the footprint excepts the receiver's
+ * array store, which the call may change arbitrarily (`receiverStore`)
+ * (`CallEffects.Effect`). */
+export type CallEffect = { footprint: ClosedFootprint; promise: CallPromise | null; fresh: boolean; receiverStore: boolean };
 /** One type alias or interface: its module (a path relative to the project's
  * tsconfig, the client's absolute path, or `typescript/lib/<file>`), its name
  * and its span there. */
@@ -77,10 +92,11 @@ export type TypeTerm =
   | { k: "function"; effect: CallEffect; receiver: TypeTerm | null; params: TypeTerm[];
       rest: TypeTerm | null; result: TypeTerm; span: Span }
   /** `new (params) => result`: a construct signature, which a class meets and
-   * no plain function does; `rest` as a function's, or null. A class value's
-   * type also states its static fields (`statics`), own data properties of
-   * the class value, a readonly one marked, left out when it has none. */
-  | { k: "constructor"; params: TypeTerm[]; rest: TypeTerm | null; result: TypeTerm;
+   * no plain function does; `rest` as a function's, or null; its effect as a
+   * function's. A class value's type also states its static fields
+   * (`statics`), own data properties of the class value, a readonly one
+   * marked, left out when it has none. */
+  | { k: "constructor"; effect: CallEffect; params: TypeTerm[]; rest: TypeTerm | null; result: TypeTerm;
       statics?: { name: PropertyKey; type: TypeTerm; readonly?: true }[]; span: Span }
   /** A rest parameter typed by a type parameter, `...params: P`: the actuals
    * past the fixed ones are, as one argument list, at `P`, a pack parameter.

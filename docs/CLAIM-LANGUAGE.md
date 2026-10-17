@@ -73,14 +73,18 @@ remain references. Self-reference needs no exception and overloads are never
 reduced to a single arrow. The readable definitions are a display.
 
 `tools/calculus.mts` similarly declares `Term`, `CallCode`, and `Tag`
-against `Calculus.lean`. `decodeTerm` / `printTerm` are exact, validated JSON.
-Terms retain native slot numbers so the printed obligation matches the calculus;
-source names are shown alongside in its context table.
+against `Calculus.lean`. The wire writes a constructor as an object whose one
+key names it; `decodeTerm` and `decodeTag` check that JSON exactly and build
+values naming their constructor in `kind` beside its fields, which `showTerm`
+and `showTag` print by cases. Terms retain native slot numbers so the printed
+obligation matches the calculus; source names are shown alongside in its
+context table.
 
 `tools/control-flow.mts` declares the program graph over those terms —
 `Target`, `Continuation`, and `ProgramNode` — against `ControlFlow.lean`. A node
 names its successors and their slot maps explicitly, so the node in a failure
-record is validated as program data rather than inferred from its expression.
+record is validated as program data rather than inferred from its expression;
+`decodeNode` builds continuations the same way, named by `kind`.
 
 ## Obligations and consistency
 

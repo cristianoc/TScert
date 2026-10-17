@@ -16,6 +16,15 @@ module Support = Expression_support.Make(S)
 open Support
 let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
   let site = e.pos in
+  (* A member access reads its operand's values other than `null` and
+     `undefined`: JavaScript throws a `TypeError` at those before the access,
+     as the lowering's guard does (PROGRAM-TYPING, "a member of `null` or
+     `undefined`"). A member of an operand holding only those is read at the
+     empty type: the access always throws. *)
+  let present t = match without_nullish t, t with
+    | Atoms [], Atoms (_ :: _ as xs) when List.for_all (function Nul | Undef -> true | _ -> false) xs -> Atoms []
+    | Atoms [], _ -> t
+    | p, _ -> p in
   match e.node with
     | Read (({node=Id name;_} as o),Name field) when List.mem_assoc (field_key name field) env ->
       let known = binding_type (List.assoc (field_key name field) env) in
@@ -31,7 +40,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
        member only some arms have is refused by that reason. *)
     | Read (({node=Id name;_} as e),n)
       when (match List.assoc_opt name env with Some (Storage _) -> true | _ -> false) ->
-      let t = expr env e in
+      let t = present (expr env e) in
       (try S.field_type declarations [] t n with Json.Error m
         when String.length m >= 27 && String.sub m 0 27 = "unsupported: missing field " ->
         Proposal_diagnostics.unsupported ("a read of " ^ key_text n ^ " on a `let` holding a union of objects, some without it: \
@@ -55,7 +64,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          S.field_type declarations [] (Atoms [Ctors ([],statics)]) n
        | _ -> Proposal_diagnostics.unsupported "a generic class value")
     | Read (e,n) ->
-      let receiver = expr env e in
+      let receiver = present (expr env e) in
       if not (List.mem site (observations ()).Analysis_capabilities.method_callees) && method_member declarations receiver n then
         S.explain site ("a method '" ^ key_text n ^ "' read off its object is not a function value: " ^ extraction_reason);
       (match expected with
@@ -87,7 +96,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
              Proposal_diagnostics.unsupported ("a field read at its contract: a read of " ^ key_text n ^ " through a field holding \
                an object beside null or undefined, which a test does not narrow: what a field is known to hold \
                is a union of primitive values (DESIGN.md, \"Current-content assertions\")")))
-    | Index (e,key) -> let receiver=expr env e in let key=expr env key in
+    | Index (e,key) -> let receiver=present (expr env e) in let key=expr env key in
       S.index_type declarations [] receiver key
     (* The right side runs after the receiver and the key: it sees what they
        assigned. *)

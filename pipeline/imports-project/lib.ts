@@ -296,5 +296,11 @@ export function trio(): readonly number[] {
   return [1, 2, 3];
 }
 /** An array type the case invalid-array-through-declaration-value-import
- * names without writing one. */
+ * names without writing one, and a fresh array of it. */
 export type Numbers = number[];
+export function fresh(): Numbers {
+  return [1, 2, 3];
+}
+/** A conditional alias computing a union's keys; the case
+ * computed-alias-value-import imports it. */
+export type KeysOf<T> = T extends unknown ? keyof T : never;

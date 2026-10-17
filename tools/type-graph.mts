@@ -3,7 +3,8 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { PropertyKey } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, ClosedFootprint, PropertyKey } from "./declaration-types.mts";
+export type { CallEffect, CallPromise, ClosedFootprint } from "./declaration-types.mts";
 /** Physical density and a safe in-bounds read are distinct guarantees. */
 export type ArrayPresence = "dense" | "readable" | "sparse";
 export function isArrayPresence(value: unknown): value is ArrayPresence {
@@ -18,19 +19,55 @@ export function presencePrefix(value: ArrayPresence): string {
 export type Labels<L = number> = L[];
 /** A signature: the receiver a call may pass, then the parameters and the
  * result. A signature indifferent to its receiver names an unknown row. */
-/** What a signature guarantees beyond its contract: a heap effect, or a
- * promise about the actual at `param`, whose type is then the signature's
- * result (`CallEffects.Effect`). */
-export type CallEffect = "unrestricted" | "preservesInputHeap" | { guards: { param: number } } | { asserts: { param: number } };
+/** The footprint letting every location change: an ordinary arrow's. */
+export const topFootprint: ClosedFootprint = { value: "any", store: "any" };
+/** The footprint letting no location change: heap preservation. */
+export const emptyFootprint: ClosedFootprint = { value: "keep", store: "keep" };
+/** The six closed footprints, each after every one within it. */
+export const closedFootprints: readonly ClosedFootprint[] = [
+  { value: "keep", store: "keep" }, { value: "any", store: "keep" },
+  { value: "keep", store: "grow" }, { value: "any", store: "grow" },
+  { value: "keep", store: "any" }, { value: "any", store: "any" },
+];
+/** A signature with a footprint and no promise. */
+export const footprintEffect = (footprint: ClosedFootprint): CallEffect =>
+  ({ footprint, promise: null, fresh: false, receiverStore: false });
+/** Heap preservation: no location may change, no promise. */
+export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
+/** An ordinary arrow's effect: every location may change, no promise. */
+export const ordinaryEffect: CallEffect = footprintEffect(topFootprint);
+/** A promise signature: a guard's or an assertion function's, about `param`,
+ * whose code may change every location. */
+export const promiseEffect = (asserts: boolean, param: number): CallEffect =>
+  ({ footprint: topFootprint, promise: asserts ? { asserts: { param } } : { guards: { param } }, fresh: false,
+    receiverStore: false });
+export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =>
+  a.value === b.value && a.store === b.store;
+const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
+  a === null || b === null ? a === b
+    : "guards" in a ? "guards" in b && a.guards.param === b.guards.param
+    : "asserts" in b && a.asserts.param === b.asserts.param;
+export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
+  sameFootprint(a.footprint, b.footprint) && samePromise(a.promise, b.promise) && a.fresh === b.fresh &&
+    a.receiverStore === b.receiverStore;
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+/** Whether a value is a closed footprint, as the wire states one. */
+export function isClosedFootprint(value: unknown): value is ClosedFootprint {
+  return isObject(value) && Object.keys(value).length === 2 &&
+    (value.value === "keep" || value.value === "any") &&
+    (value.store === "keep" || value.store === "grow" || value.store === "any");
+}
 /** Whether a value is a call effect, as the wire states one. */
 export function isCallEffect(value: unknown): value is CallEffect {
-  if (value === "unrestricted" || value === "preservesInputHeap") return true;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const keys = Object.keys(value);
-  const promise: unknown = "guards" in value ? value.guards : "asserts" in value ? value.asserts : undefined;
-  return keys.length === 1 && typeof promise === "object" && promise !== null && !Array.isArray(promise) &&
-    Object.keys(promise).length === 1 && "param" in promise && typeof promise.param === "number" &&
-    Number.isInteger(promise.param) && promise.param >= 0;
+  if (!isObject(value) || Object.keys(value).length !== 4 || !isClosedFootprint(value.footprint) ||
+      typeof value.fresh !== "boolean" || typeof value.receiverStore !== "boolean") return false;
+  const promise = value.promise;
+  if (promise === null) return true;
+  if (!isObject(promise) || Object.keys(promise).length !== 1) return false;
+  const about: unknown = "guards" in promise ? promise.guards : "asserts" in promise ? promise.asserts : undefined;
+  return isObject(about) && Object.keys(about).length === 1 && typeof about.param === "number" &&
+    Number.isInteger(about.param) && about.param >= 0;
 }
 /** One contract representation; every operand mapping must retain its effect. */
 type CallContract<Receiver, Arguments, L = number> = {
@@ -125,15 +162,15 @@ export type Clause<L = number> =
    * one argument list, are at the rest type, a `pack`; the field is left out
    * when there are none. */
   | { arrs: { arrows: Arrow<L>[]; variadic?: RestArrow<L>[] } }
-  /** Construct signatures `[parameters, result]`: what a class meets; and
-   * variadic ones `[parameters, [rest, result]]`, whose actuals past the
-   * parameters are, as one argument list, at the rest type; the field is left
-   * out when there are none. Its static fields, invariant record operands as
-   * a callable's bag, `first` and `rest`, are left out when there are none. */
+  /** Construct signatures, each with its parameters, result and effect and
+   * no receiver: what a class meets; and variadic ones, whose actuals past
+   * the parameters are, as one argument list, at the rest type; the field is
+   * left out when there are none. Its static fields, invariant record operands
+   * as a callable's bag, `first` and `rest`, are left out when there are none. */
   | {
       ctors: {
-        signatures: [Labels<L>[], Labels<L>][];
-        variadic?: [Labels<L>[], [Labels<L>, Labels<L>]][];
+        signatures: MethodArrow<L>[];
+        variadic?: MethodRestArrow<L>[];
         first?: Fields<L>;
         rest?: Fields<L>[];
         views?: Fields<L>;
@@ -394,26 +431,12 @@ export function decodeGraph(value: unknown): TypeGraph {
       if ("first" in r) fields(r.first);
       if ("rest" in r) array(r.rest).forEach(v => fields(v));
       if ("views" in r) fields(r.views, true);
-      array(r.signatures).forEach((sig) => {
-        const pair = array(sig);
-        if (pair.length !== 2) throw Error("invalid construct signature");
-        array(pair[0]).forEach(labels);
-        labels(pair[1]);
-      });
+      array(r.signatures).forEach((c) => contract(c, true, false));
       if ("variadic" in r) {
         const sigs = array(r.variadic);
         if (!sigs.length)
           throw Error("an empty variadic list is written by omitting it");
-        sigs.forEach((sig) => {
-          const pair = array(sig);
-          if (pair.length !== 2)
-            throw Error("invalid variadic construct signature");
-          array(pair[0]).forEach(labels);
-          const tail = array(pair[1]);
-          if (tail.length !== 2) throw Error("expected a rest and a result");
-          labels(tail[0]);
-          labels(tail[1]);
-        });
+        sigs.forEach((c) => contract(c, true, true));
       }
     },
     list: (b) => {

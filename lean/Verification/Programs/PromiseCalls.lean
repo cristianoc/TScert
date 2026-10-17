@@ -493,8 +493,8 @@ effect, the slot and the promise's type. -/
         match expand G jf.type with
         | [.arrs L _] => L.findSome? fun s =>
           if s.receiver = jr.type ∧ s.arguments = jas.map Sequent.type then
-            match s.effect with
-            | .guards p | .asserts p => match args[p]? with
+            match s.effect.promise with
+            | some (.guards p) | some (.asserts p) => match args[p]? with
               | some (.var a) => some (s.effect, a, s.result)
               | _ => none
             | _ => none
@@ -510,12 +510,12 @@ holds `true` and `false` for a type guard, `undefined` for an assertion
 function. -/
 def promiseYields (G : NormalGraph ι) (A : Ty ι) (effect : Effect) (a : Nat) (T : Ty ι)
     (ys : List (Yield ι)) : Bool :=
-  (match effect with
-    | .guards _ => booleanMember G A true && booleanMember G A false
-    | .asserts _ => admitsUndef G A
-    | _ => false) &&
+  (match effect.promise with
+    | some (.guards _) => booleanMember G A true && booleanMember G A false
+    | some (.asserts _) => admitsUndef G A
+    | none => false) &&
   ys.all fun y => y.target == a && within T y.type &&
-    (match effect with | .guards _ => y.conditional | _ => true)
+    (match effect.promise with | some (.guards _) => y.conditional | _ => true)
 
 theorem ordinaryOutput_holds {k : HeapKnowledge.Knowledge} {ρ h} (hk : HeapKnowledge.Holds k ρ h)
     (v : Tm) (h' : Heap) : HeapKnowledge.Holds (HeapExpressionRules.ordinaryOutput k) (push v ρ) h' :=
@@ -631,13 +631,13 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
       · rename_i a' harg
         simp only [Option.some.injEq, Prod.mk.injEq] at hsome
         obtain ⟨he', rfl, hT⟩ := hsome
-        rw [heff] at he' hu
         subst he' hT
-        have hpromised : (CallEffects.Effect.guards p).promised (args.map (instantiate 0 ρ)) = ρ a' := by
-          simp [CallEffects.Effect.promised, List.getD_eq_getElem?_getD, harg, instantiate]
+        have hpromised : s.effect.promised (args.map (instantiate 0 ρ)) = ρ a' := by
+          simp [CallEffects.Effect.promised, heff, CallEffects.TypePromise.param,
+            List.getD_eq_getElem?_getD, harg, instantiate]
         rw [hpromised] at hu
-        simp only [CallEffects.Effect.result] at hu
-        simp only [promiseYields, Bool.and_eq_true, List.all_eq_true] at hy
+        simp only [CallEffects.Effect.result, heff, CallEffects.TypePromise.result] at hu
+        simp only [promiseYields, heff, Bool.and_eq_true, List.all_eq_true] at hy
         obtain ⟨⟨hbt, hbf⟩, hall⟩ := hy
         refine ⟨?_, fun y hym hcond => ?_⟩
         · rcases hu with ⟨rfl, _⟩ | rfl
@@ -654,13 +654,13 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
       · rename_i a' harg
         simp only [Option.some.injEq, Prod.mk.injEq] at hsome
         obtain ⟨he', rfl, hT⟩ := hsome
-        rw [heff] at he' hu
         subst he' hT
-        have hpromised : (CallEffects.Effect.asserts p).promised (args.map (instantiate 0 ρ)) = ρ a' := by
-          simp [CallEffects.Effect.promised, List.getD_eq_getElem?_getD, harg, instantiate]
+        have hpromised : s.effect.promised (args.map (instantiate 0 ρ)) = ρ a' := by
+          simp [CallEffects.Effect.promised, heff, CallEffects.TypePromise.param,
+            List.getD_eq_getElem?_getD, harg, instantiate]
         rw [hpromised] at hu
-        simp only [CallEffects.Effect.result] at hu
-        simp only [promiseYields, Bool.and_eq_true, List.all_eq_true] at hy
+        simp only [CallEffects.Effect.result, heff, CallEffects.TypePromise.result] at hu
+        simp only [promiseYields, heff, Bool.and_eq_true, List.all_eq_true] at hy
         obtain ⟨hundefA, hall⟩ := hy
         obtain ⟨rfl, hT⟩ := hu
         refine ⟨admitsUndef_sound hundefA m U, fun y hym _ => ?_⟩

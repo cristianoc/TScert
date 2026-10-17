@@ -1,141 +1,110 @@
 /** Native term syntax, matching Calculus.lean and its derived JSON codec. The
- * program graph over these terms is its own language, in control-flow.mts. */
-export type Tag =
-  | "isNul"
-  | "isBool"
-  | "isRef"
-  | "isFun"
-  | "isUndef"
-  | "isNullish"
-  | "isNum"
-  | "isStr"
-  | "isBigint"
-  | "isSymbol"
-  | "truthy"
-  | "isArray"
+ * program graph over these terms is its own language, in control-flow.mts.
+ *
+ * The wire writes a constructor as an object with one key, the constructor's
+ * name, holding its fields (a constructor without fields as its bare name).
+ * The decoders here check that shape exactly and build the values below, each
+ * naming its constructor in `kind` beside its own fields, so a test of `kind`
+ * selects the fields the constructor has. */
+/** The tags without fields, as `Tag` in Calculus.lean names them. */
+const BARE_TAGS = [
+  "isNul",
+  "isBool",
+  "isRef",
+  "isFun",
+  "isUndef",
+  "isNullish",
+  "isNum",
+  "isStr",
+  "isBigint",
+  "isSymbol",
+  "truthy",
+  "isArray",
   /** `typeof v === "object"`: null, or an object without call code. */
-  | "typeofObject"
+  "typeofObject",
+] as const;
+type BareTag = (typeof BARE_TAGS)[number];
+/** A key a tag or a merge names: a string, or a symbol's identity. */
+export type Key = string | { symbol: number };
+export type Tag =
+  | { kind: BareTag }
   /** `key in v`: an object owning the key, a string or a symbol's identity. */
-  | { hasKey: { key: string | { symbol: number } } }
-  | { numEq: { bits: string } }
-  | { strEq: { value: string } }
-  | { boolEq: { value: boolean } }
+  | { kind: "hasKey"; key: Key }
+  | { kind: "numEq"; bits: string }
+  | { kind: "strEq"; value: string }
+  | { kind: "boolEq"; value: boolean }
   /** A bigint singleton, as its integer: a JSON number of any length. */
-  | { bigintEq: { value: number } };
+  | { kind: "bigintEq"; value: number };
 /** An object's invocation code: none, a closure, variadic code collecting
  * further actuals, `.bind`'s forwarding descriptor, which keeps the target,
  * the receiver and the argument prefix it was given, or graph code: a
  * control-flow graph's node expressions, each node's continuation and
  * handler (as `control-flow.mts` reads them), its entry and its captures. */
-type CallCode =
-  | "absent"
-  | { closure: { arity: number; body: Term } }
-  | { variadic: { fixed: number; body: Term } }
-  | { bound: { target: Term; receiver: Term; pre: Term[] } }
-  | { graph: { arity: number; exprs: Term[]; conts: [unknown, unknown][]; start: number; caps: Term[] } };
-export type Term =
-  | "nul"
-  | "undef"
-  | "tru"
-  | "fls"
-  /** A number, as the bit pattern of the double it denotes: its identity. */
-  | { num: { bits: string } }
-  /** A string, as itself. */
-  | { str: { value: string } }
-  /** A bigint, as its integer: a JSON number of any length. */
-  | { bigint: { value: number } }
-  | { var: { i: number } }
-  /** Invoke `f` with the receiver `r` and the actuals `args`. */
-  | { invoke: { f: Term; r: Term; args: Term[] } }
-  | { letE: { a: Term; b: Term } }
-  | { objAt: { fields: [string, number][]; call: CallCode; identity: number } }
-  | { makeAt: { call: CallCode; names: string[]; inits: Term[] } }
-  | { readAt: { field: string; a: Term } }
-  | { indexAt: { a: Term; key: Term } }
-  | { writeAt: { field: string; a: Term; b: Term } }
-  | { test: { k: Tag; a: Term } }
-  | { ite: { c: Term; t: Term; e: Term } }
-  /** A binary operator on primitive operands: arithmetic on two numbers or
-   * two bigints, or a relational comparison. */
-  | { arith: { op: (typeof OPERATORS)[number]; a: Term; b: Term } }
-  /** An array store with these initial elements, in order: the value an
-   * array object holds in its store field. */
-  | { arrLit: { inits: Term[] } }
-  /** The element of a store at a numeric index: `undefined` at a hole or out
-   * of range. */
-  | { elemAt: { a: Term; i: Term } }
-  /** The store with the element at a numeric index set, growing it when the
-   * index is past the end. */
-  | { setElem: { a: Term; i: Term; v: Term } }
-  /** The length of a store, as a number. */
-  | { lenOf: { a: Term } }
-  /** A store: the location of each element, in order, or none at a hole. */
-  | { arr: { elems: (number | null)[] } }
-  /** An actual standing for the elements of a store, read where it is written. */
-  | { spread: { a: Term } }
-  /** Evaluate `a`, then throw its value. */
-  | { throw: { a: Term } }
-  /** Allocate `a`'s fields and, over them, `b`'s own enumerable data
-   * properties, but the keys in `drop` (an object literal's spread). */
-  | { merge: { drop: (string | { symbol: number })[]; a: Term; b: Term } }
-  /** Evaluate `key`, then `init`, then allocate one object owning one
-   * property at the key `key`'s value converts to, holding `init`'s value. */
-  | { makeKey: { key: Term; init: Term } };
+export type CallCode =
+  | { kind: "absent" }
+  | { kind: "closure"; arity: number; body: Term }
+  | { kind: "variadic"; fixed: number; body: Term }
+  | { kind: "bound"; target: Term; receiver: Term; pre: Term[] }
+  /** Graph code; `mode` is the wire's `kind`, left out for `[[Call]]` code,
+   * and `rest` is left out when the code collects none, the one spelling of
+   * each. */
+  | { kind: "graph"; arity: number; exprs: Term[]; conts: [unknown, unknown][]; start: number; caps: Term[];
+      mode: "construct" | "sloppy" | null; rest: boolean };
 /** Every binary operator, as `Arith` in Calculus.lean names them. */
 const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "bitAnd", "bitOr", "shl", "shr", "ushr",
   "lt", "le", "gt", "ge", "eq"] as const;
-/** Every tag, checked against `Tag`: adding one there and not here is a type
- * error rather than an "unknown tag" at run time. */
-const TAGS: Record<Extract<Tag, string>, true> = {
-  isNul: true,
-  isBool: true,
-  isRef: true,
-  isFun: true,
-  isUndef: true,
-  isNullish: true,
-  isNum: true,
-  isStr: true,
-  isBigint: true,
-  isSymbol: true,
-  truthy: true,
-  isArray: true,
-  typeofObject: true,
-};
-const tags: readonly unknown[] = Object.keys(TAGS);
-/** Whether a decoded value is a tag, so the table above stays the one place a
- * tag is declared even for readers of other languages that carry one. */
-export function isTag(v: unknown): v is Tag {
-  if (tags.includes(v)) return true;
-  if (!isRecord(v) || Object.keys(v).length !== 1) return false;
-  if (isRecord(v.strEq))
-    return (
-      Object.keys(v.strEq).length === 1 && typeof v.strEq.value === "string"
-    );
-  if (isRecord(v.boolEq))
-    return (
-      Object.keys(v.boolEq).length === 1 && typeof v.boolEq.value === "boolean"
-    );
-  if (isRecord(v.hasKey)) {
-    const key = v.hasKey.key;
-    return (
-      Object.keys(v.hasKey).length === 1 &&
-      (typeof key === "string" ||
-        (isRecord(key) && Object.keys(key).length === 1 && typeof key.symbol === "number"))
-    );
-  }
-  if (isRecord(v.bigintEq))
-    return (
-      Object.keys(v.bigintEq).length === 1 && typeof v.bigintEq.value === "number"
-    );
-  if (!isRecord(v.numEq)) return false;
-  const n = v.numEq;
-  return (
-    Object.keys(n).length === 1 &&
-    typeof n.bits === "string" &&
-    /^[0-9]+$/.test(n.bits) &&
-    BigInt(n.bits) <= 0xffffffffffffffffn
-  );
-}
+type Operator = (typeof OPERATORS)[number];
+export type Term =
+  | { kind: "nul" }
+  | { kind: "undef" }
+  | { kind: "tru" }
+  | { kind: "fls" }
+  /** A number, as the bit pattern of the double it denotes: its identity. */
+  | { kind: "num"; bits: string }
+  /** A string, as itself. */
+  | { kind: "str"; value: string }
+  /** A bigint, as its integer: a JSON number of any length. */
+  | { kind: "bigint"; value: number }
+  | { kind: "var"; i: number }
+  /** Invoke `f` with the receiver `r` and the actuals `args`. */
+  | { kind: "invoke"; f: Term; r: Term; args: Term[] }
+  /** `new f(args)`: run `f`'s construct code with the actuals `args`. */
+  | { kind: "construct"; f: Term; args: Term[] }
+  | { kind: "letE"; a: Term; b: Term }
+  | { kind: "objAt"; fields: [string, number][]; call: CallCode; identity: number }
+  | { kind: "makeAt"; call: CallCode; names: string[]; inits: Term[] }
+  | { kind: "readAt"; field: string; a: Term }
+  | { kind: "indexAt"; a: Term; key: Term }
+  | { kind: "writeAt"; field: string; a: Term; b: Term }
+  | { kind: "test"; k: Tag; a: Term }
+  | { kind: "ite"; c: Term; t: Term; e: Term }
+  /** A binary operator on primitive operands: arithmetic on two numbers or
+   * two bigints, or a relational comparison. */
+  | { kind: "arith"; op: Operator; a: Term; b: Term }
+  /** An array store with these initial elements, in order: the value an
+   * array object holds in its store field. */
+  | { kind: "arrLit"; inits: Term[] }
+  /** The element of a store at a numeric index: `undefined` at a hole or out
+   * of range. */
+  | { kind: "elemAt"; a: Term; i: Term }
+  /** The store with the element at a numeric index set, growing it when the
+   * index is past the end. */
+  | { kind: "setElem"; a: Term; i: Term; v: Term }
+  /** The length of a store, as a number. */
+  | { kind: "lenOf"; a: Term }
+  /** A store: the location of each element, in order, or none at a hole. */
+  | { kind: "arr"; elems: (number | null)[] }
+  /** An actual standing for the elements of a store, read where it is written. */
+  | { kind: "spread"; a: Term }
+  /** Evaluate `a`, then throw its value. */
+  | { kind: "throw"; a: Term }
+  /** Allocate `a`'s fields and, over them, `b`'s own enumerable data
+   * properties, but the keys in `drop` (an object literal's spread). */
+  | { kind: "merge"; drop: Key[]; a: Term; b: Term }
+  /** Evaluate `key`, then `init`, then allocate one object owning one
+   * property at the key `key`'s value converts to, holding `init`'s value. */
+  | { kind: "makeKey"; key: Term; init: Term };
+
 /* JSON shape checks, shared with the program graph in control-flow.mts. They
  * belong to neither language, so they name neither: a malformed target is not
  * a malformed term. */
@@ -150,197 +119,312 @@ export function fields(v: unknown, keys: string[]): Record<string, unknown> {
     throw Error("unexpected or missing field");
   return v;
 }
-export function nat(v: unknown) {
+/** A non-negative integer. */
+export function nat(v: unknown): number {
   if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0)
     throw Error("expected a non-negative integer");
+  return v;
 }
-function code(v: unknown) {
-  if (v === "absent") return;
-  const key = isRecord(v) ? Object.keys(v)[0] : undefined;
-  if (key === "closure") {
-    const c = fields(fields(v, ["closure"]).closure, ["arity", "body"]);
-    nat(c.arity);
-    decodeTerm(c.body);
-  } else if (key === "variadic") {
-    const c = fields(fields(v, ["variadic"]).variadic, ["fixed", "body"]);
-    nat(c.fixed);
-    decodeTerm(c.body);
-  } else if (key === "bound") {
-    const c = fields(fields(v, ["bound"]).bound, ["target", "receiver", "pre"]);
-    decodeTerm(c.target);
-    decodeTerm(c.receiver);
-    if (!Array.isArray(c.pre)) throw Error("invalid bound prefix");
-    c.pre.forEach(decodeTerm);
-  } else if (key === "graph") {
-    const c = fields(fields(v, ["graph"]).graph, ["arity", "exprs", "conts", "start", "caps"]);
-    nat(c.arity);
-    nat(c.start);
-    if (!Array.isArray(c.exprs) || !Array.isArray(c.conts) || !Array.isArray(c.caps) ||
-        c.exprs.length !== c.conts.length || !c.conts.every((k) => Array.isArray(k) && k.length === 2))
-      throw Error("invalid graph code");
-    c.exprs.forEach(decodeTerm);
-    c.caps.forEach(decodeTerm);
-  } else throw Error("unknown call code");
+/** The one key of a constructor written as an object, and what it holds. */
+export function constructorOf(v: unknown): { key: string; value: unknown } {
+  if (!isRecord(v)) throw Error("invalid constructor");
+  const keys = Object.keys(v);
+  if (keys.length !== 1) throw Error("unexpected or missing field");
+  const key = keys[0];
+  return { key, value: v[key] };
 }
-/** The terms that are all tag and no fields, which is how they are written. */
-const BARE: Record<Extract<Term, string>, true> = {
-  nul: true,
-  undef: true,
-  tru: true,
-  fls: true,
-};
-const bare: readonly unknown[] = Object.keys(BARE);
-const isBareTerm = (v: unknown): v is Extract<Term, string> => bare.includes(v);
-export type KeysOf<T> = T extends unknown ? keyof T : never;
-type TermKey = KeysOf<Exclude<Term, string>>;
+/** A double's bit pattern: decimal, unsigned, at most 64 bits. */
+function bitsOf(v: unknown): string {
+  if (typeof v !== "string" || !/^[0-9]+$/.test(v) || BigInt(v) > 0xffffffffffffffffn)
+    throw Error("invalid number");
+  return v;
+}
+function stringOf(v: unknown, what: string): string {
+  if (typeof v !== "string") throw Error(what);
+  return v;
+}
+function termsOf(v: unknown): Term[] {
+  if (!Array.isArray(v)) throw Error("invalid arguments");
+  return v.map(decodeTerm);
+}
+function keyOf(v: unknown): Key {
+  if (typeof v === "string") return v;
+  const s = fields(v, ["symbol"]).symbol;
+  if (typeof s !== "number") throw Error("invalid symbol key");
+  return { symbol: s };
+}
 
-export function decodeTerm(value: unknown): Term {
-  if (isBareTerm(value)) return value;
-  if (!value || typeof value !== "object") throw Error("invalid term");
-  const key = Object.keys(value)[0],
-    outer = fields(value, [key]);
-  // One entry per compound constructor of `Term`; a missing key is a type error.
-  // Keyed by the language's own union, so a constructor added there and not
-  // here is a type error; read by a key that may be none of them, so a
-  // constructor this does not know is a refusal.
-  const shape: Record<TermKey, string[]> &
-    Record<string, string[] | undefined> = {
-    num: ["bits"],
-    str: ["value"],
-    bigint: ["value"],
-    var: ["i"],
-    invoke: ["f", "r", "args"],
-    letE: ["a", "b"],
-    objAt: ["fields", "call", "identity"],
-    makeAt: ["call", "names", "inits"],
-    readAt: ["field", "a"],
-    indexAt: ["a", "key"],
-    writeAt: ["field", "a", "b"],
-    test: ["k", "a"],
-    ite: ["c", "t", "e"],
-    arith: ["op", "a", "b"],
-    arrLit: ["inits"],
-    elemAt: ["a", "i"],
-    setElem: ["a", "i", "v"],
-    lenOf: ["a"],
-    arr: ["elems"],
-    spread: ["a"],
-    throw: ["a"],
-    merge: ["drop", "a", "b"],
-    makeKey: ["key", "init"],
-  };
-  const keys = shape[key];
-  if (!keys) throw Error("unknown term constructor");
-  const o = fields(outer[key], keys);
-  for (const [k, v] of Object.entries(o)) {
-    // A number's identity is its double's bit pattern, decimal, unsigned 64.
-    if (k === "bits") {
-      if (
-        typeof v !== "string" ||
-        !/^[0-9]+$/.test(v) ||
-        BigInt(v) > 0xffffffffffffffffn
-      )
-        throw Error("invalid number");
-    } else if (k === "value" && key === "bigint") {
-      if (typeof v !== "number" || !Number.isInteger(v)) throw Error("invalid bigint");
-    } else if (k === "value") {
-      if (typeof v !== "string") throw Error("invalid string");
-    } else if (k === "i" || k === "l") nat(v);
-    else if (k === "call") code(v);
-    else if (k === "k") {
-      if (!isTag(v)) throw Error("unknown tag");
-    } else if (k === "field") {
-      if (typeof v !== "string") throw Error("invalid field name");
-    } else if (k === "names") {
-      if (!Array.isArray(v) || v.some((n) => typeof n !== "string"))
-        throw Error("invalid field names");
-    } else if (k === "fields") {
-      if (!Array.isArray(v)) throw Error("invalid object fields");
-      for (const pair of v) {
-        if (
-          !Array.isArray(pair) ||
-          pair.length !== 2 ||
-          typeof pair[0] !== "string"
-        )
-          throw Error("invalid object field");
-        nat(pair[1]);
+export function decodeTag(v: unknown): Tag {
+  const bare = BARE_TAGS.find((t) => t === v);
+  if (bare !== undefined) return { kind: bare };
+  const { key, value } = constructorOf(v);
+  switch (key) {
+    case "hasKey": {
+      const k = fields(value, ["key"]).key;
+      if (typeof k !== "string" && !(isRecord(k) && Object.keys(k).length === 1 && typeof k.symbol === "number"))
+        throw Error("unknown tag");
+      return { kind: "hasKey", key: keyOf(k) };
+    }
+    case "numEq": {
+      const b = fields(value, ["bits"]).bits;
+      if (typeof b !== "string" || !/^[0-9]+$/.test(b) || BigInt(b) > 0xffffffffffffffffn) throw Error("unknown tag");
+      return { kind: "numEq", bits: b };
+    }
+    case "strEq": {
+      const s = fields(value, ["value"]).value;
+      if (typeof s !== "string") throw Error("unknown tag");
+      return { kind: "strEq", value: s };
+    }
+    case "boolEq": {
+      const b = fields(value, ["value"]).value;
+      if (typeof b !== "boolean") throw Error("unknown tag");
+      return { kind: "boolEq", value: b };
+    }
+    case "bigintEq": {
+      const n = fields(value, ["value"]).value;
+      if (typeof n !== "number") throw Error("unknown tag");
+      return { kind: "bigintEq", value: n };
+    }
+    default:
+      throw Error("unknown tag");
+  }
+}
+
+function decodeCode(v: unknown): CallCode {
+  if (v === "absent") return { kind: "absent" };
+  const { key, value } = constructorOf(v);
+  switch (key) {
+    case "closure": {
+      const c = fields(value, ["arity", "body"]);
+      return { kind: "closure", arity: nat(c.arity), body: decodeTerm(c.body) };
+    }
+    case "variadic": {
+      const c = fields(value, ["fixed", "body"]);
+      return { kind: "variadic", fixed: nat(c.fixed), body: decodeTerm(c.body) };
+    }
+    case "bound": {
+      const c = fields(value, ["target", "receiver", "pre"]);
+      const target = decodeTerm(c.target), receiver = decodeTerm(c.receiver);
+      if (!Array.isArray(c.pre)) throw Error("invalid bound prefix");
+      return { kind: "bound", target, receiver, pre: c.pre.map(decodeTerm) };
+    }
+    case "graph": {
+      const optional = isRecord(value) ? ["kind", "rest"].filter((k) => k in value) : [];
+      const c = fields(value, ["arity", "exprs", "conts", "start", "caps", ...optional]);
+      let mode: "construct" | "sloppy" | null = null;
+      if ("kind" in c) {
+        if (c.kind === "construct" || c.kind === "sloppy") mode = c.kind;
+        else throw Error("invalid code kind");
       }
-    } else if (k === "op") {
-      if (!OPERATORS.some((op) => op === v))
-        throw Error("unknown binary operator");
-    } else if (k === "elems") {
-      if (!Array.isArray(v)) throw Error("invalid store");
-      for (const l of v) if (l !== null) nat(l);
-    } else if (k === "drop") {
-      if (!Array.isArray(v) || v.some((key) => typeof key !== "string" &&
+      if ("rest" in c && c.rest !== true) throw Error("invalid code rest flag");
+      const arity = nat(c.arity), start = nat(c.start);
+      const { exprs, conts, caps } = c;
+      if (!Array.isArray(exprs) || !Array.isArray(conts) || !Array.isArray(caps) || exprs.length !== conts.length)
+        throw Error("invalid graph code");
+      const pairs: [unknown, unknown][] = conts.map((k) => {
+        if (!Array.isArray(k) || k.length !== 2) throw Error("invalid graph code");
+        const [continuation, handler] = k;
+        return [continuation, handler];
+      });
+      return { kind: "graph", arity, exprs: exprs.map(decodeTerm), conts: pairs, start, caps: caps.map(decodeTerm),
+        mode, rest: "rest" in c };
+    }
+    default:
+      throw Error("unknown call code");
+  }
+}
+
+export function decodeTerm(v: unknown): Term {
+  switch (v) {
+    case "nul": return { kind: "nul" };
+    case "undef": return { kind: "undef" };
+    case "tru": return { kind: "tru" };
+    case "fls": return { kind: "fls" };
+  }
+  if (!v || typeof v !== "object") throw Error("invalid term");
+  const { key, value } = constructorOf(v);
+  switch (key) {
+    case "num": return { kind: "num", bits: bitsOf(fields(value, ["bits"]).bits) };
+    case "str": return { kind: "str", value: stringOf(fields(value, ["value"]).value, "invalid string") };
+    case "bigint": {
+      const n = fields(value, ["value"]).value;
+      if (typeof n !== "number" || !Number.isInteger(n)) throw Error("invalid bigint");
+      return { kind: "bigint", value: n };
+    }
+    case "var": return { kind: "var", i: nat(fields(value, ["i"]).i) };
+    case "invoke": {
+      const o = fields(value, ["f", "r", "args"]);
+      return { kind: "invoke", f: decodeTerm(o.f), r: decodeTerm(o.r), args: termsOf(o.args) };
+    }
+    case "construct": {
+      const o = fields(value, ["f", "args"]);
+      return { kind: "construct", f: decodeTerm(o.f), args: termsOf(o.args) };
+    }
+    case "letE": {
+      const o = fields(value, ["a", "b"]);
+      return { kind: "letE", a: decodeTerm(o.a), b: decodeTerm(o.b) };
+    }
+    case "objAt": {
+      const o = fields(value, ["fields", "call", "identity"]);
+      if (!Array.isArray(o.fields)) throw Error("invalid object fields");
+      const pairs: [string, number][] = o.fields.map((pair) => {
+        if (!Array.isArray(pair) || pair.length !== 2) throw Error("invalid object field");
+        const [name, location] = pair;
+        if (typeof name !== "string") throw Error("invalid object field");
+        return [name, nat(location)];
+      });
+      return { kind: "objAt", fields: pairs, call: decodeCode(o.call), identity: nat(o.identity) };
+    }
+    case "makeAt": {
+      const o = fields(value, ["call", "names", "inits"]);
+      const call = decodeCode(o.call);
+      const names = o.names;
+      if (!Array.isArray(names)) throw Error("invalid field names");
+      const strings = names.map((n) => stringOf(n, "invalid field names"));
+      return { kind: "makeAt", call, names: strings, inits: termsOf(o.inits) };
+    }
+    case "readAt": {
+      const o = fields(value, ["field", "a"]);
+      return { kind: "readAt", field: stringOf(o.field, "invalid field name"), a: decodeTerm(o.a) };
+    }
+    case "indexAt": {
+      const o = fields(value, ["a", "key"]);
+      return { kind: "indexAt", a: decodeTerm(o.a), key: decodeTerm(o.key) };
+    }
+    case "writeAt": {
+      const o = fields(value, ["field", "a", "b"]);
+      return { kind: "writeAt", field: stringOf(o.field, "invalid field name"), a: decodeTerm(o.a), b: decodeTerm(o.b) };
+    }
+    case "test": {
+      const o = fields(value, ["k", "a"]);
+      return { kind: "test", k: decodeTag(o.k), a: decodeTerm(o.a) };
+    }
+    case "ite": {
+      const o = fields(value, ["c", "t", "e"]);
+      return { kind: "ite", c: decodeTerm(o.c), t: decodeTerm(o.t), e: decodeTerm(o.e) };
+    }
+    case "arith": {
+      const o = fields(value, ["op", "a", "b"]);
+      const op = OPERATORS.find((x) => x === o.op);
+      if (op === undefined) throw Error("unknown binary operator");
+      return { kind: "arith", op, a: decodeTerm(o.a), b: decodeTerm(o.b) };
+    }
+    case "arrLit": return { kind: "arrLit", inits: termsOf(fields(value, ["inits"]).inits) };
+    case "elemAt": {
+      const o = fields(value, ["a", "i"]);
+      return { kind: "elemAt", a: decodeTerm(o.a), i: decodeTerm(o.i) };
+    }
+    case "setElem": {
+      const o = fields(value, ["a", "i", "v"]);
+      return { kind: "setElem", a: decodeTerm(o.a), i: decodeTerm(o.i), v: decodeTerm(o.v) };
+    }
+    case "lenOf": return { kind: "lenOf", a: decodeTerm(fields(value, ["a"]).a) };
+    case "arr": {
+      const elems = fields(value, ["elems"]).elems;
+      if (!Array.isArray(elems)) throw Error("invalid store");
+      return { kind: "arr", elems: elems.map((l) => (l === null ? null : nat(l))) };
+    }
+    case "spread": return { kind: "spread", a: decodeTerm(fields(value, ["a"]).a) };
+    case "throw": return { kind: "throw", a: decodeTerm(fields(value, ["a"]).a) };
+    case "merge": {
+      const o = fields(value, ["drop", "a", "b"]);
+      const drop = o.drop;
+      if (!Array.isArray(drop) || drop.some((key) => typeof key !== "string" &&
           !(isRecord(key) && Object.keys(key).length === 1 && typeof key.symbol === "number")))
         throw Error("invalid dropped keys");
-    } else if (k === "args" || k === "inits") {
-      if (!Array.isArray(v)) throw Error("invalid arguments");
-      v.forEach(decodeTerm);
-    } else decodeTerm(v);
+      return { kind: "merge", drop: drop.map(keyOf), a: decodeTerm(o.a), b: decodeTerm(o.b) };
+    }
+    case "makeKey": {
+      const o = fields(value, ["key", "init"]);
+      return { kind: "makeKey", key: decodeTerm(o.key), init: decodeTerm(o.init) };
+    }
+    default:
+      throw Error("unknown term constructor");
   }
-  // asserted: the decoder's result, checked field by field above
-  return value as Term;
 }
 
 /* Readable notation for terms, as commit records and the lowering dump show
- * them. Each table is keyed by the constructors of `Term`, `Tag` and
- * `CallCode`: adding a constructor there and not here is a type error. */
-type ObjectTerm = Exclude<Term, string>;
-type Args<K extends TermKey> = Extract<ObjectTerm, Record<K, unknown>>[K];
+ * them. Each is a case analysis over its type's `kind`, exhaustive: adding a
+ * constructor to `Term`, `Tag` or `CallCode` and not here is a type error. */
+/** No value reaches this: its argument's type has no member left. */
+export function unmatched(x: never): never {
+  throw Error(`a value of no known constructor: ${JSON.stringify(x)}`);
+}
 const showTerms = (ts: Term[]): string => ts.map(showTerm).join(", ");
-const SHOW_ATOM: Record<Extract<Term, string>, string> = { nul: "null", undef: "undefined", tru: "true", fls: "false" };
-const SHOW_TERM: { [K in TermKey]: (a: Args<K>) => string } = {
-  num: a => `num#${a.bits}`,
-  str: a => JSON.stringify(a.value),
-  bigint: a => `${a.value}n`,
-  var: a => `x${a.i}`,
-  invoke: a => `${showTerm(a.f)}.call(${[a.r, ...a.args].map(showTerm).join(", ")})`,
-  letE: a => `let ${showTerm(a.a)} in ${showTerm(a.b)}`,
-  objAt: a => `obj#${a.identity}{${a.fields.map(([k, l]) => `${k}: ℓ${l}`).join(", ")}}${showCode(a.call)}`,
-  makeAt: a => `new{${a.names.map((n, i) => `${n}: ${a.inits[i] === undefined ? "?" : showTerm(a.inits[i])}`).join(", ")}}${showCode(a.call)}`,
-  readAt: a => `${showTerm(a.a)}.${a.field}`,
-  indexAt: a => `${showTerm(a.a)}[${showTerm(a.key)}]`,
-  writeAt: a => `${showTerm(a.a)}.${a.field} := ${showTerm(a.b)}`,
-  test: a => `${showTag(a.k)}(${showTerm(a.a)})`,
-  ite: a => `if ${showTerm(a.c)} then ${showTerm(a.t)} else ${showTerm(a.e)}`,
-  arith: a => `${showTerm(a.a)} ${a.op} ${showTerm(a.b)}`,
-  arrLit: a => `[${showTerms(a.inits)}]`,
-  elemAt: a => `${showTerm(a.a)}⟦${showTerm(a.i)}⟧`,
-  setElem: a => `${showTerm(a.a)}⟦${showTerm(a.i)} ↦ ${showTerm(a.v)}⟧`,
-  lenOf: a => `len(${showTerm(a.a)})`,
-  arr: a => `store[${a.elems.map(e => (e === null ? "hole" : `ℓ${e}`)).join(", ")}]`,
-  spread: a => `...${showTerm(a.a)}`,
-  throw: a => `throw ${showTerm(a.a)}`,
-  makeKey: a => `makeKey(${showTerm(a.key)}, ${showTerm(a.init)})`,
-  merge: a => `merge(${showTerm(a.a)}, ${showTerm(a.b)}${a.drop.length ? ` drop ${a.drop.map(d => (typeof d === "string" ? d : `sym#${d.symbol}`)).join(", ")}` : ""})`,
-};
 /** A term in the notation of commit records. */
 export function showTerm(t: Term): string {
-  if (typeof t === "string") return SHOW_ATOM[t];
-  const [k] = Object.keys(t);
-  // asserted: a decoded term has exactly one constructor key, one of TermKey
-  const show = SHOW_TERM[k as TermKey] as (a: unknown) => string;
-  return show((t as Record<string, unknown>)[k]); // asserted: the constructor's own arguments
+  switch (t.kind) {
+    case "nul": return "null";
+    case "undef": return "undefined";
+    case "tru": return "true";
+    case "fls": return "false";
+    case "num": return `num#${t.bits}`;
+    case "str": return JSON.stringify(t.value);
+    case "bigint": return `${t.value}n`;
+    case "var": return `x${t.i}`;
+    case "invoke": return `${showTerm(t.f)}.call(${[t.r, ...t.args].map(showTerm).join(", ")})`;
+    case "construct": return `new ${showTerm(t.f)}(${showTerms(t.args)})`;
+    case "letE": return `let ${showTerm(t.a)} in ${showTerm(t.b)}`;
+    case "objAt": return `obj#${t.identity}{${t.fields.map(([k, l]) => `${k}: ℓ${l}`).join(", ")}}${showCode(t.call)}`;
+    case "makeAt": {
+      const inits = t.inits;
+      return `new{${t.names.map((n, i) => {
+        const init = inits[i];
+        return `${n}: ${init === undefined ? "?" : showTerm(init)}`;
+      }).join(", ")}}${showCode(t.call)}`;
+    }
+    case "readAt": return `${showTerm(t.a)}.${t.field}`;
+    case "indexAt": return `${showTerm(t.a)}[${showTerm(t.key)}]`;
+    case "writeAt": return `${showTerm(t.a)}.${t.field} := ${showTerm(t.b)}`;
+    case "test": return `${showTag(t.k)}(${showTerm(t.a)})`;
+    case "ite": return `if ${showTerm(t.c)} then ${showTerm(t.t)} else ${showTerm(t.e)}`;
+    case "arith": return `${showTerm(t.a)} ${t.op} ${showTerm(t.b)}`;
+    case "arrLit": return `[${showTerms(t.inits)}]`;
+    case "elemAt": return `${showTerm(t.a)}⟦${showTerm(t.i)}⟧`;
+    case "setElem": return `${showTerm(t.a)}⟦${showTerm(t.i)} ↦ ${showTerm(t.v)}⟧`;
+    case "lenOf": return `len(${showTerm(t.a)})`;
+    case "arr": return `store[${t.elems.map((e) => (e === null ? "hole" : `ℓ${e}`)).join(", ")}]`;
+    case "spread": return `...${showTerm(t.a)}`;
+    case "throw": return `throw ${showTerm(t.a)}`;
+    case "makeKey": return `makeKey(${showTerm(t.key)}, ${showTerm(t.init)})`;
+    case "merge": {
+      const drop = t.drop.length ? ` drop ${t.drop.map(showKey).join(", ")}` : "";
+      return `merge(${showTerm(t.a)}, ${showTerm(t.b)}${drop})`;
+    }
+    default: return unmatched(t);
+  }
 }
-const SHOW_TAG: Record<Extract<Tag, string>, string> = {
-  isNul: "isNull", isBool: "isBoolean", isRef: "isObject", isFun: "isFunction", isUndef: "isUndefined",
-  isNullish: "isNullish", isNum: "isNumber", isStr: "isString", isBigint: "isBigInt", isSymbol: "isSymbol",
-  truthy: "truthy", isArray: "Array.isArray", typeofObject: "typeofObject",
-};
+const showKey = (k: Key): string => (typeof k === "string" ? k : `sym#${k.symbol}`);
 export function showTag(k: Tag): string {
-  if (typeof k === "string") return SHOW_TAG[k];
-  if ("hasKey" in k) return `has ${typeof k.hasKey.key === "string" ? k.hasKey.key : `sym#${k.hasKey.key.symbol}`}`;
-  if ("numEq" in k) return `=== num#${k.numEq.bits}`;
-  if ("strEq" in k) return `=== ${JSON.stringify(k.strEq.value)}`;
-  if ("boolEq" in k) return `=== ${k.boolEq.value}`;
-  return `=== ${k.bigintEq.value}n`;
+  switch (k.kind) {
+    case "isNul": return "isNull";
+    case "isBool": return "isBoolean";
+    case "isRef": return "isObject";
+    case "isFun": return "isFunction";
+    case "isUndef": return "isUndefined";
+    case "isNullish": return "isNullish";
+    case "isNum": return "isNumber";
+    case "isStr": return "isString";
+    case "isBigint": return "isBigInt";
+    case "isSymbol": return "isSymbol";
+    case "truthy": return "truthy";
+    case "isArray": return "Array.isArray";
+    case "typeofObject": return "typeofObject";
+    case "hasKey": return `has ${showKey(k.key)}`;
+    case "numEq": return `=== num#${k.bits}`;
+    case "strEq": return `=== ${JSON.stringify(k.value)}`;
+    case "boolEq": return `=== ${k.value}`;
+    case "bigintEq": return `=== ${k.value}n`;
+    default: return unmatched(k);
+  }
 }
 function showCode(c: CallCode): string {
-  if (c === "absent") return "";
-  if ("closure" in c) return ` code(λ${c.closure.arity}. ${showTerm(c.closure.body)})`;
-  if ("variadic" in c) return ` code(λ${c.variadic.fixed}+. ${showTerm(c.variadic.body)})`;
-  if ("bound" in c) return ` code(bind ${showTerm(c.bound.target)})`;
-  return ` code(graph of ${c.graph.exprs.length} nodes)`;
+  switch (c.kind) {
+    case "absent": return "";
+    case "closure": return ` code(λ${c.arity}. ${showTerm(c.body)})`;
+    case "variadic": return ` code(λ${c.fixed}+. ${showTerm(c.body)})`;
+    case "bound": return ` code(bind ${showTerm(c.target)})`;
+    case "graph": return ` code(graph of ${c.exprs.length} nodes)`;
+    default: return unmatched(c);
+  }
 }

@@ -550,6 +550,30 @@ whose Boolean/null observations justify the intermediate and successor contexts.
 It also checks the complete expression claim using the derived expression form.
 Thus graph decomposition cannot silently discard the producer's condition type.
 
+A condition read for its truthiness alone, a statement guard's or a
+conditional expression's test, is a short-circuit dispatch whatever its left
+operand's type. Where that operand is no test (a comparison, a shape or
+singleton test, `!`, `in`), the operator's value may be it, not a Boolean;
+read for its truthiness, the value is that truthiness:
+
+```math
+\mathsf{truth}(a\mathbin{\&\&}b)=\mathsf{truthy}(a)\land\mathsf{truth}(b),
+\qquad
+\mathsf{truth}(a\mathbin{\Vert}b)=\mathsf{truthy}(a)\lor\mathsf{truth}(b).
+```
+
+Each arm of the left operand's dispatch rebinds its outcome, `true` or
+`false`, and the right operand runs where the left is truthy (`&&`) or falsy
+(`||`), in the context the left operand's outcome leaves: a tested variable
+is a Boolean outcome where it is a Boolean, and otherwise the labels of its
+type its truthiness admits (`conditionContext`). So `s && r !== "a" ? r : x`
+sees `r` at `"b"` in its first arm (`logical-truth-narrowing`), and
+`s || r !== "a" ? r : x` does not (`invalid-logical-truth-or-narrowing`).
+The dispatch's value is that truth, which no program reads but the test:
+it carries no obligation about the operator's value, whose claim is checked
+where the operator is read as a value, and each operand keeps its own
+(`logical-string-values`: `s && s` of a string in a condition).
+
 A chain of one operator is read right-nested, the parser's left nesting
 reassociated:
 
@@ -1241,7 +1265,7 @@ i &::= o \mid \mathsf{let}\ x=i\ \mathsf{in}\ i \mid \mathsf{test}_k(i) \mid \ma
 
 ```math
 \frac{\Gamma\vdash i:B\qquad i\ \text{an inspection}}
- {\Gamma\vdash i:B\;!\;\mathsf{preservesInputHeap}}\ \textsf{inspect}
+ {\Gamma\vdash i:B\;!\;\emptyset}\ \textsf{inspect}
 ```
 
 with the premise the node's ordinary typing. No step of an inspection writes a
@@ -1260,7 +1284,7 @@ normal-return postcondition independently of the safety proof's evolving world.
 A caught exception cannot use that postcondition: compositional checking refuses
 handlers, while the independent pure-graph rule still admits pure handlers.
 Fixed calls use `ExpressionEffects.selectedCall_sound`: the selected application
-rule must carry `preservesInputHeap`, and its operands must already be values.
+rule's footprint must lie within the bound, and its operands must already be values.
 The proof consumes `CallEffects.call_safe`, including padded missing arguments;
 a result-subtyping derivation retains the same postcondition. It never inspects
 the callee's implementation. Pure immutable lets also compose: $`\mathsf{Pure}(a) \land \mathsf{Pure}(b)`$ implies $`\mathsf{Pure}(\mathsf{let}\ x=a\ \mathsf{in}\ b)`$.
@@ -1292,23 +1316,31 @@ All code certificates remain in the submitted response, and final acceptance
 independently checks every one; withholding a search hint cannot hide a failure. Qualified graph claims can
 already be submitted and certified through the ordinary source pipeline.
 
-**Function declarations.** A declaration's claim states the effect proposed
-for its signature (`effect` in the [claims](SOURCE-CLAIMS.md)). The unit of
-a declaration claiming `preservesInputHeap` is checked as a code entry's
-graph is: its nodes pure, or each node preserving by `inspect` or a fixed
-qualified call (`effectResult`, alongside ordinary safety), for a plain
-result under the ordinary checker; a guard, an assertion function and a
-unit qualified by a resolution descriptor are refused the claim. With $`P`$
-the unit's graph, $`\Gamma`$ its inputs and $`B`$ its result,
+**Function declarations.** A declaration's claim states the closed
+footprint $`\Phi`$ proposed for its signature (`footprint` in the
+[claims](SOURCE-CLAIMS.md)). The unit of a declaration claiming a footprint
+other than `all: any` is checked as a code entry's graph is: its nodes pure,
+or each node within $`\Phi`$ on normal return (`effectResult`, alongside
+ordinary safety), for a plain result under the ordinary checker. A node is
+within $`\Phi`$ as an inspection, which preserves the heap; as a write of a
+field every alternative of the object's type gives a type of source values,
+within `{value: any, store: keep}` since the location holds a value
+(`ExpressionEffects.write_within`); or as a fixed call at a selected signature
+whose footprint is within $`\Phi`$. Runs within a closed footprint compose
+(`Closed.Holds.trans`), so the graph is (`GraphCode.goto_bounded`). A guard,
+an assertion function and a unit qualified by a resolution descriptor are
+refused such a claim. A code entry's signature follows the same rule
+(`GraphCode.effectCheckedResult`). With $`P`$ the unit's graph, $`\Gamma`$ its
+inputs and $`B`$ its result,
 
 ```math
-\frac{\vdash P:\Gamma\to B\qquad \forall l.\ P_l\ \text{pure, an inspection, or a fixed qualified call}}
-     {\vdash P:\Gamma\to B\;!\;\mathsf{preservesInputHeap}}\ \textsf{declaration-effect}
+\frac{\vdash P:\Gamma\to B\qquad \forall l.\ P_l\ \text{pure, or within}\ \Phi}
+     {\vdash P:\Gamma\to B\;!\;\Phi}\ \textsf{declaration-effect}
 ```
 
 and `SourceClaimJson.checkJson_safe` states, for each such unit, that its
-graph run as code from inputs it admits returns with its entry heap a prefix
-of the heap it leaves (`SourceExtraction.checkRequests_preserving_at`).
+graph run as code from inputs it admits returns with a heap its claimed
+footprint relates to its entry heap (`SourceExtraction.checkRequests_footprint_at`).
 Every other unit reads the declaration at its annotation's signature stating
 that effect, its variadic extension included (`moduleArrow`), as it reads the
 declaration's ordinary signature: that each declaration meets the signature

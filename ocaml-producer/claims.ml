@@ -37,11 +37,14 @@ let key_json = function
 let unsupported s = fail ("unsupported: " ^ s)
 (* The graph's sole callable contract shape. Effects become definition
    obligations when a qualified signature is proposed. *)
-let effect_json = function
-  | Unrestricted -> String "unrestricted"
-  | PreservesInputHeap -> String "preservesInputHeap"
-  | Guards param -> Object ["guards",Object ["param",int param]]
-  | Asserts param -> Object ["asserts",Object ["param",int param]]
+let change_json = function Keep -> String "keep" | Grow -> String "grow" | Any -> String "any"
+let footprint_json f = Object ["value",change_json f.on_value;"store",change_json f.on_store]
+let effect_json e = Object ["footprint",footprint_json e.footprint;
+  "promise",(match e.promise with
+    | None -> Null
+    | Some (Guards param) -> Object ["guards",Object ["param",int param]]
+    | Some (Asserts param) -> Object ["asserts",Object ["param",int param]]);
+  "fresh",Bool e.fresh;"receiverStore",Bool e.receiver_store]
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]
@@ -159,10 +162,15 @@ let encode (proposal : Proposal_types.t) =
     | Callable -> [Row (intern (Array [Object ["arrs",Object ["arrows",Array []]]]))]
     (* A quantified construct signature, `new <T>(x: T) => C<T>`: a construct
        scheme row, its binders the names the source spells, each construct
-       signature an arrow's arguments and result (no receiver). *)
+       signature an arrow's arguments, result and effect (no receiver). *)
     (* A generic class value's static fields name none of its binders and are
        read at an instance; the scheme states its construct signatures. *)
-    | Ctors ([s],_) when s.quantified <> [] ->
+    | Ctors ((s :: _ as all),_) when s.quantified <> [] ->
+      (* Several construct signatures share the scheme's binders: a generic
+         class whose overlay states several forms. Signatures under other
+         binders are refused. *)
+      if List.exists (fun (t:Semantic.signature) -> t.quantified <> s.quantified) all then
+        unsupported "construct signatures under different binders";
       let binders = List.map (fun (q:Semantic.rigid) -> label_json (Binder q.spelling))
         (List.concat_map quantifier_identities s.quantified) in
       if List.exists (fun (q:Semantic.quantifier) -> q.resolution <> None) s.quantified then
@@ -171,11 +179,14 @@ let encode (proposal : Proposal_types.t) =
         match Option.value q.bound ~default:(ValueArgument top) with
         | ValueArgument bound -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[bound])))
         | _ -> None) s.quantified in
-      let body = Inference.substitute_signature within_bounds {s with quantified=[]} in
-      let signature,variadic = match body.rest_pack with
-        | None -> [call_contract Unrestricted (Array []) (Array (List.map labels body.params)) (labels body.result)],[]
-        | Some r -> [],[call_contract Unrestricted (Array [])
-            (Array [Array (List.map labels body.params);pack_labels r]) (labels body.result)] in
+      let bodies = List.map (fun (t:Semantic.signature) ->
+        Inference.substitute_signature within_bounds {t with quantified=[]}) all in
+      let signature = List.filter_map (fun (body:Semantic.signature) -> match body.rest_pack with
+        | None -> Some (call_contract body.call_effect (Array []) (Array (List.map labels body.params)) (labels body.result))
+        | Some _ -> None) bodies in
+      let variadic = List.filter_map (fun (body:Semantic.signature) -> Option.map (fun r ->
+        call_contract body.call_effect (Array [])
+          (Array [Array (List.map labels body.params);pack_labels r]) (labels body.result)) body.rest_pack) bodies in
       let bounds = List.map (fun (q:Semantic.quantifier) ->
         let bound = Option.value q.bound ~default:(ValueArgument top) in
         Array [label_json (Binder q.identity.spelling);
@@ -191,10 +202,11 @@ let encode (proposal : Proposal_types.t) =
       (* Variadic construct signatures carry their rest, an argument-list type;
          the list is left out when empty, its one spelling of none. *)
       let fixed = List.filter_map (fun (s:Semantic.signature) -> match s.rest_pack with
-        | None -> Some (Array [Array (List.map labels s.params);labels s.result])
+        | None -> Some (call_contract s.call_effect (Object []) (Array (List.map labels s.params)) (labels s.result))
         | Some _ -> None) signatures in
       let rests = List.filter_map (fun (s:Semantic.signature) -> Option.map (fun r ->
-        Array [Array (List.map labels s.params);Array [pack_labels r;labels s.result]]) s.rest_pack) signatures in
+        call_contract s.call_effect (Object [])
+          (Array [Array (List.map labels s.params);pack_labels r]) (labels s.result)) s.rest_pack) signatures in
       (* The static fields, invariant, and the readonly ones, views, each
          list left out when empty. *)
       let invariant,readonly = List.partition (fun (f:Semantic.field) -> f.write <> None) statics in
@@ -543,7 +555,7 @@ let encode (proposal : Proposal_types.t) =
       "params",Array (List.map (fun (n,t) -> named (n,Value t)) source.params);
       "result",claim_type source.result;
       "contracts",contracts f.contracts;
-      "effect",effect_json f.declared_effect;
+      "footprint",footprint_json f.declared_footprint;
       "entries",entries f.entries;
       "expressions",expressions f.expressions]
       @ arrows)) proposal.functions in
