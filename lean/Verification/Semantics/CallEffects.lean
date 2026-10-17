@@ -879,12 +879,41 @@ theorem prefix_safe {P : Tm → Prop} {R : Fam} {r : Tm}
           (hprefix.trans (Footprints.Closed.holds_empty.mp ((Effect.post_ofFootprint _ _ _ _ _).mp hpost)))))
           (ih hp' hs)⟩
 
+/-- The same invariant bounds the heap a throw leaves: every step keeps the
+heap a prefix, so a raise does too. -/
+theorem prefix_safe_exc {P : Tm → Prop} {R : Fam} {r : Tm}
+    (hstep : ∀ {h t h' t'}, P t → Step h t h' t' → h.IsPrefix h' ∧ P t') :
+    ∀ {n W heap t}, P t → Safe Ξ R n W heap t →
+      SafePostExc Ξ R ((Effect.ofFootprint .empty).post r heap)
+        (fun h' => Footprints.Closed.empty.Holds heap h') n W heap t := by
+  intro n W heap t hp hs
+  have hpost := prefix_safe (r := r) hstep hp hs
+  suffices ∀ {n W h t}, P t → heap.IsPrefix h → SafePost Ξ R ((Effect.ofFootprint .empty).post r heap) n W h t →
+      SafePostExc Ξ R ((Effect.ofFootprint .empty).post r heap)
+        (fun h' => Footprints.Closed.empty.Holds heap h') n W h t from this hp (List.prefix_refl _) hpost
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hp hpre hs
+    rcases hs with (hv | hr) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · exact .inl (.inl hv)
+    · exact .inl (.inr ⟨hr, Footprints.Closed.holds_empty.mpr hpre⟩)
+    · obtain ⟨hprefix, hp'⟩ := hstep hp step
+      exact .inr ⟨U, h', t', hx, hu, step, hh, ih hp' (hpre.trans hprefix) hs⟩
+
 /-- The conservative executable purity check enriches independently proved
 safety. It cannot manufacture safety or a return type on its own. -/
 theorem pure_safe {R : Fam} {r : Tm} {n W heap t}
     (hp : Purity.PureRun t) (hs : Safe Ξ R n W heap t) :
     SafePost Ξ R ((Effect.ofFootprint .empty).post r heap) n W heap t :=
   prefix_safe Purity.CollectingRun.step (.pure hp) hs
+
+theorem pure_safe_exc {R : Fam} {r : Tm} {n W heap t}
+    (hp : Purity.PureRun t) (hs : Safe Ξ R n W heap t) :
+    SafePostExc Ξ R ((Effect.ofFootprint .empty).post r heap)
+      (fun h' => Footprints.Closed.empty.Holds heap h') n W heap t :=
+  prefix_safe_exc Purity.CollectingRun.step (.pure hp) hs
 
 def callsT (Ξ : Fam) (L : List (Arrow Fam)) : Fam := fun k W v =>
   Invocable v ∧ ∀ s ∈ L, PromiseWith Ξ s.effect (ArgsShort s.arguments) s.receiver s.result k W v

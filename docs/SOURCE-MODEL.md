@@ -643,7 +643,10 @@ Every way a node's term can raise is then covered:
   reaches `.raised` with the invariant.
 
 A pure graph keeps its independent operational rule, which covers its
-handlers already.
+handlers already and bounds its throws too: every step keeps the heap a
+prefix (`CallEffects.prefix_safe_exc`). A node whose entry has a slot of a
+type no value meets is never entered, so it is within any bound
+(`GraphCode.unreachableEntry`; `never-parameter-calls`).
 
 **What `checkJson_safe` states.** Its second conclusion, for each accepted
 request with a footprint other than `top`, becomes a `SafePostExc` whose

@@ -133,14 +133,14 @@ ordinary checker. -/
 @[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
   if r.footprint = .top ∧ r.onThrow = false then pure () else
     (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.promise.isNone && r.footprint != .top)).bind fun _ =>
-    (ProgramCertificates.CheckResult.ofBool (!r.onThrow && r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
+    (ProgramCertificates.CheckResult.ofBool (r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
     GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) r.footprint
       false r.onThrow r.start r.program c.certificate
 
 theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
     (h : (effectResult r c).accepted = true) (he : r.footprint ≠ .top ∨ r.onThrow = true) :
     r.qualification = none ∧ r.promise = none ∧ r.footprint ≠ .top ∧
-      ((r.onThrow = false ∧ r.program.all (fun n => Purity.pureTerm n.expression) = true) ∨
+      (r.program.all (fun n => Purity.pureTerm n.expression) = true ∨
         GraphCode.compositionalChecked (RequestJson.graph r.toRequest) (StoreView.images r.types) r.footprint
           false r.onThrow r.start r.program c.certificate = true) := by
   have hn : ¬(r.footprint = .top ∧ r.onThrow = false) := by
@@ -150,7 +150,7 @@ theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
     · rw [h2] at he; cases he
   simp only [effectResult, hn, if_false, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_orElse,
-    Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true'] at h
+    Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
   exact ⟨h.1.1.1, h.1.1.2, h.1.2, h.2⟩
 
 /-- Validate one unit, sharing its checked code table with supplemental obligations. -/
@@ -297,16 +297,17 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
     have hc := hacc.2
     rw [hgoal, ← hP] at hc
     have hs := GraphCode.goto_safe hc hcodes n W heap L d he hw hh
-    rcases hp with ⟨hon, hp⟩ | hp
-    · -- No footprint on a throw: the throw's postcondition is vacuous.
-      apply HeapObservations.SafePostExc.of_post (fun _ h => absurd h (by simp [hon]))
-      apply HeapObservations.weaken (fun h' _ hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
+    rcases hp with hp | hp
+    · -- A pure graph keeps the heap a prefix at every step, a raise included.
       have hp : ∀ e ∈ r.program.map (·.expression), Purity.pureTerm e = true := by
         intro e he
         obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he
         exact List.all_eq_true.mp hp node hn
-      exact HeapObservations.weaken (fun _ _ h => (CallEffects.Effect.post_ofFootprint _ .undef _ _ _).mp h)
-        (CallEffects.pure_safe (.goto hp hvalues hd) hs)
+      exact HeapObservations.SafePostExc.weaken
+        (fun _ _ h => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
+          ((CallEffects.Effect.post_ofFootprint _ .undef _ _ _).mp h))
+        (fun _ h _ => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) h)
+        (CallEffects.pure_safe_exc (r := .undef) (.goto hp hvalues hd) hs)
     · rw [← hP] at hp
       erw [← GraphCode.compositionalChecked_reassign G images η, GraphCode.compositionalChecked_eq] at hp
       simp only [Bool.and_eq_true, List.isEmpty_iff] at hp

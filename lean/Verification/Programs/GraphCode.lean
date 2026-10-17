@@ -338,15 +338,32 @@ def BoundState (Φ : Footprints.Closed) (facts : List (List Nat)) (ret exc : Boo
           ∀ u, FreshOk (factsAt facts l.label) initial.length (mapEnv l.mapping (push u ρ))
   | .raised _ => exc = true → Φ.Holds initial h
 
-/-- What the bounded run reads of each node: a handler's facts following
-from the node's, and the node within the bound, on a throw too where it has a
-handler or the invocation's throws are bounded. -/
+/-- A node no environment reaches: a slot of its entry has a type no value
+meets. -/
+def unreachableEntry (G : NormalGraph ι) (c : NodeEvidence ι) : Bool :=
+  (entry c).any fun A => G.plainTy A && (expand G A).isEmpty
+
+theorem unreachableEntry_sound {G : NormalGraph ι} {c : NodeEvidence ι} {ρ n W}
+    (hu : unreachableEntry G c = true) (he : EnvOk G (entry c) ρ n W) : False := by
+  obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hu
+  simp only [Bool.and_eq_true, List.isEmpty_iff] at hnil
+  obtain ⟨i, hi⟩ := List.getElem?_of_mem hA
+  have hm := (expand_sem G A hnil.1 n W _).mp (he.2 i A hi)
+  rw [hnil.2] at hm
+  obtain ⟨_, hmem, _⟩ := hm
+  cases hmem
+
+/-- What the bounded run reads of each node: none for a node no environment
+reaches; else a handler's facts following from the node's, and the node
+within the bound, on a throw too where it has a handler or the invocation's
+throws are bounded. -/
 def NodesWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed) (P : Program) (C : Certificate ι)
     (facts : List (List Nat)) (ret exc : Bool) : Prop :=
   ∀ (l : Nat) (node : Node) (c : NodeEvidence ι), P[l]? = some node → C[l]? = some c →
-    (∀ t, node.handler = some t → handlerFresh facts (factsAt facts l) t = true) ∧
+    unreachableEntry G c = true ∨
+    ((∀ t, node.handler = some t → handlerFresh facts (factsAt facts l) t = true) ∧
     ∃ out, NodeWithin G Φ c node.expression (factsAt facts l) out (node.handler.isSome || exc) ∧
-      edgesFresh facts (factsAt facts l) out ret node.continuation = true
+      edgesFresh facts (factsAt facts l) out ret node.continuation = true)
 
 theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed} {Rty : Ty ι} {P : Program}
     {C : Certificate ι} {facts : List (List Nat)} {ret exc : Bool}
@@ -357,7 +374,8 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
   cases st with
   | @enter l node _ ρ hn =>
     obtain ⟨c, hc, he, hi, -, hf⟩ := hs
-    obtain ⟨hx, out, ht, hedge⟩ := hnodes _ _ c hn hc
+    rcases hnodes _ _ c hn hc with hu | ⟨hx, out, ht, hedge⟩
+    · exact (unreachableEntry_sound hu he).elim
     have hrun := ht n _ h _ initial.length (Footprints.Closed.holds_iff.mp hp.1).1 hp.2
       (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
       (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) hf
@@ -552,6 +570,8 @@ write, or a selected invocation or construction within the bound whose
 signature states its footprint on a throw. -/
 def throwsWithin [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (Φ : Footprints.Closed) (F : List Nat) (c : NodeEvidence ι) (t : Tm) : Bool :=
+  -- A node no environment reaches: a slot of its entry has no value.
+  (entry c).any (fun A => G.plainTy A && (expand G A).isEmpty) ||
   (ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
     (decide ((ProgramCertificates.claim c.expression).term = t) &&
       ProgramCertificates.checkTreeUsing G images c.expression &&
@@ -574,7 +594,14 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   have hsafe := HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
     (hterm j V h' ρ henv himp hknowledge hworld hheap))
   simp only [throwsWithin, Bool.or_eq_true] at hthrows
-  rcases hthrows with (hexpr | hwrite) | hcall
+  rcases hthrows with (hempty | (hexpr | hwrite)) | hcall
+  · obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hempty
+    simp only [Bool.and_eq_true, List.isEmpty_iff] at hnil
+    obtain ⟨i, hi⟩ := List.getElem?_of_mem hA
+    have hm := (expand_sem G A hnil.1 j V _).mp (henv.2 i A hi)
+    rw [hnil.2] at hm
+    obtain ⟨_, hmem, _⟩ := hm
+    cases hmem
   · exact HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial)
       (fun h'' hq => (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq).on _)
       (ExpressionEffects.sound_exc hexpr hscope henv hworld hheap hsafe)
@@ -681,7 +708,7 @@ the independent operational rule, which also covers their handlers. -/
 @[nospecialize] def nodeChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (Φ : Footprints.Closed) (facts : List (List Nat)) (ret exc : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) : Bool :=
   let F := factsAt facts l
-  (match node.handler with | none => true | some t => handlerFresh facts F t) &&
+  unreachableEntry G c || (match node.handler with | none => true | some t => handlerFresh facts F t) &&
     (!(node.handler.isSome || exc) || throwsWithin G images Φ F c node.expression) &&
     ProgramCertificates.checkScope (entry c).length node.expression &&
     edgesFresh facts F (varFresh F node.expression || callFresh G images c node.expression) ret node.continuation &&
@@ -695,6 +722,7 @@ the independent operational rule, which also covers their handlers. -/
     (Φ : Footprints.Closed) (facts : List (List Nat)) (ret exc : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) :
     ProgramCertificates.CheckResult ι Unit :=
   let F := factsAt facts l
+  (ProgramCertificates.CheckResult.ofBool (unreachableEntry G c)).orElse fun _ =>
   (ProgramCertificates.CheckResult.ofBool ((match node.handler with | none => true | some t => handlerFresh facts F t) &&
       (!(node.handler.isSome || exc) || throwsWithin G images Φ F c node.expression) &&
       ProgramCertificates.checkScope (entry c).length node.expression &&
@@ -762,12 +790,14 @@ theorem nodes_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
   have hzip : (P.zip C)[l]? = some (node, c) := List.getElem?_zip_eq_some.mpr ⟨hn, hc⟩
   have hmem : ((node, c), l) ∈ (P.zip C).zipIdx := List.mem_zipIdx_iff_getElem?.mpr hzip
   have hp := List.all_eq_true.mp hall _ hmem
-  simp only [nodeChecked, Bool.and_eq_true] at hp
-  obtain ⟨⟨⟨⟨hx, hthr⟩, hscope⟩, hedge⟩, hcases⟩ := hp
+  simp only [nodeChecked, Bool.or_eq_true, Bool.and_eq_true] at hp
+  rcases hp with hu | ⟨⟨⟨⟨hx, hthr⟩, hscope⟩, hedge⟩, hcases⟩
+  · exact .inl hu
   obtain ⟨actual, hactual, hterm, -⟩ := graph_node hgraph hcodes hc
   cases hn.symm.trans hactual
-  refine ⟨fun t ht => by simpa [ht] using hx, _, nodeWithin_of_checked hscope hcases (fun h => ?_) hterm, hedge⟩
-  simp only [Bool.or_eq_true, Bool.not_eq_true'] at hthr
+  refine .inr ⟨fun t ht => by simpa [ht] using hx, _, nodeWithin_of_checked hscope ?_ (fun h => ?_) hterm, hedge⟩
+  · simpa only [Bool.or_eq_true, Bool.and_eq_true] using hcases
+  simp only [Bool.not_eq_true'] at hthr
   rcases hthr with hthr | hthr
   · rw [h] at hthr; cases hthr
   · exact hthr
@@ -783,8 +813,7 @@ throw, are established node by node whatever the footprint. -/
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
   if c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false then pure () else
     (ProgramCertificates.CheckResult.ofBool c.row.effect.promise.isNone).bind fun _ =>
-    (ProgramCertificates.CheckResult.ofBool (!c.row.effect.fresh && !c.row.effect.onThrow &&
-      c.exprs.all Purity.pureTerm)).orElse fun _ =>
+    (ProgramCertificates.CheckResult.ofBool (!c.row.effect.fresh && c.exprs.all Purity.pureTerm)).orElse fun _ =>
     compositionalCheckedResult G images c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
       (program c.exprs c.conts) C
 
@@ -797,7 +826,7 @@ theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instanc
     effectChecked G images c C = (
   decide (c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false) ||
     (c.row.effect.promise.isNone &&
-    ((!c.row.effect.fresh && !c.row.effect.onThrow && c.exprs.all Purity.pureTerm) ||
+    ((!c.row.effect.fresh && c.exprs.all Purity.pureTerm) ||
       compositionalChecked G images c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
         (program c.exprs c.conts) C))
   ) := by
@@ -892,12 +921,15 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
     rw [hg] at hs hc
     rcases hp with hp | hp
     · simp only [Bool.not_eq_true'] at hp
-      apply HeapObservations.SafePostExc.of_post (fun _ r h => absurd h (by simp [hp.1.2]))
-      apply HeapObservations.weaken (fun h' v hq r => ⟨CallEffects.Effect.within_of_holds
-        (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq), fun hf => by rw [hp.1.1] at hf; cases hf⟩)
+      have hfresh := hp.1
       have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp.2
-      exact HeapObservations.weaken (fun _ _ h => (CallEffects.Effect.post_ofFootprint _ .undef _ _ _).mp h)
-        (CallEffects.pure_safe (.goto hp hvalues rfl) hs)
+      exact HeapObservations.SafePostExc.weaken
+        (fun h' v hq r => ⟨CallEffects.Effect.within_of_holds
+          (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
+            ((CallEffects.Effect.post_ofFootprint _ .undef _ _ _).mp hq)), fun hf => by rw [hfresh] at hf; cases hf⟩)
+        (fun h' hq r _ => CallEffects.Effect.within_of_holds
+          (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq))
+        (CallEffects.pure_safe_exc (r := .undef) (.goto hp hvalues rfl) hs)
     · rw [← compositionalChecked_reassign G images η, compositionalChecked_eq] at hp
       simp only [Bool.and_eq_true, List.isEmpty_iff] at hp
       have hgraph : checkGraphUsing (reassign G η) (images.reassign η) (Goal.plain c.row.result)

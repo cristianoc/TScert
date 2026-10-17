@@ -121,6 +121,7 @@ export const cases: Case[] = [
   negative("invalid-map-literal-outside-element", "a `map` callback returning a field literal the element type does not name, at that return type: the literal is no element",
     /no derivation of its node-typing claim/),
   positive("array-spread-named-union", "an array literal of a value of a named union and a spread of an array of it holds that union, so a callback at it keeps `map` dense"),
+  positive("never-parameter-calls", "a body whose parameter is `never` is within the empty footprint, on a throw too: no environment reaches its nodes, whatever they call"),
   positive("exceptional-footprint-handler", "a call whose signature states its footprint on a throw (`onThrow`) is caught by a handler within the caller's footprint: map callbacks catching a declaration's, a constant arrow's and a relaying declaration's throws stay dense"),
   positive("exceptional-footprint-fresh", "a body allocating a fresh store and catching a throw: the handler keeps the store fresh, the thrown value never is, so the handler writes the store within the empty footprint"),
   negative("invalid-exceptional-handler-fact", "a handler starts after what the throwing call wrote: a field the guard before it narrowed is read at its contract there (run under Node)",

@@ -39,7 +39,7 @@ private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name 
   let unit := effectResult r c
   if !unit.accepted then
     if unit.exhaustion.isSome then none else
-    some (refuse s!"'{name}'" (((firstBad r.footprint false false r.start r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
+    some (refuse s!"'{name}'" (((firstBad r.footprint false r.onThrow r.start r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
   else
     (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
       let code := GraphCode.effectCheckedResult G images q.entry C
