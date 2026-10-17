@@ -555,6 +555,38 @@ stays outside that contract until audited. The Lean obligations are the
 array invariant over the extended domain, the `isArray` refinement, and the
 readonly-array rules' soundness for foreign arrays.
 
+**Open: how the model represents a foreign array.** The text above fixes
+what a node list does, and leaves how the calculus states it. Two readings
+meet it, and they differ in where the evidence lies.
+
+- *A value form of its own.* The calculus gains foreign array objects: a
+  value form beside the ordinary array, step rules for its length, index
+  reads, iteration and each listed `Array.prototype` member, and those
+  members' overlay contracts restated for it. The Lean obligations above are
+  then theorems about that form, and the array invariant of `unknown` and of
+  every record type is restated over both forms. Every rule that reads an
+  array (element reads, `%Iterate%`, `%Spread:K%`, array patterns, the
+  conversion contract, `isArray`) needs its case for the new form.
+- *An ordinary readonly array in the model.* A node list is modeled as a
+  dense readonly array of its elements, as its admitted operations observe
+  it: length, index reads, iteration, the reading `Array.prototype`
+  members, `IsArray`, species. Each operation on which a node list differs
+  from such an array is refused wherever its operand's type admits a
+  readonly array or is `unknown`: own-key enumeration that types values by
+  the element type, `in` with an index key past the length. The model's
+  agreement with node lists is then T4, bound by a C4 run of every admitted
+  operation on real node lists; there is no new Lean obligation. The
+  difference in `at`'s answer at a non-integer index is within its
+  result type, `T | undefined`, either way.
+
+The second needs an audit of what the fragment admits today on readonly
+arrays and `unknown`. Probes (2026-10-17): an object spread of a
+`readonly number[]` is admitted, `{ ...xs }` with `o[0]` read at
+`number | undefined` verifies; on a node list the spread gives the class's
+fields (`parent`, `view`, …) and no index, which that read's type admits, but
+a spread read at another key would not be. The audit lists each such form,
+its typing, and whether a node list meets it.
+
 ## Node methods and callbacks
 
 `getText`, `getStart`, `getEnd`, `getFullStart`, `getWidth`,
