@@ -249,6 +249,48 @@ are in `Footprints.lean` (`Post`, `Post.compose`, `transport_sound`) and
 programs, nor the repository code measured, needs them; a retained program
 refused for this reason is the trigger.
 
+**Design, under review: arrays a callback allocated.** The trigger is
+`dev/record-render.mts`'s `effects`, whose `map` callback reads
+`const rest = parts(l)`, a fresh array (`split` then `filter`), and calls
+`rest.shift()`; `section`, `card` and `pageBody` call it. `shift` is
+`{value: any, store: any}`, so the callback is unbounded and the result may
+hold holes, although only a store allocated during the call changes. The
+design keeps the fact and the stable set, and refines what a node's run is
+measured against:
+
+1. **Entry-relative footprints.** A body within $`\Phi`$ means every run from
+   its entry heap $`h_0`$ meets $`\Phi.\mathrm{Holds}(h_0, h)`$, which
+   constrains only the locations below $`|h_0|`$. A node may break $`\Phi`$
+   step by step as long as it changes only locations at or above $`|h_0|`$:
+   the check composes nodes against $`h_0`$, not against each node's start
+   (`Closed.Holds.trans` is replaced by composition through the entry heap,
+   `Post.compose` restricted to closed footprints).
+2. **Fresh slots.** A slot is fresh when its own locations, and its store's
+   element list, lie at or above $`|h_0|`$: an allocation's result
+   (`alloc_after`, `arrLit_fresh`), and a call's result where the selected
+   signature states a fresh result. A fact `fresh(x)` is kept along edges
+   and through writes, and dropped where the slot is redefined.
+3. **Fresh results on signatures.** An effect gains a flag: the result's
+   own locations, and an array's store, are allocated by the call. It holds
+   of `split`, `filter`, `map`, `slice`, `flatMap`, `concat` (audited:
+   `ArraySpeciesCreate`, ordinary construction) and of a declaration whose
+   every return is a fresh slot (checked). Covering requires the source's
+   flag where the target states it.
+4. **The destructive natives at a fresh receiver.** `pop`, `shift`,
+   `reverse`, `splice` and a shorter `length` change only the receiver's
+   store and its elements; at a fresh receiver those lie at or above
+   $`|h_0|`$, so the call is within the empty footprint relative to $`h_0`$
+   (proved of the specification steps from `array_native_post_any`, with
+   the receiver's freshness; audited: nothing else changes).
+
+The rule users see gains: `pop`, `shift`, `reverse` and `splice` of an array
+the callback created, or obtained from a call stating a fresh result, are
+allowed. Controls: `rest.shift()` with `rest` a parameter or a captured
+array is refused; a declaration claimed to return a fresh result that
+returns its argument is refused; a fresh slot redefined to an old array
+loses the fact. This replaces neither the closed check nor `map_rely`, and
+adds no region beyond the fresh slots'.
+
 **Provenance stamps** (`FootprintProvenance.lean`: marks, `after` and
 `before` stamps, `stamps_separate`) are the candidate replacement for the
 distinct links the checker keeps between pairs of fields, which grow

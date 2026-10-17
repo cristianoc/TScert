@@ -1610,6 +1610,33 @@ scheme over its binders, host-relative) or a property (its type the result):
      {⟦s⟧_\Omega=\forall\vec X.\ \mathsf{new}(\vec P)\Rightarrow R}\ \textsf{library-construct}
 ```
 
+**Design, under review: several stated forms of one declaration.** TypeScript
+resolves `new Set("∀∃λΛμ")` to `new <T>(iterable?: Iterable<T> | null):
+Set<T>`, which the overlay states only at an array (`dev/record-render.mts`'s
+`BINDERS` and `RELATIONS`). One stated form cannot cover both: a parameter
+`readonly T[] | string` with result `Set<T>` is false at `T := number`. The
+design lets an entry state a list of forms, each a signature the host meets,
+under the entry's binders, a form naming none of them included:
+
+```math
+\frac{\omega.\mathit{stated}=[\forall\vec X.\ \mathsf{new}(\vec P_1)\Rightarrow R_1,\ \ldots,\ \forall\vec X.\ \mathsf{new}(\vec P_n)\Rightarrow R_n]}
+     {⟦s⟧_\Omega=\forall\vec X.\ \bigwedge_i\ \mathsf{new}(\vec P_i)\Rightarrow R_i}\ \textsf{library-construct-forms}
+```
+
+The value is a construct scheme with $`n`$ signatures, which every instance
+meets, so `new` selects one per call as it selects among overloads. `Set`'s
+iterable overload states `new <T>(values?: readonly T[] | null): Set<T>` and
+`new (values: string): Set<string>`, both at the empty footprint: the host
+iterates a string by its own iterator, which runs no client code (the
+assumption `%Iterate:String%` already makes). It needs, end to end: the
+overlay's `stated` as a list; the declaration reader giving a generic class
+value an intersection of construct signatures under one binder list; Lean's
+`GenericType.construct` a list of signatures, read as one conjunction of
+constructor atoms (`FragmentTypes` already conjoins a generic class's
+instances); the producer's construct scheme with several signatures. Its
+controls: `new Set("ab")` at `Set<string>` verifies; at `Set<number>`, read
+through a cast-free annotation, it is refused.
+
 An entry may read a call signature as the global's construct (`construct`),
 where the host's call runs the construct's steps: `Error(m)` called takes the
 error constructor itself as its new target (ECMA-262, "Error ( message [ ,
