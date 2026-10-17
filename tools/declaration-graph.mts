@@ -24,7 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
-import { hostEnums, isHostFile } from "./compiler-api.mts";
+import { allocatingMembers, hostEnums, hostTypeRoots, isHostFile } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -466,6 +466,10 @@ export function collectDeclarations(file: string, options: {
    * standard library alone is reported to `libraryName`. */
   libraryNames?: readonly Span[];
   libraryName?: (span: Span) => void;
+  /** The member names the client reads that are spelled as a host member
+   * whose read allocates (`allocatingMembers`): each TypeScript binds to that
+   * member is refused at the read. */
+  allocatingReads?: readonly Span[];
   /** The client's element reads `e[k]`: each whose object TypeScript types
    * as arrays and tuples only and whose key as `number`, no literal, is
    * reported to `hostElement`, and the intrinsics, among them
@@ -609,6 +613,28 @@ export function collectDeclarations(file: string, options: {
       for (const statement of statementsOnPath(checker, identifier))
         clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
       return nodes;
+    };
+    // Whether a declaration is a host type (COMPILER-API.md, reading rule
+    // 1): a class of the host package, or an interface of it that is one of
+    // `hostTypeRoots` or reaches one through `extends`.
+    const hostTypes = new Map<Node, boolean>();
+    const hostType = (node: TypeDeclaration): boolean => {
+      const known = hostTypes.get(node);
+      if (known !== undefined) return known;
+      hostTypes.set(node, false);
+      let result = false;
+      if (isHostFile(node.getSourceFile().fileName)) {
+        if (ts.isClassDeclaration(node)) result = true;
+        else if (ts.isInterfaceDeclaration(node))
+          result = hostTypeRoots.includes(node.name.text) || (node.heritageClauses ?? []).some(clause =>
+            clause.types.some(base => ts.isIdentifier(base.expression) &&
+              (targetOf(checker, base.expression)?.declarations ?? []).some(d => {
+                const target = d.resolve();
+                return !!target && isTypeDeclaration(target) && hostType(target);
+              })));
+      }
+      hostTypes.set(node, result);
+      return result;
     };
     // The name a type reference reads: an identifier, or the member of a
     // namespace import a qualified name `ns.T` reads, which TypeScript binds
@@ -1275,6 +1301,28 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         throw new DeclarationError(binding.span, error instanceof Error ? error.message : String(error));
+      }
+    }
+    // A read of a host member whose read allocates is refused at the read
+    // (COMPILER-API.md, reading rule 1), the member found as the property of
+    // the object's type TypeScript binds it to, declared as reviewed.
+    for (const span of options.allocatingReads ?? []) {
+      const name = identifierAt(client, span);
+      const access = name?.parent;
+      if (!name || !access || !ts.isPropertyAccessExpression(access) || access.name !== name) continue;
+      const object = checker.getTypeAtLocation(access.expression);
+      const property = object ? checker.getPropertyOfType(object, name.text) : undefined;
+      for (const handle of property?.declarations ?? []) {
+        const declaration = handle.resolve();
+        const owner = declaration?.parent;
+        if (!declaration || !owner || !ts.isInterfaceDeclaration(owner) ||
+            !isHostFile(declaration.getSourceFile().fileName)) continue;
+        const entry = allocatingMembers.find(m => m.owner === owner.name.text && m.name === name.text);
+        if (!entry) continue;
+        if (declaration.getText(declaration.getSourceFile()).trim() !== entry.text)
+          throw new DeclarationError(span, `${entry.owner}.${entry.name} is not declared as reviewed: ${entry.text}`);
+        throw new DeclarationError(span, `${entry.owner}.${entry.name} builds a fresh array on each read: ` +
+          "a host member whose read allocates is refused at its read (COMPILER-API.md, reading rule 1)");
       }
     }
     // A call of a namespace member passes the namespace object as the
@@ -2310,7 +2358,7 @@ export function collectDeclarations(file: string, options: {
       for (const { node: start, span } of list) {
         try {
           collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
-            enumType: enumTypeAt, enumerated, memberName, identityOf, libraryFile, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+            enumType: enumTypeAt, enumerated, memberName, identityOf, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
             libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
             keys: keyTypeOf, alias: aliasOf, awaited });
         } catch (error) {
@@ -3023,6 +3071,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
   /** Whether a file is the standard library's (`moduleIds`). */
   libraryFile: (file: SourceFile) => boolean;
+  /** Whether a declaration is a host type, whose members are readonly views. */
+  hostType: (node: TypeDeclaration) => boolean;
   symbol: (written: Identifier | ts.PropertyAccessExpression) => number;
   literalKey: (written: Identifier | ts.PropertyAccessExpression) => string | null;
   privateName: (name: ts.PrivateIdentifier) => number;
@@ -3197,6 +3247,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
             return members(partScope(part), part.members, part,
               [part.getStart(file), part.end], true);
           }), (at, message) => scope.fail(at, message), node);
+    // A host type's members are readonly views, whether or not they are
+    // declared `readonly` (COMPILER-API.md, reading rule 1): a client write
+    // to one is refused, and a test of one narrows as an invariant field's.
+    if (context.hostType(node) && expression.k === "object")
+      expression = { ...expression, fields: expression.fields.map(f => ({ ...f, readonly: true })) };
     // Native promise observation uses PromiseResolve's constructor equality
     // fast path. Its standard constructor and methods are inherited, and a
     // promise owns none of those keys. The ordinary prototype/own-key

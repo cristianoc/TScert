@@ -32,6 +32,20 @@ export const hostEnums: readonly { name: string; file: string }[] = [
   { name: "DiagnosticCategory", file: "diagnosticCategory" },
 ];
 
+/** The members of host types whose read allocates (reading rule 1), each
+ * with the interface declaring it and the declaration text it was reviewed
+ * against: `jsDoc` builds a fresh array on each read
+ * (`node.generated.js:221`), so it is refused at its read. */
+export const allocatingMembers: readonly { owner: string; name: string; text: string }[] = [
+  { owner: "Node", name: "jsDoc", text: "readonly jsDoc?: readonly Node[] | undefined;" },
+];
+
+/** The interfaces of the host package that are host types by themselves
+ * (reading rule 1): `Node`, every node shape reaching it through `extends`,
+ * `NodeArray`, and the sync API's `Type`, its sub-interfaces reaching it.
+ * Every class the package declares is a host type too. */
+export const hostTypeRoots: readonly string[] = ["Node", "NodeArray", "Type"];
+
 const packageOf = new Map<string, string | null>();
 
 /** The root directory of the package that holds `file`: the directory of the

@@ -11,8 +11,9 @@ tests that exercise it.
 
 The pipeline implements namespace imports
 ([derived source forms](SOURCE-ELABORATION.md#derived-source-forms)), host
-enums (reading rule 3, [enums](SOURCE-CONTRACTS.md#enums)), the check C1 and
-the bitwise operators;
+enums (reading rule 3, [enums](SOURCE-CONTRACTS.md#enums)), the check C1,
+the bitwise operators, and reading rule 1 (the host types' members as
+readonly views, `jsDoc` refused at its read, checked by C4 under Node);
 the other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
