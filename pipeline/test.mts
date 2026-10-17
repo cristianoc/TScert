@@ -1396,6 +1396,25 @@ for (const [file, marker, arity, accepted] of [
 }
 
 {
+  // A footprint check that runs out of subtype rounds is inconclusive, not a
+  // refusal: `marks` claims the empty footprint, and with one round the
+  // checks of its graph exhaust. Search and checking report exhaustion, never
+  // a footprint refusal.
+  const file = join(here, "examples", "declaration-preserving-callback.ts");
+  const searched = check(file, undefined, false, 1);
+  assert.equal(searched.status, "exhausted", JSON.stringify(searched));
+  const artifacts = run("declaration-preserving-callback");
+  const checking = spawnSync(verifier, ["--subtype-rounds", "1", "--check-source-claims",
+    join(artifacts, "fragment.json"), join(artifacts, "claims.json"), join(artifacts, "source.ts"),
+    join(artifacts, "evidence.json")], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(checking.status, 1, checking.stdout + checking.stderr);
+  const failure = readDiagnostic(checking.stdout + checking.stderr);
+  assert.ok(failure && failure.outcome.kind === "exhausted", checking.stdout + checking.stderr);
+  assert.doesNotMatch(checking.stdout + checking.stderr, /source effect refusal/);
+  process.stdout.write("exhausted footprint check: reported as exhausted in search and in checking\n");
+}
+
+{
   // A footprint and an effect have one spelling: `grow` on a value, which
   // is `keep` there, and an effect without its promise field are refused
   // where the claims are read.

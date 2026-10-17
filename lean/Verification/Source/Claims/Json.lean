@@ -23,7 +23,8 @@ open EquationGraphs (Tree)
 for a closure of its code, that its graph and certificate do not establish:
 at the first node no node-by-node preservation check accepts, else at the
 closure's region, else at the declaration. Search and checking report it
-alike. -/
+alike. A check that ran out of search rounds is no refusal: it is left to the
+exhaustion diagnostic. -/
 private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String) (namePos : Span)
     (r : SourceRequest σ ι) (c : Response ι) : Option String :=
   let G := RequestJson.graph r.toRequest
@@ -33,11 +34,14 @@ private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name 
       !GraphCode.compositionalChecked G images [node] [point]).bind fun (_, l) => (sourceMap[l]?).bind id
   let refuse (what : String) (pos : Span) :=
     s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
-  if !(effectResult r c).accepted then
+  let unit := effectResult r c
+  if !unit.accepted then
+    if unit.exhaustion.isSome then none else
     some (refuse s!"'{name}'" (((firstBad r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
   else
     (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
-      if GraphCode.effectChecked G images q.entry C then none else
+      let code := GraphCode.effectCheckedResult G images q.entry C
+      if code.accepted || code.exhaustion.isSome then none else
         let sourceMap := ((r.codeSources[i]?).map (·.sourceMap)).getD []
         let place := firstBad (GraphCode.program q.entry.exprs q.entry.conts) C sourceMap <|>
           sourceMapRegion sourceMap
@@ -52,9 +56,12 @@ def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
   let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← decodeStrict evidence
   let checked := checkRequestsResult rs b
   if checked.accepted then return ()
-  throw (((certified.zip b.functions).findSome? fun (plan, c) => match plan with
-      | .graph name namePos r => footprintRefusal name namePos r c).getD
-    (validationFailure rs checked "source evidence does not justify the extracted program and exact claims"))
+  -- An exhausted search is reported as such; a footprint the graph does not
+  -- establish is located; any other failure is the generic refusal.
+  let fallback := validationFailure rs checked "source evidence does not justify the extracted program and exact claims"
+  throw (if checked.exhaustion.isSome then fallback else
+    ((certified.zip b.functions).findSome? fun (plan, c) => match plan with
+      | .graph name namePos r => footprintRefusal name namePos r c).getD fallback)
 
 def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     (budget : PositiveCertificates.SearchBudget := {}) : Except String Json := do
