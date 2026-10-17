@@ -470,6 +470,20 @@ overriding `at` and `Symbol.iterator`. The ordinary-array assumptions (own
 keys, species, conversion) hold of ordinary arrays; node lists have their
 own interpretation.
 
+The package declares `interface NodeArray<T extends Node> extends
+ReadonlyArray<T>, ReadonlyTextRange` with the members `hasTrailingComma?`
+and a writable `transformFlags: number`. In a project with Node's types
+(`tools/tsconfig.json` has `types: ["node"]`), `@types/node` merges
+`interface ReadonlyArray<T> extends RelativeIndexable<T> {}`
+(`compatibility/indexable.d.ts`) into the standard library's
+`ReadonlyArray`, which is then no longer the library's alone and is read as
+a plain interface: its overloads are refused as duplicate fields
+(2026-10-17, 64 slices of `tools/`). Without the merge, an interface
+extending a library array is refused. The reading below never reads
+`NodeArray`'s heritage: `NodeArray<T>` is a host type of its own, so neither
+`ReadonlyArray`'s declarations nor the merge into them are read for a node
+list.
+
 `NodeArray<T>` is the host type $`\mathsf{NodeList}(T)`$ with the provenance
 key $`\kappa_{\mathit{RemoteNodeList}}`$ and exactly these operations, with
 $`n`$ the list's `length` at its creation and $`v_0,\ldots,v_{n-1}`$ its
@@ -885,6 +899,29 @@ Host enums, bitwise operators, namespace imports and arrays from imported
 declarations are independent of each other and of guard signatures;
 immutable fields, foreign arrays and the union-receiver and generic-method
 calls precede the node invariant.
+
+The reading rules split along the same dependencies:
+
+- Reading rule 1 is immutable fields: a stable member's reading is the
+  clause mode $`\iota`$, so the rule lands with that mode, together with its
+  refusal of a member whose read allocates. A readonly view would refuse the
+  writes, but would also refuse the `if-field` narrowing the node invariant
+  rests on, and is not a stage of rule 1.
+- Rules 2, 4 and 5 and the contract file (views, branded types, the
+  corrections table and every reviewed declaration text) depend on neither.
+- The corrections apply to node shapes, which the node invariant builds:
+  three of the eight are members a kind inherits
+  (`NoSubstitutionTemplateLiteral.rawText` and `.templateFlags` from
+  `TemplateLiteralLikeNodeBase`, `parent` of `SourceFile` from `Node`), which
+  only a member-complete shape states per kind.
+- Until $`\mathsf{NodeList}`$, every declaration that reaches `Node` is
+  refused: `NodeArray` is reached from `Node.forEachChild`'s list visitor and
+  from every list member. This includes every view member taking or giving
+  a node (`getTypeAtLocation(node: Node)`, `NodeHandle.resolve()`). So the
+  cases of rules 2, 4 and 5 use host types that reach no node (the sync
+  API's data interfaces, view members over symbols, types and flags), and
+  their application to node declarations is tested with the node
+  invariant.
 
 ## A measured slice
 
