@@ -199,6 +199,32 @@ theorem Closed.empty_le (c : Closed) : Closed.empty.le c = true := by
   cases c with
   | mk v s => cases v <;> cases s <;> rfl
 
+/-- On contents a change other than `any` keeps, a closed footprint allows
+the same change. -/
+private theorem Closed.at_of_holds {c : Closed} {b v v'} (h : (c.at v).Holds b v v')
+    (hne : c.at v ≠ .any) : c.at v' = c.at v := by
+  have := Change.Holds.same_class hne h .store
+  simp only [Cls.has] at this
+  simp only [Closed.at, this]
+
+/-- **A closed footprint composes with itself**: two runs each within it are
+within it together. -/
+theorem Closed.Holds.trans {c : Closed} {h₀ h h' : Heap} (h₁ : c.Holds h₀ h) (h₂ : c.Holds h h') :
+    c.Holds h₀ h' := by
+  rw [Closed.holds_iff] at h₁ h₂ ⊢
+  refine ⟨Nat.le_trans h₁.1 h₂.1, fun l v hv => ?_⟩
+  obtain ⟨v₁, hv₁, hc₁⟩ := h₁.2 l v hv
+  obtain ⟨v₂, hv₂, hc₂⟩ := h₂.2 l v₁ hv₁
+  refine ⟨v₂, hv₂, ?_⟩
+  by_cases hany : c.at v = .any
+  · rw [hany]; trivial
+  · have heq := Closed.at_of_holds hc₁ hany
+    rw [heq] at hc₂
+    exact hc₁.trans h₁.1 hc₂
+
+theorem Closed.Holds.refl (c : Closed) (h : Heap) : c.Holds h h :=
+  Closed.Holds.mono (Closed.empty_le c) (Closed.holds_empty.mpr (List.prefix_refl h))
+
 /-- A footprint from a later heap holds from an earlier one the later one
 extends: fresh allocation before a call composes with the call's footprint. -/
 theorem Closed.Holds.prefix_left {c : Closed} {h₀ h h' : Heap} (hpre : h₀.IsPrefix h)

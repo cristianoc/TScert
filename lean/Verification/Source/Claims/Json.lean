@@ -21,7 +21,7 @@ open EquationGraphs (Tree)
 
 /-- The located refusal of a footprint a unit claims for its declaration, or
 for a closure of its code, that its graph and certificate do not establish:
-at the first node no node-by-node preservation check accepts, else at the
+at the first node the node-by-node bound check refuses, else at the
 closure's region, else at the declaration. Search and checking report it
 alike. A check that ran out of search rounds is no refusal: it is left to the
 exhaustion diagnostic. -/
@@ -29,21 +29,21 @@ private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name 
     (r : SourceRequest σ ι) (c : Response ι) : Option String :=
   let G := RequestJson.graph r.toRequest
   let images := StoreView.images r.types
-  let firstBad (P : Program) (C : Certificate ι) (sourceMap : SourceMap) : Option SourceMapEntry :=
+  let firstBad (Φ : Footprints.Closed) (P : Program) (C : Certificate ι) (sourceMap : SourceMap) : Option SourceMapEntry :=
     ((P.zip C).zipIdx.find? fun ((node, point), _) =>
-      !GraphCode.compositionalChecked G images [node] [point]).bind fun (_, l) => (sourceMap[l]?).bind id
+      !GraphCode.compositionalChecked G images Φ [node] [point]).bind fun (_, l) => (sourceMap[l]?).bind id
   let refuse (what : String) (pos : Span) :=
     s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
   let unit := effectResult r c
   if !unit.accepted then
     if unit.exhaustion.isSome then none else
-    some (refuse s!"'{name}'" (((firstBad r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
+    some (refuse s!"'{name}'" (((firstBad r.footprint r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
   else
     (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
       let code := GraphCode.effectCheckedResult G images q.entry C
       if code.accepted || code.exhaustion.isSome then none else
         let sourceMap := ((r.codeSources[i]?).map (·.sourceMap)).getD []
-        let place := firstBad (GraphCode.program q.entry.exprs q.entry.conts) C sourceMap <|>
+        let place := firstBad q.entry.row.effect.footprint (GraphCode.program q.entry.exprs q.entry.conts) C sourceMap <|>
           sourceMapRegion sourceMap
         some (refuse s!"a closure in '{name}'" ((place.map (·.pos)).getD namePos))
 

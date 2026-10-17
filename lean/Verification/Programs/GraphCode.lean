@@ -145,36 +145,36 @@ theorem ReturnsPost.step {Q n h t h' t'} (hp : ReturnsPost Q (n+1) h t)
 theorem ReturnsPost.value {Q n h v} (hp : ReturnsPost Q (n+1) h v)
     (hv : isVal v = true) : Q h v := hp 0 h v (by omega) .refl hv
 
-/-- An effect annotation on a checked graph node. The precondition is the same
-point context and knowledge that ordinary graph checking established. -/
-def NodePreserves [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) : Prop :=
+/-- A node's run is within a closed bound `Φ` on normal return, from the heap
+it starts in. The precondition is the same point context and knowledge that
+ordinary graph checking established. -/
+def NodeWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed) (c : NodeEvidence ι) (t : Tm) : Prop :=
   ∀ n W h ρ, EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
     WorldAdm W → HeapOk n W h →
     HeapObservations.SafePost (excOf G) (meaning G (result c))
-      ((CallEffects.Effect.ofFootprint .empty).post h) n W h (instantiate 0 ρ t)
+      (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t)
 
-/-- While a call is running its entry heap need not be preserved yet. Only the
-postcondition on normal return can justify the next graph node. -/
-def PreservingState (initial : Heap) (n : Nat) (h : Heap) : State → Prop
-  | .at .. | .done _ => Footprints.Closed.empty.Holds initial h
-  | .eval t _ _ handler => handler = none ∧
-      ReturnsPost ((CallEffects.Effect.ofFootprint .empty).post initial) n h t
+/-- While a node runs, the invocation need not be within its bound yet. Only
+the node's normal return, within the bound from where it started, extends the
+invocation's run within it (`Closed.Holds.trans`). -/
+def BoundState (Φ : Footprints.Closed) (initial : Heap) (n : Nat) (h : Heap) : State → Prop
+  | .at .. | .done _ => Φ.Holds initial h
+  | .eval t _ _ handler => handler = none ∧ ReturnsPost (fun h' _ => Φ.Holds initial h') n h t
   | .raised _ => True
 
-theorem preserving_step [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty ι} {P : Program} {C : Certificate ι}
+theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed} {Rty : Ty ι} {P : Program} {C : Certificate ι}
     (hnodes : ∀ (l : Nat) (node : Node) (c : NodeEvidence ι), P[l]? = some node → C[l]? = some c →
-      node.handler = none ∧ NodePreserves G c node.expression)
+      node.handler = none ∧ NodeWithin G Φ c node.expression)
     {initial n W h s h' s'} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
-    (hs : StateOk G Rty C .undef (n+1) W h s) (hp : PreservingState initial (n+1) h s)
-    (st : Transition P h s h' s') : PreservingState initial n h' s' := by
+    (hs : StateOk G Rty C .undef (n+1) W h s) (hp : BoundState Φ initial (n+1) h s)
+    (st : Transition P h s h' s') : BoundState Φ initial n h' s' := by
   cases st with
   | enter hn =>
     obtain ⟨c, hc, he, hi, -, hf⟩ := hs
     obtain ⟨hx, ht⟩ := hnodes _ _ c hn hc
     refine ⟨hx, ?_⟩
     apply returnsPost_of_safePost
-    apply HeapObservations.weaken (fun _ _ hpost => Footprints.Closed.holds_empty.mpr
-      ((Footprints.Closed.holds_empty.mp hp).trans (Footprints.Closed.holds_empty.mp hpost)))
+    apply HeapObservations.weaken (fun _ _ hpost => Footprints.Closed.Holds.trans hp hpost)
     exact ht n _ h _ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
       (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) hf
       (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
@@ -186,16 +186,16 @@ theorem preserving_step [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty ι} {P :
 
 /-- The effect proof reuses ordinary graph progress and its point assertions.
 There is one control-flow checker, including for cycles and branch refinements. -/
-theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty : Ty ι} {E : List Tm} {K : List (Continuation × Option Target)}
+theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Φ : Footprints.Closed} {Rty : Ty ι} {E : List Tm} {K : List (Continuation × Option Target)}
     {C : Certificate ι}
     {codes : CodeEntry ι → Bool} (hg : checkGraphUsing G images Rty (program E K) C codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes)
     (hnodes : ∀ (l : Nat) (node : Node) (c : NodeEvidence ι), (program E K)[l]? = some node → C[l]? = some c →
-      node.handler = none ∧ NodePreserves G c node.expression) :
+      node.handler = none ∧ NodeWithin G Φ c node.expression) :
     ∀ n W h ts s initial, Sim E K ts s → WorldAdm W → HeapOk n W h →
-      StateOk G Rty C .undef n W h s → PreservingState initial n h s →
+      StateOk G Rty C .undef n W h s → BoundState Φ initial n h s →
       HeapObservations.SafePost (excOf G) (meaning G Rty)
-        ((CallEffects.Effect.ofFootprint .empty).post initial) n W h ts := by
+        (fun h' _ => Φ.Holds initial h') n W h ts := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -209,33 +209,59 @@ theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : I
     · obtain ⟨ts', step, sim'⟩ := sim_step sim st
       exact .inr ⟨U, h', ts', hx, hu, step, hok,
         ih U h' ts' s' initial sim' hu hok hs'
-          (preserving_step hnodes hw hh hs hp st)⟩
+          (bounded_step hnodes hw hh hs hp st)⟩
 
-theorem goto_preserving [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Rty : Ty ι} {E : List Tm} {K : List (Continuation × Option Target)}
+theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Φ : Footprints.Closed} {Rty : Ty ι} {E : List Tm} {K : List (Continuation × Option Target)}
     {C : Certificate ι} {start inputs}
     {codes : CodeEntry ι → Bool}
     (hc : checkEntryUsing G images Rty (program E K) C start inputs codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes)
     (hnodes : ∀ (l : Nat) (node : Node) (c : NodeEvidence ι), (program E K)[l]? = some node → C[l]? = some c →
-      node.handler = none ∧ NodePreserves G c node.expression)
+      node.handler = none ∧ NodeWithin G Φ c node.expression)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h) :
     HeapObservations.SafePost (excOf G) (meaning G Rty)
-      ((CallEffects.Effect.ofFootprint .empty).post h) n W h (.goto E K start L d) := by
+      (fun h' _ => Φ.Holds h h') n W h (.goto E K start L d) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
   · rename_i c hstart
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hx
     obtain ⟨⟨hin, hk, himp, harg⟩, -⟩ := hx
-    apply preserving_safe_of_sim hc.1 hcodes hnodes n W h _ _ h .goto hw hh
+    apply bounded_safe_of_sim hc.1 hcodes hnodes n W h _ _ h .goto hw hh
     · refine ⟨c, hstart, ?_, ?_, ?_, ?_⟩
       · simpa only [hin] using he
       · rw [himp]; exact PromiseCalls.ImpliesOk.nil G _ n W
       · rw [harg]; intro p hp; cases hp
       · rw [hk]; exact HeapKnowledge.empty _ h
-    · exact Footprints.Closed.holds_empty.mpr ⟨[], by simp⟩
+    · exact Footprints.Closed.Holds.refl Φ h
   · contradiction
+
+/-- **A node the bound check accepts is within the bound**: an inspection,
+which preserves the heap, a typed write of a field holding a value, or a call
+at a selected signature within the bound, each beside the node's ordinary
+safety. -/
+theorem nodeWithin_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {Φ : Footprints.Closed} {c : NodeEvidence ι} {t : Tm}
+    (hscope : ProgramCertificates.checkScope (entry c).length t = true)
+    (hcases : ((ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
+      (decide ((ProgramCertificates.claim c.expression).term = t) &&
+        ProgramCertificates.checkTreeUsing G images c.expression &&
+        ExpressionEffects.selectedCallWithin Φ c.expression)) = true)
+    (hterm : ExpressionOk G c t) : NodeWithin G Φ c t := by
+  intro j V h' ρ henv himp hknowledge hworld hheap
+  have hsafe := HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
+    (hterm j V h' ρ henv himp hknowledge hworld hheap))
+  simp only [Bool.or_eq_true] at hcases
+  rcases hcases with (hexpr | hwrite) | hcall
+  · exact HeapObservations.weaken (fun h'' _ hq =>
+      Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
+      (ExpressionEffects.sound hexpr hscope henv hworld hheap hsafe)
+  · exact ExpressionEffects.write_within hwrite henv hheap hsafe
+  · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
+    have hs := ExpressionEffects.selectedCall_sound c.expression hcall.1.2 hcall.2
+      (ProgramCertificates.codesSound_none _) (by simpa only [ControlFlow.entry] using henv) hworld hheap
+    simpa only [ControlFlow.result, hcall.1.1] using hs
 
 /-! ## A unit's table of checked code
 
@@ -249,50 +275,60 @@ first — and the unit's own graph against the whole table. -/
 def admits [DecidableEq ι] (table : List (CodeEntry ι)) (c : CodeEntry ι) : Bool :=
   table.contains c
 
-/-- Each executed node must establish preservation on normal return. A handler
-could turn a throwing call into a normal return after untracked mutation, so
-this composition rule admits only graphs without handlers. Pure graphs retain
-the independent operational rule, which also covers their handlers. -/
-@[nospecialize] def compositionalCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
+/-- Each executed node must be within the bound on normal return: an
+inspection (which preserves the heap), a typed write of a field holding a
+value, or a call at a selected signature whose footprint is within it. A
+handler could turn a throwing call into a normal return after untracked
+mutation, so this composition rule admits only graphs without handlers. Pure
+graphs retain the independent operational rule, which also covers their
+handlers. -/
+@[nospecialize] def compositionalCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (Φ : Footprints.Closed) (P : Program) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
   ProgramCertificates.CheckResult.allLocated (P.zip C) .node fun (node,c) =>
     (ProgramCertificates.CheckResult.ofBool (node.handler.isNone &&
       ProgramCertificates.checkScope (entry c).length node.expression)).bind fun _ =>
-    (ProgramCertificates.CheckResult.ofBool (ExpressionEffects.check G (entry c) node.expression)).orElse fun _ =>
+    (ProgramCertificates.CheckResult.ofBool (ExpressionEffects.check G (entry c) node.expression ||
+      ExpressionEffects.writeWithin G (entry c) Φ node.expression)).orElse fun _ =>
     (ProgramCertificates.CheckResult.ofBool (decide ((ProgramCertificates.claim c.expression).term = node.expression))).bind fun _ =>
     (ProgramCertificates.checkTreeResult G images c.expression).bind fun _ =>
-    ProgramCertificates.CheckResult.ofBool (ExpressionEffects.selectedCallPreserves c.expression)
+    ProgramCertificates.CheckResult.ofBool (ExpressionEffects.selectedCallWithin Φ c.expression)
 
-@[nospecialize] def compositionalChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι) : Bool :=
-  (compositionalCheckedResult G images P C).accepted
+@[nospecialize] def compositionalChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (Φ : Footprints.Closed) (P : Program) (C : Certificate ι) : Bool :=
+  (compositionalCheckedResult G images Φ P C).accepted
 
-theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι) :
-    compositionalChecked G images P C = (
+theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (Φ : Footprints.Closed) (P : Program) (C : Certificate ι) :
+    compositionalChecked G images Φ P C = (
   (P.zip C).all fun (node,c) => node.handler.isNone &&
     ProgramCertificates.checkScope (entry c).length node.expression &&
-    (ExpressionEffects.check G (entry c) node.expression ||
+    ((ExpressionEffects.check G (entry c) node.expression ||
+      ExpressionEffects.writeWithin G (entry c) Φ node.expression) ||
       (decide ((ProgramCertificates.claim c.expression).term = node.expression) &&
         ProgramCertificates.checkTreeUsing G images c.expression &&
-        ExpressionEffects.selectedCallPreserves c.expression))
+        ExpressionEffects.selectedCallWithin Φ c.expression))
   ) := by
   simp only [compositionalChecked, compositionalCheckedResult, ProgramCertificates.CheckResult.accepted_allLocated,
     ProgramCertificates.CheckResult.accepted_bind, ProgramCertificates.CheckResult.accepted_orElse,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.checkTreeUsing, Bool.and_assoc]
 
 @[simp] theorem compositionalChecked_reassign [DecidableEq ι] (G : NormalGraph ι)
-    (images : InstanceImageCheck G) (η : MixedAssignment ι) (P : Program) (C : Certificate ι) :
-    compositionalChecked (reassign G η) (images.reassign η) P C = compositionalChecked G images P C := by
-  simp only [compositionalChecked_eq, ExpressionEffects.check, Parametricity.checkTree_reassign]
+    (images : InstanceImageCheck G) (η : MixedAssignment ι) (Φ : Footprints.Closed) (P : Program) (C : Certificate ι) :
+    compositionalChecked (reassign G η) (images.reassign η) Φ P C = compositionalChecked G images Φ P C := by
+  simp only [compositionalChecked_eq, Parametricity.checkTree_reassign]
+  rfl
 
 /-- Definition effects supplement, rather than replace, ordinary safety. A
 footprint letting everything change holds of every run (`Closed.top_safe`);
-any other is established by heap preservation, the empty footprint, which
-covers it (`Closed.empty_le`, `Closed.Holds.mono`), for code returning a plain result. -/
+any other bound is established node by node (`compositionalChecked`), or by a
+graph of pure nodes, which preserves the heap, for code returning a plain
+result. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
   if c.row.effect.footprint = .top then pure () else
     (ProgramCertificates.CheckResult.ofBool c.row.effect.promise.isNone).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (c.exprs.all Purity.pureTerm)).orElse fun _ =>
-    compositionalCheckedResult G images (program c.exprs c.conts) C
+    compositionalCheckedResult G images c.row.effect.footprint (program c.exprs c.conts) C
 
 @[nospecialize] def effectChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) : Bool :=
@@ -302,7 +338,7 @@ theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instanc
     (c : CodeEntry ι) (C : Certificate ι) :
     effectChecked G images c C = (
   decide (c.row.effect.footprint = .top) || (c.row.effect.promise.isNone &&
-    (c.exprs.all Purity.pureTerm || compositionalChecked G images (program c.exprs c.conts) C))
+    (c.exprs.all Purity.pureTerm || compositionalChecked G images c.row.effect.footprint (program c.exprs c.conts) C))
   ) := by
   by_cases h : c.row.effect.footprint = .top <;>
     simp [effectChecked, effectCheckedResult, h, ProgramCertificates.CheckResult.accepted_orElse,
@@ -389,14 +425,14 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       Bool.or_eq_true] at heff
     obtain ⟨hpr, hp⟩ := heff
     rw [CallEffects.Effect.result_none hpr]
-    apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
     have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, hpr]
     rw [hg] at hs hc
     rcases hp with hp | hp
-    · have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp
+    · apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
+      have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp
       exact CallEffects.pure_safe (.goto hp hvalues rfl) hs
     · rw [← compositionalChecked_reassign G images η, compositionalChecked_eq] at hp
-      apply goto_preserving hc ht _ n W heap L .nul he hw hh
+      apply goto_bounded hc ht _ n W heap L .nul he hw hh
       intro l node point hn hpoint
       have hzip : ((program c.exprs c.conts).zip C)[l]? = some (node,point) :=
         List.getElem?_zip_eq_some.mpr ⟨hn,hpoint⟩
@@ -404,7 +440,6 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       have hp := List.all_eq_true.mp hp (node,point) hmem
       simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hp
       refine ⟨hp.1.1, ?_⟩
-      intro j V h' ρ henv himp hknowledge hworld hheap
       have hgraph : checkGraphUsing (reassign G η) (images.reassign η) (Goal.plain c.row.result)
           (program c.exprs c.conts) C (admits table) = true := by
         have hchecked := hc
@@ -412,16 +447,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
         exact hchecked.1
       obtain ⟨actual,hactual,hterm,-⟩ := graph_node hgraph ht hpoint
       cases hn.symm.trans hactual
-      have hcases := hp.2
-      simp only [Bool.or_eq_true] at hcases
-      rcases hcases with hexpr | hcall
-      · exact ExpressionEffects.sound hexpr hp.1.2 henv hworld hheap
-          (HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
-            (hterm j V h' ρ henv himp hknowledge hworld hheap)))
-      · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
-        have hs := ExpressionEffects.selectedCall_sound point.expression hcall.1.2 hcall.2
-          (ProgramCertificates.codesSound_none _) henv hworld hheap
-        simpa only [ControlFlow.result, hcall.1.1] using hs
+      exact nodeWithin_of_checked hp.1.2 hp.2 hterm
 
 /-- Check codes in order, each against the table of those before it. -/
 @[nospecialize] def extendTableResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) :

@@ -1238,7 +1238,7 @@ normal-return postcondition independently of the safety proof's evolving world.
 A caught exception cannot use that postcondition: compositional checking refuses
 handlers, while the independent pure-graph rule still admits pure handlers.
 Fixed calls use `ExpressionEffects.selectedCall_sound`: the selected application
-rule must carry the empty footprint and no promise, and its operands must already be values.
+rule's footprint must lie within the bound, and its operands must already be values.
 The proof consumes `CallEffects.call_safe`, including padded missing arguments;
 a result-subtyping derivation retains the same postcondition. It never inspects
 the callee's implementation. Pure immutable lets also compose: $`\mathsf{Pure}(a) \land \mathsf{Pure}(b)`$ implies $`\mathsf{Pure}(\mathsf{let}\ x=a\ \mathsf{in}\ b)`$.
@@ -1271,20 +1271,25 @@ independently checks every one; withholding a search hint cannot hide a failure.
 already be submitted and certified through the ordinary source pipeline.
 
 **Function declarations.** A declaration's claim states the closed
-footprint proposed for its signature (`footprint` in the
+footprint $`\Phi`$ proposed for its signature (`footprint` in the
 [claims](SOURCE-CLAIMS.md)). The unit of a declaration claiming a footprint
 other than `all: any` is checked as a code entry's graph is: its nodes pure,
-or each node preserving by `inspect` or a fixed qualified call
-(`effectResult`, alongside ordinary safety), for a plain result under the
-ordinary checker, which establishes the empty footprint and with it every
-footprint (`Closed.empty_le`, `Closed.Holds.mono`); a guard, an assertion function and a
-unit qualified by a resolution descriptor are refused such a claim. A code
-entry's signature follows the same rule (`GraphCode.effectCheckedResult`). With $`P`$
-the unit's graph, $`\Gamma`$ its inputs and $`B`$ its result,
+or each node within $`\Phi`$ on normal return (`effectResult`, alongside
+ordinary safety), for a plain result under the ordinary checker. A node is
+within $`\Phi`$ as an inspection, which preserves the heap; as a write of a
+field every alternative of the object's type gives a type of source values,
+within `{value: any, store: keep}` since the location holds a value
+(`ExpressionEffects.write_within`); or as a fixed call at a selected signature
+whose footprint is within $`\Phi`$. Runs within a closed footprint compose
+(`Closed.Holds.trans`), so the graph is (`GraphCode.goto_bounded`). A guard,
+an assertion function and a unit qualified by a resolution descriptor are
+refused such a claim. A code entry's signature follows the same rule
+(`GraphCode.effectCheckedResult`). With $`P`$ the unit's graph, $`\Gamma`$ its
+inputs and $`B`$ its result,
 
 ```math
-\frac{\vdash P:\Gamma\to B\qquad \forall l.\ P_l\ \text{pure, an inspection, or a fixed qualified call}}
-     {\vdash P:\Gamma\to B\;!\;\emptyset}\ \textsf{declaration-effect}
+\frac{\vdash P:\Gamma\to B\qquad \forall l.\ P_l\ \text{pure, or within}\ \Phi}
+     {\vdash P:\Gamma\to B\;!\;\Phi}\ \textsf{declaration-effect}
 ```
 
 and `SourceClaimJson.checkJson_safe` states, for each such unit, that its

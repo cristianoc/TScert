@@ -86,15 +86,118 @@ theorem sound {G : NormalGraph ι} {Γ t A ρ n W h}
       n W h (instantiate 0 ρ t) :=
   inspect_safe (List.prefix_refl h) (inspect_instantiate (d := 0) hc hscope he) hw hh hs
 
-/-- Invocation consumes the selected signature's effect. All actual evaluation
-has already been lowered to earlier graph nodes; omitted arguments are the
-ordinary evidence's explicit `undefined` premises. Subsumption may retain the
-postcondition while changing the result type. -/
-def selectedCallPreserves : Evidence ι → Bool
+/-- A type every member of which is a source value: no store and no `top`. -/
+def sourceTy (G : NormalGraph ι) (A : Ty ι) : Bool :=
+  G.plainTy A && (expand G A).all PositiveNormalization.sourceClause
+
+theorem sourceTy_sound {G : NormalGraph ι} {A n W v} (hs : sourceTy G A = true)
+    (hv : meaning G A n W v) : isSourceVal v = true := by
+  simp only [sourceTy, Bool.and_eq_true, List.all_eq_true] at hs
+  obtain ⟨c, hc, hcv⟩ := (expand_sem G A hs.1 n W v).mp hv
+  exact (PositiveNormalization.sourceClause_sound (hs.2 c hc) hcv.1).1
+
+/-- Whether every alternative is a record whose first invariant operand has
+the field `fld`, at a type of source values in each. -/
+def sourceField (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey) : Bool :=
+  !cs.isEmpty && cs.all fun c => match HeapExpressionRules.clauseBagOperand c with
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || sourceTy G p.2)
+    | none => false
+
+theorem sourceField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
+    (hr : sourceField G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
+    ∃ B A, (fld, A) ∈ B ∧ sourceTy G A = true ∧
+      bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
+  simp only [sourceField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at hr
+  have hp : G.plainTy Ref = true := by
+    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
+    exact plain_of_mem_expand (c := c) hc
+  obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
+  have hb := hr.2 c hm
+  cases c <;> simp only [HeapExpressionRules.clauseBagOperand] at hb
+  all_goals try contradiction
+  all_goals
+    simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
+      decide_eq_false_iff_not] at hb
+    obtain ⟨hany, hall⟩ := hb
+    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
+    simp only [decide_eq_true_eq] at hg
+    subst hg
+    have hsrc : sourceTy G El = true := (hall _ hmem).resolve_left (by simp)
+  · exact ⟨_, El, hmem, hsrc, recT_bag hc.1.1⟩
+  · exact ⟨_, El, hmem, hsrc, hc.1.1.1⟩
+
+/-- A write of a field of the object in a slot whose type gives it a type of
+source values: it changes one location, which holds a value, not a store. -/
+def writeWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
+  match HeapExpressionRules.writeSlots t with
+  | some (f, i, k) => Footprints.Closed.le ⟨.any, .keep⟩ Φ && decide (k < Γ.length) && match Γ[i]? with
+    | some Ref => sourceField G (expand G Ref) f
+    | none => false
+  | none => false
+
+/-- **A typed field write is within `{value: any, store: keep}`.** -/
+theorem write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : writeWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
+  unfold writeWithin at hc
+  split at hc
+  case h_2 => contradiction
+  rename_i f i k hw
+  rw [HeapExpressionRules.writeSlots_eq hw] at hs ⊢
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+  obtain ⟨⟨hle, hk⟩, hsel⟩ := hc
+  split at hsel
+  · rename_i Ref hi
+    cases n with
+    | zero => trivial
+    | succ n =>
+      have hiv := (meaning_value (he.2 i Ref hi)).1
+      have hkv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
+      rcases hs with (⟨hbad, _⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
+      · simp [isVal] at hbad
+      · exact .inl (.inr hr)
+      · obtain ⟨flds, c, oid, l, hl, hfd, hlt, rfl, rfl⟩ := HeapExpressionRules.write_inv hiv hkv step
+        refine .inr ⟨U, _, _, hx, hu, step, hh', HeapObservations.refine_value rfl ?_ hs'⟩
+        apply Footprints.Closed.Holds.mono hle
+        rw [Footprints.Closed.holds_iff]
+        refine ⟨by simp, fun l' v hv => ?_⟩
+        by_cases hll : l' = l
+        · subst hll
+          refine ⟨ρ k, by simp [hlt], ?_⟩
+          obtain ⟨B, A, hmem, hsrc, hbag⟩ := sourceField_sound hsel (he.2 i Ref hi)
+          obtain ⟨flds0, code0, oid0, hl0, _, hrec⟩ := hbag
+          obtain ⟨flds1, l1, c1, oid', hproj, hfd1, hlookup, hagree⟩ :=
+            recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hmem, rfl⟩) hrec
+          rw [hl0] at hl
+          cases hl
+          cases hproj
+          rw [hfd] at hfd1
+          cases hfd1
+          obtain ⟨u, hu, hmm⟩ := hh.2 l' c1 hlookup
+          rw [hv] at hu
+          cases hu
+          have hA := (hagree 0 (by omega) _ v).mp (hmm 0 (by omega))
+          have harr : Footprints.isArr v = false := by
+            have := sourceTy_sound hsrc hA
+            cases v <;> simp_all [isSourceVal, Footprints.isArr]
+          simp only [Footprints.Closed.at, harr]
+          trivial
+        · refine ⟨v, by rw [List.getElem?_set_ne (Ne.symm hll)]; exact hv, Footprints.Change.Holds.refl _ _ _⟩
+  · contradiction
+
+/-- Invocation consumes the selected signature's effect: within the bound
+when the signature's footprint is. All actual evaluation has already been
+lowered to earlier graph nodes; omitted arguments are the ordinary evidence's
+explicit `undefined` premises. Subsumption may retain the postcondition while
+changing the result type. -/
+def selectedCallWithin (Φ : Footprints.Closed) : Evidence ι → Bool
   | .node _ (.app e) ps =>
-      e == .ofFootprint .empty && ps.all fun p => valueTerm (claim p).term &&
+      e.footprint.le Φ && ps.all fun p => valueTerm (claim p).term &&
         checkScope (claim p).context.length (claim p).term
-  | .node _ (.sub _) [p] => selectedCallPreserves p
+  | .node _ (.sub _) [p] => selectedCallWithin Φ p
   | _ => false
 
 theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
@@ -113,11 +216,11 @@ theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
 private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
     {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool}
-    (hl : LocalUsing G images j (.app (.ofFootprint .empty)) ps codes)
+    {e : CallEffects.Effect} (hl : LocalUsing G images j (.app e) ps codes)
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) ((CallEffects.Effect.ofFootprint .empty).post h)
+    SafePost (excOf G) (meaning G j.type) (e.post h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a call with a callee and a receiver premise.
@@ -173,38 +276,41 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
         exact values p (by simp [List.mem_of_mem_take hp])
       have hr := member jr (by simp)
       have hrval := values jr (by simp)
-      have hs := CallEffects.call_safe (effect := .ofFootprint .empty)
+      have hplain : e.plain = true := hL.2
+      have hs := CallEffects.call_safe (effect := e)
         (P := ArgsShort (jas.map (fun p => meaning G p.type)))
         (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
         (meaning_adm G jr.type) hp hr hrval hvals ha hw hh
+      rw [CallEffects.Effect.result_plain hplain] at hs
       simpa [CallEffects.Arrow.map, CallEffects.Contract.map, htf, htr,
         instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] using hs
     · contradiction
 
 theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
+    {images : PositiveCertificates.InstanceImageCheck G} {Φ : Footprints.Closed} (e : Evidence ι)
     {codes : CodeEntry ι → Bool} (ht : checkTreeUsing G images e codes = true)
-    (hp : selectedCallPreserves e = true) (hcodes : CodesSound G codes)
+    (hp : selectedCallWithin Φ e = true) (hcodes : CodesSound G codes)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G (claim e).type) ((CallEffects.Effect.ofFootprint .empty).post h)
+    SafePost (excOf G) (meaning G (claim e).type) (fun h' _ => Φ.Holds h h')
       n W h (instantiate 0 ρ (claim e).term) := by
   cases e with
   | node j r ps =>
     simp only [claim] at he ⊢
     simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
-    cases r <;> try simp only [selectedCallPreserves] at hp <;> try contradiction
+    cases r <;> try simp only [selectedCallWithin] at hp <;> try contradiction
     case app effect =>
-      simp only [Bool.and_eq_true, beq_iff_eq] at hp
-      obtain ⟨rfl, hp⟩ := hp
-      · apply call_local_sound ht.1 _ _ he hw hh
-        · intro p hm
-          obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-          exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
-        · intro p hm
-          obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-          exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
+      simp only [Bool.and_eq_true] at hp
+      obtain ⟨hle, hp⟩ := hp
+      apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono hle hq)
+      apply call_local_sound ht.1 _ _ he hw hh
+      · intro p hm
+        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+      · intro p hm
+        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+        exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
     case sub proof =>
       cases ps with
       | nil => contradiction

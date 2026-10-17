@@ -123,23 +123,23 @@ def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowle
   (r.codeSources.zip c.codes).all fun (q, C) => checkGraphAssertions q.cuts q.assertions C
 
 /-- A unit's claimed footprint, established by its own graph and certificate.
-The footprint letting everything change holds of every run; any other by heap
-preservation, the empty footprint, which covers it: a graph of pure nodes, or
-node by node (`GraphCode.compositionalChecked`), for a unit returning a plain
-result under the ordinary checker. -/
+The footprint letting everything change holds of every run; any other bound
+node by node (`GraphCode.compositionalChecked`), or by a graph of pure nodes,
+which preserves the heap, for a unit returning a plain result under the
+ordinary checker. -/
 @[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
   if r.footprint = .top then pure () else
     (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.promise.isNone)).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
-    GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) r.program
-      c.certificate
+    GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) r.footprint
+      r.program c.certificate
 
 theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
     (h : (effectResult r c).accepted = true) (he : r.footprint ≠ .top) :
     r.qualification = none ∧ r.promise = none ∧
       (r.program.all (fun n => Purity.pureTerm n.expression) = true ∨
-        GraphCode.compositionalChecked (RequestJson.graph r.toRequest) (StoreView.images r.types) r.program
-          c.certificate = true) := by
+        GraphCode.compositionalChecked (RequestJson.graph r.toRequest) (StoreView.images r.types) r.footprint
+          r.program c.certificate = true) := by
   simp only [effectResult, he, if_false, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_orElse,
     Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true] at h
@@ -269,7 +269,6 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨checked, -, heff, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
   obtain ⟨hq, hpromise, hp⟩ := effectResult_preserving heff heffect
-  apply HeapObservations.weaken (fun h' _ hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
   simp only [SourceRequest.checker, hq] at checked
   rw [verify_eq] at checked
   simp only [Bool.and_eq_true] at checked
@@ -289,14 +288,15 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
     rw [hgoal, ← hP] at hc
     have hs := GraphCode.goto_safe hc hcodes n W heap L d he hw hh
     rcases hp with hp | hp
-    · have hp : ∀ e ∈ r.program.map (·.expression), Purity.pureTerm e = true := by
+    · apply HeapObservations.weaken (fun h' _ hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
+      have hp : ∀ e ∈ r.program.map (·.expression), Purity.pureTerm e = true := by
         intro e he
         obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he
         exact List.all_eq_true.mp hp node hn
       exact CallEffects.pure_safe (.goto hp hvalues hd) hs
     · rw [← hP] at hp
       erw [← GraphCode.compositionalChecked_reassign G images η, GraphCode.compositionalChecked_eq] at hp
-      apply GraphCode.goto_preserving hc hcodes _ n W heap L d he hw hh
+      apply GraphCode.goto_bounded hc hcodes _ n W heap L d he hw hh
       intro l node point hn hpoint
       have hzip : ((GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))).zip c.certificate)[l]? = some (node,point) :=
         List.getElem?_zip_eq_some.mpr ⟨hn,hpoint⟩
@@ -304,7 +304,6 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
       have hp := List.all_eq_true.mp hp (node,point) hmem
       simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hp
       refine ⟨hp.1.1, ?_⟩
-      intro j V h' ρ henv himp hknowledge hworld hheap
       have hgraph : checkGraphUsing (reassign G η) (images.reassign η) (Goal.plain r.result)
           (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))) c.certificate (GraphCode.admits table) = true := by
         have hchecked := hc
@@ -312,16 +311,7 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
         exact hchecked.1
       obtain ⟨actual,hactual,hterm,-⟩ := graph_node hgraph hcodes hpoint
       cases hn.symm.trans hactual
-      have hcases := hp.2
-      simp only [Bool.or_eq_true] at hcases
-      rcases hcases with hexpr | hcall
-      · exact ExpressionEffects.sound hexpr hp.1.2 henv hworld hheap
-          (HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
-            (hterm j V h' ρ henv himp hknowledge hworld hheap)))
-      · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
-        have hs := ExpressionEffects.selectedCall_sound point.expression hcall.1.2 hcall.2
-          (ProgramCertificates.codesSound_none _) henv hworld hheap
-        simpa only [ControlFlow.result, hcall.1.1] using hs
+      exact GraphCode.nodeWithin_of_checked hp.1.2 hp.2 hterm
   · contradiction
 
 /-- The source region represented by a graph, for checks on synthetic nodes. -/
