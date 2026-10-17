@@ -43,7 +43,6 @@ import * as expressions from "./fragment-expressions.mts";
 import * as statements from "./fragment-statements.mts";
 import * as guards from "./fragment-guards.mts";
 import { memberUses, namespaceMembers, type MemberUse, type NamespaceMember } from "./namespace-members.mts";
-import { allocatingMembers } from "./compiler-api.mts";
 
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.
@@ -1222,28 +1221,6 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findLibraryNames);
   };
   if (!carriesContext) findLibraryNames(source);
-  // The keys of member reads spelled as a host member whose read allocates
-  // (`allocatingMembers`), in every form that reads a member: `o.m` and
-  // `o?.m`, `o["m"]`, a binding pattern's `{ m }`, `{ m: x }`,
-  // `{ ["m"]: x }`, and an assignment pattern's. TypeScript decides which
-  // are that member. `"m" in o` reads no member's value.
-  const allocatingNodes: Node[] = [];
-  const allocatingKey = (key: Node | undefined): Node | undefined => {
-    const named = key && ts.isComputedPropertyName(key) ? key.expression : key;
-    return named && (ts.isIdentifier(named) || ts.isStringLiteral(named) || ts.isNoSubstitutionTemplateLiteral(named)) &&
-      allocatingMembers.some(m => m.name === named.text) ? named : undefined;
-  };
-  const findAllocating = (node: Node): void => {
-    const key = ts.isPropertyAccessExpression(node) ? allocatingKey(node.name)
-      : ts.isElementAccessExpression(node) ? allocatingKey(node.argumentExpression)
-      : ts.isBindingElement(node) && node.parent && ts.isObjectBindingPattern(node.parent)
-        ? allocatingKey(node.propertyName ?? node.name)
-      : ts.isShorthandPropertyAssignment(node) || ts.isPropertyAssignment(node) ? allocatingKey(node.name)
-      : undefined;
-    if (key) allocatingNodes.push(key);
-    node.forEachChild(findAllocating);
-  };
-  if (!carriesContext) findAllocating(source);
   const receiverTargetNodes: Node[] = [];
   const findReceiverTargets = (node: Node): void => {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
@@ -1482,13 +1459,13 @@ export function parseFile(file: string, carriesContext = false,
       staticTypeNodes.length ||
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
-      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || allocatingNodes.length || elementReadNodes.length ||
+      restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length ||
       regexpNodes.length || dispatchNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
-      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? allocatingNodes[0] ?? elementReadNodes[0] ??
+      spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ??
       regexpNodes[0] ?? dispatchNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named imports only. A type import joins the declaration graph; a value
@@ -1562,7 +1539,6 @@ export function parseFile(file: string, carriesContext = false,
         receiverTargets: receiverTargetNodes.map(node => gate.span(node)),
         methodTarget: ([start, end]) => gate.methodTargets.add(`${start}:${end}`),
         libraryNames: libraryNameNodes.map(node => gate.span(node)),
-        allocatingReads: allocatingNodes.map(node => gate.span(node)),
         libraryName: ([start, end]) => gate.libraryNames.add(`${start}:${end}`),
         elementReads: elementReadNodes.map(node => gate.span(node)),
         hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
@@ -1608,7 +1584,7 @@ export function parseFile(file: string, carriesContext = false,
       gate.symbolIdentities = declarations.symbols;
     } catch (error) {
       const at = error instanceof DeclarationError
-        ? [...importNodes, ...memberNodes, ...allocatingNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
+        ? [...importNodes, ...memberNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
             ...classTestNodes, ...classReadNodes, ...contextualNodes, ...assignNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,

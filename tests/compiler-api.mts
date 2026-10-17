@@ -95,6 +95,11 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(first && second && first.length === 1, "the statement's documentation");
   assert.notEqual(first, second, "two reads of jsDoc give different arrays");
   assert.equal(statement.parent, statement.parent, "two reads of a stable member give one value");
+  // A node's stable members are prototype getters, not own keys: a copy of
+  // its own enumerable keys has none of them (COMPILER-API.md, own keys of
+  // host objects).
+  const copy: Record<string, unknown> = { ...statement };
+  assert.ok(!("kind" in copy) && "parent" in copy, "a spread of a node copies parent and no kind");
   closeParser();
   console.log("C4: jsDoc allocates on each read; a stable member does not");
 }

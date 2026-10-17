@@ -466,10 +466,6 @@ export function collectDeclarations(file: string, options: {
    * standard library alone is reported to `libraryName`. */
   libraryNames?: readonly Span[];
   libraryName?: (span: Span) => void;
-  /** The member names the client reads that are spelled as a host member
-   * whose read allocates (`allocatingMembers`): each TypeScript binds to that
-   * member is refused at the read. */
-  allocatingReads?: readonly Span[];
   /** The client's element reads `e[k]`: each whose object TypeScript types
    * as arrays and tuples only and whose key as `number`, no literal, is
    * reported to `hostElement`, and the intrinsics, among them
@@ -1301,84 +1297,6 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         throw new DeclarationError(binding.span, error instanceof Error ? error.message : String(error));
-      }
-    }
-    // A read of a host member whose read allocates is refused at the read
-    // (COMPILER-API.md, reading rule 1), the member found as the property of
-    // the object's type TypeScript binds it to, declared as reviewed.
-    // The key of a member read in each form (`allocatingReads`); a key that
-    // reads no member (an object literal's own field) is none.
-    const keyAt = (span: Span): Node | null => {
-      const visit = (node: Node): Node | null => {
-        if (node.end < span[1] || node.pos > span[0]) return null;
-        if ((ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
-            node.getStart(client) === span[0] && node.end === span[1]) return node;
-        return node.forEachChild(visit) ?? null;
-      };
-      return visit(client);
-    };
-    // Whether a literal is an assignment pattern: the target of `=`, of a
-    // `for…of` or `for…in` head, or a part of one.
-    const assignedPattern = (node: Node): boolean => {
-      const parent = node.parent;
-      if (!parent) return false;
-      if (ts.isBinaryExpression(parent)) return parent.left === node && parent.operatorToken.kind === ts.SyntaxKind.EqualsToken;
-      if (ts.isForOfStatement(parent) || ts.isForInStatement(parent)) return parent.initializer === node;
-      if (ts.isParenthesizedExpression(parent) || ts.isArrayLiteralExpression(parent) || ts.isSpreadElement(parent) ||
-          ts.isObjectLiteralExpression(parent) || ts.isSpreadAssignment(parent) ||
-          (ts.isPropertyAssignment(parent) && parent.initializer === node) ||
-          (ts.isShorthandPropertyAssignment(parent) && parent.objectAssignmentInitializer === node))
-        return assignedPattern(parent);
-      return false;
-    };
-    // The type an object assignment pattern destructures: the right side of
-    // its `=`, or, nested, the member of its parent pattern's type. Null
-    // where it destructures an array's element or a loop's.
-    const patternSource = (literal: Node): Type | null => {
-      const parent = literal.parent;
-      if (!parent) return null;
-      if (ts.isParenthesizedExpression(parent)) return patternSource(parent);
-      if (ts.isBinaryExpression(parent) && parent.left === literal) return checker.getTypeAtLocation(parent.right) ?? null;
-      if (ts.isPropertyAssignment(parent) && parent.initializer === literal && parent.parent &&
-          (ts.isIdentifier(parent.name) || ts.isStringLiteral(parent.name))) {
-        const outer = patternSource(parent.parent);
-        const member = outer ? checker.getPropertyOfType(outer, parent.name.text) : undefined;
-        return member ? checker.getTypeOfSymbol(member) ?? null : null;
-      }
-      return null;
-    };
-    for (const span of options.allocatingReads ?? []) {
-      const key = keyAt(span);
-      if (!key || !(ts.isIdentifier(key) || ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key))) continue;
-      const holder = key.parent && ts.isComputedPropertyName(key.parent) ? key.parent : key;
-      const form = holder.parent;
-      let object: Type | null | undefined;
-      if (form && ts.isPropertyAccessExpression(form) && form.name === holder) object = checker.getTypeAtLocation(form.expression);
-      else if (form && ts.isElementAccessExpression(form) && form.argumentExpression === holder)
-        object = checker.getTypeAtLocation(form.expression);
-      else if (form && ts.isBindingElement(form) && form.parent && ts.isObjectBindingPattern(form.parent))
-        object = checker.getTypeAtLocation(form.parent);
-      else if (form && (ts.isPropertyAssignment(form) || ts.isShorthandPropertyAssignment(form)) && form.name === holder &&
-          form.parent && ts.isObjectLiteralExpression(form.parent) && assignedPattern(form.parent)) {
-        object = patternSource(form.parent);
-        if (!object) throw new DeclarationError(span, `the member ${key.text} an assignment pattern reads here is of a type ` +
-          "the declaration reader does not find (an array's element, a loop's value): it may be a host member whose read allocates");
-      }
-      else continue;
-      // An optional chain reads the member where the object is present.
-      const present = object ? checker.getNonNullableType(object) ?? object : undefined;
-      const property = present ? checker.getPropertyOfType(present, key.text) : undefined;
-      for (const handle of property?.declarations ?? []) {
-        const declaration = handle.resolve();
-        const owner = declaration?.parent;
-        if (!declaration || !owner || !ts.isInterfaceDeclaration(owner) ||
-            !isHostFile(declaration.getSourceFile().fileName)) continue;
-        const entry = allocatingMembers.find(m => m.owner === owner.name.text && m.name === key.text);
-        if (!entry) continue;
-        if (declaration.getText(declaration.getSourceFile()).trim() !== entry.text)
-          throw new DeclarationError(span, `${entry.owner}.${entry.name} is not declared as reviewed: ${entry.text}`);
-        throw new DeclarationError(span, `${entry.owner}.${entry.name} builds a fresh array on each read: ` +
-          "a host member whose read allocates is refused at its read (COMPILER-API.md, reading rule 1)");
       }
     }
     // A call of a namespace member passes the namespace object as the
@@ -3306,8 +3224,23 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // A host type's members are readonly views, whether or not they are
     // declared `readonly` (COMPILER-API.md, reading rule 1): a client write
     // to one is refused, and a test of one narrows as an invariant field's.
-    if (context.hostType(node) && expression.k === "object")
-      expression = { ...expression, fields: expression.fields.map(f => ({ ...f, readonly: true })) };
+    // A member whose read allocates is no member of the host type's shape
+    // (`allocatingMembers`, declared as reviewed): every read of it, in any
+    // form, is a read of a member the type does not state, and no structural
+    // type requiring it admits a value of the host type.
+    if (context.hostType(node) && expression.k === "object") {
+      const omitted = ts.isInterfaceDeclaration(node)
+        ? allocatingMembers.filter(m => m.owner === node.name.text) : [];
+      for (const entry of omitted) {
+        const declared = parts.flatMap(part => ts.isInterfaceDeclaration(part) ? part.members : [])
+          .filter(m => { const name = nameOf(m); return !!name && ts.isIdentifier(name) && name.text === entry.name; });
+        if (declared.length !== 1 || declared.some(m => m.getText(m.getSourceFile()).trim() !== entry.text))
+          throw Error(`${entry.owner}.${entry.name} is not declared as reviewed: ${entry.text}`);
+      }
+      expression = { ...expression, fields: expression.fields
+        .filter(f => !omitted.some(m => m.name === f.name))
+        .map(f => ({ ...f, readonly: true })) };
+    }
     // Native promise observation uses PromiseResolve's constructor equality
     // fast path. Its standard constructor and methods are inherited, and a
     // promise owns none of those keys. The ordinary prototype/own-key

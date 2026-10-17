@@ -35,7 +35,9 @@ export const hostEnums: readonly { name: string; file: string }[] = [
 /** The members of host types whose read allocates (reading rule 1), each
  * with the interface declaring it and the declaration text it was reviewed
  * against: `jsDoc` builds a fresh array on each read
- * (`node.generated.js:221`), so it is refused at its read. */
+ * (`node.generated.js:221`). The declaration reader omits each from its host
+ * type's shape, so every read of it is a read of a member the type does not
+ * state. */
 export const allocatingMembers: readonly { owner: string; name: string; text: string }[] = [
   { owner: "Node", name: "jsDoc", text: "readonly jsDoc?: readonly Node[] | undefined;" },
 ];

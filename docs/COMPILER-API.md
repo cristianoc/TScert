@@ -181,11 +181,14 @@ are ordinary types.
    constructor, or a getter decoding the immutable buffer and returning a
    primitive or a memoized object) is a **readonly view**, whether or not
    its declaration is `readonly`, so a client write to it is refused. The
-   contract lists the members whose read allocates (`jsDoc`); such a member
-   is refused at its read, in every form that reads a member, chosen by the
-   member TypeScript binds the read to: `o.m`, `o?.m`, `o["m"]`, a binding
-   or assignment pattern's key, nested and with defaults. `"m" in o` reads
-   no member's value and runs no getter.
+   contract lists the members whose read allocates (`jsDoc`), each a
+   correction that omits it from its host type's shape. Every form that
+   reads it is then a read of a member the type does not state, refused by
+   ordinary typing whatever its key's spelling: `o.m`, `o?.m`, `o["m"]`, a
+   key a constant holds or a template computes, a pattern's key. A
+   structural type stating the member, `{ m?: T }` included, admits no value
+   of the host type, since width subtyping into an optional field is
+   refused. `"m" in o` reads no member's value and runs no getter.
 2. **`any` states nothing.** A member declared `any` is an optional member
    of type `unknown`. A brand is such a member; reading one gives
    `undefined`.
@@ -246,6 +249,23 @@ objects have those prototypes, and it is preserved:
   language or refused on a host value;
 - by the reading of stable members below, every type a host value can be
   given keeps its stable members unwritable.
+
+**Open: the own keys of host objects.** The model holds a record type's
+members as the object's own fields. A node's stable members are getters on
+its prototype, and its own enumerable keys are the class's data fields
+(`parent`, `view`, `index`, `_byteIndex`). So every operation that reads own
+keys answers otherwise for a host object than the model does: under Node,
+`{ ...node }` has `parent` and no `kind` (`tests/compiler-api.mts`). A
+stand-in host `Node` (`pipeline/host-fixture/`) shows the consequence: with
+`const { ...rest } = n`, `rest.kind` verifies at `number` and is `undefined`
+under Node. The forms are an object spread or rest of a host value,
+`Object.keys`, `Object.values`, `Object.entries` and `for…in` over one,
+`Object.assign` from one, `Object.hasOwn` and `hasOwnProperty`. Each must be
+refused where its operand's type may hold a host value, or read with the
+host value's own keys stated, and where a host value may be held at
+`unknown` or a record type the refusal reaches those types as well. The
+choice is the design's; the foreign-array question below is the same one
+for node lists.
 
 ### Stable members as readonly views
 

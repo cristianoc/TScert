@@ -1,0 +1,13 @@
+{
+  // A project reading `../host-fixture/`, a stand-in for the host package
+  // whose `Node` reaches no node list: the `*host-fixture*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": [],
+    "paths": { "@fixture/host": ["../host-fixture/ast.d.ts"] }
+  },
+  "include": ["../examples/*host-fixture*.ts"]
+}
