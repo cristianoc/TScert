@@ -20,9 +20,10 @@ let promise_of = function
   | Object [("asserts",Object [("param",p)])] -> Asserts (natural p)
   | _ -> unsupported "unknown callable promise"
 let effect_of j = match j with
-  | Object fields when List.sort String.compare (List.map fst fields) = ["footprint";"promise"] ->
+  | Object fields when List.sort String.compare (List.map fst fields) = ["footprint";"fresh";"promise";"receiverStore"] ->
     {footprint=footprint_of (field "footprint" j);
-     promise=(match field "promise" j with Null -> None | p -> Some (promise_of p))}
+     promise=(match field "promise" j with Null -> None | p -> Some (promise_of p));
+     fresh=boolean (field "fresh" j); receiver_store=boolean (field "receiverStore" j)}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None
@@ -711,8 +712,26 @@ let iteration_footprint (t:ty) : footprint option =
       | Atoms [Shape {calls=(_ :: _ as steps);_}] -> Some (join_footprint s.call_effect.footprint (join_calls steps))
       | _ -> None)) (Some empty_footprint) calls
   | _ -> None
-let rec footprint_expr ~callable ~iteration ~readable (e:expr) : footprint option =
-  let go = footprint_expr ~callable ~iteration ~readable in
+(* The footprint of a call at every signature its callee may take: each
+   signature's, or, where it excepts its receiver's store and the receiver's
+   store is not one the run allocated, the one letting everything change. *)
+let effects_footprint ~receiver_fresh (effects:call_effect list) =
+  List.fold_left (fun acc (e:call_effect) -> join_footprint acc
+    (if e.receiver_store && not receiver_fresh then top_footprint else e.footprint)) empty_footprint effects
+(* A value whose array store the run allocated: a constant holding one, or a
+   call every signature of whose callee states a fresh result. Lean's facts
+   follow slots of the graph, which a constant's binding is. *)
+let fresh_expr ~callable ~fresh (e:expr) = match e.node with
+  | Id name -> List.mem name fresh
+  | Call (callee,_,_,_,_) | Invoke (callee,_,_,_) ->
+    (match callable callee with
+     | Some (_ :: _ as effects) -> List.for_all (fun (e:call_effect) -> e.fresh) effects
+     | _ -> false)
+  | _ -> false
+let rec footprint_expr ?(fresh=[]) ~callable ~iteration ~readable (e:expr) : footprint option =
+  let go = footprint_expr ~fresh ~callable ~iteration ~readable in
+  let calls ?(receiver_fresh=false) callee =
+    Option.map (effects_footprint ~receiver_fresh) (callable callee) in
   let all es = List.fold_left (fun acc e -> join_bound acc (go e)) (Some empty_footprint) es in
   match e.node with
   | Id name -> if List.mem name readable then Some empty_footprint else None
@@ -738,37 +757,42 @@ let rec footprint_expr ~callable ~iteration ~readable (e:expr) : footprint optio
   (* A spread argument reads its operand's store, as an array literal's
      spread part does. *)
   | Call (callee,receiver,args,_,_) ->
-    join_bound (all (callee :: Option.to_list receiver @ args)) (callable callee)
+    join_bound (all (callee :: Option.to_list receiver @ args)) (calls callee)
   (* A method call reads the member off its receiver (through a primitive's
-     prototype, for a primitive) and invokes it. *)
+     prototype, for a primitive) and invokes it: a member excepting its
+     receiver's store is within its footprint where the receiver is a
+     constant holding a store the run allocated. *)
   | Invoke ({node=Read (o,_);_} as callee,args,_,_) ->
-    join_bound (all (o :: args)) (callable callee)
+    let receiver_fresh = match o.node with Id name -> List.mem name fresh | _ -> false in
+    join_bound (all (o :: args)) (calls ~receiver_fresh callee)
   (* A construction changes at most what every construct signature its
      callee may take states. *)
   | New (callee,_,args,spreads) ->
-    if spreads<>[] then None else join_bound (all (callee :: args)) (callable callee)
+    if spreads<>[] then None else join_bound (all (callee :: args)) (calls callee)
   (* An optional chain runs its receiver once, then its body, which reads
      the receiver as `?.`, where the receiver is present. *)
-  | Optional (r,b) -> join_bound (go r) (footprint_expr ~callable ~iteration ~readable:("?." :: readable) b)
-  | BlockBody body -> footprint_stmts ~callable ~iteration ~readable body
+  | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~callable ~iteration ~readable:("?." :: readable) b)
+  | BlockBody body -> footprint_stmts ~fresh ~callable ~iteration ~readable body
   | Unary _ | HasKey _ | InstanceTest _ | Build _
   | Write _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> None
-and footprint_stmts ~callable ~iteration ~readable = function
+and footprint_stmts ?(fresh=[]) ~callable ~iteration ~readable = function
   | [] -> Some empty_footprint
   | s::rest ->
-    let go = footprint_expr ~callable ~iteration ~readable in
-    let block readable body = footprint_stmts ~callable ~iteration ~readable body in
+    let go = footprint_expr ~fresh ~callable ~iteration ~readable in
+    let block ?(fresh=fresh) readable body = footprint_stmts ~fresh ~callable ~iteration ~readable body in
     let tail () = block readable rest in
     match s.statement with
-    | Declare (_,bindings) ->
-      let rec add readable acc = function
-        | [] -> join_bound acc (block readable rest)
+    | Declare (mutable_,bindings) ->
+      let rec add fresh readable acc = function
+        | [] -> join_bound acc (block ~fresh readable rest)
         | (name,_,init)::more ->
-          add (name::readable) (join_bound acc (footprint_expr ~callable ~iteration ~readable init)) more in
-      add readable (Some empty_footprint) bindings
+          let fresh = if not mutable_ && fresh_expr ~callable ~fresh init then name :: fresh
+            else List.filter ((<>) name) fresh in
+          add fresh (name::readable) (join_bound acc (footprint_expr ~fresh ~callable ~iteration ~readable init)) more in
+      add fresh readable (Some empty_footprint) bindings
     | Return e | Effect e | Throw e -> join_bound (go e) (tail ())
     | If (c,a,b) -> join_bound (go c) (join_bound (block readable a) (join_bound (block readable b) (tail ())))
     | Block (_,body) -> join_bound (block readable body) (tail ())
@@ -780,11 +804,28 @@ and footprint_stmts ~callable ~iteration ~readable = function
     | Destructure (target,d,init) when pattern_reads target ->
       List.fold_left join_bound (go init)
         (Option.to_list (Option.map go d) @ List.map go (pattern_defaults target) @
-         [footprint_stmts ~callable ~iteration ~readable:(pattern_names target @ readable) rest])
+         [footprint_stmts ~fresh:(List.filter (fun n -> not (List.mem n (pattern_names target))) fresh)
+            ~callable ~iteration ~readable:(pattern_names target @ readable) rest])
     | ForOf (name,_,iterate,iterable,body) ->
       join_bound (go iterable) (join_bound (iteration iterate)
-        (join_bound (block (name::readable) body) (tail ())))
+        (join_bound (block ~fresh:(List.filter ((<>) name) fresh) (name::readable) body) (tail ())))
     | Destructure _ | Try _ | Closing _ -> None
+
+(* Whether every normal return of a body returns a value whose array store
+   the run allocated: an expression body that is one, or a block of
+   declarations and expression statements ending in a `return` of one. *)
+let fresh_result ~callable (body:expr) =
+  let rec returns fresh = function
+    | [{statement=Return e;_}] -> fresh_expr ~callable ~fresh e
+    | {statement=Declare (mutable_,bindings);_} :: rest ->
+      returns (List.fold_left (fun fresh (name,_,init) ->
+        if not mutable_ && fresh_expr ~callable ~fresh init then name :: fresh
+        else List.filter ((<>) name) fresh) fresh bindings) rest
+    | {statement=Effect _;_} :: rest -> returns fresh rest
+    | _ -> false in
+  match body.node with
+  | BlockBody stmts -> returns [] stmts
+  | _ -> fresh_expr ~callable ~fresh:[] body
 
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow | "rem" -> Rem

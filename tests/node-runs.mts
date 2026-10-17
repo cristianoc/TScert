@@ -38,6 +38,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     ["map-stable-set", `distinct([["a", "b", "a"], []])`, "[2,0]"],
     ["map-stable-spread", "padded([[1], [2, 3]])", "[[0,1,0],[0,2,3,0]]"],
     ["map-stable-named-callback", `[escapedAll(["a&b", "c"])]`, '["a&amp;b,c"]'],
+    ["map-stable-fresh-store", `heads(["a   b", " c "])`, '["a","c"]'],
+    ["map-stable-fresh-store", `lasts(["a,b", "c"])`, '["b","c"]'],
+    ["map-stable-fresh-store", `backwards(["a,bc", "c"])`, '["2,1","1"]'],
+    ["map-stable-fresh-store", `sizes(["a   b", ""])`, "[2,0]"],
     ["map-stable-spread-call", "peaks([[1, 5], []])", "[5,0]"],
     ["map-stable-spread-call", "boxedPeaks([{ values: [3, 200] }])", "[3]"],
     ["map-stable-spread", `matchCounts(["aba", "b"])`, "[2,0]"],
@@ -81,6 +85,15 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "set-string-construction: three letters, an \"a\" and a 1");
   assert.equal(runExample("invalid-set-string-at-number", `typeof [...digits("12")][0]`), "string",
     "invalid-set-string-at-number: the set at number holds strings");
+  assert.equal(runExample("flat-map-union-returns", `shown(new Map([["Lean", "x"]]))`), "Lean=x");
+  assert.equal(runExample("invalid-flat-map-union-returns", `JSON.stringify(shown(new Map([["Parts", "ab"]])))`), "[2]",
+    "invalid-flat-map-union-returns: the elements are numbers");
+  for (const file of ["invalid-map-fresh-alias", "invalid-map-fresh-join", "invalid-map-fresh-reassigned",
+    "invalid-map-fresh-parameter"])
+    assert.equal(runExample(file, `Object.keys(drained(["a", "b", "c"])).length`), 2,
+      `${file}: the result has three positions, two present`);
+  assert.equal(runExample("invalid-map-fresh-handler", `JSON.stringify(firsts(["ab", "c"]))`), '["a",""]',
+    "invalid-map-fresh-handler: no throw, a dense result");
   assert.equal(runExample("invalid-map-spread-call-pop", "Object.keys(totals([[9]])).length"), 2,
     "invalid-map-spread-call-pop: the result has three positions, two present");
   assert.equal(runExample("invalid-map-spread-pop", "Object.keys(drained([1, 2, 3])).length"), 2,

@@ -5,6 +5,12 @@ ordinary evidence; this layer establishes the additional heap postcondition. -/
 namespace Verification.ExpressionEffects
 open ProgramTyping ProgramCertificates PositiveGraphs PositiveRules HeapObservations
 
+/-- The receiver of an invocation, and `undefined` for any other term: what a
+selected signature's postcondition is relative to. -/
+def receiverOf : Tm → Tm
+  | .invoke _ r _ => r
+  | _ => .undef
+
 /-- Operands already evaluated by source lowering. -/
 def valueTerm : Tm → Bool
   | .var _ => true
@@ -93,7 +99,7 @@ separately. -/
 theorem inspect_safe {T : Fam} {initial : Heap} : ∀ {n W h t},
     initial.IsPrefix h → Purity.inspectTerm t = true → WorldAdm W → HeapOk n W h →
     Safe Ξ T n W h t →
-    SafePost Ξ T ((CallEffects.Effect.ofFootprint .empty).post initial) n W h t := by
+    SafePost Ξ T (fun h' _ => Footprints.Closed.empty.Holds initial h') n W h t := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -114,7 +120,7 @@ theorem sound {G : NormalGraph ι} {Γ t A ρ n W h}
     (hc : check G Γ t = true) (hscope : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : Safe (excOf G) (meaning G A) n W h (instantiate 0 ρ t)) :
-    SafePost (excOf G) (meaning G A) ((CallEffects.Effect.ofFootprint .empty).post h)
+    SafePost (excOf G) (meaning G A) (fun h' _ => Footprints.Closed.empty.Holds h h')
       n W h (instantiate 0 ρ t) :=
   inspect_safe (List.prefix_refl h) (inspect_instantiate (d := 0) hc hscope he) hw hh hs
 
@@ -235,24 +241,39 @@ def spreadOperands (k u : Nat) (flags : List Bool) : List (Sequent ι) → Bool
       (flags.zip (jas.drop (k + u))).all fun q => if q.1 then readOperand q.2.term else valueTerm q.2.term
   | _ => false
 
-/-- Invocation and construction consume the selected signature's effect:
-within the bound when the signature's footprint is. All actual evaluation has already been
+/-- The effect of the signature a call's evidence selects: an invocation's, a
+variadic invocation's or a construction's, through subsumption. -/
+def selectedEffect : Evidence ι → Option CallEffects.Effect
+  | .node _ (.app e) _ => some e
+  | .node _ (.callRest e _ _ _ _) _ => some e
+  | .node _ (.construct e) _ => some e
+  | .node _ (.sub _) [p] => selectedEffect p
+  | _ => none
+
+/-- A selected call's operands. All actual evaluation has already been
 lowered to earlier graph nodes; omitted arguments are the ordinary evidence's
-explicit `undefined` premises. Subsumption may retain the postcondition while
-changing the result type. -/
-def selectedCallWithin (Φ : Footprints.Closed) : Evidence ι → Bool
-  | .node _ (.app e) ps =>
-      e.footprint.le Φ && ps.all fun p => valueTerm (claim p).term &&
-        checkScope (claim p).context.length (claim p).term
-  | .node _ (.callRest e k u flags _) ps =>
-      e.footprint.le Φ && ps.all (fun p => checkScope (claim p).context.length (claim p).term) &&
+explicit `undefined` premises; a variadic call's spreads read their operands'
+stores in place. Subsumption may retain the postcondition while changing the
+result type. -/
+def selectedOperands : Evidence ι → Bool
+  | .node _ (.app _) ps =>
+      ps.all fun p => valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term
+  | .node _ (.callRest _ k u flags _) ps =>
+      ps.all (fun p => checkScope (claim p).context.length (claim p).term) &&
         (ps.all (fun p => valueTerm (claim p).term) ||
           flags.any id && spreadOperands k u flags (ps.map claim))
-  | .node _ (.construct e) ps =>
-      e.footprint.le Φ && ps.all fun p => valueTerm (claim p).term &&
-        checkScope (claim p).context.length (claim p).term
-  | .node _ (.sub _) [p] => selectedCallWithin Φ p
+  | .node _ (.construct _) ps =>
+      ps.all fun p => valueTerm (claim p).term && checkScope (claim p).context.length (claim p).term
+  | .node _ (.sub _) [p] => selectedOperands p
   | _ => false
+
+/-- Invocation and construction consume the selected signature's effect:
+within the bound when the signature's footprint is, and, for a signature
+excepting its receiver's store, when the bound lets everything change. -/
+def selectedCallWithin (Φ : Footprints.Closed) (e : Evidence ι) : Bool :=
+  selectedOperands e && match selectedEffect e with
+    | some eff => eff.footprint.le Φ && (!eff.receiverStore || Φ == .top)
+    | none => false
 
 theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {Γ : List (Ty ι)}
@@ -274,7 +295,7 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (e.post h)
+    SafePost (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a call with a callee and a receiver premise.
@@ -337,7 +358,7 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
         (meaning_adm G jr.type) hp hr hrval hvals ha hw hh
       rw [CallEffects.Effect.result_plain hplain] at hs
-      simpa [CallEffects.Arrow.map, CallEffects.Contract.map, htf, htr,
+      simpa [CallEffects.Arrow.map, CallEffects.Contract.map, htf, htr, receiverOf,
         instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] using hs
     · contradiction
 
@@ -351,7 +372,7 @@ private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (e.post h)
+    SafePost (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a construction with a constructor premise.
@@ -409,7 +430,7 @@ private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hv'
           simp [hundef p hp, instantiate])
         (by rw [← hsplit]; exact hArgs) hw hh
-      simpa [htf, instantiate, instantiateArgs_eq_map] using hs
+      simpa [htf, receiverOf, instantiate, instantiateArgs_eq_map] using hs
     · contradiction
 
 theorem map_spread_false : ∀ (flags : List Bool) (qs : List (Sequent ι)), (∀ b ∈ flags, b = false) →
@@ -560,7 +581,7 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (e.post h)
+    SafePost (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   cases t <;> try exact (hl : False).elim
@@ -666,7 +687,7 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
       (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, List.map_map, Function.comp_def] using hp)
       hr hrval hvals hacc hw hh
     rw [CallEffects.Effect.result_plain hplain] at hs
-    simpa [htf, htr, hargs, vals, instantiate, instantiateArgs_eq_map, List.map_map,
+    simpa [htf, htr, hargs, vals, receiverOf, instantiate, instantiateArgs_eq_map, List.map_map,
       Function.comp_def] using hs
 
 theorem readOperand_instantiate {G : NormalGraph ι} {Γ t ρ n W}
@@ -694,7 +715,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (hsc : ∀ p ∈ ps, checkScope p.context.length p.term = true)
     (hops : spreadOperands k u flags ps = true ∨ (ps.all fun p => valueTerm p.term) = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (e.post h)
+    SafePost (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   cases t <;> try exact (hl : False).elim
@@ -852,23 +873,25 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [CallEffects.Effect.result_plain hplain] at hs
     exact hs
 
-theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : PositiveCertificates.InstanceImageCheck G} {Φ : Footprints.Closed} (e : Evidence ι)
+/-- **A selected call meets its signature's postcondition**, at its receiver,
+from the heap it starts in. -/
+theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
     {codes : CodeEntry ι → Bool} (ht : checkTreeUsing G images e codes = true)
-    (hp : selectedCallWithin Φ e = true) (hcodes : CodesSound G codes)
+    (hp : selectedOperands e = true) {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
+    (hcodes : CodesSound G codes)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G (claim e).type) (fun h' _ => Φ.Holds h h')
+    SafePost (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) h)
       n W h (instantiate 0 ρ (claim e).term) := by
   cases e with
   | node j r ps =>
     simp only [claim] at he ⊢
     simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
-    cases r <;> try simp only [selectedCallWithin] at hp <;> try contradiction
+    cases r <;> try simp only [selectedEffect, reduceCtorEq] at hsel
     case app effect =>
-      simp only [Bool.and_eq_true] at hp
-      obtain ⟨hle, hp⟩ := hp
-      apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono hle hq)
+      cases hsel
+      simp only [selectedOperands] at hp
       apply call_local_sound ht.1 _ _ he hw hh
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
@@ -877,9 +900,9 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
     case callRest effect k u flags P =>
-      simp only [Bool.and_eq_true, Bool.or_eq_true] at hp
-      obtain ⟨⟨hle, hscope⟩, hp⟩ := hp
-      apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono hle hq)
+      cases hsel
+      simp only [selectedOperands, Bool.and_eq_true, Bool.or_eq_true] at hp
+      obtain ⟨hscope, hp⟩ := hp
       have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
         intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
@@ -903,9 +926,8 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
         exact ⟨List.all_eq_true.mp hvals e heq, List.all_eq_true.mp hscope e heq⟩
       · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inl (by simpa using hops)) he hw hh
     case construct effect =>
-      simp only [Bool.and_eq_true] at hp
-      obtain ⟨hle, hp⟩ := hp
-      apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono hle hq)
+      cases hsel
+      simp only [selectedOperands] at hp
       apply construct_local_sound ht.1 _ _ he hw hh
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
@@ -915,16 +937,39 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
         exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
     case sub proof =>
       cases ps with
-      | nil => contradiction
+      | nil => simp [selectedEffect] at hsel
       | cons child rest =>
         cases rest with
-        | cons _ _ => contradiction
+        | cons _ _ => simp [selectedEffect] at hsel
         | nil =>
+          simp only [selectedEffect] at hsel
+          simp only [selectedOperands] at hp
           obtain ⟨hctx,hterm,hsub⟩ := ht.1
-          have ih := selectedCall_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hcodes
+          have ih := selected_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hsel hcodes
             (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh
-          apply consequence (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv)
-            (fun _ _ hp => hp) (by rw [hterm] at ih; exact ih)
+          rw [hterm] at ih
+          exact consequence (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv)
+            (fun _ _ hp => hp) ih
 termination_by sizeOf e
+
+theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {Φ : Footprints.Closed} (e : Evidence ι)
+    {codes : CodeEntry ι → Bool} (ht : checkTreeUsing G images e codes = true)
+    (hp : selectedCallWithin Φ e = true) (hcodes : CodesSound G codes)
+    {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G (claim e).type) (fun h' _ => Φ.Holds h h')
+      n W h (instantiate 0 ρ (claim e).term) := by
+  simp only [selectedCallWithin, Bool.and_eq_true] at hp
+  obtain ⟨hops, hp⟩ := hp
+  split at hp
+  · rename_i eff hsel
+    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq] at hp
+    obtain ⟨hle, hr⟩ := hp
+    apply HeapObservations.weaken (fun h' v hq => ?_) (selected_sound e ht hops hsel hcodes he hw hh)
+    rcases hr with hr | hr
+    · exact (CallEffects.Effect.within_holds hq.1 hr).mono hle
+    · rw [hr]; exact CallEffects.Effect.within_top hq.1
+  · cases hp
 
 end Verification.ExpressionEffects

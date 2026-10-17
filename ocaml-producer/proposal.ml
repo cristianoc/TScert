@@ -78,12 +78,11 @@ let declaration_footprint declarations values names (claim:function_claim) =
     match List.filter_map (fun (x:expression) -> if x.pos = callee.pos then Some x.type_ else None)
             claim.expressions with
     | [] -> None
-    | types -> List.fold_left (fun acc t -> join_bound acc (match Type_queries.declared_head declarations [] t with
-      | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] | Atoms [Ctors (calls,_)]
+    | types -> List.fold_left (fun acc t -> match acc,Type_queries.declared_head declarations [] t with
+      | Some effects,(Atoms [Shape {calls;fields=[];indexes=[];elements=None}] | Atoms [Ctors (calls,_)])
         when calls <> [] && List.for_all applicable calls ->
-        Some (List.fold_left (fun acc (s:signature) -> join_footprint acc s.call_effect.footprint)
-          empty_footprint calls)
-      | _ -> None)) (Some empty_footprint) types in
+        Some (effects @ List.map (fun (s:signature) -> s.call_effect) calls)
+      | _ -> None) (Some []) types in
   let readable = List.map fst g.params @ names in
   let iteration name = Option.bind (List.assoc_opt name values) iteration_footprint in
   Option.value (footprint_stmts ~callable ~iteration ~readable g.body) ~default:top_footprint

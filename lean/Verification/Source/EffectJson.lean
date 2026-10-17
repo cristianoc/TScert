@@ -3,8 +3,9 @@ import Verification.Semantics.CallEffects
 
 /-! The one JSON form of a call signature's effect, read and written by the
 Fragment's declaration document, the claims document and the evidence: a
-closed footprint, `{"value", "store"}`, and a promise, `null` or
-`{"guards": {"param": p}}` or `{"asserts": {"param": p}}`. Each decoder
+closed footprint, `{"value", "store"}`, a promise, `null` or
+`{"guards": {"param": p}}` or `{"asserts": {"param": p}}`, and the Booleans
+`fresh` and `receiverStore`. Each decoder
 re-encodes what it read and refuses a document that differs, so a field
 outside these, or a `grow` on `value`, is refused. -/
 namespace Verification.EffectJson
@@ -43,17 +44,20 @@ instance : FromJson TypePromise := ⟨fun j => do
   if toJson p != j then throw "a promise has exactly one field, and its parameter"
   pure p⟩
 
-/-- An effect is its footprint and its promise, `null` when there is none. -/
+/-- An effect is its footprint, its promise, `null` when there is none,
+whether its result's array store is fresh, and whether its footprint excepts
+its receiver's store. -/
 instance : ToJson Effect := ⟨fun e => Json.mkObj [("footprint", toJson e.footprint),
-  ("promise", match e.promise with | some p => toJson p | none => Json.null)]⟩
+  ("promise", match e.promise with | some p => toJson p | none => Json.null),
+  ("fresh", toJson e.fresh), ("receiverStore", toJson e.receiverStore)]⟩
 
 instance : FromJson Effect := ⟨fun j => do
   let footprint ← j.getObjValAs? Footprints.Closed "footprint"
   let promise ← match ← j.getObjVal? "promise" with
     | .null => pure none
     | p => some <$> fromJson? p
-  let e : Effect := ⟨footprint, promise⟩
-  if toJson e != j then throw "an effect has exactly the fields footprint and promise"
+  let e : Effect := ⟨footprint, promise, ← j.getObjValAs? Bool "fresh", ← j.getObjValAs? Bool "receiverStore"⟩
+  if toJson e != j then throw "an effect has exactly the fields footprint, promise, fresh and receiverStore"
   pure e⟩
 
 end Verification.EffectJson

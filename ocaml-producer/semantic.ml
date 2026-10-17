@@ -20,18 +20,25 @@ let footprint_le a b =
    returns `undefined`, leaving it there. *)
 type promise = Guards of int | Asserts of int
 (* What a signature guarantees beyond its contract (Lean's
-   `CallEffects.Effect`): its footprint, and an optional promise. *)
-type call_effect = { footprint: footprint; promise: promise option }
+   `CallEffects.Effect`): its footprint, an optional promise, whether a
+   normal return's value has an array store the call allocated, and whether
+   the footprint excepts the receiver's array store, which the call may
+   change arbitrarily. *)
+type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool }
+let footprint_effect footprint = {footprint;promise=None;fresh=false;receiver_store=false}
 (* An ordinary arrow's: every location may change. *)
-let ordinary_effect = {footprint=top_footprint;promise=None}
+let ordinary_effect = footprint_effect top_footprint
 (* Heap preservation: no location may change. *)
-let empty_effect = {footprint=empty_footprint;promise=None}
-let promise_effect promise = {footprint=top_footprint;promise=Some promise}
+let empty_effect = footprint_effect empty_footprint
+let promise_effect promise = {(footprint_effect top_footprint) with promise=Some promise}
 
 (* Whether a signature's result is the call's: one without a promise. *)
 let plain_effect e = e.promise = None
-(* A smaller footprint and the same promise (Lean's `Effect.covers`). *)
-let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.promise
+(* A smaller footprint and the same promise, a fresh result where the other
+   states one, and the receiver's store excepted only where the other excepts
+   it or lets everything change (Lean's `Effect.covers`). *)
+let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.promise &&
+  (not b.fresh || a.fresh) && (not a.receiver_store || b.receiver_store || b.footprint = top_footprint)
 
 type array_presence = Dense | Readable | Sparse
 let presence_name = function Dense -> "dense" | Readable -> "readable" | Sparse -> "sparse"

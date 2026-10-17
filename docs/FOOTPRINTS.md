@@ -86,10 +86,11 @@ Runs compose: two runs within $`\Phi`$ are a run within $`\Phi`$ (proved:
 failure; `Closed.Holds.mono`).
 
 **Call effects.** A call or construct signature's effect
-(`CallEffects.Effect`) is a closed footprint and an optional promise, a type
-guard's or an assertion function's. A signature promises that its normal
-return meets the footprint from the heap the call starts in (`PromiseWith`,
-`ConstructPromise`). One signature covers another when its footprint is within
+(`CallEffects.Effect`) is a closed footprint, an optional promise, a type
+guard's or an assertion function's, and two Booleans: a fresh result, and the
+receiver's store excepted ([fresh array storage](#fresh-array-storage)). A
+signature promises that its normal return meets the footprint from the heap
+the call starts in (`PromiseWith`, `ConstructPromise`). One signature covers another when its footprint is within
 the other's and their promises are equal (`Effect.covers`, proved:
 `Effect.covers_sound`); two signatures of one call meet at the meet of their
 footprints (proved: `Closed.holds_meet`). The wire spells a closed footprint
@@ -126,8 +127,9 @@ presence only between callbacks is audited.
 ## The checked callback contract
 
 A body is certified within a closed footprint $`\Phi`$ when every node of its
-graph runs within $`\Phi`$ from the heap the node starts in; the runs compose
-by `Closed.Holds.trans` into the body's (`GraphCode.BoundState`,
+graph runs within $`\Phi`$, from the heap the node starts in, on the
+locations below the heap the body started in; the runs compose by
+`Closed.Holds.trans_on` into the body's (`GraphCode.BoundState`,
 `goto_bounded`). Lean accepts a node (`compositionalChecked`,
 `nodeWithin_of_checked`) when it is:
 
@@ -141,12 +143,15 @@ by `Closed.Holds.trans` into the body's (`GraphCode.BoundState`,
   `write_within`, from `sourceField_sound`). A variable's cell is such a
   field;
 - a **selected call or construction** whose signature's footprint is within
-  $`\Phi`$, its operands values (`selectedCallWithin`; proved:
-  `selectedCall_sound`, through `CallEffects.call_safe` and
+  $`\Phi`$, its operands values (`selectedWithinAt`; proved:
+  `ExpressionEffects.selected_sound`, through `CallEffects.call_safe` and
   `CallEffects.construct_safe`): a fixed call, a variadic call and a
   construction, each at the signature the evidence selects; a variadic
   call's spreads read their stores in the heap the call starts in
-  (`spread_values_post`, `spread_head_post`).
+  (`spread_values_post`, `spread_head_post`). A signature excepting its
+  receiver's store is within $`\Phi`$ where the receiver is a slot holding a
+  fresh store, or $`\Phi`$ lets everything change
+  (`Effect.within_below`).
 
 A node with an exceptional handler is refused: a handler could turn a
 throwing call into a normal return after mutation the bound does not track.
@@ -176,6 +181,10 @@ collections' and dates' mutators (each at most `{value: any, store: keep}`);
 outside it are `pop`, `shift`, `reverse` and every native stated
 unrestricted. `forEach`, `every`, `some`, `filter`, `find`, `findIndex` and
 `flatMap` have one signature per closed footprint, each within its callback's.
+`pop`, `shift` and `reverse` state `{value: any, store: keep}` with their
+receiver's store excepted, so outside a fresh receiver they bound a call by
+the footprint letting everything change; `filter`, `map`, `flatMap`,
+`slice` and a string's `split` state a fresh result.
 `map` has five signatures: one per footprint `ε` of the stable
 set, which takes a dense receiver and a callback within `ε`, gives a dense
 result and states `ε` as its own; and an unrestricted one, which takes any
@@ -183,6 +192,40 @@ receiver and any callback, gives a result that may hold holes and states no
 footprint. So a callback changing stores beyond `grow`, such as one within
 `{value: keep, store: any}`, or a sparse receiver gives a `map` call with no
 footprint.
+
+## Fresh array storage
+
+A destructive operation on a store allocated after a run began changes no
+store the run's entry heap held. `GraphCode` tracks, at each node, the slots
+of the node's entry holding a value whose array store lies at or above the
+entry heap's length (`FreshAt`, `FreshOk`). The fact reads no heap: an
+object's fields are fixed at its allocation.
+
+- **Facts along edges.** A destination's facts follow from the source's
+  through the edge's slot map, and slot 0 of a binding continuation holds a
+  fresh value where the node's value is fresh: a slot copy of a fresh slot,
+  or a call at a selected signature stating a fresh result (`edgesFresh`,
+  `varFresh`, `callFresh`; proved: `edgesFresh_sound`). The entry has none.
+  Lean infers the facts (`inferFresh`, untrusted) and checks every edge; a
+  join keeps a fact where every incoming edge establishes it, and a slot a
+  write changes is a cell, which holds no fact.
+- **Fresh-receiver calls.** A call at a signature excepting its receiver's
+  store, at a receiver holding a fresh store, is within the signature's
+  footprint on the locations below the entry heap's length
+  (`Closed.HoldsOn.below_fresh`); runs compose with the body's by
+  `Closed.Holds.trans_on`.
+- **Fresh results.** Code claiming a fresh result is checked node by node,
+  whatever its footprint, and each return returns a fresh value; its
+  postcondition then states it (`effectChecked`, `codeChecked_sound`). A
+  declaration states no fresh result.
+
+`pop`, `shift` and `reverse` change only their receiver's store and element
+contents, and `filter`, `map`, `flatMap`, `slice` and `split` allocate their
+result's store (audited: [native footprints](SOURCE-CONTRACTS.md#native-footprints)).
+Controls (`map-stable-fresh-store`'s negatives and `pipeline/test.mts`): an
+alias of the mapped array, a join of a fresh and an old array, a reassigned
+variable, a helper's parameter, a handler around the operation, and a fresh
+result forged onto code returning its parameter.
 
 ## The rule users see
 
@@ -194,14 +237,17 @@ footprint.
 > strings, sets, maps and regex matches, the readers and mutators of `Set`,
 > `Map`, `Date` and regex literals, the array members taking callbacks
 > (`map`, `filter`, `forEach`, `find`, ...) whose callbacks keep the same
-> rule, and calls of functions checked the same way. `pop`, `shift`,
-> `reverse`, and calls of functions the checker cannot bound are refused,
-> whichever array they reach. Otherwise the checker gives the result a type
-> that permits holes.
+> rule, calls of functions checked the same way, and `pop`, `shift` and
+> `reverse` of an array whose storage the callback created, through `filter`,
+> `map`, `flatMap`, `slice`, `split` or a function stating a fresh result,
+> held in a constant. Other `pop`, `shift` and `reverse` calls, and calls of
+> functions the checker cannot bound, are refused. Otherwise the checker
+> gives the result a type that permits holes.
 
-`pop` on an array the callback allocated, `push` followed by `pop`, and a
-`pop` on an array unrelated to the mapped one are safe and refused: the rule
-does not separate arrays ([deferred](#deferred-extra-precision)).
+`pop` on an array literal the callback allocated, `push` followed by `pop`,
+and a `pop` on an array unrelated to the mapped one are safe and refused: the
+rule does not separate arrays beyond fresh storage
+([deferred](#deferred-extra-precision)).
 
 ## The seven programs
 
@@ -238,60 +284,18 @@ and through trusted native contracts (audited).
 
 ## Deferred: extra precision
 
-The rule does not separate one array from another, so it refuses safe
-callbacks that change an array other than the mapped one beyond `grow`: `pop`
-on an array the callback allocated, or `push` then `pop`. Admitting them needs
+The rule separates arrays only by fresh storage, so it refuses safe
+callbacks that change another array beyond `grow`: `pop` on an array literal
+the callback allocated, on an array a callback parameter names that is not
+the mapped one, or `push` then `pop`. Admitting them needs
 footprints over regions rooted at a call's operands (`own(x)`, `store(x)`,
-`elems(x)`), effects relative to operands, fresh-result guarantees on
-signatures, allocation-sensitive summaries, composition of regional
+`elems(x)`), effects relative to operands, allocation-sensitive summaries, composition of regional
 footprints along a graph (transport to the entry heap), and framing of the
 caller's knowledge by a call's footprint. The regional lemmas proved so far
 are in `Footprints.lean` (`Post`, `Post.compose`, `transport_sound`) and
 `FootprintStability.lean` (`stable_sound`, `frame_sound`). None of the seven
 programs, nor the repository code measured, needs them; a retained program
 refused for this reason is the trigger.
-
-**Design: fresh array storage.** The trigger is `dev/record-render.mts`'s
-`effects`, whose `map` callback reads `const rest = parts(l)`, the store of a
-fresh array (`parts` returns `split(…).filter(…)`), and calls `rest.shift()`;
-`section`, `card` and `pageBody` call it. `shift` states
-`{value: any, store: any}`, so the callback is unbounded, although only a
-store allocated during the call changes. The guarantee needed is weaker than
-freshness of the array: its **store** was allocated after the callback's
-entry, so a destructive operation on it changes no store the entry heap
-held. The callback is then within `{value: any, store: keep}`, which keeps
-density; the empty footprint is not claimed, since the operation may change
-any location holding a value (`array_native_post_any`).
-
-1. **Store freshness only.** A slot's store is fresh when the store location
-   of its array lies at or above the entry heap's length. Element locations
-   are not tracked: a fresh store may list old element locations
-   (`FootprintProvenance.lean`).
-2. **An entry-relative analysis.** A fact `freshStore(x)` holds after an
-   allocation of an array, after a call whose selected signature states a
-   fresh-store result, and through copies and immutable bindings; a join
-   keeps it where every incoming edge has it, and a reassignment or a write
-   of the slot drops it. Lean checks each fact on every edge.
-3. **Fresh-store results.** A signature's effect may state that its result's
-   store is fresh. Natives: `split` and `filter` (audited: ordinary
-   construction). A declaration states it where every normal return returns
-   a fresh-store slot, checked by the same edge analysis, independently of
-   the shortcuts that accept an unrestricted effect or a pure body. Covering
-   a signature that states it requires the source to state it.
-4. **Destructive natives at a fresh store.** `pop`, `shift` and `reverse`
-   state that they change only their receiver's store, destructively, and
-   element contents. At a receiver whose store is fresh, the call's run
-   from the entry heap is within `{value: any, store: keep}`. A fresh
-   receiver narrows only these natives' effects, never an arbitrary call's.
-   `splice` and length writes are left out.
-
-The producer's inference proposes the facts and the fresh-store results
-(`expression_closures.ml`). The rule users see gains: `pop`, `shift` and
-`reverse` of an array whose storage the callback created, directly or
-through a call stating a fresh result, are allowed. Controls: an old
-captured or parameter array; a reassigned slot; an alias of an old array;
-a join of a fresh and an old array; a declaration claimed to return a fresh
-store that returns its argument; a handler reached after the operation.
 
 **Provenance stamps** (`FootprintProvenance.lean`: marks, `after` and
 `before` stamps, `stamps_separate`) are the candidate replacement for the

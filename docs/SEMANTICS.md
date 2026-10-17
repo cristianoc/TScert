@@ -635,13 +635,22 @@ its conclusion `Safe` with
 All quantifiers and premises are unchanged: the guarantee holds at every future
 world and compatible entry heap, for every receiver and actual list admitted
 by that signature. Write the resulting family
-$\mathcal F_\epsilon(R_c,\mathcal A,R)$. An effect $`\epsilon = (\Phi, \pi)`$ is
-a [closed footprint](FOOTPRINTS.md#changes-and-footprints) $`\Phi`$ and an
-optional promise $`\pi`$. Its postcondition is the footprint's:
+$\mathcal F_\epsilon(R_c,\mathcal A,R)$. An effect $`\epsilon = (\Phi, \pi, \varphi, \sigma)`$ is
+a [closed footprint](FOOTPRINTS.md#changes-and-footprints) $`\Phi`$, an
+optional promise $`\pi`$, and two Booleans: $`\varphi`$, a fresh result, and
+$`\sigma`$, the receiver's store excepted. Its postcondition, for a call
+with receiver $`r`$, is the footprint's, on every old location but $`r`$'s
+array store where $`\sigma`$, and the result's store allocated by the call
+where $`\varphi`$ (`Effect.post`):
 
 ```math
-Q_{(\Phi,\pi)}(h)(h',v)=\mathsf{Post}_\Phi(h,h').
+Q_{\epsilon}(r,h)(h',v)=\mathsf{Post}_\Phi^{\,\neg\sigma\lor l\ne\mathsf{store}(r)}(h,h')\land
+(\varphi\Rightarrow \exists s.\ \mathsf{store}(v)=s\land |h|\le s),
 ```
+
+where $`\mathsf{Post}_\Phi^{P}`$ is the footprint's postcondition on the old
+locations $`l`$ satisfying $`P`$ (`Closed.HoldsOn`) and $`\mathsf{store}(v)`$
+the location of $`v`$'s array store (`storeOf`).
 
 Two footprints are its extremes: the empty one, $`Q_{(\emptyset,\pi)}(h)(h',v)=(h\preceq h')`$,
 where $h\preceq h'$ means that $h'$ extends the heap list $h$ without changing
@@ -659,9 +668,14 @@ R^{\mathsf{asserts}\,p}(v) = (v=\mathsf{undefined}\land v_p\in R).
 ```
 
 Membership of $`v_p`$ is taken at the world and heap of the return. One
-signature covers another when its footprint is within the other's and their
-promises are the same (`Effect.covers`), and a conjunction of signatures with the same promise meets
-their footprints (`Effect.meet`). The promises state a type
+signature covers another when its footprint is within the other's, their
+promises are the same, it states a fresh result where the other does, and it
+excepts the receiver's store only where the other does or lets everything
+change (`Effect.covers`); a conjunction of signatures with the same promise
+and exception meets their footprints (`Effect.meet`). A bound function
+forwards to its target with a saved receiver: its signature keeps the fresh
+result and lets everything change where the target's excepts the receiver's
+store (`Effect.drop`). The promises state a type
 guard's and an assertion function's promise
 ([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). Fresh allocation is allowed. This is a guarantee at normal
 return, not a ban on intermediate writes, a termination claim, or preservation

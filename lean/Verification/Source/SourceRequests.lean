@@ -132,14 +132,14 @@ ordinary checker. -/
     (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.promise.isNone)).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
     GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) r.footprint
-      r.program c.certificate
+      false r.start r.program c.certificate
 
 theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
     (h : (effectResult r c).accepted = true) (he : r.footprint ≠ .top) :
     r.qualification = none ∧ r.promise = none ∧
       (r.program.all (fun n => Purity.pureTerm n.expression) = true ∨
         GraphCode.compositionalChecked (RequestJson.graph r.toRequest) (StoreView.images r.types) r.footprint
-          r.program c.certificate = true) := by
+          false r.start r.program c.certificate = true) := by
   simp only [effectResult, he, if_false, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_orElse,
     Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true] at h
@@ -293,25 +293,19 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
         intro e he
         obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he
         exact List.all_eq_true.mp hp node hn
-      exact CallEffects.pure_safe (.goto hp hvalues hd) hs
+      exact HeapObservations.weaken (fun _ _ h => (CallEffects.Effect.post_ofFootprint _ .undef _ _ _).mp h)
+        (CallEffects.pure_safe (.goto hp hvalues hd) hs)
     · rw [← hP] at hp
       erw [← GraphCode.compositionalChecked_reassign G images η, GraphCode.compositionalChecked_eq] at hp
-      apply GraphCode.goto_bounded hc hcodes _ n W heap L d he hw hh
-      intro l node point hn hpoint
-      have hzip : ((GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))).zip c.certificate)[l]? = some (node,point) :=
-        List.getElem?_zip_eq_some.mpr ⟨hn,hpoint⟩
-      have hmem := List.mem_of_getElem? hzip
-      have hp := List.all_eq_true.mp hp (node,point) hmem
-      simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hp
-      refine ⟨hp.1.1, ?_⟩
+      simp only [Bool.and_eq_true, List.isEmpty_iff] at hp
       have hgraph : checkGraphUsing (reassign G η) (images.reassign η) (Goal.plain r.result)
           (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))) c.certificate (GraphCode.admits table) = true := by
         have hchecked := hc
         simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
         exact hchecked.1
-      obtain ⟨actual,hactual,hterm,-⟩ := graph_node hgraph hcodes hpoint
-      cases hn.symm.trans hactual
-      exact GraphCode.nodeWithin_of_checked hp.1.2 hp.2 hterm
+      have hb := GraphCode.goto_bounded hc hcodes (GraphCode.nodes_of_checked hgraph hcodes hp.2) hp.1
+        n W heap L d he hw hh
+      exact HeapObservations.weaken (fun _ _ hq => hq.1) hb
   · contradiction
 
 /-- The source region represented by a graph, for checks on synthetic nodes. -/

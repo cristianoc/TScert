@@ -100,7 +100,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | _ -> latest_claim arg.pos in
           match known with
           | Some (Atoms [Shape {calls;_}]) -> List.exists (fun (s:Semantic.signature) ->
-              s.call_effect=offered.call_effect) calls
+              (* A fresh result the offer does not state is not asked for. *)
+              {s.call_effect with fresh=s.call_effect.fresh && offered.call_effect.fresh}=offered.call_effect) calls
           | _ -> false in
         let offered arity = match param with
           | Atoms [Shape {calls=[offered];fields=[];indexes=[];elements=None}] as t

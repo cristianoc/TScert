@@ -30,7 +30,8 @@ export const closedFootprints: readonly ClosedFootprint[] = [
   { value: "keep", store: "any" }, { value: "any", store: "any" },
 ];
 /** A signature with a footprint and no promise. */
-export const footprintEffect = (footprint: ClosedFootprint): CallEffect => ({ footprint, promise: null });
+export const footprintEffect = (footprint: ClosedFootprint): CallEffect =>
+  ({ footprint, promise: null, fresh: false, receiverStore: false });
 /** Heap preservation: no location may change, no promise. */
 export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
 /** An ordinary arrow's effect: every location may change, no promise. */
@@ -38,7 +39,8 @@ export const ordinaryEffect: CallEffect = footprintEffect(topFootprint);
 /** A promise signature: a guard's or an assertion function's, about `param`,
  * whose code may change every location. */
 export const promiseEffect = (asserts: boolean, param: number): CallEffect =>
-  ({ footprint: topFootprint, promise: asserts ? { asserts: { param } } : { guards: { param } } });
+  ({ footprint: topFootprint, promise: asserts ? { asserts: { param } } : { guards: { param } }, fresh: false,
+    receiverStore: false });
 export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =>
   a.value === b.value && a.store === b.store;
 const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
@@ -46,7 +48,8 @@ const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
     : "guards" in a ? "guards" in b && a.guards.param === b.guards.param
     : "asserts" in b && a.asserts.param === b.asserts.param;
 export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
-  sameFootprint(a.footprint, b.footprint) && samePromise(a.promise, b.promise);
+  sameFootprint(a.footprint, b.footprint) && samePromise(a.promise, b.promise) && a.fresh === b.fresh &&
+    a.receiverStore === b.receiverStore;
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 /** Whether a value is a closed footprint, as the wire states one. */
@@ -57,7 +60,8 @@ export function isClosedFootprint(value: unknown): value is ClosedFootprint {
 }
 /** Whether a value is a call effect, as the wire states one. */
 export function isCallEffect(value: unknown): value is CallEffect {
-  if (!isObject(value) || Object.keys(value).length !== 2 || !isClosedFootprint(value.footprint)) return false;
+  if (!isObject(value) || Object.keys(value).length !== 4 || !isClosedFootprint(value.footprint) ||
+      typeof value.fresh !== "boolean" || typeof value.receiverStore !== "boolean") return false;
   const promise = value.promise;
   if (promise === null) return true;
   if (!isObject(promise) || Object.keys(promise).length !== 1) return false;

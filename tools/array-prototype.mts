@@ -106,6 +106,9 @@ const callback = (value: TypeTerm, result: TypeTerm,
 const findCallback = (effect: CallEffect, footprint: ClosedFootprint): TypeTerm =>
   callback(footprint.store === "keep" ? element : maybeElement, atomOf("unknown"), effect);
 const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
+/** A destructive member's: within `{value: any, store: keep}` but for its
+ * receiver's store, which it may change arbitrarily. */
+const receiverStoreEffect: CallEffect = { ...footprintEffect({ value: "any", store: "keep" }), receiverStore: true };
 /** The closed footprints that keep an array's dense prefixes: those whose
  * change to array stores is at most `grow` (`stableDenseClosed`), smallest
  * first. */
@@ -114,10 +117,10 @@ const stableForDensity = closedFootprints.filter((f) => f.store !== "any");
  * callback within `ε`, the member is within `ε`, since besides the callback
  * it reads the receiver and allocates only its result. */
 const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootprint) =>
-    { params: TypeTerm[]; result: TypeTerm }) =>
+    { params: TypeTerm[]; result: TypeTerm }, fresh = false) =>
   closedFootprints.map((footprint) => {
     const effect = footprintEffect(footprint);
-    return { ...signature(effect, footprint), effect };
+    return { ...signature(effect, footprint), effect: { ...effect, fresh } };
   });
 
 export const overlay: readonly OverlayEntry[] = [
@@ -135,16 +138,17 @@ export const overlay: readonly OverlayEntry[] = [
     // stores at most by `grow` keeps that fact (FOOTPRINTS.md, "Natives":
     // `map_rely`, `denseCheck_stable`), so at each such footprint a dense
     // receiver gives a dense result, and the call's own footprint is the
-    // callback's: `map` reads the receiver and allocates its result. Any
+    // callback's: `map` reads the receiver and allocates its result, a fresh
+    // array, whose store its result is (each signature states it). Any
     // other callback gives a result that may hold holes. These are ordinary
     // per-signature call contracts.
     stated: [
       ...stableForDensity.map((footprint) => ({
         receiver: arrayOf(element, true, "dense"),
         params: [callback(element, mappedElement, footprintEffect(footprint))],
-        result: arrayOf(mappedElement, false), effect: footprintEffect(footprint) })),
+        result: arrayOf(mappedElement, false), effect: { ...footprintEffect(footprint), fresh: true } })),
       { params: [callback(element, mappedElement, ordinaryEffect)],
-        result: arrayOf(mappedElement, false, "sparse") },
+        result: arrayOf(mappedElement, false, "sparse"), effect: { ...ordinaryEffect, fresh: true } },
     ] },
   // `flatMap` calls the callback at each position still present when
   // visited, below the length read before the first call, and appends the
@@ -162,7 +166,7 @@ export const overlay: readonly OverlayEntry[] = [
       "    ): U[];",
     unbound: ["This"],
     stated: atEachFootprint((effect) => ({ params: [callback(element, arrayOf(mappedElement, true, "sparse"), effect)],
-      result: arrayOf(mappedElement, false) })) },
+      result: arrayOf(mappedElement, false) }), true) },
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
   // and a prototype member is read as one scheme with one signature
@@ -177,9 +181,9 @@ export const overlay: readonly OverlayEntry[] = [
   // Beside each callback's call, the member reads the length once, tests and
   // reads the receiver's own numeric keys, data properties (`numericOwn`),
   // and `filter` defines the kept elements on a fresh array (ordinary
-  // construction): it runs no other client code and writes no existing
-  // location. So at a callback within a footprint the member is: a signature
-  // per closed footprint; `thisArg` is not stated.
+  // construction), whose store its result is: it runs no other client code
+  // and writes no existing location. So at a callback within a footprint the
+  // member is: a signature per closed footprint; `thisArg` is not stated.
   { name: "every", from: "ReadonlyArray",
     signature: "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
     stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
@@ -191,14 +195,14 @@ export const overlay: readonly OverlayEntry[] = [
   { name: "filter", from: "ReadonlyArray",
     signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
     stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
-      result: arrayOf(element, false) })) },
+      result: arrayOf(element, false) }), true) },
   // The members below, through `at`, read the receiver's elements, convert
   // only numbers (an index, a bound) and, for `join` and `toString`,
   // elements meeting the standard conversion contract, compare by strict
   // equality or SameValueZero, and allocate only their result: they run no
   // client code and write no existing location.
   { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];",
-    effect: emptyEffect },
+    effect: { ...emptyEffect, fresh: true } },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
     bounds: { T: stringConvertible }, effect: emptyEffect },
   { name: "toString", from: "ReadonlyArray", signature: "toString(): string;",
@@ -236,18 +240,20 @@ export const overlay: readonly OverlayEntry[] = [
     ] },
   // Footprints (SOURCE-CONTRACTS.md, "Native footprints"): `push` and
   // `unshift` change the receiver's store by `grow` and only element
-  // contents beside it; `pop`, `shift` and `reverse` change the store
-  // arbitrarily; `sort` grows it over the whole call when its comparator's
-  // store changes do. The store relations are proved of the specification
-  // steps (FootprintNatives.lean); that each native changes nothing but its
-  // store and element contents is this entry's audit.
+  // contents beside it; `pop`, `shift` and `reverse` change the receiver's
+  // store arbitrarily and only element contents beside it: within
+  // `{value: any, store: keep}` but for the receiver's store
+  // (`receiverStore`); `sort` grows it over the whole call when its
+  // comparator's store changes do. The store relations are proved of the
+  // specification steps (FootprintNatives.lean); that each native changes
+  // nothing but its store and element contents is this entry's audit.
   { name: "push", from: "Array", signature: "push(...items: T[]): number;",
     effect: footprintEffect({ value: "any", store: "grow" }) },
-  { name: "pop", from: "Array", signature: "pop(): T | undefined;" },
-  { name: "shift", from: "Array", signature: "shift(): T | undefined;" },
+  { name: "pop", from: "Array", signature: "pop(): T | undefined;", effect: receiverStoreEffect },
+  { name: "shift", from: "Array", signature: "shift(): T | undefined;", effect: receiverStoreEffect },
   { name: "unshift", from: "Array", signature: "unshift(...items: T[]): number;",
     effect: footprintEffect({ value: "any", store: "grow" }) },
-  { name: "reverse", from: "Array", signature: "reverse(): T[];" },
+  { name: "reverse", from: "Array", signature: "reverse(): T[];", effect: receiverStoreEffect },
   // Iteration: `ArrayIterator<T>` extends `IteratorObject<T,
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
@@ -298,9 +304,11 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
     // `[Symbol.replace]` of the client's (a string primitive's lookup ends at
     // `String.prototype`, which has none), and `$` patterns in a string
     // replacement are string operations. A `RegExp`, and a replacer
-    // callback, are not stated. `split` gives a fresh array of strings;
-    // `replaceAll` of a non-global `RegExp` would throw.
+    // callback, are not stated. `split` gives a fresh array of strings,
+    // whose store its result is; `replaceAll` of a non-global `RegExp` would
+    // throw.
     { name: "split", from: "String", signature: "split(separator: string | RegExp, limit?: number): string[];",
+      effect: { ...emptyEffect, fresh: true },
       stated: [{ params: [atomOf("string"), optionalNumber],
         result: { k: "array", presence: "dense", readonly: false, element: atomOf("string"), span: at } }] },
     { name: "replace", from: "String", signature: "replace(searchValue: string | RegExp, replaceValue: string): string;",

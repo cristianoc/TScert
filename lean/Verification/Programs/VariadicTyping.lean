@@ -56,7 +56,7 @@ def CoveredCallUsing [DecidableEq ι] (G : NormalGraph ι)
     (c : MethodArrow (Ty ι)) : Prop :=
   q.arguments.length = c.arguments.length ∧
     (∀ x ∈ q.arguments.zip c.arguments, ∃ p, PositiveCertificates.checkUsing G images x.1 x.2 p = true) ∧
-    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ c.effect.covers q.effect = true
+    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ (c.effect.drop 0).covers q.effect = true
 
 /-- Parameters each within the member's, as families. -/
 theorem CoveredCallUsing.params [DecidableEq ι] {G : NormalGraph ι}
@@ -84,7 +84,7 @@ def CoveredRestUsing [DecidableEq ι] (G : NormalGraph ι)
   q.arguments.1.length = c.arguments.1.length ∧
     (∀ x ∈ q.arguments.1.zip c.arguments.1, ∃ p, PositiveCertificates.checkUsing G images x.1 x.2 p = true) ∧
     (∃ p, PositiveCertificates.checkUsing G images q.arguments.2 c.arguments.2 p = true) ∧
-    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ c.effect.covers q.effect = true
+    (∃ p, PositiveCertificates.checkUsing G images c.result q.result p = true) ∧ (c.effect.drop 0).covers q.effect = true
 
 /-- A checked proof is an inclusion of argument lists too: the argument
 component of the two types' meanings. -/
@@ -313,7 +313,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G s.receiver j U r)
     {args : List Tm} (hvals : CallArguments.Values args)
     (ha : ArgsRest (s.arguments.1.map (meaning G)) (argMeaning G s.arguments.2) j U args) :
-    SafePost (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args)) (s.effect.post heap) j U heap
+    SafePost (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args)) (s.effect.post r heap) j U heap
       (CallArguments.graphEntry arity E K start vs true r args) := by
   obtain ⟨hshort, hpack⟩ := ha
   simp only [List.length_map, hk] at hshort hpack
@@ -358,7 +358,8 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
           envOf (a :: r :: CallArguments.parameters arity args ++ vs) .nul := by
         funext i; cases i <;> rfl
       rw [← he]; exact henv
-    apply HeapObservations.weaken (fun heap'' v hp => s.effect.post_prefix hprefix hp)
+    apply HeapObservations.weaken (Q := fun heap'' v => ∀ r', s.fixed.effect.post r' heap' heap'' v)
+      (fun heap'' v hp => s.effect.post_prefix hprefix (hp r))
     have hpromised := framePromised_params (e := s.fixed.effect) hs.2.1 [a, r] args vs
     simp only [List.length_cons, List.length_nil, List.cons_append, List.nil_append] at hpromised
     rw [← show framePromised s.effect (frameOffset (some A)) (a :: r :: CallArguments.parameters arity args ++ vs) =

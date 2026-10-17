@@ -43,7 +43,8 @@ let effect_json e = Object ["footprint",footprint_json e.footprint;
   "promise",(match e.promise with
     | None -> Null
     | Some (Guards param) -> Object ["guards",Object ["param",int param]]
-    | Some (Asserts param) -> Object ["asserts",Object ["param",int param]])]
+    | Some (Asserts param) -> Object ["asserts",Object ["param",int param]]);
+  "fresh",Bool e.fresh;"receiverStore",Bool e.receiver_store]
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]

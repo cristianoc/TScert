@@ -400,7 +400,7 @@ def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
   ∀ n W h L, EnvOk G (codeFrame arity row Cs store) (envOf L .nul) n W → WorldAdm W →
     HeapOk n W h → CallArguments.Values L →
       SafePost (excOf G) (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset store) L))
-        (row.effect.post h) n W h (.goto E K start L .nul)
+        (fun after v => ∀ r, row.effect.post r h after v) n W h (.goto E K start L .nul)
 
 /-- A graph code the certificate of a unit has checked at one signature: the
 code, its captures' types, the signature, and, for code collecting a rest, the
@@ -496,7 +496,7 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
     {j : Nat} (hj : j < n) {U : WorldT j} (hx : WExt (trunc j (Nat.le_of_lt hj) W) U)
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args) :
-    SafePost (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args)) (row.effect.post heap) j U heap
+    SafePost (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args)) (row.effect.post r heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_of_lt hj) hx hr ha) hu hh (by
     intro v hv
@@ -508,7 +508,8 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
       · exact hvalues v hv)
   have hp := framePromised_params hs.2.1 [r] args vs
   simp only [List.length_singleton, List.singleton_append] at hp
-  rwa [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp] at hsafe
+  rw [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp] at hsafe
+  exact HeapObservations.weaken (fun _ _ h => h r) hsafe
 
 /-- Graph code with captured values meets its fixed signatures, where its
 kind binds each signature's receivers. -/

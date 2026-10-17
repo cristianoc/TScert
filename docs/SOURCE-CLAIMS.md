@@ -196,7 +196,7 @@ primitive table above, so the receiver accepts any value. Its claim is:
 
 ```json
 {"scheme": {
-  "effect": {"footprint": {"value":"any","store":"any"}, "promise": null},
+  "effect": {"footprint": {"value":"any","store":"any"}, "promise": null, "fresh": false, "receiverStore": false},
   "typeParams": [{"name":"T","bound":null}],
   "this": [4], "params": [{"param":"T"}],
   "rest": null, "result": {"param":"T"}
@@ -210,7 +210,7 @@ makes `o` and `r` binders of the same scheme;
 `this` is the required receiver type, `params` is the fixed parameter list,
 and `rest` is `null` or the surplus-element type. Binder names resolve
 lexically; a nested scheme's binders hide outer binders of the same names.
-The effect is `{"footprint": f, "promise": p}`. The footprint `f` is a
+The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c}`. The footprint `f` is a
 [closed footprint](FOOTPRINTS.md#changes-and-footprints), `{"value":v,"store":s}`
 with `v` one of `keep` and `any` and `s` one of `keep`, `grow` and `any`: on
 normal return, the locations of the entry heap holding a value change at most
@@ -218,6 +218,10 @@ by `v`, those holding an array store at most by `s`. The promise `p` is `null`,
 `{"guards":{"param":i}}` or `{"asserts":{"param":i}}`: `guards` and `asserts`
 promise the `i`-th actual a value of the result, on a `true` result or a
 normal return ([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)).
+`fresh` states that a normal return's value has an array store the call
+allocated; `receiverStore` that the footprint bounds every location but the
+receiver's array store, which the call may change arbitrarily
+([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts)).
 Each requires corresponding evidence.
 
 A call expression can propose an instance with:

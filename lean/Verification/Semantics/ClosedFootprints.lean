@@ -293,4 +293,116 @@ theorem Closed.top_safe {Ξ R : Fam} {n W h t} (hs : Safe Ξ R n W h t) :
     HeapObservations.SafePost Ξ R (fun h' _ => Closed.top.Holds h h') n W h t :=
   HeapObservations.weaken (fun _ _ hb => Closed.holds_top.mpr hb) (grow_safe (Nat.le_refl _) hs)
 
+/-! ## Footprints on some old locations
+
+A call may change one store beyond its footprint, its receiver's: its
+postcondition is the footprint on the old locations other than that store.
+A run whose every such store was allocated after a heap of length `b` is
+within the footprint on the locations below `b`. -/
+
+/-- A closed footprint's postcondition on the old locations `P` admits. -/
+def Closed.HoldsOn (c : Closed) (P : Nat → Prop) (h h' : Heap) : Prop :=
+  h.length ≤ h'.length ∧
+    ∀ (l : Nat) (v : Val), P l → h[l]? = some v → ∃ v', h'[l]? = some v' ∧ (c.at v).Holds h.length v v'
+
+theorem Closed.Holds.on {c : Closed} {h h' : Heap} (P : Nat → Prop) (hp : c.Holds h h') : c.HoldsOn P h h' := by
+  rw [Closed.holds_iff] at hp
+  exact ⟨hp.1, fun l v _ hv => hp.2 l v hv⟩
+
+theorem Closed.HoldsOn.weaken {c : Closed} {P Q : Nat → Prop} {h h' : Heap} (hpq : ∀ l, Q l → P l)
+    (hp : c.HoldsOn P h h') : c.HoldsOn Q h h' :=
+  ⟨hp.1, fun l v hq hv => hp.2 l v (hpq l hq) hv⟩
+
+theorem Closed.holds_of_on {c : Closed} {h h' : Heap} (hp : c.HoldsOn (fun _ => True) h h') : c.Holds h h' := by
+  rw [Closed.holds_iff]
+  exact ⟨hp.1, fun l v hv => hp.2 l v trivial hv⟩
+
+private theorem Closed.at_mono {a b : Closed} (hle : a.le b = true) {n v v'}
+    (h : (a.at v).Holds n v v') : (b.at v).Holds n v v' := by
+  simp only [Closed.le, Bool.and_eq_true] at hle
+  unfold Closed.at at h ⊢
+  cases hv : isArr v
+  · simp only [hv] at h ⊢
+    exact value_change (by simpa using hv) hle.1 h
+  · simp only [hv, if_true] at h ⊢
+    exact h.mono hle.2
+
+theorem Closed.HoldsOn.mono {a b : Closed} (hle : a.le b = true) {P : Nat → Prop} {h h' : Heap}
+    (hp : a.HoldsOn P h h') : b.HoldsOn P h h' :=
+  ⟨hp.1, fun l v hl hv => by
+    obtain ⟨v', hv', hc⟩ := hp.2 l v hl hv
+    exact ⟨v', hv', Closed.at_mono hle hc⟩⟩
+
+/-- **A run within a footprint, then one within it on the locations below
+where the first started, is within it.** -/
+theorem Closed.Holds.trans_on {c : Closed} {h₀ h h' : Heap} (h₁ : c.Holds h₀ h)
+    (h₂ : c.HoldsOn (· < h₀.length) h h') : c.Holds h₀ h' := by
+  rw [Closed.holds_iff] at h₁ ⊢
+  refine ⟨Nat.le_trans h₁.1 h₂.1, fun l v hv => ?_⟩
+  obtain ⟨v₁, hv₁, hc₁⟩ := h₁.2 l v hv
+  obtain ⟨v₂, hv₂, hc₂⟩ := h₂.2 l v₁ (List.getElem?_eq_some_iff.mp hv).1 hv₁
+  refine ⟨v₂, hv₂, ?_⟩
+  by_cases hany : c.at v = .any
+  · rw [hany]; trivial
+  · have heq := Closed.at_of_holds hc₁ hany
+    rw [heq] at hc₂
+    exact hc₁.trans h₁.1 hc₂
+
+theorem Closed.HoldsOn.prefix_left {c : Closed} {P : Nat → Prop} {h₀ h h' : Heap} (hpre : h₀.IsPrefix h)
+    (hp : c.HoldsOn P h h') : c.HoldsOn P h₀ h' := by
+  refine ⟨Nat.le_trans hpre.length_le hp.1, fun l v hl hv => ?_⟩
+  have hv₀ : h[l]? = some v := by
+    obtain ⟨t, rfl⟩ := hpre
+    rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1, hv]
+  obtain ⟨v', hv', hc⟩ := hp.2 l v hl hv₀
+  exact ⟨v', hv', hc.lower hpre.length_le⟩
+
+theorem Closed.holdsOn_meet {a b : Closed} {P : Nat → Prop} {h h' : Heap} :
+    (a.meet b).HoldsOn P h h' ↔ a.HoldsOn P h h' ∧ b.HoldsOn P h h' := by
+  simp only [Closed.HoldsOn, Closed.at_meet, Change.min_holds]
+  constructor
+  · rintro ⟨hl, hall⟩
+    refine ⟨⟨hl, fun l v hp hv => ?_⟩, ⟨hl, fun l v hp hv => ?_⟩⟩
+    · obtain ⟨v', h1, h2⟩ := hall l v hp hv
+      exact ⟨v', h1, h2.1⟩
+    · obtain ⟨v', h1, h2⟩ := hall l v hp hv
+      exact ⟨v', h1, h2.2⟩
+  · rintro ⟨⟨hl, ha⟩, ⟨-, hb⟩⟩
+    refine ⟨hl, fun l v hp hv => ?_⟩
+    obtain ⟨v₁, h1, ha'⟩ := ha l v hp hv
+    obtain ⟨v₂, h2, hb'⟩ := hb l v hp hv
+    obtain rfl : v₁ = v₂ := Option.some.inj (h1.symm.trans h2)
+    exact ⟨v₁, h1, ha', hb'⟩
+
+/-- Any run within a footprint on some locations is within the one letting
+everything change. -/
+theorem Closed.HoldsOn.top {c : Closed} {P : Nat → Prop} {h h' : Heap} (hp : c.HoldsOn P h h') :
+    Closed.top.Holds h h' :=
+  Closed.holds_top.mpr hp.1
+
+/-! ## Fresh stores -/
+
+/-- The location of a value's array store, where it has one. -/
+def storeOf (v : Tm) : Option Nat := (fieldsOf v).lookup arrayStoreKey
+
+/-- A value whose array store was allocated after a heap of length `b`:
+its store's location is at least `b`. It reads no heap: an object's fields
+are fixed at its allocation. -/
+def FreshAt (b : Nat) (v : Tm) : Prop := ∃ s, storeOf v = some s ∧ b ≤ s
+
+theorem FreshAt.lower {b b' : Nat} {v : Tm} (hb : b ≤ b') (h : FreshAt b' v) : FreshAt b v := by
+  obtain ⟨s, hs, hle⟩ := h
+  exact ⟨s, hs, Nat.le_trans hb hle⟩
+
+/-- A change on every old location but a fresh value's store is a change on
+every location below where it was allocated. -/
+theorem Closed.HoldsOn.below_fresh {c : Closed} {b : Nat} {r : Tm} {h h' : Heap} (hf : FreshAt b r)
+    (hp : c.HoldsOn (fun l => storeOf r ≠ some l) h h') : c.HoldsOn (· < b) h h' := by
+  obtain ⟨s, hs, hle⟩ := hf
+  refine hp.weaken fun l hl => ?_
+  rw [hs]
+  intro he
+  cases he
+  omega
+
 end Verification.Footprints

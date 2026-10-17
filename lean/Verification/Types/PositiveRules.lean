@@ -893,10 +893,10 @@ aside (both are the host's: the bound function's is any, `s`'s is the host,
 which `CoversByScheme` checks): each is covered by one of `s`'s. -/
 @[nospecialize] def BoundSigsCover (G : NormalGraph ι) (R : List ι → List ι → Prop) (s : SchemeRow ι)
     (L : Ops ι) (M : List (RestArrow (List ι))) : Prop :=
-  (∀ t ∈ L, ∃ p ∈ s.signatures, Domains R t.arguments p.arguments ∧ R p.result t.result ∧ p.effect.covers t.effect = true) ∧
+  (∀ t ∈ L, ∃ p ∈ s.signatures, Domains R t.arguments p.arguments ∧ R p.result t.result ∧ (p.effect.drop 0).covers t.effect = true) ∧
   (∀ t ∈ M, ∃ p ∈ s.variadic, Domains R (t.arguments.1.take p.arguments.1.length) p.arguments.1 ∧
     IntoRest (restElem G) R (t.arguments.1.drop p.arguments.1.length) p.arguments.2 ∧ R t.arguments.2 p.arguments.2 ∧
-    R p.result t.result ∧ p.effect.covers t.effect = true)
+    R p.result t.result ∧ (p.effect.drop 0).covers t.effect = true)
 
 /-- The renaming of a target scheme's binders `qs` to a source scheme's `ps`,
 as a substitution. -/
@@ -1179,7 +1179,7 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
     exact ⟨result, hi, HeapObservations.consequence_below (fun m hm V u hu =>
         (Effect.covers_sound heff).2 _ args m V u (Effect.result_mono p.effect
           (fun u hu => hr m (by omega) _ _ hres V u hu) (fun u hu => hr m (by omega) _ _ hres V u hu) hu))
-      ((Effect.covers_sound heff).1 heap) hsafe⟩
+      ((Effect.covers_sound heff).1 r heap) hsafe⟩
   · exact hc.elim
 
 /-- A position covered by another: a present source position needs a target
@@ -2209,7 +2209,7 @@ theorem bound_sigs_sound [DecidableEq ι] {G : NormalGraph ι} {θ : MixedAssign
       (fs := []) (oid := oid) (pre := []) (hadm p.receiver) (by simp)
       (fun A hA => by obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact hadm b) (Effect.keeps_zero _)
       (by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hc) hval.1 hval.2 hrv trivial (by simp [CallArguments.Values]) (by simp)
-    simp only [List.length_nil, Effect.drop_zero] at hbd
+    simp only [List.length_nil] at hbd
     refine ⟨hbd.1, fun y hy => ?_⟩
     cases List.mem_singleton.mp hy
     exact (hbd.2 _ (List.mem_singleton_self _)).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)
@@ -2230,11 +2230,11 @@ theorem bound_sigs_sound [DecidableEq ι] {G : NormalGraph ι} {θ : MixedAssign
       (by simp only [List.take_nil, List.take_zero, List.length_nil]; exact trivial)
       (fun _ _ _ _ ys hys => by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hys)
       (by simp [CallArguments.Values]) (by simp)
-    simp only [List.length_nil, Effect.drop_zero] at hbd
+    simp only [List.length_nil] at hbd
     refine ⟨hbd.1, fun y hy => ?_⟩
     cases List.mem_singleton.mp hy
     exact ((by simpa [Arrow.map, RestArrow.mapWith, MethodArrow.map, MethodRestArrow.mapWith, Contract.map, Contract.withReceiver] using hbd.2 _ (List.mem_singleton_self _)) :
-      PromiseWith Ξ p.effect (ArgsRest (p.arguments.1.map (mixedValues G θ))
+      PromiseWith Ξ (p.effect.drop 0) (ArgsRest (p.arguments.1.map (mixedValues G θ))
         (mixedArgs G θ p.arguments.2))
         (mixedValues G θ t.receiver)
         (mixedValues G θ p.result) j U _).weaken (Effect.covers_sound heff) (fun _ _ _ r h => h)

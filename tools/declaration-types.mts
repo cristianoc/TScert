@@ -15,9 +15,12 @@ export type ClosedFootprint = { value: "keep" | "any"; store: "keep" | "grow" | 
 /** A promise about the actual at `param`, whose type is then the signature's
  * result: a type guard's or an assertion function's. */
 export type CallPromise = { guards: { param: number } } | { asserts: { param: number } };
-/** What a signature guarantees beyond its contract: its footprint, and an
- * optional promise (`CallEffects.Effect`). */
-export type CallEffect = { footprint: ClosedFootprint; promise: CallPromise | null };
+/** What a signature guarantees beyond its contract: its footprint, an
+ * optional promise, whether a normal return's value has an array store the
+ * call allocated (`fresh`), and whether the footprint excepts the receiver's
+ * array store, which the call may change arbitrarily (`receiverStore`)
+ * (`CallEffects.Effect`). */
+export type CallEffect = { footprint: ClosedFootprint; promise: CallPromise | null; fresh: boolean; receiverStore: boolean };
 /** One type alias or interface: its module (a path relative to the project's
  * tsconfig, the client's absolute path, or `typescript/lib/<file>`), its name
  * and its span there. */

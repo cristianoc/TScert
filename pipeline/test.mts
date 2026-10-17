@@ -1243,6 +1243,13 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   ["map-stable-outer-cell", "(x: number)", 3, true, writeValues, true],
   ["invalid-map-unstable-pop", "(x: number)", 3, false, growStores, false],
   ["map-unstable-pop-sparse", "(x: number)", 3, false, growStores, true],
+  ["map-stable-fresh-store", "(l) =>", 3, false, keepAll, true],
+  ["map-stable-fresh-store", "(l) =>", 3, true, writeValues, true],
+  ["invalid-map-fresh-alias", "(x) =>", 3, false, writeValues, false],
+  ["invalid-map-fresh-join", "(x) =>", 3, false, writeValues, false],
+  ["invalid-map-fresh-reassigned", "(x) =>", 3, false, writeValues, false],
+  ["invalid-map-fresh-parameter", "(x) =>", 3, false, writeValues, false],
+  ["invalid-map-fresh-handler", "(x) =>", 3, false, writeValues, false],
 ] as const) {
   const artifacts = run(file);
   const claims = readClaims(artifacts);
@@ -1289,6 +1296,33 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     }
   }
   process.stdout.write(`callback footprint claim {${footprint.value}, ${footprint.store}}, ${file}: ${accepted ? "certified" : consumed ? "refused in search and in checking" : "refused in search"}\n`);
+}
+
+{
+  // A fresh result forged onto code returning its parameter, a constant whose
+  // value a callback pops: the code's returns are checked to return a store
+  // allocated by its run, and the parameter's is not, so search refuses the
+  // claim and checking the honest evidence against it refuses it there.
+  const artifacts = run("map-stable-fresh-store");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("(a: string[])");
+  const closure = must([...claims.functions.flatMap(f => f.expressions), ...(claims.init?.expressions ?? [])]
+    .find(e => e.pos[0] === at), "the constant's closure claim");
+  assert.ok(Array.isArray(closure.type) && closure.type.length === 1);
+  const label = closure.type[0];
+  assert.ok(typeof label === "number");
+  const arrows = must(claims.types[label], "the closure's type row").flatMap(clause =>
+    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
+  assert.ok(arrows.length > 0 && arrows.every(a => !a.effect.fresh), "the honest claim states no fresh result");
+  for (const arrow of arrows) arrow.effect = { ...arrow.effect, fresh: true };
+  const input = writeClaims(artifacts, "forged-fresh-result", claims);
+  const produce = produceWith(artifacts, input, "forged-fresh-result");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts),
+    /source effect refusal at \[\d+,\d+\): the footprint claimed for a closure/);
+  process.stdout.write("forged fresh result: code returning its parameter refused in search and in checking\n");
 }
 
 {

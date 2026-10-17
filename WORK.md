@@ -21,7 +21,6 @@ design, not its progress.
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
-| [Footprint precision](#footprints) | open: fresh array storage designed ([FOOTPRINTS](docs/FOOTPRINTS.md#deferred-extra-precision)) | `dev/record-render.mts`'s `effects` verifies |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open | a Lean theorem composes units certified against each other's signatures |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
@@ -31,7 +30,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 14 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 17 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -85,8 +84,9 @@ effect. A program with an arbitrary callback promising readable `U[]` for every
 Effect inference remains conservative for some rest wrappers, call forms and
 nested heap operations. Expression scheduling alone does not supply the missing
 effect derivation. Code that writes only locations it allocated preserves the
-heap it was called with, but a body's checked footprint does not separate
-those from older ones ([footprint precision](#footprints)). A call of a value holding a fixed
+heap it was called with, but a body's checked footprint separates only array
+stores the body allocated, through fresh results ([footprint
+precision](#footprints)). A call of a value holding a fixed
 signature and its variadic extension, a module constant read as a value
 elsewhere, is not certified preserving: the selected call's evidence is no
 qualified application at the fixed signature. Keep the source targets and their
@@ -97,8 +97,10 @@ negative controls when extending the body-effect checker.
 construct's fact, the operations proved to keep it, stated as closed
 footprints, and Lean's node-by-node check that a callback, with what it
 calls, stays within one. The checked forms are inspections, typed writes of
-fields holding values, and fixed calls, variadic calls without spreads and
-constructions at a selected signature. Left open:
+fields holding values, and fixed calls, variadic calls and constructions at
+a selected signature, `pop`, `shift` and `reverse` at a store the body
+allocated ([fresh array storage](docs/FOOTPRINTS.md#fresh-array-storage)).
+Left open:
 
 - the other application forms (a variadic construction, a call of a
   callable object, a packed call) consume no footprint, so a bounded body
@@ -108,8 +110,9 @@ constructions at a selected signature. Left open:
 
 **Footprint precision** is deferred
 ([FOOTPRINTS](docs/FOOTPRINTS.md#deferred-extra-precision)): separating one
-array from another, so that `pop` on an array the callback allocated is
-admitted.
+array from another beyond fresh storage, so that `pop` on an array literal
+the callback allocated is admitted; and a declaration's fresh result, which
+only closures state.
 
 <a id="keys-known-only-at-run-time"></a>
 **Keys known only at run time.** A write at a string key known only at run
@@ -253,16 +256,16 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 14 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
+dump, 17 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
 the same-file declarations it uses). The first blockers of the others in
 `dev/`, with the functions each stops directly and through callees:
 
-- `shift` of an array a `map` callback allocated (effects: `rest.shift()` on
-  the result of `parts`), which the rule refuses
-  ([footprint precision](#footprints)) (effects; through it section, card,
-  pageBody: 4);
-- a `map` callback running a child process, whose effect no contract bounds
-  (group: 1);
+- a function declaration passed by name as a `map` callback
+  (`g.records.map(card)`), claimed only at its own signature of one
+  parameter where `map` passes three (pageBody: 1);
+- a `map` callback (`readRecord`) whose calls state no footprint: Node's
+  `execFileSync`, whose overlay entry states none, and the imported
+  `parseRecord`, read at its declared type (group: 1);
 - an element read a length guards (`paragraphs[paragraphs.length - 1]`,
   `guarded-element-read-refused`; parseTrailers, parseRecord: 2);
 - a mapped type whose value names its key, `SHOW_STEP`'s

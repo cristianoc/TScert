@@ -446,12 +446,12 @@ claimed rest within the member's too. -/
   if expand G F = [] && m.schemes.contains F then return ([], [], [])
   let [.arrs L S] := expand G F | none
   let calls ← L.mapM fun q => m.calls.findCheck? fun c => do
-    if q.arguments.length != c.arguments.length || !c.effect.covers q.effect then none
+    if q.arguments.length != c.arguments.length || !(c.effect.drop 0).covers q.effect then none
     let ps ← (q.arguments.zip c.arguments).mapM fun (D, C) => subtypeUsing G images D C
     let pr ← subtypeUsing G images c.result q.result
     pure (ps, pr)
   let rests ← S.mapM fun s => m.rests.findCheck? fun c => do
-    if s.arguments.1.length != c.arguments.1.length || !c.effect.covers s.effect then none
+    if s.arguments.1.length != c.arguments.1.length || !(c.effect.drop 0).covers s.effect then none
     let ps ← (s.arguments.1.zip c.arguments.1).mapM fun (D, C) => subtypeUsing G images D C
     let pe ← subtypeUsing G images s.arguments.2 c.arguments.2
     let pr ← subtypeUsing G images c.result s.result
