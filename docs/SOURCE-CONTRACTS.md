@@ -1906,8 +1906,9 @@ unrestricted in its effect. The entries:
 
   A record type is open, so a key it does not name may hold any value; a key
   it names at `undefined` or `false` is absent or holds that value. The form
-  states the empty footprint on normal return. A call meeting only the first
-  form keeps an unrestricted effect. The audit of Node 25.2.1's
+  states the empty footprint on normal return and on a throw
+  ([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints)). A call
+  meeting only the first form keeps an unrestricted effect. The audit of Node 25.2.1's
   `lib/child_process.js` and `lib/internal/child_process.js` covers every
   write the call makes before it returns, and before each throw: a
   validation error, a failure to spawn, and a failed command.

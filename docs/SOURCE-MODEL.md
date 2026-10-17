@@ -435,7 +435,7 @@ The first guarantee preserves existing heap contents on normal return and
 allows fresh allocation. A call that throws supplies no heap postcondition.
 Consequently, a body checker cannot carry this guarantee through a caught
 exception: it must check the handler with the possibly changed heap, or have
-a separately justified guarantee for exceptional exits. The current pure-body
+a separately justified guarantee for exceptional exits ([exceptional footprints](#exceptional-footprints)). The current pure-body
 checker does not admit such calls. Graph composition checks normal-return
 postconditions node by node and refuses handlers; the independent pure-graph
 rule can still certify pure handlers. Qualified-call composition retains
@@ -538,11 +538,108 @@ parser's resolution and the host's module loader. Until module composition
 is proved, both are obligations of review, listed with the import
 assumption.
 
-**A catch is out of reach.** A certified import's footprint holds on normal
-return, as every call effect's does. `commit-records`' `at` catches the throw
-of `git`, so it has no certificate, and neither has `readRecord`, which
-reaches `at` through `examplesOf`
-([exceptional footprints](../WORK.md#exceptional-footprints)).
+**A catch.** A certified import's footprint holds on normal return, and on
+a throw where its effect states `onThrow`
+([exceptional footprints](#exceptional-footprints)).
+
+### Exceptional footprints
+
+An effect may promise that its footprint also holds when the call throws:
+`onThrow`. The promise covers the heap a throw leaves the call in, from the
+call's entry heap, exactly as the footprint covers a normal return's. It says
+nothing of the thrown value. A handler of a node calling at such a signature
+then starts in a heap the footprint relates to the node's entry heap, and a
+body that catches can be certified at a footprint.
+
+**Semantics.** `SafePost Ξ T Q` states `Q` of the heap a value is returned in
+and nothing of a throw. Its generalization `SafePostExc Ξ T Q R` states, in its
+throw disjunct, `R h v` of the heap `h` at which the term raises `v`:
+
+```math
+\mathsf{SafePostExc}\,\Xi\,T\,Q\,R\,(n{+}1)\,W\,h\,t \iff
+(\mathsf{val}\,t \wedge T\,W\,t \wedge Q\,h\,t)
+\vee (\exists v.\ \mathsf{Raises}\,t\,v \wedge \mathsf{Scoped}_0\,v \wedge \Xi\,W\,v \wedge R\,h\,v)
+\vee (\exists W'\,h'\,t'.\ \ldots \wedge \mathsf{SafePostExc}\,\Xi\,T\,Q\,R\,n\,W'\,h'\,t')
+```
+
+with the step disjunct as in `SafePost`. `SafePost Ξ T Q` is
+`SafePostExc Ξ T Q (fun _ _ => True)`, and `erase` holds for both. An
+effect $`e`$ with `onThrow` gives the arrow's run, from entry heap
+$`h_0`$, the exceptional postcondition
+$`R\,h\,v \iff e.\mathsf{footprint}.\mathsf{HoldsOn}\,P\,h_0\,h`$, with
+$`P`$ the locations its `receiverStore` leaves bounded, as `Effect.within`
+reads them. Without `onThrow`, $`R`$ is `True`. Coverage
+(`Effect.Covers`) gains one clause: an effect with `onThrow` covers one
+without, and not the other way.
+
+**What stays on normal edges.** A promise (`guards`, `asserts`) is a fact
+about the arguments a normal return establishes, and `fresh` a fact about
+the returned value. A throw establishes neither, so neither moves onto an
+exceptional edge. A handler binds the thrown value at the graph's exception
+family, `unknown`, with no freshness, and receives only the current-content
+facts the footprint keeps stable, as a normal edge receives those its call
+keeps.
+
+**Composition through a body.** `GraphCode.BoundState` states the run's
+invariant from the body's entry heap $`h_0`$. It changes in three places:
+
+- a node with a handler is admitted when its term's run is
+  `SafePostExc` with the footprint on the locations below the node's entry
+  as its exceptional postcondition, and the `handle` transition then keeps
+  $`\Phi.\mathsf{Holds}\,h_0\,h`$, by `Closed.Holds.trans_on` from the
+  node's entry, as `enter` does for a normal return;
+- the state `.raised v` keeps $`\Phi.\mathsf{Holds}\,h_0\,h`$ where the body
+  claims `onThrow`; without it the state stays unconstrained;
+- each node's term is checked by the form that admits it today (an
+  inspection, a typed write, a call at a selected signature), now also on
+  its throws.
+
+Every way a node's term can raise is then covered:
+
+- **Before the invocation.** Source lowering evaluates operands into slots
+  first (`valueTerm`), so a call node raises either while reading its
+  operands, which writes nothing, or in the callee. An inspection or a read
+  raises at its entry heap. A typed write raises before it writes.
+- **In the callee.** A call at a selected signature raises within the
+  signature's `onThrow` footprint; one whose signature lacks `onThrow` admits
+  no handler and no `onThrow` body.
+- **Defaults and intermediate mutations.** A parameter default runs as nodes
+  of the declaration's graph, and earlier nodes' normal returns compose into
+  the invariant, so a throw at any node is relative to the body's entry
+  heap.
+- **Handlers and rethrows.** A handler is a node like any other. A rethrow
+  is a `throw` node without a handler, which raises at its entry heap and so
+  reaches `.raised` with the invariant.
+
+A pure graph keeps its independent operational rule, which covers its
+handlers already.
+
+**What `checkJson_safe` states.** Its second conclusion, for each accepted
+request with a footprint other than `top`, becomes a `SafePostExc` whose
+exceptional postcondition is the footprint from the run's entry heap where
+the request's effect states `onThrow`, and `True` elsewhere. Its premise
+stays the exact CLI success condition. The first conclusion, plain safety,
+is unchanged.
+
+**Natives.** A native signature states `onThrow` only where its audit
+covers every throw: validation errors, failures of the host, and the
+operation's own errors. `execFileSync`'s
+[restricted form](SOURCE-CONTRACTS.md#library-modules) is the first; its
+overlay entry in `library-modules.mts` states the empty footprint with
+`onThrow`, at options whose optional fields `env?: undefined` and
+`shell?: false` the argument's claim must meet. An object literal meets them
+by leaving those keys out, since a literal owns exactly the properties it
+writes ([object literals](#object-literals)). The entry keeps the unrestricted
+form beside it, so a call outside the restricted options keeps its type and
+an unrestricted effect.
+
+**The motivating chain.** `commit-records`' `git` calls `execFileSync` at
+the restricted options and is certified at the empty footprint with
+`onThrow`. `at` catches `git`'s throw and returns `undefined` from its
+handler, so it is certified at the empty footprint. `examplesOf`,
+`readRecord` and `group`'s `map` callback then compose normal-return
+footprints, with the [certified import](#certified-imports) of
+`parseRecord`.
 
 ### Calls
 
