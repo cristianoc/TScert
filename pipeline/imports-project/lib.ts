@@ -290,3 +290,11 @@ export function isKind(x: unknown, k: "string" | "number"): boolean {
 export function limited(this: { limit: number } | undefined): number {
   return this === undefined ? 0 : this.limit;
 }
+/** An array the case array-through-declaration-value-import reads without
+ * writing an array type itself. */
+export function trio(): readonly number[] {
+  return [1, 2, 3];
+}
+/** An array type the case invalid-array-through-declaration-value-import
+ * names without writing one. */
+export type Numbers = number[];

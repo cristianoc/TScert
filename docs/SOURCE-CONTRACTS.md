@@ -1384,7 +1384,10 @@ and `String`, `Number`, `BigInt`, `Boolean` through the overlay
 (`array-prototype.mts`): only listed members, each read from the declaration
 whose text is the reviewed one, at the receiver the entry names (`readonly
 T[]` for `ReadonlyArray`, `T[]` for a mutator, the primitive for a
-primitive's member), without dropped parameters. An entry may state its
+primitive's member), without dropped parameters. `ArrayProto` joins a
+unit's declarations wherever an array or tuple type reaches it: one the file
+writes, or one a declaration it reads states (an imported value's type, a
+declared type's member, a library contract's result). An entry may state its
 signature family instead, with $`\omega`$ the entry of member $`m`$ of prototype
 $`p`$, and $`R_j`$ its reviewed receiver (defaulting to $`p`$):
 

@@ -29,7 +29,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 295 verify in `tools/`, 7 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 28 of 296 verify in `tools/`, 7 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -222,13 +222,14 @@ probe's correspondence to the application.
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 295 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 296 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-17):
 
 - the compiler API's `NodeArray`, which extends the standard library's
-  `ReadonlyArray`, there read as a plain interface ("duplicate field name in
-  a record", 61);
+  `ReadonlyArray`, there read as a plain interface because `@types/node`
+  merges an interface of its own into it ("duplicate field name in a
+  record", 61); without that merge, extending a library array is refused;
 - a value imported from the front end's own modules that is no annotated
   constant, function or class: an unannotated arrow such as `nameOf`, a
   constant such as `asyncCompleteName` (45);

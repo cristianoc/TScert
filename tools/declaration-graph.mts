@@ -171,6 +171,15 @@ function withProject<T>(file: string, tsconfigPath: string | undefined, clientTe
   }
 }
 
+/** Whether a part of the declaration document names an array or a tuple
+ * type, which Lean reads at `ArrayProto`. */
+function namesArray(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(namesArray);
+  if (typeof value !== "object" || value === null) return false;
+  if ("k" in value && (value.k === "array" || value.k === "tuple")) return true;
+  return Object.values(value).some(namesArray);
+}
+
 /** A module's identity: the client by its absolute path, a standard library
  * file by name, anything else by its real path relative to the project. */
 function moduleIds(clientFile: string, root: string): (file: SourceFile) => string {
@@ -2206,15 +2215,33 @@ export function collectDeclarations(file: string, options: {
         ({ node, span: values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0] })),
       ...contextualStarts,
     ];
-    for (const { node: start, span } of starts) {
-      try {
-        collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
-          enumType: enumTypeAt, enumerated, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
-          libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
-          keys: keyTypeOf, alias: aliasOf, awaited });
-      } catch (error) {
-        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+    const collectFrom = (list: readonly { node: TypeDeclaration; span: Span }[]): void => {
+      for (const { node: start, span } of list) {
+        try {
+          collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
+            enumType: enumTypeAt, enumerated, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+            libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
+            keys: keyTypeOf, alias: aliasOf, awaited });
+        } catch (error) {
+          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        }
       }
+    };
+    collectFrom(starts);
+    // An array type reaching the unit only through a declaration (an
+    // imported value's, a declared type's member, a library contract's) is
+    // read at `Array.prototype`'s contract as one the client writes is; the
+    // declarations that contract names join the graph.
+    if (!arrayProto.length &&
+        [values, definitions, applications, selections, primitiveProtos, regexpDefinitions].some(namesArray)) {
+      const at = values[0]?.binding.span ?? roots[0]?.root.binding.span ?? [0, 0];
+      const from = valueStarts.length;
+      try {
+        arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
+      } catch (error) {
+        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
+      }
+      collectFrom(valueStarts.slice(from).map(node => ({ node, span: at })));
     }
     definitions.push(...selections, ...primitiveProtos, ...regexpDefinitions, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
