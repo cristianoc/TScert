@@ -24,7 +24,9 @@ Cases naming a project read their imports from it:
 `pipeline/augmented-project/` augments `ObjectConstructor` from a module of
 its own, and `pipeline/fake-lib-project/` reads `pipeline/fake-lib/`, a file
 named like a standard library file, for the `*augmented*` and `*fake-lib*`
-cases.
+cases; `pipeline/lib-collision-project/` holds one at
+`typescript/lib/lib.augment.d.ts`, the path a standard library identity is
+printed with, for the `*lib-collision*` case.
 Lean tests build alongside the implementation in `lean/Verification/Tests/`.
 
 This directory holds the suites that check the repository around the pipeline:

@@ -1,0 +1,14 @@
+{
+  // A project holding `typescript/lib/lib.augment.d.ts`, a file whose path
+  // from the project root spells a standard library identity: the
+  // `*lib-collision*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "files": ["./typescript/lib/lib.augment.d.ts"],
+  "include": ["../examples/*lib-collision*.ts"]
+}

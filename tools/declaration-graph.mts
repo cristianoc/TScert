@@ -102,7 +102,6 @@ export function libraryArguments(library: LibraryType, nodes: readonly TypeNode[
   return nodes.map((node, i) => (named.includes(i) ? keys?.(node) : null) ?? read(node));
 }
 
-const isLibraryModule = (module: string): boolean => module.startsWith("typescript/lib/");
 
 /** The configured project named on a command line: a tsconfig file, or the
  * directory holding one. */
@@ -177,23 +176,32 @@ function namesArray(value: unknown): boolean {
 
 /** A module's identity: the client by its absolute path, a standard library
  * file by name, anything else by its real path relative to the project. */
-function moduleIds(clientFile: string, root: string, program: Program): (file: SourceFile) => string {
+function moduleIds(clientFile: string, root: string, program: Program):
+    { idOf: (file: SourceFile) => string; libraryFile: (file: SourceFile) => boolean } {
   const client = realpathSync(clientFile);
   const projectRoot = realpathSync(root);
   // The standard library is the files the compiler's own library resolution
   // gives the program (`isSourceFileDefaultLibrary`), whatever else is
-  // named like one; only names of that form are asked.
+  // named like one; only names of that form are asked. Every library
+  // decision reads this membership.
   const libraries = new Set(program.getSourceFileNames().filter(name => /^lib\..*\.d\.ts$/.test(basename(name)))
     .flatMap(name => {
       const file = program.getSourceFile(name);
       return file && program.isSourceFileDefaultLibrary(file) ? [realpathSync(name)] : [];
     }));
-  return file => {
+  const libraryFile = (file: SourceFile): boolean => libraries.has(realpathSync(file.fileName));
+  // The identities are disjoint by construction: the client by its absolute
+  // path, a library file `typescript/lib/<file>`, any other file its path
+  // from the project root, written `./…` inside it and `../…` outside, so
+  // no other file's identity reads as a library file's.
+  const idOf = (file: SourceFile): string => {
     const path = realpathSync(file.fileName);
     if (path === client) return clientFile;
     if (libraries.has(path)) return `typescript/lib/${basename(path)}`;
-    return relative(projectRoot, path).split(sep).join("/");
+    const inside = relative(projectRoot, path).split(sep).join("/");
+    return inside.startsWith("../") ? inside : `./${inside}`;
   };
+  return { idOf, libraryFile };
 }
 
 /** What TypeScript binds `identifier` to, following import and export aliases. */
@@ -559,7 +567,7 @@ export function collectDeclarations(file: string, options: {
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
-    const idOf = moduleIds(clientFile, root, program);
+    const { idOf, libraryFile } = moduleIds(clientFile, root, program);
     // Everything the graph uses must be code TypeScript accepts: an error in a
     // used declaration or on the resolution path refuses it. Errors elsewhere in
     // those files, and in the client's function bodies, are not the graph's.
@@ -678,7 +686,7 @@ export function collectDeclarations(file: string, options: {
       const declarations = target?.declarations.map(d => d.resolve()) ?? [];
       const [only] = declarations;
       return declarations.length === 1 && !!only && ts.isTypeAliasDeclaration(only) &&
-        only.name.text === "Awaited" && isLibraryModule(idOf(only.getSourceFile()));
+        only.name.text === "Awaited" && libraryFile(only.getSourceFile());
     };
     const associatedAlias = (node: TypeAliasDeclaration, seen = new Set<TypeAliasDeclaration>()): boolean => {
       if (seen.has(node)) return false;
@@ -756,7 +764,7 @@ export function collectDeclarations(file: string, options: {
       const nodes = (targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve());
       const types: TypeDeclaration[] = [];
       for (const node of nodes) {
-        if (!node || !isLibraryModule(idOf(node.getSourceFile()))) return null;
+        if (!node || !libraryFile(node.getSourceFile())) return null;
         if (isTypeDeclaration(node)) types.push(node);
       }
       const [first] = types;
@@ -794,7 +802,7 @@ export function collectDeclarations(file: string, options: {
       const source = node.getSourceFile();
       const parts = partners.get(node) ?? [node];
       const library = ts.isInterfaceDeclaration(node) && !node.typeParameters?.length &&
-        parts.every(part => isLibraryModule(idOf(part.getSourceFile())));
+        parts.every(part => libraryFile(part.getSourceFile()));
       if (library && node.name.text === "Function") return { k: "callable", span: [node.getStart(source), node.end] };
       return library ? libraryRegExp(node.name.text, parts) : null;
     };
@@ -831,7 +839,7 @@ export function collectDeclarations(file: string, options: {
     // Whether a name denotes a standard library value, such as `Symbol`.
     const isLibraryValue = (name: Identifier): boolean => {
       const nodes = (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve());
-      return nodes.length > 0 && nodes.every(n => !!n && isLibraryModule(idOf(n.getSourceFile())));
+      return nodes.length > 0 && nodes.every(n => !!n && libraryFile(n.getSourceFile()));
     };
     const symbols: DeclarationIdentity[] = [];
     const symbolIndex = new Map<string, number>();
@@ -1315,7 +1323,7 @@ export function collectDeclarations(file: string, options: {
           declaration.getSourceFile().fileName === client.fileName) continue;
       try {
         if (ts.isTypeAliasDeclaration(declaration) && declaration.name.text === "Awaited" &&
-            isLibraryModule(idOf(declaration.getSourceFile()))) {
+            libraryFile(declaration.getSourceFile())) {
           resolutionContextAt ??= span;
           options.awaited?.(span);
           continue;
@@ -1352,7 +1360,7 @@ export function collectDeclarations(file: string, options: {
       const parts = (symbol?.declarations ?? []).map(d => d.resolve())
         .filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
       const [first] = parts;
-      if (!first || !parts.every(part => isLibraryModule(idOf(part.getSourceFile()))))
+      if (!first || !parts.every(part => libraryFile(part.getSourceFile())))
         throw Error(`the standard library declares no ${name}`);
       for (const part of parts) clean(part, `${idOf(part.getSourceFile())}#${name}`);
       partners.set(first, parts);
@@ -1381,7 +1389,7 @@ export function collectDeclarations(file: string, options: {
         const [property, ...more] = fields;
         if (!property) return null;
         if (more.length || !ts.isIdentifier(property.name) ||
-            !isLibraryModule(idOf(property.getSourceFile())) ||
+            !libraryFile(property.getSourceFile()) ||
             property.getText(property.getSourceFile()).trim() !== `readonly ${name}: unique symbol;`)
           throw Error(`Symbol.${name} is not declared as reviewed`);
         return symbolOf(property.name);
@@ -1485,7 +1493,7 @@ export function collectDeclarations(file: string, options: {
       const symbol = part.getSymbol();
       const named = symbol && Object.hasOwn(collections, symbol.name) ? collections[symbol.name] : undefined;
       const library = !!symbol?.declarations.length &&
-        symbol.declarations.every(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client)));
+        symbol.declarations.every(d => libraryFile(d.resolve()?.getSourceFile() ?? client));
       if (named && library) return named;
       // A match array is an array (`regexp.mts` reads `RegExpExecArray` and
       // `RegExpMatchArray` as tuple views), which the host builds with
@@ -1719,7 +1727,7 @@ export function collectDeclarations(file: string, options: {
       if (!symbol || symbol.flags & SymbolFlags.Alias || !symbol.declarations.length) continue;
       if (symbol.declarations.every(d => {
         const node = d.resolve();
-        return !!node && isLibraryModule(idOf(node.getSourceFile()));
+        return !!node && libraryFile(node.getSourceFile());
       })) options.libraryName?.(span);
     }
     for (const span of options.receiverTargets ?? []) {
@@ -1750,7 +1758,7 @@ export function collectDeclarations(file: string, options: {
       if (!first) continue;
       const at: Span = [first.getStart(client), first.end];
       try {
-        const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, clean, valueScope, partners,
+        const selection = selectGlobal(checker, uses, { lookup, identityOf: idOf, libraryFile, clean, valueScope, partners,
           overlay: globalsOverlay, test: (span, test) => options.globalTest?.(span, test),
           intrinsic: (span, name) => {
             listIntrinsics(span, [name]);
@@ -1858,11 +1866,11 @@ export function collectDeclarations(file: string, options: {
       // A hook the program's types state, not the one `Function.prototype`
       // holds, which a function value inherits rather than owns.
       const declaration = hook?.declarations[0]?.resolve();
-      if (!declaration || isLibraryModule(idOf(declaration.getSourceFile() ?? client))) continue;
+      if (!declaration || libraryFile(declaration.getSourceFile() ?? client)) continue;
       const key = declaration ? nameOf(declaration) : undefined;
       const target = key && ts.isComputedPropertyName(key) && ts.isPropertyAccessExpression(key.expression) &&
         ts.isIdentifier(key.expression.name) ? targetOf(checker, key.expression.name) : undefined;
-      if (target?.declarations.some(d => isLibraryModule(idOf(d.resolve()?.getSourceFile() ?? client))))
+      if (target?.declarations.some(d => libraryFile(d.resolve()?.getSourceFile() ?? client)))
         options.hookTest?.(span);
     }
     for (const span of options.bindingReads ?? []) {
@@ -1929,7 +1937,7 @@ export function collectDeclarations(file: string, options: {
       const symbol = type.getAliasSymbol() ?? type.getSymbol();
       const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
       const [node] = nodes;
-      if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !isLibraryModule(idOf(node.getSourceFile()))) {
+      if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !libraryFile(node.getSourceFile())) {
         const arguments_ = type.getAliasTypeArguments();
         const actuals = arguments_.length ? arguments_ : isTypeReference(type) ? checker.getTypeArguments(type) : [];
         const args = actuals.map(argument => contextualTerm(argument, span));
@@ -1944,7 +1952,7 @@ export function collectDeclarations(file: string, options: {
       // `regexp.mts` reads it.
       const library = nodes.filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
       if (symbol && library.length && library.length === nodes.length &&
-          library.every(n => isLibraryModule(idOf(n.getSourceFile())))) {
+          library.every(n => libraryFile(n.getSourceFile()))) {
         const stated = libraryRegExp(symbol.name, library);
         if (stated) return stated;
       }
@@ -2219,7 +2227,7 @@ export function collectDeclarations(file: string, options: {
           const node = lookup(name, name.text);
           return partners.get(node) ?? [node];
         },
-        library: node => isLibraryModule(idOf(node.getSourceFile())),
+        library: node => libraryFile(node.getSourceFile()),
         read: (node, binder) => typeTerm(sweepScope(node, binder), node),
         reference: (name, args) => {
           const node = lookup(name, name.text);
@@ -2287,7 +2295,7 @@ export function collectDeclarations(file: string, options: {
       for (const { node: start, span } of list) {
         try {
           collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
-            enumType: enumTypeAt, enumerated, memberName, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+            enumType: enumTypeAt, enumerated, memberName, identityOf, libraryFile, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
             libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
             keys: keyTypeOf, alias: aliasOf, awaited });
         } catch (error) {
@@ -2407,6 +2415,8 @@ const ambientSpecifier = "ambient";
 type SelectionContext = {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (file: SourceFile) => string;
+  /** Whether a file is the standard library's (`moduleIds`). */
+  libraryFile: (file: SourceFile) => boolean;
   clean: (node: Node, what: string) => void;
   valueScope: (node: Node, what: string) => TermScope;
   partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
@@ -2534,7 +2544,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
   // A standard library global is read through the reviewed overlay: a
   // signature it does not list, with exactly the text reviewed, is refused.
-  const library = variables.every(v => isLibraryModule(context.identityOf(v.getSourceFile())));
+  const library = variables.every(v => context.libraryFile(v.getSourceFile()));
   // An entry stating several forms states construct signatures: each form is
   // one, under the entry's binders, which every form names alike. Read
   // anywhere else, or empty, the list is refused rather than an arm dropped.
@@ -2996,6 +3006,8 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
+  /** Whether a file is the standard library's (`moduleIds`). */
+  libraryFile: (file: SourceFile) => boolean;
   symbol: (written: Identifier | ts.PropertyAccessExpression) => number;
   literalKey: (written: Identifier | ts.PropertyAccessExpression) => string | null;
   privateName: (name: ts.PrivateIdentifier) => number;
@@ -3142,7 +3154,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // A standard library interface read through the overlay: only its listed
     // members, and no base.
     const overlaid = ts.isInterfaceDeclaration(node) && Object.hasOwn(interfaceOverlay, node.name.text) &&
-        parts.every(part => isLibraryModule(identityOf(part).module))
+        parts.every(part => context.libraryFile(part.getSourceFile()))
       ? interfaceOverlay[node.name.text] : undefined;
     if (overlaid && ts.isInterfaceDeclaration(node)) {
       definitions.push({ declaration: identity, parameters, bases: [],
@@ -3175,8 +3187,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // promise owns none of those keys. The ordinary prototype/own-key
     // contracts preserve this requirement through structural writable aliases.
     if (parts.some(part => ts.isInterfaceDeclaration(part) && part.name.text === "Promise" &&
-        isLibraryModule(identityOf(part).module))) {
-      if (parts.some(part => !isLibraryModule(identityOf(part).module)))
+        context.libraryFile(part.getSourceFile()))) {
+      if (parts.some(part => !context.libraryFile(part.getSourceFile())))
         scope.fail(node, "a source augmentation of native Promise is outside the fragment: native factories must meet the built-in reviewed Promise contract");
       if (expression.k !== "object" || expression.prototype || expression.stringIndex ||
           expression.numberIndex || expression.symbolIndex || expression.calls.length)

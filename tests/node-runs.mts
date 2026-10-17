@@ -697,7 +697,7 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runImporting("invalid-undefined-import-value-import", "read()"), 10);
   // `Object.assign(1)` is the standard copy whatever a declaration augments:
   // a `Number` object, not the string the augmenting declarations state.
-  for (const file of ["invalid-augmented-object-assign", "invalid-fake-lib-object-assign"])
+  for (const file of ["invalid-augmented-object-assign", "invalid-fake-lib-object-assign", "invalid-lib-collision-object-assign"])
     assert.equal(runExample(file, "typeof assigned()"), "object", file);
   // A namespace member is an import binding: writing it throws.
   assert.throws(() => runImporting("invalid-namespace-member-write-value-import", "reset()"), /read only|read-only|Cannot assign/);
