@@ -16,5 +16,7 @@ type function_claim = { contracts: contract list; source: fn; entries: entry lis
                         arrows: (Json.t * overlay list) list;
                         (* The footprint proposed for a declaration's signature, which
                            Lean's check of its unit must establish. *)
-                        declared_footprint: footprint }
+                        declared_footprint: footprint;
+                        (* Whether the footprint is proposed on a throw too. *)
+                        declared_on_throw: bool }
 type t = { program: program; functions: function_claim list; init: function_claim option }

@@ -556,6 +556,7 @@ let encode (proposal : Proposal_types.t) =
       "result",claim_type source.result;
       "contracts",contracts f.contracts;
       "footprint",footprint_json f.declared_footprint;
+      "onThrow",Bool f.declared_on_throw;
       "entries",entries f.entries;
       "expressions",expressions f.expressions]
       @ arrows)) proposal.functions in

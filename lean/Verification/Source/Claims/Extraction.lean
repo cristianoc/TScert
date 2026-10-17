@@ -37,9 +37,11 @@ def extractPlans (ast claims : Json) (fileKey : String)
   -- unit certifies (`checkRequestResult`); an imported value states none.
   let footprintOf (g : Fragment.Fn) : Footprints.Closed :=
     ((d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map (·.footprint)).getD .top
+  let onThrowOf (g : Fragment.Fn) : Bool :=
+    ((d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map (·.onThrow)).getD false
   let moduleFunctions : List (SourceExtraction.ModuleValue Tree) :=
     (all.filterMap fun (g, tps) => if tps.isEmpty then
-      some (g.name, g.namePos, (moduleArrow g (footprintOf g)).map .written) else none) ++
+      some (g.name, g.namePos, (moduleArrow g (footprintOf g) (onThrowOf g)).map .written) else none) ++
     (imported.map fun (name, span, ty) => (name, span, .ok (.written ty))) ++
     (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
       Except.ok (.written (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
@@ -90,7 +92,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
         throw "the module initialization's binders are not its generic classes'"
       -- Nothing calls the initialization unit with a receiver.
       pure [(⟨"", span, [], undefinedType, init, false, none⟩, binders,
-        ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, .top, c.arrows⟩)]
+        ⟨"", span, [], .labels [Labels.undef], c.entries, c.expressions, c.contracts, .top, false, c.arrows⟩)]
   -- Initialization order is the initialization unit's own obligation.
   if !initUnit.isEmpty then checkInitializationOrder d.types all init
   if all.length != d.functions.length then throw "function claim count mismatch"

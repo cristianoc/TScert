@@ -122,6 +122,9 @@ interface FunctionClaims<L = Label> {
   /** The footprint proposed for the declaration's signature, which its
    * unit's graph must establish. */
   footprint: ClosedFootprint;
+  /** Whether the footprint is proposed on a throw too, which the unit's
+   * graph must establish as well. */
+  onThrow: boolean;
   entries: EntryClaim<L>[];
   expressions: ExpressionClaim<L>[];
   /** One interior claim set per advertised signature of the closure at pos. */

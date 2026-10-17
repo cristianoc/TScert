@@ -25,7 +25,7 @@ design, not its progress.
 | [Module composition](#module-composition) | open: certified imports designed (2026-10-17) | a Lean theorem composes units certified against each other's signatures |
 | [Cell facts by tag, and label slices](#cell-fact-slices) | open: designed (2026-10-17) | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
 | [Decoders' dictionary reads](#decoders-dictionary-reads) | investigation, waiting for the owner | a route is chosen for reading `unknown` JSON by key |
-| [Exceptional footprints](#exceptional-footprints) | open: designed (2026-10-17) | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
+| [Exceptional footprints](#exceptional-footprints) | open: the restricted `execFileSync` entry's effect is not read yet (2026-10-17) | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
@@ -162,8 +162,12 @@ decoders then take instead of `unknown`.
 **Exceptional footprints**: a call's promise that its footprint also holds
 when it throws (`onThrow`), carried through handlers and concluded by
 `checkJson_safe` ([the design](docs/SOURCE-MODEL.md#exceptional-footprints)).
-`group` in `dev/` needs it at `at`'s catch of `git`, with `execFileSync`'s
-[restricted form](docs/SOURCE-CONTRACTS.md#library-modules).
+Left: the declaration reader (`declaration-graph.mts`, `moduleValue`) builds a
+module function's signature at the ordinary effect, so the restricted
+`execFileSync` entry's `onThrow` is not read, and `git` in `dev/` states no
+footprint on a throw; reading `entry.effect` there is a one-line change in
+the module the compiler-API work owns. Handlers receive no current-content
+facts across a throw.
 
 - a semantic extension: `SafePost` states no postcondition on a throw, so
   `checkJson_safe` needs an exceptional conclusion tied to the exact CLI
@@ -311,8 +315,9 @@ the same-file declarations it uses). The first blockers of the others in
   `parseRecord`, read at its declared type, which states no effect; an
   imported function's effect needs a contract its own module's
   certification establishes ([module composition](#module-composition));
-  past both, `at`'s catch of `git`'s throw needs
-  [exceptional footprints](#exceptional-footprints) (group: 1);
+  past both, `at`'s catch of `git`'s throw needs `execFileSync`'s restricted
+  entry read at its footprint on a throw
+  ([exceptional footprints](#exceptional-footprints)) (group: 1);
 - in printGraph, `program.map(decodeNode)` passes an imported function as a
   callback, which a signature binding more parameters may call with further
   actuals; only a module function's own code is known to discard them

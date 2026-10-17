@@ -82,6 +82,13 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-map-literal-outside-element: the actual source returns a kind its type does not name");
   assert.equal(runExample("array-spread-named-union", `sizes({ kind: "dot" }, [{ kind: "line", length: 2 }])`), "0, 2",
     "array-spread-named-union: each element's size");
+  assert.equal(runExample("exceptional-footprint-handler",
+    `JSON.stringify([orZero([1, -1]), halvesOrSelf([4, 3]), relayedOrOne([-2, 2]), largest(1, 2)])`),
+    "[[1,0],[2,3],[1,2],2]", "exceptional-footprint-handler: each handler's value");
+  assert.equal(runExample("invalid-exceptional-handler-fact", `wrong({ v: "x" })`), undefined,
+    "invalid-exceptional-handler-fact: the handler reads the field the throwing call cleared");
+  assert.equal(runExample("invalid-exceptional-handler-mutation", "(r => r.length === 3 && !(2 in r))(wrong([1, 2, 3]))"), true,
+    "invalid-exceptional-handler-mutation: the callee's pop before its throw leaves a hole");
   assert.equal(runExample("json-stringify-recursive", `JSON.stringify(serialized([{ a: { b: [] } }, 1]))`), '["{\\"a\\":{\\"b\\":[]}}","1"]',
     "json-stringify-recursive: each value serialized");
   // Each hook runs code of the client's that pops the array `map` visits, so

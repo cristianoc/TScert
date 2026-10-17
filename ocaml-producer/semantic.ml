@@ -135,10 +135,11 @@ let quantifier_identities (q:quantifier) = q.identity ::
 let retain_call_effects declared inferred = match declared,inferred with
   | Atoms [Shape expected],Atoms [Shape actual] ->
     let retain (s:signature) =
-      if List.exists (fun (candidate:signature) ->
-        candidate.call_effect=empty_effect &&
-        {candidate with call_effect=ordinary_effect} = {s with call_effect=ordinary_effect}) actual.calls
-      then {s with call_effect=empty_effect} else s in
+      match List.find_opt (fun (candidate:signature) ->
+        {candidate.call_effect with on_throw=false}=empty_effect &&
+        {candidate with call_effect=ordinary_effect} = {s with call_effect=ordinary_effect}) actual.calls with
+      | Some candidate -> {s with call_effect=candidate.call_effect}
+      | None -> s in
     Atoms [Shape {expected with calls=List.map retain expected.calls}]
   | _ -> declared
 

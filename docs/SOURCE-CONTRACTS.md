@@ -1793,8 +1793,10 @@ declaration no library has, which joins the document with the entry:
 
 (`JSON.stringify`'s parameter). At a `JsonValue`, `JSON.stringify` reads own
 data properties, calls no `toJSON` and no getter, and allocates its string,
-so it states the empty footprint; so does `Error` at a string message, which
-it stores without conversion code (`map-stable-json-error`,
+so it states the empty footprint, on a throw too (a cycle); so does `Error`
+at a string message, which it stores without conversion code
+([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints);
+`map-stable-json-error`,
 `json-stringify-recursive`). Each is read with its one argument: a
 `toJSON` hook, a replacer and `Error`'s options run code of the client's,
 which may write what a footprint excludes

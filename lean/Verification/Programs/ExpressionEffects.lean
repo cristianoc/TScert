@@ -295,8 +295,8 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) h)
-      n W h (instantiate 0 ρ j.term) := by
+    SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) h)
+      (e.excPost (receiverOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a call with a callee and a receiver premise.
   cases t <;> try exact (hl : False).elim
@@ -352,7 +352,7 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
       have hr := member jr (by simp)
       have hrval := values jr (by simp)
       have hplain : e.plain = true := hL.2
-      have hs := CallEffects.call_safe (effect := e)
+      have hs := CallEffects.call_safe_exc (effect := e)
         (P := ArgsShort (jas.map (fun p => meaning G p.type)))
         (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
@@ -372,8 +372,8 @@ private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) h)
-      n W h (instantiate 0 ρ j.term) := by
+    SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) h)
+      (e.excPost (receiverOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a construction with a constructor premise.
   cases t <;> try exact (hl : False).elim
@@ -420,7 +420,7 @@ private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
         intro v hv'
         obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hv'
         exact values p (by simp [List.mem_of_mem_take hp])
-      have hs := CallEffects.construct_safe hpl
+      have hs := CallEffects.construct_safe_exc hpl
         (P := ArgsT (jas.map (fun p => meaning G p.type)))
         (Adm.of_transfer (fun ha j hj U hx => ArgsT_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
@@ -892,7 +892,7 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
     case app effect =>
       cases hsel
       simp only [selectedOperands] at hp
-      apply call_local_sound ht.1 _ _ he hw hh
+      refine SafePostExc.post (call_local_sound ht.1 ?_ ?_ he hw hh)
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
@@ -928,7 +928,7 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
     case construct effect =>
       cases hsel
       simp only [selectedOperands] at hp
-      apply construct_local_sound ht.1 _ _ he hw hh
+      refine SafePostExc.post (construct_local_sound ht.1 ?_ ?_ he hw hh)
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
@@ -971,5 +971,140 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     · exact (CallEffects.Effect.within_holds hq.1 hr).mono hle
     · rw [hr]; exact CallEffects.Effect.within_top hq.1
   · cases hp
+
+/-! ### Throws
+
+A node a handler catches, or one in a body stating its footprint on a throw,
+must bound the heap its throw leaves too. An inspection keeps the heap's
+prefix at every step, a raise included; a typed write raises before it
+writes; a call at a selected signature raises within the signature's
+footprint where it states `onThrow`. -/
+
+/-- An inspection keeps the input heap as a prefix on every step, so where it
+raises too. -/
+theorem inspect_safe_exc {T : Fam} {initial : Heap} : ∀ {n W h t},
+    initial.IsPrefix h → Purity.inspectTerm t = true → WorldAdm W → HeapOk n W h →
+    Safe Ξ T n W h t →
+    SafePostExc Ξ T (fun h' _ => Footprints.Closed.empty.Holds initial h')
+      (fun h' => Footprints.Closed.empty.Holds initial h') n W h t := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hpre hp hw hh hs
+    rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh', hs⟩
+    · exact .inl (.inl ⟨hv, ht, Footprints.Closed.holds_empty.mpr hpre⟩)
+    · exact .inl (.inr ⟨hth, Footprints.Closed.holds_empty.mpr hpre⟩)
+    · obtain ⟨hprefix, hp'⟩ := Purity.inspect_step step hp (HeapExpressionRules.heap_values hw hh)
+      exact .inr ⟨U, h', t', hx, hu, step, hh', ih (hpre.trans hprefix) hp' hu hh' hs⟩
+
+theorem sound_exc {G : NormalGraph ι} {Γ t A ρ n W h}
+    (hc : check G Γ t = true) (hscope : checkScope Γ.length t = true)
+    (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hs : Safe (excOf G) (meaning G A) n W h (instantiate 0 ρ t)) :
+    SafePostExc (excOf G) (meaning G A) (fun h' _ => Footprints.Closed.empty.Holds h h')
+      (fun h' => Footprints.Closed.empty.Holds h h') n W h (instantiate 0 ρ t) :=
+  inspect_safe_exc (List.prefix_refl h) (inspect_instantiate (d := 0) hc hscope he) hw hh hs
+
+/-- A typed write raises, where it does, before it writes: at its entry
+heap. -/
+theorem write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : writeWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
+  have hpost := write_within hc he hh hs
+  unfold writeWithin at hc
+  split at hc
+  case h_2 => contradiction
+  rename_i f i k hw
+  rw [HeapExpressionRules.writeSlots_eq hw] at hpost ⊢
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+  obtain ⟨⟨_, hk⟩, hsel⟩ := hc
+  split at hsel
+  · rename_i Ref hi
+    cases n with
+    | zero => trivial
+    | succ n =>
+      have hiv := (meaning_value (he.2 i Ref hi)).1
+      have hkv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
+      simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hpost ⊢
+      rcases hpost with (hv | hr) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
+      · exact .inl (.inl hv)
+      · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl Φ h⟩)
+      · obtain ⟨_, _, _, _, _, _, _, rfl, rfl⟩ := HeapExpressionRules.write_inv hiv hkv step
+        refine .inr ⟨U, _, _, hx, hu, step, hh', ?_⟩
+        cases n with
+        | zero => trivial
+        | succ m =>
+          rcases hs' with (hv | hr) | ⟨_, _, _, _, _, step', _, _⟩
+          · exact .inl (.inl hv)
+          · exact absurd hr (val_not_thrown rfl)
+          · exact False.elim (value_no_step rfl step')
+  · contradiction
+
+/-- The selected forms a throw postcondition is concluded for: an invocation
+or a construction at a fixed signature, through subsumption. -/
+def selectedThrows : Evidence ι → Bool
+  | .node _ (.app _) _ => true
+  | .node _ (.construct _) _ => true
+  | .node _ (.sub _) [p] => selectedThrows p
+  | _ => false
+
+/-- **A selected call meets its signature's postconditions** on a normal
+return and on a throw, at its receiver, from the heap it starts in. -/
+theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
+    {codes : CodeEntry ι → Bool} (ht : checkTreeUsing G images e codes = true)
+    (hp : selectedOperands e = true) (hthrows : selectedThrows e = true)
+    {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
+    (hcodes : CodesSound G codes)
+    {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePostExc (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) h)
+      (eff.excPost (receiverOf (instantiate 0 ρ (claim e).term)) h) n W h (instantiate 0 ρ (claim e).term) := by
+  cases e with
+  | node j r ps =>
+    simp only [claim] at he ⊢
+    simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
+    cases r <;> try simp only [selectedEffect, reduceCtorEq] at hsel
+    case app effect =>
+      cases hsel
+      simp only [selectedOperands] at hp
+      apply call_local_sound ht.1 _ _ he hw hh
+      · intro p hm
+        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+      · intro p hm
+        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+        exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
+    case callRest => simp [selectedThrows] at hthrows
+    case construct effect =>
+      cases hsel
+      simp only [selectedOperands] at hp
+      apply construct_local_sound ht.1 _ _ he hw hh
+      · intro p hm
+        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+      · intro p hm
+        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+        exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
+    case sub proof =>
+      cases ps with
+      | nil => simp [selectedEffect] at hsel
+      | cons child rest =>
+        cases rest with
+        | cons _ _ => simp [selectedEffect] at hsel
+        | nil =>
+          simp only [selectedEffect] at hsel
+          simp only [selectedOperands] at hp
+          simp only [selectedThrows] at hthrows
+          obtain ⟨hctx,hterm,hsub⟩ := ht.1
+          have ih := selected_sound_exc child (ht.2 ⟨child,by simp⟩ (by simp)) hp hthrows hsel hcodes
+            (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh
+          rw [hterm] at ih
+          exact SafePostExc.consequence_below' (fun _ _ _ _ h => h)
+            (fun j _ W v hv => PositiveCertificates.acceptedUsing hsub j W v hv)
+            (fun _ _ hp => hp) (fun _ hp => hp) ih
+termination_by sizeOf e
 
 end Verification.ExpressionEffects

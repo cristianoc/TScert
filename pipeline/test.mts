@@ -1594,6 +1594,38 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A footprint on a throw is established by the unit's own graph, and a
+  // handler is certified only around a call whose signature states it.
+  // `largest` calls `Math.max`, which states its footprint on normal return
+  // only: claimed on a throw, it is refused at its call. `checked` states it;
+  // claimed without, `orZero`'s callback, which reads `checked` at the
+  // signature stating it, is refused.
+  // Each in evidence production and in checking.
+  const artifacts = run("exceptional-footprint-handler");
+  const honest = readClaims(artifacts);
+  assert.equal(must(honest.functions.find(f => f.name === "checked"), "checked's claims").onThrow, true);
+  assert.equal(must(honest.functions.find(f => f.name === "largest"), "largest's claims").onThrow, false);
+  for (const [name, forge, at] of [
+    ["forged-throw-footprint-largest", (c: SourceClaims) => {
+      must(c.functions.find(f => f.name === "largest"), "largest's claims").onThrow = true;
+    }, /source effect refusal at \[\d+,\d+\): the footprint claimed for 'largest'/],
+    ["forged-throw-footprint-checked", (c: SourceClaims) => {
+      must(c.functions.find(f => f.name === "checked"), "checked's claims").onThrow = false;
+    }, /reject: source (expression obligation at \[\d+,\d+\)|evidence does not justify)/],
+  ] as const) {
+    const claims = readClaims(artifacts);
+    forge(claims);
+    const input = writeClaims(artifacts, name, claims);
+    const produce = produceWith(artifacts, input, name);
+    assert.ifError(produce.error);
+    assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+    for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+      assert.match(detail, at);
+  }
+  process.stdout.write("forged throw footprints: a caller of Math.max claimed on a throw, and a handler around a call claimed without, refused in search and in checking\n");
+}
+
+{
   // A guard's promise is its annotation's: a guard declaration claimed
   // heap-preserving is refused at the declaration.
   const artifacts = run("type-guards");

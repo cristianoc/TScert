@@ -612,12 +612,14 @@ before it, a receiver among them. The extension keeps that cutoff:
   its throws.
 
 **Handler facts.** Ordinary graph certification checks a handler edge
-(`HandlerOk`) with facts that hold in every heap, and `handlerFacts` drops
-heap observations. The exceptional postcondition is therefore threaded
-through expression checking, handler checking and `StateOk`: a handler edge
-carries the current-content facts the throwing node's footprint keeps, and
-its check is relative to the heap the postcondition describes. A handler
-that relies on a fact the footprint does not keep is refused.
+(`HandlerOk`) with facts that hold in every heap: `handlerFacts` drops heap
+observations, whatever the throwing call's footprint. A handler therefore
+receives no current-content fact across a throw, and one that relies on a
+fact the guard before the call established is refused
+(`invalid-exceptional-handler-fact`, run under Node). The bounded run's
+footprint and freshness are what the exceptional postcondition carries to a
+handler. Keeping the facts a throw's footprint keeps would thread the
+postcondition through expression checking, `HandlerOk` and `StateOk`.
 
 Every way a node's term can raise is then covered:
 
@@ -651,9 +653,12 @@ is unchanged.
 
 **Natives.** A native signature states `onThrow` only where its audit
 covers every throw: validation errors, failures of the host, and the
-operation's own errors. `execFileSync`'s
-[restricted form](SOURCE-CONTRACTS.md#library-modules) is the first; its
-overlay entry in `library-modules.mts` states the empty footprint with
+operation's own errors. `Error` at a string message and `JSON.stringify` at
+a JSON value write nothing they did not allocate before they return or
+throw, so each states the empty footprint with `onThrow`
+([library globals](SOURCE-CONTRACTS.md#library-globals)). `execFileSync`'s
+[restricted form](SOURCE-CONTRACTS.md#library-modules) is audited for it;
+its overlay entry in `library-modules.mts` states the empty footprint with
 `onThrow`, at options whose optional fields `env?: undefined` and
 `shell?: false` the argument's claim must meet. An object literal without a
 spread meets them by leaving those keys out, since a literal owns exactly
@@ -670,7 +675,21 @@ the restricted options and is certified at the empty footprint with
 handler, so it is certified at the empty footprint. `examplesOf`,
 `readRecord` and `group`'s `map` callback then compose normal-return
 footprints, with the [certified import](#certified-imports) of
-`parseRecord`.
+`parseRecord`. `exceptional-footprint-handler` shows the same composition
+for callees that build and throw an error: a declaration, a constant's
+arrow, and a declaration whose handler rethrows.
+
+**Producer and wire.** A call effect states `onThrow` in the wire
+([source claims](SOURCE-CLAIMS.md)), and so does a declaration's claim beside
+its footprint. OCaml proposes it for a closure and, at a greatest fixpoint
+over the module, for a declaration whose every node bounds its throw
+(`Source.throws_stmts`); a `try` whose block bounds its throws, with a catch
+and no `finally`, is within the join of the block's and the handler's
+footprints. Implementation: `HeapObservations.SafePostExc`,
+`CallEffects.Effect.excPost`, `GraphCode.NodeWithin` (its `thr` flag),
+`GraphCode.throwsWithin`, `GraphCode.handlerFresh`, `GraphCode.BoundState`
+(its `exc` flag) and `SourceRequests.checkRequests_footprint_at`, whose
+statement `checkJson_safe`'s second conclusion is.
 
 ### Calls
 

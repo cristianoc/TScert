@@ -277,11 +277,12 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // constructor takes itself as the target (ECMA-262, "Error ( message [ ,
   // options ] )"), so the call is read as the construct, at the same
   // statement. It converts a string message with no code of the client's
-  // and writes nothing it did not allocate: the empty footprint.
+  // and writes nothing it did not allocate: the empty footprint, on a throw
+  // too.
   ...["new (message?: string): Error;", "new (message?: string, options?: ErrorOptions): Error;",
     "(message?: string): Error;", "(message?: string, options?: ErrorOptions): Error;"].map(
     (signature): GlobalEntry => ({ global: "Error", signature,
-      ...(signature.startsWith("new ") ? {} : { construct: true }), effect: emptyEffect,
+      ...(signature.startsWith("new ") ? {} : { construct: true }), effect: { ...emptyEffect, onThrow: true },
       stated: { binders: [], params: [atom("string")],
         result: { k: "object", fields: [], stringIndex: null, calls: [], span: at,
           prototype: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
@@ -351,11 +352,12 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // at a `JsonValue` it does none of the first two and returns a string. A
   // replacer is client code: the call is read with the value only. At a
   // `JsonValue` it runs no code of the client's and writes nothing: it
-  // reads own data properties and allocates the string.
+  // reads own data properties and allocates the string, also before it
+  // throws on a cycle, so the empty footprint holds on a throw too.
   { global: "JSON", member: "stringify",
     signature: "stringify(value: any, replacer?: (this: any, key: string, value: any) => any, space?: string | number): string;",
     stated: { binders: [], params: [jsonValue], result: atom("string") }, definitions: [jsonValueDefinition],
-    effect: emptyEffect },
+    effect: { ...emptyEffect, onThrow: true } },
   // `%PromiseReject%`: a promise rejected with the reason, whose await
   // throws it, an outcome; it settles to no value, so it is a promise of
   // every type. The declared `any` is read as `unknown`: nothing runs on it.
