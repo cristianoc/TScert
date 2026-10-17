@@ -111,7 +111,7 @@ let encode (proposal : Proposal_types.t) =
           @ List.concat_map (fun (f:field) -> packed_uses f.read) statics
         | Named (id,args) ->
           let packed = match List.find_opt (fun (d:Source.declaration) -> d.id = id) declarations with
-            | Some d -> packed_rigids d.expression | None -> [] in
+            | Some { expression=Some e; _ } -> packed_rigids e | _ -> [] in
           let parameters = match List.find_opt (fun (d:Source.declaration) -> d.id = id) declarations with
             | Some d -> d.parameters | None -> [] in
           List.concat (List.mapi (fun i arg -> match List.nth_opt parameters i, arg with
@@ -383,10 +383,10 @@ let encode (proposal : Proposal_types.t) =
         "optional",Array (List.map labels sequence.optional_elements);
         "rest",(match sequence.rest with None -> Null | Some t -> labels t);
         "readonly",Bool false;"presence",String "dense"];"rest",Array []]]]))]
-  (* An application names its declaration by position, with every argument:
-     one left to its default is that default, at the earlier arguments, so
-     `IteratorResult<number>` and `IteratorResult<number, unknown>` are one
-     label. A nullary declaration's label has no arguments. *)
+  (* An application names its declaration by position, with every argument,
+     as each reference carries them: the omitted ones completed with the
+     defaults where the reference is read. A nullary declaration's label has
+     no arguments. *)
   and declaration_labels id args =
     let rec find k = function
       | [] -> unsupported ("unknown declaration " ^ id)
@@ -394,22 +394,11 @@ let encode (proposal : Proposal_types.t) =
         if d.id<>id then find (k + 1) rest
         else if d.parameters=[] && args=[] then [Decl (k,[])]
         else begin
-          let rec complete previous supplied parameters defaults = match parameters,defaults with
-            | parameter::more,default::others ->
-              (match supplied,default with
-               | value::tail,_ -> complete ((parameter,Semantic.ValueArgument value)::previous) tail more others
-               | [],Some value ->
-                 let value = Inference.substitute (List.rev previous) value in
-                 complete ((parameter,Semantic.ValueArgument value)::previous) [] more others
-               | [],None -> None)
-            | [],[] when supplied=[] -> Some (List.rev_map (fun (_,a) -> match a with
-                | Semantic.ValueArgument t -> t | _ -> assert false) previous)
-            | _ -> None in
-          match complete [] args d.parameters d.defaults with
+          match if List.length args = List.length d.parameters then Some args else None with
           | Some args ->
             (* A packed parameter's argument with its argument lists: those
                of its array's tuple contract, or a binder's own. *)
-            let packed = packed_rigids d.expression in
+            let packed = match d.expression with Some e -> packed_rigids e | None -> [] in
             [Decl (k,List.map2 (fun parameter arg ->
               if List.mem parameter packed then
                 List.sort_uniq compare (label_list arg @ pack_label_list

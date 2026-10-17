@@ -74,21 +74,10 @@ let definition declarations id args =
   if List.mem id seen then unsupported "cyclic inheritance";
   match List.find_opt (fun (d:Source.declaration) -> d.id=id) declarations with
   | Some d ->
-    if List.length args > List.length d.parameters then
+    (* A reference carries every argument. *)
+    if List.length args <> List.length d.parameters then
       unsupported "type application has wrong arity";
-    let rec complete previous supplied parameters defaults =
-      match parameters, defaults with
-      | [], [] -> List.rev previous
-      | parameter::rest, default::other ->
-        let value, supplied = match supplied with
-          | value::tail -> value,tail
-          | [] -> (match default with
-            | Some value -> value,[]
-            | None -> unsupported "type application has missing required argument") in
-        let value = Inference.substitute (List.rev previous) value in
-        complete ((parameter,ValueArgument value)::previous) supplied rest other
-      | _ -> unsupported "declaration parameter/default length mismatch" in
-    let solution = complete [] args d.parameters d.defaults in
+    let solution = List.map2 (fun parameter value -> parameter,ValueArgument value) d.parameters args in
     (* An intersection of the equation, its arguments substituted, is the one
        object its operands describe where they are records, a declared one
        read through its equation (`Serializable<Todo>`); otherwise it stays
@@ -104,7 +93,10 @@ let definition declarations id args =
               (Some (expand t)) ts with
       | Some merged -> merged
       | None -> Meet (t,ts) in
-    let body = Inference.substitute ~meet solution d.expression in
+    let expression = match d.expression with
+      | Some e -> e
+      | None -> unsupported ("a computed alias has no equation: " ^ id) in
+    let body = Inference.substitute ~meet solution expression in
     (* A base named through an alias of another declaration is that
        declaration, instantiated: its members are inherited by structure. *)
     let rec base_of seen t = match t with

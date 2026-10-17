@@ -110,11 +110,39 @@ export type TypeTerm =
   | { k: "reference"; reference: Reference; args: TypeTerm[]; span: Span };
 export type TypeDefinition = {
   declaration: DeclarationIdentity;
-  parameters: { name: string; span: Span; bound: TypeTerm | null;
-    default: TypeTerm | null }[];
+  /** Its type parameters, each with whether it has a default. Every
+   * reference carries all its arguments, the omitted ones completed with the
+   * defaults where the reference is read; a parameter's bound is read at each
+   * written application (`WrittenApplication`). */
+  parameters: { name: string; span: Span; defaulted: boolean }[];
   /** Interface heritage remains a source edge; consumers derive its members. */
   bases: TypeTerm[];
-  expression: TypeTerm;
+  /** The equation; null where none is read: an alias TypeScript computes
+   * from its parameters, or a library type read at its meaning, stated for
+   * its parameters. */
+  expression: TypeTerm | null;
+};
+/** A type application written in source syntax, `D<σ⃗>`, which obliges
+ * each argument, completed with the defaults, to meet its parameter's bound
+ * at those arguments, in `scope`: binder groups from the outermost, each
+ * binder named freshly (`name@module:offset`) and bounded by its assumption,
+ * the arguments and bounds naming them by that name
+ * (`written-applications.mts`). */
+export type WrittenApplication = {
+  scope: SourceTypeParameter<TypeTerm>[][];
+  reference: Reference;
+  /** The target's parameters, for diagnostics. */
+  parameters: { name: string; span: Span }[];
+  /** One per parameter: the argument written, or the default at the
+   * earlier arguments. */
+  args: TypeTerm[];
+  /** One per parameter: its declared bound at the arguments (`B[X⃗ := σ⃗]`),
+   * or null where it declares none. */
+  bounds: (TypeTerm | null)[];
+  /** Where it is written in the client file, or null elsewhere. */
+  span: Span | null;
+  /** The module and declaration it is written in, for diagnostics. */
+  site: string;
 };
 /** Every declaration reachable from the roots, each once. References live in
  * the expression, parameter bounds/defaults and heritage edges, not in a second list. */
@@ -141,4 +169,8 @@ export type DeclarationDocument = {
   /** The `unique symbol` constants the definitions use as property keys, each
    * once: distinct declarations are distinct symbols, as TypeScript assumes. */
   symbols: DeclarationIdentity[];
+  /** Every type application written in the swept syntax whose target has a
+   * bounded parameter: the client file's, and that of every user
+   * declaration it reaches. */
+  applications: WrittenApplication[];
 };

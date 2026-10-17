@@ -28,7 +28,8 @@ design, not its progress.
 | [Precision](#precision) | open | the facts listed there are derivable |
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 267 verify in `tools/`, 7 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/`, 7 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -196,6 +197,27 @@ testing converges without a mechanized specification. A rewrite chosen by a
 type (`%Iterate:K%`, `%ElementAt%`) is correct under that typing premise.
 The reading of declared types and the host remain trusted; the remaining
 options are in [TRUST-REDUCTION](docs/TRUST-REDUCTION.md).
+
+<a id="computed-types-evaluated-through-helper-declarations"></a>
+**Computed types evaluated through helper declarations.** A computed form
+naming a declaration's parameters (a bound, a default, an annotation's
+computed alias) is evaluated at an application by the pinned TypeScript,
+through helper declarations added to a probe program
+([written applications](docs/SOURCE-CONTRACTS.md#written-applications),
+`tools/type-probe.mts`): the checker offers no operation instantiating a
+declaration's syntax. This is a stopgap, to be either relaxed or checked.
+Relaxed: where TypeScript's API offers a direct checker endpoint for
+instantiation and `keyof` (a declaration, its arguments, a parameter's
+instantiated bound or default), it replaces the helper declarations and
+their resolution checks. Checked: a source-type elaborator whose reductions
+Lean checks, from declaration-linked bounds and completed arguments to the
+semantic types, so that the correspondence to TypeScript's computation is
+proved rather than trusted. Either retires the clause of the trust surface's
+TypeScript row stating that "a computed form naming a declaration's
+parameters, at an application, means what the checker computes for a probe
+declaration" ([trust surface](docs/DESIGN.md#trust-surface)); the checked
+form retires the computation's trust altogether, the relaxed one only the
+probe's correspondence to the application.
 
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,

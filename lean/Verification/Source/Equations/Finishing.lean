@@ -44,8 +44,12 @@ def builtinsOf (E : Equations) (proto unknown : Option Nat) (excluded : List Pro
     (Label.ofTree? (mkApp u [])).map fun k => ⟨[l], [k], excluded⟩
 
 /-- A bound obligation's closed form: inside a template, the head's
-parameters are read as bounded parameter labels, each a family variable met
-with its declared bound (§8.2). -/
+parameters are read as bounded parameter labels. On the actual side each is
+a family variable met with its declared bound (§8.2); on the upper side the
+variable itself. Under an assignment meeting the bounds both keep their
+meaning (SOURCE-CONTRACTS.md, "Written applications"); a meet only on the
+actual side lets a bound recurring in the upper one (`T extends Node<T>`)
+be compared at the variable. -/
 def closeObligation (o : Obligation) : Union × Union :=
   let var (p : Tree) : Tree := match p with
     | .argument i => .var 1000000 i .value
@@ -64,10 +68,10 @@ def closeObligation (o : Obligation) : Union × Union :=
           let B := B.flatMap (treeReplace fun t => if isPlaceholder t then some (next t) else none)
           meetUnions [[var p], B]
   let σ := bounded (o.bounds.length + 1) []
-  let close (U : Union) :=
+  let close (σ : Tree → Union) (U : Union) :=
     (U.flatMap (treeSubst (σ ∘ .argument) (σ ∘ .local))).flatMap
       (treeReplace fun t => if isPlaceholder t then some (σ t) else none)
-  (close o.actual, close o.upper)
+  (close σ o.actual, close (fun p => [var p]) o.upper)
 
 /-- The lowered heads, hash-consed and compacted, before validation. -/
 structure Built where

@@ -56,6 +56,8 @@ obstacle named. A search failure is neither.
 | A class extending `Array` | Its instances' `constructor` is the subclass, so `map`, `filter` and `slice` construct their results through it (`ArraySpeciesCreate`), which [ordinary array construction](SOURCE-MODEL.md#arrays) excludes (`invalid-array-subclass`). |
 | A catch binding annotated other than `unknown`, or destructured | Anything may be thrown; TypeScript's alternative is `any`. |
 | TypeScript's `any` in the checked module's own annotations; a contextual closure parameter TypeScript types `any` | It states no contract. |
+| A class in the checked module merged with an interface whose member its constructor does not give | A class merged with interfaces is one instance contract, every part's members: a value consumed at it reads them all (`merged-class-consumer-value-import`). The class's constructor must establish that contract, and is checked where the class is defined in the checked module: TypeScript assumes the interface's members on instances the constructor does not create, so `class C {} interface C { m: number }` types `new C().m`, `undefined`, as a number, and is refused at `C`'s definition (`invalid-merged-augmented`). An imported class's constructor is a trusted declaration, as every imported contract is. |
+| A contract read through an unannotated declaration, whose type is inferred from its code: a declaration a type reaches (`typeof`, a member selection, a named type, a whole class, namespace or module) whose written annotations do not determine its exposed type ([the table below](#types-stated-by-annotations)) | Its type is whatever TypeScript infers from code the reader does not read, which may depend on any code; the bound obligations written there would go unchecked (`invalid-written-unannotated-call-value-import`, `invalid-written-whole-class-value-import`, `invalid-written-unannotated-field-value-import`). The client's own values carry annotations by the same requirement. |
 | A rest parameter typed by what is no array | TypeScript rejects it (TS2370). |
 | A rest parameter typed by an intersection (`...xs: T[] & (number[] \| string[])`) | Its declared contract can be empty at an instance TypeScript admits: at `T := boolean` no array is both a writable `boolean[]` and a `number[]`, writable storage being invariant, yet TypeScript accepts `f<boolean>()`, and a body writing through one operand's view returns a number as a `boolean` (`invalid-rest-intersection`, executed under Node by `node-runs.mts`). |
 | A type parameter typing a rest parameter and anything else, in a module function (`<T extends readonly string[]>(...args: T): T`, a parameter `mutator: (arr: T) => void`, `const x: T = args`) or in a generic function or constructor type (`<T extends [string, number]>(...args: T) => T`) | The array a call collects is fresh: it holds the actuals and none of `T`'s other members, so it is no value of `T`. TypeScript admits `T := string[] & { tag: string }`, inferred from a spread of a tagged array, at which a body returning `args` gives a value whose `tag` is `undefined` typed `string` (`invalid-rest-pack-value`). In a generic type the instance `T := X` gives the rest the element lists of `X`'s members, `[string, number] & { tag: string }` included. Admitting it would need the element lists related to arrays a world extension holds (an array-allocation lemma whose statement is open: an array's `[[proto]]` holds a member of the built-in prototype type, which the model never shows inhabited), linked binder positions, quantified subtyping across binder counts and rest-bound reasoning: substantial machinery for a form rarely useful in real programs. A declaration's or a class's own type parameter typing a rest and a value is a [packed binder](PROGRAM-TYPING.md#packed-binders), whose instances are array or tuple types with no other members. |
@@ -70,6 +72,40 @@ obstacle named. A search failure is neither.
 | An enum member named `__proto__` | TypeScript's emit writes a member by assignment, which for `__proto__` runs the prototype's setter and creates no property: `enum P { "__proto__" = 1 }` makes `P.__proto__` `Object.prototype`, typed `1` (`invalid-enum-proto-member`). |
 | A member named `NaN` or `Infinity` in an enum with a member TypeScript computes no value for | That member's reverse mapping is written at its value's key, which may be the name: `enum Q { NaN = 1, X = "x".charCodeAt(1) }` makes `Q.NaN` `"X"`, typed `1` (`invalid-enum-computed-nan-name`). |
 | A use of a guard's argument that relies on the guard's `false` outcome (`if (isPositive(v)) …; v.toUpperCase()` with `v: number \| string`) | The promise states the `true` outcome only. TypeScript also narrows the `false` one to the arms outside `T`, wrong for a guard answering `false` for some values of `T`: `isPositive(-1)` is `false` for a number, and `shout(-1)` calls `toUpperCase` on it (`invalid-type-guard-false-branch`, executed under Node by `node-runs.mts`). |
+
+#### Types stated by annotations
+
+The written annotations that determine a declaration's exposed type, by its
+kind. These, and only these, are read for a declaration a type reaches; no
+function body, initializer's code or static block is read. A declaration
+without them is refused (above). The structure is the checker's symbols, not
+syntax: what a name or a selection denotes is one symbol, its annotations
+the union over its declarations (an overload set's, an accessor pair's, a
+merged entity's); a class's members are its instance and static member
+symbols, apart; a module's or namespace's are its exported symbols,
+`export =`, a default export and ambient members included. A member under
+a computed name, which the checker binds late, counts by its declaration,
+and its name's entity is swept. A name path, `typeof E.p₁…pₙ` (a qualified name, a property access, a
+`typeof` or import type), contributes the determining annotations of every
+declared entity on it: the root, which must have them, and each later step
+with a declaration, with everything those annotations name. A step the
+checker synthesises (a mapped type's member, an instantiation's) has no
+declaration and needs none: its type is computed from annotations already
+swept. A module or namespace a further step selects from contributes
+nothing itself.
+
+| Declaration | Determined by |
+| --- | --- |
+| Interface, type alias | Its whole syntax |
+| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too |
+| Property declaration or signature | Its annotation |
+| Property assignment, default export | Its value's: a literal naming nothing; a function's parameter and result annotations; a nested object literal's properties, each by its kind; an assertion's type (`as` or angle-bracket) |
+| Function, method, signature | The symbol's overload signatures if it has any, else its parameter and result annotations |
+| Accessor | The symbol's getter result or setter parameter, either for the pair |
+| Constructor | Its parameter annotations, or its overloads' with the implementation's parameter properties |
+| Class | Its type parameters, its heritage, and every instance and static member symbol |
+| Namespace, module | Every exported symbol, `export =` and a default export included |
+| Enum, enum member | Its value |
 
 ### Model limits
 

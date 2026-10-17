@@ -174,7 +174,6 @@ def liftedCtx (ctx : Ctx) (items : List Item) (h : Nat) : Ctx :=
     owner := some h
     site := ctx.site
     source := ctx.source
-    checkBounds := ctx.checkBounds
     bounds := ctx.bounds.filterMap fun (p, U) => do
       let (_, j) ← indexed.find? fun (it, _) => (ctxValue ctx it).toOption == some [p]
       let moved (q : Tree) : Option Union :=

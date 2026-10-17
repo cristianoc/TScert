@@ -130,7 +130,8 @@ def instancePack (T : EquationStore.State) (X : List Tree) (n : String) :
   return (T, [l])
 
 private def emptyDeclarations : Json := Json.mkObj [("roots", Json.arr #[]),
-  ("definitions", Json.arr #[]), ("values", Json.arr #[]), ("symbols", Json.arr #[])]
+  ("definitions", Json.arr #[]), ("values", Json.arr #[]), ("symbols", Json.arr #[]),
+  ("applications", Json.arr #[])]
 
 /-- **The equation front.** The source's declarations, its annotations and
 the claims, lowered to one store; the source tree with its annotations in
@@ -145,7 +146,7 @@ def equationFront (ast claims : Json) (fileKey : String)
   sourceGate (ast.getObjValD "functions")
   sourceGate (ast.getObjValD "init")
   let document ← jField ast "declarations"
-  fieldsExactly document ["roots", "definitions", "values", "symbols"]
+  fieldsExactly document ["roots", "definitions", "values", "symbols", "applications"]
   -- A symbol key `{"symbol": i}` is the i-th listed `unique symbol` constant.
   let symbols ← jArr document "symbols"
   if symbols.eraseDups.length != symbols.length then

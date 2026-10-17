@@ -437,7 +437,7 @@ export function arrayPrototype(checker: Checker, at: Node, library: OverlayLibra
     receiver: from => ({ k: "array", presence: "readable", readonly: from === "ReadonlyArray", element, span: [0, 0] }) });
   if (!entries.some(e => ["join", "toString", "sort"].includes(e.name))) return [result];
   const hook = library.wellKnownSymbol("toPrimitive");
-  if (result.expression.k !== "object") throw Error("a prototype contract must be an object");
+  if (result.expression?.k !== "object") throw Error("a prototype contract must be an object");
   // Standard Array.prototype has no conversion hook. The optional undefined
   // view states this, and the existing array own-key invariant prevents an
   // array from shadowing it, toString or join. External arrays obey it too.

@@ -1164,9 +1164,10 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
   fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions"]
   let document ← jField j "declarations"
-  fieldsExactly document ["roots", "definitions", "values", "symbols"]
+  fieldsExactly document ["roots", "definitions", "values", "symbols", "applications"]
   if !(← jArr document "roots").isEmpty || !(← jArr document "definitions").isEmpty ||
-      !(← jArr document "values").isEmpty || !(← jArr document "symbols").isEmpty then
+      !(← jArr document "values").isEmpty || !(← jArr document "symbols").isEmpty ||
+      !(← jArr document "applications").isEmpty then
     throw "type declarations have no certified graph interpretation"
   (← jArr j "functions").mapM decodeFn
 

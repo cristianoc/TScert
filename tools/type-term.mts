@@ -215,6 +215,10 @@ export type TermScope = {
    * constant or readonly property it denotes. A scope without it reads no
    * symbol key. */
   symbol?(name: Identifier | ts.PropertyAccessExpression): number;
+  /** A computed key `[x]` or `[o.x]` naming an entity of a string or number
+   * literal type, as an enum member or a constant is: the key its value
+   * names; null for any other. */
+  literalKey?(name: Identifier | ts.PropertyAccessExpression): string | null;
   /** A class member's private name `#x`: the index of the symbol the
    * declaration document lists for it, a key no code outside the class
    * spells. A scope without it reads no private name. */
@@ -827,9 +831,12 @@ function propertyKey(scope: TermScope, name: Node | undefined): PropertyKey | nu
   // A numeric name is the property its value names, `ToString` of it:
   // `0x10`, `16` and `1_6` are the key "16".
   if (ts.isNumericLiteral(name)) return numericKey(name.text);
-  if (ts.isComputedPropertyName(name) && scope.symbol &&
-      (ts.isIdentifier(name.expression) || ts.isPropertyAccessExpression(name.expression)))
-    return { symbol: scope.symbol(name.expression) };
+  if (ts.isComputedPropertyName(name) &&
+      (ts.isIdentifier(name.expression) || ts.isPropertyAccessExpression(name.expression))) {
+    const literal = scope.literalKey?.(name.expression);
+    if (literal !== null && literal !== undefined) return literal;
+    if (scope.symbol) return { symbol: scope.symbol(name.expression) };
+  }
   if (ts.isPrivateIdentifier(name) && scope.privateName) return { symbol: scope.privateName(name) };
   return null;
 }

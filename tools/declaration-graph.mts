@@ -16,8 +16,8 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 // intrinsics.mts declares the intrinsics this reader lists among the client's values: the trusted steps async functions, loops, spreads and patterns lower to.
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
-import { nameOf } from "./syntax.mts";
-import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, oneTerm, optionalTerm, signature, signatures, substitute,
+import { childrenOf, nameOf } from "./syntax.mts";
+import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
@@ -30,7 +30,9 @@ import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, m
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
   type RegExpKeys } from "./regexp.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
-import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot } from "./declaration-types.mts";
+import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
+import { SweepError, writtenApplications, type Entity } from "./written-applications.mts";
+import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -108,10 +110,38 @@ export function tsconfigOf(path: string): string {
 
 /** Open `file` in its configured TypeScript project, which must be strict:
  * `tsconfigPath` when given, otherwise the project that owns the file. The
- * compiler reads the files on disk; nothing here overrides their text. */
+ * compiler reads the files on disk; only a probe program (`type-probe.mts`)
+ * reads some of them with text of its own, in a snapshot of its own. */
 function withProject<T>(file: string, tsconfigPath: string | undefined,
-  use: (checker: Checker, client: SourceFile, root: string, program: Program) => T): T {
-  const api = new API({ cwd: dirname(file) });
+  use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
+  const overlay = new Map<string, string>();
+  const api = new API({ cwd: dirname(file), fs: {
+    readFile: name => overlay.get(name),
+    fileExists: name => (overlay.has(name) ? true : undefined),
+  } });
+  // The files the last probe replaced, read from disk again by the next. The
+  // compiler keeps an open file's text over its changes: the client, open
+  // for the graph's program, is closed for the probes'.
+  let replaced: string[] = [];
+  let opened = true;
+  let config = "";
+  // A probe's snapshot is released when the next one is made: the next
+  // takes its unchanged files over from it.
+  let previous: { dispose(): void } | null = null;
+  const probe: ProbeProgram = (files, read) => {
+    overlay.clear();
+    for (const [name, text] of files) overlay.set(name, text);
+    const snapshot = api.updateSnapshot({ ...(opened ? { closeFiles: [file] } : {}),
+      openProjects: [config],
+      fileChanges: { changed: [...new Set([...replaced, ...files.keys()])] } });
+    opened = false;
+    replaced = [...files.keys()];
+    previous?.dispose();
+    previous = snapshot;
+    const project = snapshot.getProject(config);
+    if (!project) throw Error("TypeScript did not load the probe program");
+    return read(project.program, project.checker);
+  };
   try {
     const snapshot = api.updateSnapshot({ openFiles: [file],
       ...(tsconfigPath ? { openProjects: [tsconfigPath] } : {}) });
@@ -126,7 +156,8 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     // `types: ["node"]`, that is not installed leaves its globals undeclared.
     const broken = project.program.getProgramDiagnostics().find(d => d.category === DiagnosticCategory.Error);
     if (broken) throw new DeclarationError([0, 0], `TypeScript reports an error in the project: ${broken.text}`);
-    return use(project.checker, client, dirname(project.configFileName), project.program);
+    config = project.configFileName;
+    return use(project.checker, client, dirname(project.configFileName), project.program, probe);
   } finally {
     api.close();
   }
@@ -453,6 +484,10 @@ export function collectDeclarations(file: string, options: {
   * with the reason it has none. */
   computed?: readonly Span[];
   computedType?: (span: Span, result: TypeTerm | { refused: string }) => void;
+  /** Told, for each client reference omitting arguments of a declaration,
+   * the omitted arguments: each parameter's default at the arguments before
+   * it, or the reason it has none. */
+  completion?: (span: Span, result: TypeTerm[] | { refused: string }) => void;
   /** Type nodes of the client's annotations that may be a mapped type's keys:
    * each is reported to `keyType` with the union of literals and primitives
    * TypeScript computes for it, or null. */
@@ -463,14 +498,14 @@ export function collectDeclarations(file: string, options: {
    * joins the symbols and is reported to `symbolName` with its index, any
    * other with the reason it names none. */
   symbolNames?: readonly Span[];
-  symbolName?: (span: Span, result: number | { refused: string }) => void;
+  symbolName?: (span: Span, result: number | { literal: string } | { refused: string }) => void;
   /** Told each TypeScript error the gate reads while deciding whether a
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
   seen?: (diagnostic: SeenDiagnostic) => void;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
-  return withProject(clientFile, options.tsconfigPath, (checker, client, root, program) => {
+  return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
     const idOf = moduleIds(clientFile, root);
@@ -559,14 +594,19 @@ export function collectDeclarations(file: string, options: {
     const aliasNodes = new Map<string, ts.TypeAliasDeclaration>();
     const aliasKey = (identity: DeclarationIdentity) =>
       `${identity.module}#${identity.name}@${identity.span[0]}:${identity.span[1]}`;
+    // A class merged with interfaces is one symbol too, the class its
+    // identity, its instance contract every part's members (`collect`).
     const declarationOf = (nodes: readonly Node[], what: string): TypeDeclaration => {
-      const declared = nodes.filter(isTypeDeclaration);
-      const longest = Math.max(0, ...declared.map(n => n.typeParameters?.length ?? 0));
-      const node = declared.find(n => (n.typeParameters?.length ?? 0) === longest);
-      const types = node ? [node, ...declared.filter(n => n !== node)] : declared;
+      // A class merged with interfaces is the class; otherwise the
+      // declaration binding the longest parameter list is the identity.
+      const types0 = nodes.filter(isTypeDeclaration);
+      const classes = types0.filter(ts.isClassDeclaration);
+      const longest = Math.max(0, ...types0.map(n => n.typeParameters?.length ?? 0));
+      const node = classes[0] ?? types0.find(n => (n.typeParameters?.length ?? 0) === longest);
+      const types = node ? [node, ...types0.filter(n => n !== node)] : types0;
       if (!node || nodes.some(n => !isTypeDeclaration(n) && !ts.isVariableDeclaration(n) &&
             !ts.isFunctionDeclaration(n)) ||
-          (types.length > 1 && !types.every(ts.isInterfaceDeclaration)))
+          (types.length > 1 && !types.every(t => ts.isInterfaceDeclaration(t) || (t === node && classes.length === 1))))
         throw Error(types.length > 1 || nodes.length > 1
           ? `TypeScript found ${nodes.length} declarations for ${what}`
           : `${what} is not one type alias, interface or class`);
@@ -664,6 +704,16 @@ export function collectDeclarations(file: string, options: {
       const type = checker.getTypeFromTypeNode(node);
       return type ? literalUnion(type, [node.getStart(node.getSourceFile()), node.end]) : null;
     };
+    // The key an entity of a string or number literal type names, as an enum
+    // member or a constant does: its value, a number at its canonical
+    // spelling.
+    const literalKeyOf = (name: Identifier | ts.PropertyAccessExpression): string | null => {
+      const type = checker.getTypeAtLocation(name);
+      if (!type) return null;
+      if (type.isStringLiteralType()) return type.value;
+      if (type.isNumberLiteralType() && Number.isFinite(type.value)) return numericKey(String(type.value));
+      return null;
+    };
     // Whether a name denotes a standard library value, such as `Symbol`.
     const isLibraryValue = (name: Identifier): boolean => {
       const nodes = (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve());
@@ -756,6 +806,9 @@ export function collectDeclarations(file: string, options: {
     // The type an imported value's declaration states, and the declarations
     // that type reaches, which join the graph.
     const valueStarts: TypeDeclaration[] = [];
+    // The declarations of the values read, whose declared types are swept for
+    // their written applications.
+    const valueDeclarations: Node[] = [];
     const valueScope = (node: Node, what: string, binders: string[] = []): TermScope => {
       const source = node.getSourceFile();
       return {
@@ -786,6 +839,7 @@ export function collectDeclarations(file: string, options: {
           } }, body, alias);
         },
         symbol: symbolOf,
+        literalKey: literalKeyOf,
         computed: (part, pos, read) => computedType(computedContext, part, pos, read),
         keys: keyTypeOf,
         fail: (_node, message) => { throw Error(`${message} in ${what}`); },
@@ -803,14 +857,13 @@ export function collectDeclarations(file: string, options: {
           // An alias TypeScript computes from its parameters is the type it
           // computes at this reference's arguments.
           if (computedAlias(targetNode, aliasOf)) return computedType(computedContext, part, pos, read);
-          const parameters = mergedParameters(targetNode, partners);
           const args = part.typeArguments ?? [];
-          if (args.length < parameters.filter(p => !p.default).length || args.length > parameters.length)
-            throw Error(`type argument arity: ${identityOf(targetNode).module}#${name.text}`);
+          const completed = completeArguments(targetNode, args.map(read), part,
+            `${identityOf(targetNode).module}#${name.text}`);
           valueStarts.push(targetNode);
           return { k: "reference", reference: { name: name.text, span: pos,
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(targetNode) },
-            args: args.map(read), span: pos };
+            args: completed, span: pos };
         },
       };
     };
@@ -835,6 +888,7 @@ export function collectDeclarations(file: string, options: {
     // which a value reference does not denote.
     const valueOf = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
       const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !ts.isTypeAliasDeclaration(n));
+      valueDeclarations.push(...nodes);
       const [node] = nodes;
       if (!node) throw Error(`unresolved value ${what}`);
       const source = node.getSourceFile();
@@ -941,19 +995,7 @@ export function collectDeclarations(file: string, options: {
       },
       value: (nodes, what) => valueOf(nodes, what),
       alias: aliasOf,
-      applied: (alias, args) => {
-        const what = `${idOf(alias.getSourceFile())}#${alias.name.text}`;
-        const parameters = (alias.typeParameters ?? []).map(p => p.name.text);
-        const outer = valueScope(alias, what);
-        const scope: TermScope = { ...outer, named: (part, pos, read) => {
-          const index = ts.isIdentifier(part.typeName) ? parameters.indexOf(part.typeName.text) : -1;
-          const argument = args[index];
-          if (index < 0 || !argument) return outer.named(part, pos, read);
-          if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${part.typeName.getText(alias.getSourceFile())}`);
-          return argument;
-        } };
-        return node => typeTerm(scope, node, alias);
-      },
+      applied: (alias, args, use) => instantiateAt(alias, args, use),
       equation: reference => valueScope(client, "an alias's equation").equation?.(reference) ?? null,
       // A `unique symbol` type is the type of the one constant or readonly
       // property declaring it (`Symbol.iterator`'s is `SymbolConstructor`'s
@@ -970,6 +1012,72 @@ export function collectDeclarations(file: string, options: {
     };
     const roots: { root: TypeRoot; node: TypeDeclaration }[] = [];
     const values: ValueRoot[] = [];
+    const typeDeclarationsOf = (name: Identifier): Node[] =>
+      (targetOf(checker, name)?.declarations ?? []).map(d => d.resolve()).filter((d): d is Node => !!d);
+    // TypeScript's evaluation of a form in a declaration's parameter list at
+    // an application (`type-probe.mts`).
+    const probe = makeProbe({ program, checker }, probeProgram, name => symbolOf(name));
+    // A declaration's type parameters by position, its merged declarations
+    // together, as TypeScript merges them: each position's name from the
+    // declaration binding the longest list, its bound and default from a
+    // declaration stating them (TypeScript requires those to agree).
+    const parametersOf = (declaration: Node): MergedParameter[] => {
+      const name = nameOf(declaration);
+      const parts = name && ts.isIdentifier(name) ? typeDeclarationsOf(name).filter(isTypeDeclaration) : [];
+      const own = isTypeDeclaration(declaration) ? [declaration] : [];
+      return mergedParameters(parts.length ? parts : own).map(merged => ({ name: merged.parameter.name,
+        constraint: merged.bound?.at.constraint, default: merged.default?.at.defaultType }));
+    };
+    // A declaration's bound or default read at an application's arguments:
+    // each parameter its argument; a computed form naming the parameters,
+    // or a computed alias's application naming them, what TypeScript
+    // computes for it at the application `use`; any other computed form
+    // what TypeScript computes for it where it is written.
+    const instantiateAt = (declaration: Node, args: readonly TypeTerm[], use: Node | null): (node: TypeNode) => TypeTerm => {
+      const source = declaration.getSourceFile();
+      const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
+      const merged = parametersOf(declaration);
+      const parameters = merged.map(p => p.name.text);
+      const argumentOf = (part: Node): TypeTerm | undefined => {
+        const index = ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && !part.typeArguments?.length
+          ? parameters.indexOf(part.typeName.text) : -1;
+        return index < 0 ? undefined : args[index];
+      };
+      const namesParameter = (n: Node): boolean =>
+        (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && parameters.includes(n.typeName.text)) ||
+        (n.forEachChild(c => namesParameter(c) || undefined) ?? false);
+      const outer = valueScope(declaration, what);
+      const evaluate: NonNullable<TermScope["computed"]> = (part, pos, read) => {
+        if (!namesParameter(part)) return computedType(computedContext, part, pos, read);
+        if (!use) throw Error(`${what}: ${part.getText(source)} names the declaration's parameters, ` +
+          "and is evaluated only at an application written in source");
+        return probe({ declaration, parameters: merged, form: part, use, span: pos, what });
+      };
+      const scope: TermScope = { ...outer,
+        named: (part, pos, read) => {
+          const argument = argumentOf(part);
+          if (argument) return argument;
+          const alias = aliasOf(part);
+          if (alias && computedAlias(alias, aliasOf) && namesParameter(part)) return evaluate(part, pos, read);
+          return outer.named(part, pos, read);
+        },
+        computed: evaluate };
+      return node => typeTerm(scope, node, declaration);
+    };
+    // The arguments of an application `use` of `declaration`: those written,
+    // then each omitted one its parameter's default read at the arguments
+    // before it (`instantiateAt`).
+    const completeArguments = (declaration: Node, written: readonly TypeTerm[], use: Node | null,
+        what: string): TypeTerm[] => {
+      const parameters = parametersOf(declaration);
+      if (written.length > parameters.length) throw Error(`${what} applied to too many type arguments`);
+      const completed = [...written];
+      for (const parameter of parameters.slice(written.length)) {
+        if (!parameter.default) throw Error(`${what}'s ${parameter.name.text} has neither an argument nor a default`);
+        completed.push(instantiateAt(declaration, completed, use)(parameter.default));
+      }
+      return completed;
+    };
     for (const binding of importBindings(client)) {
       try {
         // A function with overloads is its several declarations; any other
@@ -982,13 +1090,14 @@ export function collectDeclarations(file: string, options: {
           continue;
         }
         const [node] = nodes;
-        if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration)))
+        // Merged type declarations are one, as `lookup` reads them.
+        if (!node || (nodes.length > 1 && !nodes.every(ts.isFunctionDeclaration) && !nodes.every(isTypeDeclaration)))
           throw Error(`TypeScript found ${nodes.length} declarations for ${binding.local.text}`);
         // A class is a type and, imported as a value, a constructor too.
-        if (!binding.typeOnly && !(ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)))
+        if (!binding.typeOnly && nodes.some(n => !ts.isTypeAliasDeclaration(n) && !ts.isInterfaceDeclaration(n)))
           values.push({ binding: { local: binding.local.text, imported: binding.imported,
             specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.local.text) });
-        if (!isTypeDeclaration(node)) continue;
+        if (!nodes.some(isTypeDeclaration)) continue;
         const declaration = lookup(binding.local, binding.local.text);
         roots.push({ node: declaration, root: { binding: { kind: "import", local: binding.local.text,
           imported: binding.imported, specifier: binding.specifier, span: binding.span },
@@ -1097,7 +1206,7 @@ export function collectDeclarations(file: string, options: {
       valueStarts.push(node);
       const target = identityOf(node);
       return { k: "reference", reference: { name, span: [0, 0], arguments: args.map((): Span => [0, 0]), target },
-        args, span: [0, 0] };
+        args: completeArguments(node, args, null, name), span: [0, 0] };
     };
     const overlayLibrary: OverlayLibrary = {
       symbol: symbolOf,
@@ -1122,7 +1231,7 @@ export function collectDeclarations(file: string, options: {
         valueStarts.push(node);
         const target = identityOf(node);
         return { k: "reference", reference: { name: target.name, span, arguments: args.map(() => span),
-          target }, args, span };
+          target }, args: completeArguments(node, args, null, target.name), span };
       },
     };
     // The keys a regex's type states (`regexp.mts`): the well-known symbols
@@ -1811,7 +1920,8 @@ export function collectDeclarations(file: string, options: {
         continue;
       }
       try {
-        options.symbolName?.(span, symbolOf(node));
+        const literal = literalKeyOf(node);
+        options.symbolName?.(span, literal !== null ? { literal } : symbolOf(node));
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         options.symbolName?.(span, { refused: error instanceof Error ? error.message : String(error) });
@@ -1834,6 +1944,151 @@ export function collectDeclarations(file: string, options: {
         options.computedType?.(span, { refused: error instanceof Error ? error.message : String(error) });
       }
     }
+    // The client's references that omit arguments of a declaration: the
+    // omitted ones completed at the written ones (`completeArguments`) and
+    // reported to `completion`, or refused with the reason.
+    const completing = (node: Node): void => {
+      if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
+        const name = node.typeName;
+        const written = node.typeArguments ?? [];
+        const targets = typeDeclarationsOf(name).filter(isTypeDeclaration);
+        // A library type read at its meaning completes its own arguments.
+        if (targets.some(t => (t.typeParameters?.length ?? 0) > written.length) && !library(name, name.text)) {
+          const span: Span = [node.getStart(client), node.end];
+          try {
+            const target = lookup(name, name.text);
+            if (!computedAlias(target, aliasOf)) {
+              const scope = valueScope(node, `${idOf(client)}#${node.getText(client)}`, enclosingBinders(node));
+              const completed = completeArguments(target, written.map(arg => typeTerm(scope, arg)), node, name.text);
+              options.completion?.(span, completed.slice(written.length));
+            }
+          } catch (error) {
+            if (error instanceof DeclarationError) throw error;
+            options.completion?.(span, { refused: error instanceof Error ? error.message : String(error) });
+          }
+        }
+      }
+      node.forEachChild(completing);
+    };
+    if (options.completion) completing(client);
+    // The applications written in the client file and in the declarations it
+    // reaches (`written-applications.mts`), each target joining the graph for
+    // its bounds; a library one is stated for its bounds only.
+    const sweepScope = (at: Node, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TermScope => {
+      const what = `${idOf(at.getSourceFile())}#${at.getText(at.getSourceFile())}`;
+      const base = valueScope(at, what);
+      return { ...base, named: (part, pos, read) => {
+        // A merged declaration's parameter is one per part: the one in scope.
+        const parameters = (ts.isIdentifier(part.typeName) ? typeDeclarationsOf(part.typeName) : [])
+          .filter(ts.isTypeParameterDeclaration);
+        const [first] = parameters;
+        if (first) {
+          const name = parameters.map(binder).find(n => n !== undefined);
+          if (!name || part.typeArguments?.length)
+            throw Error(`the type parameter ${first.name.text} in ${what} is not one the written application's scope binds`);
+          return { k: "binder", name, span: pos };
+        }
+        return base.named(part, pos, read);
+      } };
+    };
+    // What a symbol denotes for the sweep (`Entity`): its declarations, an
+    // alias followed to its target, and the symbols its type exposes as
+    // members, as the checker has them: a class's instance and static
+    // members, a module's or namespace's exports, `export =` and a default
+    // export included.
+    type Symbolic = NonNullable<ReturnType<typeof targetOf>>;
+    const follow = (symbol: Symbolic | undefined): Symbolic | undefined =>
+      symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+    const exportsOf = (symbol: Symbolic): Symbolic[] => {
+      const found = new Map<number, Symbolic>();
+      if (symbol.flags & (SymbolFlags.ValueModule | SymbolFlags.NamespaceModule)) {
+        for (const e of checker.getExportsOfModule(symbol)) found.set(e.id, e);
+        for (const [key, e] of symbol.getExports()) if (key === "export=" || key === "default") found.set(e.id, e);
+      }
+      if (symbol.flags & SymbolFlags.Class) {
+        for (const e of symbol.getMembers().values()) found.set(e.id, e);
+        for (const [key, e] of symbol.getExports()) if (key !== "prototype") found.set(e.id, e);
+      }
+      return [...found.values()];
+    };
+    // A symbol the checker synthesises has no declaration: no entity. Its
+    // origin is found where it is selected (`resolve`, `members`).
+    const entityOf = (symbol: Symbolic | undefined): Entity | null => {
+      const target = follow(symbol);
+      if (!target || checker.isUnknownSymbol(target)) return null;
+      const declarations = target.declarations.map(d => d.resolve()).filter((d): d is Node => !!d);
+      if (!declarations.length) return null;
+      return { declarations,
+        members: () => exportsOf(target).map(e => entityOf(e) ?? { declarations: [], members: () => [] }) };
+    };
+    let applications: WrittenApplication[];
+    try {
+      applications = writtenApplications({
+        declarationsOf: typeDeclarationsOf,
+        declaration: name => {
+          const nodes = typeDeclarationsOf(name);
+          if (!nodes.some(isTypeDeclaration)) return null;
+          // A target matters only where it has a bounded parameter.
+          if (!nodes.some(n => isTypeDeclaration(n) && n.typeParameters?.some(p => p.constraint))) return null;
+          const node = lookup(name, name.text);
+          return partners.get(node) ?? [node];
+        },
+        library: node => isLibraryModule(idOf(node.getSourceFile())),
+        read: (node, binder) => typeTerm(sweepScope(node, binder), node),
+        reference: (name, args) => {
+          const node = lookup(name, name.text);
+          const source = name.getSourceFile();
+          return { name: name.text, span: [name.getStart(source), name.end],
+            arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(node) };
+        },
+        instantiate: instantiateAt,
+        parameters: parametersOf,
+        complete: completeArguments,
+        resolve: name => {
+          // The declarations a name denotes: TypeScript's symbol at its
+          // location, or, for a step of a member path TypeScript gives no
+          // symbol, a module's or namespace's export of that name; none for
+          // a member the checker synthesises.
+          const resolved = (at: Identifier): { symbol: Symbolic | null; entity: Entity } | null => {
+            const direct = follow(checker.getSymbolAtLocation(at));
+            const entity = entityOf(direct);
+            if (direct && entity) return { symbol: direct, entity };
+            // The values the language defines, which no declaration states.
+            if (direct && !direct.declarations.length && (direct.name === "undefined" || direct.name === "globalThis"))
+              return { symbol: direct, entity: { declarations: [], members: () => [], intrinsic: true } };
+            const path = at.parent;
+            if (!path || !ts.isQualifiedName(path) || path.right !== at) return null;
+            const left = ts.isIdentifier(path.left) ? path.left : path.left.right;
+            const owner = ts.isIdentifier(left) ? resolved(left) : null;
+            if (!owner) return null;
+            const exported = owner.symbol ? follow(exportsOf(owner.symbol).find(e => e.name === at.text)) : undefined;
+            const selected = entityOf(exported);
+            if (exported && selected) return { symbol: exported, entity: selected };
+            return null;
+          };
+          return resolved(name)?.entity ?? null;
+        },
+        moduleOf: specifier => entityOf(checker.getSymbolAtLocation(specifier)),
+        members: (object, key) => {
+          const type = checker.getTypeFromTypeNode(object);
+          if (!type) return [];
+          const keyType = key ? checker.getTypeFromTypeNode(key) : null;
+          const parts = keyType ? (keyType.isUnionType() ? keyType.getTypes() : [keyType]) : [];
+          const literals = parts.length && parts.every(p => p.isStringLiteralType() || p.isNumberLiteralType())
+            ? parts.map(p => p.isStringLiteralType() ? p.value : p.isNumberLiteralType() ? String(p.value) : "") : null;
+          const properties = literals ? literals.map(k => checker.getPropertyOfType(type, k)) : checker.getPropertiesOfType(type);
+          // A member the checker synthesises without a declaration is
+          // refused by the sweep (an entity without declarations).
+          return properties.map(p => entityOf(p) ?? { declarations: [], members: () => [] });
+        },
+        module: file => idOf(file),
+        client,
+      }, [client, ...valueDeclarations]);
+    } catch (error) {
+      if (error instanceof DeclarationError) throw error;
+      throw new DeclarationError(error instanceof SweepError ? error.span ?? [0, 0] : [0, 0],
+        error instanceof Error ? error.message : String(error));
+    }
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
     const starts = [
@@ -1844,7 +2099,7 @@ export function collectDeclarations(file: string, options: {
     ];
     for (const { node: start, span } of starts) {
       try {
-        collect(start, seen, definitions, { lookup, identityOf, symbol: symbolOf, privateName: privateNameOf, partners, library, equation,
+        collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
           keys: keyTypeOf, alias: aliasOf, awaited });
       } catch (error) {
@@ -1864,8 +2119,8 @@ export function collectDeclarations(file: string, options: {
     const trustedValues = values.map(v => v.binding.specifier === intrinsicModule ? v :
       { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
     const trustedDefinitions = definitions.map(d => d.declaration.module === clientModule ? d :
-      { ...d, expression: promisedMethods(d.expression) });
-    return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols };
+      { ...d, expression: d.expression && promisedMethods(d.expression) });
+    return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
   });
 }
 
@@ -2026,15 +2281,15 @@ function boundedArguments(call: ts.CallExpression, stated: Stated, what: string)
  * it, or, outside the standard library, as declared. A global read only
  * through tests, `Array.isArray(e)`, is no value at all (null).
  */
-/** A declaration's type parameters by position, as TypeScript merges an
- * interface's declarations: each position's parameter in the declaration
+/** A declaration's type parameters by position, as TypeScript merges its
+ * declarations `parts`: each position's parameter in the declaration
  * binding the longest list, and its bound and default with the declaration
  * stating them, in whose scope they are read. TypeScript requires the
  * declarations stating a position's bound, or its default, to agree. */
-function mergedParameters(node: TypeDeclaration,
-    partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>) {
-  const parts = partners.get(node) ?? [node];
-  return (node.typeParameters ?? []).map((parameter, index) => {
+function mergedParameters(parts: readonly TypeDeclaration[]) {
+  const longest = parts.reduce<readonly ts.TypeParameterDeclaration[]>((list, part) =>
+    (part.typeParameters?.length ?? 0) > list.length ? part.typeParameters ?? [] : list, []);
+  return longest.map((parameter, index) => {
     const stated = parts.flatMap(part => {
       const at = part.typeParameters?.[index];
       return at ? [{ part, at }] : [];
@@ -2419,6 +2674,29 @@ function mergeMembers(parts: TypeTerm[], fail: (at: Node, message: string) => ne
     ...(symbolIndex ? { symbolIndex } : {}), calls };
 }
 
+/** A class's instance contract merged with its interfaces' members, as
+ * TypeScript merges them: a property both declare is one, of the one type
+ * TypeScript requires of both; a method both declare would be overloads,
+ * outside the fragment. The class's constructor must establish the whole
+ * contract, checked where the class is defined in the checked module; an
+ * imported class's constructor is a trusted declaration. */
+function mergedClass(instance: TypeTerm, interfaces: TypeTerm[], fail: (at: Node, message: string) => never,
+    at: Node): TypeTerm {
+  if (!interfaces.length) return instance;
+  if (instance.k !== "object") return fail(at, "a class merged with an interface states no record");
+  const key = (name: PropertyKey) => typeof name === "string" ? name : `[symbol ${name.symbol}]`;
+  const own = new Set(instance.fields.map(f => key(f.name)));
+  const added = interfaces.map(part => {
+    if (part.k !== "object") return fail(at, "an interface merged with a class is a record");
+    for (const field of part.fields)
+      if (own.has(key(field.name)) &&
+          (field.type.k === "function" || field.type.k === "scheme" || field.type.k === "intersection"))
+        fail(at, "a method a class and an interface merged with it both declare would be overloads, outside the fragment");
+    return { ...part, fields: part.fields.filter(f => !own.has(key(f.name))) };
+  });
+  return mergeMembers([instance, ...added], fail, at);
+}
+
 /** A standard library interface through its overlay entries
  * (`interfaceOverlay`): each listed member, read from the one declaration
  * among the merged parts whose text is the reviewed one, a method as a
@@ -2490,6 +2768,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
   symbol: (written: Identifier | ts.PropertyAccessExpression) => number;
+  literalKey: (written: Identifier | ts.PropertyAccessExpression) => string | null;
   privateName: (name: ts.PrivateIdentifier) => number;
   partners: ReadonlyMap<TypeDeclaration, readonly TypeDeclaration[]>;
   library: (identifier: Identifier, what: string) => LibraryType | null;
@@ -2504,6 +2783,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   awaited: NonNullable<TermScope["awaited"]>;
   /** A mapped type's keys as TypeScript computes them. */
   keys: NonNullable<TermScope["keys"]>;
+  /** A declaration's type parameters, its merged declarations together. */
+  parameters: (declaration: Node) => readonly MergedParameter[];
+  /** An application's arguments completed with its defaults. */
+  complete: (declaration: Node, written: readonly TypeTerm[], use: Node | null, what: string) => TypeTerm[];
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -2520,7 +2803,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       continue;
     }
     const source = node.getSourceFile();
-    const parameterNodes = node.typeParameters ?? [];
+    // Its parameters, its merged declarations together.
+    const parameterNodes = context.parameters(node);
     const parameterNames = parameterNodes.map(parameter => parameter.name.text);
     if (new Set(parameterNames).size !== parameterNames.length)
       throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
@@ -2544,14 +2828,12 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // computes at this reference's arguments.
       if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
       const target = identityOf(targetNode);
-      const targetParameters = mergedParameters(targetNode, partners);
-      const required = targetParameters.filter(p => !p.default).length;
-      if (arguments_.length < required || arguments_.length > targetParameters.length)
-        throw Error(`type argument arity: ${target.module}#${target.name}`);
+      const completed = context.complete(targetNode, arguments_.map(read), written ?? null,
+        `${target.module}#${target.name}`);
       const edge: Reference = { name: identifier.text, span: pos,
         arguments: arguments_.map(arg => [arg.getStart(source), arg.end]), target };
       queue.push(targetNode);
-      return { k: "reference", reference: edge, args: arguments_.map(read), span: pos };
+      return { k: "reference", reference: edge, args: completed, span: pos };
     };
     // Each declaration part is read in its own file, which its spans index.
     let body: TypeNode | undefined;
@@ -2575,6 +2857,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       awaited: context.awaited,
       ...(body ? { body } : {}),
       symbol,
+      literalKey: context.literalKey,
       privateName: context.privateName,
       keys: context.keys,
       computed,
@@ -2597,16 +2880,22 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const statedIn = (at: { part: TypeDeclaration; type: TypeNode | undefined }): TypeTerm | null =>
       at.type ? typeTerm(partScope(at.part), at.type) : null;
     let sawDefault = false;
-    const parameters = mergedParameters(node, partners).map(merged => {
-      const parameter = merged.parameter;
-      if (sawDefault && !merged.default)
+    const parameters = parameterNodes.map((parameter, index) => {
+      if (sawDefault && !parameter.default)
         throw Error(`required type parameter after default in ${identity.module}#${identity.name}`);
-      sawDefault ||= !!merged.default;
-      const parameterSpan: Span = [parameter.getStart(source), parameter.end];
-      return { name: parameter.name.text, span: parameterSpan,
-        bound: merged.bound ? statedIn({ part: merged.bound.part, type: merged.bound.at.constraint }) : null,
-        default: merged.default ? statedIn({ part: merged.default.part, type: merged.default.at.defaultType }) : null };
+      sawDefault ||= !!parameter.default;
+      const own = node.typeParameters?.[index] ?? parameter.name.parent;
+      const parameterSpan: Span = [own.getStart(own.getSourceFile()), own.end];
+      return { name: parameter.name.text, span: parameterSpan, defaulted: !!parameter.default };
     });
+    // An alias TypeScript computes from its parameters has no equation: its
+    // definition states its parameters and defaults.
+    // (A predicate's false branch would narrow `node` to no alias.)
+    const computedEquation: boolean = computedAlias(node, context.alias);
+    if (computedEquation) {
+      definitions.push({ declaration: identity, parameters, bases: [], expression: null });
+      continue;
+    }
     // A standard library interface read through the overlay: only its listed
     // members, and no base.
     const overlaid = ts.isInterfaceDeclaration(node) && Object.hasOwn(interfaceOverlay, node.name.text) &&
@@ -2618,7 +2907,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           identityOf, symbol, (name, span) => {
           const target = context.libraryInterface(name);
           queue.push(target);
-          return (args: TypeTerm[]): TypeTerm => ({ k: "reference", args, span,
+          return (args: TypeTerm[]): TypeTerm => ({ k: "reference", span,
+            args: context.complete(target, args, null, name),
             reference: { name, span, arguments: args.map(() => span), target: identityOf(target) } });
         }) });
       continue;
@@ -2626,7 +2916,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     let expression = ts.isTypeAliasDeclaration(node)
       ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
-        ? classInstance(scope, node, [node.getStart(source), node.end])
+        ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end]), parts.flatMap(part => {
+            if (part === node || !ts.isInterfaceDeclaration(part)) return [];
+            const file = part.getSourceFile();
+            return [members(scopeOf(file), part.members, part, [part.getStart(file), part.end], true)];
+          }), (at, message) => scope.fail(at, message), node)
         : mergeMembers(parts.map(part => {
             const file = part.getSourceFile();
             if (!ts.isInterfaceDeclaration(part)) return scope.fail(part, "a declaration merged with an interface is not one");

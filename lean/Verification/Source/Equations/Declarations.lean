@@ -24,7 +24,12 @@ def definitions (document : Json) : Except String (Array Definition) := do
   (← arr document "definitions").mapM fun j => do
     fieldsExactly j ["declaration", "parameters", "bases", "expression"]
     let identity ← field j "declaration"
-    return ⟨identity, ← str identity "name", ← arr j "parameters", ← arr j "bases", ← field j "expression"⟩
+    let parameters ← arr j "parameters"
+    for p in parameters do
+      fieldsExactly p ["name", "span", "defaulted"]
+      let _ ← str p "name"
+      let _ ← bool p "defaulted"
+    return ⟨identity, ← str identity "name", parameters, ← arr j "bases", ← field j "expression"⟩
 
 /-- `ArrayProto`'s identity, the synthetic declaration array types name. -/
 def arrayProtoIdentity : Json :=
@@ -214,10 +219,6 @@ structure Ctx where
   /-- The declared bounds of the placeholders in scope (`arg i`, `local j`),
   read when a bound obligation inside the template is checked (§8.2). -/
   bounds : List (Tree × Union) := []
-  /-- Whether an application's declared bounds are checked here: where the
-  source writes it. A claim's are not: a claim is a proposal the program is
-  checked against, and bounds carry no meaning (§8.2). -/
-  checkBounds : Bool := true
   deriving Inhabited
 
 

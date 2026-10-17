@@ -131,7 +131,7 @@ export const nativeIteratorIdentity: DeclarationIdentity =
   { module: "tscert/regexp", name: "NativeRegExpStringIterator", span };
 export function nativeIteratorDefinition(keys: Pick<RegExpKeys, "stringIterator" | "iterator">): TypeDefinition {
   return { declaration: nativeIteratorIdentity, bases: [],
-    parameters: [{ name: "T", span, bound: null, default: null }],
+    parameters: [{ name: "T", span, defaulted: false }],
     expression: { k: "intersection", span, parts: [keys.iterator({ k: "parameter", index: 0, span }),
       record([readonlyField({ symbol: keys.stringIterator }, atom("undefined"))])] } };
 }

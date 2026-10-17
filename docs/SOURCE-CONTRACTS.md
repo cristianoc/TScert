@@ -1117,10 +1117,10 @@ A conditional type is read through an alias distributing over a parameter,
 `type Extract<T, U> = T extends U ? T : never`, as `Extract`, `Exclude` and a
 user alias of that shape are. With $`\mathsf{members}(\sigma)`$ the members of
 the union $`\sigma`$ is written as, a union's members and those of the
-equation of an alias without bounded parameters it names, each alias's
-parameters read as the reference's arguments or their defaults, an
-application of an alias with a bounded parameter being one member read as
-written, with its bound obligation, an application TypeScript decides
+equation of an alias it names, each alias's parameters read as the
+reference's arguments or their defaults, a parameter standing alone in an
+equation or a default being the members of what it stands for, an
+application TypeScript decides
 member by member, whose result is a union of the types of whole members, is
 the union of those members, each read where it is written:
 
@@ -1146,13 +1146,21 @@ which TypeScript keeps, read where it is written by the declaration reader as
 `unknown` (`any` constrains nothing): a parameter at it accepts every value,
 and a result at it promises none.
 
+Each rule above gives what a computed type denotes. That replaces the
+applications written in it, which keep their obligations by
+[written applications](#written-applications): `ElementOf<number[]>` with
+`type ElementOf<T extends readonly string[]> = T[number]` is refused although
+TypeScript computes `number` for it, as are `keyof Box<number>` with
+`interface Box<T extends string>` and `P<number>` with
+`type P<T extends string> = T extends "a" ? T : never`, whose evaluation is
+`never`. A computed alias applied without an argument reads its parameter's
+default there, at the earlier arguments.
+
 Refused: a conditional type over a function's own type parameter, which
-TypeScript defers; an application of a conditional type alias with a bounded
-parameter, which what TypeScript computes for it would replace together with
-the obligation that its arguments meet their bounds; one whose result has a part that is no member of the
+TypeScript defers; one whose result has a part that is no member of the
 decided union as written (a branch other than the parameter, `T[]`, or a
-member naming a parameter of the alias declaring it, which is another type at
-each instance); a conditional type outside an alias distributing over a
+member naming a parameter of the alias declaring it inside another type,
+which is another type at each instance); a conditional type outside an alias distributing over a
 parameter that computes no union of literals and primitives; a template
 literal type with a `$`{string}` or ``${number}` hole; a
 form over a function's own type parameter (`keyof T`, `T[number]` with `T`
@@ -1163,6 +1171,184 @@ declaration names no symbol (a constant made neither by `Symbol()` nor by
 TypeScript infers another type for (a `let`, a method, a `const` assertion);
 `typeof C` of a class with a static method or a private static, bindings of
 their own that no member of the class value's type states.
+
+## Written applications
+
+A type application written in source syntax,
+$`D\langle\sigma_1,\ldots,\sigma_k\rangle`$ with $`D\langle X_1,\ldots,X_n\rangle`$
+an alias, interface or class, $`k\le n`$, its arguments completed with the
+defaults $`\delta_j`$ ($`\sigma_j=\delta_j[\vec X:=\vec\sigma]`$, $`j>k`$), in a
+lexical scope $`\Gamma`$ of type parameters with their assumptions,
+obliges
+
+```math
+\Gamma\ \vdash\ ⟦\sigma_i⟧\le⟦\beta_i⟧_{\vec X:=⟦\vec\sigma⟧}\qquad(1\le i\le n)
+```
+
+with $`\beta_i`$ the declared bound of $`X_i`$ ($`\mathsf{top}`$ where none):
+the inclusion holds at every assignment of $`\Gamma`$'s parameters meeting
+its assumptions. The obligation is a function of the syntax and its scope,
+whatever term a reader states for the type it is written in (a computed
+type's evaluation, a mapped type's expansion, a rest's alias read through its
+equation). An application of a declaration with no bounded parameter obliges
+only $`\sigma_i\le\mathsf{top}`$, which every type meets.
+
+The front end reads the obligations from the syntax
+(`written-applications.mts`): every form naming an alias, interface or
+class, at every depth, written with or without arguments: a type reference,
+simple or qualified (`ns.B<σ>`, `globalThis.Record<K, V>`), an import type
+(`import("m").B<σ>`), and a heritage clause (`extends`, `implements`,
+qualified or not). A form instantiating a value's generic signature,
+`typeof f<σ>` or `f<σ>` as an expression, is refused: its binders' bounds
+are checked only at a call. An expression inside a type or an interface, or in a declared module's
+declared types, is erased: no code the client runs evaluates it, so nothing
+checks what a call, construction, tagged template, JSX element or decorator
+there applies. The sweep visits every node of that syntax (members, keys,
+signatures, parameters and their initializers, heritage clauses) and admits
+an erased expression only when it is an entity name (an identifier, a
+property of an entity read by name) or a literal (a string, a number or a
+bigint, signed or not, `true`, `false`, `null`); it refuses any other,
+whatever node holds it. A declaration's name, a private name `#x` included,
+is no expression. A declared module's bodies, decorators and binding
+initializers are its code, not its declared types. A computed key naming an
+entity of a string or number literal type, an enum member or a constant, is
+the key its value names. In the client's code a
+heritage expression is code, swept whole. Swept are the client file's
+code, with every type node outside its interfaces and aliases; the declared
+types of the values the client reads; and, closed under dependency, every
+declaration a swept type's meaning depends on, generic or not, with all its
+merged parts. Every name in swept type syntax (a type reference's, a
+qualified name's or a member path's every step, a `typeof` query's, an
+import type's qualifier, a heritage clause's, a computed key's) resolves
+through TypeScript's symbol, aliases followed to their target (re-exports,
+renames, type-only imports, `export =`), to all that symbol's declarations;
+a member path's step TypeScript gives no symbol resolves to the members of
+that name of what the step before it denotes. A member selection depends on
+the members it selects: an indexed access on its keys' members (every member
+where its keys are no literals), a computed alias's application on every
+member of its arguments; a module's or a namespace's member is its export
+of that name. The unit swept is exactly the declaration reached (a member, a
+property, a method, a variable's declarator, a type), its annotations and
+type syntax, with the binders of its enclosing declarations in scope,
+whatever path reached it; never its enclosing statement, its executable
+body or its initializer. What is swept of a reached declaration is the
+written annotations that determine its exposed type
+([types stated by annotations](SOURCE-FRAGMENT.md#types-stated-by-annotations));
+one they do not determine, whose type TypeScript infers from its code, is
+refused at the use reaching it. A name a further step selects a member of
+contributes only that member; a whole class, namespace or module
+(`typeof import("m")` included) contributes every member by its kind. A module or a namespace contributes nothing by itself,
+only the members a further step selects. A name resolving to nothing is
+refused. The standard library's declarations are not
+swept: the applications inside them belong to the reviewed library
+declarations. A call's type arguments are swept for the applications written
+in them; whether they meet the callee's binder bounds is the instantiation of
+a quantified signature, checked at the call.
+
+The scope is binder groups from the outermost, each binder named freshly per
+declaration, so that distinct type parameters of one spelling are distinct
+variables. A group is simultaneous: all its names are in scope in all its
+bounds (`<T, U extends T>`, `<T extends Node<T>>`). The assumptions:
+
+- a function's, method's, closure's, class's, declaration's or generic
+  signature's type parameter: its declared bound;
+- a mapped type's key `[K in Q]`: `Q`;
+- `infer U`, in its extends type and the true branch: its explicit
+  constraint, else none;
+- in a conditional's true branch with a naked check type `T`: a fresh `T'`
+  bounded by `T & X`, `X` the extends type, as TypeScript narrows `T` there,
+  except where `X` holds `infer`.
+
+An entry keeps the binders its arguments name, closed under those their
+bounds name; dropping a binder's assumption enlarges the assignments the
+obligation must hold for, so it only strengthens the check. A declaration's
+entries are checked once, under its parameters' bounds; a use obliges its
+arguments to meet them, and an instance is one assignment meeting them.
+
+An application's arguments are completed once, by the one reader every
+consumer shares: the written ones, then each omitted parameter's default
+read at the arguments before it, $`\sigma_j=\delta_j[\vec X:=\vec\sigma]`$. A
+reference in a declaration's equation, in the client's annotations, in a
+library overlay and in each entry carries every argument so completed; a
+definition states only whether each parameter has a default, and the
+verifier and the producer read a reference at exactly its declaration's
+arity.
+
+An entry states, per parameter, its completed argument and its bound read at
+the arguments, $`\beta_i[\vec X:=\vec\sigma]`$: the front end reads the
+bound's syntax, as a default's, with the parameters as the arguments' terms,
+so `Pick`'s `K extends keyof T` is read at `T`'s argument. A computed form
+there (`keyof`, a conditional, a template literal, an indexed access, a
+computed alias's application) naming no parameter is what TypeScript computes
+for it where it is written; one naming a parameter is what TypeScript
+computes for it at the application. The checker instantiates no declaration's
+syntax, so the question is asked in a probe program (`type-probe.mts`): the
+project with two declarations added,
+
+```ts
+type P</* the declaration's parameters, verbatim */> = /* the form */;
+type U = P</* the application's written arguments, verbatim */>;
+```
+
+`P`'s parameters are the declaration's by position, its merged declarations
+together: each position's name, with the bound and the default a
+declaration states for it, copied from that declaration. `P` stands beside
+the declaration (in a global augmentation of its module) or, where that file
+cannot be read again (a standard library file), beside `U`; `U` at the end of
+the statement list holding the application. Their names are fresh; where one
+binds to anything other than its generated declaration, another pair is
+tried, and after a few the evaluation is refused. A reference's omitted
+arguments, and the arity a definition states, count the defaults of all the
+merged declarations. TypeScript completes
+the omitted arguments with the defaults, substitutes and evaluates: `U`'s
+type is the answer. Each name in the copied parameter list, form and
+arguments must resolve in the probe to the declarations it resolves to where
+it is written, a name declared inside a copy to its original, a parameter of
+the declaration (its merged parts included) to `P`'s parameter at its
+position; `P` and `U` must be the declarations found where they were placed,
+the reference to `P` binding to that `P`, and `U` the one declaration of its
+name; otherwise the evaluation is refused, as it is for a `this` type and for a name of the
+application's scope that is a type parameter (the form is then computed only
+at an instance). The answer is read from the checker's type objects: a union
+of literals and primitives (`keyof Record<string, number>` is `string`, of
+`{ 0: number }` the number `0`, of a class its public members' keys), each
+unique symbol mapped to the constant declaring it in the original program;
+an enum member, whose identity the fragment has no literal for, and any
+other type are refused. A computed alias applied in an annotation reads its
+defaults and equation the same way, at that application. A
+declaration's definition states no bound: bounds are read only here. The
+verifier binds
+each entry's groups as a unit's binders (`bindNames`), lowers each argument
+and bound there, and records one obligation per parameter, checked by the subtype
+comparison after closing (`closeObligation`): each bounded placeholder $`p`$
+on the actual side becomes $`p\wedge B_p`$, its bound's placeholders closed
+in turn up to a cycle, and on the upper side stays $`p`$.
+
+**Closing lemma** (proved here, not mechanized). For an assignment $`\eta`$
+with $`\eta(p)\subseteq⟦B_p⟧_\eta`$ for each recorded $`(p,B_p)`$, closing
+keeps both sides' meanings: $`⟦\mathsf{close}(A)⟧_\eta=⟦A⟧_\eta`$. By
+induction on the closing's fuel: a placeholder cut at a cycle or at fuel
+$`0`$ is itself; otherwise
+$`⟦p\wedge B_p[\mathsf{close}]⟧_\eta=\eta(p)\cap⟦B_p⟧_\eta=\eta(p)`$, by the
+hypothesis on $`B_p`$'s placeholders and the assumption. The upper side is
+unchanged. With `comparisonUsing_sound`,
+$`\forall\eta.\ ⟦\mathsf{close}(A)⟧_\eta\subseteq⟦B⟧_\eta`$, so the obligation
+holds at every assignment meeting the recorded bounds.
+
+Lean checks every supplied entry; that the entries are exactly the
+applications written in the swept syntax, read faithfully, is the front
+end's (the declared-types bridge of [TRUST-REDUCTION](TRUST-REDUCTION.md#the-bridges)).
+`any` in a user declaration reads as
+`unknown`, so `Box<any>` with a bounded `Box` is refused.
+
+Refused, each a limit of the mechanism: an argument computed over a binder,
+`B<T["k"]>` in a generic body, which has no term there; `infer U` at a
+bounded position, whose implied constraint is not modelled; a narrowing other
+than a naked check type's, as of a wrapped check type `[T] extends [X]` or an
+extends type with `infer`; a generic signature whose bound names another of
+its binders, which a scheme does not represent; an obligation whose
+comparison exhausts its budget; an argument outside the fragment, such as a
+string pattern.
 
 ## Index signatures
 

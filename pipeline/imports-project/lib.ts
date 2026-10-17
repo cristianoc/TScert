@@ -142,6 +142,137 @@ export interface Merge {
 export interface Merge {
   readonly label: string;
 }
+
+// A bounded alias an import type applies (`invalid-written-import-type-value-import`).
+export type Bounded<T extends string> = T;
+
+// A class whose heritage calls a generic function
+// (`invalid-written-heritage-call-value-import`).
+function made<T>(): { new (): { n: number } } {
+  return class {
+    n = 1;
+  };
+}
+export class Made extends made<Bounded<any>>() {}
+
+// A constant a client selects through the module's namespace
+// (`invalid-written-namespace-member-value-import`).
+export const selected: keyof { a: Bounded<any> } = "a";
+
+// A class with a private field (`written-private-name-value-import`).
+export class Private {
+  #x: number = 1;
+  a: number = this.#x;
+}
+
+// A constant a client reads as a type-only imported key
+// (`invalid-written-imported-key-value-import`).
+export const k: keyof { a: Bounded<any> } = "a";
+
+// A constant whose interface's member a client selects by `typeof`
+// (`written-member-path-value-import`).
+interface Keyed<T extends string> {
+  x: keyof { a: Bounded<T> };
+}
+export const keyed: Keyed<string> = { x: "a" };
+
+// An object literal's method a client selects by `typeof`
+// (`invalid-written-method-value-import`).
+export const methods = {
+  m(): keyof { a: Bounded<any> } {
+    return "a";
+  },
+};
+
+// A member a client selects through the namespace re-export of this module
+// (`written-namespace-export-value-import`), beside code that runs when the
+// module loads, which that selection does not read.
+export const value: number = 1;
+let loads = 0;
+loads += 1;
+
+// Unannotated declarations whose types their initializers determine, which
+// clients select (`invalid-written-initializer-*-value-import`).
+export const arrows = { m: (x: keyof { a: Bounded<any> }): number => x.length };
+export const functions = {
+  m: function (x: keyof { a: Bounded<any> }): number {
+    return x.length;
+  },
+};
+export const nested = {
+  inner: { m: (x: keyof { a: Bounded<any> }): number => x.length },
+};
+export class Fields {
+  f: (x: keyof { a: Bounded<any> }) => number = (
+    x: keyof { a: Bounded<any> },
+  ): number => x.length;
+  static g: (x: keyof { a: Bounded<any> }) => number = (
+    x: keyof { a: Bounded<any> },
+  ): number => x.length;
+}
+export const arrow: (x: keyof { a: Bounded<any> }) => number = (
+  x: keyof { a: Bounded<any> },
+): number => x.length;
+export class Unannotated {
+  f = (x: number): number => x;
+}
+
+// Destructuring under an annotation
+// (`invalid-written-annotated-pattern-value-import`), and an arrow property
+// of an unannotated literal, typed by its own annotations
+// (`written-arrow-property-value-import`).
+export const { dm }: { dm: keyof { a: Bounded<any> } } = { dm: "a" };
+export const arrowed = {
+  m: (): number =>
+    (() => {
+      return 1;
+    })(),
+};
+export const asserted: keyof { a: Bounded<any> } = "a" as keyof {
+  a: Bounded<any>;
+};
+const shortValue: keyof { a: Bounded<any> } = "a";
+export const shorthand: { shortValue: keyof { a: Bounded<any> } } = {
+  shortValue,
+};
+export const assigned: { m: keyof { a: Bounded<any> } } = { m: shortValue };
+
+// A method whose result type its body determines
+// (`written-initializer-inferred-result-refused-value-import`).
+export const inferred = {
+  m() {
+    return 1;
+  },
+};
+
+// Destructured constants, typed by their initializer
+// (`invalid-written-unannotated-destructured-value-import`).
+export const { destructured } = {
+  destructured: "a" as keyof { a: Bounded<any> },
+};
+export const [first] = ["a" as keyof { a: Bounded<any> }];
+
+// A property holding a call's result, whose function's result its body
+// determines, and a class method whose body determines its result
+// (`invalid-written-unannotated-call-value-import`).
+function make() {
+  return "a" as keyof { a: Bounded<any> };
+}
+export const madeProperty = { m: make() };
+export class Inferring {
+  m() {
+    return 1;
+  }
+}
+
+// An annotated constant whose arrow has an expression body: the body is code,
+// not swept (`written-expression-body-value-import`).
+export const exprBody: { m: () => number } = {
+  m: (): number =>
+    (() => {
+      return 1;
+    })(),
+};
 /** A type guard; the case type-guard-value-import imports it. */
 export function isWord(x: unknown): x is string {
   return typeof x === "string";

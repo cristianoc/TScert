@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { producerExecutable, verifier } from "./verify-source.mts";
+import { check, producerExecutable, verifier } from "./verify-source.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
@@ -120,7 +120,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const erased = run("invalid-generic-contract-erasure");
   const ast: Ast = JSON.parse(readFileSync(join(erased, "fragment.json"), "utf8"));
   const declaration = ast.declarations?.definitions.find(d => d.declaration.name === "Witness");
-  assert(declaration?.expression.k === "object");
+  assert(declaration?.expression?.k === "object");
   const member = declaration.expression.fields.find(f => f.name === "choose");
   assert(member?.type.k === "scheme");
   member.type = { k: "atom", name: "unknown", span: member.type.span };
@@ -172,7 +172,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     return { status: searched.status, detail: searched.stdout + searched.stderr };
   };
   const withRun = (inner: TypeTerm) => (d: TypeDefinition) => {
-    assert(d.expression.k === "object");
+    assert(d.expression?.k === "object");
     must(d.expression.fields[0], "Runner's method").type = runner(inner);
   };
   const schemeHost = run("scheme-binder-roles");
@@ -184,13 +184,69 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.equal(mixed.status, 1);
   assert.match(mixed.detail, /Runner: generic contract at \[0,0\]: a binder used as both a value and an argument pack is not represented/);
   const unguarded = forgeDefinition(run("non-regular-alias"), "Box", "forged-unguarded-alias", (d) => {
-    assert(d.expression.k === "object");
+    assert(d.expression?.k === "object");
     const next = must(d.expression.fields.find((f) => f.name === "next"), "Box's next").type;
     assert(next.k === "union");
     d.expression = { k: "union", parts: [{ k: "parameter", index: 0, span }, must(next.parts[0], "Box<[T]>")], span };
   });
   assert.equal(unguarded.status, 1);
   assert.match(unguarded.detail, /unguarded alias cycle through Box: a recursive alias must reach itself through an object, array, tuple or function type/);
+  // A written application's obligation is what the document states: the
+  // verifier checks each supplied entry at its arguments, its target's
+  // bounds and its scope's assumptions (the front end supplies every one).
+  const forgeDocument = (artifacts: string, file: string, change: (fragment: Ast) => void) => {
+    const fragment: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+    change(fragment);
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    const searched = produceWith(artifacts, join(artifacts, "claims.json"), file, path);
+    return { status: searched.status, detail: searched.stdout + searched.stderr };
+  };
+  const scopes = run("written-scopes");
+  const dependent = (fragment: Ast) => must(fragment.declarations.applications.find(a =>
+    a.site.endsWith("#dependent")), "dependent's B<U>");
+  const widened = forgeDocument(scopes, "forged-written-argument", fragment => {
+    const entry = dependent(fragment);
+    entry.args = [{ k: "atom", name: "number", span }];
+  });
+  assert.equal(widened.status, 1, widened.detail);
+  assert.match(widened.detail, /a written application: the type argument for B's "T" .*does not establish its declared bound: number ≤ string/);
+  const weakened = forgeDocument(scopes, "forged-written-scope", fragment => {
+    const entry = dependent(fragment);
+    for (const level of entry.scope) for (const binder of level) binder.bound = null;
+  });
+  assert.equal(weakened.status, 1, weakened.detail);
+  assert.match(weakened.detail, /a written application: the type argument for B's "T" .*does not establish its declared bound/);
+  const relaxed = forgeDocument(run("invalid-computed-bound-typeof"), "forged-written-bound", fragment => {
+    const entry = must(fragment.declarations.applications.find(a => a.reference.name === "BoxOf"), "BoxOf<number>");
+    entry.bounds = entry.bounds.map(() => null);
+  });
+  assert.equal(relaxed.status, 0, relaxed.detail);
+  // A reference carries every argument, the omitted ones completed where it
+  // is read: one left short, for the checker to complete with a default, is
+  // refused.
+  const short = forgeDocument(run("written-dependent-default"), "forged-short-reference", fragment => {
+    const found: unknown[] = [];
+    const walk = (value: unknown): void => {
+      if (Array.isArray(value)) value.forEach(walk);
+      else if (value && typeof value === "object") {
+        if ("k" in value && value.k === "reference" && "args" in value && Array.isArray(value.args) &&
+            "reference" in value && JSON.stringify(value.reference).includes('"name":"Keys"')) found.push(value.args);
+        Object.values(value).forEach(walk);
+      }
+    };
+    walk(fragment.functions);
+    for (const args of found) if (Array.isArray(args)) args.pop();
+    assert.ok(found.length, "a reference to Keys");
+  });
+  assert.equal(short.status, 1, short.detail);
+  assert.match(short.detail, /Keys applied to 1 type arguments of 2/);
+  // A written obligation whose comparison runs out of rounds is refused as
+  // exhausted, at the application (`Node<Leaf>`), not verified.
+  const exhausted = check(join(here, "examples", "written-recursive-bound.ts"), undefined, false, 0);
+  assert.equal(exhausted.status, "exhausted", JSON.stringify(exhausted));
+  assert("detail" in exhausted);
+  assert.match(exhausted.detail, /source direct obligation at \[202,212\): subtype search exhausted/);
 }
 {
   // An array literal's spread is copied before a later element that runs
@@ -1037,7 +1093,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   const promise = must(weakAst.declarations.definitions.find(d =>
     d.declaration.name === "Promise" && d.declaration.module.startsWith("typescript/lib/")),
     "the native Promise declaration");
-  assert(promise.expression.k === "object" && promise.expression.prototype?.k === "object");
+  assert(promise.expression?.k === "object" && promise.expression.prototype?.k === "object");
   promise.expression.prototype.fields = promise.expression.prototype.fields.filter(f => f.name !== "constructor");
   promise.expression.fields.push({ name: "constructor", optional: false, readonly: false,
     type: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] });
@@ -1080,7 +1136,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   const ast: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
   const target = must(ast.declarations.definitions.find(d => d.declaration.name === "NumericUnknownWrapper"),
     "the result-widened generic wrapper declaration").expression;
-  assert.ok(target.k === "scheme" && target.binders.length === 1);
+  assert.ok(target?.k === "scheme" && target.binders.length === 1);
   must(target.binders[0], "the retained numeric input binder").bound = null;
   const forged = join(artifacts, "forged-generic-input-bound.json");
   writeFileSync(forged, JSON.stringify(ast));

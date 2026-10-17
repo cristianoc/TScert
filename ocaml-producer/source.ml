@@ -581,7 +581,7 @@ and fn = { quantified: quantifier list; name: string; name_pos: Json.t; params: 
               signature's effect and type. *)
            guard: (call_effect * ty) option; body: stmt list }
 type declaration = { id: string; native_promise: bool; parameters: rigid list;
-  defaults: ty option list; bases: ty list; expression: ty }
+  bases: ty list; expression: ty option }
 (* `init` is the module's top-level code, run once after its function
    declarations exist. *)
 (* `values` are the client's value imports, at the types their declarations
@@ -908,8 +908,9 @@ let decode ast =
   let arity = List.map (fun definition ->
     let parameters = items "parameters" definition in
     identity (field "declaration" definition),
-      (List.length (List.filter (fun p -> field "default" p = Null) parameters),
-       List.length parameters)) (items "definitions" document) in
+      (* A reference carries every argument, the omitted ones completed
+         where it is read. *)
+      (List.length parameters, List.length parameters)) (items "definitions" document) in
   let definitions = List.mapi (fun index definition ->
     let id = identity (field "declaration" definition) in
     let parameters = List.mapi (fun i p -> {scope= -1-index;index=i;spelling=text "name" p})
@@ -918,10 +919,9 @@ let decode ast =
       own=true;self_owner=true;value_packs=false} in
     {id;native_promise=(text "name" (field "declaration" definition)="Promise" &&
        String.starts_with ~prefix:"typescript/lib/" (text "module" (field "declaration" definition)));parameters;
-     defaults=List.map (fun p -> match field "default" p with
-       | Null -> None | j -> Some (body j)) (items "parameters" definition);
      bases=List.map body (items "bases" definition);
-     expression=body (field "expression" definition)})
+     (* A definition stated for its bounds only has no equation. *)
+     expression=(match field "expression" definition with Null -> None | e -> Some (body e))})
     (items "definitions" document) in
   let locals = List.map (fun root ->
     let id=identity (field "declaration" root) in
@@ -931,10 +931,10 @@ let decode ast =
   if List.length (List.sort_uniq compare locals) <> List.length locals then
     fail "duplicate declaration root name";
   let symbolic = List.filter_map (fun d ->
-    match d.parameters,d.defaults,d.bases,d.expression with
-    | [parameter],[None],[],(Rigid identity as body) when identity=parameter ->
+    match d.parameters,d.bases,d.expression with
+    | [parameter],[],Some (Rigid identity as body) when identity=parameter ->
       Some (d.id,(parameter,body))
-    | [parameter],[None],[],(Atoms [Shape shape] as body) ->
+    | [parameter],[],Some (Atoms [Shape shape] as body) ->
       (match shape.fields,shape.indexes,shape.calls,shape.elements with
       | [{name=Name "value";optional=false;read=Rigid identity;
           write=Some (Rigid written);host=false;receivers=[]}],[],[],None
