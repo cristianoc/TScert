@@ -67,6 +67,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "map-stable-filter-push: the callback's call writes the array it captures, and the result is dense");
   assert.equal(runExample("invalid-map-named-callback-pop", "Object.keys(drained()).length"), 2,
     "invalid-map-named-callback-pop: the result has three positions, two present");
+  assert.equal(runExample("map-literal-at-expected-element", `tokens(["\`a\`", "b"]).map(t => t.kind).join()`), "code,word",
+    "map-literal-at-expected-element: each token's kind is one the type names");
+  assert.equal(runExample("invalid-map-literal-outside-element", `tokens([" "])[0].kind`), "space",
+    "invalid-map-literal-outside-element: the actual source returns a kind its type does not name");
   assert.equal(runExample("invalid-map-spread-pop", "Object.keys(drained([1, 2, 3])).length"), 2,
     "invalid-map-spread-pop: the result has three positions, two present");
   assert.equal(runExample("invalid-map-filter-pop", "Object.keys(trimmed([\"a\", \"b\", \"c\"])).length"), 2,

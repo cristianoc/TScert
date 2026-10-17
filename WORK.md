@@ -31,7 +31,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 9 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 10 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -102,7 +102,8 @@ constructions at a selected signature. Left open:
 
 - the other application forms (a variadic call with spreads, a variadic
   construction, a call of a callable object, a packed call) consume no
-  footprint, so a bounded body refuses them;
+  footprint, so a bounded body refuses them: `record-render.mts`'s `rules`
+  (`Math.max(0, ...ends)`);
 - an array element write has no bound; the fragment writes elements only at
   proved index singletons, and no measured program needs one.
 
@@ -253,29 +254,31 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 9 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
+dump, 10 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
 the same-file declarations it uses). The first blockers of the others in
-`dev/`:
+`dev/`, with the functions each stops directly and through callees:
 
-- a nested conditional of literals whose type the producer widens
-  (mathTokens): the producer types a callback's object literal before it
-  solves `map`'s `U` from the call's expected result, so the literal's
-  fields widen to `string` and `U` becomes the union of the widened record
-  and the expected element type, which no mutable array of the expected type
-  admits. TypeScript solves `U` from the return context first and types the
-  literal against it. `math` and `lowering` stop there through `mathTokens`;
+- `new Set` of a string, the parameter the overlay states only at an array,
+  in the module constants `BINDERS` and `RELATIONS` (mathRoles; through it
+  math, lowering, rules, section, card, pageBody: 7);
+- a conditional expression whose condition is `a && b`, where `b` narrows a
+  variable the branch reads (`CLASS[r] && r !== "text" ? … CLASS[r] …`): the
+  producer narrows through `b`, which the lowering, testing the value of
+  `a && b`, does not establish (math, lowering; through them rules, section,
+  card, pageBody: 6);
+- a variadic call with a spread argument in a bounded body,
+  `Math.max(0, ...ends)` (rules; through it section, card, pageBody: 4;
+  [footprints](#footprints));
 - `shift` of an array a `map` callback allocated (effects: `rest.shift()` on
   the result of `parts`), which the rule refuses
-  ([footprint precision](#footprints)); `rules`, `section`, `card` and
-  `pageBody` stop at a callback calling `math`, `lowering` or `effects`;
-- `new Set` of a string, the parameter the overlay states only at an array,
-  in the module constants `BINDERS` and `RELATIONS` (mathRoles);
+  ([footprint precision](#footprints)) (effects; through it section, card,
+  pageBody: 4);
 - a `map` callback running a child process, whose effect no contract bounds
-  (group);
+  (group: 1);
 - an element read a length guards (`paragraphs[paragraphs.length - 1]`,
-  `guarded-element-read-refused`; parseTrailers, parseRecord);
+  `guarded-element-read-refused`; parseTrailers, parseRecord: 2);
 - a conditional type over a type parameter, `KeysOf<T>` (printGraph,
-  showStep).
+  showStep: 2).
 
 In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
 verify; the others stop at a namespace import, Node's `Buffer` type, `join`

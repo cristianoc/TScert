@@ -149,6 +149,50 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | Some p :: rest when List.for_all (fun q -> q = Some p) rest ->
             expr ~expected:p env arg,Some p
           | _ -> expr env arg,None) args in
+      (* Quantified overloads whose receiver or result places a binder where
+         the call's receiver or expected type places a type: the binder is that
+         type for typing the actuals, as TypeScript infers from the return
+         position first. A
+         callback actual is typed at the parameter the candidates share once
+         their call effects are set aside: the overloads of a callback member
+         differ only in the footprint they state, and the actual's own is
+         inferred from its body. The proposal is untrusted; Lean checks the
+         instance and every actual. *)
+      let seeded_actuals (candidates:Semantic.signature list) =
+        let rec bind (pattern:ty) (actual:ty) = match pattern,declared_head declarations [] actual with
+          | Rigid r,_ -> [r,actual]
+          | Atoms [Shape {elements=Some p;calls=[];_}],Atoms [Shape {elements=Some a;_}]
+              when p.required=[] && p.optional_elements=[] && a.required=[] && a.optional_elements=[] ->
+            (match p.rest,a.rest with Some p,Some a -> bind p a | _ -> [])
+          | _ -> [] in
+        let seed (s:Semantic.signature) =
+          let own = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
+          let found = bind s.receiver receiver_type @ (match expected with
+            | Some t -> bind s.result t
+            | None -> []) in
+          let seeds = List.filter_map (fun (r,t) ->
+            if List.mem r own then Some (r,ValueArgument t) else None) found in
+          {s with params=List.map (Inference.substitute seeds) s.params} in
+        let plain = function
+          | Atoms [Shape ({calls=_::_;_} as sh)] -> Atoms [Shape {sh with calls=List.map (fun (c:Semantic.signature) ->
+              {c with call_effect=Semantic.ordinary_effect}) sh.calls}]
+          | t -> t in
+        let candidates = List.map seed candidates in
+        (* A parameter still naming a candidate's own binder, one neither
+           the receiver nor the expected result fixes, is no type to check a
+           callback at. *)
+        let unbound p = List.for_all (fun (c:Semantic.signature) ->
+          let own = List.map (fun (q:Semantic.quantifier) -> q.identity,ValueArgument (Atoms [])) c.quantified in
+          Inference.substitute own p = p) candidates in
+        List.mapi (fun i arg ->
+          match List.map (fun s -> param_at s i) candidates with
+          | Some p :: rest when List.for_all (fun q -> q = Some p) rest ->
+            expr ~expected:p env arg,Some p
+          | Some p :: rest when (match arg.node with Lambda _ -> true | _ -> false)
+              && unbound (plain p)
+              && List.for_all (fun q -> Option.map plain q = Some (plain p)) rest ->
+            expr ~expected:(plain p) env arg,None
+          | _ -> expr env arg,None) args in
       let offer ?(substitute=Fun.id) (s:Semantic.signature) =
         List.iteri (fun i arg -> Option.iter (fun p ->
           Option.iter (fun state -> state ()) (offer_to arg (substitute p))) (param_at s i)) args in
@@ -453,7 +497,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           when not spread && List.for_all (fun (s:Semantic.signature) ->
             s.quantified<>[] && s.variadic=None && s.rest_pack=None) calls ->
         let usable = List.filter callable calls in
-        let actuals = shared_actuals usable in
+        let actuals = seeded_actuals usable in
         let proposals = List.filter_map (fun (s:Semantic.signature) ->
           Option.map (fun (substitution,result) -> s,substitution,result)
             (quietly (fun () -> infer_explicit ~receiver:receiver_type ?expected s
