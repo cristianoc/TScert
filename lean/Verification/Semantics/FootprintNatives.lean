@@ -421,11 +421,11 @@ theorem array_native_post_any {ρ x s h h'} (hs : (fieldsOf (ρ x)).lookup array
 /-! ## Relies -/
 
 /-- The separation knowledge a density fact supplies about its own store. -/
-def denseK (x : Nat) : SepKnowledge := ⟨denseClass x, ⟨fun _ => none, fun _ => none⟩, fun _ => [], []⟩
+def denseK (x : Nat) : SepKnowledge := ⟨denseClass x, ⟨fun _ => none, fun _ => none⟩, fun _ => []⟩
 
 theorem denseK_holds {x n ρ h} (hd : Dense x n ρ h) : (denseK x).Holds id ρ h :=
   ⟨dense_classOk hd, ⟨fun _ _ h => by simp [denseK] at h, fun _ _ h => by simp [denseK] at h⟩,
-    fun _ _ h => h, fun _ h => by simp [denseK] at h⟩
+    fun _ _ h => h⟩
 
 /-- **The closed check of `map`'s bound is the stability check**, with the
 knowledge density gives about its own store. -/

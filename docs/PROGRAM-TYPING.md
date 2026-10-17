@@ -1956,8 +1956,8 @@ is bound at and the handler edge's certificate. `checkHandlerUsing` requires $`T
 admit every JavaScript value, with a `source` or `top` clause (`admitsAll`), and the edge to
 check against the target's claims under the facts that hold wherever the
 expression throws, which are those of the node's entry that do not mention the
-heap (`handlerFacts`: immutable values, alias and distinct links, shifted past
-the thrown value's slot):
+heap (`handlerFacts`: immutable values, alias links and provenance stamps,
+shifted past the thrown value's slot):
 
 ```math
 \frac{\{\mathsf{source},\mathsf{top}\}\cap\mathrm{expand}_G(T)\ne\varnothing\quad
@@ -2549,10 +2549,11 @@ names, so all of $`\Sigma`$ survives.
   \dashv \Pi\;;\;\Sigma}
 ```
 
-Either way the fresh cell's field is a location distinct from every contract
-field of every record-typed slot (the distinct links of `allocOutput`), whether
-or not its contents are known: a cell holding an object keeps what is known of
-the others, and a later write to either keeps what is known of the other.
+Either way the fresh cell is stamped after a new mark, and every contract field
+of every record-typed slot before it (`allocOutput`, `HeapStamps.alloc_holds`),
+whether or not its contents are known: a cell holding an object keeps what is
+known of the others, and a later write to either keeps what is known of the
+other.
 
 **Reading** has two rules for the same term, and neither subsumes the other.
 
@@ -2633,7 +2634,7 @@ on the choice — only precision does.
 **Writing** stores $`y`$'s value in the field $`f`$ of the object $`x`$ names. The
 result is `null`. Where $`y`$'s value is a known primitive it establishes the new
 contents for $`x`$ and every variable recorded equal to it; it keeps the atoms
-about locations a distinct link $`z.g\neq x.f`$ separates from the written one;
+about locations the stamps separate from the written one, $`z.g\neq x.f`$;
 it destroys the rest of $`\Sigma`$ — including atoms about cells that may or may
 not be this one. Writing a value that is not a known primitive, an object say,
 establishes no new contents and keeps the separated atoms all the same:
@@ -2673,21 +2674,20 @@ general frame rule.** A write through $`x`$ discards what is known about $`z`$ e
 when $`z`$ is a different name, because distinct names need not be distinct
 locations — $`\Pi`$ can witness that two names are equal, never that they are
 not. So the positive direction is proof-driven and the negative direction is
-total but for one timeless fact, the distinct link $`z.g\neq x.f`$: two field
-locations that differ whatever they hold (`HeapLinks.distinctFrom`,
-`distinct_sound`). Allocation states it: a fresh object's locations differ
-from every field each record of a record-typed slot names (`contractFields`).
-The lowering restates, at each statement entry, the links between a private
-cell the code allocated and the slots whose records' fields it was allocated
-after, or that were allocated after it
-([Source model](SOURCE-MODEL.md#current-content-assertions)); a cell a
-closure captures was allocated before the closure's entry, which states no
-fact of that allocation, so its body states none of these links.
+total but for one timeless fact, $`z.g\neq x.f`$: two field locations that
+differ whatever they hold, which provenance stamps give (`Stamps.apart`,
+`HeapStamps.apart_sound`): $`x`$ stamped after a mark and the field $`g`$ of
+$`z`$ before it, or the reverse. Allocation states them: a fresh object's
+locations are past the heap's end, and every field each record of a
+record-typed slot names is below it (`contractFields`). Stamps cross a
+statement entry where every incoming edge carries them, a loop's back edge
+included; a cell a closure captures was allocated before the closure's
+entry, which states no stamp, so its body states none of that allocation.
 
 The practical shape of the gap is worth stating. Facts about several cells
 coexist freely: allocation and reads preserve every one of them, so a program
 that allocates three cells knows the contents of all three. A write collapses
-that set to the written cell, its aliases and the locations distinct links
+that set to the written cell, its aliases and the locations the stamps
 separate from it, and a call empties it: a callee may write any location its
 operands reach, and nothing states which locations those are. $`\Pi`$ is not subject to this at
 all, which is why a value read out of a cell before a callback
@@ -2725,8 +2725,8 @@ It computes a guaranteed output, not an assumed postcondition:
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
 | Sliced read (`slicedRead`)           | A read whose cell fact excludes a nullish tag: ordinary read evidence at the location's contract $`C`$, whose negative slice by that tag is below the requested type by a checked subtype proof. As an ordinary typed read otherwise. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
-| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, the fields its result type names distinct. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`). |
-| Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
+| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and stamp it after a new mark and every record slot's fields before it. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, its result stamped the same way. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`). |
+| Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those the stamps separate from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
 `typedRead_sound`, `slicedRead_sound`, `read_sound`, `reading_sound` (by

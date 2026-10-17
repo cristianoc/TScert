@@ -21,8 +21,7 @@ set_option maxHeartbeats 1000000
   if (names scope).contains b.name then throw s!"duplicate or shadowing local declaration '{b.name}'"
   let A ← exprType fc b.init
   let B ← match b.annot with | none => pure A | some ty => lower (Fragment.translate ty)
-  let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
-  let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, fresh := fresh }
+  let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩ }
   let next ← after (bound::scope)
   let annotation ← emitAt b.init.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
     (scope := held ⟨b.name,some b.init.span⟩::scope)
@@ -53,7 +52,7 @@ set_option maxHeartbeats 1000000
       "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
     return ← LoweringExecution.compileExpr recursive fc scope Γ b.init stored
   let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
-  let binding : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, storage := .cell contract reference, apart := some Γ }
+  let binding : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, storage := .cell contract reference }
   let continued ← after (binding::scope)
   let drop := ⟨continued.label, some ((continued.mapping.getD (List.range (Γ.length+1))).map
     (fun j => if j == 0 then 0 else j+1))⟩

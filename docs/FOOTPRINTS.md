@@ -153,7 +153,7 @@ needs, besides, a **class theorem** for the support entry it uses.
 | Fact | Meaning | Support | Class theorem |
 | --- | --- | --- | --- |
 | `value(x, atoms)` | `ρ x` meets a primitive predicate | none | – |
-| `alias(x, y)`, `distinct(x,k, y,k')` | slot equality; two fields at different locations | none | – |
+| `alias(x, y)` | slot equality | none | – |
 | `cell(x, k, atoms)` (`HeapFacts.Fact`) | `h[field(x,k)]` meets `atoms`, an absent key reading `undefined` | `field(x,k): keep` | `class(value)` from a source-valued contract of the field (proved: `classOk_of_contracts`); the atoms alone give none, since `nonNull` holds of a store (`nonNull_admits_store`) |
 | `read(x, k, y)` (`HeapLinks.Link`) | `h[field(x,k)] = ρ y` | `field(x,k): keep` | as for `cell` |
 | `dense(x, n)` (`Dense`) | `h[store(x)] = .arr ls` with $`D_n\,ls`$ | `store(x): grow` | `class(store)` by its meaning (proved: `dense_class`, `dense_classOk`) |
@@ -205,9 +205,15 @@ field of `y` (proved: `stamps_separate`). A fresh store may list old element
 locations, so `elems(x)` is apart from nothing by `after(x)`
 (`elems_separation_false`, `stamps_separate_excludes_elems`).
 
-Stamps are the one provenance analysis. The distinct links the checker keeps
-between two fields, which write framing consumes, are derived from
-`stamps_separate` and checked as any other fact.
+Stamps are the one provenance analysis. The checker keeps them in
+`HeapKnowledge` (`HeapStamps`): two fields are apart, which write framing
+consumes, when the stamps separate them (proved: `HeapStamps.apart_sound`, the
+instance of `stamps_separate` for lists of stamps); an allocation stamps its
+result after a new mark and the contract fields of the context's slots
+before it (proved: `alloc_holds`); an edge's check computes the least
+monotone renaming of marks its target's `before` stamps need (proved:
+`HeapStamps.check_sound`). A statement entry's stamps are what every incoming
+edge carries.
 
 **Edges rename marks** by a sorted map `σ` from target marks to source
 marks with `σ(0) = 0`; the target valuation is $`\mu \circ \sigma`$ (proved:
@@ -228,8 +234,7 @@ Separation $`K \vdash r \mathbin{\#} s`$ (`SepKnowledge.apart`) holds by:
 
 1. **class**: `class(c)` against a field whose class evidence states
    `c' ≠ c`;
-2. **provenance**: stamps, as above;
-3. **link**: a distinct pair of fields.
+2. **provenance**: stamps, as above.
 
 A slot without provenance is apart from nothing (proved: `Sep.sound`). The
 **stability check** of a fact under a footprint:
@@ -537,14 +542,14 @@ a relied signature selected at a callback footprint outside its bound.
 | --- | --- | --- |
 | World contracts: `CtrAdm`, `ArrayPresence`, `StorePresence`, `CoversPresence`, `Implication`/`ImpliesOk`, `fieldAnswers`/`fieldSlice`, `persistentObservation`/`entryFacts` | kept, separate | Contracts are invariant; typing, promise establishment and refinement keep their rules. The class theorems read them. |
 | `HeapFacts.Fact`, `Holds`, `check` | the `cell` fact kind | Its class comes from a field's contract. |
-| `HeapLinks.Link` | one link type with an explicit kind (`alias`, `read`, `readOptional`, `distinct`), alias and distinct canonically ordered | Read links are the `read` fact kind. |
+| `HeapLinks.Link` | one link type with an explicit kind (`alias`, `read`, `readOptional`), alias canonically ordered | Read links are the `read` fact kind. |
 | `HeapLinks.alloc_frames`, `HeapKnowledge.alloc_frame(s)`, `HeapLinks.stable` | instances of `frame` | An allocation's footprint is $`\emptyset`$; `stable` is `frame` under `all: any`. |
-| `HeapLinks.aliases`, `distinctFrom` | kept | Alias lookup gives a write's gains; separation goes through the check. |
+| `HeapLinks.aliases` | kept | Alias lookup gives a write's gains; separation goes through the check. |
 | `HeapKnowledge.Knowledge`, `meet`, `check` | kept, with marks and stamps | – |
 | `observeBoolean`, `observeTag`; `PromiseCalls.fieldYield` | kept | Refinement gains; a read link survives every action the check accepts. |
 | `StepEvidence`, `checkStepResult` | kept | Operation evidence and its gains; their framing part is `frame(k, Φ_n)`. |
-| `readFrame`, `read_frame`, `pure_frame`, the framing part of `pureOutput`; `ordinaryOutput`; `writeOutput`'s `distinctFrom` filter; `ControlFlow.handlerFacts`, `checkYields` | instances of `frame` | Under $`\emptyset`$, the call's footprint (`all: any` for `ordinaryOutput`), `{field(x,k): any}`, and the exceptional edge's or promise signature's footprint. |
-| `allocOutput`'s product of distinct links, `Observations.distinctLinks`, `Bindings.mutableBinding`'s `apart` | stamps | `contractFields` is the typed fields' invariant part, with the same proof role (`typedField_contract`). |
+| `readFrame`, `read_frame`, `pure_frame`, the framing part of `pureOutput`; `ordinaryOutput`; `writeOutput`'s stamp filter; `ControlFlow.handlerFacts`, `checkYields` | instances of `frame` | Under $`\emptyset`$, the call's footprint (`all: any` for `ordinaryOutput`), `{field(x,k): any}`, and the exceptional edge's or promise signature's footprint. |
+| Allocation separation | stamps (`HeapStamps`) | `contractFields` is the typed fields' invariant part, with the same proof role (`typedField_contract`). |
 | `Observations.checkpoint` | kept, with marks and $`\Phi_p`$ | – |
 | `CallEffects.Effect` | a footprint and an optional promise | The heap effects are $`\emptyset`$ and `all: any`. |
 | `Effect.post`, `PromiseWith`, `covers`, `call_safe`, `prefix_safe`, `pure_safe` | `Post`, footprint order, a footprint `call_safe` | – |

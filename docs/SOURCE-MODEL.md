@@ -95,8 +95,10 @@ must still satisfy the Boolean contract.
 Each statement entry supplies a local interface: binding types and current
 heap observations. Every incoming edge, including a loop back edge, must
 establish that interface. The calculus can also retain relationships such as
-two slots denoting the same value or two private cells being distinct.
-The source-entry rules determine which of these facts cross a checkpoint.
+two slots denoting the same value, and provenance stamps from which two
+fields' distinct locations follow. The source-entry rules determine which of
+these facts cross a checkpoint; the stamps cross it where every incoming edge
+carries them.
 
 An unrestricted call invalidates heap observations because the callee may write
 through an alias. A certified heap-preserving call can retain facts on normal

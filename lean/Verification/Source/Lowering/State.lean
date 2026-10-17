@@ -43,12 +43,6 @@ structure ScopeBinding (ι : Type) where
   /-- A module function's slot: its type is its own source signature, never a
   producer claim, and it is a value slot, so no assignment can reach it. -/
   fixed : Option (Ty ι) := none
-  /-- A `let`'s cell: the types of the slots below it when it was allocated,
-  whose records' fields its fresh location differs from. -/
-  apart : Option (List (Ty ι)) := none
-  /-- A constant bound to an object or array it allocated: its fields are
-  fresh, so they differ from every older cell's location. -/
-  fresh : Bool := false
   /-- A parameter: bound before the body runs, so before any cell the body
   allocates, and at the same time as an assigned parameter's cell. -/
   param : Bool := false

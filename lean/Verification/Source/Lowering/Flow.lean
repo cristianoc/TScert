@@ -170,9 +170,8 @@ set_option maxHeartbeats 1000000
     | _ => throw "internal flow error: malformed action"
   completeFlowEntry reserved target
   let facts ← entryFacts fc node.source.1 scope
-  let links := distinctLinks (SourceTypes.graph (← table)) scope Γ
-  if !facts.isEmpty || !links.isEmpty then
-    recordAssertion reserved ⟨facts, [], links⟩
+  if !facts.isEmpty then
+    recordAssertion reserved { cells := facts }
   recordCut reserved
   return ← jumpTo incoming reserved scope
 
