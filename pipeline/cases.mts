@@ -1821,7 +1821,7 @@ export const cases: Case[] = [
   negative("invalid-truthiness-string", "a falsy `string` is a `string`: no singleton is invented for it",
     /source expression obligation at \[138,139\)/),
   positive("primitive-members", "a string's own `length` and code units (`string | undefined` at any numeric index), and a primitive's other members read through its wrapper's prototype (`StringProto`, `NumberProto`, `BigIntProto`, `BooleanProto`) and called with the primitive as receiver, in functions and closures"),
-  positive("primitive-string-members", "`repeat` and `normalize` read as declared, their RangeErrors outcomes; `split`, `replace` and `replaceAll` stated at string patterns; `toLocaleString` of locale tags"),
+  positive("primitive-string-members", "`repeat`, `normalize`, `padStart` and `padEnd` read as declared, their RangeErrors outcomes; `split`, `replace` and `replaceAll` stated at string patterns; `toLocaleString` of locale tags"),
   positive("primitive-radix", "`toString(radix)`, `toFixed`, `toExponential` and `toPrecision` of any number, as declared: each returns a string or throws a RangeError"),
   negative("invalid-string-index", "a string's index past its end reads `undefined`, though TypeScript says `string`",
     /source expression obligation at \[158,162\)/),

@@ -319,6 +319,10 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
     { name: "codePointAt", from: "String", signature: "codePointAt(pos: number): number | undefined;" },
     { name: "trimStart", from: "String", signature: "trimStart(): string;" },
     { name: "trimEnd", from: "String", signature: "trimEnd(): string;" },
+    // The pad is a string; a length past the host's string limit is a
+    // `RangeError`.
+    { name: "padStart", from: "String", signature: "padStart(targetLength: number, padString?: string): string;" },
+    { name: "padEnd", from: "String", signature: "padEnd(targetLength: number, padString?: string): string;" },
     { name: "at", from: "String", signature: "at(index: number): string | undefined;" },
   ],
   number: [

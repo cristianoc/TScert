@@ -266,12 +266,15 @@ the same-file declarations it uses). The first blockers of the others in
   imported function's effect needs a contract its own module's
   certification establishes ([module composition](#module-composition))
   (group: 1);
-- in lowering-dump, a mapped type whose value names its key, `SHOW_STEP`'s
-  `{ [K in KeysOf<Step>]: (a: Extract<Step, Record<K, unknown>>[K]) => string }`,
-  refuses the file; showStep's assertions, which state what `decodeNode`
-  checked, are obligations its values do not meet, and printGraph has no
-  return annotation, which a module function's value requires
-  ([SOURCE-FRAGMENT](docs/SOURCE-FRAGMENT.md)) (printGraph, showStep: 2).
+- in lowering-dump, showStep's case analysis over `Continuation`, a union of
+  records each holding one key: `"bind" in k` is refused, as every function
+  inherits `bind` ([SOURCE-FRAGMENT](docs/SOURCE-FRAGMENT.md)), and a passed
+  `in` test narrows nothing, as an open record may own any other key
+  (`in-test`'s `either`), so no arm's payload read is typed (showStep: 1);
+- in printGraph, `program.map(decodeNode)` passes an imported function as a
+  callback, which a signature binding more parameters may call with further
+  actuals; only a module function's own code is known to discard them
+  ([module composition](#module-composition)) (printGraph: 1).
 
 In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
 verify; the others stop at a namespace import, Node's `Buffer` type, `join`
