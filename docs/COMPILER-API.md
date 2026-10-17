@@ -286,6 +286,42 @@ The Lean obligations of the capability are its meaning, the monotonicity of
 $`\iota`$ under every step, covariant subtyping, and `if-field` on
 $`\iota`$.
 
+**Open: whether $`\iota`$ is needed beside readonly views.** Each use the
+contract makes of $`\iota`$ is already a property of the readonly views
+$`\psi`$, in the model as it stands:
+
+- *No write.* The write rule consumes $`\varphi`$ alone; a readonly view
+  grants no write (`viewT`: the stored contract implies the view's family).
+- *Subtyping.* A view is below a wider view and is no invariant field: an
+  invariant field states the stored contract exactly, a view only an
+  implication from it. So a node read with readonly views is below
+  `{ readonly flags: number }` and outside `{ flags: number }`, as the
+  subtyping item above requires.
+- *Narrowing.* Lean's field slice already drops an arm by a readonly view.
+  `fieldAnswers` (`BranchRefinement.lean`) lists the clause's invariant
+  fields and its views. `fieldSlice_sound` proves the exclusion from the
+  stored contract, fixed at allocation, which a view constrains as an
+  invariant field does: the exclusion concerns the object's label, which is
+  timeless. "Narrowing a readonly view stays refused" is no property of the
+  calculus.
+- *What $`\iota`$ adds.* Only that the value a stable member holds is the
+  same in every later heap. No rule of this document reads that property.
+  The host-guard expansion reads `kind` several times with nothing between
+  the reads, and the field slice's exclusion is timeless.
+
+The pipeline does not narrow by a readonly view today. With
+`type A = { readonly k: "a"; x: number } | { readonly k: "b"; y: string }`,
+`o.k === "a" ? o.x : o.y.length` is refused at the edge ("the edge from
+node 24 does not establish the claims at this point"). The producer claims
+the narrowed arm, and the same program with `k` writable verifies (probes,
+2026-10-17). The cause, in the edge's link to the read or elsewhere, is not
+established.
+
+If $`\iota`$ is not needed, rule 1 reads a stable member as a readonly view,
+its write refusal and subtyping hold as they are, and the work is the
+investigation of view narrowing in the pipeline. If it is needed, the
+property it adds must be named by a rule that reads it.
+
 ## The node invariant
 
 Let $`\mathcal K`$ be the 352 values of `SyntaxKind`. For $`k\in\mathcal K`$

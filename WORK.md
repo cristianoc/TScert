@@ -31,6 +31,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
+| [Narrowing by a readonly view](#narrowing-by-a-readonly-view) | open: an investigation, cause unknown | the pipeline narrows a union of records by a test of a readonly view, as Lean's field slice does, or the cause of the refusal is established |
 | [The front end's own functions](#the-front-ends-own-functions) | open: 31 of 306 verify in `tools/`, 21 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
@@ -261,6 +262,17 @@ parameters, at an application, means what the checker computes for a probe
 declaration" ([trust surface](docs/DESIGN.md#trust-surface)); the checked
 form retires the computation's trust altogether, the relaxed one only the
 probe's correspondence to the application.
+
+<a id="narrowing-by-a-readonly-view"></a>
+**Narrowing by a readonly view.** A test of a field a union's arms state as
+readonly views does not narrow the union:
+`o.k === "a" ? o.x : o.y.length` with
+`o: { readonly k: "a"; x: number } | { readonly k: "b"; y: string }` is
+refused at the edge, while the same program with `k` writable verifies
+(probes, 2026-10-17). Lean's `fieldSlice` lists views beside invariant
+fields, and `fieldSlice_sound` covers both. Whether the compiler API needs
+immutable fields beside readonly views depends on this
+([COMPILER-API](docs/COMPILER-API.md#the-immutable-field-capability)).
 
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
