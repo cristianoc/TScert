@@ -322,8 +322,8 @@ def moduleScheme (T : EquationStore.State) (g : Instantiable) :
   -- signatures, each an arrow's arguments and result.
   let (L, S, construct) ← match PositiveRules.expand (SourceTypes.graph grown) A with
     | [.arrs L S] => pure (L, S, false)
-    | [.ctors L S _ _ _] => pure (L.map (fun (ps, r) => ⟨[], ps, r, .unrestricted⟩),
-        S.map (fun (ps, rest, r) => ⟨[], (ps, rest), r, .unrestricted⟩), true)
+    | [.ctors L S _ _ _] => pure (L.map (fun (ps, r) => ⟨[], ps, r, .ordinary⟩),
+        S.map (fun (ps, rest, r) => ⟨[], (ps, rest), r, .ordinary⟩), true)
     | _ => throw s!"'{g.name}' read as a value is not one callable or one class value"
   let (grown, label) := EquationStore.scheme grown ps L rows S construct
   return (grown, graph [label])

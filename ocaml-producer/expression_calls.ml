@@ -94,7 +94,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            value; adding ignored parameters cannot manufacture an effect.
            Overload selection uses this type, never the callback's body. *)
         let supplies_effect (offered:Semantic.signature) =
-          offered.call_effect=Unrestricted ||
+          offered.call_effect=Semantic.ordinary_effect ||
           let known = match arg.node with
             | Id name -> quietly (fun () -> resolve env name)
             | _ -> latest_claim arg.pos in
@@ -478,10 +478,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | Some p,Atoms [Shape actual] ->
               (match declared_head declarations [] (Inference.substitute substitution p) with
                | Atoms [Shape wanted] -> List.for_all (fun (w:Semantic.field) ->
-                   List.for_all (fun (c:Semantic.signature) -> c.call_effect<>PreservesInputHeap ||
+                   List.for_all (fun (c:Semantic.signature) -> c.call_effect<>Semantic.empty_effect ||
                      match List.find_opt (fun (a:Semantic.field) -> a.name=w.name) actual.fields with
                      | Some a -> List.for_all (fun (d:Semantic.signature) ->
-                         d.call_effect=PreservesInputHeap) (calls_of a.read)
+                         d.call_effect=Semantic.empty_effect) (calls_of a.read)
                      | None -> true) (calls_of w.read)) wanted.fields
                | _ -> true)
             | _ -> true) (List.combine args actuals)) in

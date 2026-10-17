@@ -3,7 +3,8 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { PropertyKey } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, ClosedFootprint, PropertyKey } from "./declaration-types.mts";
+export type { CallEffect, CallPromise, ClosedFootprint } from "./declaration-types.mts";
 /** Physical density and a safe in-bounds read are distinct guarantees. */
 export type ArrayPresence = "dense" | "readable" | "sparse";
 export function isArrayPresence(value: unknown): value is ArrayPresence {
@@ -18,19 +19,45 @@ export function presencePrefix(value: ArrayPresence): string {
 export type Labels<L = number> = L[];
 /** A signature: the receiver a call may pass, then the parameters and the
  * result. A signature indifferent to its receiver names an unknown row. */
-/** What a signature guarantees beyond its contract: a heap effect, or a
- * promise about the actual at `param`, whose type is then the signature's
- * result (`CallEffects.Effect`). */
-export type CallEffect = "unrestricted" | "preservesInputHeap" | { guards: { param: number } } | { asserts: { param: number } };
+/** The footprint letting every location change: an ordinary arrow's. */
+export const topFootprint: ClosedFootprint = { value: "any", store: "any" };
+/** The footprint letting no location change: heap preservation. */
+export const emptyFootprint: ClosedFootprint = { value: "keep", store: "keep" };
+/** A signature with a footprint and no promise. */
+export const footprintEffect = (footprint: ClosedFootprint): CallEffect => ({ footprint, promise: null });
+/** Heap preservation: no location may change, no promise. */
+export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
+/** An ordinary arrow's effect: every location may change, no promise. */
+export const ordinaryEffect: CallEffect = footprintEffect(topFootprint);
+/** A promise signature: a guard's or an assertion function's, about `param`,
+ * whose code may change every location. */
+export const promiseEffect = (asserts: boolean, param: number): CallEffect =>
+  ({ footprint: topFootprint, promise: asserts ? { asserts: { param } } : { guards: { param } } });
+export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =>
+  a.value === b.value && a.store === b.store;
+const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
+  a === null || b === null ? a === b
+    : "guards" in a ? "guards" in b && a.guards.param === b.guards.param
+    : "asserts" in b && a.asserts.param === b.asserts.param;
+export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
+  sameFootprint(a.footprint, b.footprint) && samePromise(a.promise, b.promise);
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+/** Whether a value is a closed footprint, as the wire states one. */
+export function isClosedFootprint(value: unknown): value is ClosedFootprint {
+  return isObject(value) && Object.keys(value).length === 2 &&
+    (value.value === "keep" || value.value === "any") &&
+    (value.store === "keep" || value.store === "grow" || value.store === "any");
+}
 /** Whether a value is a call effect, as the wire states one. */
 export function isCallEffect(value: unknown): value is CallEffect {
-  if (value === "unrestricted" || value === "preservesInputHeap") return true;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const keys = Object.keys(value);
-  const promise: unknown = "guards" in value ? value.guards : "asserts" in value ? value.asserts : undefined;
-  return keys.length === 1 && typeof promise === "object" && promise !== null && !Array.isArray(promise) &&
-    Object.keys(promise).length === 1 && "param" in promise && typeof promise.param === "number" &&
-    Number.isInteger(promise.param) && promise.param >= 0;
+  if (!isObject(value) || Object.keys(value).length !== 2 || !isClosedFootprint(value.footprint)) return false;
+  const promise = value.promise;
+  if (promise === null) return true;
+  if (!isObject(promise) || Object.keys(promise).length !== 1) return false;
+  const about: unknown = "guards" in promise ? promise.guards : "asserts" in promise ? promise.asserts : undefined;
+  return isObject(about) && Object.keys(about).length === 1 && typeof about.param === "number" &&
+    Number.isInteger(about.param) && about.param >= 0;
 }
 /** One contract representation; every operand mapping must retain its effect. */
 type CallContract<Receiver, Arguments, L = number> = {

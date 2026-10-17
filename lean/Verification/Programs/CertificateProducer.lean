@@ -1136,7 +1136,7 @@ type, a type of the pool the test decides. Untrusted: the checker decides. -/
   match PromiseCalls.promiseOf G e with
   | some (effect, a, T) =>
     if out == HeapExpressionRules.ordinaryOutput k then
-      [{ conditional := match effect with | .guards _ => true | _ => false, target := a, type := T }]
+      [{ conditional := match effect.promise with | some (.guards _) => true | _ => false, target := a, type := T }]
     else []
   | none =>
     match (claim e).term with

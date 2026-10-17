@@ -1,14 +1,37 @@
 (* Semantic types contain no solver state. More precise proposals do not mutate them.
    A rigid parameter remains distinct from any future inference/existential IDs. *)
-(* What a signature guarantees beyond its contract: a heap effect, or a
-   promise about the actual at a parameter (Lean's `CallEffects.Effect`). A
-   promise signature's result is the promise's type, not the call's: a type
-   guard's call is `true` or `false`, `true` leaving the actual at the result;
-   an assertion function's returns `undefined`, leaving it there. *)
-type call_effect = Unrestricted | PreservesInputHeap | Guards of int | Asserts of int
+(* How a footprint may change a location's contents (Lean's
+   `Footprints.Change`): not at all, as a store keeping every dense prefix, or
+   arbitrarily. *)
+type change = Keep | Grow | Any
+(* A closed footprint (Lean's `Footprints.Closed`): the change a call may make,
+   on normal return, to its entry heap's locations holding a value and to those
+   holding an array store. On a value `Grow` is `Keep`. *)
+type footprint = { on_value: change; on_store: change }
+let top_footprint = {on_value=Any;on_store=Any}
+let empty_footprint = {on_value=Keep;on_store=Keep}
+let change_le a b = match a,b with Keep,_ | Grow,(Grow|Any) | Any,Any -> true | _ -> false
+let footprint_le a b =
+  let on_value = function Grow -> Keep | d -> d in
+  change_le (on_value a.on_value) (on_value b.on_value) && change_le a.on_store b.on_store
+(* A promise about the actual at a parameter. A promise signature's result is
+   the promise's type, not the call's: a type guard's call is `true` or
+   `false`, `true` leaving the actual at the result; an assertion function's
+   returns `undefined`, leaving it there. *)
+type promise = Guards of int | Asserts of int
+(* What a signature guarantees beyond its contract (Lean's
+   `CallEffects.Effect`): its footprint, and an optional promise. *)
+type call_effect = { footprint: footprint; promise: promise option }
+(* An ordinary arrow's: every location may change. *)
+let ordinary_effect = {footprint=top_footprint;promise=None}
+(* Heap preservation: no location may change. *)
+let empty_effect = {footprint=empty_footprint;promise=None}
+let promise_effect promise = {footprint=top_footprint;promise=Some promise}
 
-(* Whether a signature's result is the call's: a heap effect's. *)
-let plain_effect = function Unrestricted | PreservesInputHeap -> true | Guards _ | Asserts _ -> false
+(* Whether a signature's result is the call's: one without a promise. *)
+let plain_effect e = e.promise = None
+(* A smaller footprint and the same promise (Lean's `Effect.covers`). *)
+let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.promise
 
 type array_presence = Dense | Readable | Sparse
 let presence_name = function Dense -> "dense" | Readable -> "readable" | Sparse -> "sparse"
@@ -104,9 +127,9 @@ let retain_call_effects declared inferred = match declared,inferred with
   | Atoms [Shape expected],Atoms [Shape actual] ->
     let retain (s:signature) =
       if List.exists (fun (candidate:signature) ->
-        candidate.call_effect=PreservesInputHeap &&
-        {candidate with call_effect=Unrestricted} = {s with call_effect=Unrestricted}) actual.calls
-      then {s with call_effect=PreservesInputHeap} else s in
+        candidate.call_effect=empty_effect &&
+        {candidate with call_effect=ordinary_effect} = {s with call_effect=ordinary_effect}) actual.calls
+      then {s with call_effect=empty_effect} else s in
     Atoms [Shape {expected with calls=List.map retain expected.calls}]
   | _ -> declared
 
@@ -150,11 +173,11 @@ let meet_objects a b = match a,b with
       calls=x.calls @ y.calls}])
   | _ -> None
 let top = Atoms [Top]
-let arrow ?(call_effect=Unrestricted) params result =
+let arrow ?(call_effect=ordinary_effect) params result =
   Atoms [Shape {fields=[];indexes=[];calls=[{quantified=[];receiver=top;params;variadic=None;rest_pack=None;result;call_effect}];elements=None}]
-let quantified_arrow ?(call_effect=Unrestricted) ?(receiver=top) quantified params result =
+let quantified_arrow ?(call_effect=ordinary_effect) ?(receiver=top) quantified params result =
   Atoms [Shape {fields=[];indexes=[];calls=[{quantified;receiver;params;variadic=None;rest_pack=None;result;call_effect}];elements=None}]
-let variadic_arrow ?(call_effect=Unrestricted) ?(quantified=[]) ?(receiver=top) params element result =
+let variadic_arrow ?(call_effect=ordinary_effect) ?(quantified=[]) ?(receiver=top) params element result =
   Atoms [Shape {fields=[];indexes=[];calls=[{quantified;receiver;params;variadic=Some element;rest_pack=None;result;call_effect}];elements=None}]
 let ground xs = Atoms (List.sort_uniq compare xs)
 let bool = ground [True;False]

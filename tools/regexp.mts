@@ -21,6 +21,7 @@
  *   intrinsic `%Iterate:RegExpString%` requires. */
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { RegExpShape } from "./regexp-shape.mts";
+import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 type Signature = Extract<TypeTerm, { k: "function" }>;
@@ -36,7 +37,7 @@ type Effect = Signature["effect"];
 const method = (params: TypeTerm[], result: TypeTerm, effect: Effect): Signature =>
   ({ k: "function", effect, receiver: { k: "self", span }, params, rest: null, result, span });
 const methodField = (name: Field["name"], params: TypeTerm[], result: TypeTerm,
-    effect: Effect = "unrestricted"): Field =>
+    effect: Effect = ordinaryEffect): Field =>
   ({ name, optional: false, readonly: false, type: method(params, result, effect), span });
 
 /** The synthetic symbols the marks are keyed by: no source declaration has
@@ -96,7 +97,7 @@ function splitResult(shape: RegExpShape | null): TypeTerm {
  * type states no `[Symbol.matchAll]`, which `matchAll` reaches only on a
  * native regex.
  *
- * A native regex's standard members state `preservesInputHeap` where they
+ * A native regex's standard members state the empty footprint where they
  * run no client code and leave every existing location as it was: each reads
  * the regex's pattern and flags, allocates only its result, and writes
  * `lastIndex` only where the regex is global or sticky. `[Symbol.search]`
@@ -115,9 +116,9 @@ function splitResult(shape: RegExpShape | null): TypeTerm {
 function members(shape: RegExpShape | null, keys: RegExpKeys, native: boolean): Field[] {
   const exec = execResult(shape);
   const optionalNumber = either(atom("number"), atom("undefined"));
-  const restoring: Effect = native && shape !== null ? "preservesInputHeap" : "unrestricted";
+  const restoring: Effect = native && shape !== null ? emptyEffect : ordinaryEffect;
   const stateless: Effect = native && shape !== null && !shape.global && !shape.sticky
-    ? "preservesInputHeap" : "unrestricted";
+    ? emptyEffect : ordinaryEffect;
   return [
     methodField("exec", [atom("string")], either(exec, atom("null")), stateless),
     methodField("test", [atom("string")], atom("boolean"), stateless),
@@ -179,7 +180,7 @@ export const dispatchName = (method: DispatchMethod): string => `%Dispatch:${met
  * for a non-global one, an outcome). Evaluation is as written: `s`, `o`,
  * then `rest`. Beside the member's call, the dispatch reads `o`'s members
  * and converts only strings: it runs no other code and writes nothing, so a
- * first signature, at an `o` whose member states `preservesInputHeap`,
+ * first signature, at an `o` whose member states the empty footprint,
  * states it too; the second takes any `o`. */
 export function dispatchIntrinsic(method: DispatchMethod, keys: RegExpKeys):
     { name: string; typeParams: { name: string; bound: null; resolution: null }[]; type: TypeTerm } {
@@ -198,7 +199,7 @@ export function dispatchIntrinsic(method: DispatchMethod, keys: RegExpKeys):
     params: [atom("string"), record([methodField({ symbol: key }, memberParams, memberResult, effect), ...mark]),
       ...rest], rest: null, result, span });
   return { name: dispatchName(method), typeParams: [{ name: "X", bound: null, resolution: null }],
-    type: { k: "intersection", parts: [signature("preservesInputHeap"), signature("unrestricted")], span } };
+    type: { k: "intersection", parts: [signature(emptyEffect), signature(ordinaryEffect)], span } };
 }
 
 /** The standard library's regex interfaces, as an annotation or a contextual

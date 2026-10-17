@@ -1,6 +1,7 @@
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Verification.Semantics.FootprintProvenance
+import Verification.Semantics.ClosedFootprints
 import Verification.Programs.FootprintTyping
 import Verification.Semantics.FootprintNatives
 import Verification.Semantics.HeapFacts

@@ -37,11 +37,13 @@ let key_json = function
 let unsupported s = fail ("unsupported: " ^ s)
 (* The graph's sole callable contract shape. Effects become definition
    obligations when a qualified signature is proposed. *)
-let effect_json = function
-  | Unrestricted -> String "unrestricted"
-  | PreservesInputHeap -> String "preservesInputHeap"
-  | Guards param -> Object ["guards",Object ["param",int param]]
-  | Asserts param -> Object ["asserts",Object ["param",int param]]
+let change_json = function Keep -> String "keep" | Grow -> String "grow" | Any -> String "any"
+let footprint_json f = Object ["value",change_json f.on_value;"store",change_json f.on_store]
+let effect_json e = Object ["footprint",footprint_json e.footprint;
+  "promise",(match e.promise with
+    | None -> Null
+    | Some (Guards param) -> Object ["guards",Object ["param",int param]]
+    | Some (Asserts param) -> Object ["asserts",Object ["param",int param]])]
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]
@@ -173,8 +175,8 @@ let encode (proposal : Proposal_types.t) =
         | _ -> None) s.quantified in
       let body = Inference.substitute_signature within_bounds {s with quantified=[]} in
       let signature,variadic = match body.rest_pack with
-        | None -> [call_contract Unrestricted (Array []) (Array (List.map labels body.params)) (labels body.result)],[]
-        | Some r -> [],[call_contract Unrestricted (Array [])
+        | None -> [call_contract ordinary_effect (Array []) (Array (List.map labels body.params)) (labels body.result)],[]
+        | Some r -> [],[call_contract ordinary_effect (Array [])
             (Array [Array (List.map labels body.params);pack_labels r]) (labels body.result)] in
       let bounds = List.map (fun (q:Semantic.quantifier) ->
         let bound = Option.value q.bound ~default:(ValueArgument top) in
@@ -543,7 +545,7 @@ let encode (proposal : Proposal_types.t) =
       "params",Array (List.map (fun (n,t) -> named (n,Value t)) source.params);
       "result",claim_type source.result;
       "contracts",contracts f.contracts;
-      "effect",effect_json f.declared_effect;
+      "footprint",footprint_json f.declared_footprint;
       "entries",entries f.entries;
       "expressions",expressions f.expressions]
       @ arrows)) proposal.functions in

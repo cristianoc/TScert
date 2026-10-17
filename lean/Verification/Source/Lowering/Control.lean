@@ -104,8 +104,8 @@ callee's signature at the call (`PromiseCalls.promiseCall_sound`). -/
       | some (_, A) => A.all D.contains
       | none => true
     | _ => true
-  let promises := sigs.filterMap fun (Ds, T, effect) => match effect, asserts with
-    | .guards p, false | .asserts p, true => some (Ds, T, p)
+  let promises := sigs.filterMap fun (Ds, T, effect) => match effect.promise, asserts with
+    | some (.guards p), false | some (.asserts p), true => some (Ds, T, p)
     | _, _ => none
   let chosen := match promises with
     | [one] => [one]

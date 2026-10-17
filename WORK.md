@@ -20,7 +20,7 @@ design, not its progress.
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
-| [Footprints](#footprints) | open: increments 1 and 2 of 6 done | the seven programs of [FOOTPRINTS](docs/FOOTPRINTS.md#seven-example-programs) are decided as stated there, and every framing rule is an instance of the stability check |
+| [Footprints](#footprints) | open: increments 1 to 3 of 6 done | the seven programs of [FOOTPRINTS](docs/FOOTPRINTS.md#seven-example-programs) are decided as stated there, and every framing rule is an instance of the stability check |
 | [The match iterator's state](#footprints) | open | a region over a hidden field states the match iterator's state |
 | [Element freshness](#footprints) | open | `freshElems` is a fact kind with its support lemma and its maintenance proved |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |

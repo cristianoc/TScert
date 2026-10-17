@@ -409,9 +409,9 @@ static fields, exactly `P`. -/
     (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
     (start : Nat) (Cs : List (Ty ι)) (P : List (PropKey × Ty ι)) : Bool :=
   match expand G A with
-  | [.ctors L S P' []] => (P' == P && L.all fun p => codes ⟨arity, E, K, start, Cs, ⟨U, p.1, p.2, .unrestricted⟩, none⟩) &&
+  | [.ctors L S P' []] => (P' == P && L.all fun p => codes ⟨arity, E, K, start, Cs, ⟨U, p.1, p.2, .ordinary⟩, none⟩) &&
       S.all fun s => match restElem G s.2.1 with
-        | some El => codes ⟨arity, E, K, start, Cs, ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩, none⟩
+        | some El => codes ⟨arity, E, K, start, Cs, ⟨U, ctorRestParams arity s.1 El U, s.2.2, .ordinary⟩, none⟩
         | none => false
   | _ => false
 

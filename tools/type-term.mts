@@ -7,6 +7,7 @@ import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, T
 import type { Span } from "./span.mts";
 import { childrenOf } from "./syntax.mts";
 import type { PropertyKey, ResolutionSlots, TypeTerm } from "./declaration-types.mts";
+import { ordinaryEffect, promiseEffect, sameEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 
 /** The projections a qualified parameter owns: an awaitable one its
@@ -672,7 +673,7 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
   const forms = signatures(scope, parameters, result, at, span, declared);
   // A guard's promise is a second form beside the plain one; any other second
   // form is a rest over several tuples.
-  const plain = forms.filter((f) => f.effect === "unrestricted");
+  const plain = forms.filter((f) => sameEffect(f.effect, ordinaryEffect));
   if (plain.length !== 1) return scope.fail(at, "a rest parameter over several tuples is several signatures");
   return forms;
 }
@@ -786,7 +787,7 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
     ? promiseOf(scope, result, ordinary) : null;
   const resultTerm = given ?? (predicate ? predicate.plain : typeTerm(scope, result, at));
   const forms = (alternatives ?? [[]]).map((positions): FunctionTerm =>
-    ({ k: "function", effect: "unrestricted", receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
+    ({ k: "function", effect: ordinaryEffect, receiver, params: [...params, ...positions], rest, result: resultTerm, span }));
   return predicate
     ? [...forms, ...forms.map((f): FunctionTerm => ({ ...f, effect: predicate.effect, result: predicate.type }))]
     : forms;
@@ -811,7 +812,7 @@ export function promiseOf(scope: TermScope, node: ts.TypePredicateNode, ordinary
   const span = spanOf(scope, node);
   return {
     plain: { k: "atom", name: node.assertsModifier ? "void" : "boolean", span },
-    effect: node.assertsModifier ? { asserts: { param } } : { guards: { param } },
+    effect: promiseEffect(node.assertsModifier !== undefined, param),
     type: typeTerm(scope, node.type, node),
   };
 }

@@ -95,9 +95,9 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       Represents G F (.ctors L S (parts.map fun p => (p.1, p.2.1)) []) → Represents G U .undef →
       (codeField :: parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
-      (∀ p ∈ L, GraphCodeSpec G arity E K start (caps.map Prod.fst) ⟨U, p.1, p.2, .unrestricted⟩) →
+      (∀ p ∈ L, GraphCodeSpec G arity E K start (caps.map Prod.fst) ⟨U, p.1, p.2, .ordinary⟩) →
       (∀ s ∈ S, ∃ El, restElem G s.2.1 = some El ∧ GraphCodeSpec G arity E K start (caps.map Prod.fst)
-        ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩) →
+        ⟨U, ctorRestParams arity s.1 El U, s.2.2, .ordinary⟩) →
       (∀ c ∈ caps, c.2 < Γ.length) →
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
       HasTyWith G images subtyping Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) .construct)

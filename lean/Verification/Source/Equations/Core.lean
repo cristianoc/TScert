@@ -424,7 +424,7 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
   let mut rests : List (RestArrow (List Tree)) := []
   -- Call signatures, or construct signatures (`new <T>(…) => R`), each an
   -- arrow's arguments and result: a construct signature has no receiver and
-  -- no effect, read as none and as unrestricted.
+  -- no effect, read as an ordinary arrow's.
   let sigs ← arr term "signatures"
   let construct := sigs.toList.any (kindOf · == some "constructor")
   if construct && !sigs.toList.all (kindOf · == some "constructor") then
@@ -441,7 +441,7 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
     let ps ← (← arr f "params").toList.mapM (lowerType inner)
     let restTerm ← field f "rest"
     let res ← lowerType inner (← field f "result")
-    let effect : CallEffects.Effect ← if construct then pure .unrestricted else fromJson? (← field f "effect")
+    let effect : CallEffects.Effect ← if construct then pure .ordinary else fromJson? (← field f "effect")
     if restTerm == .null then fixed := fixed ++ [⟨recv, ps, res, effect⟩]
     else rests := rests ++ [⟨recv, (ps, ← lowerRest inner restTerm), res, effect⟩]
   return .scheme ((List.range names.length).map Tree.local) fixed bounds rests resolution construct

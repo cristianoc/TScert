@@ -12,6 +12,7 @@ import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
+import { emptyEffect, emptyFootprint, footprintEffect, ordinaryEffect, type ClosedFootprint } from "../tools/type-graph.mts";
 // Forged-claim controls on single cases, each in a file of its own:
 // generic-rest.mts, a universal rest claim past collection, substitution and binding;
 // rest-pack-instance.mts, a forged non-array instance of a type parameter typing a value and a rest, at a call and at a `new`;
@@ -58,6 +59,10 @@ const rowOf = (claims: SourceClaims, clause: Row[number]): number => {
   const i = claims.types.findIndex((row) => row.length === 1 && JSON.stringify(row[0]) === JSON.stringify(clause));
   return i >= 0 ? i : claims.types.push([clause]) - 1;
 };
+/** The closed footprints other than the one letting everything change. */
+const narrowerFootprints: ClosedFootprint[] = (["keep", "any"] as const).flatMap((value) =>
+  (["keep", "grow", "any"] as const).map((store) => ({ value, store })))
+  .filter((f) => f.value !== "any" || f.store !== "any");
 const readClaims = (artifacts: string): SourceClaims =>
   JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
 /** Write forged claims beside a run's artifacts. */
@@ -154,7 +159,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const span: [number, number] = [0, 0];
   const binder = (name: string): TypeTerm => ({ k: "binder", name, span });
   const method = (params: TypeTerm[], rest: TypeTerm | null, result: TypeTerm): Extract<TypeTerm, { k: "function" }> =>
-    ({ k: "function", effect: "unrestricted", receiver: { k: "self", span }, params, rest, result, span });
+    ({ k: "function", effect: ordinaryEffect, receiver: { k: "self", span }, params, rest, result, span });
   const scheme = (name: string, signature: Extract<TypeTerm, { k: "function" }>,
       bound: TypeTerm | null = null): TypeTerm =>
     ({ k: "scheme", binders: [{ name, bound, default: null, resolution: null, span }], signatures: [signature], span });
@@ -1234,7 +1239,7 @@ for (const [file, marker, arity, accepted] of [
   const arrow = must(row.flatMap(clause =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
     .find(s => s.arguments.length === arity), "the callback contract");
-  arrow.effect = "preservesInputHeap";
+  arrow.effect = emptyEffect;
   const input = writeClaims(artifacts, "qualified-callback", claims);
   const produce = produceWith(artifacts, input, "qualified-callback");
   assert.ifError(produce.error);
@@ -1325,8 +1330,8 @@ for (const [file, marker, arity, accepted] of [
     return must(row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : [])
       .find(s => s.arguments.length === arity), `the contract at ${start}`);
   };
-  arrowAt(source.indexOf("replace("), 3).effect = "preservesInputHeap";
-  arrowAt(source.indexOf("(l) =>"), 3).effect = "preservesInputHeap";
+  arrowAt(source.indexOf("replace("), 3).effect = emptyEffect;
+  arrowAt(source.indexOf("(l) =>"), 3).effect = emptyEffect;
   const input = writeClaims(artifacts, "forged-dispatch-effect", claims);
   const produce = produceWith(artifacts, input, "forged-dispatch-effect");
   assert.ifError(produce.error);
@@ -1337,27 +1342,31 @@ for (const [file, marker, arity, accepted] of [
 }
 
 {
-  // A declaration's claimed effect is established by its own unit's graph.
-  // `collect` verifies at its honest claims, and writes a `let` cell and
-  // pushes onto its parameter. Claimed preserving, evidence production
-  // refuses at one of those writes, and the evidence for the honest claims
-  // does not justify the forged ones.
+  // A declaration's claimed footprint is established by its own unit's
+  // graph. `collect` verifies at its honest claims, and writes a `let` cell
+  // and pushes onto its parameter. Claimed at any footprint other than the
+  // one letting everything change, evidence production refuses at one of
+  // those writes, and the evidence for the honest claims does not justify
+  // the forged ones.
   const artifacts = run("optional-call-loop-cell");
-  const claims = readClaims(artifacts);
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  must(claims.functions.find(f => f.name === "collect"), "collect's claims").effect = "preservesInputHeap";
-  const input = writeClaims(artifacts, "forged-declaration-effect", claims);
-  const produce = produceWith(artifacts, input, "forged-declaration-effect");
-  assert.ifError(produce.error);
-  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  const refused = /source effect refusal at \[(\d+),\d+\): the heap preservation claimed for 'collect'/
-    .exec(produce.stdout + produce.stderr);
-  assert.ok(refused, produce.stdout + produce.stderr);
-  const at = Number(refused[1]);
-  assert.ok(source.indexOf("target?.push(line)") <= at && at < source.indexOf("target = into") + "target = into".length,
-    `refused at the push or the write, not at ${at}`);
-  invoke(input, join(artifacts, "evidence.json"), artifacts);
-  process.stdout.write("forged declaration effect: a cell write and a push onto a parameter refused, in search and in checking\n");
+  for (const footprint of narrowerFootprints) {
+    const claims = readClaims(artifacts);
+    must(claims.functions.find(f => f.name === "collect"), "collect's claims").footprint = footprint;
+    const name = `forged-declaration-footprint-${footprint.value}-${footprint.store}`;
+    const input = writeClaims(artifacts, name, claims);
+    const produce = produceWith(artifacts, input, name);
+    assert.ifError(produce.error);
+    assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+    const refused = /source effect refusal at \[(\d+),\d+\): the footprint claimed for 'collect'/
+      .exec(produce.stdout + produce.stderr);
+    assert.ok(refused, produce.stdout + produce.stderr);
+    const at = Number(refused[1]);
+    assert.ok(source.indexOf("target?.push(line)") <= at && at < source.indexOf("target = into") + "target = into".length,
+      `refused at the push or the write, not at ${at}`);
+    invoke(input, join(artifacts, "evidence.json"), artifacts);
+  }
+  process.stdout.write("forged declaration footprints: each narrower than everything refused at a cell write or a push onto a parameter, in search and in checking\n");
 }
 
 {
@@ -1368,37 +1377,61 @@ for (const [file, marker, arity, accepted] of [
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
   const guard = must(claims.functions.find(f => f.name === "isPresence"), "isPresence's claims");
   assert.ok(source.slice(guard.namePos[1]).startsWith("(value: unknown): value is Presence"));
-  guard.effect = "preservesInputHeap";
+  guard.footprint = emptyFootprint;
   const input = writeClaims(artifacts, "forged-guard-effect", claims);
   refusedAt(artifacts, input, "forged-guard-effect",
-    `source effect refusal at [${guard.namePos[0]},${guard.namePos[1]}): the heap preservation claimed for '${guard.name}'`);
+    `source effect refusal at [${guard.namePos[0]},${guard.namePos[1]}): the footprint claimed for '${guard.name}'`);
   process.stdout.write("forged guard effect: refused at the guard declaration\n");
 }
 
 {
-  // An imported function is read at its declaration's type, which states no
-  // effect: its call claimed preserving, with the callback through it, is
-  // refused at a node's typing.
-  const artifacts = run("invalid-preserving-callback-value-import");
+  // A footprint and an effect have one spelling: `grow` on a value, which
+  // is `keep` there, and an effect without its promise field are refused
+  // where the claims are read.
+  const artifacts = run("optional-call-loop-cell");
+  const evidence = join(artifacts, "evidence.json");
   const claims = readClaims(artifacts);
+  const collect = must(claims.functions.find(f => f.name === "collect"), "collect's claims");
+  const grown = join(artifacts, "forged-footprint-value-grow.json");
+  writeFileSync(grown, JSON.stringify(claims, (key, value: unknown) =>
+    key === "footprint" && value === collect.footprint ? { value: "grow", store: "keep" } : value));
+  assert.match(invoke(grown, evidence, artifacts), /invalid footprint change 'grow'/);
+  const arrow = must(claims.types.flatMap(row => row.flatMap(clause =>
+    typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))[0], "a claimed arrow");
+  const unpromised = join(artifacts, "forged-effect-without-promise.json");
+  writeFileSync(unpromised, JSON.stringify(claims, (key, value: unknown) =>
+    key === "effect" && value === arrow.effect ? { footprint: arrow.effect.footprint } : value));
+  assert.match(invoke(unpromised, evidence, artifacts), /promise/);
+  process.stdout.write("footprints and effects other than the one spelling: refused\n");
+}
+
+{
+  // An imported function is read at its declaration's type, which states no
+  // effect: its call claimed at any narrower footprint, with the callback
+  // through it, is refused.
+  const artifacts = run("invalid-preserving-callback-value-import");
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  const expressions = claims.functions.flatMap(f => f.expressions);
-  const arrowsAt = (start: number) => {
-    const claim = must(expressions.find(e => e.pos[0] === start && Array.isArray(e.type) && e.type.length === 1),
-      `the claim at ${start}`);
-    const label = Array.isArray(claim.type) ? claim.type[0] : undefined;
-    assert.ok(typeof label === "number");
-    const row = must(claims.types[label], `the type row at ${start}`);
-    return row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
-  };
-  const forged = [...arrowsAt(source.indexOf("double(x)")), ...arrowsAt(source.indexOf("(x) =>"))];
-  assert.ok(forged.length > 0, "the callee's and the callback's contracts");
-  for (const s of forged) s.effect = "preservesInputHeap";
-  const input = writeClaims(artifacts, "forged-import-effect", claims);
-  const produce = produceWith(artifacts, input, "forged-import-effect");
-  assert.ifError(produce.error);
-  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  process.stdout.write("forged import effect: an imported function's call refused heap preservation\n");
+  for (const footprint of narrowerFootprints) {
+    const claims = readClaims(artifacts);
+    const expressions = claims.functions.flatMap(f => f.expressions);
+    const arrowsAt = (start: number) => {
+      const claim = must(expressions.find(e => e.pos[0] === start && Array.isArray(e.type) && e.type.length === 1),
+        `the claim at ${start}`);
+      const label = Array.isArray(claim.type) ? claim.type[0] : undefined;
+      assert.ok(typeof label === "number");
+      const row = must(claims.types[label], `the type row at ${start}`);
+      return row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
+    };
+    const forged = [...arrowsAt(source.indexOf("double(x)")), ...arrowsAt(source.indexOf("(x) =>"))];
+    assert.ok(forged.length > 0, "the callee's and the callback's contracts");
+    for (const s of forged) s.effect = footprintEffect(footprint);
+    const name = `forged-import-footprint-${footprint.value}-${footprint.store}`;
+    const input = writeClaims(artifacts, name, claims);
+    const produce = produceWith(artifacts, input, name);
+    assert.ifError(produce.error);
+    assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  }
+  process.stdout.write("forged import footprints: an imported function's call refused each footprint narrower than everything\n");
 }
 
 {
@@ -1459,7 +1492,7 @@ for (const [file, marker, arity, accepted] of [
   assert.ok(typeof label === "number", "isNumber is claimed at one row");
   const clause = must(claims.types[label]?.[0], "isNumber's row");
   assert.ok(typeof clause === "object" && "arrs" in clause, "isNumber is claimed at arrows");
-  const kept = clause.arrs.arrows.map((a) => typeof a.effect !== "object");
+  const kept = clause.arrs.arrows.map((a) => a.effect.promise === null);
   assert.ok(kept.includes(false), "isNumber's claim offers its promise");
   clause.arrs.arrows = clause.arrs.arrows.filter((_, i) => kept[i]);
   arrow.rows = arrow.rows.filter((_, i) => kept[i]);
@@ -1483,7 +1516,7 @@ for (const [file, marker, arity, accepted] of [
   assert.ok(typeof label === "number", "isNumber is claimed at one row");
   const clause = must(claims.types[label]?.[0], "isNumber's row");
   assert.ok(typeof clause === "object" && "arrs" in clause, "isNumber is claimed at arrows");
-  const promise = must(clause.arrs.arrows.find((a) => typeof a.effect === "object"), "isNumber's promise signature");
+  const promise = must(clause.arrs.arrows.find((a) => a.effect.promise !== null), "isNumber's promise signature");
   promise.arguments = [promise.result];
   const forged = writeClaims(artifacts, "forged-narrowed-promise", claims);
   refusedAt(artifacts, forged, "forged-narrowed-promise", "a guard closure's claim must offer its written promise over its annotated parameters");

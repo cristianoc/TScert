@@ -185,8 +185,8 @@ let promise_refine ?(claimed = fun _ -> None) resolve declarations env (cond:exp
     let promises = match Option.map (fun t ->
         try Some (declared_head declarations [] t) with Json.Error _ -> None) callee_type with
       | Some (Some (Atoms [Shape {calls;_}])) -> List.filter_map (fun (s:Semantic.signature) ->
-          match s.call_effect,asserts with
-          | Guards p,false | Asserts p,true -> Some (p,s)
+          match s.call_effect.promise,asserts with
+          | Some (Guards p),false | Some (Asserts p),true -> Some (p,s)
           | _ -> None) calls
       | _ -> [] in
     let applicable (_,(s:Semantic.signature)) =

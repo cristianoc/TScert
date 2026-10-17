@@ -787,7 +787,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let actuals ← args.attach.mapM fun ⟨a,_⟩ => closureExpr recursive fc scope Γ a
     -- As for a call: a signature declaring exactly the actuals written, or a
     -- longer one whose remaining positions admit `undefined`.
-    let ⟨_, Ds, R, _⟩ ← selectSignature G (L.map fun (Ds, R) => ⟨[Labels.undef], Ds, R, .unrestricted⟩) (actuals.map (·.type))
+    let ⟨_, Ds, R, _⟩ ← selectSignature G (L.map fun (Ds, R) => ⟨[Labels.undef], Ds, R, .ordinary⟩) (actuals.map (·.type))
     pure (DirectProof.node Γ (.construct callee.term (actuals.map (·.term))) R .construct
       (callee :: ((actuals.zip Ds).map fun (a,D) => DirectProof.cast Γ D a)
         ++ omittedPremises Γ Ds actuals.length))

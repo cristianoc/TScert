@@ -26,6 +26,8 @@
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { asyncCompleteName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
   symbolKeyForName } from "./intrinsics.mts";
+import { emptyEffect } from "./type-graph.mts";
+import type { CallEffect } from "./type-graph.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 
@@ -76,7 +78,7 @@ export type GlobalEntry = {
   /** The effect the read signature states, where reviewed: a call at the
    * parameters it states runs no client code and leaves every location it
    * did not allocate as it was. Absent, the signature states none. */
-  effect?: "preservesInputHeap";
+  effect?: CallEffect;
 };
 
 const at: [number, number] = [0, 0];
@@ -153,14 +155,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // client code; an object's conversion calls its `toString` or `valueOf`,
   // which may throw or return an object, and then `String` throws.
   // At a primitive it writes nothing, so it states heap preservation.
-  { global: "String", signature: "(value?: any): string;", effect: "preservesInputHeap",
+  { global: "String", signature: "(value?: any): string;", effect: emptyEffect,
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
   // `Number(v)` converts a primitive without running client code: a bigint
   // to the nearest number, a symbol throws a TypeError, an outcome. An
   // object's conversion calls its `Symbol.toPrimitive`, `valueOf` or
   // `toString`, client code, so the parameter is stated at the primitives,
   // where the call writes nothing and states heap preservation.
-  { global: "Number", signature: "(value?: any): number;", effect: "preservesInputHeap",
+  { global: "Number", signature: "(value?: any): number;", effect: emptyEffect,
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
   // `Boolean(v)` is ToBoolean of its first argument, which reads no property
   // and runs no code of any value's, and ignores every further argument;
@@ -169,7 +171,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `(value: unknown, ...rest: unknown[]) => boolean`. The declaration
   // promises no narrowing, and none is stated: its result is a Boolean, which
   // a guard's promise is not. It writes nothing: heap preservation.
-  { global: "Boolean", signature: "<T>(value?: T): boolean;", value: true, effect: "preservesInputHeap",
+  { global: "Boolean", signature: "<T>(value?: T): boolean;", value: true, effect: emptyEffect,
     stated: { binders: [], params: [atom("unknown")], rest: atom("unknown"), result: atom("boolean") } },
   // `Math.max(...vs)` and `Math.min(...vs)` convert every argument with
   // ToNumber before comparing: a primitive without running code (`undefined`
@@ -194,14 +196,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // Tests of a number that convert nothing: `false` for any argument that is
   // not a number, an object included, whose methods are never read. They
   // write nothing.
-  { global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;", effect: "preservesInputHeap" },
-  { global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: "preservesInputHeap" },
+  { global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;", effect: emptyEffect },
+  { global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: emptyEffect },
   { global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;",
-    effect: "preservesInputHeap" },
+    effect: emptyEffect },
   // SameValue of the two arguments: identity of objects, equality of
   // primitives, no conversion and no client code, and no write. `any` is
   // read as `unknown`.
-  { global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: "preservesInputHeap" },
+  { global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
   // (no getter is called). ES5 declares it at `object`, ES2015 at `{}`.

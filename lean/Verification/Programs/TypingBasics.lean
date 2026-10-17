@@ -365,9 +365,9 @@ def frameOffset : Option α → Nat
 /-- The frame slot holding the actual a promise is about, past `offset`
 slots: what an entry environment `envOf L .nul` holds there. -/
 def framePromised (e : CallEffects.Effect) (offset : Nat) (L : List Tm) : Tm :=
-  match e with
-  | .guards p | .asserts p => envOf L .nul (offset + p)
-  | _ => .undef
+  match e.promise with
+  | some p => envOf L .nul (offset + p.param)
+  | none => .undef
 
 /-- A frame of code binding `arity` parameters holds a promised actual among
 them, as the call passed it. -/
@@ -375,11 +375,10 @@ theorem framePromised_params {e : CallEffects.Effect} {arity : Nat} (h : e.below
     (pre : List Tm) (args vs : List Tm) :
     framePromised e pre.length (pre ++ CallArguments.parameters arity args ++ vs) = e.promised args := by
   rw [← CallEffects.Effect.promised_frame h args vs]
-  cases e with
-  | unrestricted | preservesInputHeap => rfl
-  | guards p | asserts p =>
-    simp only [CallEffects.Effect.below, decide_eq_true_eq] at h
-    have hlen : p < (CallArguments.parameters arity args ++ vs).length := by
+  rcases e with ⟨c, _ | q⟩
+  · rfl
+  · simp only [CallEffects.Effect.below, decide_eq_true_eq] at h
+    have hlen : q.param < (CallArguments.parameters arity args ++ vs).length := by
       have := CallEffects.Effect.parameters_length arity args
       simp [this]; omega
     simp only [framePromised, envOf, CallEffects.Effect.promised, List.append_assoc,

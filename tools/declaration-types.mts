@@ -1,4 +1,4 @@
-import type { CallEffect, ArrayPresence } from "./type-graph.mts";
+import type { ArrayPresence } from "./type-graph.mts";
 /** The declaration document shared by the source parser, the Fragment AST
  * and readers. TypeScript's checker, under the source's configured project,
  * decides which declaration each name denotes; the document records the source
@@ -6,6 +6,18 @@ import type { CallEffect, ArrayPresence } from "./type-graph.mts";
  * producer's claim follows from them. This module has no runtime dependencies,
  * so importing its types does not pull the compiler into a reader's project. */
 import type { Span } from "./span.mts";
+/** A closed footprint (`Footprints.Closed`): the change a call may make, on
+ * normal return, to the locations of its entry heap holding a value and to
+ * those holding an array store. `keep` changes nothing, `grow` keeps every
+ * dense prefix of a store, `any` allows every change; on a value `grow` is
+ * `keep`. Fresh locations are unconstrained. */
+export type ClosedFootprint = { value: "keep" | "any"; store: "keep" | "grow" | "any" };
+/** A promise about the actual at `param`, whose type is then the signature's
+ * result: a type guard's or an assertion function's. */
+export type CallPromise = { guards: { param: number } } | { asserts: { param: number } };
+/** What a signature guarantees beyond its contract: its footprint, and an
+ * optional promise (`CallEffects.Effect`). */
+export type CallEffect = { footprint: ClosedFootprint; promise: CallPromise | null };
 /** One type alias or interface: its module (a path relative to the project's
  * tsconfig, the client's absolute path, or `typescript/lib/<file>`), its name
  * and its span there. */

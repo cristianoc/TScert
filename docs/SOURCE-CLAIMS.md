@@ -65,7 +65,7 @@ Each function object has these fields:
 | `params` | Ordered parameter points: `{name,type,current}` |
 | `result` | Claimed return type |
 | `contracts` | Mutable declaration contracts: `{pos,name,type}` |
-| `effect` | The effect proposed for the declaration's signature: `"unrestricted"` or `"preservesInputHeap"` |
+| `footprint` | The [closed footprint](FOOTPRINTS.md#changes-and-footprints) proposed for the declaration's signature: `{"value":v,"store":s}` |
 | `entries` | Entry claims: `{point,start,bindings}` |
 | `expressions` | Expression claims: `{point,pos,type,current}` |
 | `arrows` | Optional per-signature interior claims, described below |
@@ -84,12 +84,13 @@ An annotation, when present, must have the same meaning as the supplied
 contract. Entry types and contents assertions describe execution points;
 they do not replace this lifetime obligation.
 
-A function's `effect` strengthens its annotated signature only as a claim:
-`preservesInputHeap` is an obligation on the function's own graph, which
-must establish it ([effect certification](SOURCE-ELABORATION.md#certifying-inferred-call-effects)),
+A function's `footprint` strengthens its annotated signature only as a
+claim: a footprint other than `{"value":"any","store":"any"}` is an
+obligation on the function's own graph, which must establish it
+([effect certification](SOURCE-ELABORATION.md#certifying-inferred-call-effects)),
 and the other units then read the function at its annotation's signature
-stating that effect. A guard's or an assertion function's claim states
-`unrestricted`; its promise is its annotation's.
+stating that footprint. A guard's or an assertion function's claim states
+`{"value":"any","store":"any"}`; its promise is its annotation's.
 
 A source containing top-level executable code has an `init` object with
 `contracts`, `entries`, `expressions`, and optional `arrows`. It has no
@@ -118,7 +119,7 @@ executable input; its identity and point associations must match a Fragment:
   "functions": [{
     "name": "identity", "namePos": [9,17],
     "params": [{"name":"flag","type":[1,2],"current":null}],
-    "result": [1,2], "contracts": [], "effect": "preservesInputHeap",
+    "result": [1,2], "contracts": [], "footprint": {"value":"keep","store":"keep"},
     "entries": [{"point":"9:17:1","start":43,
       "bindings":[{"name":"flag","type":[1,2],"current":null}]}],
     "expressions": [{"point":"9:17:1","pos":[50,54],
@@ -195,7 +196,7 @@ primitive table above, so the receiver accepts any value. Its claim is:
 
 ```json
 {"scheme": {
-  "effect": "unrestricted",
+  "effect": {"footprint": {"value":"any","store":"any"}, "promise": null},
   "typeParams": [{"name":"T","bound":null}],
   "this": [4], "params": [{"param":"T"}],
   "rest": null, "result": {"param":"T"}
@@ -209,12 +210,15 @@ makes `o` and `r` binders of the same scheme;
 `this` is the required receiver type, `params` is the fixed parameter list,
 and `rest` is `null` or the surplus-element type. Binder names resolve
 lexically; a nested scheme's binders hide outer binders of the same names.
-The effect is `unrestricted`, `preservesInputHeap`, `{"guards":{"param":p}}`
-or `{"asserts":{"param":p}}`. `preservesInputHeap` promises that execution
-preserves the input heap; `guards` and `asserts` promise the `p`-th actual a
-value of the result, on a `true` result or a normal return
-([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). Each requires
-corresponding evidence.
+The effect is `{"footprint": f, "promise": p}`. The footprint `f` is a
+[closed footprint](FOOTPRINTS.md#changes-and-footprints), `{"value":v,"store":s}`
+with `v` one of `keep` and `any` and `s` one of `keep`, `grow` and `any`: on
+normal return, the locations of the entry heap holding a value change at most
+by `v`, those holding an array store at most by `s`. The promise `p` is `null`,
+`{"guards":{"param":i}}` or `{"asserts":{"param":i}}`: `guards` and `asserts`
+promise the `i`-th actual a value of the result, on a `true` result or a
+normal return ([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)).
+Each requires corresponding evidence.
 
 A call expression can propose an instance with:
 

@@ -334,7 +334,7 @@ Unrestricted `find` and `findIndex` callbacks receive `T | undefined`: a prior c
 shrink even an initially dense array through another reference, while these
 methods visit the original index range. `map` visits only present indices,
 but shrinking its source can leave holes in its result. Separate overloads consume
-a certified `preservesInputHeap` callback: `find`/`findIndex` can then pass `T`,
+a certified callback at the empty footprint: `find`/`findIndex` can then pass `T`,
 and `map` produces a dense result from its dense receiver. The fresh result
 is assigned the readable `U[]` lifetime contract, so it remains writable at
 the source type even when `U` admits holes. These are ordinary
@@ -391,10 +391,13 @@ safety theorem does not prove. Intrinsics are collected on demand from the opera
 
 ### Inferred call effects: elaboration and certification
 
-A call signature may state the effect `preservesInputHeap`: on normal return,
-the call leaves every previously allocated location's contents unchanged.
-It may allocate fresh storage. A type guard's and an assertion function's
-signatures state the effects `guards` and `asserts`, a promise about an actual
+A call signature states a [closed footprint](FOOTPRINTS.md#changes-and-footprints):
+on normal return, the call changes the contents of the previously allocated
+locations holding a value and of those holding an array store at most as it
+says. The empty footprint leaves every such location's contents unchanged;
+`all: any` constrains none. It may allocate fresh storage. A type guard's and
+an assertion function's signatures state, besides, the promises `guards` and
+`asserts`, a promise about an actual
 ([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). An
 **effect-qualified signature** is a signature carrying such a guarantee. `CallEffects.lean` defines its semantics; the
 [effect contract](SEMANTICS.md#effect-qualified-call-contracts) and
@@ -481,7 +484,7 @@ built-in wrapper prototype (`String.prototype`, `Number.prototype`,
 `BigInt.prototype`, `Boolean.prototype`) with the primitive as receiver; a
 string's `length` and indices are its own
 ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)). Each member
-those prototypes list states `preservesInputHeap`, so a call of one is a
+those prototypes list states the empty footprint, so a call of one is a
 fixed qualified call, and the read itself an inspection
 ([certification](SOURCE-ELABORATION.md#certifying-inferred-call-effects)).
 

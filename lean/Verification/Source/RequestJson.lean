@@ -4,6 +4,7 @@ import Verification.Types.GraphRows
 import Verification.Programs.Parametricity
 import Verification.Programs.GraphCode
 import Verification.Source.LabelStore
+import Verification.Source.EffectJson
 
 /-! In-memory JSON boundary for the stateful consumer: a unit's request, over
 the labels of a store, and its evidence, as separate inputs. No unsupported
@@ -55,7 +56,6 @@ instance (priority := high) : ToJson Tm := ⟨fun t => closureKinds false (deriv
 instance (priority := high) : FromJson Tm := ⟨fun j => derivedTmFromJson (closureKinds true j)⟩
 deriving instance ToJson, FromJson for ArrayPresence
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
-deriving instance ToJson, FromJson for Effect
 deriving instance ToJson, FromJson for Contract
 deriving instance ToJson, FromJson for MethodMembers.Sig
 deriving instance ToJson, FromJson for OptionalField

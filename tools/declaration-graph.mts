@@ -33,6 +33,7 @@ import { computedType, enclosingBinders, inferredTerm, literalUnion, type Comput
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
+import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -975,7 +976,7 @@ export function collectDeclarations(file: string, options: {
         if (!match) throw Error(`${what} is not declared as reviewed: ${entry.signature}`);
         const source = match.getSourceFile();
         const span: Span = [match.getStart(source), match.end];
-        const term: Extract<TypeTerm, { k: "function" }> = { k: "function", effect: "unrestricted", receiver: null,
+        const term: Extract<TypeTerm, { k: "function" }> = { k: "function", effect: ordinaryEffect, receiver: null,
           params: entry.stated.params, rest: entry.stated.rest ?? null, result: entry.stated.result, span };
         return { module: idOf(source), span, term };
       });
@@ -1503,7 +1504,7 @@ export function collectDeclarations(file: string, options: {
             // footprint is empty and its result fresh: every own location of
             // the regex, `lastIndex` its only mutable one, is allocated by
             // this evaluation (SOURCE-CONTRACTS.md, "Native footprints").
-            type: { k: "function", effect: "preservesInputHeap", receiver: null, params: [], rest: null,
+            type: { k: "function", effect: emptyEffect, receiver: null, params: [], rest: null,
               result: nativeRegExp(shape, nativeMatches()), span: [0, 0] } });
         } catch (error) {
           throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
@@ -1828,7 +1829,7 @@ export function collectDeclarations(file: string, options: {
         if (!bagType || bagType.k !== "object")
           throw Error(`TypeScript infers Object.assign's source as ${checker.typeToString(source)}, not an object ` +
             "literal's record of literals and primitives");
-        options.assignTypes?.(span, { bagType, functionType: { k: "function", effect: "unrestricted", receiver: null,
+        options.assignTypes?.(span, { bagType, functionType: { k: "function", effect: ordinaryEffect, receiver: null,
           params, rest: null, result: contextualTerm(returned, span), span } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
@@ -2467,7 +2468,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
           const stated = entry.stated;
           for (const call of calls) boundedArguments(call, stated, what);
           const at = spanOf(overload);
-          const form: FunctionTerm = { k: "function", effect: entry.effect ?? "unrestricted", receiver: { k: "self", span: at }, params: stated.params,
+          const form: FunctionTerm = { k: "function", effect: entry.effect ?? ordinaryEffect, receiver: { k: "self", span: at }, params: stated.params,
             rest: stated.rest ?? null, result: stated.result, span: at };
           // A generic statement is a scheme over its binders, as a generic
           // interface method is.
@@ -2545,7 +2546,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       if (stated.binders.length) throw Error(`${what} is stated with binders, which a call signature cannot hold`);
       for (const call of calls) boundedArguments(call, stated, what);
       const at = spanOf(signature);
-      return [{ k: "function", effect: entry.effect ?? "unrestricted", receiver: null, params: stated.params,
+      return [{ k: "function", effect: entry.effect ?? ordinaryEffect, receiver: null, params: stated.params,
         rest: stated.rest ?? null, result: stated.result, span: at } satisfies FunctionTerm];
     }
     return forms(signature, name, what, entry).map(form => {

@@ -77,6 +77,7 @@
 import { join } from "node:path";
 import type { SourceTypeParameter, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { resolutionSlots } from "./type-term.mts";
+import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 
 export const intrinsicModule = "tscert/intrinsics";
 export const awaitName = "%Await%";
@@ -115,7 +116,7 @@ const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span });
 const binder: TypeTerm = { k: "binder", name: "T", span };
 const either = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", span, parts });
 const fn = (params: TypeTerm[], result: TypeTerm): Signature =>
-  ({ k: "function", effect: "unrestricted", receiver: null, params, rest: null, result, span });
+  ({ k: "function", effect: ordinaryEffect, receiver: null, params, rest: null, result, span });
 /** The values no object is: a promise resolved with one settles to it. */
 const primitives: AtomName[] = ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"];
 const primitive: TypeTerm = { k: "union", span, parts: primitives.map(atom) };
@@ -321,7 +322,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // `Array.prototype` nor `Object.prototype` owns one, so no getter runs.
     [elementAtName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: { ...fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }, atom("number")],
-        either(binder, atom("undefined"))), effect: "preservesInputHeap" } }),
+        either(binder, atom("undefined"))), effect: emptyEffect } }),
   };
   return [...needed].map(name => {
     const make = definitions[name];

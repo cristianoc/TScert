@@ -26,10 +26,11 @@
  * library is refused here and reviewed again, never trusted silently. */
 import { SymbolFlags, type Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
-import type { ArrayPresence } from "./type-graph.mts";
 import type { Node } from "typescript/unstable/ast";
 import { signatures, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import type { CallEffect, ArrayPresence } from "./type-graph.mts";
 
 export type OverlayEntry = {
   /** The member's key on the prototype, as declared: a name, or a computed
@@ -68,7 +69,7 @@ export type OverlayEntry = {
    * allocate. A stated signature's own effect overrides it. */
   effect?: Effect;
 };
-type Effect = "unrestricted" | "preservesInputHeap";
+type Effect = CallEffect;
 
 const at: [number, number] = [0, 0];
 const atomOf = (name: "string" | "number" | "undefined" | "unknown" | "boolean" | "null" | "bigint" | "symbol"): TypeTerm => ({ k: "atom", name, span: at });
@@ -93,11 +94,11 @@ const maybeElement: TypeTerm = { k: "union", parts: [element, atomOf("undefined"
 const arrayOf = (value: TypeTerm, readonly: boolean, presence: ArrayPresence = "readable"): TypeTerm =>
   ({ k: "array", presence, readonly, element: value, span: at });
 const callback = (value: TypeTerm, result: TypeTerm,
-    effect: "unrestricted" | "preservesInputHeap"): TypeTerm =>
+    effect: CallEffect): TypeTerm =>
   ({ k: "function", effect, receiver: null, rest: null, span: at,
      params: [value, atomOf("number"), arrayOf(element, true)], result });
-const findingCallback = callback(maybeElement, atomOf("unknown"), "unrestricted");
-const preservingFind = callback(element, atomOf("unknown"), "preservesInputHeap");
+const findingCallback = callback(maybeElement, atomOf("unknown"), ordinaryEffect);
+const preservingFind = callback(element, atomOf("unknown"), emptyEffect);
 const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
 
 export const overlay: readonly OverlayEntry[] = [
@@ -106,9 +107,9 @@ export const overlay: readonly OverlayEntry[] = [
   // properties, and writes nothing.
   { name: "forEach", from: "ReadonlyArray",
     signature: "forEach(callbackfn: (value: T, index: number, array: readonly T[]) => void, thisArg?: any): void;",
-    stated: [{ params: [callback(element, atomOf("unknown"), "preservesInputHeap")], result: atomOf("undefined"),
-        effect: "preservesInputHeap" },
-      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: atomOf("undefined") }] },
+    stated: [{ params: [callback(element, atomOf("unknown"), emptyEffect)], result: atomOf("undefined"),
+        effect: emptyEffect },
+      { params: [callback(element, atomOf("unknown"), ordinaryEffect)], result: atomOf("undefined") }] },
   { name: "map", from: "ReadonlyArray",
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
     // Under ordinary construction, a callback preserving the input heap
@@ -116,9 +117,9 @@ export const overlay: readonly OverlayEntry[] = [
     // The unrestricted contract admits reentrancy and only promises presence
     // at visited positions. Both are ordinary per-signature call contracts.
     stated: [
-      { receiver: arrayOf(element, true, "dense"), params: [callback(element, mappedElement, "preservesInputHeap")],
-        result: arrayOf(mappedElement, false), effect: "preservesInputHeap" },
-      { params: [callback(element, mappedElement, "unrestricted")],
+      { receiver: arrayOf(element, true, "dense"), params: [callback(element, mappedElement, emptyEffect)],
+        result: arrayOf(mappedElement, false), effect: emptyEffect },
+      { params: [callback(element, mappedElement, ordinaryEffect)],
         result: arrayOf(mappedElement, false, "sparse") },
     ] },
   // `flatMap` calls the callback at each position still present when
@@ -136,7 +137,7 @@ export const overlay: readonly OverlayEntry[] = [
       "        thisArg?: This,\n" +
       "    ): U[];",
     unbound: ["This"],
-    stated: [{ params: [callback(element, arrayOf(mappedElement, true, "sparse"), "unrestricted")],
+    stated: [{ params: [callback(element, arrayOf(mappedElement, true, "sparse"), ordinaryEffect)],
       result: arrayOf(mappedElement, false) }] },
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
@@ -157,42 +158,42 @@ export const overlay: readonly OverlayEntry[] = [
   // a signature of its own beside the declared one; `thisArg` is not stated.
   { name: "every", from: "ReadonlyArray",
     signature: "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
-    stated: [{ params: [preservingFind], result: atomOf("boolean"), effect: "preservesInputHeap" },
-      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: atomOf("boolean") }] },
+    stated: [{ params: [preservingFind], result: atomOf("boolean"), effect: emptyEffect },
+      { params: [callback(element, atomOf("unknown"), ordinaryEffect)], result: atomOf("boolean") }] },
   { name: "some", from: "ReadonlyArray",
     signature: "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
-    stated: [{ params: [preservingFind], result: atomOf("boolean"), effect: "preservesInputHeap" },
-      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: atomOf("boolean") }] },
+    stated: [{ params: [preservingFind], result: atomOf("boolean"), effect: emptyEffect },
+      { params: [callback(element, atomOf("unknown"), ordinaryEffect)], result: atomOf("boolean") }] },
   { name: "filter", from: "ReadonlyArray",
     signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
-    stated: [{ params: [preservingFind], result: arrayOf(element, false), effect: "preservesInputHeap" },
-      { params: [callback(element, atomOf("unknown"), "unrestricted")], result: arrayOf(element, false) }] },
+    stated: [{ params: [preservingFind], result: arrayOf(element, false), effect: emptyEffect },
+      { params: [callback(element, atomOf("unknown"), ordinaryEffect)], result: arrayOf(element, false) }] },
   // The members below, through `at`, read the receiver's elements, convert
   // only numbers (an index, a bound) and, for `join` and `toString`,
   // elements meeting the standard conversion contract, compare by strict
   // equality or SameValueZero, and allocate only their result: they run no
   // client code and write no existing location.
   { name: "slice", from: "ReadonlyArray", signature: "slice(start?: number, end?: number): T[];",
-    effect: "preservesInputHeap" },
+    effect: emptyEffect },
   { name: "join", from: "ReadonlyArray", signature: "join(separator?: string): string;",
-    bounds: { T: stringConvertible }, effect: "preservesInputHeap" },
+    bounds: { T: stringConvertible }, effect: emptyEffect },
   { name: "toString", from: "ReadonlyArray", signature: "toString(): string;",
-    bounds: { T: stringConvertible }, effect: "preservesInputHeap" },
+    bounds: { T: stringConvertible }, effect: emptyEffect },
   { name: "indexOf", from: "ReadonlyArray",
-    signature: "indexOf(searchElement: T, fromIndex?: number): number;", effect: "preservesInputHeap" },
+    signature: "indexOf(searchElement: T, fromIndex?: number): number;", effect: emptyEffect },
   { name: "lastIndexOf", from: "ReadonlyArray",
-    signature: "lastIndexOf(searchElement: T, fromIndex?: number): number;", effect: "preservesInputHeap" },
+    signature: "lastIndexOf(searchElement: T, fromIndex?: number): number;", effect: emptyEffect },
   { name: "includes", from: "ReadonlyArray",
-    signature: "includes(searchElement: T, fromIndex?: number): boolean;", effect: "preservesInputHeap" },
+    signature: "includes(searchElement: T, fromIndex?: number): boolean;", effect: emptyEffect },
   { name: "at", from: "ReadonlyArray", signature: "at(index: number): T | undefined;",
-    effect: "preservesInputHeap" },
+    effect: emptyEffect },
   { name: "find", from: "ReadonlyArray",
     signature: "find(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): T | undefined;",
-    stated: [{ params: [preservingFind], result: maybeElement, effect: "preservesInputHeap" },
+    stated: [{ params: [preservingFind], result: maybeElement, effect: emptyEffect },
       { params: [findingCallback], result: maybeElement }] },
   { name: "findIndex", from: "ReadonlyArray",
     signature: "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;",
-    stated: [{ params: [preservingFind], result: atomOf("number"), effect: "preservesInputHeap" },
+    stated: [{ params: [preservingFind], result: atomOf("number"), effect: emptyEffect },
       { params: [findingCallback], result: atomOf("number") }] },
   // Mutators take a mutable array.
   { name: "sort", from: "Array",
@@ -201,7 +202,7 @@ export const overlay: readonly OverlayEntry[] = [
     // An explicit comparator avoids element coercion. Omitted/undefined
     // comparison instead requires the recursive standard-conversion view.
     stated: [
-      { params: [{ k: "function", effect: "unrestricted", receiver: null, params: [element, element], rest: null,
+      { params: [{ k: "function", effect: ordinaryEffect, receiver: null, params: [element, element], rest: null,
           result: atomOf("number"), span: at }],
         result: { k: "array", presence: "readable", readonly: false, element, span: at } },
       { receiver: { k: "intersection", parts: [
@@ -225,7 +226,7 @@ export const overlay: readonly OverlayEntry[] = [
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
   { name: "[Symbol.iterator]", from: "ReadonlyArray",
-    signature: "[Symbol.iterator](): ArrayIterator<T>;", resultAs: "Iterator", effect: "preservesInputHeap" },
+    signature: "[Symbol.iterator](): ArrayIterator<T>;", resultAs: "Iterator", effect: emptyEffect },
   // Not listed: `concat` names `ConcatArray`, and `values`, `keys` and
   // `entries` are not needed yet.
 ];
@@ -332,7 +333,7 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
  * invalid date, an outcome); `[Symbol.toPrimitive]`, whose overloads take
  * hints, is not listed, nor the members taking locales.
  *
- * The readers state `preservesInputHeap`: `has` and `get` compare by
+ * The readers state the empty footprint: `has` and `get` compare by
  * SameValueZero and run no code, `keys`, `values`, `entries` and
  * `[Symbol.iterator]` allocate a fresh iterator, and `Date`'s getters,
  * `valueOf`, `toString` and `toISOString` read its time value. The members
@@ -354,7 +355,7 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "forEach", from: "Set",
       signature: "forEach(callbackfn: (value: T, value2: T, set: Set<T>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
-    { name: "has", from: "Set", signature: "has(value: T): boolean;", effect: "preservesInputHeap" },
+    { name: "has", from: "Set", signature: "has(value: T): boolean;", effect: emptyEffect },
     { name: "size", from: "Set", signature: "readonly size: number;" },
     // A host collection's tag, which its prototype holds: no object the
     // fragment builds has one (a literal or class writes no well-known
@@ -363,12 +364,12 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "[Symbol.toStringTag]", from: "Set", signature: "readonly [Symbol.toStringTag]: string;" },
     // As for arrays: `SetIterator<T>` is an `Iterator<T>`.
     { name: "[Symbol.iterator]", from: "Set", signature: "[Symbol.iterator](): SetIterator<T>;",
-      resultAs: "Iterator", effect: "preservesInputHeap" },
+      resultAs: "Iterator", effect: emptyEffect },
     // A `SetIterator<T>` is read as an `Iterator<T>` too; a `for...of` over
     // one steps it as the host's (`intrinsics.mts`).
-    { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "Iterator", effect: "preservesInputHeap" },
-    { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "Iterator", effect: "preservesInputHeap" },
-    { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator", effect: "preservesInputHeap" },
+    { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "Iterator", effect: emptyEffect },
+    { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "Iterator", effect: emptyEffect },
+    { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator", effect: emptyEffect },
   ],
   Map: [
     { name: "clear", from: "Map", signature: "clear(): void;" },
@@ -377,25 +378,25 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
       signature: "forEach(callbackfn: (value: V, key: K, map: Map<K, V>) => void, thisArg?: any): void;",
       drop: ["thisArg"] },
     // TypeScript's own `V | undefined`: a key the map lacks reads nothing.
-    { name: "get", from: "Map", signature: "get(key: K): V | undefined;", effect: "preservesInputHeap" },
-    { name: "has", from: "Map", signature: "has(key: K): boolean;", effect: "preservesInputHeap" },
+    { name: "get", from: "Map", signature: "get(key: K): V | undefined;", effect: emptyEffect },
+    { name: "has", from: "Map", signature: "has(key: K): boolean;", effect: emptyEffect },
     { name: "set", from: "Map", signature: "set(key: K, value: V): this;", resultIsReceiver: true },
     { name: "size", from: "Map", signature: "readonly size: number;" },
     { name: "[Symbol.toStringTag]", from: "Map", signature: "readonly [Symbol.toStringTag]: string;" },
     { name: "[Symbol.iterator]", from: "Map", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
-      resultAs: "Iterator", effect: "preservesInputHeap" },
-    { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "Iterator", effect: "preservesInputHeap" },
-    { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "Iterator", effect: "preservesInputHeap" },
-    { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator", effect: "preservesInputHeap" },
+      resultAs: "Iterator", effect: emptyEffect },
+    { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "Iterator", effect: emptyEffect },
+    { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "Iterator", effect: emptyEffect },
+    { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator", effect: emptyEffect },
   ],
   Date: [
     ...["valueOf", "getTime", "getFullYear", "getUTCFullYear", "getMonth", "getUTCMonth", "getDate",
       "getUTCDate", "getDay", "getUTCDay", "getHours", "getUTCHours", "getMinutes", "getUTCMinutes",
       "getSeconds", "getUTCSeconds", "getMilliseconds", "getUTCMilliseconds", "getTimezoneOffset"]
-      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): number;`, effect: "preservesInputHeap" })),
+      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): number;`, effect: emptyEffect })),
     { name: "setTime", from: "Date", signature: "setTime(time: number): number;" },
     ...["toString", "toISOString"]
-      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;`, effect: "preservesInputHeap" })),
+      .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;`, effect: emptyEffect })),
   ],
 };
 
@@ -435,7 +436,7 @@ type Prototype = {
   receiver: (from: string) => TypeTerm;
   entries: readonly OverlayEntry[];
   /** The effect a member's signatures state where its entry states none:
-   * `preservesInputHeap` where every listed member, at each signature the
+   * the empty footprint where every listed member, at each signature the
    * overlay reads, runs no client code and writes no location the call did
    * not allocate. */
   effect: Effect;
@@ -448,7 +449,7 @@ export function arrayPrototype(checker: Checker, at: Node, library: OverlayLibra
     entries: readonly OverlayEntry[] = overlay): TypeDefinition[] {
   const element: TypeTerm = { k: "binder", name: "T", span: [0, 0] };
   const result = prototype(checker, at, library, { identity: arrayProtoIdentity, binders: ["T"], entries,
-    effect: "unrestricted",
+    effect: ordinaryEffect,
     receiver: from => ({ k: "array", presence: "readable", readonly: from === "ReadonlyArray", element, span: [0, 0] }) });
   if (!entries.some(e => ["join", "toString", "sort"].includes(e.name))) return [result];
   const hook = library.wellKnownSymbol("toPrimitive");
@@ -473,7 +474,7 @@ export function primitivePrototype(checker: Checker, at: Node, library: OverlayL
   const owned = entries.find(e => kind === "string" && (e.name === "length" || /^\d/.test(e.name)));
   if (owned) throw Error(`a string owns '${owned.name}'; String.prototype's does not answer for it`);
   return prototype(checker, at, library, { identity: primitiveProtoIdentity(kind), binders: [], entries,
-    effect: "preservesInputHeap", receiver: () => ({ k: "atom", name: kind, span: [0, 0] }) });
+    effect: emptyEffect, receiver: () => ({ k: "atom", name: kind, span: [0, 0] }) });
 }
 
 function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: Prototype): TypeDefinition {

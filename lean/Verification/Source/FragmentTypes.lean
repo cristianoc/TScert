@@ -28,7 +28,7 @@ private def callableShape (a : Json) : Except String (Json × List Json × Json 
   let args ← jArr a "params"
   let effect ← match effect with
     | some e => fromJson? e
-    | none => pure .unrestricted
+    | none => pure .ordinary
   return (← jField a "this", args, ← jField a "result", rest, effect)
 
 /-- The positions a rest parameter stands for: the required elements of its
@@ -266,8 +266,8 @@ private def callableObject (atom : Json) : SourceTypes.Lowering Tree := do
   if !CellUnion.invariant c then
     throw "callable field requires an invariant read/write contract"
   match E with
-  | none => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [⟨Rc,Ds,R,.unrestricted⟩] [])
-  | some E => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [] [⟨Rc,(Ds,E),R,.unrestricted⟩])
+  | none => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [⟨Rc,Ds,R,.ordinary⟩] [])
+  | some E => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [] [⟨Rc,(Ds,E),R,.ordinary⟩])
 
 /-- Validate every union arm. Record alternatives may absorb a redundant
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).

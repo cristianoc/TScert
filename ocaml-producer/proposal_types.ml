@@ -14,7 +14,7 @@ type contract = { pos: Json.t; name: string; type_: ty }
 type overlay = { row_contracts: contract list; row_entries: entry list; row_expressions: expression list }
 type function_claim = { contracts: contract list; source: fn; entries: entry list; expressions: expression list;
                         arrows: (Json.t * overlay list) list;
-                        (* The effect proposed for a declaration's signature, which Lean's
-                           check of its unit must establish. *)
-                        declared_effect: call_effect }
+                        (* The footprint proposed for a declaration's signature, which
+                           Lean's check of its unit must establish. *)
+                        declared_footprint: footprint }
 type t = { program: program; functions: function_claim list; init: function_claim option }

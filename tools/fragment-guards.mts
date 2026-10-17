@@ -23,9 +23,10 @@ export function guardOf(this: Gate, node: FunctionDeclaration | ArrowFunction | 
   const head = node.parameters[0];
   const ordinary = head && ts.isIdentifier(head.name) && head.name.text === "this" ? node.parameters.slice(1) : [...node.parameters];
   const { effect, type } = promiseOf(gate.scope, p, ordinary);
-  if (typeof effect !== "object") throw Error("internal: a type predicate without a promise");
-  return "guards" in effect ? { param: effect.guards.param, asserts: false, type, span: gate.span(p) }
-    : { param: effect.asserts.param, asserts: true, type, span: gate.span(p) };
+  const promise = effect.promise;
+  if (promise === null) throw Error("internal: a type predicate without a promise");
+  return "guards" in promise ? { param: promise.guards.param, asserts: false, type, span: gate.span(p) }
+    : { param: promise.asserts.param, asserts: true, type, span: gate.span(p) };
 }
 
 /** The plain result a guard is called at: a type guard's `boolean`, an

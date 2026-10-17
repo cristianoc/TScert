@@ -61,7 +61,7 @@ separately. -/
 theorem inspect_safe {T : Fam} {initial : Heap} : ∀ {n W h t},
     initial.IsPrefix h → Purity.inspectTerm t = true → WorldAdm W → HeapOk n W h →
     Safe Ξ T n W h t →
-    SafePost Ξ T (CallEffects.Effect.preservesInputHeap.post initial) n W h t := by
+    SafePost Ξ T (CallEffects.preserves initial) n W h t := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -82,7 +82,7 @@ theorem sound {G : NormalGraph ι} {Γ t A ρ n W h}
     (hc : check G Γ t = true) (hscope : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : Safe (excOf G) (meaning G A) n W h (instantiate 0 ρ t)) :
-    SafePost (excOf G) (meaning G A) (CallEffects.Effect.preservesInputHeap.post h)
+    SafePost (excOf G) (meaning G A) (CallEffects.preserves h)
       n W h (instantiate 0 ρ t) :=
   inspect_safe (List.prefix_refl h) (inspect_instantiate (d := 0) hc hscope he) hw hh hs
 
@@ -91,8 +91,8 @@ has already been lowered to earlier graph nodes; omitted arguments are the
 ordinary evidence's explicit `undefined` premises. Subsumption may retain the
 postcondition while changing the result type. -/
 def selectedCallPreserves : Evidence ι → Bool
-  | .node _ (.app .preservesInputHeap) ps =>
-      ps.all fun p => valueTerm (claim p).term &&
+  | .node _ (.app e) ps =>
+      e == .ofFootprint .empty && ps.all fun p => valueTerm (claim p).term &&
         checkScope (claim p).context.length (claim p).term
   | .node _ (.sub _) [p] => selectedCallPreserves p
   | _ => false
@@ -113,11 +113,11 @@ theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
 private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
     {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool}
-    (hl : LocalUsing G images j (.app .preservesInputHeap) ps codes)
+    (hl : LocalUsing G images j (.app (.ofFootprint .empty)) ps codes)
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (CallEffects.Effect.preservesInputHeap.post h)
+    SafePost (excOf G) (meaning G j.type) (CallEffects.preserves h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a call with a callee and a receiver premise.
@@ -173,7 +173,7 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
         exact values p (by simp [List.mem_of_mem_take hp])
       have hr := member jr (by simp)
       have hrval := values jr (by simp)
-      have hs := CallEffects.call_safe (effect := .preservesInputHeap)
+      have hs := CallEffects.call_safe (effect := .ofFootprint .empty)
         (P := ArgsShort (jas.map (fun p => meaning G p.type)))
         (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
@@ -188,7 +188,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     (hp : selectedCallPreserves e = true) (hcodes : CodesSound G codes)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G (claim e).type) (CallEffects.Effect.preservesInputHeap.post h)
+    SafePost (excOf G) (meaning G (claim e).type) (CallEffects.preserves h)
       n W h (instantiate 0 ρ (claim e).term) := by
   cases e with
   | node j r ps =>
@@ -196,10 +196,9 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
     cases r <;> try simp only [selectedCallPreserves] at hp <;> try contradiction
     case app effect =>
-      cases effect with
-      | unrestricted | guards _ | asserts _ => contradiction
-      | preservesInputHeap =>
-        apply call_local_sound ht.1 _ _ he hw hh
+      simp only [Bool.and_eq_true, beq_iff_eq] at hp
+      obtain ⟨rfl, hp⟩ := hp
+      · apply call_local_sound ht.1 _ _ he hw hh
         · intro p hm
           obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
           exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes

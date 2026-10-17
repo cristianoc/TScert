@@ -31,7 +31,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
            does not state; the field holds it at its annotation. *)
         let t = match expr env value with
           | Atoms [Shape ({calls;_} as s)] ->
-            Atoms [Shape {s with calls=List.map (fun (c:Semantic.signature) -> {c with call_effect=Unrestricted}) calls}]
+            Atoms [Shape {s with calls=List.map (fun (c:Semantic.signature) -> {c with call_effect=Semantic.ordinary_effect}) calls}]
           | t -> t in
         {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) statics in
   match e.node with
@@ -49,7 +49,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | _ -> expr ~expected:result inner body in
       (* A class offered construct signatures giving other instances is
          claimed at them too, beside its own; Lean checks the body at each. *)
-      let own = {call_effect=Unrestricted;quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result} in
+      let own = {call_effect=Semantic.ordinary_effect;quantified=[];receiver=Semantic.top;params=List.map snd ps;variadic=None;rest_pack=None;result} in
       let extra = Option.value (List.assoc_opt e.pos offered) ~default:[] in
       (* A fresh constructor gives, first, the instance it allocates. *)
       let fresh_sig = if fresh then [{own with result=allocated_type}] else [] in
@@ -227,7 +227,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         match (match latest_instance callee.pos with Some t -> Some t | None -> latest_claim callee.pos) with
         | Some t -> (match declared_head declarations [] t with
           | Atoms [Shape {calls;fields=[];indexes=[];elements=None}] -> calls <> [] &&
-            List.for_all (fun (s:signature) -> s.call_effect=PreservesInputHeap &&
+            List.for_all (fun (s:signature) -> s.call_effect=Semantic.empty_effect &&
               s.variadic=None && s.rest_pack=None) calls
           | _ -> false)
         | None -> false in
@@ -235,7 +235,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          conservative until that lowering carries the inferred effect too. *)
       let call_effect = if not rest && heap_preserving_expr ~callable values body &&
         List.for_all (fun (_,d) -> heap_preserving_expr ~callable values d) defaults
-        then PreservesInputHeap else Unrestricted in
+        then Semantic.empty_effect else Semantic.ordinary_effect in
       let own = match element with
         | Some element -> variadic_arrow ~call_effect ~quantified ~receiver params element result
         | None -> quantified_arrow ~call_effect ~receiver quantified params result in

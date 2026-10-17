@@ -1100,7 +1100,7 @@ writes where TypeScript's types of the object and the key are these:
 ```math
 \mathit{xs}[k]\;\equiv\;\%\mathsf{ElementAt}\%(\mathit{xs},\ k)
 \qquad
-\%\mathsf{ElementAt}\%:\forall T.\ (\mathtt{readonly}\ T[\,],\ \mathtt{number})\Rightarrow_{\mathsf{preservesInputHeap}} T\mid\mathtt{undefined}
+\%\mathsf{ElementAt}\%:\forall T.\ (\mathtt{readonly}\ T[\,],\ \mathtt{number})\Rightarrow_{\emptyset} T\mid\mathtt{undefined}
 ```
 
 The element at an index below the length, an own property at another

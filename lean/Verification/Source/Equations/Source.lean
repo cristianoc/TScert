@@ -65,7 +65,8 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
   match (term.getObjValAs? String "k").toOption with
   | some "function" =>
     fieldsExactly term ["k", "receiver", "params", "rest", "result", "effect", "span"]
-    if (← str term "effect") != "unrestricted" then return .other (← lowerType ctx term)
+    let effect : CallEffects.Effect ← fromJson? (← field term "effect")
+    if effect != .ordinary then return .other (← lowerType ctx term)
     let recv ← field term "receiver"
     let receiver ← if recv == .null then pure none else some <$> lowerType ctx recv
     let params ← (← arr term "params").toList.mapM (lowerType ctx)
@@ -211,7 +212,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
           throw s!"{path}: a generic module function's type needs every parameter's and its result's annotation"
         return .other (← lowerType ctx (Json.mkObj [("k", .str "function"), ("receiver", .null),
           ("params", .arr (params.pop.map (·.getObjValD "type"))), ("rest", params.back!.getObjValD "type"),
-          ("result", f.getObjValD "retType"), ("effect", .str "unrestricted"),
+          ("result", f.getObjValD "retType"), ("effect", toJson CallEffects.Effect.ordinary),
           ("span", toJson (← (fromJson? (← field f "namePos") : Except String (Nat × Nat))))]))
       let mut params := []
       let mut rest := none

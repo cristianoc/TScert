@@ -321,9 +321,11 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
       let n = List.length args in
       let kept (plain:Semantic.signature) = match callee with
         | Atoms [Shape {calls;_}] -> List.filter_map (fun (s:Semantic.signature) ->
-            let shifted = match s.call_effect with
-              | Guards p when p >= n -> Some (Semantic.Guards (p - n))
-              | Asserts p when p >= n -> Some (Semantic.Asserts (p - n))
+            let shifted = match s.call_effect.promise with
+              | Some (Semantic.Guards p) when p >= n ->
+                Some {s.call_effect with promise=Some (Semantic.Guards (p - n))}
+              | Some (Semantic.Asserts p) when p >= n ->
+                Some {s.call_effect with promise=Some (Semantic.Asserts (p - n))}
               | _ -> None in
             (match shifted with
              | Some promise when s.params=plain.params && s.receiver=plain.receiver && s.variadic=None

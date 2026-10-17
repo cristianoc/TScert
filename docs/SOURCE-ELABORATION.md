@@ -1219,7 +1219,7 @@ i &::= o \mid \mathsf{let}\ x=i\ \mathsf{in}\ i \mid \mathsf{test}_k(i) \mid \ma
 
 ```math
 \frac{\Gamma\vdash i:B\qquad i\ \text{an inspection}}
- {\Gamma\vdash i:B\;!\;\mathsf{preservesInputHeap}}\ \textsf{inspect}
+ {\Gamma\vdash i:B\;!\;\emptyset}\ \textsf{inspect}
 ```
 
 with the premise the node's ordinary typing. No step of an inspection writes a
@@ -1238,7 +1238,7 @@ normal-return postcondition independently of the safety proof's evolving world.
 A caught exception cannot use that postcondition: compositional checking refuses
 handlers, while the independent pure-graph rule still admits pure handlers.
 Fixed calls use `ExpressionEffects.selectedCall_sound`: the selected application
-rule must carry `preservesInputHeap`, and its operands must already be values.
+rule must carry the empty footprint and no promise, and its operands must already be values.
 The proof consumes `CallEffects.call_safe`, including padded missing arguments;
 a result-subtyping derivation retains the same postcondition. It never inspects
 the callee's implementation. Pure immutable lets also compose: $`\mathsf{Pure}(a) \land \mathsf{Pure}(b)`$ implies $`\mathsf{Pure}(\mathsf{let}\ x=a\ \mathsf{in}\ b)`$.
@@ -1270,23 +1270,26 @@ All code certificates remain in the submitted response, and final acceptance
 independently checks every one; withholding a search hint cannot hide a failure. Qualified graph claims can
 already be submitted and certified through the ordinary source pipeline.
 
-**Function declarations.** A declaration's claim states the effect proposed
-for its signature (`effect` in the [claims](SOURCE-CLAIMS.md)). The unit of
-a declaration claiming `preservesInputHeap` is checked as a code entry's
-graph is: its nodes pure, or each node preserving by `inspect` or a fixed
-qualified call (`effectResult`, alongside ordinary safety), for a plain
-result under the ordinary checker; a guard, an assertion function and a
-unit qualified by a resolution descriptor are refused the claim. With $`P`$
+**Function declarations.** A declaration's claim states the closed
+footprint proposed for its signature (`footprint` in the
+[claims](SOURCE-CLAIMS.md)). The unit of a declaration claiming a footprint
+other than `all: any` is checked as a code entry's graph is: its nodes pure,
+or each node preserving by `inspect` or a fixed qualified call
+(`effectResult`, alongside ordinary safety), for a plain result under the
+ordinary checker, which establishes the empty footprint and with it every
+footprint (`Closed.Holds.of_prefix`); a guard, an assertion function and a
+unit qualified by a resolution descriptor are refused such a claim. A code
+entry's signature follows the same rule (`GraphCode.effectCheckedResult`). With $`P`$
 the unit's graph, $`\Gamma`$ its inputs and $`B`$ its result,
 
 ```math
 \frac{\vdash P:\Gamma\to B\qquad \forall l.\ P_l\ \text{pure, an inspection, or a fixed qualified call}}
-     {\vdash P:\Gamma\to B\;!\;\mathsf{preservesInputHeap}}\ \textsf{declaration-effect}
+     {\vdash P:\Gamma\to B\;!\;\emptyset}\ \textsf{declaration-effect}
 ```
 
 and `SourceClaimJson.checkJson_safe` states, for each such unit, that its
-graph run as code from inputs it admits returns with its entry heap a prefix
-of the heap it leaves (`SourceExtraction.checkRequests_preserving_at`).
+graph run as code from inputs it admits returns with a heap its claimed
+footprint relates to its entry heap (`SourceExtraction.checkRequests_footprint_at`).
 Every other unit reads the declaration at its annotation's signature stating
 that effect, its variadic extension included (`moduleArrow`), as it reads the
 declaration's ordinary signature: that each declaration meets the signature

@@ -151,14 +151,14 @@ def NodePreserves [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t
   ∀ n W h ρ, EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
     WorldAdm W → HeapOk n W h →
     HeapObservations.SafePost (excOf G) (meaning G (result c))
-      (CallEffects.Effect.preservesInputHeap.post h) n W h (instantiate 0 ρ t)
+      (CallEffects.preserves h) n W h (instantiate 0 ρ t)
 
 /-- While a call is running its entry heap need not be preserved yet. Only the
 postcondition on normal return can justify the next graph node. -/
 def PreservingState (initial : Heap) (n : Nat) (h : Heap) : State → Prop
   | .at .. | .done _ => initial.IsPrefix h
   | .eval t _ _ handler => handler = none ∧
-      ReturnsPost (CallEffects.Effect.preservesInputHeap.post initial) n h t
+      ReturnsPost (CallEffects.preserves initial) n h t
   | .raised _ => True
 
 theorem preserving_step [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty ι} {P : Program} {C : Certificate ι}
@@ -194,7 +194,7 @@ theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : I
     ∀ n W h ts s initial, Sim E K ts s → WorldAdm W → HeapOk n W h →
       StateOk G Rty C .undef n W h s → PreservingState initial n h s →
       HeapObservations.SafePost (excOf G) (meaning G Rty)
-        (CallEffects.Effect.preservesInputHeap.post initial) n W h ts := by
+        (CallEffects.preserves initial) n W h ts := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -220,7 +220,7 @@ theorem goto_preserving [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h) :
     HeapObservations.SafePost (excOf G) (meaning G Rty)
-      (CallEffects.Effect.preservesInputHeap.post h) n W h (.goto E K start L d) := by
+      (CallEffects.preserves h) n W h (.goto E K start L d) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
@@ -282,15 +282,16 @@ theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : 
     compositionalChecked (reassign G η) (images.reassign η) P C = compositionalChecked G images P C := by
   simp only [compositionalChecked_eq, ExpressionEffects.check, Parametricity.checkTree_reassign]
 
-/-- Definition effects supplement, rather than replace, ordinary safety. -/
+/-- Definition effects supplement, rather than replace, ordinary safety. A
+footprint letting everything change holds of every run (`Closed.top_safe`);
+any other is established by heap preservation, the empty footprint, which
+covers it (`Closed.Holds.of_prefix`), for code returning a plain result. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
-  match c.row.effect with
-  | .unrestricted => pure ()
-  | .preservesInputHeap =>
-      (ProgramCertificates.CheckResult.ofBool (c.exprs.all Purity.pureTerm)).orElse fun _ =>
-      compositionalCheckedResult G images (program c.exprs c.conts) C
-  | .guards _ | .asserts _ => pure ()
+  if c.row.effect.footprint = .top then pure () else
+    (ProgramCertificates.CheckResult.ofBool c.row.effect.promise.isNone).bind fun _ =>
+    (ProgramCertificates.CheckResult.ofBool (c.exprs.all Purity.pureTerm)).orElse fun _ =>
+    compositionalCheckedResult G images (program c.exprs c.conts) C
 
 @[nospecialize] def effectChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) : Bool :=
@@ -299,24 +300,22 @@ theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : 
 theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) :
     effectChecked G images c C = (
-  match c.row.effect with
-  | .unrestricted => true
-  | .preservesInputHeap => c.exprs.all Purity.pureTerm ||
-      compositionalChecked G images (program c.exprs c.conts) C
-  | .guards _ | .asserts _ => true
+  decide (c.row.effect.footprint = .top) || (c.row.effect.promise.isNone &&
+    (c.exprs.all Purity.pureTerm || compositionalChecked G images (program c.exprs c.conts) C))
   ) := by
-  cases h : c.row.effect <;>
-    simp only [effectChecked, effectCheckedResult, h, ProgramCertificates.CheckResult.accepted_orElse,
-      ProgramCertificates.CheckResult.accepted_ofBool, compositionalChecked] <;> rfl
+  by_cases h : c.row.effect.footprint = .top <;>
+    simp [effectChecked, effectCheckedResult, h, ProgramCertificates.CheckResult.accepted_orElse,
+      ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_bind,
+      compositionalChecked] <;> rfl
 
 /-- What a code entry's graph is checked to return: its signature's result,
 or its signature's promise about the parameter it names, at that parameter's
 place in the frame. -/
 def _root_.Verification.ProgramTyping.CodeEntry.goal (c : CodeEntry ι) : Goal ι :=
-  match c.row.effect with
-  | .guards p => .guards c.row.result (frameOffset c.store + p)
-  | .asserts p => .asserts c.row.result (frameOffset c.store + p)
-  | _ => .plain c.row.result
+  match c.row.effect.promise with
+  | some (.guards p) => .guards c.row.result (frameOffset c.store + p)
+  | some (.asserts p) => .asserts c.row.result (frameOffset c.store + p)
+  | none => .plain c.row.result
 
 /-- One code entry, checked at its signature from the frame the signature
 describes, against an earlier table. -/
@@ -359,31 +358,43 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   refine ⟨harity, hbelow, ?_⟩
   intro n W heap L he hw hh hvalues
   have hs := goto_safe hc ht n W heap L .nul he hw hh
-  cases heffect : c.row.effect with
-  | guards p =>
-    have hg : c.goal = .guards c.row.result (frameOffset c.store + p) := by
-      simp [CodeEntry.goal, heffect]
-    rw [hg] at hs
-    exact HeapObservations.forget hs
-  | asserts p =>
-    have hg : c.goal = .asserts c.row.result (frameOffset c.store + p) := by
-      simp [CodeEntry.goal, heffect]
-    rw [hg] at hs
-    exact HeapObservations.forget hs
-  | unrestricted =>
-    have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, heffect]
-    rw [hg] at hs
-    exact HeapObservations.forget hs
-  | preservesInputHeap =>
-    have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, heffect]
+  have hsafe : Safe (excOf (reassign G η)) (c.row.effect.result (meaning (reassign G η) c.row.result)
+      (framePromised c.row.effect (frameOffset c.store) L)) n W heap
+      (.goto c.exprs c.conts c.start L .nul) := by
+    rcases hpr : c.row.effect.promise with _ | (p | p)
+    · have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, hpr]
+      rw [hg] at hs
+      rw [CallEffects.Effect.result_none hpr]
+      exact hs
+    · have hg : c.goal = .guards c.row.result (frameOffset c.store + p) := by
+        simp [CodeEntry.goal, hpr]
+      rw [hg] at hs
+      simp only [CallEffects.Effect.result, framePromised, hpr, CallEffects.TypePromise.result,
+        CallEffects.TypePromise.param]
+      exact hs
+    · have hg : c.goal = .asserts c.row.result (frameOffset c.store + p) := by
+        simp [CodeEntry.goal, hpr]
+      rw [hg] at hs
+      simp only [CallEffects.Effect.result, framePromised, hpr, CallEffects.TypePromise.result,
+        CallEffects.TypePromise.param]
+      exact hs
+  rw [effectChecked_eq] at heff
+  by_cases htop : c.row.effect.footprint = .top
+  · refine HeapObservations.weaken (fun h' v hp => ?_) (Footprints.Closed.top_safe hsafe)
+    show c.row.effect.footprint.Holds heap h'
+    rw [htop]
+    exact hp
+  · simp only [htop, decide_false, Bool.false_or, Bool.and_eq_true, Option.isNone_iff_eq_none,
+      Bool.or_eq_true] at heff
+    obtain ⟨hpr, hp⟩ := heff
+    rw [CallEffects.Effect.result_none hpr]
+    apply HeapObservations.weaken (fun h' v hq => CallEffects.Effect.post_of_preserves _ hq)
+    have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, hpr]
     rw [hg] at hs hc
-    have hp : c.exprs.all Purity.pureTerm = true ∨
-        compositionalChecked (reassign G η) (images.reassign η) (program c.exprs c.conts) C = true := by
-      simpa [effectChecked_eq, heffect, Bool.or_eq_true] using heff
     rcases hp with hp | hp
     · have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp
       exact CallEffects.pure_safe (.goto hp hvalues rfl) hs
-    · rw [compositionalChecked_eq] at hp
+    · rw [← compositionalChecked_reassign G images η, compositionalChecked_eq] at hp
       apply goto_preserving hc ht _ n W heap L .nul he hw hh
       intro l node point hn hpoint
       have hzip : ((program c.exprs c.conts).zip C)[l]? = some (node,point) :=

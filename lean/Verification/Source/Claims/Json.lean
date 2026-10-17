@@ -54,7 +54,7 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
         !GraphCode.compositionalChecked G images [node] [point]).bind fun (_, l) =>
           (r.sourceMap[l]?).bind id
       let pos := (bad.map (·.pos)).getD namePos
-      throw s!"source effect refusal at [{pos.1},{pos.2}): the heap preservation claimed for '{name}' is not established by its body"
+      throw s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for '{name}' is not established by its body"
   let evidence := toJson (Bundle.mk cs es)
   let b : Bundle (EquationStore.CheckedLabel F.equations F.primitive) ← decodeStrict evidence
   let checked := checkRequestsResult rs b
@@ -80,8 +80,9 @@ def lowerJson (ast claims : Json) (fileKey : String) : Except String Json := do
 /-- Every extracted plan crosses the exhaustive certification boundary, and its
 graph request proves the enclosing execution safe at every assignment admitted
 by its source signature, including its descriptor contract when qualified. A
-unit whose declaration claims heap preservation, run as the code its graph
-describes, also leaves its entry heap a prefix of the heap it returns with.
+unit whose declaration claims a footprint other than the one letting every
+location change, run as the code its graph describes, also returns with a heap
+its footprint relates to its entry heap.
 The graph is `Equations.graph` of the equations the extracted store presents,
 validated by `Equations.ofRaw` (`freezePlans`). -/
 theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
@@ -100,13 +101,13 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument ρ))
             n W heap (.at r.start ρ)) ∧
       (∀ r c, (r,c) ∈ (CertifiedPlan.requests certified).zip b.functions →
-        r.effect = .preservesInputHeap →
+        r.footprint ≠ .top →
         ∀ η n W heap (L : List Tm) (d : Tm),
           EnvOk (reassign F.equations.graph η) r.inputs (envOf L d) n W →
           WorldAdm W → HeapOk n W heap → (∀ v ∈ L, isVal v = true) → isVal d = true →
           HeapObservations.SafePost (excOf (reassign F.equations.graph η))
             (meaning (reassign F.equations.graph η) r.result)
-            (CallEffects.Effect.preservesInputHeap.post heap) n W heap
+            (fun h' _ => r.footprint.Holds heap h') n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
               r.start L d)) := by
   unfold checkJson at h
@@ -136,7 +137,7 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
             · intro r c hm η admitted n W heap ρ he hw hh
               exact checkRequests_safe_at hx hm η admitted n W heap ρ he hw hh
             · intro r c hm heffect η n W heap L d he hw hh hvalues hd
-              exact checkRequests_preserving_at hx hm heffect η n W heap L d he hw hh hvalues hd
+              exact checkRequests_footprint_at hx hm heffect η n W heap L d he hw hh hvalues hd
           · simp only [checkRequests] at hx
             simp [hx] at h
 

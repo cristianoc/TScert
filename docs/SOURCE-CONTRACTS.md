@@ -1396,9 +1396,9 @@ $`p`$, and $`R_j`$ its reviewed receiver (defaulting to $`p`$):
 ```
 
 Each signature states an effect $`\epsilon_j`$: the entry's own, else its
-prototype's, `preservesInputHeap` for `StringProto`, `NumberProto`,
-`BigIntProto` and `BooleanProto` and `unrestricted` for `ArrayProto`. A
-signature states `preservesInputHeap` where the member, called at it, runs no
+prototype's, the empty footprint for `StringProto`, `NumberProto`,
+`BigIntProto` and `BooleanProto` and the footprint `all: any` for `ArrayProto`. A
+signature states the empty footprint where the member, called at it, runs no
 client code but callbacks whose own signatures state the same, and writes no
 location the call did not allocate. Every primitive member listed meets this:
 its receiver is a primitive, it converts only primitives (a string search
@@ -1418,8 +1418,8 @@ unrestricted callback, stating no effect (`array-preserving-callbacks`,
 `invalid-filter-writing-callback`):
 
 ```math
-\frac{m\in\{\mathsf{filter},\mathsf{some},\mathsf{every},\mathsf{forEach}\}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\mathsf{preservesInputHeap}}\mathtt{unknown}}
-     {\mathit{xs}.m(f):R_m\;!\;\mathsf{preservesInputHeap}}\ \textsf{native-preserving-callback}
+\frac{m\in\{\mathsf{filter},\mathsf{some},\mathsf{every},\mathsf{forEach}\}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset}\mathtt{unknown}}
+     {\mathit{xs}.m(f):R_m\;!\;\emptyset}\ \textsf{native-preserving-callback}
 ```
 
 with $`R_m`$ the member's result: $`T[\,]`$, `boolean`, `boolean`,
@@ -1432,9 +1432,9 @@ The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source
 annotations are still translated in full. `join` bounds `T` to the conversion
 contract below,
-unrestricted `find`/`findIndex` callbacks receive `T | undefined`, and unrestricted
+unrestricted (`all: any`) `find`/`findIndex` callbacks receive `T | undefined`, and unrestricted
 `map` callbacks produce a sparse result. Qualified overloads require a certified
-`preservesInputHeap` callback and respectively pass `T` or promise a dense result.
+callback at the empty footprint and respectively pass `T` or promise a dense result.
 Source `U[]` requires readability; the fresh qualified map result may choose that
 lifetime contract even when its initial contents are physically dense.
 `flatMap` appends the present elements of each array its callback returns,
@@ -1511,7 +1511,7 @@ other signature or its receiver condition from the declared scheme.
 ```
 
 a supertype of the declared interface. A member's signatures state the
-entry's effect: `preservesInputHeap` for the readers, `has`, `get`, `keys`,
+entry's effect: the empty footprint for the readers, `has`, `get`, `keys`,
 `values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`,
 `toString` and `toISOString`, none for the members that change the
 collection or the date or call a callback. $`⟦m⟧_\omega`$ drops
@@ -1533,8 +1533,8 @@ present and it lists no old element location it did not list before. A
 **state** is the locations its mutable state occupies; an object sharing
 another's state, an iterator and its collection, holds the other through an
 immutable hidden field and lists the other's state as read, never as its own.
-The signatures above state the two effects `preservesInputHeap`, the empty
-footprint, and `unrestricted`, the footprint `all: any`. The footprints
+The signatures above state two closed footprints, the empty one and
+`all: any`. The footprints
 below are the specification of each native for the footprint mechanism:
 
 - `push`, `unshift`: `store(receiver): grow`, `class(value): any`.
@@ -1668,8 +1668,8 @@ An entry may state that its signature preserves the input heap
 client code and writes no location it did not allocate:
 
 ```math
-\frac{⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow R\quad \omega.\mathit{effect}=\mathsf{preservesInputHeap}}
-     {⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow_{\mathsf{preservesInputHeap}} R}\ \textsf{library-effect}
+\frac{⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow R\quad \omega.\mathit{effect}=\emptyset}
+     {⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow_{\emptyset} R}\ \textsf{library-effect}
 ```
 
 `String` and `Number` of a primitive, `Number.isFinite`, `Number.isInteger`,
@@ -1918,9 +1918,9 @@ $`g`$ and $`y`$ whether the flags hold `g` and `y`,
 
 ```math
 \epsilon_{N(\Sigma)}(m)=\begin{cases}
-\mathsf{preservesInputHeap} & m\in\{[@@\mathrm{search}],[@@\mathrm{split}],[@@\mathrm{matchAll}]\},\ \Sigma\ne\Sigma_\top\\
-\mathsf{preservesInputHeap} & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ \neg g,\ \neg y\\
-\mathsf{unrestricted} & \text{otherwise}
+\emptyset & m\in\{[@@\mathrm{search}],[@@\mathrm{split}],[@@\mathrm{matchAll}]\},\ \Sigma\ne\Sigma_\top\\
+\emptyset & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ \neg g,\ \neg y\\
+\top & \text{otherwise}
 \end{cases}
 ```
 
@@ -1937,7 +1937,7 @@ returns what that method returns:
 
 ```math
 \frac{\Sigma=\mathsf{shape}(P,F)}
-     {⟦/P/F⟧=\%\mathrm{RegExp}{:}\Sigma\%()\qquad \%\mathrm{RegExp}{:}\Sigma\%\colon()\Rightarrow_{\mathsf{preservesInputHeap}} N(\Sigma)}\ \textsf{regexp-literal}
+     {⟦/P/F⟧=\%\mathrm{RegExp}{:}\Sigma\%()\qquad \%\mathrm{RegExp}{:}\Sigma\%\colon()\Rightarrow_{\emptyset} N(\Sigma)}\ \textsf{regexp-literal}
 ```
 
 ```math
@@ -1958,13 +1958,13 @@ as TypeScript types the receiver and the argument, evaluated as written, with
 and `match` and `search` as `split` without the limit, `replaceAll` as
 `replace` with the mark. Each states two signatures over the same binder:
 the one above, unrestricted, and the same at a target whose member states
-$`\mathsf{preservesInputHeap}`$, stating it too. Beside that member's call, the
+$`\emptyset`$, stating it too. Beside that member's call, the
 dispatch reads `o`'s members and converts only strings, so it writes nothing
 the member does not:
 
 ```math
 \frac{\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow Q\},\ \vec R)\Rightarrow S}
-     {\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow_{\mathsf{preservesInputHeap}} Q\},\ \vec R)\Rightarrow_{\mathsf{preservesInputHeap}} S}\ \textsf{dispatch-preserving}
+     {\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow_{\emptyset} Q\},\ \vec R)\Rightarrow_{\emptyset} S}\ \textsf{dispatch-preserving}
 ```
  `matchAll` and `replaceAll` first read
 `o[@@match]` and `o.flags` and convert `flags` (ECMA-262,

@@ -12,10 +12,7 @@ the class of a field's contents, provenance stamps, and distinct links. The
 entry either changes the support's regions within their tolerance or is
 apart from them; its soundness theorem gives the support's premise from the
 footprint's postcondition, and the **frame** keeps exactly the facts that
-pass it. Nothing uses this module yet.
-
-Also here: heaps only grow under steps, and the six closed footprints are
-ordered exactly by their entries. -/
+pass it. Nothing uses this module yet. -/
 namespace Verification.Footprints
 
 /-! ## Fact kinds -/
@@ -269,123 +266,5 @@ theorem arrLit_fresh {h vs h' r} (st : Step h (.arrLit vs) h' r) (hv : ∀ v ∈
   | arrSpread he _ _ =>
     have := hv _ (by rw [he]; exact List.mem_append_right _ (List.mem_cons_self ..))
     simp [isVal] at this
-
-/-! ## Heaps grow -/
-
-theorem step_length_le {h t h' t'} (st : Step h t h' t') : h.length ≤ h'.length := by
-  induction st <;> simp_all [List.length_append, List.length_set] <;> omega
-
-theorem steps_grow {k h t h' t'} (st : HeapObservations.Steps k h t h' t') : h.length ≤ h'.length := by
-  induction st with
-  | refl => exact Nat.le_refl _
-  | next s _ ih => exact Nat.le_trans (step_length_le s) ih
-
-/-! ## Closed footprints -/
-
-/-- A closed footprint: a change for each class of contents. -/
-structure Closed where
-  value : Change
-  store : Change
-  deriving DecidableEq, Repr
-
-def Closed.fp (c : Closed) : Footprint := [(.cls .value, c.value), (.cls .store, c.store)]
-
-/-- On contents of class `value`, `grow` is `keep`. -/
-def Change.onValue : Change → Change
-  | .grow => .keep
-  | d => d
-
-def Closed.le (a b : Closed) : Bool := a.value.onValue.le b.value.onValue && a.store.le b.store
-
-private theorem value_change {δ δ' : Change} {b v v'} (hv : isArr v = false)
-    (hle : δ.onValue.le δ'.onValue = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
-  cases δ with
-  | grow => rw [h.grow_value hv]; exact Change.Holds.refl _ _ _
-  | keep => simp only [Change.Holds] at h; rw [h]; exact Change.Holds.refl _ _ _
-  | any => cases δ' <;> simp_all [Change.onValue, Change.le, Change.Holds]
-
-theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Post a.fp ρ h h') :
-    Post b.fp ρ h h' := by
-  simp only [Closed.le, Bool.and_eq_true] at hle
-  refine ⟨hp.1, fun l v hv => ?_⟩
-  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
-  refine ⟨v', hv', ?_⟩
-  rcases ha with rfl | ⟨e, he, hm, hh⟩
-  · exact .inl rfl
-  · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
-    rcases he with rfl | rfl
-    · have hc : isArr v = false := by simpa [Region.mem, hv, Cls.has] using hm
-      exact .inr ⟨_, List.mem_cons_self .., hm, value_change hc hle.1 hh⟩
-    · exact .inr ⟨(.cls .store, b.store), by simp [Closed.fp], hm, hh.mono hle.2⟩
-
-private def ρ₀ : Env := fun _ => .undef
-
-private theorem single_post {Φ : Footprint} {v v' : Val} (hp : Post Φ ρ₀ [v] [v']) :
-    v' = v ∨ ∃ e ∈ Φ, e.1.mem ρ₀ [v] 0 = true ∧ e.2.Holds 1 v v' := by
-  obtain ⟨v₁, hv₁, ha⟩ := hp.2 0 v rfl
-  simp only [List.getElem?_cons_zero, Option.some.injEq] at hv₁
-  subst hv₁
-  exact ha
-
-/-- **The closed footprints are ordered exactly by their entries.** -/
-theorem closed_order_exact (a b : Closed) :
-    a.le b = true ↔ ∀ ρ h h', Post a.fp ρ h h' → Post b.fp ρ h h' := by
-  refine ⟨fun hle _ _ _ => Closed.post_mono hle, fun H => ?_⟩
-  simp only [Closed.le, Bool.and_eq_true]
-  refine ⟨?_, ?_⟩
-  · -- a value location changes arbitrarily
-    cases ha : a.value <;> cases hb : b.value <;> simp [Change.onValue, Change.le] <;>
-    · have hp : Post a.fp ρ₀ [.nul] [.tru] :=
-        ⟨by simp, fun l v hv => by
-          cases l with
-          | zero =>
-            simp only [List.getElem?_cons_zero, Option.some.injEq] at hv; subst hv
-            exact ⟨.tru, rfl, .inr ⟨(.cls .value, a.value), List.mem_cons_self .., by simp [Region.mem, Cls.has, isArr], by
-              show a.value.Holds _ _ _
-              rw [ha]; trivial⟩⟩
-          | succ l => simp at hv⟩
-      rcases single_post (H _ _ _ hp) with h | ⟨e, he, hm, hh⟩
-      · cases h
-      · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
-        rcases he with rfl | rfl
-        · simp only [hb] at hh
-          simp [Change.Holds] at hh
-        · simp [Region.mem, Cls.has, isArr] at hm
-  · cases ha : a.store <;> cases hb : b.store <;> simp [Change.le]
-    · -- grow against keep: a store gains a fresh element location
-      have hp : Post a.fp ρ₀ [.arr []] [.arr [some 1]] :=
-        ⟨by simp, fun l v hv => by
-          cases l with
-          | zero =>
-            simp only [List.getElem?_cons_zero, Option.some.injEq] at hv; subst hv
-            exact ⟨_, rfl, .inr ⟨(.cls .store, a.store), by simp [Closed.fp], by simp [Region.mem, Cls.has, isArr], by
-              show a.store.Holds _ _ _
-              rw [ha]; exact (Change.holdsB_iff _ _ _ _).mp (by decide)⟩⟩
-          | succ l => simp at hv⟩
-      rcases single_post (H _ _ _ hp) with h | ⟨e, he, hm, hh⟩
-      · cases h
-      · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
-        rcases he with rfl | rfl
-        · simp [Region.mem, Cls.has, isArr] at hm
-        · simp only [hb] at hh
-          simp [Change.Holds] at hh
-    all_goals
-      -- any against keep or grow: a dense store loses its index
-      have hp : Post a.fp ρ₀ [.arr [some 0]] [.arr []] :=
-        ⟨by simp, fun l v hv => by
-          cases l with
-          | zero =>
-            simp only [List.getElem?_cons_zero, Option.some.injEq] at hv; subst hv
-            exact ⟨_, rfl, .inr ⟨(.cls .store, a.store), by simp [Closed.fp], by simp [Region.mem, Cls.has, isArr], by
-              show a.store.Holds _ _ _
-              rw [ha]; trivial⟩⟩
-          | succ l => simp at hv⟩
-      rcases single_post (H _ _ _ hp) with h | ⟨e, he, hm, hh⟩
-      · cases h
-      · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
-        rcases he with rfl | rfl
-        · simp [Region.mem, Cls.has, isArr] at hm
-        · simp only [hb] at hh
-          exact absurd ((Change.holdsB_iff _ _ _ _).mpr hh) (by decide)
 
 end Verification.Footprints

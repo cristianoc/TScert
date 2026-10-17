@@ -482,7 +482,7 @@ theorem offers_sem {G : NormalGraph ι} {arity E K start Cs rest vs n W} {kind :
 checked at with `undefined` for its receiver: `new` enters it so. -/
 theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty ι}
     {L : List (List (Ty ι) × Ty ι)} (fs : List (PropKey × Nat))
-    (hs : ∀ p ∈ L, GraphCodeSpec G arity E K start Cs ⟨U, p.1, p.2, .unrestricted⟩)
+    (hs : ∀ p ∈ L, GraphCodeSpec G arity E K start Cs ⟨U, p.1, p.2, .ordinary⟩)
     (hu : Represents G U .undef)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     ctorsT (excOf G) (L.map fun p => (p.1.map (meaning G), meaning G p.2)) n W
@@ -491,7 +491,7 @@ theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty
   intro q hq j hj V hx hv heap hh args _ ha
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
   refine ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, ?_⟩
-  exact HeapObservations.erase (graph_invoke (row := ⟨U, p.1, p.2, .unrestricted⟩) (hs p hp) hvs hvalues hj hx hv hh
+  exact HeapObservations.erase (graph_invoke (row := ⟨U, p.1, p.2, .ordinary⟩) (hs p hp) hvs hvalues hj hx hv hh
     ((represents_back hu j V _) rfl) (ArgsShort_of_exact ha))
 
 /-- The row a class's graph code is checked at for a variadic construct
@@ -524,7 +524,7 @@ and discards the rest. -/
 theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty ι}
     {S : List (List (Ty ι) × Ty ι × Ty ι)} (fs : List (PropKey × Nat))
     (hs : ∀ s ∈ S, ∃ El, restElem G s.2.1 = some El ∧
-      GraphCodeSpec G arity E K start Cs ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩)
+      GraphCodeSpec G arity E K start Cs ⟨U, ctorRestParams arity s.1 El U, s.2.2, .ordinary⟩)
     (hu : Represents G U .undef)
     (hvs : EnvOk G Cs (envOf vs .nul) n W) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs) :
     ctorRestsT (excOf G) (S.map fun s => (s.1.map (meaning G), argMeaning G s.2.1, meaning G s.2.2)) n W
@@ -551,7 +551,7 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
       args.take (s.1.length + (arity - s.1.length)) := by
     rw [List.take_add]
   rw [hargs'] at hshort
-  have hsafe := graph_invoke (row := ⟨U, ctorRestParams arity s.1 El U, s.2.2, .unrestricted⟩) hspec hvs
+  have hsafe := graph_invoke (row := ⟨U, ctorRestParams arity s.1 El U, s.2.2, .ordinary⟩) hspec hvs
     hvalues hj hx hv hh ((represents_back hu j V _) rfl)
     (args := args.take (s.1.length + (arity - s.1.length)))
     (by simpa [ctorRestParams, List.map_append, List.map_replicate] using hshort)

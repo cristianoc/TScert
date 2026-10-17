@@ -70,18 +70,20 @@ Each type-graph node is a union of clauses:
 | Own-key bounds: each says the object's own keys are `among` its `keys`, or, with `among` false, none of them; a key one does not admit is not the object's own and a read of it continues at the prototype; left out when there are none (also on `dict`) | `{"refs":{"first":[["[]",[2]]],"rest":[],"views":[["[[proto]]",[5]]],"bounds":[{"among":false,"keys":["map"]}]}}` |
 | Plain object with named contracts and readonly index views, each `[class, operand]` with class `"strings"` (every string key), `"numeric"` (the canonical numeric keys) or `"symbols"` (every symbol key); each constrains every present own field under a key of its class | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]],["numeric",[1]]]}}` |
 | Writable index contracts, a mutable index signature's, `[class, operand]` as above: every present own field under a key of the class holds exactly the operand; each is also listed in `indexes`; left out when there are none | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]]],"cells":[["strings",[1,3]]]}}` |
-| Intersection of callable contracts, each with a receiver, arguments, result and required effect  | `{"arrs":{"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":"unrestricted"},{"receiver":[5],"arguments":[[1]],"result":[0],"effect":"unrestricted"}]}}`                                 |
+| Intersection of callable contracts, each with a receiver, arguments, result and required effect  | `{"arrs":{"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null}},{"receiver":[5],"arguments":[[1]],"result":[0],"effect":{"footprint":{"value":"any","store":"any"},"promise":null}}]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false,"presence":"readable"},"rest":[]}}` |
-| Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":"unrestricted"}]}}`             |
+| Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null}}]}}`             |
 | Class value: construct signatures `[params, result]`, which `new` meets; no call signature meets it; `"variadic": [[params, [rest, result]], ...]` when there are any      | `{"ctors":{"signatures":[[[[1,2]],[1,2]]]}}`             |
 | Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                  | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false,"presence":"dense"},"rest":[]}}` |
 
 The arrow example contains two signatures, each with one argument and the
-receiver label 5. Every signature carries `effect: "unrestricted"`,
-`effect: "preservesInputHeap"`, `effect: {"guards":{"param":p}}` or
-`effect: {"asserts":{"param":p}}`, the last two with the promise's type as
-the result ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts));
-omission is refused. Host-relative method
+receiver label 5. Every signature carries `effect: {"footprint": f, "promise": p}`:
+`f` a [closed footprint](FOOTPRINTS.md#changes-and-footprints)
+`{"value": v, "store": s}`, `v` one of `"keep"` and `"any"`, `s` one of
+`"keep"`, `"grow"` and `"any"`, and `p` `null`, `{"guards":{"param":i}}` or
+`{"asserts":{"param":i}}`, the last two with the promise's type as the result
+([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts));
+omission of either field is refused. Host-relative method
 signatures use the same record with `receiver: {}`. A record clause's
 `methods` lists its members as `{"key","calls","rests","schemes","receivers"}`:
 the fixed and variadic signatures, the quantified ones as scheme types, and
@@ -121,7 +123,7 @@ form resolution descriptors, each naming three positions among the binders,
 or two with `r` `null` for an observation (left out when none), and
 `"construct": true` for a construct scheme, a generic constructor type, whose
 signatures are construct signatures, each a contract's arguments and result,
-its receiver `[]` and its effect `"unrestricted"` (left out for a call scheme);
+its receiver `[]` and its effect `{"footprint":{"value":"any","store":"any"},"promise":null}` (left out for a call scheme);
 a **parameter row** `{"param": i, "name": n, "kind": "value" | "arguments"}`, which
 names its own label $i$ and, in `n`, the binder it stands for (the name has no meaning). Its kind is mandatory and is preserved by instantiation and binder renaming;
 or a **meet row** `{"meet": p, "clauses": [...], "also": [...]}`, the value
@@ -320,7 +322,7 @@ this redundancy cannot substitute a different program or different claims.
 
 Subtype arrow certificates use ordered lists of argument types. A `source`
 certificate's `p` is the complete contract record, for example
-`{"source":{"p":{"receiver":[5],"arguments":[[0],[1]],"result":[1],"effect":"unrestricted"}}}` for a two-argument signature whose
+`{"source":{"p":{"receiver":[5],"arguments":[[0],[1]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null}}}}` for a two-argument signature whose
 receiver is label 5; the receiver is contravariant, like the domains. A `union`
 certificate contains `pre`, `a`, `b`, `suffix`, `left`, and `right`: `pre` and
 `suffix` are lists of unchanged argument types, and the selected argument splits

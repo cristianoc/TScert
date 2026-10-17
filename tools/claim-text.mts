@@ -6,6 +6,9 @@ import { decodeClaimType, type Atom } from "./claim.mts";
 import {
   numberOfBits,
   isArrayPresence,
+  isCallEffect,
+  ordinaryEffect,
+  sameEffect,
   presencePrefix,
   type ClauseKey,
   type StringClause,
@@ -18,6 +21,8 @@ import {
 function isObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object";
 }
+/** An ordinary arrow's effect, the one a structural function atom states. */
+const isOrdinary = (effect: unknown): boolean => isCallEffect(effect) && sameEffect(effect, ordinaryEffect);
 /** A list of records where the producer sends one: what arrives may not be one,
  * and a nullish element reaches the field read and throws there, as before. */
 function isRecordList(v: unknown): v is Record<string, unknown>[] {
@@ -459,7 +464,7 @@ function liftClause(types: Table, clause: unknown, depth: number): unknown {
     const rest: unknown[] = Array.isArray(c.rest) ? c.rest : [];
     if ([...(Array.isArray(c.arrows) ? c.arrows : []),
       ...(Array.isArray(c.variadic) ? c.variadic : [])].some(
-        (s: unknown) => !isObject(s) || s.effect !== "unrestricted")) return JSON.stringify(clause);
+        (s: unknown) => !isObject(s) || !isOrdinary(s.effect))) return JSON.stringify(clause);
     const signatures = liftSignatures(types, c.arrows, c.variadic, depth);
     if (rest.length || signatures.length !== 1) return JSON.stringify(clause);
     return {
@@ -472,7 +477,7 @@ function liftClause(types: Table, clause: unknown, depth: number): unknown {
   if (isObject(arrs)) {
     if ([...(Array.isArray(arrs.arrows) ? arrs.arrows : []),
       ...(Array.isArray(arrs.variadic) ? arrs.variadic : [])].some(
-        (s: unknown) => !isObject(s) || s.effect !== "unrestricted")) return JSON.stringify(clause);
+        (s: unknown) => !isObject(s) || !isOrdinary(s.effect))) return JSON.stringify(clause);
     const arrows = liftSignatures(types, arrs.arrows, arrs.variadic, depth);
     if (arrows.length) return arrows.length === 1 ? arrows[0] : shown(arrows);
   }
@@ -512,12 +517,12 @@ function liftSignatures(
   const sigs: unknown[] = Array.isArray(variadic) ? variadic : [];
   return [
     ...arrows.map((arrow) => {
-      if (!isObject(arrow) || arrow.effect !== "unrestricted")
+      if (!isObject(arrow) || !isOrdinary(arrow.effect))
         throw new TypeSyntaxError("a qualified signature has no structural form");
       return atom(arrow.receiver, arrow.arguments, arrow.result);
     }),
     ...sigs.map((sig) => {
-      if (!isObject(sig) || sig.effect !== "unrestricted")
+      if (!isObject(sig) || !isOrdinary(sig.effect))
         throw new TypeSyntaxError("a qualified signature has no structural form");
       const [domain, rest]: unknown[] = Array.isArray(sig.arguments) ? sig.arguments : [];
       return atom(sig.receiver, domain, sig.result, restElement(types, rest));

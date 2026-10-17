@@ -6,13 +6,23 @@ let items k j = list (field k j)
 let natural j = match j with
   | Number n -> (match int_of_string_opt n with Some i when i >= 0 -> i | _ -> fail "expected a natural number")
   | _ -> fail "expected a natural number"
-(* A signature's effect, as the wire spells it: a heap effect's name, or a
-   promise naming its parameter. *)
-let effect_of = function
-  | String "unrestricted" -> Unrestricted
-  | String "preservesInputHeap" -> PreservesInputHeap
+(* A closed footprint and a signature's effect, as the wire spells them. *)
+let change_of allowed j =
+  match List.assoc_opt (str j) ["keep",Keep;"grow",Grow;"any",Any] with
+  | Some d when List.mem d allowed -> d
+  | _ -> unsupported "unknown footprint change"
+let footprint_of j = match j with
+  | Object fields when List.sort String.compare (List.map fst fields) = ["store";"value"] ->
+    {on_value=change_of [Keep;Any] (field "value" j);on_store=change_of [Keep;Grow;Any] (field "store" j)}
+  | _ -> unsupported "invalid footprint"
+let promise_of = function
   | Object [("guards",Object [("param",p)])] -> Guards (natural p)
   | Object [("asserts",Object [("param",p)])] -> Asserts (natural p)
+  | _ -> unsupported "unknown callable promise"
+let effect_of j = match j with
+  | Object fields when List.sort String.compare (List.map fst fields) = ["footprint";"promise"] ->
+    {footprint=footprint_of (field "footprint" j);
+     promise=(match field "promise" j with Null -> None | p -> Some (promise_of p))}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None
@@ -218,7 +228,7 @@ let rec source_type ctx j =
           let readonly = List.mem_assoc "readonly" (obj f) in
           {name=property_key (field "name" f);optional=false;read=t;write=(if readonly then None else Some t);
            host=false;receivers=[]}) (list fs) in
-    Atoms [Ctors ([{call_effect=Unrestricted;quantified=[];receiver=top;params=List.map recur (items "params" j);
+    Atoms [Ctors ([{call_effect=ordinary_effect;quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;rest_pack;result=recur (field "result" j)}],statics)]
   | "function" ->
     let receiver = match field "receiver" j with Null -> top | source -> recur source in
@@ -404,7 +414,7 @@ let guard_of binders = function
   | Null -> None
   | j ->
     let param = natural (field "param" j) in
-    Some ((if boolean (field "asserts" j) then Asserts param else Guards param),
+    Some (promise_effect (if boolean (field "asserts" j) then Asserts param else Guards param),
       source_type binders (field "type" j))
 let span_start j = match list j with
   | Number n :: _ -> int_of_string n
