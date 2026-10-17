@@ -77,8 +77,13 @@ export function expr(this: Gate, node: Expression): Expr {
   if (ts.isTemplateExpression(node)) return gate.template(node);
 
   if (ts.isIdentifier(node)) {
-    if (node.text === "undefined")
+    // `undefined` is the value where TypeScript binds it to the global; a
+    // binding of that name (an import's) is no value the fragment reads.
+    if (node.text === "undefined") {
+      if (!gate.globalUndefined.has(gate.span(node).join(":")))
+        gate.fail(node, "a binding named `undefined` other than the global is outside the fragment");
       return { k: "lit", pos: gate.span(node), lit: { a: "undefined" } };
+    }
     // A class is a value like any other: its construct-only code is what a
     // plain call cannot run, which its type records. Its own name in its
     // instance members, which run only once the class exists, is its class
@@ -436,10 +441,19 @@ export function expr(this: Gate, node: Expression): Expr {
     if (gate.globalConstructs.has(gate.span(node).join(":")))
       return { k: "new", pos: gate.span(node), callee: gate.expr(node.expression),
         args: node.arguments.map(a => gate.expr(a)) };
+    // `Object.assign` of the global `Object` is the intrinsic only where
+    // TypeScript binds both names to the standard library alone: a
+    // declaration augmenting `ObjectConstructor.assign` states another
+    // contract, which no global value carries here.
+    if (ts.isPropertyAccessExpression(node.expression) &&
+        gate.assignObjects.has(gate.span(node.expression.expression).join(":")) &&
+        !(gate.libraryName(node.expression.expression) && gate.libraryName(node.expression.name)))
+      gate.fail(node, "Object.assign here is not the standard library's alone: a declaration augments it, " +
+        "and the fragment reads Object.assign only as the standard intrinsic");
     if (
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === "assign" &&
-      gate.libraryName(node.expression.expression)
+      gate.libraryName(node.expression.expression) && gate.libraryName(node.expression.name)
     ) {
       if (node.questionDotToken || node.expression.questionDotToken)
         gate.fail(node, "an optional call of Object.assign is outside the fragment");
@@ -1004,7 +1018,7 @@ export function localArrow(this: Gate, node: Expression, seen = new Set<number>(
     ts.isCallExpression(node) &&
     ts.isPropertyAccessExpression(node.expression) &&
     node.expression.name.text === "assign" &&
-    gate.libraryName(node.expression.expression)
+    gate.libraryName(node.expression.expression) && gate.libraryName(node.expression.name)
   )
     // Its initializer is separately parsed through the full Object.assign
     // gate. Do not parse it again here: its body may refer back to this name.

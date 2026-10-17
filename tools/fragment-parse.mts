@@ -310,6 +310,12 @@ export class Gate {
   /** The names TypeScript binds to the standard library's declarations
    * alone, among those the gate lowers specially (`libraryNames`), by span. */
   readonly libraryNames = new Set<string>();
+  /** The identifiers spelled `undefined` that TypeScript binds to the global
+   * `undefined`, by span: those alone read the value `undefined`. */
+  readonly globalUndefined = new Set<string>();
+  /** The global `Object`s of `Object.assign` calls, which no global value
+   * stands for: each is the intrinsic or refused, by span. */
+  readonly assignObjects = new Set<string>();
 
   constructor(file: SourceFile) {
     this.file = file;
@@ -934,6 +940,18 @@ export function parseFile(file: string, carriesContext = false,
   const members = namespaceMembers(source, checker, (node, message) => gate.fail(node, message));
   gate.namespaceUses = memberUses(members, source);
   const memberNodes = [...gate.namespaceUses.values()].map(({ use }) => use.node);
+  // Each `undefined` the file reads, decided by what TypeScript binds it to.
+  const undefinedNodes: Identifier[] = [];
+  const findUndefined = (node: Node): void => {
+    if (ts.isTypeNode(node)) return;
+    if (ts.isIdentifier(node) && node.text === "undefined") undefinedNodes.push(node);
+    node.forEachChild(findUndefined);
+  };
+  findUndefined(source);
+  checker.getSymbolAtLocation(undefinedNodes).forEach((symbol, i) => {
+    const node = undefinedNodes[i];
+    if (node && symbol && checker.isUndefinedSymbol(symbol)) gate.globalUndefined.add(gate.span(node).join(":"));
+  });
   const aliasNodes: TypeAliasDeclaration[] = [];
   const interfaceNodes: InterfaceDeclaration[] = [];
   const classNodes: ClassDeclaration[] = [];
@@ -1131,6 +1149,7 @@ export function parseFile(file: string, carriesContext = false,
       const parent = node.parent;
       const intrinsic = node.text === "Object" && ts.isPropertyAccessExpression(parent) &&
         parent.expression === node && parent.name.text === "assign";
+      if (intrinsic) gate.assignObjects.add(gate.span(node).join(":"));
       if (childOf(parent, "name") !== node && childOf(parent, "propertyName") !== node &&
           childOf(parent, "label") !== node && !intrinsic)
         globalValueNodes.push(node);
@@ -1197,7 +1216,7 @@ export function parseFile(file: string, carriesContext = false,
     if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
       if (["call", "apply", "bind"].includes(node.name.text)) libraryNameNodes.push(node.name);
       if (node.name.text === "assign" && ts.isIdentifier(node.expression) && node.expression.text === "Object")
-        libraryNameNodes.push(node.expression);
+        libraryNameNodes.push(node.expression, node.name);
     }
     node.forEachChild(findLibraryNames);
   };

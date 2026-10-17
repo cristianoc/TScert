@@ -177,16 +177,22 @@ function namesArray(value: unknown): boolean {
 
 /** A module's identity: the client by its absolute path, a standard library
  * file by name, anything else by its real path relative to the project. */
-function moduleIds(clientFile: string, root: string): (file: SourceFile) => string {
+function moduleIds(clientFile: string, root: string, program: Program): (file: SourceFile) => string {
   const client = realpathSync(clientFile);
   const projectRoot = realpathSync(root);
+  // The standard library is the files the compiler's own library resolution
+  // gives the program (`isSourceFileDefaultLibrary`), whatever else is
+  // named like one; only names of that form are asked.
+  const libraries = new Set(program.getSourceFileNames().filter(name => /^lib\..*\.d\.ts$/.test(basename(name)))
+    .flatMap(name => {
+      const file = program.getSourceFile(name);
+      return file && program.isSourceFileDefaultLibrary(file) ? [realpathSync(name)] : [];
+    }));
   return file => {
     const path = realpathSync(file.fileName);
     if (path === client) return clientFile;
-    const inside = relative(projectRoot, path).split(sep).join("/");
-    if (/^lib\..*\.d\.ts$/.test(basename(path)) && inside.startsWith("../"))
-      return `typescript/lib/${basename(path)}`;
-    return inside;
+    if (libraries.has(path)) return `typescript/lib/${basename(path)}`;
+    return relative(projectRoot, path).split(sep).join("/");
   };
 }
 
@@ -553,7 +559,7 @@ export function collectDeclarations(file: string, options: {
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
-    const idOf = moduleIds(clientFile, root);
+    const idOf = moduleIds(clientFile, root, program);
     // Everything the graph uses must be code TypeScript accepts: an error in a
     // used declaration or on the resolution path refuses it. Errors elsewhere in
     // those files, and in the client's function bodies, are not the graph's.

@@ -20,7 +20,11 @@ Cases naming a project read their imports from it:
 `pipeline/library-project/` is a typed library of reactive collections
 (`collections.ts`) with Node's pinned types, read by the `collections-*` cases;
 `pipeline/compiler-api-project/` resolves the compiler API, the package
-`typescript` the front end pins, for the `*compiler-api*` cases.
+`typescript` the front end pins, for the `*compiler-api*` cases;
+`pipeline/augmented-project/` augments `ObjectConstructor` from a module of
+its own, and `pipeline/fake-lib-project/` reads `pipeline/fake-lib/`, a file
+named like a standard library file, for the `*augmented*` and `*fake-lib*`
+cases.
 Lean tests build alongside the implementation in `lean/Verification/Tests/`.
 
 This directory holds the suites that check the repository around the pipeline:

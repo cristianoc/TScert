@@ -1,0 +1,12 @@
+{
+  // A project whose own module augments the standard library's
+  // `ObjectConstructor` with another `assign`: the `*augmented*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["./augment.ts", "../examples/*augmented*.ts"]
+}
