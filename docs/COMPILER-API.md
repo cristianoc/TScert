@@ -182,7 +182,10 @@ are ordinary types.
    primitive or a memoized object) is a **readonly view**, whether or not
    its declaration is `readonly`, so a client write to it is refused. The
    contract lists the members whose read allocates (`jsDoc`); such a member
-   is refused at its read.
+   is refused at its read, in every form that reads a member, chosen by the
+   member TypeScript binds the read to: `o.m`, `o?.m`, `o["m"]`, a binding
+   or assignment pattern's key, nested and with defaults. `"m" in o` reads
+   no member's value and runs no getter.
 2. **`any` states nothing.** A member declared `any` is an optional member
    of type `unknown`. A brand is such a member; reading one gives
    `undefined`.

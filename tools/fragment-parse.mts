@@ -1222,12 +1222,25 @@ export function parseFile(file: string, carriesContext = false,
     node.forEachChild(findLibraryNames);
   };
   if (!carriesContext) findLibraryNames(source);
-  // Reads of a member spelled as a host member whose read allocates
-  // (`allocatingMembers`): TypeScript decides which are that member.
+  // The keys of member reads spelled as a host member whose read allocates
+  // (`allocatingMembers`), in every form that reads a member: `o.m` and
+  // `o?.m`, `o["m"]`, a binding pattern's `{ m }`, `{ m: x }`,
+  // `{ ["m"]: x }`, and an assignment pattern's. TypeScript decides which
+  // are that member. `"m" in o` reads no member's value.
   const allocatingNodes: Node[] = [];
+  const allocatingKey = (key: Node | undefined): Node | undefined => {
+    const named = key && ts.isComputedPropertyName(key) ? key.expression : key;
+    return named && (ts.isIdentifier(named) || ts.isStringLiteral(named) || ts.isNoSubstitutionTemplateLiteral(named)) &&
+      allocatingMembers.some(m => m.name === named.text) ? named : undefined;
+  };
   const findAllocating = (node: Node): void => {
-    if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name) &&
-        allocatingMembers.some(m => m.name === node.name.text)) allocatingNodes.push(node.name);
+    const key = ts.isPropertyAccessExpression(node) ? allocatingKey(node.name)
+      : ts.isElementAccessExpression(node) ? allocatingKey(node.argumentExpression)
+      : ts.isBindingElement(node) && node.parent && ts.isObjectBindingPattern(node.parent)
+        ? allocatingKey(node.propertyName ?? node.name)
+      : ts.isShorthandPropertyAssignment(node) || ts.isPropertyAssignment(node) ? allocatingKey(node.name)
+      : undefined;
+    if (key) allocatingNodes.push(key);
     node.forEachChild(findAllocating);
   };
   if (!carriesContext) findAllocating(source);
