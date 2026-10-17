@@ -356,6 +356,29 @@ signatures keeps their footprints as a conjunction. A code entry's row states
 a footprint over `receiver`, `arg i`, `self` and `cap i`; its arrow type
 closes the `cap i` entries by their class containments, else to `all`.
 
+**A signature's effect** is a footprint over its operand roots, a
+fresh-result flag and an optional promise: $`(\Phi, \phi, \pi)`$ with
+$`\Phi`$ a list of entries whose regions are the classes, `all`, and `own`
+or `field(·, k)` rooted at `receiver`, `arg i` or `self`. Its postcondition,
+from the heap $`h`$ the call starts in, is $`\mathsf{Post}_\Phi(\rho)(h,h')`$
+with $`\rho`$ the call's operands, and, when $`\phi`$ holds, every own
+location of the result at least $`|h|`$. A closed footprint is the instance
+with class regions alone, and $`\phi`$ false the instance stating nothing of
+the result. One signature covers another when its entries lie within the
+other's (`Footprint.le` without class evidence), its flag implies the
+other's and the promises are equal. The natives use the operand regions and
+the flag: a regex literal's intrinsic $`(\emptyset, \top, -)`$; a global
+regex's `[Symbol.replace]` $`(\{\mathsf{own}(\mathsf{receiver}){:}\,\mathsf{any}\}, \bot, -)`$;
+`%Dispatch:replace%` at a target whose member states that,
+$`(\{\mathsf{own}(\mathsf{arg}\ 1){:}\,\mathsf{any}\}, \bot, -)`$, a further
+signature of its intersection (audited, as its empty-footprint signature);
+`Set`'s constructor and `%Iterate%` fresh, `add` `own(receiver)`, an
+iterator's step `own(self)`. The graph checker of an invocation's entry
+footprint (the [composition](#composition) check with $`\Phi_q`$ given) has
+the empty-footprint check as its instance $`\Phi_q = \emptyset`$: a node's
+call entry `own(x)` with `after(x) = 0` transports to nothing, so a callback
+allocating a regex and replacing through it has the empty footprint.
+
 ## Natives
 
 Each native's footprint is a footprint of this vocabulary. The footprints,
@@ -596,3 +619,15 @@ controls, and updates the documents that own its subject.
    operands. Footprints over operands substituted at the call need a
    Lean-native binder or call-site rely checks; how often a closed footprint
    refuses a safe callback is a census question.
+3. **Stamps beside allocation separation.** The `after` stamps that
+   [provenance](#provenance) places in `HeapKnowledge` (with the invocation's
+   entry heap length as mark 0, which `HeapKnowledge.Holds` and the graph
+   state invariant then take as a parameter) state freshness, and so do the
+   distinct links an allocation adds (`HeapExpressionRules.allocOutput`,
+   `Observations.distinctLinks`, `Bindings.mutableBinding`'s `apart`), which
+   frame cell facts across writes. Increment 5 puts stamps in place of the
+   latter, which needs `before` stamps and `stamps_separate` in the write
+   framing. The fresh-result flag needs `after` stamps first. Undecided:
+   whether stamps enter beside the distinct links until increment 5, a
+   second freshness analysis for one increment, or replace them in the same
+   step, moving the write framing of increment 5 forward.
