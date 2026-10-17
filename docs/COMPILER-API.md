@@ -907,8 +907,6 @@ The reading rules split along the same dependencies:
   refusal of a member whose read allocates. A readonly view would refuse the
   writes, but would also refuse the `if-field` narrowing the node invariant
   rests on, and is not a stage of rule 1.
-- Rules 2, 4 and 5 and the contract file (views, branded types, the
-  corrections table and every reviewed declaration text) depend on neither.
 - The corrections apply to node shapes, which the node invariant builds:
   three of the eight are members a kind inherits
   (`NoSubstitutionTemplateLiteral.rawText` and `.templateFlags` from
@@ -916,12 +914,15 @@ The reading rules split along the same dependencies:
   only a member-complete shape states per kind.
 - Until $`\mathsf{NodeList}`$, every declaration that reaches `Node` is
   refused: `NodeArray` is reached from `Node.forEachChild`'s list visitor and
-  from every list member. This includes every view member taking or giving
-  a node (`getTypeAtLocation(node: Node)`, `NodeHandle.resolve()`). So the
-  cases of rules 2, 4 and 5 use host types that reach no node (the sync
-  API's data interfaces, view members over symbols, types and flags), and
-  their application to node declarations is tested with the node
-  invariant.
+  from every list member, and so is every view member taking or giving a
+  node (`getTypeAtLocation(node: Node)`, `NodeHandle.resolve()`).
+
+So the pieces land in this order: immutable fields in the calculus, then
+rule 1 with the allocating-member refusal; foreign arrays and
+$`\mathsf{NodeList}`$; then rules 2, 4 and 5, the contract file (views,
+branded types, the corrections table, every reviewed declaration text) and
+the node invariant, each tested on the host types the front end reads,
+nodes among them.
 
 ## A measured slice
 

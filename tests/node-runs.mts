@@ -693,6 +693,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runImporting("shadowed-library-names-value-import", "`${assigned()}|${called()}`"), "assigned 1|2");
   assert.equal(runExample("shadowed-library-names",
     "[localMax(), parameterJson({ stringify: (n) => n * 10 }), ownCall()].join()"), "local 3,30,8");
+  // Imported constants stated by their literals.
+  assert.equal(runImporting("literal-constant-value-import", "`${greeted()}|${shifted()}`"), "hello|0");
   // An import bound to the name `undefined` reads the imported number.
   assert.equal(runImporting("invalid-undefined-import-value-import", "read()"), 10);
   // `Object.assign(1)` is the standard copy whatever a declaration augments:

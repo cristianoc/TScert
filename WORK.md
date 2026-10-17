@@ -286,16 +286,12 @@ The first blockers, by the number of slices each stops (2026-10-17):
 
 The source annotations to add, apart from the compiler API (2026-10-17, by
 the slices each stops): the module constants holding arrows without an
-annotation of their own, `promiseEffect` (16), `nameOf` (12),
-`footprintEffect` (7), `isStatic` (6), `numberOfBits` (5),
-`enumIntrinsicName`, `enumMemberName`, `freshName` and `selfName` (1 each),
+annotation of their own, `nameOf` (20), `skipParentheses` (17),
+`promiseEffect` (16), `footprintEffect` (7), `isStatic` (6),
+`numberOfBits` (5), `enumIntrinsicName`, `enumMemberName`, `freshName`,
+`parameterName` and `selfName` (1 each),
 each needing its function type written on the constant or the arrow written
-as a function declaration. Two more, `asyncCompleteName` (18) and
-`GENERIC_METHOD_RECEIVER` (8), are constants initialized by a string
-literal, which the [table of types stated by
-annotations](docs/SOURCE-FRAGMENT.md#types-stated-by-annotations) admits and
-the declaration reader's reading of an imported value refuses: a reader gap,
-not a missing annotation.
+as a function declaration.
 
 Ten slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering

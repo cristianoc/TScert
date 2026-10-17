@@ -33,7 +33,7 @@ import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, m
   type RegExpKeys } from "./regexp.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
-import { SweepError, writtenApplications, type Entity } from "./written-applications.mts";
+import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 
@@ -1065,7 +1065,22 @@ export function collectDeclarations(file: string, options: {
       }
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
         const list = node.parent;
-        if (!ts.isVariableDeclarationList(list) || !(list.flags & ts.NodeFlags.Const) || !node.type)
+        const constant = ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) !== 0;
+        // A constant initialized by a literal naming nothing states its type
+        // by that literal (SOURCE-FRAGMENT.md, "Types stated by
+        // annotations"): a primitive literal its literal type, an object
+        // literal of such the record TypeScript infers. An array literal or
+        // one `as const` is no type the reader states yet.
+        if (constant && !node.type && node.initializer && literal(node.initializer)) {
+          const type = checker.getTypeAtLocation(node.name);
+          const term = type ? inferredTerm(checker, type, span) : null;
+          if (!term)
+            throw Error(`a declared value must be an annotated constant, function or class, or a constant initialized by a primitive literal or an object literal of such: ${what}`);
+          clean(node, `${idOf(source)}#${node.name.text}`);
+          return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
+            typeParams: [], type: term };
+        }
+        if (!constant || !node.type)
           throw Error(`a declared value must be an annotated constant, function or class: ${what}`);
         clean(node, `${idOf(source)}#${node.name.text}`);
         // A `unique symbol` constant holds the symbol its declaration names,

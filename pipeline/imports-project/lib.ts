@@ -316,3 +316,9 @@ export function assign(n: number): string {
 export function call(n: number): number {
   return n + 1;
 }
+/** Constants stated by their literals; the cases
+ * literal-constant-value-import and literal-array-constant-value-import read
+ * them. */
+export const greeting = "hello";
+export const origin = { x: 0, y: -1, label: "o" };
+export const offsets = [1, 2];
