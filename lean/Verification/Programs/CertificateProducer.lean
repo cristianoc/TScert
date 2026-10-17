@@ -476,6 +476,24 @@ only a body check that admits those aliases accepts. -/
 instance [DecidableEq ι] (G : NormalGraph ι) (B : Ty ι) (tag : Tag) (q : Bool) :
     Decidable (Answers G B tag q) := by unfold Answers; infer_instance
 
+/-- The arms a chain of tests decided by the context selects: each step a
+test of a slot whose type answers it, with the arm taken. The final term is
+the first that is no such test. A chain costs one search step, however long:
+each of its steps is decided, so nothing is searched. -/
+def decidedChain [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : Tm → List (Tm × Bool) × Tm
+  | t@(.ite (.test tag (.var i)) u e) =>
+    match Γ[i]? with
+    | some B =>
+      if decide (Answers G B tag true) then
+        let (steps, last) := decidedChain G Γ u
+        ((t, true) :: steps, last)
+      else if decide (Answers G B tag false) then
+        let (steps, last) := decidedChain G Γ e
+        ((t, false) :: steps, last)
+      else ([], t)
+    | none => ([], t)
+  | t => ([], t)
+
 /-- Search ordinary typing rules. Every recursive expression request decreases
 search fuel, including implicit let typing. Suggestions only prioritize candidate
 types; every premise is proved in the actual context, even when the suggestion
@@ -938,10 +956,10 @@ came from a different context. No execution budget is inspected. -/
             if let some L := vs.lookup lengthKey then
               if PositiveRules.numIn G L then
                 return coerce G images aliases (.node ⟨Γ,t,L⟩ (.lenView i) []) A
-      if decide (Answers G B tag true) then
-        return (recur Γ u A).map fun p => .node ⟨Γ,t,A⟩ .ifTrue [p]
-      if decide (Answers G B tag false) then
-        return (recur Γ e A).map fun p => .node ⟨Γ,t,A⟩ .ifFalse [p]
+      if decide (Answers G B tag true) || decide (Answers G B tag false) then
+        let (steps, last) := decidedChain G Γ t
+        return (recur Γ last A).map fun p => steps.foldr (fun (s, q) p =>
+          .node ⟨Γ,s,A⟩ (if q then .ifTrue else .ifFalse) [p]) p
       -- Split only an explicit union. A singleton whose graph clause itself
       -- mixes shapes is not made smaller by repeating this rule; its answer
       -- is unknown, the test is a Boolean, and both arms are typed.

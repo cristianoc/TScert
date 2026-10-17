@@ -640,11 +640,18 @@ prepared predicate without replaying an effectful source operand. -/
       let alias := match origin with
         | .var _ name => valueSlot scope' name
         | _ => none
+      -- A tested Boolean is correlated: each arm is reached by the tested
+      -- expression's own dispatch and rebinds the outcome. So is a left
+      -- operand read for its truthiness alone (role `truth`,
+      -- `SourceExecution.buildCondition`), whatever its type: its arms
+      -- rebind the outcome, a Boolean, which is all a reader sees.
+      let truthOnly := binding.role == "truth"
       let correlated := test == .truthy && !Y.isEmpty && !N.isEmpty &&
-        BranchRefinement.onlyBoolean G A && readOnly origin && !origin.freeNames.contains ""
+        (BranchRefinement.onlyBoolean G A || truthOnly) && readOnly origin && !origin.freeNames.contains ""
       let arrays ← if correlated && arrayTested origin then some <$> builtinArrayTy else pure none
       let singles ← if correlated then conditionSingletons G scope' Δ origin else pure []
       let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) => do
+        let T := if correlated && truthOnly then (if truth then [Labels.tru] else [Labels.fls]) else T
         let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) else
           match alias with
           | some i => Δ.set i T
@@ -655,7 +662,10 @@ prepared predicate without replaying an effectful source operand. -/
         let sc := bound :: scope'.tail
         let savedTypes := previous.types.map fun (name,B) =>
           (name, ((resolve sc name).bind fun (i,_) => types[i]?).getD B)
-        withExecutionBindings ⟨(binding.name,T)::savedTypes,(binding.name,origin)::previous.origins⟩ do
+        -- A rebound truthiness is that Boolean, no longer the tested value.
+        let bindingOrigin := if correlated && truthOnly then Fragment.Expr.lit binding.source (.vbool truth)
+          else origin
+        withExecutionBindings ⟨(binding.name,T)::savedTypes,(binding.name,bindingOrigin)::previous.origins⟩ do
           let target ← executePlanTail recursive fc sc types body k
           if correlated then
             let mapping := (target.mapping.getD (List.range types.length)).map
@@ -687,7 +697,7 @@ The final pure predicate uses the retained operands to justify refinements. -/
 @[nospecialize] partial def compileCondition (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (cond : Fragment.Expr)
     (yes no : Target) : Compiler Target :=
-  executePlanTail recursive fc scope Γ (SourceExecution.build cond) fun inner Δ origin => do
+  executePlanTail recursive fc scope Γ (SourceExecution.buildCondition cond) fun inner Δ origin => do
     let offset := Δ.length - Γ.length
     let adapt := fun (target : Target) =>
       ⟨target.label,some ((target.mapping.getD (List.range Γ.length)).map (·+offset))⟩

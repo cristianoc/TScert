@@ -262,11 +262,6 @@ the same-file declarations it uses). The first blockers of the others in
 - `new Set` of a string, the parameter the overlay states only at an array,
   in the module constants `BINDERS` and `RELATIONS` (mathRoles; through it
   math, lowering, rules, section, card, pageBody: 7);
-- a conditional expression whose condition is `a && b`, where `b` narrows a
-  variable the branch reads (`CLASS[r] && r !== "text" ? … CLASS[r] …`): the
-  producer narrows through `b`, which the lowering, testing the value of
-  `a && b`, does not establish (math, lowering; through them rules, section,
-  card, pageBody: 6);
 - a variadic call with a spread argument in a bounded body,
   `Math.max(0, ...ends)` (rules; through it section, card, pageBody: 4;
   [footprints](#footprints));

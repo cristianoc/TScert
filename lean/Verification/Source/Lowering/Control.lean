@@ -144,7 +144,11 @@ leaves its operand that value alone, which `tagMember` checks on the edge. -/
         | some l => Γ.set i [l]
         | none => Γ.set i sliced
     else if let some i := testedSlot scope Γ cond then
-      Γ.set i (if answer then [Labels.tru] else [Labels.fls])
+      -- A tested Boolean is the outcome; any other tested value is of the
+      -- labels its truthiness admits.
+      if BranchRefinement.onlyBoolean G (Γ[i]?.getD []) then
+        Γ.set i (if answer then [Labels.tru] else [Labels.fls])
+      else Γ.set i (BranchRefinement.tagSlice G (Γ[i]?.getD []) .truthy answer)
     else Γ
 where
   /-- Two paths' contexts over the same slots: a slot either path leaves at

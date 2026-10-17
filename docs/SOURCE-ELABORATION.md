@@ -528,6 +528,26 @@ whose Boolean/null observations justify the intermediate and successor contexts.
 It also checks the complete expression claim using the derived expression form.
 Thus graph decomposition cannot silently discard the producer's condition type.
 
+A condition read for its truthiness alone, a statement guard's or a
+conditional expression's test, is a short-circuit dispatch whatever its left
+operand's type. Where that operand is no test (a comparison, a shape or
+singleton test, `!`, `in`), the operator's value may be it, not a Boolean;
+read for its truthiness, the value is that truthiness:
+
+```math
+\mathsf{truth}(a\mathbin{\&\&}b)=\mathsf{truthy}(a)\land\mathsf{truth}(b),
+\qquad
+\mathsf{truth}(a\mathbin{\Vert}b)=\mathsf{truthy}(a)\lor\mathsf{truth}(b).
+```
+
+Each arm of the left operand's dispatch rebinds its outcome, `true` or
+`false`, and the right operand runs where the left is truthy (`&&`) or falsy
+(`||`), in the context the left operand's outcome leaves: a tested variable
+is a Boolean outcome where it is a Boolean, and otherwise the labels of its
+type its truthiness admits (`conditionContext`). So `s && r !== "a" ? r : x`
+sees `r` at `"b"` in its first arm (`logical-truth-narrowing`), and
+`s || r !== "a" ? r : x` does not (`invalid-logical-truth-or-narrowing`).
+
 A chain of one operator is read right-nested, the parser's left nesting
 reassociated:
 

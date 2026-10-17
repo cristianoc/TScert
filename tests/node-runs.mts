@@ -71,6 +71,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "map-literal-at-expected-element: each token's kind is one the type names");
   assert.equal(runExample("invalid-map-literal-outside-element", `tokens([" "])[0].kind`), "space",
     "invalid-map-literal-outside-element: the actual source returns a kind its type does not name");
+  assert.equal(runExample("logical-truth-narrowing", `[guarded("b", "x"), chosen("a", "x"), chosen("b", ""), classOf("kw", "e")].join()`),
+    'b,,,<span class="m-kw">e</span>', "logical-truth-narrowing: the guarded branches see `r` at \"b\"");
+  assert.equal(runExample("invalid-logical-truth-or-narrowing", `chosen("a", "x")`), "a",
+    "invalid-logical-truth-or-narrowing: the actual source returns \"a\" at a \"b\" contract");
   assert.equal(runExample("invalid-map-spread-pop", "Object.keys(drained([1, 2, 3])).length"), 2,
     "invalid-map-spread-pop: the result has three positions, two present");
   assert.equal(runExample("invalid-map-filter-pop", "Object.keys(trimmed([\"a\", \"b\", \"c\"])).length"), 2,
