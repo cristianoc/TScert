@@ -262,25 +262,6 @@ theorem grow_safe {Ξ R : Fam} {b : Nat} : ∀ {n W h t}, b ≤ h.length → Saf
     · exact .inl (.inr hth)
     · exact .inr ⟨U, h', t', hx, hu, step, hh, ih (Nat.le_trans hb (step_length_le step)) hs⟩
 
-/-- A run's result property, beside the heap's growth from where it starts. -/
-theorem grow_value_safe {Ξ R : Fam} {Q : HeapObservations.Post} (hq : ∀ n W h v, R n W v → Q h v) :
-    ∀ {n W h t}, Safe Ξ R n W h t →
-      HeapObservations.SafePost Ξ R (fun h' v => h.length ≤ h'.length ∧ Q h' v) n W h t := by
-  intro n W h t hs
-  have hg := grow_safe (Nat.le_refl h.length) hs
-  clear hs
-  revert hg
-  generalize hb : h.length = b
-  intro hg
-  clear hb
-  induction n generalizing h t with
-  | zero => trivial
-  | succ n ih =>
-    rcases hg with (⟨hv, ht, hl⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
-    · exact .inl (.inl ⟨hv, ht, hl, hq _ _ _ _ ht⟩)
-    · exact .inl (.inr hth)
-    · exact .inr ⟨U, h', t', hx, hu, step, hh, ih hs⟩
-
 /-- **Every safe run meets the footprint letting everything change.** -/
 theorem Closed.top_safe {Ξ R : Fam} {n W h t} (hs : Safe Ξ R n W h t) :
     HeapObservations.SafePost Ξ R (fun h' _ => Closed.top.Holds h h') n W h t :=

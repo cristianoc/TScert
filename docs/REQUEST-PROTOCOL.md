@@ -341,22 +341,20 @@ position. Source function types, closures and calls preserve required parameter
 lists, including empty lists for zero-argument thunks. There is one accepted certificate shape.
 
 All node objects explicitly contain `expression`, `edges`, `knowledge`, `effect`
-and `output`. `knowledge` and `output` each contain `cells`, `values`, `links` and `stamps`. The first two are lists of
+and `output`. `knowledge` and `output` each contain `cells`, `values`, and `links`. The first two are lists of
 `{slot, contents, field}` facts. `contents` is a disjunction of primitive
 predicates: `nul`, `undef`, `tru`, `fls`, `num`, `str`, `defined`, `nonNull`, `nonNullish`,
 `{"numLit":{"bits":"…"}}`, with the same unsigned 64-bit decimal encoding as
 numeric graph clauses, or `{"strLit":{"value":"…"}}`. The empty list is
 impossible. A singleton fact can weaken to its family, never the reverse. `links` is a list of
-`{cell, value, alias, field, optional}` objects: `alias: true` means equal
+`{cell, value, alias, field, distinct, other, optional}` objects: `alias: true` means equal
 slot values; `alias: false` means the named field currently contains the other
 slot's value, or, with `optional: true`, that the object lacks the key and the
-other slot holds `undefined`. `stamps` is `{after, before}`: `after` lists
-`[slot, mark]`, every own location of the slot's object at least the mark;
-`before` lists `[slot, [mark, fields]]`, those fields of the slot's object below
-the mark, for some monotone valuation of the marks by heap lengths at most the
-current one ([provenance](FOOTPRINTS.md#provenance)). Allocation establishes
-them, and they are the reason a write to one cell keeps facts about another.
-These are finite state assertions, not extra type labels.
+other slot holds `undefined`; `distinct: true` means field `field` of the object in `cell` and
+field `other` of the object in `value` are different locations, a timeless fact
+established by allocation, since fresh locations differ from every field of
+every record-typed slot in scope, and the reason a write to one cell keeps
+facts about another. These are finite state assertions, not extra type labels.
 Nodes also contain `implies`, `yields`, `arguments` and `promise`, which
 only a request's `promise` makes other than empty or `null`. `implies` lists `{test, target, type}`: where the Boolean in
 slot `test` is `true`, slot `target` holds a `type`; incoming edges must

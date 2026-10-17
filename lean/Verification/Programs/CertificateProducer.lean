@@ -1150,7 +1150,7 @@ where
   from: each at the arms whose field answers the test so. -/
   throughFields (i : Nat) (tag : Tag) (q : Bool) : List (PromiseCalls.Yield ι) :=
     k.links.filterMap fun g =>
-      if g.alias || g.optional || g.value != i then none else do
+      if g.distinct || g.alias || g.optional || g.value != i then none else do
         let A ← Γ[g.cell]?
         let sliced := BranchRefinement.fieldSlice G A g.field tag q
         if sliced == A then none
@@ -1368,13 +1368,13 @@ starts empty; source cuts use exactly their supplied requirements, even when
 empty. Other merge points use supplied requirements. A node is checked once
 when its unique predecessor is available; this is dependency scheduling, not invariant iteration.
 Every edge is still checked by the independent consumer. -/
-@[nospecialize] def produceRawWith [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
+@[nospecialize] def produceRawUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
-    (suggestions : List (Sequent ι)) (known : List (Evidence ι)) (start : Nat)
-    (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
-    (codes : CodeEntry ι → Bool) (aliases : List (ι × ι))
-    (checker : HeapExpressionRules.Checker G images)
-    (goal : ControlFlow.Goal ι) (carried : List (Nat × HeapStamps.Stamps)) :
+    (suggestions : List (Sequent ι) := []) (known : List (Evidence ι) := []) (start : Nat := 0)
+    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
+    (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
+    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
+    (goal : ControlFlow.Goal ι := .plain []) :
     Except (Failure ι) (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
   let arguments := argumentSlots P claims start goal.slot
@@ -1394,13 +1394,11 @@ Every edge is still checked by the independent consumer. -/
       if ((table[l]?).getD none).isSome then continue
       let some node := P[l]? | throw .claimCount
       let some c := claims[l]? | throw .claimCount
-      let required := (requirements.lookup l).getD {}
+      let required := (requirements.lookup l).getD ⟨[],[],[]⟩
       let mut k := required
       let mut implies : List (PromiseCalls.Implication ι) := []
       -- At the entry and at cuts, the argument slots every edge carries.
       let mut held := (arguments[l]?).getD []
-      if l != start && cuts.contains l then
-        k := {k with stamps := (carried.lookup l).getD {}}
       if l != start && !cuts.contains l then
         match incoming[l]? with
         | some [(pred,index,target)] =>
@@ -1438,9 +1436,7 @@ Every edge is still checked by the independent consumer. -/
               | [] => []
         | none => pure ()
       k := ⟨(k.cells ++ required.cells).eraseDups,(k.values ++ required.values).eraseDups,
-        HeapLinks.dedup (k.links ++ required.links),
-        ⟨(k.stamps.after ++ required.stamps.after).eraseDups,
-         (k.stamps.before ++ required.stamps.before).eraseDups⟩⟩
+        HeapLinks.dedup (k.links ++ required.links)⟩
       -- A handler target is entered by throws too, which carry no
       -- implication, and the argument slots the throwing nodes carry.
       if handlerTargets.contains l then
@@ -1456,85 +1452,6 @@ Every edge is still checked by the independent consumer. -/
   table.mapM fun c => match c with
     | some e => pure e
     | none => throw .rejected
-
-/-- The stamps each node's output carries, if its allocations are checked as
-allocations: an allocation stamps its result after a new mark, every other
-node shifts the stamps by its result. -/
-@[nospecialize] def stampStep [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm)
-    (st : HeapStamps.Stamps) : HeapStamps.Stamps :=
-  if (HeapExpressionRules.allocationSlots t).isSome || (HeapExpressionRules.mergeSlots t).isSome then
-    st.alloc (HeapExpressionRules.contractFields G Γ)
-  else st.shift
-
-/-- A first proposal of every cut's stamps: what every incoming edge carries,
-to a fixpoint from the entry, which states none. Untrusted: production narrows
-it where an edge does not carry it, and the checker checks every edge. -/
-@[nospecialize] def stampFlow [DecidableEq ι] (G : NormalGraph ι) (P : Program) (claims : List (PointClaim ι))
-    (start : Nat) (cuts : List Nat) : List (Nat × HeapStamps.Stamps) := Id.run do
-  let mut table : List (Option HeapStamps.Stamps) := List.replicate P.length none
-  table := table.set start (some {})
-  for _ in List.range (2 * P.length + 2) do
-    let mut changed := false
-    for (node, l) in P.zipIdx do
-      let some here := (table[l]?).getD none | continue
-      let Γ := ((claims[l]?).map (·.context)).getD []
-      let out := stampStep G Γ node.expression here
-      for (t, _) in (successors node.continuation).zipIdx do
-        let carried := match node.continuation with
-          | .effect _ | .branch _ _ => out.drop
-          | _ => out
-        let width := ((claims[t.label]?).map (·.context.length)).getD 0
-        let preimages : Std.HashMap Nat (List Nat) := (List.range width).foldr
-          (fun j acc => acc.alter (PointClaims.slot t.mapping j) fun js => some (j :: js.getD [])) ∅
-        let projected := carried.pull fun i => preimages.getD i []
-        let merged := match (table[t.label]?).getD none with
-          | none => projected
-          | some old => HeapStamps.meet [old, projected]
-        if some merged != (table[t.label]?).getD none then
-          table := table.set t.label (some merged)
-          changed := true
-    if !changed then break
-  return cuts.filterMap fun l => ((table[l]?).getD none).map (l, ·)
-
-/-- Production, with each cut's stamps narrowed until every incoming edge
-carries them: a pass that leaves an edge into a cut without its stamps
-retries with the cut's stamps met with what every incoming edge carries. -/
-@[nospecialize] def produceRawUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
-    (fuel : Nat) (P : Program) (claims : List (PointClaim ι))
-    (suggestions : List (Sequent ι) := []) (known : List (Evidence ι) := []) (start : Nat := 0)
-    (requirements : List (Nat × HeapKnowledge.Knowledge) := []) (cuts : List Nat := [])
-    (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
-    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (goal : ControlFlow.Goal ι := .plain []) :
-    Except (Failure ι) (ControlFlow.Certificate ι) := do
-  let mut carried : List (Nat × HeapStamps.Stamps) := stampFlow G P claims start cuts
-  for _ in List.range (cuts.length + 2) do
-    let C ← produceRawWith G images pool fuel P claims suggestions known start requirements cuts codes
-      aliases checker goal carried
-    let mut narrowed := carried
-    let mut changed := false
-    for l in cuts do
-      if l == start then continue
-      let some c := C[l]? | continue
-      let incoming := P.zipIdx.flatMap fun (node,p) =>
-        (successors node.continuation).zipIdx.filterMap fun (t,index) =>
-          if t.label == l then some (p,index,t) else none
-      let sources := incoming.filterMap fun (p,index,t) => match C[p]?, P[p]? with
-        | some previous, some source => some ((edgeKnowledge G ((claim previous.expression).type ::
-            (claim previous.expression).context) previous.output source.continuation index).stamps, t.mapping)
-        | _, _ => none
-      if sources.all fun (st, m) => HeapStamps.check st c.knowledge.stamps m then continue
-      let projected := incoming.filterMap fun (p,index,t) => match C[p]?, P[p]? with
-        | some previous, some source => some (HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type ::
-            (claim previous.expression).context) previous.output source.continuation index) t.mapping
-              (((claims[l]?).map (·.context.length)).getD 0)).stamps
-        | _, _ => none
-      narrowed := (l, HeapStamps.meet (c.knowledge.stamps :: projected)) :: narrowed.filter (·.1 != l)
-      changed := true
-    if !changed then return C
-    carried := narrowed
-  produceRawWith G images pool fuel P claims suggestions known start requirements cuts codes
-    aliases checker goal (cuts.map fun l => (l, {}))
 
 /-- Recover a located failed edge from the completed candidate. This includes
 heap entailment; it is not limited to ordinary subtype proof construction. -/

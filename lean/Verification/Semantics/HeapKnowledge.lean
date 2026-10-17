@@ -1,5 +1,4 @@
 import Verification.Semantics.HeapLinks
-import Verification.Semantics.HeapStamps
 import Verification.Programs.BranchRefinement
 
 /-! Primitive heap and immutable-value facts for expression postconditions. Facts
@@ -11,28 +10,26 @@ structure Knowledge where
   cells : Facts := []
   values : Facts := []
   links : HeapLinks.Links := []
-  stamps : HeapStamps.Stamps := {}
   deriving DecidableEq, Repr
 
 def ValueHolds (facts : Facts) (ρ : Env) : Prop :=
   ∀ f ∈ facts, ∃ a ∈ f.contents, a.holds (ρ f.slot)
 
 def Holds (k : Knowledge) (ρ : Env) (h : Heap) : Prop :=
-  HeapFacts.Holds k.cells ρ h ∧ ValueHolds k.values ρ ∧ HeapLinks.Holds k.links ρ h ∧ k.stamps.Holds ρ h
+  HeapFacts.Holds k.cells ρ h ∧ ValueHolds k.values ρ ∧ HeapLinks.Holds k.links ρ h
 
-theorem empty (ρ h) : Holds {} ρ h :=
-  ⟨holds_nil ρ h,by simp [ValueHolds],by simp [HeapLinks.Holds],HeapStamps.holds_empty ρ h⟩
+theorem empty (ρ h) : Holds ⟨[],[],[]⟩ ρ h := ⟨holds_nil ρ h,by simp [ValueHolds],by simp [HeapLinks.Holds]⟩
 
 /-- A fresh allocation preserves every assertion about existing cells and aliases. -/
 theorem alloc_frame {k ρ h v} (hk : Holds k ρ h) : Holds k ρ (h ++ [v]) := by
-  refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2.1, hk.2.2.2.grow (by simp)⟩
+  refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2⟩
   intro f hf
   obtain ⟨flds,c,oid,u,he,hr,a,ha,hv⟩ := hk.1 f hf
   exact ⟨flds,c,oid,u,he,hr.alloc_frames [v],a,ha,hv⟩
 
 /-- The same across a whole object's worth of fresh locations. -/
 theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ρ h) : Holds k ρ (h ++ vs) := by
-  refine ⟨?_, hk.2.1, HeapLinks.alloc_frames vs hk.2.2.1, hk.2.2.2.grow (by simp)⟩
+  refine ⟨?_, hk.2.1, HeapLinks.alloc_frames vs hk.2.2⟩
   intro f hf
   obtain ⟨flds,c,oid,u,he,hr,a,ha,hv⟩ := hk.1 f hf
   exact ⟨flds,c,oid,u,he,hr.alloc_frames vs,a,ha,hv⟩
@@ -43,7 +40,7 @@ links that appear verbatim in all the others. Used by the producer at a merge
 that is not a cut, where no requirement is stated; every edge is still
 checked, and each state's fact covers the union. -/
 def meet : List Knowledge → Knowledge
-  | [] => {}
+  | [] => ⟨[],[],[]⟩
   | k :: ks =>
     let joined := fun (pick : Knowledge → Facts) =>
       (pick k).filterMap fun f =>
@@ -53,46 +50,39 @@ def meet : List Knowledge → Knowledge
         else none
     ⟨(joined (·.cells)).eraseDups, (joined (·.values)).eraseDups,
      let others := ks.map fun o => (Std.HashSet.ofList o.links : Std.HashSet HeapLinks.Link)
-     k.links.filter (fun g => others.all (·.contains g)),
-     HeapStamps.meet ((k :: ks).map (·.stamps))⟩
+     k.links.filter (fun g => others.all (·.contains g))⟩
 
 def check (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
-  HeapFacts.check a.cells b.cells m && (HeapFacts.check a.values b.values m &&
-    (HeapLinks.check a.links b.links m && HeapStamps.check a.stamps b.stamps m))
+  HeapFacts.check a.cells b.cells m && (HeapFacts.check a.values b.values m && HeapLinks.check a.links b.links m)
 
 theorem check_sound {a b m ρ h} (hc : check a b m = true) (ha : Holds a ρ h) :
     Holds b (PointClaims.mapEnv m ρ) h := by
   simp only [check,Bool.and_eq_true] at hc
-  refine ⟨HeapFacts.check_sound hc.1 ha.1,?_,HeapLinks.check_sound hc.2.2.1 ha.2.2.1,
-    HeapStamps.check_sound hc.2.2.2 ha.2.2.2⟩
+  refine ⟨HeapFacts.check_sound hc.1 ha.1,?_,HeapLinks.check_sound hc.2.2 ha.2.2⟩
   intro f hf
   obtain ⟨g,hg,hc⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc.2.1 f hf)
   simp only [Bool.and_eq_true,beq_iff_eq] at hc
   obtain ⟨a,ham,he⟩ := ha.2.1 g hg
   simpa [PointClaims.mapEnv,hc.1] using covers_sound hc.2 ⟨a,ham,he⟩
 
-def shift (k : Knowledge) : Knowledge :=
-  ⟨HeapFacts.shift k.cells,HeapFacts.shift k.values,HeapLinks.pull k.links (fun i => [i+1]),k.stamps.shift⟩
+def shift (k : Knowledge) : Knowledge := ⟨HeapFacts.shift k.cells,HeapFacts.shift k.values,HeapLinks.pull k.links (fun i => [i+1])⟩
 
 theorem shift_holds {k ρ h v} (hk : Holds k ρ h) : Holds (shift k) (push v ρ) h := by
-  refine ⟨HeapFacts.shift_holds hk.1,?_,?_,?_⟩
+  refine ⟨HeapFacts.shift_holds hk.1,?_,?_⟩
   · intro f hf
     obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
     exact hk.2.1 g hg
-  · apply HeapLinks.pull_holds (pre := fun i => [i+1]) hk.2.2.1
+  · apply HeapLinks.pull_holds (pre := fun i => [i+1]) hk.2.2
     intro i j hj
     have hj := List.mem_singleton.mp hj
     subst j
     rfl
-  · exact HeapStamps.shift_holds hk.2.2.2
 /-- Effect-only continuations discard the result slot. Facts about it cannot
 be transferred into the old environment. -/
 def dropFacts (fs : Facts) : Facts :=
   (fs.filter fun f => 0 < f.slot).map fun f => {f with slot := f.slot - 1}
 
-def dropResult (k : Knowledge) : Knowledge :=
-  ⟨dropFacts k.cells,dropFacts k.values,HeapLinks.pull k.links (fun i => if i = 0 then [] else [i-1]),
-    k.stamps.drop⟩
+def dropResult (k : Knowledge) : Knowledge := ⟨dropFacts k.cells,dropFacts k.values,HeapLinks.pull k.links (fun i => if i = 0 then [] else [i-1])⟩
 
 theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
     Holds (dropResult k) ρ h := by
@@ -116,8 +106,7 @@ theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
         | zero => omega
         | succ i => rfl
       simpa [he] using hk.2.1 g hg.1
-    constructor
-    · apply HeapLinks.pull_holds (pre := fun i => if i = 0 then [] else [i-1]) hk.2.2.1
+    · apply HeapLinks.pull_holds (pre := fun i => if i = 0 then [] else [i-1]) hk.2.2
       intro i j hj
       split at hj
       · simp at hj
@@ -126,7 +115,6 @@ theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
         cases i with
         | zero => contradiction
         | succ i => rfl
-    · exact HeapStamps.drop_holds hk.2.2.2
 
 /-- Project facts along an executable slot map. All runtime aliases selected by
 that map are retained; facts about unselected slots are forgotten. -/
@@ -139,13 +127,12 @@ def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge 
   let preimages : Std.HashMap Nat (List Nat) := (List.range count).foldr
     (fun j acc => acc.alter (PointClaims.slot m j) fun js => some (j :: js.getD [])) ∅
   ⟨projectFacts k.cells m count,projectFacts k.values m count,
-    HeapLinks.pull k.links (fun i => preimages.getD i []),
-    k.stamps.pull (fun i => preimages.getD i [])⟩
+    HeapLinks.pull k.links (fun i => preimages.getD i [])⟩
 
 /-- Every live property-read link transfers the observed result predicate,
 including observations admitting undefined. -/
 def linkFacts (k : Knowledge) (slot : Nat) (R : List Atom) : Facts :=
-  (k.links.filter (fun g => !g.alias && g.value == slot)).map
+  (k.links.filter (fun g => (!g.alias && !g.distinct) && g.value == slot)).map
     (fun g => ⟨g.cell,R,g.field⟩)
 
 theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : ∃ a ∈ R, a.holds (ρ slot)) :
@@ -155,8 +142,8 @@ theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : ∃ a ∈ R, a
   have hg := List.mem_filter.mp hg
   have hg2 := hg.2
   simp only [Bool.and_eq_true,Bool.not_eq_true',beq_iff_eq] at hg2
-  have hl := hk.2.2.1 g hg.1
-  simp only [hg2.1,Bool.false_eq_true,ite_false] at hl
+  have hl := hk.2.2 g hg.1
+  simp only [hg2.1.1,hg2.1.2,Bool.false_eq_true,ite_false] at hl
   cases ho : g.optional
   · simp only [ho,Bool.false_eq_true,ite_false] at hl
     obtain ⟨flds,c,oid,l,hl,hfd,hh⟩ := hl
@@ -169,7 +156,7 @@ theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : ∃ a ∈ R, a
 The ordinary value fact is useful even when no cell link exists. -/
 def observeBoolean (k : Knowledge) (slot : Nat) (q : Bool) : Knowledge :=
   let R := [if q then HeapFacts.Atom.tru else .fls]
-  ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links,k.stamps⟩
+  ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links⟩
 
 theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
     (hq : ρ slot = if q then .tru else .fls) : Holds (observeBoolean k slot q) ρ h := by
@@ -283,7 +270,7 @@ def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :
   | none => k
   | some f =>
     let R := f.contents.flatMap (observeAtom tag q)
-    ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links,k.stamps⟩
+    ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links⟩
 
 theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
     (hq' : tagHolds tag (ρ slot) = q ∨ protoFree tag (ρ slot) = false) :
@@ -388,7 +375,7 @@ undefined, whose broad saved nullish predicate alone is insufficient. -/
   match o, Γ[slot]? with
   | .tag tag q, some A =>
     match atoms G (BranchRefinement.tagSlice G A tag q) with
-    | some R => ⟨linkFacts k slot R ++ out.cells, ⟨slot,R,valueField⟩ :: out.values, out.links, out.stamps⟩
+    | some R => ⟨linkFacts k slot R ++ out.cells, ⟨slot,R,valueField⟩ :: out.values, out.links⟩
     | none => out
   | _, _ => out
 

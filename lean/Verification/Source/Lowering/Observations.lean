@@ -67,14 +67,52 @@ claim, joins the search's known evidence, so the node is not searched. -/
   recordNodePlan (DirectProof.cast Γ A plan)
   emitAt pos plan.term k Γ A role (scope := scope)
 
+/-- The cells this lowering allocated sit at locations no other object in
+scope has: a private cell's identity never becomes a source value, and every
+record-typed slot holds something else. Stated at each cut so the allocation's
+freshness survives the reset of knowledge there; every incoming edge proves
+it, from the allocation or from the cut before. What the allocation proves is
+about the fields the older slots' records named then (`apart`), whatever a
+later test narrowed them to, and about the objects allocated after it, other
+cells and fresh constants; an object a later call returned may be any
+object. -/
+@[nospecialize] def distinctLinks (G : Verification.PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι))
+    (Γ : List (Ty ι)) : HeapLinks.Links :=
+  scope.zipIdx.flatMap fun (b,i) =>
+    match b.storage with
+    | .cell .. =>
+      -- A captured cell was allocated before the closure's entry, which
+      -- knows nothing of that allocation.
+      if b.captured then [] else
+      Γ.zipIdx.flatMap fun (A,j) =>
+        if i == j then [] else
+        let other := scope[j]?
+        let isCell := other.any fun o => match o.storage with | .cell .. => true | .value | .slot _ => false
+        let fields :=
+          if j > i || (b.param && other.any (·.param)) then
+            -- Older than the cell: the fields its record named when the cell
+            -- was allocated, where that is known.
+            match b.apart with
+            | some older =>
+              match older[j - i - 1]? with
+              | some B => (commonFields G A).filter (commonFields G B).contains
+              | none => []
+            | none => commonFields G A
+          else if isCell || other.any (·.fresh) then commonFields G A
+          else []
+        fields.map fun f => (⟨i,j,false,valueField,true,f,false⟩ : HeapLinks.Link)
+    | .value | .slot _ => []
+
 /-- A checkpoint is an actual no-op graph node. Every incoming edge must
 justify its supplied current-heap assertion, including backedges. -/
 @[nospecialize] def checkpoint (pos : Span) (Γ : List (Ty Tree)) (facts : HeapFacts.Facts)
     (next : Target) (entry : Option Nat := none) (scope : List (ScopeBinding Tree) := []) :
     Compiler Target := do
-  if facts.isEmpty then return next
+  let G := SourceTypes.graph (← table)
+  let links := if entry.isSome then distinctLinks G scope Γ else []
+  if facts.isEmpty && links.isEmpty then return next
   let t ← emitAt pos .nul (.effect next) Γ [Labels.nul] "heap-observation" entry scope
-  recordAssertion t { cells := facts }
+  recordAssertion t ⟨facts,[],links⟩
   return t
 
 @[nospecialize] def contents (A : Ty Tree) : Compiler (List HeapFacts.Atom) := do

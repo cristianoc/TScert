@@ -6,8 +6,8 @@ import Verification.Semantics.HeapLinks
 A **fact kind** has a meaning at a heap and a **support**: the regions it
 reads, each with the largest change it tolerates. Its support lemma says that
 it survives every change within its support. **Separation** of a support
-region from a footprint region is derived from two sources of knowledge:
-the class of a field's contents and provenance stamps. The
+region from a footprint region is derived from three sources of knowledge:
+the class of a field's contents, provenance stamps, and distinct links. The
 **stability check** of a fact under a footprint accepts when every footprint
 entry either changes the support's regions within their tolerance or is
 apart from them; its soundness theorem gives the support's premise from the
@@ -21,7 +21,7 @@ namespace Verification.Footprints
 inductive FactKind where
   /-- An observation of a field's current contents (`HeapFacts.Fact`). -/
   | cell (f : HeapFacts.Fact)
-  /-- A link: alias, or a read of a field (`HeapLinks.Link`). -/
+  /-- A link: alias, distinct, or a read of a field (`HeapLinks.Link`). -/
   | link (g : HeapLinks.Link)
   /-- A primitive predicate of a slot's value. -/
   | value (f : HeapFacts.Fact)
@@ -36,7 +36,7 @@ def FactKind.Holds : FactKind → Env → Heap → Prop
 
 def FactKind.support : FactKind → Footprint
   | .cell f => [(.field f.slot f.field, .keep)]
-  | .link g => if g.alias then [] else [(.field g.cell g.field, .keep)]
+  | .link g => if g.distinct || g.alias then [] else [(.field g.cell g.field, .keep)]
   | .value _ => []
   | .dense x _ => [(.field x arrayStoreKey, .grow)]
 
@@ -72,33 +72,38 @@ theorem FactKind.support_sound {F : FactKind} {ρ h h'} (hF : F.Holds ρ h)
     simp only [List.mem_singleton] at hg'
     subst hg'
     have hg := hF g' (List.mem_singleton_self _)
-    by_cases ha : g'.alias = true
-    · simpa [ha] using hg
-    · have hs' : Supported [(.field g'.cell g'.field, .keep)] ρ h h' := by
-        simpa [FactKind.support, ha] using hs
-      simp only [ha, if_false, Bool.false_eq_true] at hg ⊢
-      by_cases ho : g'.optional = true
-      · simp only [ho, if_true] at hg ⊢
-        obtain ⟨flds, c, oid, hx, hr⟩ := hg
-        exact ⟨flds, c, oid, hx, readGave_support (by simp [hx, fieldsOf]) hs' hr⟩
-      · simp only [ho, if_false, Bool.false_eq_true] at hg ⊢
-        obtain ⟨flds, c, oid, l, hx, hl, hv⟩ := hg
-        obtain ⟨v', hv', hk⟩ := hs' _ (List.mem_singleton_self _) l _
-          (by simp [Region.mem, hx, fieldsOf, hl]) hv
-        simp only [Change.Holds] at hk
-        exact ⟨flds, c, oid, l, hx, hl, by rw [← hk]; exact hv'⟩
+    by_cases hd : g'.distinct = true
+    · simpa [hd] using hg
+    · by_cases ha : g'.alias = true
+      · simpa [hd, ha] using hg
+      · have hs' : Supported [(.field g'.cell g'.field, .keep)] ρ h h' := by
+          simpa [FactKind.support, hd, ha] using hs
+        simp only [hd, ha, if_false, Bool.false_eq_true] at hg ⊢
+        by_cases ho : g'.optional = true
+        · simp only [ho, if_true] at hg ⊢
+          obtain ⟨flds, c, oid, hx, hr⟩ := hg
+          exact ⟨flds, c, oid, hx, readGave_support (by simp [hx, fieldsOf]) hs' hr⟩
+        · simp only [ho, if_false, Bool.false_eq_true] at hg ⊢
+          obtain ⟨flds, c, oid, l, hx, hl, hv⟩ := hg
+          obtain ⟨v', hv', hk⟩ := hs' _ (List.mem_singleton_self _) l _
+            (by simp [Region.mem, hx, fieldsOf, hl]) hv
+          simp only [Change.Holds] at hk
+          exact ⟨flds, c, oid, l, hx, hl, by rw [← hk]; exact hv'⟩
 
 /-! ## Separation -/
 
-/-- What separation may use: the class of fields' contents and provenance
-stamps. -/
+/-- What separation may use: the class of fields' contents, provenance
+stamps, and distinct field pairs. -/
 structure SepKnowledge where
   cl : ClassEvidence
   stamps : Stamps
   typed : Nat → List PropKey
+  distinct : List (Nat × PropKey × Nat × PropKey)
 
 def SepKnowledge.Holds (K : SepKnowledge) (μ : Nat → Nat) (ρ : Env) (h : Heap) : Prop :=
-  ClassOk K.cl ρ h ∧ StampsHold K.stamps K.typed μ ρ ∧ (∀ i j, i ≤ j → μ i ≤ μ j)
+  ClassOk K.cl ρ h ∧ StampsHold K.stamps K.typed μ ρ ∧ (∀ i j, i ≤ j → μ i ≤ μ j) ∧
+    ∀ d ∈ K.distinct, ∀ l l', (fieldsOf (ρ d.1)).lookup d.2.1 = some l →
+      (fieldsOf (ρ d.2.2.1)).lookup d.2.2.2 = some l' → l ≠ l'
 
 /-- Own locations of `x` against typed field `k` of `y`, by stamps. -/
 def SepKnowledge.provenance (K : SepKnowledge) (x y : Nat) (k : PropKey) : Bool :=
@@ -106,12 +111,15 @@ def SepKnowledge.provenance (K : SepKnowledge) (x y : Nat) (k : PropKey) : Bool 
     | some m, some m' => decide (m' ≤ m)
     | _, _ => false
 
+def SepKnowledge.linked (K : SepKnowledge) (x : Nat) (k : PropKey) (y : Nat) (k' : PropKey) : Bool :=
+  K.distinct.contains (x, k, y, k') || K.distinct.contains (y, k', x, k)
+
 /-- One orientation of separation. -/
 def SepKnowledge.apart₁ (K : SepKnowledge) : Region → Region → Bool
   | .field x k, .cls c => match K.cl x k with
     | some c' => c' != c
     | none => false
-  | .field x k, .field y k' => K.provenance x y k' || K.provenance y x k
+  | .field x k, .field y k' => K.provenance x y k' || K.provenance y x k || K.linked x k y k'
   | .own x, .field y k' => K.provenance x y k'
   | _, _ => false
 
@@ -133,7 +141,7 @@ private theorem provenance_sound {K : SepKnowledge} {μ ρ h x y k l l'} (hK : K
     | none => simp [ha, hb] at hm
     | some m' =>
       simp only [ha, hb, decide_eq_true_eq] at hm
-      exact stamps_separate (r := .own x) (h := h) hK.2.1 hK.2.2 ha hb hm (.inr rfl)
+      exact stamps_separate (r := .own x) (h := h) hK.2.1 hK.2.2.1 ha hb hm (.inr rfl)
         (by simpa [Region.mem] using hl) hk hl'
 
 private theorem apart₁_sound {K : SepKnowledge} {μ ρ h r s l} (hK : K.Holds μ ρ h)
@@ -156,9 +164,13 @@ private theorem apart₁_sound {K : SepKnowledge} {μ ρ h r s l} (hK : K.Holds 
   case field.field x k y k' =>
     simp only [Bool.or_eq_true] at ha
     simp only [Region.mem, beq_iff_eq] at hr hs
-    rcases ha with ha | ha
+    rcases ha with (ha | ha) | ha
     · exact provenance_sound hK ha (lookup_mem_snd hr) hs rfl
     · exact provenance_sound hK ha (lookup_mem_snd hs) hr rfl
+    · simp only [SepKnowledge.linked, Bool.or_eq_true, List.contains_iff_mem] at ha
+      rcases ha with ha | ha
+      · exact hK.2.2.2 _ ha l l hr hs rfl
+      · exact hK.2.2.2 _ ha l l hs hr rfl
   case own.field x y k' =>
     simp only [Region.mem, beq_iff_eq] at hs
     exact provenance_sound hK ha (by simpa [Region.mem] using hr) hs rfl

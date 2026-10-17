@@ -215,7 +215,6 @@ deriving instance ToJson, FromJson for ProgramCertificates.Evidence
 deriving instance ToJson, FromJson for HeapFacts.Atom
 deriving instance ToJson, FromJson for HeapFacts.Fact
 deriving instance ToJson, FromJson for HeapLinks.Link
-deriving instance ToJson, FromJson for HeapStamps.Stamps
 deriving instance ToJson, FromJson for HeapKnowledge.Knowledge
 deriving instance ToJson, FromJson for HeapExpressionRules.StepEvidence
 deriving instance ToJson, FromJson for PromiseCalls.Implication

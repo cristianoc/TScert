@@ -135,7 +135,7 @@ theorem elems_separation_false :
 /-- The separation checker, on these stamps: it separates slot 0's own
 locations from slot 1's typed field, and refuses to separate slot 0's listed
 elements from it. -/
-private def apartK : SepKnowledge := ⟨fun _ _ => none, apartStamps, typedF⟩
+private def apartK : SepKnowledge := ⟨fun _ _ => none, apartStamps, typedF, []⟩
 
 #guard apartK.apart (.own 0) (.field 1 "f")
 #guard apartK.apart (.field 0 arrayStoreKey) (.field 1 "f")
@@ -296,7 +296,7 @@ A cell fact about `x.k` survives a write to `class(value)` only where the
 field's class is known to be another one, and never a write to the field
 itself. -/
 
-private def noKnowledge : SepKnowledge := ⟨fun _ _ => none, ⟨fun _ => none, fun _ => none⟩, fun _ => []⟩
+private def noKnowledge : SepKnowledge := ⟨fun _ _ => none, ⟨fun _ => none, fun _ => none⟩, fun _ => [], []⟩
 private def storeK : SepKnowledge := { noKnowledge with cl := fun x k => if x = 0 ∧ k = "k" then some .store else none }
 private def cellK : FactKind := .cell ⟨0, [.nul], "k"⟩
 

@@ -106,14 +106,13 @@ structure Bundle (ι : Type) where
   deriving ToJson, FromJson
 
 /-- Statement entries are exact interfaces, in a unit's graph and in each of its
-codes', but for their stamps, which every edge into them justifies.
-Expression observation checkpoints inside a statement require
+codes'. Expression observation checkpoints inside a statement require
 entailment but do not reset its local context. -/
 def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowledge.Knowledge))
     (C : ControlFlow.Certificate ι) : Bool :=
   (cuts.all fun l => match C[l]? with
     | none => false
-    | some n => {n.knowledge with stamps := {}} == (assertions.lookup l).getD {}) &&
+    | some n => n.knowledge == (assertions.lookup l).getD ⟨[],[],[]⟩) &&
   (assertions.all fun (l,k) => match C[l]? with
     | none => false
     | some n => HeapKnowledge.check n.knowledge k none)
