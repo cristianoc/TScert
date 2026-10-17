@@ -77,6 +77,18 @@ theorem current_heap_compose_false :
     (fun _ h => by cases h) (by decide) valueK_ok_current
   exact absurd (postB_iff.mpr h) (by decide)
 
+/-- `Post.compose` itself cannot be applied to the witness: applied with any
+class evidence that justifies the inclusion and holds at the entry heap, it
+would give the false postcondition. So no such evidence exists, while
+evidence holding at the current heap does (`valueK_ok_current`). -/
+theorem compose_needs_entry_evidence :
+    ¬ ∃ cl, Footprint.le cl (Φp ++ transportAll ⟨fun _ => false, fun _ => false⟩ []) Φq = true ∧
+      ClassOk cl fieldK g₀ := by
+  rintro ⟨cl, hle, hc⟩
+  have h := Post.compose (Φn := []) (h := g) (h' := g) (postB_iff.mp (by decide)) (Post.refl _ _ _)
+    (fun _ h => by cases h) (fun _ h => by cases h) hle hc
+  exact absurd (postB_iff.mpr h) (by decide)
+
 /-! ## Freshness of a store says nothing of its elements
 
 Slot 0's own location is 5, at least mark 1; slot 1's typed field `f` is
@@ -116,6 +128,26 @@ theorem elems_separation_false :
   intro H
   exact H apartStamps typedF μ5 apart heap5 0 1 1 1 1 "f" 1 apart_stamps_hold
     (fun i j hij => by simp only [μ5]; split <;> split <;> omega) rfl rfl (Nat.le_refl _)
+    (by decide) (by simp [typedF]) (by simp [apart, fieldsOf]) rfl
+
+/-- The separation checker, on these stamps: it separates slot 0's own
+locations from slot 1's typed field, and refuses to separate slot 0's listed
+elements from it. -/
+private def apartK : SepKnowledge := ⟨fun _ _ => none, apartStamps, typedF, []⟩
+
+#guard apartK.apart (.own 0) (.field 1 "f")
+#guard apartK.apart (.field 0 arrayStoreKey) (.field 1 "f")
+#guard !apartK.apart (.elems 0) (.field 1 "f")
+
+/-- `stamps_separate`'s region premise must exclude `elems`: on the witness,
+slot 0's listed element and slot 1's typed field are one location, so the
+theorem's conclusion fails there; were its premise to admit `elems 0`, this
+would prove `False`. -/
+theorem stamps_separate_excludes_elems
+    (hr : (∃ k, Region.elems 0 = Region.field 0 k) ∨ Region.elems 0 = Region.own 0) : False :=
+  stamps_separate (x := 0) (y := 1) (m := 1) (m' := 1) (r := .elems 0) (h := heap5) (l := 1) (k := "f")
+    (l' := 1) apart_stamps_hold
+    (fun i j hij => by simp only [μ5]; split <;> split <;> omega) rfl rfl (Nat.le_refl _) hr
     (by decide) (by simp [typedF]) (by simp [apart, fieldsOf]) rfl
 
 /-! ## Mark maps
@@ -237,6 +269,18 @@ theorem elems_class_needs_two_levels :
     subst hl
     exact ⟨_, rfl, fun _ _ => trivial⟩
   | l + 2, hl => simp at hl
+
+/-! ## Readonly arrays have a typed store
+
+A readonly array's store is a view, a writable one's an invariant field.
+Both count as typed fields, so both get a `before` bound. -/
+
+#guard !HeapExpressionRules.fieldOperand [PositiveNormalization.arrayClauseOf (0 : Nat) 1 [] true]
+  CallArguments.arrayStoreField
+#guard viewOperand [PositiveNormalization.arrayClauseOf (0 : Nat) 1 [] true] CallArguments.arrayStoreField
+#guard HeapExpressionRules.fieldOperand [PositiveNormalization.arrayClauseOf (0 : Nat) 1 [] false]
+  CallArguments.arrayStoreField
+#guard !viewOperand [PositiveNormalization.arrayClauseOf (0 : Nat) 1 [] true] lengthKey
 
 /-! ## The stability check
 
