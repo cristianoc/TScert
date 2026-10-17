@@ -53,6 +53,8 @@ structure Function (ι : Type) where
   /-- The footprint proposed for a declaration's signature, which its unit
   certifies; the initialization unit's lets everything change. -/
   footprint : Footprints.Closed := .top
+  /-- Whether the footprint is proposed on a throw too. -/
+  onThrow : Bool := false
 
 /-- Select one execution point for expression elaboration. A missing point has
 no claims, so an obligation there fails instead of borrowing another copy's. -/

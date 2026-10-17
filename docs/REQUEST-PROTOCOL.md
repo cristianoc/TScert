@@ -70,21 +70,23 @@ Each type-graph node is a union of clauses:
 | Own-key bounds: each says the object's own keys are `among` its `keys`, or, with `among` false, none of them; a key one does not admit is not the object's own and a read of it continues at the prototype; left out when there are none (also on `dict`) | `{"refs":{"first":[["[]",[2]]],"rest":[],"views":[["[[proto]]",[5]]],"bounds":[{"among":false,"keys":["map"]}]}}` |
 | Plain object with named contracts and readonly index views, each `[class, operand]` with class `"strings"` (every string key), `"numeric"` (the canonical numeric keys) or `"symbols"` (every symbol key); each constrains every present own field under a key of its class | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]],["numeric",[1]]]}}` |
 | Writable index contracts, a mutable index signature's, `[class, operand]` as above: every present own field under a key of the class holds exactly the operand; each is also listed in `indexes`; left out when there are none | `{"dict":{"first":[],"rest":[],"views":[],"indexes":[["strings",[1,3]]],"cells":[["strings",[1,3]]]}}` |
-| Intersection of callable contracts, each with a receiver, arguments, result and required effect  | `{"arrs":{"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null,"fresh":false,"receiverStore":false}},{"receiver":[5],"arguments":[[1]],"result":[0],"effect":{"footprint":{"value":"any","store":"any"},"promise":null,"fresh":false,"receiverStore":false}}]}}`                                 |
+| Intersection of callable contracts, each with a receiver, arguments, result and required effect  | `{"arrs":{"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null,"fresh":false,"receiverStore":false,"onThrow":false}},{"receiver":[5],"arguments":[[1]],"result":[0],"effect":{"footprint":{"value":"any","store":"any"},"promise":null,"fresh":false,"receiverStore":false,"onThrow":false}}]}}`                                 |
 | Array store: simultaneous tuple contracts, each with required, optional and rest positions; readonly contracts give element read capabilities                              | `{"list":{"first":{"required":[[4]],"optional":[],"rest":[4],"readonly":false,"presence":"readable"},"rest":[]}}` |
-| Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null,"fresh":false,"receiverStore":false}}]}}`             |
-| Class value: construct signatures, each a contract with receiver `{}`, arguments, result and effect, which `new` meets; no call signature meets it; `"variadic"` in the same format, arguments `[params, rest]`, when there are any      | `{"ctors":{"signatures":[{"receiver":{},"arguments":[[1,2]],"result":[1,2],"effect":{"footprint":{"value":"keep","store":"keep"},"promise":null,"fresh":false,"receiverStore":false}}]}}`             |
+| Callable with invariant bag requirements and overloads, fixed and variadic                                                                                                 | `{"callable":{"first":[["value",[1]]],"rest":[],"arrows":[{"receiver":[5],"arguments":[[0]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null,"fresh":false,"receiverStore":false,"onThrow":false}}]}}`             |
+| Class value: construct signatures, each a contract with receiver `{}`, arguments, result and effect, which `new` meets; no call signature meets it; `"variadic"` in the same format, arguments `[params, rest]`, when there are any      | `{"ctors":{"signatures":[{"receiver":{},"arguments":[[1,2]],"result":[1,2],"effect":{"footprint":{"value":"keep","store":"keep"},"promise":null,"fresh":false,"receiverStore":false,"onThrow":false}}]}}`             |
 | Argument list: simultaneous tuple contracts on the actuals a rest parameter receives, positions compared covariantly                                                  | `{"pack":{"first":{"required":[[4]],"optional":[],"rest":[0],"readonly":false,"presence":"dense"},"rest":[]}}` |
 
 The arrow example contains two signatures, each with one argument and the
-receiver label 5. Every signature carries `effect: {"footprint": f, "promise": p, "fresh": b, "receiverStore": c}`:
+receiver label 5. Every signature carries `effect: {"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "onThrow": o}`:
 `f` a [closed footprint](FOOTPRINTS.md#changes-and-footprints)
 `{"value": v, "store": s}`, `v` one of `"keep"` and `"any"`, `s` one of
 `"keep"`, `"grow"` and `"any"`, and `p` `null`, `{"guards":{"param":i}}` or
 `{"asserts":{"param":i}}`, the last two with the promise's type as the result
 ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts)),
-and `b` and `c` Booleans: a fresh result, and the receiver's store excepted
-from the footprint; omission of any field is refused. Host-relative method
+and `b`, `c` and `o` Booleans: a fresh result, the receiver's store excepted
+from the footprint, and the footprint stated on a throw too
+([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints)); omission
+of any field is refused. Host-relative method
 signatures use the same record with `receiver: {}`. A record clause's
 `methods` lists its members as `{"key","calls","rests","schemes","receivers"}`:
 the fixed and variadic signatures, the quantified ones as scheme types, and
@@ -323,7 +325,7 @@ this redundancy cannot substitute a different program or different claims.
 
 Subtype arrow certificates use ordered lists of argument types. A `source`
 certificate's `p` is the complete contract record, for example
-`{"source":{"p":{"receiver":[5],"arguments":[[0],[1]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null,"fresh":false,"receiverStore":false}}}}` for a two-argument signature whose
+`{"source":{"p":{"receiver":[5],"arguments":[[0],[1]],"result":[1],"effect":{"footprint":{"value":"any","store":"any"},"promise":null,"fresh":false,"receiverStore":false,"onThrow":false}}}}` for a two-argument signature whose
 receiver is label 5; the receiver is contravariant, like the domains. A `union`
 certificate contains `pre`, `a`, `b`, `suffix`, `left`, and `right`: `pre` and
 `suffix` are lists of unchanged argument types, and the selected argument splits

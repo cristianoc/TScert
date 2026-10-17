@@ -254,6 +254,30 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.match(exhausted.detail, /source direct obligation at \[202,212\): subtype search exhausted/);
 }
 {
+  // A parameter's entry claim in an `&&` operand is its first read before a
+  // call, which the incoming edge checks: a read claimed narrower than any
+  // test establishes is refused where evidence is produced and where it is
+  // checked.
+  const good = run("logical-narrowing-past-reads");
+  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "untested"), "untested function");
+  const start = source.indexOf("Number.isSafeInteger(v);\n}\n", source.indexOf("function untested")) + "Number.isSafeInteger(".length;
+  const read = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + 1), "the read of v");
+  read.type = [rowOf(claims, "num")];
+  const forged = writeClaims(good, "untested-number", claims);
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+      join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+        ? "untested-number-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      { encoding: "utf8", timeout: 30_000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+  }
+  process.stdout.write("forged operand entry: a parameter read claimed narrower than its test refused\n");
+}
+{
   // An array literal's spread is copied before a later element that runs
   // code, as JavaScript reads it there; a spread operand claimed at other
   // than an array is refused where the elements are produced and checked.
@@ -1567,6 +1591,38 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     }
   }
   process.stdout.write("forged declaration footprints: each not covering the body's refused in its loop, in search and in checking\n");
+}
+
+{
+  // A footprint on a throw is established by the unit's own graph, and a
+  // handler is certified only around a call whose signature states it.
+  // `largest` calls `Math.max`, which states its footprint on normal return
+  // only: claimed on a throw, it is refused at its call. `checked` states it;
+  // claimed without, `orZero`'s callback, which reads `checked` at the
+  // signature stating it, is refused.
+  // Each in evidence production and in checking.
+  const artifacts = run("exceptional-footprint-handler");
+  const honest = readClaims(artifacts);
+  assert.equal(must(honest.functions.find(f => f.name === "checked"), "checked's claims").onThrow, true);
+  assert.equal(must(honest.functions.find(f => f.name === "largest"), "largest's claims").onThrow, false);
+  for (const [name, forge, at] of [
+    ["forged-throw-footprint-largest", (c: SourceClaims) => {
+      must(c.functions.find(f => f.name === "largest"), "largest's claims").onThrow = true;
+    }, /source effect refusal at \[\d+,\d+\): the footprint claimed for 'largest'/],
+    ["forged-throw-footprint-checked", (c: SourceClaims) => {
+      must(c.functions.find(f => f.name === "checked"), "checked's claims").onThrow = false;
+    }, /reject: source (expression obligation at \[\d+,\d+\)|evidence does not justify)/],
+  ] as const) {
+    const claims = readClaims(artifacts);
+    forge(claims);
+    const input = writeClaims(artifacts, name, claims);
+    const produce = produceWith(artifacts, input, name);
+    assert.ifError(produce.error);
+    assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+    for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+      assert.match(detail, at);
+  }
+  process.stdout.write("forged throw footprints: a caller of Math.max claimed on a throw, and a handler around a call claimed without, refused in search and in checking\n");
 }
 
 {

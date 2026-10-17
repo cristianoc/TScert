@@ -1796,7 +1796,18 @@ declaration no library has, which joins the document with the entry:
 \mathsf{JsonValue}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\{\mathsf{readonly}\ [k:\mathsf{string}]:\mathsf{JsonValue}\}
 ```
 
-(`JSON.stringify`'s parameter). An entry may read a member as a test of the
+(`JSON.stringify`'s parameter). At a `JsonValue`, `JSON.stringify` reads own
+data properties, calls no `toJSON` and no getter, and allocates its string,
+so it states the empty footprint, on a throw too (a cycle); so does `Error`
+at a string message, which it stores without conversion code
+([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints);
+`map-stable-json-error`,
+`json-stringify-recursive`). Each is read with its one argument: a
+`toJSON` hook, a replacer and `Error`'s options run code of the client's,
+which may write what a footprint excludes
+(`invalid-json-stringify-tojson`, `invalid-json-stringify-replacer`,
+`invalid-error-options`, each run under Node; `invalid-json-stringify-space`). An entry may
+read a member as a test of the
 calculus (`test`), and the variable's declaration as the right operand of
 `instanceof`:
 
@@ -1911,8 +1922,9 @@ unrestricted in its effect. The entries:
 
   A record type is open, so a key it does not name may hold any value; a key
   it names at `undefined` or `false` is absent or holds that value. The form
-  states the empty footprint on normal return. A call meeting only the first
-  form keeps an unrestricted effect. The audit of Node 25.2.1's
+  states the empty footprint on normal return and on a throw
+  ([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints)). A call
+  meeting only the first form keeps an unrestricted effect. The audit of Node 25.2.1's
   `lib/child_process.js` and `lib/internal/child_process.js` covers every
   write the call makes before it returns, and before each throw: a
   validation error, a failure to spawn, and a failed command.

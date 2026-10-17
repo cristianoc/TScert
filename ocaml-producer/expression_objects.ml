@@ -193,7 +193,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         else expr ?expected env e) es in
       (match contract with
         | Some s -> array s
-        | None -> array {required=[];optional_elements=[];rest=Some (widen (combine types));readonly=false;presence=Readable})
+        | None -> array {required=[];optional_elements=[];rest=Some (absorb declarations (widen (combine types)));
+            readonly=false;presence=Readable})
     (* A field a guard found holding less than its type is read at that. *)
     | _ -> Json.fail "expression dispatched to the wrong typing family"
 end

@@ -102,8 +102,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | _ -> latest_claim arg.pos in
           match known with
           | Some (Atoms [Shape {calls;_}]) -> List.exists (fun (s:Semantic.signature) ->
-              (* A fresh result the offer does not state is not asked for. *)
-              {s.call_effect with fresh=s.call_effect.fresh && offered.call_effect.fresh}=offered.call_effect) calls
+              (* A fresh result, or a footprint on a throw, the offer does
+                 not state is not asked for. *)
+              {s.call_effect with fresh=s.call_effect.fresh && offered.call_effect.fresh;
+                 on_throw=s.call_effect.on_throw && offered.call_effect.on_throw}=offered.call_effect) calls
           | _ -> false in
         let offered arity = match param with
           | Atoms [Shape {calls=[offered];fields=[];indexes=[];elements=None}] as t
@@ -146,12 +148,36 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       (* Several candidate signatures (overloads, or a union's arms): an
          actual is built at a parameter every candidate states alike, as a
          single signature's actuals are, and typed on its own otherwise. *)
+      (* An object or array literal where the candidates differ is built at
+         the first candidate's parameter it fits, as TypeScript reads a
+         literal against each overload in turn. *)
       let shared_actuals (candidates:Semantic.signature list) =
         List.mapi (fun i arg ->
           match List.map (fun s -> param_at s i) candidates with
           | Some p :: rest when List.for_all (fun q -> q = Some p) rest ->
             expr ~expected:p env arg,Some p
-          | _ -> expr env arg,None) args in
+          | params ->
+            let literal = match arg.node with Alloc _ | ArrayLiteral _ -> true | _ -> false in
+            (* A record literal fits where each field it writes is a field of
+               the parameter's at a plausible type, and it writes each field
+               the parameter requires. *)
+            let head t = try declared_head declarations [] t with Json.Error _ -> t in
+            let written = function
+              | Atoms [Exact fields] -> Some fields
+              | Atoms [Shape {fields;elements=None;calls=[];_}] -> Some fields
+              | _ -> None in
+            let fits p = match Option.map head (quietly (fun () -> expr ~expected:p env arg)) with
+              | Some t -> (match written t,head p with
+                | Some fs,Atoms [Shape {fields=gs;elements=None;_}] ->
+                  List.for_all (fun (f:Semantic.field) -> List.exists (fun (g:Semantic.field) ->
+                    g.name=f.name && plausible_subtype f.read g.read) gs) fs &&
+                  List.for_all (fun (g:Semantic.field) -> g.optional ||
+                    List.exists (fun (f:Semantic.field) -> f.name=g.name) fs) gs
+                | _ -> plausible_subtype t p)
+              | None -> false in
+            match (if literal then List.find_opt fits (List.filter_map Fun.id params) else None) with
+            | Some p -> expr ~expected:p env arg,Some p
+            | None -> expr env arg,None) args in
       (* Quantified overloads whose receiver or result places a binder where
          the call's receiver or expected type places a type: the binder is that
          type for typing the actuals, as TypeScript infers from the return
@@ -581,7 +607,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          as the usable signatures agree (`shared_actuals`), and the signature
          whose domains they match is proposed. Lean selects the row it checks
          and re-checks every argument obligation. *)
-      | Atoms [Shape {calls=(_::_::_ as calls);_}]
+      | Atoms [Shape ({calls=(_::_::_ as calls);_} as overloaded)]
           when List.for_all (fun (s:Semantic.signature) -> s.quantified=[]) calls
                && (last_only || not spread) ->
         no_type_arguments ();
@@ -603,7 +629,19 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | [] -> matching
             | kept -> kept in
         (match matching,usable with
-         | s :: _,_ -> offer s; s.result
+         (* The callee is claimed at the signature selected, which the
+            overloads' intersection meets: a call's effect is its own. A
+            guard's callee keeps its promise signatures, which a condition
+            reads. *)
+         | s :: _,_ ->
+           offer s;
+           let promises = match latest_claim target.pos with
+             | Some (Atoms [Shape {calls;_}]) ->
+               List.exists (fun (c:Semantic.signature) -> not (Semantic.plain_effect c.call_effect)) calls
+             | _ -> true in
+           if not (method_read target) && not promises then
+             publish_instance target.pos (Atoms [Shape {overloaded with calls=[s]}]);
+           s.result
          | [],(first :: rest) when List.for_all (fun (s:Semantic.signature) ->
              s.result = first.result) rest -> first.result
          | _ -> Proposal_diagnostics.unsupported "overloaded call needs a signature its arguments match")

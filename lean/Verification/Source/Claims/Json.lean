@@ -29,23 +29,24 @@ private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name 
     (r : SourceRequest σ ι) (c : Response ι) : Option String :=
   let G := RequestJson.graph r.toRequest
   let images := StoreView.images r.types
-  let firstBad (Φ : Footprints.Closed) (ret : Bool) (start : Nat) (P : Program) (C : Certificate ι)
+  let firstBad (Φ : Footprints.Closed) (ret exc : Bool) (start : Nat) (P : Program) (C : Certificate ι)
       (sourceMap : SourceMap) : Option SourceMapEntry :=
     let facts := GraphCode.inferFresh G images P C start
     ((P.zip C).zipIdx.find? fun ((node, point), l) =>
-      !GraphCode.nodeChecked G images Φ facts ret l node point).bind fun (_, l) => (sourceMap[l]?).bind id
+      !GraphCode.nodeChecked G images Φ facts ret exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
   let refuse (what : String) (pos : Span) :=
     s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
   let unit := effectResult r c
   if !unit.accepted then
     if unit.exhaustion.isSome then none else
-    some (refuse s!"'{name}'" (((firstBad r.footprint false r.start r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
+    some (refuse s!"'{name}'" (((firstBad r.footprint false r.onThrow r.start r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
   else
     (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
       let code := GraphCode.effectCheckedResult G images q.entry C
       if code.accepted || code.exhaustion.isSome then none else
         let sourceMap := ((r.codeSources[i]?).map (·.sourceMap)).getD []
-        let place := firstBad q.entry.row.effect.footprint q.entry.row.effect.fresh q.entry.start
+        let place := firstBad q.entry.row.effect.footprint q.entry.row.effect.fresh q.entry.row.effect.onThrow
+            q.entry.start
             (GraphCode.program q.entry.exprs q.entry.conts) C sourceMap <|>
           sourceMapRegion sourceMap
         some (refuse s!"a closure in '{name}'" ((place.map (·.pos)).getD namePos))
@@ -128,13 +129,14 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
             (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument ρ))
             n W heap (.at r.start ρ)) ∧
       (∀ r c, (r,c) ∈ (CertifiedPlan.requests certified).zip b.functions →
-        r.footprint ≠ .top →
+        r.footprint ≠ .top ∨ r.onThrow = true →
         ∀ η n W heap (L : List Tm) (d : Tm),
           EnvOk (reassign F.equations.graph η) r.inputs (envOf L d) n W →
           WorldAdm W → HeapOk n W heap → (∀ v ∈ L, isVal v = true) → isVal d = true →
-          HeapObservations.SafePost (excOf (reassign F.equations.graph η))
+          HeapObservations.SafePostExc (excOf (reassign F.equations.graph η))
             (meaning (reassign F.equations.graph η) r.result)
-            (fun h' _ => r.footprint.Holds heap h') n W heap
+            (fun h' _ => r.footprint.Holds heap h') (fun h' => r.onThrow = true → r.footprint.Holds heap h')
+            n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
               r.start L d)) := by
   unfold checkJson at h

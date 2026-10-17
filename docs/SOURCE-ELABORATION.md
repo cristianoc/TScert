@@ -577,6 +577,22 @@ it carries no obligation about the operator's value, whose claim is checked
 where the operator is read as a value, and each operand keeps its own
 (`logical-string-values`: `s && s` of a string in a condition).
 
+A slice of the labels cannot refine `unknown`, which no label
+decomposes. An arm's entry therefore takes, for each binding its operand
+reads, the producer's claim at that read as a candidate, which the incoming
+dispatch edge checks under the edge's own observation, as it checks a
+statement entry. The read is the binding's first in the arm before any
+choice. For a binding that may change, it is the first before any other
+operation. A value binding (a parameter, a `const`) holds one value
+throughout, so its first read may also follow reads of members, references
+and positions, effect-free evaluations, and calls of native intrinsics,
+which state no promise. A call of a source function ends the search, since
+an assertion function's promise may narrow the binding there. So
+`typeof v === "number" && Number.isSafeInteger(v)` reads `v` at `number`
+(`logical-narrowing-past-reads`). A read claimed narrower than the edge
+establishes is refused when evidence is produced and when it is checked
+(the forged operand entry in `pipeline/test.mts`).
+
 A chain of one operator is read right-nested, the parser's left nesting
 reassociated:
 

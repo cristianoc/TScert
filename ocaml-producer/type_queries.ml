@@ -372,6 +372,17 @@ let flat_atoms declarations t =
         | a -> [a]) atoms
     | Rigid _ | Meet _ -> [] in
   go [] t
+(* A union naming a declaration beside atoms of that declaration's
+   definition is the declaration's: the atoms add no value. `T | { kind:
+   "a" }`, with `T = { kind: "a" } | { kind: "b" }`, is `T`. *)
+let absorb declarations = function
+  | Atoms xs as t when List.exists (function Named _ -> true | _ -> false) xs ->
+    let covered = List.concat_map (function
+      | Named _ as a -> (try flat_atoms declarations (Atoms [a]) with Json.Error _ -> [])
+      | _ -> []) xs in
+    let kept = List.filter (fun a -> (match a with Named _ -> true | _ -> false) || not (List.mem a covered)) xs in
+    if List.length kept = List.length xs then t else Atoms kept
+  | t -> t
 (* A key whose type names string or number singletons, through the
    declarations and unions that state them, is read as those singletons. *)
 let literal_key declarations key =

@@ -20,10 +20,11 @@ let promise_of = function
   | Object [("asserts",Object [("param",p)])] -> Asserts (natural p)
   | _ -> unsupported "unknown callable promise"
 let effect_of j = match j with
-  | Object fields when List.sort String.compare (List.map fst fields) = ["footprint";"fresh";"promise";"receiverStore"] ->
+  | Object fields when List.sort String.compare (List.map fst fields) = ["footprint";"fresh";"onThrow";"promise";"receiverStore"] ->
     {footprint=footprint_of (field "footprint" j);
      promise=(match field "promise" j with Null -> None | p -> Some (promise_of p));
-     fresh=boolean (field "fresh" j); receiver_store=boolean (field "receiverStore" j)}
+     fresh=boolean (field "fresh" j); receiver_store=boolean (field "receiverStore" j);
+     on_throw=boolean (field "onThrow" j)}
   | _ -> unsupported "unknown callable effect"
 let resolution_slots scope index j = match field "resolution" j with
   | Null -> None
@@ -811,7 +812,60 @@ and footprint_stmts ?(fresh=[]) ~callable ~iteration ~readable = function
     | ForOf (name,_,iterate,iterable,body) ->
       join_bound (go iterable) (join_bound (iteration iterate)
         (join_bound (block ~fresh:(List.filter ((<>) name) fresh) (name::readable) body) (tail ())))
+    (* A handler starts where the guarded block threw: Lean bounds that heap
+       where every node of the block bounds its throw (`throws_stmts`). A
+       finalizer is not proposed. *)
+    | Try (body,Some (binding,handler),None) when throws_stmts ~callable body ->
+      let caught = match binding with Some (name,_) -> name :: readable | None -> readable in
+      join_bound (block readable body) (join_bound (block caught handler) (tail ()))
     | Destructure _ | Try _ | Closing _ -> None
+(* Whether an expression's run bounds the heap it throws in as its normal
+   return does: every call and construction at a signature stating its
+   footprint on a throw (`onThrow`), every other node an inspection or a typed
+   write, which raise before they change a location (Lean's `throwsWithin`).
+   Every constructor is listed so extensions require a decision here. *)
+and throws_expr ~callable (e:expr) : bool =
+  let go = throws_expr ~callable in
+  let calls callee = match callable callee with
+    | Some (_ :: _ as effects) -> List.for_all (fun (e:call_effect) -> e.on_throw) effects
+    | _ -> false in
+  match e.node with
+  | Id _ | Literal _ | Lambda _ -> true
+  | Not a | TypeofTest (_,_,a) | Cast (_,_,a) | Read (a,_) -> go a
+  | Arith (_,a,b) | Comma (a,b) | Logical (_,a,b) | Coalesce (a,b) | Index (a,b) | Equality (_,a,b) ->
+    go a && go b
+  | Conditional (c,a,b) -> go c && go a && go b
+  | Alloc fields -> List.for_all (fun (_,v) -> go v) fields
+  | ArrayLiteral (es,_) -> List.for_all go es
+  | Assign (_,v) -> go v
+  | Update (_,{node=Id _;_},r,_) -> List.for_all go (Option.to_list r)
+  | Call (callee,receiver,args,_,_) ->
+    List.for_all go (callee :: Option.to_list receiver @ args) && calls callee
+  | Invoke ({node=Read (o,_);_} as callee,args,_,_) -> List.for_all go (o :: args) && calls callee
+  | New (callee,_,args,spreads) -> spreads = [] && List.for_all go (callee :: args) && calls callee
+  | Optional (r,b) -> go r && go b
+  | BlockBody body -> throws_stmts ~callable body
+  | Unary _ | HasKey _ | InstanceTest _ | Build _
+  | Write _ | Update _ | LogicalAssign _ | NullishAssign _
+  | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
+  | IndexWrite _ | Bind _ | ObjectAssign _
+  | WithFields _ -> false
+and throws_stmts ~callable = function
+  | [] -> true
+  | s::rest ->
+    let go = throws_expr ~callable in
+    let tail () = throws_stmts ~callable rest in
+    match s.statement with
+    | Declare (_,bindings) -> List.for_all (fun (_,_,init) -> go init) bindings && tail ()
+    | Return e | Effect e | Throw e -> go e && tail ()
+    | If (c,a,b) -> go c && throws_stmts ~callable a && throws_stmts ~callable b && tail ()
+    | Block (_,body) -> throws_stmts ~callable body && tail ()
+    | While (c,body,update) -> go c && throws_stmts ~callable (body @ update) && tail ()
+    | Break _ | Continue -> tail ()
+    | Destructure (target,d,init) when pattern_reads target ->
+      go init && List.for_all go (Option.to_list d @ pattern_defaults target) && tail ()
+    | Try (body,Some (_,handler),None) -> throws_stmts ~callable body && throws_stmts ~callable handler && tail ()
+    | ForOf _ | Destructure _ | Try _ | Closing _ -> false
 
 (* Whether every normal return of a body returns a value whose array store
    the run allocated: an expression body that is one, or a block of

@@ -39,6 +39,9 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   /-- The footprint the unit's declaration claims, which its graph must
   establish (`checkRequestResult`). -/
   footprint : Footprints.Closed := .top
+  /-- Whether the declaration claims its footprint on a throw too, which its
+  graph must establish as well. -/
+  onThrow : Bool := false
 
 @[nospecialize] def SourceRequest.codeHints (r : SourceRequest σ ι) : List RequestJson.CodeHints :=
   r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.cuts⟩
@@ -128,22 +131,27 @@ node by node (`GraphCode.compositionalChecked`), or by a graph of pure nodes,
 which preserves the heap, for a unit returning a plain result under the
 ordinary checker. -/
 @[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
-  if r.footprint = .top then pure () else
-    (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.promise.isNone)).bind fun _ =>
+  if r.footprint = .top ∧ r.onThrow = false then pure () else
+    (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.promise.isNone && r.footprint != .top)).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
     GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) r.footprint
-      false r.start r.program c.certificate
+      false r.onThrow r.start r.program c.certificate
 
 theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
-    (h : (effectResult r c).accepted = true) (he : r.footprint ≠ .top) :
-    r.qualification = none ∧ r.promise = none ∧
+    (h : (effectResult r c).accepted = true) (he : r.footprint ≠ .top ∨ r.onThrow = true) :
+    r.qualification = none ∧ r.promise = none ∧ r.footprint ≠ .top ∧
       (r.program.all (fun n => Purity.pureTerm n.expression) = true ∨
         GraphCode.compositionalChecked (RequestJson.graph r.toRequest) (StoreView.images r.types) r.footprint
-          false r.start r.program c.certificate = true) := by
-  simp only [effectResult, he, if_false, ProgramCertificates.CheckResult.accepted_bind,
+          false r.onThrow r.start r.program c.certificate = true) := by
+  have hn : ¬(r.footprint = .top ∧ r.onThrow = false) := by
+    rintro ⟨h1, h2⟩
+    rcases he with he | he
+    · exact he h1
+    · rw [h2] at he; cases he
+  simp only [effectResult, hn, if_false, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_orElse,
-    Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true] at h
-  exact ⟨h.1.1, h.1.2, h.2⟩
+    Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
+  exact ⟨h.1.1.1, h.1.1.2, h.1.2, h.2⟩
 
 /-- Validate one unit, sharing its checked code table with supplemental obligations. -/
 @[nospecialize] def checkRequestResult (r : SourceRequest σ ι) (c : Response ι)
@@ -252,23 +260,25 @@ theorem program_nodes (P : Program) :
     rw [ih]
 
 /-- **A unit claiming a footprint meets it.** A unit claiming a footprint
-other than the one letting everything change, run as the code its graph
-describes from any environment of values its inputs admit, is safe, and on
-normal return the heap it leaves is within its footprint of its entry heap. -/
+other than the one letting everything change, or claiming it on a throw, run
+as the code its graph describes from any environment of values its inputs
+admit, is safe; on normal return the heap it leaves is within its footprint
+of its entry heap, and so is the heap a throw leaves where it claims
+`onThrow`. -/
 theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
     (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
-    (heffect : r.footprint ≠ .top)
+    (heffect : r.footprint ≠ .top ∨ r.onThrow = true)
     (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W heap) (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true) :
-    HeapObservations.SafePost (excOf (reassign (RequestJson.graph r.toRequest) η))
+    HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
       (meaning (reassign (RequestJson.graph r.toRequest) η) r.result)
-      (fun h' _ => r.footprint.Holds heap h') n W heap
+      (fun h' _ => r.footprint.Holds heap h') (fun h' => r.onThrow = true → r.footprint.Holds heap h') n W heap
       (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
         r.start L d) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨checked, -, heff, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
-  obtain ⟨hq, hpromise, hp⟩ := effectResult_preserving heff heffect
+  obtain ⟨hq, hpromise, -, hp⟩ := effectResult_preserving heff heffect
   simp only [SourceRequest.checker, hq] at checked
   rw [verify_eq] at checked
   simp only [Bool.and_eq_true] at checked
@@ -288,13 +298,16 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
     rw [hgoal, ← hP] at hc
     have hs := GraphCode.goto_safe hc hcodes n W heap L d he hw hh
     rcases hp with hp | hp
-    · apply HeapObservations.weaken (fun h' _ hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
+    · -- A pure graph keeps the heap a prefix at every step, a raise included.
       have hp : ∀ e ∈ r.program.map (·.expression), Purity.pureTerm e = true := by
         intro e he
         obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he
         exact List.all_eq_true.mp hp node hn
-      exact HeapObservations.weaken (fun _ _ h => (CallEffects.Effect.post_ofFootprint _ .undef _ _ _).mp h)
-        (CallEffects.pure_safe (.goto hp hvalues hd) hs)
+      exact HeapObservations.SafePostExc.weaken
+        (fun _ _ h => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
+          ((CallEffects.Effect.post_ofFootprint _ .undef _ _ _).mp h))
+        (fun _ h _ => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) h)
+        (CallEffects.pure_safe_exc (r := .undef) (.goto hp hvalues hd) hs)
     · rw [← hP] at hp
       erw [← GraphCode.compositionalChecked_reassign G images η, GraphCode.compositionalChecked_eq] at hp
       simp only [Bool.and_eq_true, List.isEmpty_iff] at hp
@@ -305,7 +318,7 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
         exact hchecked.1
       have hb := GraphCode.goto_bounded hc hcodes (GraphCode.nodes_of_checked hgraph hcodes hp.2) hp.1
         n W heap L d he hw hh
-      exact HeapObservations.weaken (fun _ _ hq => hq.1) hb
+      exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1) (fun _ hq => hq) hb
   · contradiction
 
 /-- The source region represented by a graph, for checks on synthetic nodes. -/
@@ -393,7 +406,7 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
     return body
   return { toRequest := request, sourceScheme, qualification, obligations := obligations, sourceMap := r.sourceMap,
            assertions := r.assertions, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
-           nodePlans := nodePlans, footprint := r.footprint }
+           nodePlans := nodePlans, footprint := r.footprint, onThrow := r.onThrow }
 
 end
 

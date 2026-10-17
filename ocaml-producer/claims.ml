@@ -44,7 +44,7 @@ let effect_json e = Object ["footprint",footprint_json e.footprint;
     | None -> Null
     | Some (Guards param) -> Object ["guards",Object ["param",int param]]
     | Some (Asserts param) -> Object ["asserts",Object ["param",int param]]);
-  "fresh",Bool e.fresh;"receiverStore",Bool e.receiver_store]
+  "fresh",Bool e.fresh;"receiverStore",Bool e.receiver_store;"onThrow",Bool e.on_throw]
 let rec resolution_json = function
   | StableResolution -> Object ["k",String "stable"]
   | NativeResolution child -> Object ["k",String "native";"child",resolution_json child]
@@ -556,6 +556,7 @@ let encode (proposal : Proposal_types.t) =
       "result",claim_type source.result;
       "contracts",contracts f.contracts;
       "footprint",footprint_json f.declared_footprint;
+      "onThrow",Bool f.declared_on_throw;
       "entries",entries f.entries;
       "expressions",expressions f.expressions]
       @ arrows)) proposal.functions in

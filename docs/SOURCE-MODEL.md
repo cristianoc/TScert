@@ -435,7 +435,7 @@ The first guarantee preserves existing heap contents on normal return and
 allows fresh allocation. A call that throws supplies no heap postcondition.
 Consequently, a body checker cannot carry this guarantee through a caught
 exception: it must check the handler with the possibly changed heap, or have
-a separately justified guarantee for exceptional exits. The current pure-body
+a separately justified guarantee for exceptional exits ([exceptional footprints](#exceptional-footprints)). The current pure-body
 checker does not admit such calls. Graph composition checks normal-return
 postconditions node by node and refuses handlers; the independent pure-graph
 rule can still certify pure handlers. Qualified-call composition retains
@@ -538,11 +538,163 @@ parser's resolution and the host's module loader. Until module composition
 is proved, both are obligations of review, listed with the import
 assumption.
 
-**A catch is out of reach.** A certified import's footprint holds on normal
-return, as every call effect's does. `commit-records`' `at` catches the throw
-of `git`, so it has no certificate, and neither has `readRecord`, which
-reaches `at` through `examplesOf`
-([exceptional footprints](../WORK.md#exceptional-footprints)).
+**A catch.** A certified import's footprint holds on normal return, and on
+a throw where its effect states `onThrow`
+([exceptional footprints](#exceptional-footprints)).
+
+### Exceptional footprints
+
+An effect may promise that its footprint also holds when the call throws:
+`onThrow`. The promise covers the heap a throw leaves the call in, from the
+call's entry heap, exactly as the footprint covers a normal return's. It says
+nothing of the thrown value. A handler of a node calling at such a signature
+then starts in a heap the footprint relates to the node's entry heap, and a
+body that catches can be certified at a footprint.
+
+**Semantics.** `SafePost Ξ T Q` states `Q` of the heap a value is returned in
+and nothing of a throw. Its generalization `SafePostExc Ξ T Q R` states, in its
+throw disjunct, `R h` of the heap `h` at which the term raises, whatever
+value it raises:
+
+```math
+\mathsf{SafePostExc}\,\Xi\,T\,Q\,R\,(n{+}1)\,W\,h\,t \iff
+(\mathsf{val}\,t \wedge T\,W\,t \wedge Q\,h\,t)
+\vee (\exists v.\ \mathsf{Raises}\,t\,v \wedge \mathsf{Scoped}_0\,v \wedge \Xi\,W\,v \wedge R\,h)
+\vee (\exists W'\,h'\,t'.\ \ldots \wedge \mathsf{SafePostExc}\,\Xi\,T\,Q\,R\,n\,W'\,h'\,t')
+```
+
+with the step disjunct as in `SafePost`. `SafePost Ξ T Q` is
+`SafePostExc Ξ T Q (fun _ => True)`, and `erase` holds for both. An
+effect $`e`$ with `onThrow` gives the arrow's run, from entry heap
+$`h_0`$, the exceptional postcondition
+$`R\,h \iff e.\mathsf{footprint}.\mathsf{HoldsOn}\,P\,h_0\,h`$, with
+$`P`$ the locations its `receiverStore` leaves bounded, as `Effect.within`
+reads them. Without `onThrow`, $`R`$ is `True`. Coverage
+(`Effect.Covers`) gains one clause: an effect with `onThrow` covers one
+without, and not the other way.
+
+**Combining effects.** Two guarantees of one call combine
+(`Effect.meet`) into the meet of their footprints, with `onThrow` the
+conjunction of theirs. A disjunction would be unsound: an empty footprint
+stated on normal return only, met with a wider one stated also on a throw,
+gives no empty footprint on a throw. Where the conjunction loses a useful
+guarantee, the signatures stay separately selectable, as overloads are. The
+field is carried, and audited, wherever an effect is: overload combination,
+weakening by an annotation, `bind`, construct signatures, and imported and
+library signatures.
+
+**What stays on normal edges.** A promise (`guards`, `asserts`) is a fact
+about the arguments a normal return establishes, and `fresh` a fact about
+the returned value. A throw establishes neither, so neither moves onto an
+exceptional edge. A handler binds the thrown value at the graph's exception
+family, `unknown`, and the thrown slot is never fresh; the slots the node
+already held keep their freshness (`handlerFresh`; the candidate facts
+`inferFresh` proposes flow along handler edges the same way). The handler
+receives no current-content fact ([handler facts](#exceptional-footprints)).
+
+**Composition through a body.** `GraphCode.BoundState` states the run's
+invariant from the body's entry heap $`h_0`$, with $`b`$ the body's
+freshness cutoff, the length of $`h_0`$: a node's run is bounded on the
+locations below $`b`$, so a node may change storage the body allocated
+before it, a receiver among them. The extension keeps that cutoff:
+
+- a node with a handler is admitted when its term's run is `SafePostExc`
+  whose exceptional postcondition relates the node's entry heap to the heap
+  it raises in on the locations below $`b`$; the `handle` transition then
+  keeps $`\Phi.\mathsf{Holds}\,h_0\,h`$ by `Closed.Holds.trans_on` with
+  the invariant at the node's entry, as `enter` does for a normal return;
+- the state `.raised v` keeps $`\Phi.\mathsf{Holds}\,h_0\,h`$ where the body
+  claims `onThrow`; without it the state stays unconstrained;
+- the `handle` transition also establishes the handler target's
+  `FreshOk`, through the handler's slot mapping with the thrown slot
+  non-fresh;
+- each node's term is checked by the form that admits it today (an
+  inspection, a typed write, a call at a selected signature), now also on
+  its throws.
+
+**Handler facts.** Ordinary graph certification checks a handler edge
+(`HandlerOk`) with facts that hold in every heap: `handlerFacts` drops heap
+observations, whatever the throwing call's footprint. A handler therefore
+receives no current-content fact across a throw, and one that relies on a
+fact the guard before the call established is refused
+(`invalid-exceptional-handler-fact`, run under Node). The bounded run's
+footprint and freshness are what the exceptional postcondition carries to a
+handler. Keeping the facts a throw's footprint keeps would thread the
+postcondition through expression checking, `HandlerOk` and `StateOk`.
+
+Every way a node's term can raise is then covered:
+
+- **Before the invocation.** Source lowering evaluates operands into slots
+  first (`valueTerm`), so a call node raises either while reading its
+  operands, which writes nothing, or in the callee. An inspection may
+  allocate before it raises; it preserves the heap's prefix
+  (`inspect_step`), so every location below $`b`$ keeps its contents. A typed
+  write raises before it writes.
+- **In the callee.** A call at a selected signature raises within the
+  signature's `onThrow` footprint. In bounded certification, a node whose
+  call lacks `onThrow` admits no handler, and a body containing one claims
+  no `onThrow`; ordinary safety keeps every handler.
+- **Defaults and intermediate mutations.** A parameter default runs as nodes
+  of the declaration's graph, and earlier nodes' normal returns compose into
+  the invariant, so a throw at any node is relative to the body's entry
+  heap.
+- **Handlers and rethrows.** A handler is a node like any other. A rethrow
+  is a `throw` node without a handler, which raises at its entry heap and so
+  reaches `.raised` with the invariant.
+
+A pure graph keeps its independent operational rule, which covers its
+handlers already and bounds its throws too: every step keeps the heap a
+prefix (`CallEffects.prefix_safe_exc`). A node whose entry has a slot of a
+type no value meets is never entered, so it is within any bound
+(`GraphCode.unreachableEntry`; `never-parameter-calls`).
+
+**What `checkJson_safe` states.** Its second conclusion, for each accepted
+request with a footprint other than `top`, becomes a `SafePostExc` whose
+exceptional postcondition is the footprint from the run's entry heap where
+the request's effect states `onThrow`, and `True` elsewhere. Its premise
+stays the exact CLI success condition. The first conclusion, plain safety,
+is unchanged.
+
+**Natives.** A native signature states `onThrow` only where its audit
+covers every throw: validation errors, failures of the host, and the
+operation's own errors. `Error` at a string message and `JSON.stringify` at
+a JSON value write nothing they did not allocate before they return or
+throw, so each states the empty footprint with `onThrow`
+([library globals](SOURCE-CONTRACTS.md#library-globals)). `execFileSync`'s
+[restricted form](SOURCE-CONTRACTS.md#library-modules) is audited for it;
+its overlay entry in `library-modules.mts` states the empty footprint with
+`onThrow`, at options whose optional fields `env?: undefined` and
+`shell?: false` the argument's claim must meet. An object literal without a
+spread meets them by leaving those keys out, since a literal owns exactly
+the properties it writes ([object literals](#object-literals)). A literal
+with a spread meets them only where each spread part's claim states the two
+keys absent or at those types; leaving them out after an open spread does
+not. The entry keeps the unrestricted
+form beside it, so a call outside the restricted options keeps its type and
+an unrestricted effect.
+
+**The motivating chain.** `commit-records`' `git` calls `execFileSync` at
+the restricted options and is certified at the empty footprint with
+`onThrow`. `at` catches `git`'s throw and returns `undefined` from its
+handler, so it is certified at the empty footprint. `examplesOf`,
+`readRecord` and `group`'s `map` callback then compose normal-return
+footprints, with the [certified import](#certified-imports) of
+`parseRecord`. `node-exec-restricted` shows the first steps, and
+`exceptional-footprint-handler` the same composition
+for callees that build and throw an error: a declaration, a constant's
+arrow, and a declaration whose handler rethrows.
+
+**Producer and wire.** A call effect states `onThrow` in the wire
+([source claims](SOURCE-CLAIMS.md)), and so does a declaration's claim beside
+its footprint. OCaml proposes it for a closure and, at a greatest fixpoint
+over the module, for a declaration whose every node bounds its throw
+(`Source.throws_stmts`); a `try` whose block bounds its throws, with a catch
+and no `finally`, is within the join of the block's and the handler's
+footprints. Implementation: `HeapObservations.SafePostExc`,
+`CallEffects.Effect.excPost`, `GraphCode.NodeWithin` (its `thr` flag),
+`GraphCode.throwsWithin`, `GraphCode.handlerFresh`, `GraphCode.BoundState`
+(its `exc` flag) and `SourceRequests.checkRequests_footprint_at`, whose
+statement `checkJson_safe`'s second conclusion is.
 
 ### Calls
 

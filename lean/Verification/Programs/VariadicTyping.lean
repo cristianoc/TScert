@@ -313,7 +313,8 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G s.receiver j U r)
     {args : List Tm} (hvals : CallArguments.Values args)
     (ha : ArgsRest (s.arguments.1.map (meaning G)) (argMeaning G s.arguments.2) j U args) :
-    SafePost (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args)) (s.effect.post r heap) j U heap
+    HeapObservations.SafePostExc (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args))
+      (s.effect.post r heap) (s.effect.excPost r heap) j U heap
       (CallArguments.graphEntry arity E K start vs true r args) := by
   obtain ⟨hshort, hpack⟩ := ha
   simp only [List.length_map, hk] at hshort hpack
@@ -329,16 +330,16 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     rw [List.getD_eq_getElem?_getD, hi] at this
     exact this
   unfold CallArguments.graphEntry
-  have hstore : SafePost (excOf G) (meaning G A) (fun heap' _ => heap.IsPrefix heap')
-      j U heap (.arrLit (args.drop arity)) := by
-    apply HeapObservations.one_step rfl rfl (.arrAlloc (fun a hm => hvals a (List.mem_of_mem_drop hm)))
+  have hstore : HeapObservations.SafePostExc (excOf G) (meaning G A) (fun heap' _ => heap.IsPrefix heap')
+      (s.effect.excPost r heap) j U heap (.arrLit (args.drop arity)) := by
+    apply HeapObservations.SafePostExc.one_step rfl rfl (.arrAlloc (fun a hm => hvals a (List.mem_of_mem_drop hm)))
       ⟨args.drop arity, rfl⟩ (restStore_safe harr hu hh hpack (fun a hm => hvals a (List.mem_of_mem_drop hm)))
-  apply HeapObservations.bind (.letE · _) .letC .letC j U heap _ hu hh hstore
+  apply HeapObservations.SafePostExc.bind (.letE · _) .letC .letC j U heap _ hu hh hstore
   intro i hi V hy hv heap' a hh' hval harr' hprefix
   cases i with
   | zero => trivial
   | succ p =>
-    apply HeapObservations.bind_value hval hv hh'
+    apply HeapObservations.SafePostExc.bind_value hval hv hh'
     have hsub : subst 0 a (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs)
         .nul) = .goto E K start (a :: r :: CallArguments.parameters arity args ++ vs) .nul := by
       have hmap : (r :: CallArguments.parameters arity args ++ vs).map (subst 0 a) =
@@ -358,8 +359,10 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
           envOf (a :: r :: CallArguments.parameters arity args ++ vs) .nul := by
         funext i; cases i <;> rfl
       rw [← he]; exact henv
-    apply HeapObservations.weaken (Q := fun heap'' v => ∀ r', s.fixed.effect.post r' heap' heap'' v)
+    apply HeapObservations.SafePostExc.weaken (Q := fun heap'' v => ∀ r', s.fixed.effect.post r' heap' heap'' v)
+      (R := fun heap'' => ∀ r', s.fixed.effect.excPost r' heap' heap'')
       (fun heap'' v hp => s.effect.post_prefix hprefix (hp r))
+      (fun heap'' hp => s.effect.excPost_prefix hprefix (hp r))
     have hpromised := framePromised_params (e := s.fixed.effect) hs.2.1 [a, r] args vs
     simp only [List.length_cons, List.length_nil, List.cons_append, List.nil_append] at hpromised
     rw [← show framePromised s.effect (frameOffset (some A)) (a :: r :: CallArguments.parameters arity args ++ vs) =

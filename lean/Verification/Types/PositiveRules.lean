@@ -1176,10 +1176,10 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
         exact ArgsShort_of_exact this
     obtain ⟨result, hi, hsafe⟩ := hv j hj U hx hu heap hh r hrv
       (hr j hj _ _ hrecv U r hrm) args hvals (Domains.short (hr j hj) hd hall)
-    exact ⟨result, hi, HeapObservations.consequence_below (fun m hm V u hu =>
-        (Effect.covers_sound heff).2 _ args m V u (Effect.result_mono p.effect
+    exact ⟨result, hi, HeapObservations.SafePostExc.consequence_below' (fun _ _ _ _ h => h) (fun m hm V u hu =>
+        (Effect.covers_sound heff).2.1 _ args m V u (Effect.result_mono p.effect
           (fun u hu => hr m (by omega) _ _ hres V u hu) (fun u hu => hr m (by omega) _ _ hres V u hu) hu))
-      ((Effect.covers_sound heff).1 r heap) hsafe⟩
+      ((Effect.covers_sound heff).1 r heap) ((Effect.covers_sound heff).2.2 r heap) hsafe⟩
   · exact hc.elim
 
 /-- A position covered by another: a present source position needs a target

@@ -24,8 +24,8 @@ type promise = Guards of int | Asserts of int
    normal return's value has an array store the call allocated, and whether
    the footprint excepts the receiver's array store, which the call may
    change arbitrarily. *)
-type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool }
-let footprint_effect footprint = {footprint;promise=None;fresh=false;receiver_store=false}
+type call_effect = { footprint: footprint; promise: promise option; fresh: bool; receiver_store: bool; on_throw: bool }
+let footprint_effect footprint = {footprint;promise=None;fresh=false;receiver_store=false;on_throw=false}
 (* An ordinary arrow's: every location may change. *)
 let ordinary_effect = footprint_effect top_footprint
 (* Heap preservation: no location may change. *)
@@ -36,9 +36,11 @@ let promise_effect promise = {(footprint_effect top_footprint) with promise=Some
 let plain_effect e = e.promise = None
 (* A smaller footprint and the same promise, a fresh result where the other
    states one, and the receiver's store excepted only where the other excepts
-   it or lets everything change (Lean's `Effect.covers`). *)
+   it or lets everything change, and a footprint on a throw where the other
+   states one (Lean's `Effect.covers`). *)
 let effect_covers a b = footprint_le a.footprint b.footprint && a.promise = b.promise &&
-  (not b.fresh || a.fresh) && (not a.receiver_store || b.receiver_store || b.footprint = top_footprint)
+  (not b.fresh || a.fresh) && (not a.receiver_store || b.receiver_store || b.footprint = top_footprint) &&
+  (not b.on_throw || a.on_throw)
 
 type array_presence = Dense | Readable | Sparse
 let presence_name = function Dense -> "dense" | Readable -> "readable" | Sparse -> "sparse"
@@ -133,10 +135,11 @@ let quantifier_identities (q:quantifier) = q.identity ::
 let retain_call_effects declared inferred = match declared,inferred with
   | Atoms [Shape expected],Atoms [Shape actual] ->
     let retain (s:signature) =
-      if List.exists (fun (candidate:signature) ->
-        candidate.call_effect=empty_effect &&
-        {candidate with call_effect=ordinary_effect} = {s with call_effect=ordinary_effect}) actual.calls
-      then {s with call_effect=empty_effect} else s in
+      match List.find_opt (fun (candidate:signature) ->
+        {candidate.call_effect with on_throw=false}=empty_effect &&
+        {candidate with call_effect=ordinary_effect} = {s with call_effect=ordinary_effect}) actual.calls with
+      | Some candidate -> {s with call_effect=candidate.call_effect}
+      | None -> s in
     Atoms [Shape {expected with calls=List.map retain expected.calls}]
   | _ -> declared
 

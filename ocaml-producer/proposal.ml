@@ -53,10 +53,12 @@ let infer_function ?(offers=[]) state flows declarations arities module_function
   let (claim,_),_ = settled offered 4 assumed in
   claim
 
-(* A declaration's signature with the footprint proposed for it. *)
-let with_footprint footprint t = match t with
+(* A declaration's signature with the footprint proposed for it, on a throw
+   too where `on_throw`. *)
+let with_footprint ?(on_throw=false) footprint t = match t with
   | Atoms [Shape ({calls;_} as shape)] when footprint <> top_footprint ->
-    Atoms [Shape {shape with calls=List.map (fun (s:signature) -> {s with call_effect={s.call_effect with footprint}}) calls}]
+    Atoms [Shape {shape with calls=List.map (fun (s:signature) ->
+      {s with call_effect={s.call_effect with footprint;on_throw}}) calls}]
   | _ -> t
 
 (* A call of a signature the call applies: no quantified one, whose call is
@@ -73,7 +75,7 @@ let effect_candidate (g:Source.fn) = g.guard = None && not g.rest && g.quantifie
    establishes it. *)
 let declaration_footprint declarations values names (claim:function_claim) =
   let g = claim.source in
-  if not (effect_candidate g) then top_footprint else
+  if not (effect_candidate g) then top_footprint,false else
   let callable (callee:expr) =
     match List.filter_map (fun (x:expression) -> if x.pos = callee.pos then Some x.type_ else None)
             claim.expressions with
@@ -85,7 +87,8 @@ let declaration_footprint declarations values names (claim:function_claim) =
       | _ -> None) (Some []) types in
   let readable = List.map fst g.params @ names in
   let iteration name = Option.bind (List.assoc_opt name values) iteration_footprint in
-  Option.value (footprint_stmts ~callable ~iteration ~readable g.body) ~default:top_footprint
+  Option.value (footprint_stmts ~callable ~iteration ~readable g.body) ~default:top_footprint,
+  throws_stmts ~callable g.body
 
 let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
   (* Footprints are proposed at the least fixpoint: every candidate is
@@ -102,22 +105,30 @@ let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
     @ constants in
   let start = List.filter_map (fun (g:Source.fn) ->
     if effect_candidate g then Some (g.name,empty_footprint) else None) program.Source.functions in
-  let rec rounds assumed =
-    let proposal : Proposal_types.t = infer_assuming ~state flows program assumed in
+  (* A footprint on a throw is proposed at the greatest fixpoint: every
+     candidate is assumed to bound its throws, and a round withdraws the
+     assumption from each whose body then does not. *)
+  let rec rounds assumed thrown =
+    let proposal : Proposal_types.t = infer_assuming ~thrown ~state flows program assumed in
     let footprints = List.map (fun c -> c,declaration_footprint program.Source.declarations program.Source.values names c) proposal.functions in
-    let raised = List.filter_map (fun ((c:function_claim),f) ->
+    let raised = List.filter_map (fun ((c:function_claim),(f,_)) ->
       match List.assoc_opt c.source.name assumed with
       | Some a -> Some (c.source.name,join_footprint a f)
       | None -> None) footprints in
-    if raised = assumed then
-      {proposal with functions=List.map (fun ((c:function_claim),f) ->
-        {c with declared_footprint=(match List.assoc_opt c.source.name assumed with
-          | Some a -> join_footprint a f | None -> top_footprint)}) footprints}
-    else rounds raised in
-  rounds start
+    let kept = List.filter (fun name -> List.exists (fun ((c:function_claim),(f,t)) ->
+      c.source.name = name && t && f <> top_footprint) footprints) thrown in
+    if raised = assumed && kept = thrown then
+      {proposal with functions=List.map (fun ((c:function_claim),(f,_)) ->
+        let footprint = match List.assoc_opt c.source.name assumed with
+          | Some a -> join_footprint a f | None -> top_footprint in
+        {c with declared_footprint=footprint;
+          declared_on_throw=footprint <> top_footprint && List.mem c.source.name thrown}) footprints}
+    else rounds raised kept in
+  rounds start (List.map fst start)
 
-and infer_assuming ~state flows program assumed =
+and infer_assuming ?(thrown=[]) ~state flows program assumed =
   let module_functions = List.map (fun (g:Source.fn) -> g.name,lazy (with_footprint
+      ~on_throw:(List.mem g.name thrown)
       (Option.value (List.assoc_opt g.name assumed) ~default:top_footprint) (module_type g)))
     program.Source.functions
     @ List.map (fun (name,t) -> name,lazy t) program.Source.values in

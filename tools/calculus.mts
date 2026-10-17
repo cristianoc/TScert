@@ -221,7 +221,7 @@ function decodeCode(v: unknown): CallCode {
       const { exprs, conts, caps } = c;
       if (!Array.isArray(exprs) || !Array.isArray(conts) || !Array.isArray(caps) || exprs.length !== conts.length)
         throw Error("invalid graph code");
-      const pairs: [unknown, unknown][] = conts.map((k) => {
+      const pairs: [unknown, unknown][] = conts.map((k: unknown) => {
         if (!Array.isArray(k) || k.length !== 2) throw Error("invalid graph code");
         const [continuation, handler] = k;
         return [continuation, handler];
@@ -267,7 +267,7 @@ export function decodeTerm(v: unknown): Term {
     case "objAt": {
       const o = fields(value, ["fields", "call", "identity"]);
       if (!Array.isArray(o.fields)) throw Error("invalid object fields");
-      const pairs: [string, number][] = o.fields.map((pair) => {
+      const pairs: [string, number][] = o.fields.map((pair: unknown) => {
         if (!Array.isArray(pair) || pair.length !== 2) throw Error("invalid object field");
         const [name, location] = pair;
         if (typeof name !== "string") throw Error("invalid object field");
@@ -280,7 +280,7 @@ export function decodeTerm(v: unknown): Term {
       const call = decodeCode(o.call);
       const names = o.names;
       if (!Array.isArray(names)) throw Error("invalid field names");
-      const strings = names.map((n) => stringOf(n, "invalid field names"));
+      const strings = names.map((n: unknown) => stringOf(n, "invalid field names"));
       return { kind: "makeAt", call, names: strings, inits: termsOf(o.inits) };
     }
     case "readAt": {
@@ -322,14 +322,14 @@ export function decodeTerm(v: unknown): Term {
     case "arr": {
       const elems = fields(value, ["elems"]).elems;
       if (!Array.isArray(elems)) throw Error("invalid store");
-      return { kind: "arr", elems: elems.map((l) => (l === null ? null : nat(l))) };
+      return { kind: "arr", elems: elems.map((l: unknown) => (l === null ? null : nat(l))) };
     }
     case "spread": return { kind: "spread", a: decodeTerm(fields(value, ["a"]).a) };
     case "throw": return { kind: "throw", a: decodeTerm(fields(value, ["a"]).a) };
     case "merge": {
       const o = fields(value, ["drop", "a", "b"]);
       const drop = o.drop;
-      if (!Array.isArray(drop) || drop.some((key) => typeof key !== "string" &&
+      if (!Array.isArray(drop) || drop.some((key: unknown) => typeof key !== "string" &&
           !(isRecord(key) && Object.keys(key).length === 1 && typeof key.symbol === "number")))
         throw Error("invalid dropped keys");
       return { kind: "merge", drop: drop.map(keyOf), a: decodeTerm(o.a), b: decodeTerm(o.b) };

@@ -80,6 +80,41 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "map-literal-at-expected-element: each token's kind is one the type names");
   assert.equal(runExample("invalid-map-literal-outside-element", `tokens([" "])[0].kind`), "space",
     "invalid-map-literal-outside-element: the actual source returns a kind its type does not name");
+  assert.equal(runExample("array-spread-named-union", `sizes({ kind: "dot" }, [{ kind: "line", length: 2 }])`), "0, 2",
+    "array-spread-named-union: each element's size");
+  assert.equal(runExample("exceptional-footprint-handler",
+    `JSON.stringify([orZero([1, -1]), halvesOrSelf([4, 3]), relayedOrOne([-2, 2]), largest(1, 2)])`),
+    "[[1,0],[2,3],[1,2],2]", "exceptional-footprint-handler: each handler's value");
+  assert.equal(runExample("exceptional-footprint-fresh", `JSON.stringify(counts(["a,b", "c"], 2))`), "[0,2]",
+    "exceptional-footprint-fresh: the handler pushes onto the fresh store");
+  assert.equal(runExample("invalid-exceptional-handler-fact", `wrong({ v: "x" })`), undefined,
+    "invalid-exceptional-handler-fact: the handler reads the field the throwing call cleared");
+  assert.equal(runExample("invalid-exceptional-handler-mutation", "(r => r.length === 3 && !(2 in r))(wrong([1, 2, 3]))"), true,
+    "invalid-exceptional-handler-mutation: the callee's pop before its throw leaves a hole");
+  assert.equal(runExample("json-stringify-recursive", `JSON.stringify(serialized([{ a: { b: [] } }, 1]))`), '["{\\"a\\":{\\"b\\":[]}}","1"]',
+    "json-stringify-recursive: each value serialized");
+  // Each hook runs code of the client's that pops the array `map` visits, so
+  // the result has a hole below its length.
+  for (const [file, call] of [
+    ["invalid-json-stringify-tojson", "(() => { const xs = [1, 2, 3]; return wrong(xs, { toJSON() { xs.pop(); return \"\"; } }); })()"],
+    ["invalid-json-stringify-replacer", "(() => { const xs = [1, 2, 3]; return wrong(xs, (k, v) => { xs.pop(); return v; }); })()"],
+    ["invalid-error-options", "(() => { const xs = [\"a\", \"b\", \"c\"]; return wrong(xs, { get cause() { xs.pop(); return 0; } }); })()"],
+  ])
+    assert.equal(runExample(file, `(r => r.length === 3 && !(2 in r))(${call})`), true,
+      `${file}: the hook shrinks the mapped array, leaving a hole in the result`);
+  assert.equal(runExample("map-stable-json-error", `JSON.stringify([quotedAll(["a"]), checkedAll([1, 2])])`),
+    '[["\\"a\\""],[1,2]]', "map-stable-json-error: dense results");
+  assert.throws(() => runExample("map-stable-json-error", "checkedAll([-1])"), /negative: -1/,
+    "map-stable-json-error: the callback's throw is an outcome");
+  assert.equal(runExample("typeof-named-union-open-arms", `[nonString({ size: 2 }), nonString("x"), joined({ a: 1, b: 2 }), joined("y")].join()`),
+    "2,-1,3,-1", "typeof-named-union-open-arms: the undecided arms are read");
+  assert.equal(runExample("typeof-named-union", `[showKey("a"), showKey({ symbol: 2 }), symbolOf({ symbol: 3 }), symbolOf("x")].join()`),
+    "a,sym#2,3,-1", "typeof-named-union: each arm reads its own representation");
+  assert.equal(runExample("logical-narrowing-past-reads",
+    `[safeInteger(3), safeInteger("3"), shorter(1, "ab"), digits("12"), digits(12), nonNegative(4), untested(2, "a")].join()`),
+    "true,false,true,true,false,4,true", "logical-narrowing-past-reads: each test guards its operand");
+  assert.throws(() => runExample("logical-narrowing-past-reads", "nonNegative(-1)"), /non-negative/,
+    "logical-narrowing-past-reads: a failed test throws");
   assert.equal(runExample("logical-truth-narrowing", `[guarded("b", "x"), chosen("a", "x"), chosen("b", ""), classOf("kw", "e")].join()`),
     'b,,,<span class="m-kw">e</span>', "logical-truth-narrowing: the guarded branches see `r` at \"b\"");
   assert.equal(runExample("invalid-logical-truth-or-narrowing", `chosen("a", "x")`), "a",
@@ -205,6 +240,13 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("invalid-array-flat-map-value", "first()"), 1,
     "invalid-array-flat-map-value: the flattened array's number is returned at number[]");
   // An `env` value's `toString`, which the host runs before it reads `stdio`.
+  assert.equal(runImporting("node-exec-restricted", `JSON.stringify(outputs(["process.stdout.write('a')", "process.exit(1)"]))`),
+    '["a",""]', "node-exec-restricted: a failed command's throw caught as no output");
+  assert.equal(runImporting("invalid-node-exec-restricted-spread", `(() => {
+    const scripts = ["", "", ""];
+    const r = wrong(scripts, { encoding: "utf8", env: { X: { toString() { scripts.pop(); return "x"; } } } });
+    return r.length === 3 && !(2 in r);
+  })()`), true, "invalid-node-exec-restricted-spread: an env value's toString shrinks the mapped array");
   assert.equal(runImporting("invalid-node-exec-env-object", `(() => {
     const stdio = ["pipe", "pipe", "ignore"];
     const X = { toString() { stdio[1] = "ignore"; return "x"; } };

@@ -2806,6 +2806,40 @@ read is
 ```
 
 where the supported tags are tests for null, undefined and either nullish value.
+
+The rule extends to every tag whose answer depends on the value alone, so
+not on the heap: the primitive families, `isArray`, `typeofObject`, `isFun`,
+truthiness and the singletons. A cell fact's atoms are alternatives: the
+value meets one of them. An observation that the value answers
+$`\tau`$ with $`q`$ is a conjunct, so it is a separate fact
+$`x.f\mapsto\mathsf{tag}\,\tau\,q`$, never an atom appended to a list:
+two failed tests are two facts, both of which hold. A dispatch on a value
+read from $`x.f`$ records it, as `observeTyped` records `nonNullish` from a
+slice of objects. A later read of $`x.f`$ is then typed at the slice of the
+location's contract by every such fact, which for `isArray` is the
+built-ins' array slice that `Array.isArray` gives a value. Observed contents
+follow the existing invalidation rules: a write that may alias the location
+discards them, a write a distinct link separates from it keeps them, and a
+call discards them. So `Array.isArray(t.mapping)` followed by
+`t.mapping.map(nat)` reads an array.
+
+The facts also exclude semantic type labels of the object they are about.
+Where the facts about $`x.f`$ hold, a label of $`\Gamma(x)`$ is dropped when
+every clause of its expansion fixes $`f`$, as an invariant field or a
+readonly view, at a type no value meeting the facts meets. The proof is one
+step index down, as for the edge's field slice: the field's location holds
+a value of the field's type one level down (`field_value`), and that value
+meets the facts. A clause whose field type cannot be decided against the
+facts (one not plain, an unresolved reference) keeps its label, and a special
+field keeps its own exclusions, as `fieldAnswers` keeps an array's `length`
+out. The exclusion is a fact about the value's type, so it survives later
+writes and calls, as the edge's field slice does; the observed contents it
+came from do not. Unlike that slice, it combines successive tests: after
+`k.kind` fails `"isNul"` and `"isBool"`, the label
+`{ kind: "isNul" | "isBool" }` is dropped. Controls: a write through an
+alias between the test and the read, an intervening call, successive
+singleton exclusions, and forged observations, each where evidence is
+produced and where it is checked.
 The write rule takes no premise about the cell's old contents. These are operation rules within a
 local segment: at the next statement entry, only the supplied interface
 survives.

@@ -10,7 +10,8 @@
  * collected. A function the overlay lists none of is read as its declaration
  * states (an imported value). */
 import type { Stated } from "./library-globals.mts";
-import type { TypeTerm } from "./declaration-types.mts";
+import type { CallEffect, TypeTerm } from "./declaration-types.mts";
+import { emptyEffect } from "./type-graph.mts";
 
 export type ModuleEntry = {
   /** The module, as `node:` names it without the prefix: `child_process`. */
@@ -20,6 +21,9 @@ export type ModuleEntry = {
   /** The overload, exactly as reviewed, its white space collapsed. */
   signature: string;
   stated: Stated;
+  /** The effect the stated signature states, where reviewed: a call at it
+   * changes at most what its footprint says; absent, it may change anything. */
+  effect?: CallEffect;
 };
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -27,6 +31,7 @@ const at: [number, number] = [0, 0];
 const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span: at });
 const text = (value: string): TypeTerm => ({ k: "literal", name: "string", text: value, span: at });
 const union = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", parts, span: at });
+const no = (): TypeTerm => ({ k: "literal", name: "false", text: "false", span: at });
 const field = (name: string, type: TypeTerm, optional: boolean) =>
   ({ name, optional, readonly: true, type, span: at });
 
@@ -41,6 +46,36 @@ const strings: TypeTerm = { k: "object", fields: [], calls: [], span: at,
   stringIndex: { readonly: true, value: union(atom("string"), atom("undefined")), span: at } };
 
 export const modulesOverlay: readonly ModuleEntry[] = [
+  // `execFileSync`'s restricted form, read first: options naming every key the synchronous path
+  // reads, each at a type the host validates without code of the client's
+  // (SOURCE-CONTRACTS.md, "Library modules"). `env` is absent or undefined,
+  // as the host would write `NODE_V8_COVERAGE` and `NODE_OPTIONS` into an
+  // `env` it is given and convert its values; `shell` is absent or `false`,
+  // as a shell with arguments runs `process.emitWarning`'s listeners; `stdio`
+  // is given, three streams long, so the host pads no array and writes no
+  // standard error of its own. Under Node 25.2.1 the host writes nothing it
+  // did not allocate before it returns or throws: the empty footprint, on a
+  // throw too.
+  { module: "child_process", name: "execFileSync",
+    signature: "function execFileSync(file: string, args: readonly string[], options: ExecFileSyncOptionsWithStringEncoding): string;",
+    stated: { binders: [], params: [atom("string"),
+      { k: "array", presence: "readable", readonly: true, element: atom("string"), span: at },
+      { k: "object", stringIndex: null, calls: [], span: at, fields: [
+        field("encoding", text("utf8"), false), field("stdio", stdio, false),
+        field("input", union(atom("string"), atom("undefined")), true),
+        field("maxBuffer", union(atom("number"), atom("undefined")), true),
+        field("env", atom("undefined"), true), field("shell", union(no(), atom("undefined")), true),
+        field("cwd", union(atom("string"), atom("undefined")), true),
+        field("argv0", union(atom("string"), atom("undefined")), true),
+        field("detached", union(atom("boolean"), atom("undefined")), true),
+        field("uid", union(atom("number"), atom("undefined")), true),
+        field("gid", union(atom("number"), atom("undefined")), true),
+        field("windowsHide", union(atom("boolean"), atom("undefined")), true),
+        field("windowsVerbatimArguments", union(atom("boolean"), atom("undefined")), true),
+        field("timeout", union(atom("number"), atom("undefined")), true),
+        field("killSignal", union(atom("string"), atom("number"), atom("undefined")), true)] }],
+      result: atom("string") },
+    effect: { ...emptyEffect, onThrow: true } },
   // `execFileSync(file, args, options)` runs `file` with the arguments and,
   // when the child exits with status 0, returns its standard output: decoded
   // to a string where `options.encoding` is a text encoding, `null` where
