@@ -227,7 +227,22 @@ guards (`paragraphs[paragraphs.length - 1]`, `guarded-element-read-refused`,
 2: parseTrailers, parseRecord), a conditional type over a type parameter, `KeysOf<T>` (2,
 lowering-dump), a closure claimed outside its parameter's contextual
 annotation (2: summary, pageBody), and a nested conditional of
-literals whose type the producer widens (mathTokens).
+literals whose type the producer widens (mathTokens): the producer types a
+callback's object literal before it solves `map`'s `U` from the call's
+expected result, so the literal's fields widen to `string` and `U` becomes
+the union of the widened record and the expected element type, which no
+mutable array of the expected type admits. TypeScript solves `U` from the
+return context first and types the literal against it.
+
+Behind the effect question the callback chains of `effects`, `mathRoles`
+and the five slices calling `math` stop at three more forms (2026-10-17,
+probes, and a copy of `record-render.mts` with its write forms replaced by
+write-free ones of the same types, which verifies 8 of 23): an optional
+chain, which the producer never proposes heap-preserving
+(`heap_preserving_expr`), in `afterRelation`'s condition; `new Set` of a
+string, the parameter the overlay states only at an array, in the module
+constants `BINDERS` and `RELATIONS`; and the literal widening of
+`mathTokens` above.
 
 Two forms of the record tools are rewritten for a verifier limit, not
 for a departure from the fragment; each rewrite is reverted when its limit
