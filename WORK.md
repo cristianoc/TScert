@@ -30,7 +30,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 17 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 18 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -256,13 +256,10 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 17 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
+dump, 18 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
 the same-file declarations it uses). The first blockers of the others in
 `dev/`, with the functions each stops directly and through callees:
 
-- a function declaration passed by name as a `map` callback
-  (`g.records.map(card)`), claimed only at its own signature of one
-  parameter where `map` passes three (pageBody: 1);
 - a `map` callback (`readRecord`) whose calls state no footprint: Node's
   `execFileSync`, whose overlay entry states none, and the imported
   `parseRecord`, read at its declared type (group: 1);

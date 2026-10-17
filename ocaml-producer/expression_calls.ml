@@ -185,10 +185,36 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         let unbound p = List.for_all (fun (c:Semantic.signature) ->
           let own = List.map (fun (q:Semantic.quantifier) -> q.identity,ValueArgument (Atoms [])) c.quantified in
           Inference.substitute own p = p) candidates in
+        (* A module function discarding the actuals past its parameters,
+           passed by name, is typed at the shared parameter at its own
+           effect: its slot meets that signature, which binds more
+           parameters, and the overload stating its effect is the call's. *)
+        let own_signature (arg:expr) = match arg.node with
+          | Id n when not (List.mem_assoc n env) && module_arity n = Some Module_contract.Discards ->
+            (match (try module_type n with Json.Error _ -> None) with
+             | Some (Atoms [Shape {calls=[own];_}]) when own.quantified=[] && own.variadic=None
+                 && own.rest_pack=None -> Some own
+             | _ -> None)
+          | _ -> None in
+        (* The parameter at the function's own effect; where it still names
+           a binder, the function's own signature extended to its
+           positions, whose result fixes it. *)
+        let at_own (own:Semantic.signature) = function
+          | Atoms [Shape ({calls=[c];_} as sh)] as t when not (unbound t)
+              && List.length own.params <= List.length c.params ->
+            Atoms [Shape {sh with calls=[{c with call_effect=own.call_effect;receiver=own.receiver;
+              params=own.params @ List.filteri (fun i _ -> i >= List.length own.params) c.params;
+              result=own.result}]}]
+          | Atoms [Shape ({calls=_::_;_} as sh)] -> Atoms [Shape {sh with calls=List.map (fun (c:Semantic.signature) ->
+              {c with call_effect=own.call_effect}) sh.calls}]
+          | t -> t in
         List.mapi (fun i arg ->
           match List.map (fun s -> param_at s i) candidates with
           | Some p :: rest when List.for_all (fun q -> q = Some p) rest ->
             expr ~expected:p env arg,Some p
+          | Some p :: rest when own_signature arg <> None
+              && List.for_all (fun q -> Option.map plain q = Some (plain p)) rest ->
+            expr ~expected:(at_own (Option.get (own_signature arg)) (plain p)) env arg,None
           | Some p :: rest when (match arg.node with Lambda _ -> true | _ -> false)
               && unbound (plain p)
               && List.for_all (fun q -> Option.map plain q = Some (plain p)) rest ->
