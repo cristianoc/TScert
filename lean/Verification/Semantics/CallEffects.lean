@@ -138,19 +138,6 @@ def Arrow.plain (s : Arrow α) : α × List α × α := (s.receiver, s.arguments
 in: its footprint. -/
 def Effect.post (e : Effect) : Heap → Post := fun before after _ => e.footprint.Holds before after
 
-/-- Heap preservation: every location of the entry heap holds what it held.
-The postcondition of the empty footprint (`Closed.holds_empty`). -/
-def preserves (before : Heap) : Post := fun after _ => before.IsPrefix after
-
-theorem Effect.post_of_preserves (e : Effect) {before after : Heap} {v : Val}
-    (h : preserves before after v) : e.post before after v :=
-  Footprints.Closed.Holds.of_prefix e.footprint h
-
-/-- The empty footprint's postcondition is heap preservation. -/
-@[simp] theorem Effect.post_empty : (Effect.ofFootprint .empty).post = preserves := by
-  funext before after v
-  exact propext Footprints.Closed.holds_empty
-
 /-- Whether the signature's result operand is the result's type: a
 signature's without a promise. -/
 def Effect.plain (e : Effect) : Bool := e.promise.isNone
@@ -513,24 +500,25 @@ The safety proof supplies the same worlds and result contract at every step. -/
 theorem prefix_safe {P : Tm → Prop} {R : Fam}
     (hstep : ∀ {h t h' t'}, P t → Step h t h' t' → h.IsPrefix h' ∧ P t') :
     ∀ {n W heap t}, P t → Safe Ξ R n W heap t →
-      SafePost Ξ R (preserves heap) n W heap t := by
+      SafePost Ξ R ((Effect.ofFootprint .empty).post heap) n W heap t := by
   intro n
   induction n with
   | zero => intros; trivial
   | succ n ih =>
     intro W heap t hp hs
     rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
-    · exact .inl (.inl ⟨hv, ht, ⟨[], by simp⟩⟩)
+    · exact .inl (.inl ⟨hv, ht, Footprints.Closed.holds_empty.mpr ⟨[], by simp⟩⟩)
     · exact .inl (.inr hth)
     · obtain ⟨hprefix, hp'⟩ := hstep hp step
       exact .inr ⟨U, h', t', hx, hu, step, hh,
-        HeapObservations.weaken (fun _ _ hpost => hprefix.trans hpost) (ih hp' hs)⟩
+        HeapObservations.weaken (fun _ _ hpost => Footprints.Closed.holds_empty.mpr
+          (hprefix.trans (Footprints.Closed.holds_empty.mp hpost))) (ih hp' hs)⟩
 
 /-- The conservative executable purity check enriches independently proved
 safety. It cannot manufacture safety or a return type on its own. -/
 theorem pure_safe {R : Fam} {n W heap t}
     (hp : Purity.PureRun t) (hs : Safe Ξ R n W heap t) :
-    SafePost Ξ R (preserves heap) n W heap t :=
+    SafePost Ξ R ((Effect.ofFootprint .empty).post heap) n W heap t :=
   prefix_safe Purity.CollectingRun.step (.pure hp) hs
 
 def callsT (Ξ : Fam) (L : List (Arrow Fam)) : Fam := fun k W v =>

@@ -658,8 +658,8 @@ R^{\mathsf{asserts}\,p}(v) = (v=\mathsf{undefined}\land v_p\in R).
 ```
 
 Membership of $`v_p`$ is taken at the world and heap of the return. One
-signature covers another at a footprint it is within and the same promise
-(`Effect.covers`), and a conjunction of signatures with the same promise meets
+signature covers another when its footprint is within the other's and their
+promises are the same (`Effect.covers`), and a conjunction of signatures with the same promise meets
 their footprints (`Effect.meet`). The promises state a type
 guard's and an assertion function's promise
 ([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)). Fresh allocation is allowed. This is a guarantee at normal

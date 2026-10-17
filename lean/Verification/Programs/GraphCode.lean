@@ -151,14 +151,14 @@ def NodePreserves [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t
   ∀ n W h ρ, EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds c.knowledge ρ h →
     WorldAdm W → HeapOk n W h →
     HeapObservations.SafePost (excOf G) (meaning G (result c))
-      (CallEffects.preserves h) n W h (instantiate 0 ρ t)
+      ((CallEffects.Effect.ofFootprint .empty).post h) n W h (instantiate 0 ρ t)
 
 /-- While a call is running its entry heap need not be preserved yet. Only the
 postcondition on normal return can justify the next graph node. -/
 def PreservingState (initial : Heap) (n : Nat) (h : Heap) : State → Prop
-  | .at .. | .done _ => initial.IsPrefix h
+  | .at .. | .done _ => Footprints.Closed.empty.Holds initial h
   | .eval t _ _ handler => handler = none ∧
-      ReturnsPost (CallEffects.preserves initial) n h t
+      ReturnsPost ((CallEffects.Effect.ofFootprint .empty).post initial) n h t
   | .raised _ => True
 
 theorem preserving_step [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty ι} {P : Program} {C : Certificate ι}
@@ -173,7 +173,8 @@ theorem preserving_step [DecidableEq ι] {G : NormalGraph ι} {Rty : Ty ι} {P :
     obtain ⟨hx, ht⟩ := hnodes _ _ c hn hc
     refine ⟨hx, ?_⟩
     apply returnsPost_of_safePost
-    apply HeapObservations.weaken (fun _ _ hpost => hp.trans hpost)
+    apply HeapObservations.weaken (fun _ _ hpost => Footprints.Closed.holds_empty.mpr
+      ((Footprints.Closed.holds_empty.mp hp).trans (Footprints.Closed.holds_empty.mp hpost)))
     exact ht n _ h _ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
       (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) hf
       (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
@@ -194,7 +195,7 @@ theorem preserving_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : I
     ∀ n W h ts s initial, Sim E K ts s → WorldAdm W → HeapOk n W h →
       StateOk G Rty C .undef n W h s → PreservingState initial n h s →
       HeapObservations.SafePost (excOf G) (meaning G Rty)
-        (CallEffects.preserves initial) n W h ts := by
+        ((CallEffects.Effect.ofFootprint .empty).post initial) n W h ts := by
   intro n
   induction n with
   | zero => intros; trivial
@@ -220,7 +221,7 @@ theorem goto_preserving [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h) :
     HeapObservations.SafePost (excOf G) (meaning G Rty)
-      (CallEffects.preserves h) n W h (.goto E K start L d) := by
+      ((CallEffects.Effect.ofFootprint .empty).post h) n W h (.goto E K start L d) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   split at hx
@@ -233,7 +234,7 @@ theorem goto_preserving [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       · rw [himp]; exact PromiseCalls.ImpliesOk.nil G _ n W
       · rw [harg]; intro p hp; cases hp
       · rw [hk]; exact HeapKnowledge.empty _ h
-    · exact ⟨[], by simp⟩
+    · exact Footprints.Closed.holds_empty.mpr ⟨[], by simp⟩
   · contradiction
 
 /-! ## A unit's table of checked code
@@ -285,7 +286,7 @@ theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : 
 /-- Definition effects supplement, rather than replace, ordinary safety. A
 footprint letting everything change holds of every run (`Closed.top_safe`);
 any other is established by heap preservation, the empty footprint, which
-covers it (`Closed.Holds.of_prefix`), for code returning a plain result. -/
+covers it (`Closed.empty_le`, `Closed.Holds.mono`), for code returning a plain result. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
   if c.row.effect.footprint = .top then pure () else
@@ -388,7 +389,7 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
       Bool.or_eq_true] at heff
     obtain ⟨hpr, hp⟩ := heff
     rw [CallEffects.Effect.result_none hpr]
-    apply HeapObservations.weaken (fun h' v hq => CallEffects.Effect.post_of_preserves _ hq)
+    apply HeapObservations.weaken (fun h' v hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
     have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, hpr]
     rw [hg] at hs hc
     rcases hp with hp | hp

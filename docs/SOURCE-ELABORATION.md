@@ -1277,7 +1277,7 @@ other than `all: any` is checked as a code entry's graph is: its nodes pure,
 or each node preserving by `inspect` or a fixed qualified call
 (`effectResult`, alongside ordinary safety), for a plain result under the
 ordinary checker, which establishes the empty footprint and with it every
-footprint (`Closed.Holds.of_prefix`); a guard, an assertion function and a
+footprint (`Closed.empty_le`, `Closed.Holds.mono`); a guard, an assertion function and a
 unit qualified by a resolution descriptor are refused such a claim. A code
 entry's signature follows the same rule (`GraphCode.effectCheckedResult`). With $`P`$
 the unit's graph, $`\Gamma`$ its inputs and $`B`$ its result,

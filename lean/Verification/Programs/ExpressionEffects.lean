@@ -61,14 +61,14 @@ separately. -/
 theorem inspect_safe {T : Fam} {initial : Heap} : ∀ {n W h t},
     initial.IsPrefix h → Purity.inspectTerm t = true → WorldAdm W → HeapOk n W h →
     Safe Ξ T n W h t →
-    SafePost Ξ T (CallEffects.preserves initial) n W h t := by
+    SafePost Ξ T ((CallEffects.Effect.ofFootprint .empty).post initial) n W h t := by
   intro n
   induction n with
   | zero => intros; trivial
   | succ n ih =>
     intro W h t hpre hp hw hh hs
     rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh', hs⟩
-    · exact .inl (.inl ⟨hv, ht, hpre⟩)
+    · exact .inl (.inl ⟨hv, ht, Footprints.Closed.holds_empty.mpr hpre⟩)
     · exact .inl (.inr hth)
     · obtain ⟨hprefix, hp'⟩ := Purity.inspect_step step hp (HeapExpressionRules.heap_values hw hh)
       exact .inr ⟨U, h', t', hx, hu, step, hh', ih (hpre.trans hprefix) hp' hu hh' hs⟩
@@ -82,7 +82,7 @@ theorem sound {G : NormalGraph ι} {Γ t A ρ n W h}
     (hc : check G Γ t = true) (hscope : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : Safe (excOf G) (meaning G A) n W h (instantiate 0 ρ t)) :
-    SafePost (excOf G) (meaning G A) (CallEffects.preserves h)
+    SafePost (excOf G) (meaning G A) ((CallEffects.Effect.ofFootprint .empty).post h)
       n W h (instantiate 0 ρ t) :=
   inspect_safe (List.prefix_refl h) (inspect_instantiate (d := 0) hc hscope he) hw hh hs
 
@@ -117,7 +117,7 @@ private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (CallEffects.preserves h)
+    SafePost (excOf G) (meaning G j.type) ((CallEffects.Effect.ofFootprint .empty).post h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a call with a callee and a receiver premise.
@@ -188,7 +188,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     (hp : selectedCallPreserves e = true) (hcodes : CodesSound G codes)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G (claim e).type) (CallEffects.preserves h)
+    SafePost (excOf G) (meaning G (claim e).type) ((CallEffects.Effect.ofFootprint .empty).post h)
       n W h (instantiate 0 ρ (claim e).term) := by
   cases e with
   | node j r ps =>

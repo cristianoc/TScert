@@ -128,8 +128,9 @@ function's; its postcondition is the footprint's, `Closed.Holds`, which
 reads no slot (proved: `Closed.post_iff`). The empty closed footprint is
 heap preservation and `all: any` is growth (proved: `Closed.holds_empty`,
 `Closed.holds_top`), which every safe run meets (proved: `Closed.top_safe`).
-One signature covers another at a footprint within its own and the same
-promise (`Effect.covers`, proved: `Effect.covers_sound`); two signatures of
+A signature covers another when its footprint is within the other's and
+their promises are the same, so the empty footprint covers `all: any` and not
+the reverse (`Effect.covers`, proved: `Effect.covers_sound`); two signatures of
 one call meet at the meet of their footprints (proved: `Closed.holds_meet`);
 binding keeps the footprint (`Effect.drop`). The wire spells a closed
 footprint `{"value": v, "store": s}`, `v` one of `keep` and `any`
@@ -449,7 +450,7 @@ that each unit whose declaration claims a footprint other than `all: any`,
 run as its graph, returns with a heap its footprint relates to its entry heap
 (proved: `SourceExtraction.checkRequests_footprint_at`). Such a claim, a
 unit's or a code entry's, is established by heap preservation, which covers
-every footprint (proved: `Closed.Holds.of_prefix`), and only for a plain
+every footprint (proved: `Closed.empty_le`, `Closed.Holds.mono`), and only for a plain
 result; the graph lemmas of [composition](#composition) establish the others.
 Footprints reach it through certified code entries
 (`ProgramCertificates.CodesSound`, with a footprint version of

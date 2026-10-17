@@ -9,7 +9,7 @@ array store. On a value, `grow` is `keep`, so there are six. They are ordered
 exactly by their entries (`closed_order_exact`), their postcondition reads no
 slot, and the empty one and the one letting everything change are the two
 heap effects of a call signature that state no footprint relation beyond
-prefix and growth (`Closed.post_empty`, `Closed.post_top`). Heaps only grow
+prefix and growth (`Closed.holds_empty`, `Closed.holds_top`). Heaps only grow
 under steps, so every run meets the latter (`Closed.top_safe`). -/
 namespace Verification.Footprints
 
@@ -198,10 +198,6 @@ theorem Closed.holds_top {h h' : Heap} : Closed.top.Holds h h' ↔ h.length ≤ 
 theorem Closed.empty_le (c : Closed) : Closed.empty.le c = true := by
   cases c with
   | mk v s => cases v <;> cases s <;> rfl
-
-/-- Every footprint holds where the heap only gained locations. -/
-theorem Closed.Holds.of_prefix (c : Closed) {h h' : Heap} (hp : h.IsPrefix h') : c.Holds h h' :=
-  Closed.Holds.mono (Closed.empty_le c) (Closed.holds_empty.mpr hp)
 
 /-- A footprint from a later heap holds from an earlier one the later one
 extends: fresh allocation before a call composes with the call's footprint. -/

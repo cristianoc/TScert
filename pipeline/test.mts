@@ -2,7 +2,7 @@
 // documents and claims no case can make. The controls needing no build are
 // node-runs.mts and trusted-inputs.mts, among the fast checks.
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
@@ -1254,6 +1254,16 @@ for (const [file, marker, arity, accepted] of [
     const failure = readDiagnostic(produce.stdout + produce.stderr);
     assert.ok(failure && failure.kind === "node-typing", "a failed effect must name the callable's typing obligation");
     assert.ok(failure.source?.sourceMap?.pos, "the failed callable must have a source location");
+    // Checking the honest evidence, where the case has any, against the
+    // forged claim names a node of the closure search named.
+    const callable = failure.source?.sourceMap?.pos;
+    if (callable && existsSync(join(artifacts, "evidence.json"))) {
+      const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+      const refused = /source effect refusal at \[(\d+),(\d+)\): the footprint claimed for a closure/.exec(checked);
+      assert.ok(refused, checked);
+      assert.ok(callable[0] <= Number(refused[1]) && Number(refused[2]) <= callable[1],
+        `checking refused at [${refused[1]},${refused[2]}), outside the closure [${callable[0]},${callable[1]})`);
+    }
   }
   process.stdout.write(`callback heap-preservation claim, ${file}: ${accepted ? "certified" : "refused"}\n`);
 }
@@ -1358,13 +1368,14 @@ for (const [file, marker, arity, accepted] of [
     const produce = produceWith(artifacts, input, name);
     assert.ifError(produce.error);
     assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-    const refused = /source effect refusal at \[(\d+),\d+\): the footprint claimed for 'collect'/
-      .exec(produce.stdout + produce.stderr);
-    assert.ok(refused, produce.stdout + produce.stderr);
-    const at = Number(refused[1]);
-    assert.ok(source.indexOf("target?.push(line)") <= at && at < source.indexOf("target = into") + "target = into".length,
-      `refused at the push or the write, not at ${at}`);
-    invoke(input, join(artifacts, "evidence.json"), artifacts);
+    // Search and checking both name the write or the push.
+    for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)]) {
+      const refused = /source effect refusal at \[(\d+),\d+\): the footprint claimed for 'collect'/.exec(detail);
+      assert.ok(refused, detail);
+      const at = Number(refused[1]);
+      assert.ok(source.indexOf("target?.push(line)") <= at && at < source.indexOf("target = into") + "target = into".length,
+        `refused at the push or the write, not at ${at}`);
+    }
   }
   process.stdout.write("forged declaration footprints: each narrower than everything refused at a cell write or a push onto a parameter, in search and in checking\n");
 }

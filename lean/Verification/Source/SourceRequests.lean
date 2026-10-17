@@ -269,7 +269,7 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨checked, -, heff, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
   obtain ⟨hq, hpromise, hp⟩ := effectResult_preserving heff heffect
-  apply HeapObservations.weaken (fun h' _ hq => Footprints.Closed.Holds.of_prefix r.footprint hq)
+  apply HeapObservations.weaken (fun h' _ hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
   simp only [SourceRequest.checker, hq] at checked
   rw [verify_eq] at checked
   simp only [Bool.and_eq_true] at checked
