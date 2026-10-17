@@ -1,6 +1,10 @@
 // The compiler-API contract (COMPILER-API.md, "Binding the contract to the
 // implementation") checked against the installed package, without a build.
 //
+// C0, binding: the host package is the installation the front end resolves,
+// its declarations' digest the reviewed one; another package naming the host
+// in its manifest is no host.
+//
 // C1, enums: for every host enum the contract reads (`hostEnums` in
 // tools/compiler-api.mts), each member of its `.enum.d.ts` is a plain integer
 // literal equal to the value of the runtime object Node loads for
@@ -17,7 +21,7 @@ import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { allocatingMembers, hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
+import { allocatingMembers, declarationsDigest, hostDeclarationsDigest, hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 
 // The package the front end resolves, from tools/.
@@ -29,6 +33,11 @@ assert.ok("name" in manifest && manifest.name === hostPackage.name && "version" 
   manifest.version === hostPackage.version,
   `the installed host package is ${hostPackage.name} ${hostPackage.version}`);
 assert.ok(isHostFile(join(root, "dist", "ast", "index.d.ts")), "the package's declarations are host files");
+// C0, binding: the installed declarations have the reviewed digest, and a
+// package elsewhere whose manifest names the host package is no host.
+assert.equal(declarationsDigest(root), hostDeclarationsDigest, "the host declarations are the reviewed ones");
+const lookalike = resolve(import.meta.dirname, "../pipeline/host-fixture/ast.d.ts");
+assert.ok(!isHostFile(lookalike), "a lookalike package with the host's manifest is no host");
 
 // `#enums/*` under the `default` condition, as the manifest's `imports` map
 // states it.

@@ -601,25 +601,12 @@ export const cases: Case[] = [
   { ...negative("invalid-compiler-api-category-exhaustive", "at a host declaration's position an enum type is `number`: a `switch` with a case per member and no default may complete without a return",
     /source expression obligation at \[375,383\): evidence search failed: no derivation of its completion claim/),
     project: "pipeline/compiler-api-project" },
-  // `jsDoc` allocates on each read (two reads differ under Node,
-  // tests/compiler-api.mts): the host type's shape omits it, so every read
-  // form is a read of a member the type does not state. The stand-in host
-  // package `pipeline/host-fixture/` declares a `Node` that reaches no node
-  // list.
-  ...([
-    ["dot", "`n.jsDoc`", /missing field jsDoc/],
-    ["element", "`n[\"jsDoc\"]`", /missing field jsDoc/],
-    ["paren-key", "`n[(\"jsDoc\")]`", /missing field jsDoc/],
-    ["const-key", "`n[key]` with `key` a constant holding \"jsDoc\"", /missing field jsDoc/],
-    ["template-key", "`n[`js${suffix}`]` evaluating to \"jsDoc\"", /dynamic index requires a dictionary over its keys/],
-    ["binding", "a binding pattern's `{ jsDoc }`", /missing field jsDoc/],
-    ["optional", "an optional chain `n?.jsDoc`", /missing field jsDoc/],
-    ["view", "a node held at a structural type stating `jsDoc?`, which no node meets",
-      /no derivation of its binding-annotation claim/],
-  ] as const).map(([form, what, diagnostic]): Case => ({ file: `invalid-host-fixture-jsdoc-${form}`,
-    area: `${what}: a read of the allocating member, which the host type's shape omits, is refused`,
-    kind: "negative", status: form === "view" ? "unverified" : "unsupported", phase: form === "view" ? "search" : "proposal",
-    diagnostic, project: "pipeline/host-fixture-project" })),
+  // `pipeline/host-fixture/` names the host package in its manifest and is
+  // no installation of it: no host reading applies, so its `jsDoc` is an
+  // ordinary member. pipeline/test.mts reads it as the host package through
+  // the test-only stand-in, where every read of `jsDoc` is refused.
+  { ...positive("host-fixture-lookalike", "a package whose manifest names the host package, outside the audited installation, gets no host reading: its `jsDoc` is read as declared"),
+    project: "pipeline/host-fixture-project" },
   { ...positive("host-fixture-jsdoc-other-reads", "no read of the allocating member: a constant named `jsDoc` holding \"parent\" keys the read of `parent`; a node at a structural type stating only kept members; `\"jsDoc\" in n`, which reads no value"),
     project: "pipeline/host-fixture-project" },
   positive("own-jsdoc-member", "a member named `jsDoc` of the file's own object is an ordinary field in every read form, dot, element, binding pattern and optional chain: only the host member TypeScript binds a read to is refused"),

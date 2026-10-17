@@ -8,6 +8,8 @@ import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, verifier } from "./verify-source.mts";
+import { tsconfigOf } from "../tools/declaration-graph.mts";
+import { useHostInstallationForTests } from "../tools/compiler-api.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
@@ -1707,6 +1709,35 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   }
   process.stdout.write("forged import footprints: an imported function's call refused each footprint narrower than everything\n");
+}
+
+{
+  // Reading rule 1 on a stand-in host package (`pipeline/host-fixture/`,
+  // whose `Node` reaches no node list), installed as the host through the
+  // test-only channel: the shape omits the allocating `jsDoc`, so every form
+  // of its read is refused, and reads of other members verify.
+  const project = tsconfigOf(join(import.meta.dirname, "host-fixture-project"));
+  const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
+  useHostInstallationForTests(join(import.meta.dirname, "host-fixture"));
+  try {
+    for (const [form, refusal] of [
+      ["dot", /missing field jsDoc/], ["element", /missing field jsDoc/], ["paren-key", /missing field jsDoc/],
+      ["const-key", /missing field jsDoc/], ["template-key", /dynamic index requires a dictionary over its keys/],
+      ["binding", /missing field jsDoc/], ["optional", /missing field jsDoc/],
+      ["view", /no derivation of its binding-annotation claim/],
+    ] as const) {
+      const outcome = check(example(`invalid-host-fixture-jsdoc-${form}`), project);
+      assert.notEqual(outcome.status, "verified", `invalid-host-fixture-jsdoc-${form}: refused`);
+      assert.ok("detail" in outcome && refusal.test(outcome.detail), `invalid-host-fixture-jsdoc-${form}: ${JSON.stringify(outcome)}`);
+    }
+    const kept = check(example("host-fixture-jsdoc-other-reads"), project);
+    assert.equal(kept.status, "verified", JSON.stringify(kept));
+    const lookalike = check(example("host-fixture-lookalike"), project);
+    assert.equal(lookalike.status, "unsupported", JSON.stringify(lookalike));
+  } finally {
+    useHostInstallationForTests(null);
+  }
+  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, other reads verified\n");
 }
 
 {

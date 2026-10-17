@@ -12,8 +12,9 @@ tests that exercise it.
 The pipeline implements namespace imports
 ([derived source forms](SOURCE-ELABORATION.md#derived-source-forms)), host
 enums (reading rule 3, [enums](SOURCE-CONTRACTS.md#enums)), the check C1,
-the bitwise operators, and reading rule 1 (the host types' members as
-readonly views, `jsDoc` refused at its read, checked by C4 under Node);
+the bitwise operators, reading rule 1 (the host types' members as readonly
+views, `jsDoc` omitted from its shape, checked by C4 under Node) and C0's
+binding of the host package to the audited installation's declarations;
 the other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
@@ -166,7 +167,13 @@ an identity the package's memoization keeps within a snapshot.
 ## Host declarations
 
 A **host package** is a package the contract names: `typescript`, with the
-modules `unstable/ast` and `unstable/sync`. A **host type** is a type the
+modules `unstable/ast` and `unstable/sync`. Its declarations are the files
+of the audited installation, the package the front end itself resolves
+(`tools/package-lock.json` pins it), whose `.d.ts` files have the reviewed
+digest (`hostDeclarationsDigest`, C0): a package elsewhere, whatever its
+manifest names, gets no host reading, and a changed installation is refused
+until reviewed again. A test supplies a stand-in through a channel no entry
+point of the pipeline reaches (`useHostInstallationForTests`). A **host type** is a type the
 contract lists as introduced by the package alone: every node shape,
 `NodeArray`, `Type` and its sub-interfaces, `Symbol`, `Signature`,
 `NodeHandle`, and every class the package declares (`API`, `Snapshot`,

@@ -7,8 +7,10 @@
  * which package is the host, and which of its enums the contract reads as
  * values. Each entry is checked against the installed package by
  * `tests/compiler-api.mts`. */
-import { readFileSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join, relative, sep } from "node:path";
 
 /** The host package: its name and the version the contract was reviewed
  * against (`tools/package-lock.json`). */
@@ -48,37 +50,64 @@ export const allocatingMembers: readonly { owner: string; name: string; text: st
  * Every class the package declares is a host type too. */
 export const hostTypeRoots: readonly string[] = ["Node", "NodeArray", "Type"];
 
-const packageOf = new Map<string, string | null>();
+/** The reviewed host declarations' digest (C0): the SHA-256 of every
+ * `.d.ts` file under the audited installation's `dist/`, each its path from
+ * the package root, a NUL, its bytes and a NUL, in path order, after the
+ * package's version. A different digest is a different package, refused
+ * until the contract is reviewed again. */
+export const hostDeclarationsDigest = "16f2260fe0003d51dfb6b8503926ce01ff3e8afd3842a3351d3d544c1e81d492";
 
-/** The root directory of the package that holds `file`: the directory of the
- * nearest `package.json` above it, or null where none is. */
-function packageRoot(file: string): string | null {
-  let directory = dirname(file);
-  const visited: string[] = [];
-  let found: string | null = null;
-  for (;;) {
-    const known = packageOf.get(directory);
-    if (known !== undefined) {
-      found = known;
-      break;
+/** The digest of the declarations of the package installed at `root`. */
+export function declarationsDigest(root: string): string {
+  const hash = createHash("sha256");
+  const manifest: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const version = typeof manifest === "object" && manifest !== null && "version" in manifest ? String(manifest.version) : "";
+  hash.update(`${version}\0`);
+  const files: string[] = [];
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith(".d.ts")) files.push(relative(root, path).split(sep).join("/"));
     }
-    visited.push(directory);
-    try {
-      readFileSync(join(directory, "package.json"));
-      found = directory;
-      break;
-    } catch {
-      const parent = dirname(directory);
-      if (parent === directory) break;
-      directory = parent;
-    }
+  };
+  walk(join(root, "dist"));
+  for (const file of files.sort()) {
+    hash.update(`${file}\0`);
+    hash.update(readFileSync(join(root, file)));
+    hash.update("\0");
   }
-  for (const v of visited) packageOf.set(v, found);
-  return found;
+  return hash.digest("hex");
 }
 
-/** Whether `file` belongs to the host package at the reviewed version: its
- * nearest `package.json` names `hostPackage`. */
+/** The host installation: the package directory and whether its digest is
+ * checked. */
+type Installation = { root: string; checked: boolean };
+
+/** The audited installation: the package `typescript` the front end itself
+ * resolves (`tools/package-lock.json` pins it), its real path. */
+let audited: Installation | null = null;
+/** A stand-in installation a test supplies (`useHostInstallationForTests`);
+ * no entry point of the pipeline sets it. */
+let standIn: Installation | null = null;
+let digestChecked = false;
+
+function installation(): Installation {
+  if (standIn) return standIn;
+  audited ??= { root: realpathSync(dirname(createRequire(import.meta.url).resolve(`${hostPackage.name}/package.json`))),
+    checked: true };
+  return audited;
+}
+
+/** Tests only: read the package at `root` as the host package, its digest
+ * unchecked, until called again with null. */
+export function useHostInstallationForTests(root: string | null): void {
+  standIn = root === null ? null : { root: realpathSync(root), checked: false };
+}
+
+/** Whether `file` is a declaration of the host package: a file of the
+ * audited installation, whose declarations have the reviewed digest. A
+ * package elsewhere, whatever its manifest names, is no host. */
 export function isHostFile(file: string): boolean {
   let real: string;
   try {
@@ -86,10 +115,14 @@ export function isHostFile(file: string): boolean {
   } catch {
     return false;
   }
-  const root = packageRoot(real);
-  if (!root) return false;
-  const manifest: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  return typeof manifest === "object" && manifest !== null &&
-    "name" in manifest && manifest.name === hostPackage.name &&
-    "version" in manifest && manifest.version === hostPackage.version;
+  const host = installation();
+  if (!real.startsWith(host.root + sep)) return false;
+  if (host.checked && !digestChecked) {
+    const digest = declarationsDigest(host.root);
+    if (digest !== hostDeclarationsDigest)
+      throw Error(`the host package at ${host.root} is not the reviewed one: its declarations' digest is ${digest}, ` +
+        `the contract was reviewed against ${hostDeclarationsDigest}`);
+    digestChecked = true;
+  }
+  return true;
 }
