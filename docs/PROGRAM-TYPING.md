@@ -2804,6 +2804,28 @@ read is
 ```
 
 where the supported tags are tests for null, undefined and either nullish value.
+
+The rule extends to every tag whose answer depends on the value alone, so
+not on the heap: the primitive families, `isArray`, `typeofObject`, `isFun`,
+truthiness and the singletons. A cell fact $`x.f\mapsto R`$ then holds,
+beside primitive predicates, an atom $`\mathsf{tag}\,\tau\,q`$ (the value
+answers $`\tau`$ with $`q`$). A dispatch on a value read from $`x.f`$
+records it, as `observeTyped` records `nonNullish` from a slice of objects.
+A later read of $`x.f`$ is then typed at the slice
+$`T^{\tau}_{q}(C)`$ of the location's contract, which for `isArray` is the
+built-ins' array slice that `Array.isArray` gives a value. A write to the
+location, or a call, discards the fact as it discards other cell facts. So
+`Array.isArray(t.mapping)` followed by `t.mapping.map(nat)` reads an array.
+
+A cell fact also slices the labels of the object it is about. Where
+$`x.f\mapsto R`$ holds, the labels of $`\Gamma(x)`$ every clause of which
+fixes $`f`$, as an invariant field or a readonly view, at a type no value of
+$`R`$ meets, are dropped: the field's location holds a value of the field's
+type one level down (`field_value`), and a value $`R`$ admits. The dropped
+label is the object's allocation label, so its absence outlives the fact,
+across writes and calls, as the field slice of an edge does. Unlike that
+slice, this one combines successive tests: after `k.kind` fails
+`"isNul"` and `"isBool"`, the arm `{ kind: "isNul" | "isBool" }` is dropped.
 The write rule takes no premise about the cell's old contents. These are operation rules within a
 local segment: at the next statement entry, only the supplied interface
 survives.

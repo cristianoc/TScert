@@ -23,6 +23,8 @@ design, not its progress.
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open: certified imports designed (2026-10-17) | a Lean theorem composes units certified against each other's signatures |
+| [Cell facts by tag, and label slices](#cell-fact-slices) | open: designed (2026-10-17) | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
+| [Decoders' dictionary reads](#decoders-dictionary-reads) | investigation, waiting for the owner | a route is chosen for reading `unknown` JSON by key |
 | [Exceptional footprints](#exceptional-footprints) | open: designed (2026-10-17) | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -136,6 +138,25 @@ its effect-qualified signature. `checkJson_safe` keeps its statement.
 Combining a certified import's conclusion with the importer's is left to
 this theorem, plus the review obligation that the import binds the certified
 unit's closure ([the linking obligation](docs/SOURCE-MODEL.md#certified-imports)).
+
+<a id="cell-fact-slices"></a>
+**Cell facts by tag, and label slices**
+([the design](docs/PROGRAM-TYPING.md#current-content-rules-semantic-layer)):
+a sliced read by any heap-independent tag, and the labels of an object a
+cell fact about its field excludes.
+
+<a id="decoders-dictionary-reads"></a>
+**Decoders' dictionary reads**, an investigation for the owner: the
+decoders of `calculus.mts` read `unknown` JSON through
+`isRecord(v): v is Record<string, unknown>` and `v[key]`. In the model a
+dictionary owns no prototype, so a class instance, which `typeof` finds an
+object, meets no `Record<string, unknown>`: the guard's promise is false of
+it, and a read at a key that may name an `Object.prototype` member is
+refused. Two general routes: a key fact, that an element of
+`Object.keys(o)` names an own key of `o` while `o` is unchanged, admitting
+`o[k]` as a `for...in` entry is admitted; or a contract for `JSON.parse`
+whose result is a JSON value, plain objects and arrays of them, which the
+decoders then take instead of `unknown`.
 
 <a id="exceptional-footprints"></a>
 **Exceptional footprints**: a call's promise that its footprint also holds
@@ -297,15 +318,15 @@ the same-file declarations it uses). The first blockers of the others in
   actuals; only a module function's own code is known to discard them
   ([module composition](#module-composition)), and so is `showTerm`, which a callback calls. A certified import of
   either needs its module's code to verify. In `control-flow` and
-  `calculus` (2026-10-17), `decodeTarget`, `decodeContinuation` and
-  `decodeNode` stop at a read of `map` on an array a field holds, which a
-  test does not narrow; `showTerm`, `showTag` and `showCode` at a member
-  read the producer and TypeScript disagree on; `fields` and `keyOf` at
-  `isRecord`'s promise, which `!!v && typeof v === "object" &&
-  !Array.isArray(v)` does not establish of `unknown`;
-  `constructorOf` and `decodeTag` at a record index by a string; and
-  `decodeTerm`, `decodeCode` and `termsOf` at a callback parameter
-  TypeScript types `any` (printGraph: 1).
+  `calculus` (2026-10-17), 4 of 16 functions verify. `decodeTarget`,
+  `decodeContinuation` and `decodeNode` stop at `Array.isArray` of a field
+  holding an object, which a cell fact does not record; `showTag`, and
+  through it `showTerm` and `showCode`, at `{ kind: BareTag }`, an arm
+  successive tests of its field exclude together (both
+  [designed](docs/PROGRAM-TYPING.md#current-content-rules-semantic-layer)).
+  `fields`, `keyOf`, `constructorOf`, `decodeTag`, `decodeTerm`,
+  `decodeCode` and `termsOf` stop at the
+  [decoders' dictionary reads](#decoders-dictionary-reads) (printGraph: 1).
 
 In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
 verify; the others stop at a namespace import, Node's `Buffer` type, `join`
