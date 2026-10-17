@@ -29,7 +29,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 293 verify in `tools/`, 7 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 295 verify in `tools/`, 7 of 23 in `dev/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -222,25 +222,25 @@ probe's correspondence to the application.
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 293 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 295 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-17):
 
-- the compiler API's host enums read as values, `ts.SyntaxKind.Identifier`,
-  `TypeFlags`, `NodeFlags`, `SymbolFlags`, `SignatureKind` (54);
-- the compiler API's node declarations, through the written application
-  `Token<SyntaxKind.…>` (44);
+- the compiler API's `NodeArray`, which extends the standard library's
+  `ReadonlyArray`, there read as a plain interface ("duplicate field name in
+  a record", 61);
 - a value imported from the front end's own modules that is no annotated
   constant, function or class: an unannotated arrow such as `nameOf`, a
-  constant such as `asyncCompleteName` (44);
+  constant such as `asyncCompleteName` (45);
+- the parser's `Gate` class (28) and its `CLASS_ACCESS` type (10);
+- library globals absent from the overlay or refused (26):
+  `JSON.stringify` with a replacer or an indent (17), the global function
+  `parseInt`, `Reflect` ([refused](docs/SOURCE-FRAGMENT.md)), `Array.from`,
+  `Object.fromEntries`, `new RegExp`;
 - a missing annotation, or a value TypeScript types `any` (24);
-- the parser's `Gate` class (18) and its `CLASS_ACCESS` type (10);
-- library globals absent from the overlay or refused (10): the global
-  function `parseInt`, `Reflect` ([refused](docs/SOURCE-FRAGMENT.md)),
-  `Array.from`, `Object.fromEntries`, `new RegExp`, `JSON.stringify`;
-- Node's modules, `path` and `fs` (7); the compiler API's host classes read
-  member-complete, `Checker` and `Symbol` (5); module-level `let` and `var`
-  (5); a default import (3).
+- the compiler API's host classes read member-complete, `Checker` and
+  `Symbol` (11); Node's modules, `path` and `fs` (9); module-level `let` and
+  `var` (5); a default import (3).
 
 Six slices reach the producer and fail there, and twenty-one fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering

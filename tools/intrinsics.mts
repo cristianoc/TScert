@@ -230,7 +230,7 @@ export function literalTerm(value: string | number, at: [number, number]): TypeT
 /** An enum's members: each one's name, and its value where TypeScript
  * computes one (`getConstantValue`), `undefined` where it is known only at
  * run time. */
-type EnumMemberValue = { name: string; value: string | number | undefined };
+export type EnumMemberValue = { name: string; value: string | number | undefined };
 
 /** The object type of an enum one of whose members' values is known only at
  * run time, or of an ambient enum: each member a readonly field at its

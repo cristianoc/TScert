@@ -10,8 +10,9 @@ assumptions the result is relative to, the restrictions it imposes, and the
 tests that exercise it.
 
 The pipeline implements namespace imports
-([derived source forms](SOURCE-ELABORATION.md#derived-source-forms)); the
-other rules below are a design, which the pipeline does not implement, and
+([derived source forms](SOURCE-ELABORATION.md#derived-source-forms)), host
+enums (reading rule 3, [enums](SOURCE-CONTRACTS.md#enums)) and the check C1;
+the other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
 [Source contracts](SOURCE-CONTRACTS.md), the record clauses of
@@ -663,9 +664,11 @@ as regression evidence.
   executable fails the suite, and the contract is reviewed again, whether or
   not the declarations changed.
 
-- **C1, enums.** For every enum the contract reads, every member of its
-  `.enum.d.ts` equals the value of the runtime object Node loads for
-  `#enums/<name>` under the `default` condition, and the member names agree.
+- **C1, enums.** For every enum the contract reads (`hostEnums`), every
+  member of its `.enum.d.ts` is an integer literal equal to the value of the
+  runtime object Node loads for `#enums/<name>` under the `default`
+  condition, the object's keys are the members and their reverse mappings,
+  and the entry points exporting the enum export that object.
 - **C2, guards.** The guard check reads every exported guard: the bodies
   outside the accepted syntax are exactly the refused list, and execution on
   every kind (and on every number in a range around $`\mathcal K`$ for

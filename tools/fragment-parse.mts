@@ -34,7 +34,8 @@ import { enclosingBinders } from "./computed-types.mts";
 import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
-import { asyncCompleteName, asyncReturnName, awaitName, forInName, iterateForInName, iterateName, literalTerm } from "./intrinsics.mts";
+import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
+  type EnumMemberValue } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writtenElement } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
@@ -288,6 +289,9 @@ export class Gate {
   /** The file's enums by name (PROGRAM-TYPING.md, "Enums"), each member's value as
    * TypeScript computes it, once the declaration graph has been read. */
   readonly enums = new Map<string, EnumInfo>();
+  /** The enums the file imports, by local name, with their members as the
+   * declaration graph read them. */
+  readonly importedEnums = new Map<string, readonly EnumMemberValue[]>();
   /** Reads of a `const enum` member TypeScript writes as the member's value,
    * by span: that value. */
   readonly constEnumReads = new Map<string, string | number>();
@@ -578,6 +582,19 @@ export class Gate {
           const found = this.enumMembers(node.typeName.left.text).find((m) => m.name === member);
           if (found) return found.value === null ? { k: "atom", name: "number", span } : literalTerm(found.value, span);
         }
+        // An imported enum's, at its members as the declaration graph read
+        // them (`ambient-enum`).
+        if (ts.isTypeQueryNode(node) && ts.isIdentifier(node.exprName) && !node.typeArguments?.length) {
+          const imported = this.importedEnums.get(node.exprName.text);
+          if (imported && !this.hasTypeParam(node.exprName.text)) return enumMembersTerm(imported, span);
+        }
+        if (ts.isTypeReferenceNode(node) && ts.isQualifiedName(node.typeName) && ts.isIdentifier(node.typeName.left)) {
+          const imported = this.importedEnums.get(node.typeName.left.text);
+          const member = node.typeName.right.text;
+          const found = imported?.find((m) => m.name === member);
+          if (imported && !found) return this.fail(node, `${node.typeName.left.text} has no member ${member}`);
+          if (found) return found.value === undefined ? { k: "atom", name: "number", span } : literalTerm(found.value, span);
+        }
         return null;
       },
       symbol: (name) => {
@@ -623,6 +640,15 @@ export class Gate {
         if (this.enums.has(name) && !this.hasTypeParam(name)) {
           if (node.typeArguments?.length) this.fail(node, "an enum type takes no type arguments");
           return this.enumTerm(name, span);
+        }
+        // An imported enum's type in the file's annotations: the union of
+        // its members' types (`ambient-enum`).
+        const imported = this.importedEnums.get(name);
+        if (imported && !this.hasTypeParam(name)) {
+          if (node.typeArguments?.length) this.fail(node, "an enum type takes no type arguments");
+          const parts = imported.map((m): TypeTerm =>
+            m.value === undefined ? { k: "atom", name: "number", span } : literalTerm(m.value, span));
+          return parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span };
         }
         const library = this.libraryTypes.get(name);
         if (library !== undefined && !this.hasTypeParam(name))
@@ -1480,6 +1506,7 @@ export function parseFile(file: string, carriesContext = false,
             for (const m of info.members) if (m.span[0] === start && m.span[1] === end) m.value = value;
         },
         enumMemberRead: ([start, end], member) => gate.enumMemberReads.set(`${start}:${end}`, member.join(":")),
+        importedEnum: (local, members) => gate.importedEnums.set(local, members),
         constEnumReads: constEnumNodes.map(node => gate.span(node)),
         constEnumRead: ([start, end], value) => gate.constEnumReads.set(`${start}:${end}`, value),
         library: ([start, end], library) => {

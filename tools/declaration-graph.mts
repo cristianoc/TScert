@@ -23,7 +23,9 @@ import { classInstance, computedAlias, computedForm, expandMapped, mapped, membe
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
-  iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm } from "./intrinsics.mts";
+  iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
+  literalTerm, type EnumMemberValue } from "./intrinsics.mts";
+import { hostEnums, isHostFile } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -472,6 +474,9 @@ export function collectDeclarations(file: string, options: {
    * (PROGRAM-TYPING.md, "Enums"), or undefined where it computes none. */
   enums?: readonly Span[];
   enumMember?: (span: Span, value: string | number | undefined) => void;
+  /** Told each imported enum's local name and members: the client's
+   * annotations read its type and its members' literal types. */
+  importedEnum?: (local: string, members: readonly EnumMemberValue[]) => void;
   /** An ambient enum (`declare enum`, not `const`) joins the values as the
    * environment's object, at its members' object type (`enumMembersTerm`).
    * An enum with a member TypeScript computes no value for joins the
@@ -564,6 +569,57 @@ export function collectDeclarations(file: string, options: {
       for (const statement of statementsOnPath(checker, identifier))
         clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
       return nodes;
+    };
+    // The enum a name denotes, every declaration TypeScript binds it to an
+    // enum's (merged enums are one), or null.
+    const enumsOf = (identifier: Identifier): ts.EnumDeclaration[] | null => {
+      const nodes = (targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve());
+      const enums = nodes.filter((n): n is ts.EnumDeclaration => !!n && ts.isEnumDeclaration(n));
+      return enums.length && enums.length === nodes.length ? enums : null;
+    };
+    // An enum's members, in order, each at the value TypeScript computes,
+    // `undefined` where it computes none.
+    const enumMembersOf = (enums: readonly ts.EnumDeclaration[], what: string): EnumMemberValue[] =>
+      enums.flatMap(e => {
+        clean(e, what);
+        return e.members.map(m => {
+          if (!ts.isIdentifier(m.name) && !ts.isStringLiteral(m.name)) throw Error(`an enum member of ${what} needs a plain name`);
+          const value = checker.getConstantValue(m);
+          if (typeof value === "number" && !Number.isFinite(value))
+            throw Error(`an enum member of ${what} that is NaN or infinite has no literal type`);
+          return { name: m.name.text, value };
+        });
+      });
+    // The type an enum's name denotes where `at` writes it
+    // (SOURCE-CONTRACTS.md, "Enums"; COMPILER-API.md, reading rule 3): at a
+    // position of a host declaration `number`, since TypeScript admits any
+    // number there and the flag enums hold combinations; elsewhere the union
+    // of its members' types.
+    const enumTypeAt = (identifier: Identifier, at: SourceFile, span: Span): TypeTerm | null => {
+      const enums = enumsOf(identifier);
+      if (!enums) return null;
+      const what = `${idOf(at)}#${identifier.text}`;
+      const members = enumMembersOf(enums, what);
+      if (isHostFile(at.fileName)) return { k: "atom", name: "number", span };
+      const parts = members.map((m): TypeTerm =>
+        m.value === undefined ? { k: "atom", name: "number", span } : literalTerm(m.value, span));
+      return parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span };
+    };
+    // `E.M`, an enum member's literal type, where `E` names an enum; and
+    // `typeof E`, the enum's object.
+    const enumerated = (node: TypeNode, span: Span): TypeTerm | null => {
+      if (ts.isTypeQueryNode(node) && ts.isIdentifier(node.exprName) && !node.typeArguments?.length) {
+        const enums = enumsOf(node.exprName);
+        return enums ? enumMembersTerm(enumMembersOf(enums, node.exprName.text), span) : null;
+      }
+      if (!ts.isTypeReferenceNode(node) || !ts.isQualifiedName(node.typeName) || !ts.isIdentifier(node.typeName.left))
+        return null;
+      const enums = enumsOf(node.typeName.left);
+      if (!enums) return null;
+      const name = node.typeName.right.text;
+      const member = enumMembersOf(enums, node.typeName.left.text).find(m => m.name === name);
+      if (!member) throw Error(`${node.typeName.left.text} has no member ${name}`);
+      return member.value === undefined ? { k: "atom", name: "number", span } : literalTerm(member.value, span);
     };
     const resolveDeclaration = (identifier: Identifier, what: string): Node => {
       const nodes = resolveDeclarations(identifier, what);
@@ -856,6 +912,7 @@ export function collectDeclarations(file: string, options: {
         literalKey: literalKeyOf,
         computed: (part, pos, read) => computedType(computedContext, part, pos, read),
         keys: keyTypeOf,
+        enumerated,
         fail: (_node, message) => { throw Error(`${message} in ${what}`); },
         named: (part, pos, read) => {
           const name = part.typeName;
@@ -863,6 +920,11 @@ export function collectDeclarations(file: string, options: {
           if (binders.includes(name.text)) {
             if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${name.text}`);
             return { k: "binder", name: name.text, span: pos };
+          }
+          const enumType = enumTypeAt(name, source, pos);
+          if (enumType) {
+            if (part.typeArguments?.length) throw Error(`an enum type takes no type arguments: ${name.text}`);
+            return enumType;
           }
           const known = library(name, `${idOf(source)}#${name.text}`);
           if (known) return libraryTerm(known, libraryArguments(known, part.typeArguments ?? [], read, keyTypeOf), pos,
@@ -907,6 +969,21 @@ export function collectDeclarations(file: string, options: {
       if (!node) throw Error(`unresolved value ${what}`);
       const source = node.getSourceFile();
       const span: Span = [node.getStart(source), node.end];
+      // An enum declared elsewhere is its object, read by `ambient-enum`
+      // (SOURCE-CONTRACTS.md, "Enums"): its members, each at its value's
+      // literal type, `number` where TypeScript computes none. A host enum is
+      // read only where the contract lists it (`compiler-api.mts`, T5).
+      const enums = nodes.filter(ts.isEnumDeclaration);
+      if (enums.length) {
+        if (enums.length !== nodes.length) throw Error(`TypeScript found ${nodes.length} declarations for ${what}`);
+        if (enums.some(e => e.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword)))
+          throw Error(`the imported const enum ${what} has no object: its reads are its members' values, which TypeScript inlines`);
+        const name = enums[0]?.name.text ?? what;
+        if (enums.some(e => isHostFile(e.getSourceFile().fileName)) && !hostEnums.some(h => h.name === name))
+          throw Error(`the host enum ${name} is not one the compiler-API contract reads (compiler-api.mts)`);
+        return { declaration: { module: idOf(source), name, span }, construct: false, typeParams: [],
+          type: enumMembersTerm(enumMembersOf(enums, what), span) };
+      }
       if (nodes.length > 1) {
         const overloads = nodes.filter((n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && !n.body);
         if (!overloads.length || !nodes.every(ts.isFunctionDeclaration) || nodes.length - overloads.length > 1)
@@ -1097,6 +1174,14 @@ export function collectDeclarations(file: string, options: {
         // A function with overloads is its several declarations; any other
         // name must have one.
         const nodes = resolveDeclarations(binding.local, binding.local.text);
+        const enums = enumsOf(binding.local);
+        if (enums) {
+          options.importedEnum?.(binding.local.text, enumMembersOf(enums, binding.local.text));
+          if (!binding.typeOnly)
+            values.push({ binding: { local: binding.local.text, imported: binding.imported,
+              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.local.text) });
+          continue;
+        }
         const reviewed = moduleEntries(binding.specifier, binding.imported);
         if (!binding.typeOnly && reviewed.length) {
           values.push({ binding: { local: binding.local.text, imported: binding.imported,
@@ -2123,7 +2208,8 @@ export function collectDeclarations(file: string, options: {
     ];
     for (const { node: start, span } of starts) {
       try {
-        collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+        collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
+          enumType: enumTypeAt, enumerated, identityOf, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
           libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
           keys: keyTypeOf, alias: aliasOf, awaited });
       } catch (error) {
@@ -2811,6 +2897,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   parameters: (declaration: Node) => readonly MergedParameter[];
   /** An application's arguments completed with its defaults. */
   complete: (declaration: Node, written: readonly TypeTerm[], use: Node | null, what: string) => TypeTerm[];
+  /** The type an enum's name denotes where a file writes it, or null for a
+   * name that is no enum's. */
+  enumType: (identifier: Identifier, at: SourceFile, span: Span) => TypeTerm | null;
+  /** An enum member's literal type `E.M`, or `typeof E`. */
+  enumerated: NonNullable<TermScope["enumerated"]>;
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -2885,10 +2976,16 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       privateName: context.privateName,
       keys: context.keys,
       computed,
+      enumerated: context.enumerated,
       fail: (_node, message) => { throw Error(`${message} in ${identity.module}#${identity.name}`); },
       named: (part, pos, read) => {
         const name = part.typeName;
         if (!ts.isIdentifier(name)) throw Error(`a qualified type reference in ${identity.module}#${identity.name}`);
+        const enumType = names.includes(name.text) ? null : context.enumType(name, source, pos);
+        if (enumType) {
+          if (part.typeArguments?.length) throw Error(`an enum type takes no type arguments: ${name.text}`);
+          return enumType;
+        }
         const index = names.indexOf(name.text);
         if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
         if (part.typeArguments?.length)

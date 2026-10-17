@@ -1,0 +1,24 @@
+{
+  // The compiler-API examples import the host package `typescript`, the one
+  // the front end pins (tools/package-lock.json), through `paths`; inside the
+  // package its own `imports` map resolves `#enums/*`.
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "types": [],
+    "paths": {
+      "typescript/unstable/ast": [
+        "../../tools/node_modules/typescript/dist/ast/index.d.ts"
+      ],
+      "typescript/unstable/sync": [
+        "../../tools/node_modules/typescript/dist/api/sync/api.d.ts"
+      ]
+    }
+  },
+  "include": ["../examples/*compiler-api*.ts"]
+}

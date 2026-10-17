@@ -2580,6 +2580,19 @@ member it does not initialize, which TypeScript leaves opaque:
 
 The type `E` is $`\bigcup_i\tau_i`$ there too.
 
+An enum another module declares, imported or reached through a declaration,
+is read by the same rule: its value is $`\mathcal O^{\circ}(E)`$, the object of
+its members, merged declarations together, which states nothing of the
+reverse mapping; `E.M` is the literal type of `M`'s value and `typeof E` is
+$`\mathcal O^{\circ}(E)`$. An imported `const enum` has no object to read and
+is refused as a value. At a position of a declaration of a
+[host package](COMPILER-API.md#host-declarations) the type `E` is
+`number` (reading rule 3): TypeScript admits any number at a numeric enum
+type, and the flag enums hold combinations of members, which are no member's
+value. A host enum is read as a value only where the contract lists it
+(`hostEnums` in [`compiler-api.mts`](../tools/compiler-api.mts)), whose
+runtime object `tests/compiler-api.mts` compares with the declaration (C1).
+
 ## Const assertions
 
 `e as const` returns its operand, claimed at the operand's *const type*:
