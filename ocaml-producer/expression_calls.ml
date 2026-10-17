@@ -467,8 +467,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | None -> false) (List.combine args actuals)) in
         (* A signature requiring an actual's member to state an effect is not
            the call's where that member, as the actual's type states it, has a
-           signature without it (`%Dispatch:m%` at a regex whose member writes
-           its `lastIndex`). *)
+           signature whose effect it does not cover (`%Dispatch:m%` at a regex
+           whose member may change anything). *)
         let member_effects ((s:Semantic.signature),substitution,_) =
           let calls_of (t:ty) = match declared_head declarations [] t with
             | Atoms [Shape {calls;_}] -> calls
@@ -478,10 +478,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | Some p,Atoms [Shape actual] ->
               (match declared_head declarations [] (Inference.substitute substitution p) with
                | Atoms [Shape wanted] -> List.for_all (fun (w:Semantic.field) ->
-                   List.for_all (fun (c:Semantic.signature) -> c.call_effect<>Semantic.empty_effect ||
+                   List.for_all (fun (c:Semantic.signature) ->
                      match List.find_opt (fun (a:Semantic.field) -> a.name=w.name) actual.fields with
                      | Some a -> List.for_all (fun (d:Semantic.signature) ->
-                         d.call_effect=Semantic.empty_effect) (calls_of a.read)
+                         Semantic.effect_covers d.call_effect c.call_effect) (calls_of a.read)
                      | None -> true) (calls_of w.read)) wanted.fields
                | _ -> true)
             | _ -> true) (List.combine args actuals)) in

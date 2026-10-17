@@ -55,8 +55,15 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-annotated-constant-callback: the actual source returns undefined at string");
   // `test` of a global regex leaves `lastIndex` where the match ended: the
   // same line tests true, then false.
-  assert.equal(runExample("invalid-regexp-global-callback-effect", `marks(["ab", "ab"]).join()`), "true,false",
-    "invalid-regexp-global-callback-effect: the callback's call writes the regex it captures");
+  assert.equal(runExample("map-stable-regexp-test", `marks(["ab", "ab"]).join()`), "true,false",
+    "map-stable-regexp-test: the callback's call writes the regex it captures, and the result is dense");
+  assert.equal(runExample("invalid-map-structural-replace", `(() => {
+      const xs = ["a", "b", "c"];
+      const out = rewrite(xs, { [Symbol.replace](s, r) { xs.pop(); return r; } });
+      return out.length + ":" + Object.keys(out).length;
+    })()`), "3:2", "invalid-map-structural-replace: a structural replacement pops the mapped array, leaving a hole");
+  assert.equal(runExample("map-stable-regexp-replace", `JSON.stringify(collapsed(["a  b", "c\\td"]))`), '["a b","c d"]',
+    "map-stable-regexp-replace: each call replaces through a regex the literal allocates");
   // `Number` of an object calls its `valueOf`, which here writes `seen.value`.
   // A guard's promise, which TypeScript does not check: lying guards, of a
   // primitive, through a parameter's default and of an object, a lying

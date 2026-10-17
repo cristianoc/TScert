@@ -29,8 +29,8 @@ import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { signatures, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
-import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
+import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
+import type { CallEffect, ArrayPresence } from "./type-graph.mts";
 
 export type OverlayEntry = {
   /** The member's key on the prototype, as declared: a name, or a computed
@@ -103,10 +103,7 @@ const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
 /** The closed footprints that keep an array's dense prefixes: those whose
  * change to array stores is at most `grow` (`stableDenseClosed`), smallest
  * first. */
-const stableForDensity: ClosedFootprint[] = [
-  { value: "keep", store: "keep" }, { value: "any", store: "keep" },
-  { value: "keep", store: "grow" }, { value: "any", store: "grow" },
-];
+const stableForDensity = closedFootprints.filter((f) => f.store !== "any");
 
 export const overlay: readonly OverlayEntry[] = [
   // At a callback preserving the input heap, `forEach` does, as `every`

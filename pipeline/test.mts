@@ -1228,7 +1228,7 @@ const growStores: ClosedFootprint = { value: "any", store: "grow" };
 for (const [file, marker, arity, accepted, footprint] of [
   ["closure-result-contract", "(p: number", 2, true, keepAll], ["closure-graph-captured-cell", "(): void", 0, false, keepAll],
   ["invalid-map-primitive-method-mutation", "(x: string)", 3, false, keepAll],
-  ["invalid-regexp-global-callback-effect", "(l) => word", 3, false, keepAll],
+  ["map-stable-regexp-test", "(l) => word", 3, false, keepAll],
   ["invalid-map-collection-write-callback", "(name) =>", 3, false, keepAll],
   ["map-stable-outer-cell", "(x: number)", 3, false, keepAll],
   ["map-stable-outer-cell", "(x: number)", 3, true, writeValues],
@@ -1338,7 +1338,7 @@ for (const [file, marker, arity, accepted, footprint] of [
   // the dispatch claimed preserving at that target, with the callback
   // claimed preserving through it, is refused at the callback's typing,
   // whatever the producer proposes.
-  const artifacts = run("regexp-fresh-global-replace-refused");
+  const artifacts = run("map-stable-regexp-replace");
   const claims = readClaims(artifacts);
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
   const expressions = claims.functions.flatMap(f => f.expressions);

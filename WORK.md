@@ -86,14 +86,12 @@ effect. A program with an arbitrary callback promising readable `U[]` for every
 Effect inference remains conservative for some rest wrappers, call forms and
 nested heap operations. Expression scheduling alone does not supply the missing
 effect derivation. Code that writes only locations it allocated preserves the
-heap it was called with, but each node of its graph is checked preserving
-from its own entry heap: a write of a `let` cell the code allocated, a
-mutator called on an array it allocated, and a global regex literal's
-`[Symbol.replace]`, which writes the `lastIndex` of the regex just created
-(`regexp-fresh-global-replace-refused`), are refused. Certifying them needs
-the postcondition relative to the code's entry heap, the knowledge of which
-locations were allocated since, and call effects stating which locations a
-call may write (its receiver's own). A call of a value holding a fixed
+heap it was called with, but each node of its graph is checked against a
+closed footprint from its own entry heap: a destructive mutator such as `pop`
+called on an array the code allocated is refused at any footprint that keeps
+array stores. Certifying it needs the knowledge of which locations were
+allocated since entry and call effects stating which locations a call may
+write (its receiver's own). A call of a value holding a fixed
 signature and its variadic extension, a module constant read as a value
 elsewhere, is not certified preserving: the selected call's evidence is no
 qualified application at the fixed signature. Keep the source targets and their

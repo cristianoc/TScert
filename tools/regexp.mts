@@ -21,7 +21,7 @@
  *   intrinsic `%Iterate:RegExpString%` requires. */
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import type { RegExpShape } from "./regexp-shape.mts";
-import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
 type Signature = Extract<TypeTerm, { k: "function" }>;
@@ -97,16 +97,17 @@ function splitResult(shape: RegExpShape | null): TypeTerm {
  * type states no `[Symbol.matchAll]`, which `matchAll` reaches only on a
  * native regex.
  *
- * A native regex's standard members state the empty footprint where they
- * run no client code and leave every existing location as it was: each reads
- * the regex's pattern and flags, allocates only its result, and writes
- * `lastIndex` only where the regex is global or sticky. `[Symbol.search]`
- * restores the `lastIndex` it saved, `[Symbol.split]` and `[Symbol.matchAll]`
- * step a fresh clone; `exec`, `test`, `[Symbol.match]` and
- * `[Symbol.replace]` of a global or sticky regex leave `lastIndex` where its
- * last match ended (0 after the last), so they state no effect there, nor at
- * the conservative shape, whose flags are not read. A structural regex's
- * members are any value's and state none.
+ * A native regex's standard members run no client code: each reads the
+ * regex's pattern, flags and `lastIndex` (a number by its contract),
+ * allocates only its result, and writes `lastIndex` only where the regex is
+ * global or sticky. `[Symbol.search]` restores the `lastIndex` it saved,
+ * `[Symbol.split]` and `[Symbol.matchAll]` step a fresh clone: the empty
+ * footprint. `exec`, `test`, `[Symbol.match]` and `[Symbol.replace]` (at a
+ * string replacement) state the empty footprint where the regex is neither
+ * global nor sticky, and where it is, `{value: any, store: keep}`: they
+ * leave `lastIndex`, a location holding a number, where the last match
+ * ended (0 after the last). The conservative shape, whose flags are not
+ * read, and a structural regex's members are any value's and state none.
  *
  * Footprints (SOURCE-CONTRACTS.md, "Native footprints"): a native regex's
  * state is its own locations, `lastIndex` the only mutable one. The members
@@ -117,8 +118,8 @@ function members(shape: RegExpShape | null, keys: RegExpKeys, native: boolean): 
   const exec = execResult(shape);
   const optionalNumber = either(atom("number"), atom("undefined"));
   const restoring: Effect = native && shape !== null ? emptyEffect : ordinaryEffect;
-  const stateless: Effect = native && shape !== null && !shape.global && !shape.sticky
-    ? emptyEffect : ordinaryEffect;
+  const stateless: Effect = !native || shape === null ? ordinaryEffect
+    : shape.global || shape.sticky ? footprintEffect({ value: "any", store: "keep" }) : emptyEffect;
   return [
     methodField("exec", [atom("string")], either(exec, atom("null")), stateless),
     methodField("test", [atom("string")], atom("boolean"), stateless),
@@ -179,9 +180,10 @@ export const dispatchName = (method: DispatchMethod): string => `%Dispatch:${met
  * code: their argument must be marked native (and they throw a `TypeError`
  * for a non-global one, an outcome). Evaluation is as written: `s`, `o`,
  * then `rest`. Beside the member's call, the dispatch reads `o`'s members
- * and converts only strings: it runs no other code and writes nothing, so a
- * first signature, at an `o` whose member states the empty footprint,
- * states it too; the second takes any `o`. */
+ * and converts only strings: it runs no other code and writes nothing, so
+ * at an `o` whose member states a closed footprint it states the same one:
+ * one signature per closed footprint, each after those within it, the last
+ * taking any `o`. */
 export function dispatchIntrinsic(method: DispatchMethod, keys: RegExpKeys):
     { name: string; typeParams: { name: string; bound: null; resolution: null }[]; type: TypeTerm } {
   const native = method === "matchAll" || method === "replaceAll";
@@ -199,7 +201,7 @@ export function dispatchIntrinsic(method: DispatchMethod, keys: RegExpKeys):
     params: [atom("string"), record([methodField({ symbol: key }, memberParams, memberResult, effect), ...mark]),
       ...rest], rest: null, result, span });
   return { name: dispatchName(method), typeParams: [{ name: "X", bound: null, resolution: null }],
-    type: { k: "intersection", parts: [signature(emptyEffect), signature(ordinaryEffect)], span } };
+    type: { k: "intersection", parts: closedFootprints.map((f) => signature(footprintEffect(f))), span } };
 }
 
 /** The standard library's regex interfaces, as an annotation or a contextual

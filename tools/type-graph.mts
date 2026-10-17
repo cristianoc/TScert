@@ -23,6 +23,12 @@ export type Labels<L = number> = L[];
 export const topFootprint: ClosedFootprint = { value: "any", store: "any" };
 /** The footprint letting no location change: heap preservation. */
 export const emptyFootprint: ClosedFootprint = { value: "keep", store: "keep" };
+/** The six closed footprints, each after every one within it. */
+export const closedFootprints: readonly ClosedFootprint[] = [
+  { value: "keep", store: "keep" }, { value: "any", store: "keep" },
+  { value: "keep", store: "grow" }, { value: "any", store: "grow" },
+  { value: "keep", store: "any" }, { value: "any", store: "any" },
+];
 /** A signature with a footprint and no promise. */
 export const footprintEffect = (footprint: ClosedFootprint): CallEffect => ({ footprint, promise: null });
 /** Heap preservation: no location may change, no promise. */

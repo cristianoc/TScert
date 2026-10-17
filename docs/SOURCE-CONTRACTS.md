@@ -1934,15 +1934,17 @@ $`g`$ and $`y`$ whether the flags hold `g` and `y`,
 \epsilon_{N(\Sigma)}(m)=\begin{cases}
 \emptyset & m\in\{[@@\mathrm{search}],[@@\mathrm{split}],[@@\mathrm{matchAll}]\},\ \Sigma\ne\Sigma_\top\\
 \emptyset & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ \neg g,\ \neg y\\
+\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{keep}\} & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ g\lor y\\
 \top & \text{otherwise}
 \end{cases}
 ```
 
 `[@@search]` restores the `lastIndex` it saved, `[@@split]` and
 `[@@matchAll]` step a fresh clone, and a regex neither global nor sticky
-writes no `lastIndex`; one that is leaves it where its last match ended
-(`invalid-regexp-global-callback-effect`). At $`\Sigma_\top`$ the flags are
-not read, and no member states the effect.
+writes no `lastIndex`; one that is leaves it where its last match ended,
+changing one location, which holds a number by its contract
+(`map-stable-regexp-test`). At $`\Sigma_\top`$ the flags are not read, and
+no member states an effect.
 
 **Literals and dispatch.** Each evaluation of a literal allocates a regex;
 a call of `String.prototype`'s `match`, `matchAll`, `replace`, `replaceAll`,
@@ -1970,15 +1972,16 @@ as TypeScript types the receiver and the argument, evaluated as written, with
 ```
 
 and `match` and `search` as `split` without the limit, `replaceAll` as
-`replace` with the mark. Each states two signatures over the same binder:
-the one above, unrestricted, and the same at a target whose member states
-$`\emptyset`$, stating it too. Beside that member's call, the
-dispatch reads `o`'s members and converts only strings, so it writes nothing
-the member does not:
+`replace` with the mark. Each states one signature over the same binder per
+closed footprint $`\varepsilon`$: the one above at a target whose member
+states $`\varepsilon`$, stating it too, the one at $`\top`$ taking any
+target. Beside that member's call, the dispatch reads `o`'s members and
+converts only strings, so it writes nothing the member does not
+(`map-stable-regexp-replace`):
 
 ```math
 \frac{\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow Q\},\ \vec R)\Rightarrow S}
-     {\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow_{\emptyset} Q\},\ \vec R)\Rightarrow_{\emptyset} S}\ \textsf{dispatch-preserving}
+     {\%\mathrm{Dispatch}{:}m\%\colon\forall X.\ (\mathtt{string},\ \{[@@m]\colon\vec P\Rightarrow_{\varepsilon} Q\},\ \vec R)\Rightarrow_{\varepsilon} S}\ \textsf{dispatch-footprint}
 ```
  `matchAll` and `replaceAll` first read
 `o[@@match]` and `o.flags` and convert `flags` (ECMA-262,
