@@ -1041,7 +1041,9 @@ let decode ast =
        | t,[] -> t
        | Atoms [Shape ({calls=_ :: _ as calls;_} as shape)],_ ->
          Atoms [Shape {shape with calls=List.map (fun (call:signature) -> {call with quantified}) calls}]
-       | Atoms [Ctors ([signature],statics)],_ -> Atoms [Ctors ([{signature with quantified}],statics)]
+       (* A generic class: every construct signature under its binders. *)
+       | Atoms [Ctors ((_ :: _ as signatures),statics)],_ ->
+         Atoms [Ctors (List.map (fun (signature:signature) -> {signature with quantified}) signatures,statics)]
        | _ -> unsupported "a generic imported value must be one callable"))
       (items "values" document);
     functions=List.mapi (fun scope f ->

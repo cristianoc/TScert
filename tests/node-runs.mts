@@ -75,6 +75,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     'b,,,<span class="m-kw">e</span>', "logical-truth-narrowing: the guarded branches see `r` at \"b\"");
   assert.equal(runExample("invalid-logical-truth-or-narrowing", `chosen("a", "x")`), "a",
     "invalid-logical-truth-or-narrowing: the actual source returns \"a\" at a \"b\" contract");
+  assert.equal(runExample("set-string-construction", `letters("banana", [1, 2])`), 5,
+    "set-string-construction: three letters, an \"a\" and a 1");
+  assert.equal(runExample("invalid-set-string-at-number", `typeof [...digits("12")][0]`), "string",
+    "invalid-set-string-at-number: the set at number holds strings");
   assert.equal(runExample("invalid-map-spread-pop", "Object.keys(drained([1, 2, 3])).length"), 2,
     "invalid-map-spread-pop: the result has three positions, two present");
   assert.equal(runExample("invalid-map-filter-pop", "Object.keys(trimmed([\"a\", \"b\", \"c\"])).length"), 2,

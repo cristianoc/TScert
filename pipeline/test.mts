@@ -1321,6 +1321,27 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A construction forged to the other stated form's result: `new Set` of a
+  // string claimed at the `Set<number>` the array construction has. The
+  // construction rule requires the selected signature with every argument's
+  // premise, so search refuses it, and so does checking the honest evidence
+  // against the forged claim.
+  const artifacts = run("set-string-construction");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const expressions = claims.functions.flatMap(f => f.expressions);
+  const at = (text: string) => must(expressions.find(e => e.pos[0] === source.indexOf(text) &&
+    e.pos[1] === source.indexOf(text) + text.length), `the claim of ${text}`);
+  at("new Set(word)").type = at("new Set<number>(codes)").type;
+  const input = writeClaims(artifacts, "forged-set-form", claims);
+  const produce = produceWith(artifacts, input, "forged-set-form");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject/);
+  process.stdout.write("forged construct form: a string's set claimed at Set<number> refused in search and in checking\n");
+}
+
+{
   // An optional call's body is claimed at no value only where its receiver
   // is only nullish. The loop's receiver holds the array from the second
   // iteration on: the body's member read and call forged to no value are

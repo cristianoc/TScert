@@ -71,7 +71,7 @@ export type GlobalEntry = {
    * parameters, which a call may not exceed, and its result. What the host
    * does at these arguments, stated as a type. For a property, its type is
    * the result. */
-  stated?: Stated | ((library: LibraryReference) => Stated);
+  stated?: Stated | Stated[] | ((library: LibraryReference) => Stated | Stated[]);
   /** Declarations the stated signature names that no library declares, such
    * as `JsonValue`: they join the document when the entry is read. */
   definitions?: TypeDefinition[];
@@ -301,11 +301,18 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // runs no client code; any other iterable's is the client's, so the
   // parameter is stated at an array (`Set<T>`: `array-prototype.mts`). The
   // construction reads the array and allocates, so it states the empty
-  // footprint; so does `new Map`'s.
-  ...["new <T = any>(values?: readonly T[] | null): Set<T>;", "new <T>(iterable?: Iterable<T> | null): Set<T>;"]
-    .map((signature): GlobalEntry => ({ global: "Set", signature, effect: emptyEffect,
-      stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
-        result: library("Set", [binder("T")]) }) })),
+  // footprint; so does `new Map`'s. The iterable overload is stated at an
+  // array and, separately, at a string, whose iterator is the host's too:
+  // `new Set(s)` is a fresh set of the string's code points, a
+  // `Set<string>`. One form at `readonly T[] | string` would be false at
+  // `T := number`.
+  { global: "Set", signature: "new <T = any>(values?: readonly T[] | null): Set<T>;", effect: emptyEffect,
+    stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
+      result: library("Set", [binder("T")]) }) },
+  { global: "Set", signature: "new <T>(iterable?: Iterable<T> | null): Set<T>;", effect: emptyEffect,
+    stated: library => [
+      { binders: ["T"], params: [optional(readonlyArray(binder("T")))], result: library("Set", [binder("T")]) },
+      { binders: ["T"], params: [atom("string")], result: library("Set", [atom("string")]) }] },
   // `new Map<K, V>(es)` is a fresh map of the array's pairs, each read at
   // its indices 0 and 1, and `new Map()` an empty one, at every `K` and `V`.
   ...["new (): Map<any, any>;", "new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;",

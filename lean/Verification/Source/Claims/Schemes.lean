@@ -265,7 +265,14 @@ def moduleInstances (T : EquationStore.State) (g : Instantiable)
       let (T', label) := EquationStore.intern T [.arrs (parts.flatMap (·.1)) (parts.flatMap (·.2))]
       T := T'
       pure (Json.mkObj [("a", toJson "graph"), ("label", toJson label)])
-    | _ => pure (if instances.length == 1 then first else first.setObjVal! "and" (toJson instances.tail))
+    | _ =>
+      -- An instance with several signatures is a conjunction already: the
+      -- whole is one conjunction of every instance's signatures.
+      let parts := instances.flatMap fun i => (CellClaims.conjuncts i).toOption.getD [i]
+      match parts with
+      | [one] => pure one
+      | one :: more => pure (one.setObjVal! "and" (toJson more))
+      | [] => pure first
   return (T, Json.mkObj [("top", toJson false), ("atoms", toJson [callable])],
     calls.map (·.2.1), calls.map (·.1))
 

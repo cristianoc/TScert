@@ -12,15 +12,17 @@ function's signature (receiver, parameters, rest element and result), a
 construct signature (parameters and result), or any other type. -/
 inductive GenericType where
   | function (receiver : Option Union) (params : List Union) (rest : Option Union) (result : Union)
-  /-- A generic class: its construct signature with its effect, and its
-  static fields, each readonly or not, which name none of its binders. -/
-  | construct (params : List Union) (result : Union) (effect : CallEffects.Effect)
+  /-- A generic class: its construct signatures, each its parameters, result
+  and effect, every instance meeting all of them, and its static fields,
+  each readonly or not, which name none of its binders. -/
+  | construct (signatures : List (List Union × Union × CallEffects.Effect))
       (statics : List (PropKey × Bool × Union) := [])
   | other (type : Union)
 
 def GenericType.map (f : Union → Union) : GenericType → GenericType
   | .function r ps e res => .function (r.map f) (ps.map f) (e.map f) (f res)
-  | .construct ps res e fs => .construct (ps.map f) (f res) e (fs.map fun (k, r, t) => (k, r, f t))
+  | .construct ss fs => .construct (ss.map fun (ps, res, e) => (ps.map f, f res, e))
+      (fs.map fun (k, r, t) => (k, r, f t))
   | .other t => .other (f t)
 
 /-- A generic module value: a generic module function, a generic class or a
@@ -76,7 +78,28 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
     if kindOf restTerm == some "pack" then return .other (← lowerType ctx term)
     let rest ← if restTerm == .null then pure none else some <$> lowerType ctx restTerm
     return .function receiver params rest (← lowerType ctx (← field term "result"))
-  | some "constructor" =>
+  | some "constructor" => constructorType term
+  -- Several construct signatures of one generic class, under its binders:
+  -- each a construct signature, all with the same static fields.
+  | some "intersection" =>
+    let parts ← arr term "parts"
+    if parts.isEmpty || !parts.all (kindOf · == some "constructor") then return .other (← lowerType ctx term)
+    fieldsExactly term ["k", "parts", "span"]
+    let forms ← parts.toList.mapM constructorType
+    let mut signatures := []
+    let mut statics : Option (List (PropKey × Bool × Union)) := none
+    for form in forms do
+      match form with
+      | .construct ss fs =>
+        if statics.isSome && statics != some fs then
+          throw s!"{ctx.site}: a generic class's construct signatures state the same static fields"
+        statics := some fs
+        signatures := signatures ++ ss
+      | _ => return .other (← lowerType ctx term)
+    return .construct signatures (statics.getD [])
+  | _ => return .other (← lowerType ctx term)
+where
+  constructorType (term : Json) : M GenericType := do
     let hasStatics := (term.getObjVal? "statics").isOk
     fieldsExactly term (["k", "params", "rest", "result", "effect", "span"] ++
       (if hasStatics then ["statics"] else []))
@@ -90,8 +113,7 @@ def genericType (ctx : Ctx) (term : Json) : M GenericType := do
         if (← field f "readonly") != .bool true then
           throw s!"{ctx.site}: a static field's readonly mark is `true`, left out otherwise"
       return (← PropKey.decode (← field f "name"), readonly, ← lowerType ctx (← field f "type"))
-    return .construct params (← lowerType ctx (← field term "result")) effect statics
-  | _ => return .other (← lowerType ctx term)
+    return .construct [(params, ← lowerType ctx (← field term "result"), effect)] statics
 
 /-- A type term with each rest typed by one of `names` typed by its packed
 name instead. A nested scheme binding the name hides it. -/

@@ -109,29 +109,43 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          `undefined` there, and Lean checks each omitted position admits it. *)
       let written (s:Semantic.signature) = List.filteri (fun i _ -> i < count) s.params in
       (match constructor with
-       | Atoms [Ctors ([signature],_)] when signature.quantified <> [] ->
+       | Atoms [Ctors ((first :: _ as signatures),_)] when first.quantified <> [] ->
          (* A generic class: its instance is the one the explicit type
             arguments name, or is inferred from the actuals, as a generic
-            call's is. *)
-         if count > List.length signature.params then
+            call's is. Its construct signatures share its binders; the
+            proposal is at the first taking the actuals whose instance admits
+            them, and Lean checks the construction at the signature it
+            selects, with every argument's obligation. *)
+         let fitting = List.filter (fun (s:Semantic.signature) -> count <= List.length s.params) signatures in
+         if fitting = [] then
            Proposal_diagnostics.unsupported "no construct signature takes this many arguments";
-         let substitution,result =
+         let actuals = if types <> [] then [] else actual_types () in
+         let instance_at (signature:Semantic.signature) =
            if types <> [] then begin
              if List.length types <> List.length signature.quantified then
                Proposal_diagnostics.unsupported "explicit type arguments must name every class type parameter";
              let substitution = List.map2 (fun (q:Semantic.quantifier) t -> q.identity,ValueArgument t)
                signature.quantified types in
              let instance = Inference.substitute_signature substitution {signature with quantified=[]} in
-             contextual_actuals (written instance);
-             substitution,instance.result
+             substitution,instance
            end else
              let missing = List.length signature.params - count in
              let inferred = Inference.infer ~expand:(expand_named declarations) ~receiver:Semantic.top ?expected signature
-               (actual_types () @ List.init missing (fun _ -> Atoms [Undef])) in
-             inferred.substitution,inferred.result in
+               (actuals @ List.init missing (fun _ -> Atoms [Undef])) in
+             inferred.substitution,
+             Inference.substitute_signature inferred.substitution {signature with quantified=[]} in
+         let admits (instance:Semantic.signature) =
+           types <> [] || List.for_all2 plausible_subtype actuals (written instance) in
+         let chosen = match List.find_map (fun s -> match quietly (fun () -> instance_at s) with
+             | Some (substitution,instance) when admits instance -> Some (substitution,instance)
+             | _ -> None) fitting with
+           | Some c -> c
+           | None -> instance_at (List.hd fitting) in
+         let substitution,instance = chosen in
+         if types <> [] then contextual_actuals (written instance);
          instance_of callee substitution;
          publish_substitution e.pos (List.map (fun ((r:Semantic.rigid),t) -> r.spelling,t) substitution);
-         result
+         instance.result
        | Atoms [Ctors (signatures,_)] ->
          if types <> [] then Proposal_diagnostics.unsupported "explicit type arguments to a class that takes none";
          let exact,short = List.partition (fun (s:Semantic.signature) ->

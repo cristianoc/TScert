@@ -164,7 +164,12 @@ let encode (proposal : Proposal_types.t) =
        signature an arrow's arguments, result and effect (no receiver). *)
     (* A generic class value's static fields name none of its binders and are
        read at an instance; the scheme states its construct signatures. *)
-    | Ctors ([s],_) when s.quantified <> [] ->
+    | Ctors ((s :: _ as all),_) when s.quantified <> [] ->
+      (* Several construct signatures share the scheme's binders: a generic
+         class whose overlay states several forms. Signatures under other
+         binders are refused. *)
+      if List.exists (fun (t:Semantic.signature) -> t.quantified <> s.quantified) all then
+        unsupported "construct signatures under different binders";
       let binders = List.map (fun (q:Semantic.rigid) -> label_json (Binder q.spelling))
         (List.concat_map quantifier_identities s.quantified) in
       if List.exists (fun (q:Semantic.quantifier) -> q.resolution <> None) s.quantified then
@@ -173,11 +178,14 @@ let encode (proposal : Proposal_types.t) =
         match Option.value q.bound ~default:(ValueArgument top) with
         | ValueArgument bound -> Some (q.identity, ValueArgument (Meet (Rigid q.identity,[bound])))
         | _ -> None) s.quantified in
-      let body = Inference.substitute_signature within_bounds {s with quantified=[]} in
-      let signature,variadic = match body.rest_pack with
-        | None -> [call_contract body.call_effect (Array []) (Array (List.map labels body.params)) (labels body.result)],[]
-        | Some r -> [],[call_contract body.call_effect (Array [])
-            (Array [Array (List.map labels body.params);pack_labels r]) (labels body.result)] in
+      let bodies = List.map (fun (t:Semantic.signature) ->
+        Inference.substitute_signature within_bounds {t with quantified=[]}) all in
+      let signature = List.filter_map (fun (body:Semantic.signature) -> match body.rest_pack with
+        | None -> Some (call_contract body.call_effect (Array []) (Array (List.map labels body.params)) (labels body.result))
+        | Some _ -> None) bodies in
+      let variadic = List.filter_map (fun (body:Semantic.signature) -> Option.map (fun r ->
+        call_contract body.call_effect (Array [])
+          (Array [Array (List.map labels body.params);pack_labels r]) (labels body.result)) body.rest_pack) bodies in
       let bounds = List.map (fun (q:Semantic.quantifier) ->
         let bound = Option.value q.bound ~default:(ValueArgument top) in
         Array [label_json (Binder q.identity.spelling);

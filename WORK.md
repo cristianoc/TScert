@@ -22,7 +22,6 @@ design, not its progress.
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
 | [Footprint precision](#footprints) | open: fresh array storage designed ([FOOTPRINTS](docs/FOOTPRINTS.md#deferred-extra-precision)) | `dev/record-render.mts`'s `effects` verifies |
-| [Several stated forms of one declaration](docs/SOURCE-CONTRACTS.md#library-globals) | open: designed | `new Set` of a string verifies (`dev/record-render.mts`'s `mathRoles`) |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open | a Lean theorem composes units certified against each other's signatures |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
@@ -32,7 +31,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 10 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 13 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -255,13 +254,10 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 10 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
+dump, 13 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
 the same-file declarations it uses). The first blockers of the others in
 `dev/`, with the functions each stops directly and through callees:
 
-- `new Set` of a string, the parameter the overlay states only at an array,
-  in the module constants `BINDERS` and `RELATIONS` (mathRoles; through it
-  math, lowering, rules, section, card, pageBody: 7);
 - a variadic call with a spread argument in a bounded body,
   `Math.max(0, ...ends)` (rules; through it section, card, pageBody: 4;
   [footprints](#footprints));

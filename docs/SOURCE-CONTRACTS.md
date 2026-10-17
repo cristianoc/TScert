@@ -1634,7 +1634,9 @@ the host iterates a string by its own iterator, which runs no client code
 (the assumption `%Iterate:String%` makes). Every form keeps its parameters,
 result, effect and binder substitution. The declaration's text matches the
 reviewed one exactly; every form is decoded, and an empty or malformed list,
-or an unsupported combination of binders, is refused, never an arm dropped.
+or an unsupported combination of binders, is refused, never an arm dropped
+(`set-string-construction`; `invalid-set-string-at-number`,
+`invalid-set-iterator-construction`, `invalid-set-excess-arguments`).
 
 An entry may read a call signature as the global's construct (`construct`),
 where the host's call runs the construct's steps: `Error(m)` called takes the

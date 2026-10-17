@@ -2335,15 +2335,33 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   // A standard library global is read through the reviewed overlay: a
   // signature it does not list, with exactly the text reviewed, is refused.
   const library = variables.every(v => isLibraryModule(context.identityOf(v.getSourceFile())));
-  const reviewed = (member: string | undefined, node: Node, what: string):
-      (Omit<GlobalEntry, "stated"> & { stated?: Stated }) | undefined => {
+  // An entry stating several forms states construct signatures: each form is
+  // one, under the entry's binders, which every form names alike. Read
+  // anywhere else, or empty, the list is refused rather than an arm dropped.
+  const reviewedForms = (member: string | undefined, node: Node, what: string):
+      (Omit<GlobalEntry, "stated"> & { forms?: Stated[] }) | undefined => {
     if (!library) return undefined;
     const text = node.getText(node.getSourceFile()).trim();
     const entry = globalEntry(context.overlay, name, member, text);
     if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
     for (const definition of entry.definitions ?? []) context.define(definition);
-    const stated = entry.stated;
-    return { ...entry, stated: typeof stated === "function" ? stated(context.library) : stated };
+    const { stated: written, ...rest } = entry;
+    const stated = typeof written === "function" ? written(context.library) : written;
+    if (stated === undefined) return rest;
+    const forms = Array.isArray(stated) ? stated : [stated];
+    const [first] = forms;
+    if (!first) throw Error(`${what} states an empty list of forms`);
+    if (forms.some(f => JSON.stringify(f.binders) !== JSON.stringify(first.binders)))
+      throw Error(`${what} states forms under different binders`);
+    return { ...rest, forms };
+  };
+  const reviewed = (member: string | undefined, node: Node, what: string):
+      (Omit<GlobalEntry, "stated"> & { stated?: Stated }) | undefined => {
+    const entry = reviewedForms(member, node, what);
+    if (!entry) return undefined;
+    const { forms, ...rest } = entry;
+    if (forms && forms.length > 1) throw Error(`${what} states several forms, read only as construct signatures`);
+    return { ...rest, ...(forms?.[0] ? { stated: forms[0] } : {}) };
   };
   // The interface the variable is annotated with, a plain or qualified name.
   const annotation = declaration.type;
@@ -2569,7 +2587,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   }
   const whatNew = `new ${name}(…)`;
   const constructForms = [...calledConstructs, ...[...built].flatMap(([signature, expressions]) => {
-    const entry = reviewed(undefined, signature, whatNew);
+    const entry = reviewedForms(undefined, signature, whatNew);
     const span = spanOf(signature);
     // A construct of an intrinsic stating the same step, `new Promise(e)`:
     // each is reported, with its arguments as written, and joins no value.
@@ -2581,15 +2599,15 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       }
       return [];
     }
-    if (entry?.stated) {
-      const stated = entry.stated;
+    if (entry?.forms) {
+      const forms = entry.forms;
+      const most = Math.max(...forms.map(f => f.params.length));
       for (const expression of expressions)
-        if ((expression.arguments?.length ?? 0) > stated.params.length ||
-            expression.arguments?.some(ts.isSpreadElement))
-          throw Error(`${whatNew} is read with at most ${stated.params.length} argument(s)`);
-      return [{ binders: stated.binders,
+        if ((expression.arguments?.length ?? 0) > most || expression.arguments?.some(ts.isSpreadElement))
+          throw Error(`${whatNew} is read with at most ${most} argument(s)`);
+      return forms.map(stated => ({ binders: stated.binders,
         type: { k: "constructor", effect: entry.effect ?? ordinaryEffect, params: stated.params, rest: null,
-          result: stated.result, span } satisfies TypeTerm }];
+          result: stated.result, span } satisfies TypeTerm }));
     }
     if (signature.typeParameters?.length) throw Error(`${whatNew} is generic`);
     context.clean(signature, where(signature, name));
@@ -2617,9 +2635,13 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     if (distinct.length === 1 && only)
       return { construct: { declaration: identity, typeParams: only.binders.map(name => ({ name, bound: null, resolution: null })),
         type: only.type } };
-    if (distinct.some(f => f.binders.length)) throw Error(`${whatNew} selects several generic signatures`);
+    // Several signatures under the same binders are one generic class's,
+    // every instance meeting each; under different ones they are refused.
+    const binders = only?.binders ?? [];
+    if (distinct.some(f => JSON.stringify(f.binders) !== JSON.stringify(binders)))
+      throw Error(`${whatNew} selects several signatures under different binders`);
     const span = spanOf(first);
-    return { construct: { declaration: identity, typeParams: [],
+    return { construct: { declaration: identity, typeParams: binders.map(name => ({ name, bound: null, resolution: null })),
       type: { k: "intersection", parts: distinct.map(f => f.type), span } } };
   }
   // A global read only through tests is not a value.
