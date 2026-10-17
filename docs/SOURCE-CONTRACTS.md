@@ -1408,18 +1408,17 @@ result. Of `ArrayProto`, `slice`, `join`, `toString`, `indexOf`,
 `lastIndexOf`, `includes`, `at` and `[Symbol.iterator]` state it: they read
 the receiver, convert only numbers and elements meeting the conversion
 contract below, compare by strict equality or SameValueZero, and allocate
-only their result; so do the overloads of `find`, `findIndex`,
-`filter`, `some`, `every` and `forEach` that take a preserving callback,
-which they call, the ordinary construction below allocating `map`'s and
-`filter`'s results. Each of these members reads the length once and the
-receiver's own numeric keys, data properties (`numericOwn`), so beside the
-callback it runs no client code; each has a second signature at an
-unrestricted callback, stating no effect (`array-preserving-callbacks`,
-`invalid-filter-writing-callback`):
+only their result. `find`, `findIndex`, `filter`, `some`, `every`,
+`forEach` and `flatMap` call a callback; each reads the length once and the
+receiver's own numeric keys, data properties (`numericOwn`), and allocates
+only its result by ordinary construction, so beside the callback it runs no
+client code and is within the callback's footprint: it has one signature per
+closed footprint $`\varepsilon`$ (`array-preserving-callbacks`,
+`map-stable-filter-push`, `invalid-map-filter-pop`):
 
 ```math
-\frac{m\in\{\mathsf{filter},\mathsf{some},\mathsf{every},\mathsf{forEach}\}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\emptyset}\mathtt{unknown}}
-     {\mathit{xs}.m(f):R_m\;!\;\emptyset}\ \textsf{native-preserving-callback}
+\frac{m\in\{\mathsf{filter},\mathsf{some},\mathsf{every},\mathsf{forEach}\}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon}\mathtt{unknown}}
+     {\mathit{xs}.m(f):R_m\;!\;\varepsilon}\ \textsf{native-callback}
 ```
 
 with $`R_m`$ the member's result: $`T[\,]`$, `boolean`, `boolean`,
@@ -1432,9 +1431,11 @@ The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source
 annotations are still translated in full. `join` bounds `T` to the conversion
 contract below,
-unrestricted (`all: any`) `find`/`findIndex` callbacks receive `T | undefined`.
-Their qualified overloads require a certified callback at the empty footprint
-and pass `T`. `map` relies on every index below the length it captured staying
+`find` and `findIndex` visit every index below the length they read first.
+At a callback whose footprint keeps array stores (`store: keep`), the
+receiver's length stays as it was, so they pass `T` (`find-stable-counter`);
+at any other a store may shrink, and they pass `T | undefined`
+(`invalid-native-find-mutation`). `map` relies on every index below the length it captured staying
 present until it tests it, a fact every closed footprint whose change to stores
 is at most `grow` keeps (`map_rely`, `denseCheck_stable`): at each such
 footprint $`\varepsilon`$, a dense receiver and a callback within
@@ -1554,7 +1555,8 @@ where the native is modelled and audited otherwise:
 | a global or sticky native regex's `exec`, `test`, `[Symbol.match]`, `[Symbol.replace]` at a string | `{value: any, store: keep}` | they write only `lastIndex`, a number (audited) |
 | a native regex's other members, a regex neither global nor sticky | the empty footprint | they write nothing (audited) |
 | `%Dispatch:replace%` | its target member's footprint | one signature per closed footprint (audited, as its target's) |
-| `%Iterate%` over an array; its step | the empty footprint; `{value: any, store: keep}` | the step reads the array and writes its own position, a number (audited) |
+| an iteration intrinsic, `%Iterate%` over an array and those over a string, a `Set`, a `Map`, a host iterator and a native match iterator; its step; a spread form `%Spread:K%` | the empty footprint; `{value: any, store: keep}`; `{value: any, store: keep}` | they run no client code; a step writes only the iterator's position and, for a match iterator, its clone's `lastIndex`, each a number, and allocates what it yields (audited) |
+| `forEach`, `every`, `some`, `filter`, `find`, `findIndex`, `flatMap` at a callback within `ε` | `ε` | one signature per closed footprint; beside the callback each reads the receiver and allocates only its result (audited) |
 | `new Set`, `new Map` of an array or nothing | the empty footprint | they read the array through the host's iterator and allocate (audited) |
 | `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: any, store: keep}` | they run no code and write only the receiver's internal slots, which hold no array store (audited) |
 

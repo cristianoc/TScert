@@ -726,7 +726,10 @@ let rec footprint_expr ~callable ~iteration ~readable (e:expr) : footprint optio
   | Read (a,_) -> go a
   | Index (a,b) | Equality (_,a,b) -> all [a;b]
   | Alloc fields -> all (List.map snd fields)
-  | ArrayLiteral (es,spreads) -> if spreads=[] then all es else None
+  (* A spread part reads its operand's store, an array; the parser writes a
+     spread of any other iterable as its spread intrinsic's call, whose
+     signature states its footprint. *)
+  | ArrayLiteral (es,_) -> all es
   | Lambda _ -> Some empty_footprint
   (* A variable's new value goes to its slot, or to its cell, a location
      holding a value (Lean's typed write rule). *)

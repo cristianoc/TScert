@@ -32,6 +32,37 @@ private theorem operand_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
   case objAt fs code oid => cases code <;> simp [instantiate, Purity.operandTerm, isVal]
   all_goals simp_all [Purity.operandTerm, isVal, instantiate]
 
+private theorem read_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
+    (hp : Purity.readTerm t = true) (hc : checkScope (Γ.length + d) t = true)
+    (he : EnvOk G Γ ρ n W) : Purity.readTerm (instantiate d ρ t) = true := by
+  induction t using Tm.induct generalizing d
+  case var i =>
+    simp only [instantiate]
+    split
+    · rfl
+    · have hi : i - d < Γ.length := by simp [checkScope] at hc; omega
+      exact Purity.read_value
+        (meaning_value (he.2 (i-d) Γ[i-d] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
+  all_goals simp only [Purity.readTerm, instantiate, checkScope, Bool.and_eq_true] at hp hc ⊢
+  all_goals first
+    | (simp_all; done)
+    | (simp_all [isVal]; done)
+    | (simp [isVal] at hp; done)
+
+private theorem init_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
+    (hp : Purity.initTerm t = true) (hc : checkScope (Γ.length + d) t = true)
+    (he : EnvOk G Γ ρ n W) : Purity.initTerm (instantiate d ρ t) = true := by
+  by_cases hs : ∃ b, t = .spread b
+  · obtain ⟨b, rfl⟩ := hs
+    simp only [instantiate, Purity.initTerm, checkScope] at hp hc ⊢
+    exact read_instantiate hp hc he
+  · have ho : Purity.operandTerm t = true := by cases t <;> simp_all [Purity.initTerm]
+    have h' := operand_instantiate ho hc he
+    revert h'
+    generalize instantiate d ρ t = u
+    intro hu
+    cases u <;> simp_all [Purity.initTerm, Purity.operandTerm, isVal]
+
 /-- Substituting the environment's values for the free slots keeps an
 inspection: a slot becomes the value it holds. -/
 theorem inspect_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
@@ -51,6 +82,7 @@ theorem inspect_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
   all_goals first
     | (rintro _ ⟨x, hx, rfl⟩; exact operand_instantiate (hp x hx) (hc.2 x hx) he)
     | (rintro _ ⟨x, hx, rfl⟩; exact operand_instantiate (hp x hx) (hc x hx) he)
+    | (rintro _ ⟨x, hx, rfl⟩; exact init_instantiate (hp x hx) (hc x hx) he)
     | (simp [isVal] at hp ⊢; done)
     | (simp_all [Nat.add_assoc]; done)
 

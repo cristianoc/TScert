@@ -32,7 +32,13 @@ let rec plausible_subtype_with excludes actual expected =
       | Shape a,Shape b when a.fields=b.fields && a.indexes=b.indexes && plausible_elements excludes a.elements b.elements ->
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           Semantic.effect_covers p.call_effect q.call_effect &&
-          {p with call_effect=q.call_effect}=q) a.calls) b.calls
+          ({p with call_effect=q.call_effect}=q ||
+           (* A function taking fewer parameters meets a signature passing
+              more: a call discards the actuals past its parameters. *)
+           (p.variadic=None && p.rest_pack=None && q.variadic=None && q.rest_pack=None &&
+            List.length p.params < List.length q.params &&
+            {p with call_effect=q.call_effect}
+              = {q with params=List.filteri (fun i _ -> i < List.length p.params) q.params}))) a.calls) b.calls
       | _ -> false) ys) xs
   | Union parts,_ -> List.for_all (fun part -> plausible_subtype_with excludes part expected) parts
   | _,Union parts -> List.exists (plausible_subtype_with excludes actual) parts

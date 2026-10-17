@@ -30,7 +30,7 @@ import type { Node } from "typescript/unstable/ast";
 import { signatures, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
-import type { CallEffect, ArrayPresence } from "./type-graph.mts";
+import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
 export type OverlayEntry = {
   /** The member's key on the prototype, as declared: a name, or a computed
@@ -97,23 +97,37 @@ const callback = (value: TypeTerm, result: TypeTerm,
     effect: CallEffect): TypeTerm =>
   ({ k: "function", effect, receiver: null, rest: null, span: at,
      params: [value, atomOf("number"), arrayOf(element, true)], result });
-const findingCallback = callback(maybeElement, atomOf("unknown"), ordinaryEffect);
-const preservingFind = callback(element, atomOf("unknown"), emptyEffect);
+/** `find` and `findIndex` visit every index below the length they read
+ * first, present or not. At a callback that changes no array store, the
+ * receiver's store, and so its length, stays as it was, and each visit reads
+ * an element at the receiver's contract; at any other, a store may shrink
+ * (`grow` may drop indices past a hole), and a visit past the new length
+ * passes `undefined`. */
+const findCallback = (effect: CallEffect, footprint: ClosedFootprint): TypeTerm =>
+  callback(footprint.store === "keep" ? element : maybeElement, atomOf("unknown"), effect);
 const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
 /** The closed footprints that keep an array's dense prefixes: those whose
  * change to array stores is at most `grow` (`stableDenseClosed`), smallest
  * first. */
 const stableForDensity = closedFootprints.filter((f) => f.store !== "any");
+/** A callback member's signatures, one per closed footprint `ε`: called at a
+ * callback within `ε`, the member is within `ε`, since besides the callback
+ * it reads the receiver and allocates only its result. */
+const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootprint) =>
+    { params: TypeTerm[]; result: TypeTerm }) =>
+  closedFootprints.map((footprint) => {
+    const effect = footprintEffect(footprint);
+    return { ...signature(effect, footprint), effect };
+  });
 
 export const overlay: readonly OverlayEntry[] = [
-  // At a callback preserving the input heap, `forEach` does, as `every`
-  // below: it reads the length once and the present elements, data
-  // properties, and writes nothing.
+  // `forEach` reads the length once and the present elements, data
+  // properties, and writes nothing beside its callback's calls, as `every`
+  // below: within the callback's footprint.
   { name: "forEach", from: "ReadonlyArray",
     signature: "forEach(callbackfn: (value: T, index: number, array: readonly T[]) => void, thisArg?: any): void;",
-    stated: [{ params: [callback(element, atomOf("unknown"), emptyEffect)], result: atomOf("undefined"),
-        effect: emptyEffect },
-      { params: [callback(element, atomOf("unknown"), ordinaryEffect)], result: atomOf("undefined") }] },
+    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
+      result: atomOf("undefined") })) },
   { name: "map", from: "ReadonlyArray",
     signature: "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];",
     // `map` relies on every index below the length it captured staying
@@ -147,8 +161,8 @@ export const overlay: readonly OverlayEntry[] = [
       "        thisArg?: This,\n" +
       "    ): U[];",
     unbound: ["This"],
-    stated: [{ params: [callback(element, arrayOf(mappedElement, true, "sparse"), ordinaryEffect)],
-      result: arrayOf(mappedElement, false) }] },
+    stated: atEachFootprint((effect) => ({ params: [callback(element, arrayOf(mappedElement, true, "sparse"), effect)],
+      result: arrayOf(mappedElement, false) })) },
   // Only the overload with an initial value. The one without, `reduce(cb)`,
   // is a second signature of the member beside the generic `reduce<U>`,
   // and a prototype member is read as one scheme with one signature
@@ -164,20 +178,20 @@ export const overlay: readonly OverlayEntry[] = [
   // reads the receiver's own numeric keys, data properties (`numericOwn`),
   // and `filter` defines the kept elements on a fresh array (ordinary
   // construction): it runs no other client code and writes no existing
-  // location. So at a callback preserving the input heap the member does,
-  // a signature of its own beside the declared one; `thisArg` is not stated.
+  // location. So at a callback within a footprint the member is: a signature
+  // per closed footprint; `thisArg` is not stated.
   { name: "every", from: "ReadonlyArray",
     signature: "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
-    stated: [{ params: [preservingFind], result: atomOf("boolean"), effect: emptyEffect },
-      { params: [callback(element, atomOf("unknown"), ordinaryEffect)], result: atomOf("boolean") }] },
+    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
+      result: atomOf("boolean") })) },
   { name: "some", from: "ReadonlyArray",
     signature: "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
-    stated: [{ params: [preservingFind], result: atomOf("boolean"), effect: emptyEffect },
-      { params: [callback(element, atomOf("unknown"), ordinaryEffect)], result: atomOf("boolean") }] },
+    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
+      result: atomOf("boolean") })) },
   { name: "filter", from: "ReadonlyArray",
     signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
-    stated: [{ params: [preservingFind], result: arrayOf(element, false), effect: emptyEffect },
-      { params: [callback(element, atomOf("unknown"), ordinaryEffect)], result: arrayOf(element, false) }] },
+    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
+      result: arrayOf(element, false) })) },
   // The members below, through `at`, read the receiver's elements, convert
   // only numbers (an index, a bound) and, for `join` and `toString`,
   // elements meeting the standard conversion contract, compare by strict
@@ -199,12 +213,12 @@ export const overlay: readonly OverlayEntry[] = [
     effect: emptyEffect },
   { name: "find", from: "ReadonlyArray",
     signature: "find(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): T | undefined;",
-    stated: [{ params: [preservingFind], result: maybeElement, effect: emptyEffect },
-      { params: [findingCallback], result: maybeElement }] },
+    stated: atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],
+      result: maybeElement })) },
   { name: "findIndex", from: "ReadonlyArray",
     signature: "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;",
-    stated: [{ params: [preservingFind], result: atomOf("number"), effect: emptyEffect },
-      { params: [findingCallback], result: atomOf("number") }] },
+    stated: atEachFootprint((effect, footprint) => ({ params: [findCallback(effect, footprint)],
+      result: atomOf("number") })) },
   // Mutators take a mutable array.
   { name: "sort", from: "Array",
     signature: "sort(compareFn?: (a: T, b: T) => number): this;",

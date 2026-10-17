@@ -166,6 +166,12 @@ const step: Signature = stepOf(binder);
  *
  * A spread form, `%Spread:K%` for `%Iterate:K%` (`spreadName`), takes the
  * same parameter and gives the fresh array of what the step yields.
+ *
+ * Each runs no client code. Creating a step allocates it: the empty
+ * footprint. A step, and a spread, which steps to the end, write only the
+ * iterator's own position and, for a match iterator, its clone's
+ * `lastIndex`, each a number, and allocate what they yield:
+ * `{value: any, store: keep}` (SOURCE-CONTRACTS.md, "Native footprints").
  * `library` gives a reference to a standard library interface at arguments,
  * `nativeMatches` the native match iterator of an element type.
  * Each is listed only for a file that iterates such a value. */
@@ -187,8 +193,10 @@ export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" |
     : (() => { throw Error(`no iteration intrinsic ${name}`); })();
   // The step, or, for a spread, the fresh array of what the step yields until
   // it yields `null`, as `...` collects it.
-  return { name, typeParams, type: fn([param],
-    spread ? { k: "array", presence: "dense", readonly: false, element, span } : stepOf(element)) };
+  const changesValues = footprintEffect({ value: "any", store: "keep" });
+  return { name, typeParams, type: spread
+    ? { ...fn([param], { k: "array", presence: "dense", readonly: false, element, span }), effect: changesValues }
+    : { ...fn([param], { ...stepOf(element), effect: changesValues }), effect: emptyEffect } };
 }
 
 /** The spread form of an iteration intrinsic: `...x` in an argument list, over

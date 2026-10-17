@@ -131,8 +131,10 @@ by `Closed.Holds.trans` into the body's (`GraphCode.BoundState`,
 `goto_bounded`). Lean accepts a node (`compositionalChecked`,
 `nodeWithin_of_checked`) when it is:
 
-- an **inspection**: a read, test, arithmetic or allocation, which preserves
-  the heap (`ExpressionEffects.check`; proved: `inspect_safe`);
+- an **inspection**: a read, test, arithmetic or allocation, an array
+  literal's spread parts included, which read their stores' elements in
+  place, which preserves the heap (`ExpressionEffects.check`,
+  `Purity.inspectTerm`; proved: `inspect_safe`, from `inspect_step`);
 - a **typed write** of a field whose contract, at the written object's type,
   admits only source values, within `{value: any, store: keep}`: the written
   location holds no store, by its contract (`writeWithin`; proved:
@@ -170,7 +172,9 @@ stable set are `push` and `unshift` (`{value: any, store: grow}`), a native
 regex's members, the array iterator, `new Set` and `new Map`, and the
 collections' and dates' mutators (each at most `{value: any, store: keep}`);
 outside it are `pop`, `shift`, `reverse` and every native stated
-unrestricted. `map` has five signatures: one per footprint `ε` of the stable
+unrestricted. `forEach`, `every`, `some`, `filter`, `find`, `findIndex` and
+`flatMap` have one signature per closed footprint, each within its callback's.
+`map` has five signatures: one per footprint `ε` of the stable
 set, which takes a dense receiver and a callback within `ε`, gives a dense
 result and states `ε` as its own; and an unrestricted one, which takes any
 receiver and any callback, gives a result that may hold holes and states no
@@ -182,14 +186,16 @@ footprint.
 
 > `xs.map(f)` has type `U[]` with no holes when `xs` has none and `f`, with
 > everything it calls, uses only operations that keep every array's dense
-> prefixes: reads (optional chains included), tests, arithmetic, allocation,
-> writes to variables and to fields holding values, `push` and `unshift`,
-> `for...of` over an array, the readers and mutators of `Set`, `Map`, `Date`
-> and regex literals, nested `map`s whose callbacks keep the same rule, and
-> calls of functions checked the same way. `pop`, `shift`, `reverse`, and
-> calls of functions the checker cannot bound are refused, whichever array
-> they reach. Otherwise the checker gives the result a type that permits
-> holes.
+> prefixes: reads (optional chains included), tests, arithmetic, allocation
+> (array literals with spreads included), writes to variables and to fields
+> holding values, `push` and `unshift`, `for...of` and spreads over arrays,
+> strings, sets, maps and regex matches, the readers and mutators of `Set`,
+> `Map`, `Date` and regex literals, the array members taking callbacks
+> (`map`, `filter`, `forEach`, `find`, ...) whose callbacks keep the same
+> rule, and calls of functions checked the same way. `pop`, `shift`,
+> `reverse`, and calls of functions the checker cannot bound are refused,
+> whichever array they reach. Otherwise the checker gives the result a type
+> that permits holes.
 
 `pop` on an array the callback allocated, `push` followed by `pop`, and a
 `pop` on an array unrelated to the mapped one are safe and refused: the rule

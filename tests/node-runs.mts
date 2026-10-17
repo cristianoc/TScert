@@ -36,6 +36,11 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     ["map-stable-for-of", "proses([\"a `b` c\"])", '["a   c"]'],
     ["map-stable-collection-write", `seen(["a", "b"], new Map())`, '["a","b"]'],
     ["map-stable-set", `distinct([["a", "b", "a"], []])`, "[2,0]"],
+    ["map-stable-spread", "padded([[1], [2, 3]])", "[[0,1,0],[0,2,3,0]]"],
+    ["map-stable-named-callback", `[escapedAll(["a&b", "c"])]`, '["a&amp;b,c"]'],
+    ["map-stable-spread", `matchCounts(["aba", "b"])`, "[2,0]"],
+    ["map-stable-spread", `distinctCounts([["a", "a"], []])`, "[1,0]"],
+    ["map-stable-spread", `codePoints(["h\u00e9llo"])`, "[5]"],
     ["map-stable-optional-chain", `lastWords([[{ kind: "w", text: "a" }, { kind: "space", text: " " }], []])`, "[0,-1]"],
   ] as const)
     assert.equal(runExample(file, `((r) => Object.keys(r).length === r.length && JSON.stringify(r))(${call})`),
@@ -57,9 +62,17 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     `(() => { const counter = { n: 0 }; counted(["a", "b"], counter); return counter.n; })()`), 2,
     "invalid-declaration-write-callback: the declaration's call writes its parameter's field");
   // The `filter` callback's `push` writes the array it captures.
-  assert.equal(runExample("invalid-filter-writing-callback",
-    `(() => { const kept = []; words(["a b", "c"], kept); return kept.join(); })()`), "a,b,c",
-    "invalid-filter-writing-callback: the callback's call writes the array it captures");
+  assert.equal(runExample("map-stable-filter-push",
+    `(() => { const kept = []; const r = words(["a b", "c"], kept); return kept.join() + ":" + Object.keys(r).length; })()`), "a,b,c:2",
+    "map-stable-filter-push: the callback's call writes the array it captures, and the result is dense");
+  assert.equal(runExample("invalid-map-named-callback-pop", "Object.keys(drained()).length"), 2,
+    "invalid-map-named-callback-pop: the result has three positions, two present");
+  assert.equal(runExample("invalid-map-spread-pop", "Object.keys(drained([1, 2, 3])).length"), 2,
+    "invalid-map-spread-pop: the result has three positions, two present");
+  assert.equal(runExample("invalid-map-filter-pop", "Object.keys(trimmed([\"a\", \"b\", \"c\"])).length"), 2,
+    "invalid-map-filter-pop: the result has three positions, two present");
+  assert.equal(runExample("find-stable-counter", `firstLong(["ab", "abcd", "x"])`), 6,
+    "find-stable-counter: two visits and a found element of length four");
   // `map` passes the index to the constant's second parameter, whose `tag`
   // is undefined.
   assert.equal(runExample("invalid-annotated-constant-callback", `tags(["a"])[0]`), undefined,
