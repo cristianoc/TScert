@@ -254,6 +254,30 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.match(exhausted.detail, /source direct obligation at \[202,212\): subtype search exhausted/);
 }
 {
+  // A parameter's entry claim in an `&&` operand is its first read before a
+  // call, which the incoming edge checks: a read claimed narrower than any
+  // test establishes is refused where evidence is produced and where it is
+  // checked.
+  const good = run("logical-narrowing-past-reads");
+  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "untested"), "untested function");
+  const start = source.indexOf("Number.isSafeInteger(v);\n}\n", source.indexOf("function untested")) + "Number.isSafeInteger(".length;
+  const read = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + 1), "the read of v");
+  read.type = [rowOf(claims, "num")];
+  const forged = writeClaims(good, "untested-number", claims);
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+      join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+        ? "untested-number-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      { encoding: "utf8", timeout: 30_000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+  }
+  process.stdout.write("forged operand entry: a parameter read claimed narrower than its test refused\n");
+}
+{
   // An array literal's spread is copied before a later element that runs
   // code, as JavaScript reads it there; a spread operand claimed at other
   // than an array is refused where the elements are produced and checked.

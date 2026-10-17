@@ -300,8 +300,9 @@ the same-file declarations it uses). The first blockers of the others in
   `calculus` (2026-10-17), `decodeTarget`, `decodeContinuation` and
   `decodeNode` stop at a read of `map` on an array a field holds, which a
   test does not narrow; `showTerm`, `showTag` and `showCode` at a member
-  read the producer and TypeScript disagree on; `nat`, `bitsOf`, `fields`
-  and `keyOf` at a `typeof` or record test that does not narrow `unknown`;
+  read the producer and TypeScript disagree on; `fields` and `keyOf` at
+  `isRecord`'s promise, which `!!v && typeof v === "object" &&
+  !Array.isArray(v)` does not establish of `unknown`;
   `constructorOf` and `decodeTag` at a record index by a string; and
   `decodeTerm`, `decodeCode` and `termsOf` at a callback parameter
   TypeScript types `any` (printGraph: 1).

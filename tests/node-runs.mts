@@ -80,6 +80,11 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "map-literal-at-expected-element: each token's kind is one the type names");
   assert.equal(runExample("invalid-map-literal-outside-element", `tokens([" "])[0].kind`), "space",
     "invalid-map-literal-outside-element: the actual source returns a kind its type does not name");
+  assert.equal(runExample("logical-narrowing-past-reads",
+    `[safeInteger(3), safeInteger("3"), shorter(1, "ab"), digits("12"), digits(12), nonNegative(4), untested(2, "a")].join()`),
+    "true,false,true,true,false,4,true", "logical-narrowing-past-reads: each test guards its operand");
+  assert.throws(() => runExample("logical-narrowing-past-reads", "nonNegative(-1)"), /non-negative/,
+    "logical-narrowing-past-reads: a failed test throws");
   assert.equal(runExample("logical-truth-narrowing", `[guarded("b", "x"), chosen("a", "x"), chosen("b", ""), classOf("kw", "e")].join()`),
     'b,,,<span class="m-kw">e</span>', "logical-truth-narrowing: the guarded branches see `r` at \"b\"");
   assert.equal(runExample("invalid-logical-truth-or-narrowing", `chosen("a", "x")`), "a",

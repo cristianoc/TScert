@@ -585,18 +585,26 @@ private partial def executionBranches : SourceExecution.Plan → Bool
   | .choose .. => true
 
 /-- A source read in the unconditional, effect-free prefix of a shared plan.
-Its claim is an entry candidate checked by the incoming branch edge. -/
-private partial def executionEntryRead (name : String) : SourceExecution.Plan → Option Span × Bool
-  | .observe _ evaluate => executionEntryRead name evaluate
+Its claim is an entry candidate checked by the incoming branch edge. A value
+binding (`immutable`) holds one value throughout, so a read of it past other
+reads (of members, references and positions, and effect-free evaluations)
+serves as well, checked by the same edge; a call, which may narrow it as an
+assertion does, ends the prefix, but a call of a native intrinsic (a `%`
+name no source declares), whose contract states no promise. -/
+private partial def executionEntryRead (name : String) (immutable : Bool := false) :
+    SourceExecution.Plan → Option Span × Bool
+  | .observe _ evaluate => executionEntryRead name immutable evaluate
   | .atom _ (.evaluate original _ .none) =>
     match original with
     | .var p n => (if n == name then some p else none, true)
     | .lit .. => (none, true)
-    | _ => (none, false)
+    | _ => (none, immutable)
+  | .atom _ (.methodRead ..) | .atom _ (.referenceRead ..) | .atom _ (.positionRead ..) => (none, immutable)
+  | .atom _ (.evaluate (.call _ (.var _ callee) ..) _ _) => (none, immutable && callee.startsWith "%")
   | .sequence _ _ evaluate next =>
-    let (found, more) := executionEntryRead name evaluate
-    if found.isSome || !more then (found, false) else executionEntryRead name next
-  | .choose _ _ _ _ evaluate _ _ => ((executionEntryRead name evaluate).1, false)
+    let (found, more) := executionEntryRead name immutable evaluate
+    if found.isSome || !more then (found, false) else executionEntryRead name immutable next
+  | .choose _ _ _ _ evaluate _ _ => ((executionEntryRead name immutable evaluate).1, false)
   | _ => (none, false)
 
 @[nospecialize] private partial def executionArmContext (fc : SourceClaims.Function Tree)
@@ -610,7 +618,8 @@ private partial def executionEntryRead (name : String) : SourceExecution.Plan �
     if b.fixed.isSome then return Δ
     if let .cell .. := b.storage then return Δ
     if (Γ[i]?.bind (ProgramCertificates.schemeOf G ·)).isSome then return Δ
-    let some p := (executionEntryRead b.source.name plan).1 | return Δ
+    let immutable := match b.storage with | .value => true | _ => false
+    let some p := (executionEntryRead b.source.name immutable plan).1 | return Δ
     match fc.exprs.lookup p with
     | some _ => return Δ.set i (← claimAt fc p)
     | none => return Δ) Γ
