@@ -1249,7 +1249,12 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   ["invalid-map-fresh-join", "(x) =>", 3, false, writeValues, false],
   ["invalid-map-fresh-reassigned", "(x) =>", 3, false, writeValues, false],
   ["invalid-map-fresh-parameter", "(x) =>", 3, false, writeValues, false],
-  ["invalid-map-fresh-handler", "(x) =>", 3, false, writeValues, false],
+  ["map-fresh-handler-refused", "(x) =>", 3, false, writeValues, false],
+  ["invalid-map-handler-after-pop", "(x) =>", 3, false, writeValues, false],
+  ["map-fresh-controls-sparse", "(x) =>", 3, false, writeValues, true],
+  ["map-fresh-controls-sparse", "(y) =>", 3, false, writeValues, true],
+  ["map-fresh-controls-sparse", "(z) =>", 3, false, writeValues, true],
+  ["map-fresh-controls-sparse", "(w) =>", 3, false, writeValues, true],
 ] as const) {
   const artifacts = run(file);
   const claims = readClaims(artifacts);

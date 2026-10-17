@@ -257,12 +257,22 @@ private partial def logical (root : Span) (e left right : Expr) (andOp : Bool) (
 /-- A condition, whose truthiness alone its consumer reads. `&&` or `||`
     whose left operand is no test (`testForm`) yields its left operand's
     value where that decides; read for its truthiness, the operator's left
-    dispatch is its truthiness (role `truth`). -/
+    dispatch is its truthiness (role `truth`), whose arms rebind the
+    outcome, a Boolean. The plan's value is then that synthetic truth, never
+    the operator's value: it carries no source obligation, so it is placed
+    at an empty span no claim names, and the operands keep their own. -/
 private partial def truthOf (root : Span) (cond : Expr) : Builder Plan :=
   match cond with
   | .logical _ andOp left right =>
     if testForm left then expression root cond
-    else return .observe cond.span (← logical root cond left right andOp "truth")
+    else do
+      let truth : Span := (cond.span.1, cond.span.1)
+      let binding ← saved root left.span "truth"
+      let lhs ← expression root left
+      let rhs ← expression root right
+      let keep := Plan.atom truth (.evaluate (.var truth binding.name) (.var truth binding.name) .none)
+      return .choose truth left.span .truthy binding lhs
+        (if andOp then rhs else keep) (if andOp then keep else rhs)
   | _ => expression root cond
 
 private partial def callArguments (root : Span) (call : Expr) (args : List Expr) (spreads : List Nat) (index : Nat)

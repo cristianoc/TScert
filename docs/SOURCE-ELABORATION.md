@@ -547,6 +547,10 @@ is a Boolean outcome where it is a Boolean, and otherwise the labels of its
 type its truthiness admits (`conditionContext`). So `s && r !== "a" ? r : x`
 sees `r` at `"b"` in its first arm (`logical-truth-narrowing`), and
 `s || r !== "a" ? r : x` does not (`invalid-logical-truth-or-narrowing`).
+The dispatch's value is that truth, which no program reads but the test:
+it carries no obligation about the operator's value, whose claim is checked
+where the operator is read as a value, and each operand keeps its own
+(`logical-string-values`: `s && s` of a string in a condition).
 
 A chain of one operator is read right-nested, the parser's left nesting
 reassociated:

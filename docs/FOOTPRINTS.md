@@ -224,8 +224,13 @@ contents, and `filter`, `map`, `flatMap`, `slice` and `split` allocate their
 result's store (audited: [native footprints](SOURCE-CONTRACTS.md#native-footprints)).
 Controls (`map-stable-fresh-store`'s negatives and `pipeline/test.mts`): an
 alias of the mapped array, a join of a fresh and an old array, a reassigned
-variable, a helper's parameter, a handler around the operation, and a fresh
-result forged onto code returning its parameter.
+variable and a helper's parameter, each also at a result type admitting holes
+(`map-fresh-controls-sparse`), where a callback forged within
+`{value: any, store: keep}` is refused in search and in checking; a pop of the
+mapped array before a throw its handler catches (`invalid-map-handler-after-pop`);
+and a fresh result forged onto code returning its parameter. A fresh array
+popped inside `try` is refused with every node a handler covers, though its
+result is dense (`map-fresh-handler-refused`, a gap).
 
 ## The rule users see
 
