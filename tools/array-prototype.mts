@@ -209,6 +209,13 @@ export const overlay: readonly OverlayEntry[] = [
           { k: "array", presence: "readable", readonly: true, element: stringConvertible, span: at }], span: at },
         params: [atomOf("undefined")], result: { k: "array", presence: "readable", readonly: false, element, span: at } },
     ] },
+  // Footprints (SOURCE-CONTRACTS.md, "Native footprints"): `push` and
+  // `unshift` change the receiver's store by `grow` and only element
+  // contents beside it; `pop`, `shift` and `reverse` change the store
+  // arbitrarily; `sort` grows it over the whole call when its comparator's
+  // store changes do. The store relations are proved of the specification
+  // steps (FootprintNatives.lean); that each native changes nothing but its
+  // store and element contents is this entry's audit.
   { name: "push", from: "Array", signature: "push(...items: T[]): number;" },
   { name: "pop", from: "Array", signature: "pop(): T | undefined;" },
   { name: "shift", from: "Array", signature: "shift(): T | undefined;" },
@@ -331,6 +338,14 @@ const primitiveOverlay: Readonly<Record<PrimitiveKind, readonly OverlayEntry[]>>
  * `valueOf`, `toString` and `toISOString` read its time value. The members
  * that change a collection or a date, and `forEach`, which calls its
  * callback, state none. */
+// Footprints (SOURCE-CONTRACTS.md, "Native footprints"): a collection's state
+// is its own locations; `new Set()` and `new Map()` allocate all of it. The
+// members that change a collection have the footprint `state(receiver): any`,
+// the readers (`size` and `has` included) the empty one. An iterator's state
+// is its own position; it holds the collection through an immutable hidden
+// field and reads the collection's state at every step, so it observes later
+// changes; a step's footprint is `state(self): any`, which leaves the
+// collection's state unchanged.
 export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>> = {
   Set: [
     { name: "add", from: "Set", signature: "add(value: T): this;", resultIsReceiver: true },

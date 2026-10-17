@@ -105,7 +105,13 @@ function splitResult(shape: RegExpShape | null): TypeTerm {
  * `[Symbol.replace]` of a global or sticky regex leave `lastIndex` where its
  * last match ended (0 after the last), so they state no effect there, nor at
  * the conservative shape, whose flags are not read. A structural regex's
- * members are any value's and state none. */
+ * members are any value's and state none.
+ *
+ * Footprints (SOURCE-CONTRACTS.md, "Native footprints"): a native regex's
+ * state is its own locations, `lastIndex` the only mutable one. The members
+ * that write `lastIndex` have the footprint `state(receiver): any`; the
+ * others the empty footprint, by their own audits. A match iterator's state
+ * is its own locations and its clone's, which it alone references. */
 function members(shape: RegExpShape | null, keys: RegExpKeys, native: boolean): Field[] {
   const exec = execResult(shape);
   const optionalNumber = either(atom("number"), atom("undefined"));

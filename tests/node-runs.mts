@@ -637,3 +637,57 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     words(" a b "), tokens("ab 12"), count("a1b22")]`)),
     JSON.stringify([["k", "v"], "none", "&lt;<code>a</code>>", ["a", "b"], "<w>ab</w>12@3", 3]));
 }
+{
+  // Native footprints (SOURCE-CONTRACTS.md, "Native footprints"): what each
+  // array mutator does to `map`'s result when its callback calls it on the
+  // array being mapped. The removing ones leave holes; the growing ones and
+  // element writes leave none.
+  const holes = (call: (xs: number[], i: number) => unknown): number => {
+    const xs = [1, 2, 3];
+    const ys = xs.map((x, i) => { call(xs, i); return x; });
+    return ys.length - Object.keys(ys).length;
+  };
+  const removing: [string, (xs: number[], i: number) => unknown][] = [
+    ["pop", (xs) => xs.pop()],
+    ["shift", (xs) => xs.shift()],
+    ["reverse after growth", (xs, i) => { if (i === 0) { xs.length = 5; xs.reverse(); } }],
+    ["a shorter length", (xs, i) => { if (i === 0) xs.length = 1; }],
+    ["splice removing", (xs, i) => { if (i === 0) xs.splice(1, 1); }],
+    ["delete", (xs, i) => { if (i === 0) delete xs[1]; }],
+  ];
+  for (const [name, call] of removing) assert.ok(holes(call) > 0, `${name} in map's callback leaves a hole`);
+  const growing: [string, (xs: number[], i: number) => unknown][] = [
+    ["push", (xs) => xs.push(9)],
+    ["unshift", (xs) => xs.unshift(9)],
+    ["sort", (xs) => xs.sort((a, b) => b - a)],
+    ["an element write", (xs, i) => { xs[i] = 7; }],
+    ["a longer length", (xs, i) => { if (i === 0) xs.length = 5; }],
+    ["splice inserting", (xs, i) => { if (i === 0) xs.splice(1, 0, 8); }],
+  ];
+  for (const [name, call] of growing) assert.equal(holes(call), 0, `${name} in map's callback leaves no hole`);
+  // A nested `map` is part of the outer callback: its callback's `pop` leaves
+  // holes in the outer result, its `push` none.
+  assert.ok(holes((xs) => xs.map((x) => { xs.pop(); return x; })) > 0, "a nested map's pop leaves a hole");
+  assert.equal(holes((xs) => xs.map((x) => { xs.push(x); return x; })), 0, "a nested map's push leaves none");
+  // `sort`'s writeback deletes every index from its snapshot's count up to
+  // the length it read first: index 3, which held a value, is a hole after.
+  const ys: number[] = [3, 1];
+  ys[3] = 2;
+  ys.sort((a, b) => { ys[2] = 0; return a - b; });
+  assert.deepEqual([Object.keys(ys), ys.length], [["0", "1", "2"], 4], "sort's writeback deletes past its count");
+  // A Set iterator reads the set's state at each step: it sees a later `add`.
+  const set = new Set([1]);
+  const values = set.values();
+  values.next();
+  set.add(2);
+  assert.equal(values.next().value, 2, "a Set iterator observes the set's state");
+  // A regex literal is a fresh object at each evaluation; one regex shared
+  // keeps its `lastIndex` between calls; `replace` of a global regex writes it.
+  const shared = /a/g;
+  assert.deepEqual([shared.test("a"), shared.test("a")], [true, false], "a shared global regex keeps lastIndex");
+  const literal = (): boolean => /a/g.test("a");
+  assert.deepEqual([literal(), literal()], [true, true], "a regex literal is fresh at each evaluation");
+  const global = /&/g;
+  global.lastIndex = 2;
+  assert.deepEqual(["a&b&".replace(global, "+"), global.lastIndex], ["a+b+", 0], "replace writes lastIndex");
+}

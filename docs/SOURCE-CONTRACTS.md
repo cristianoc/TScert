@@ -1520,6 +1520,77 @@ iterator result as `Iterator<T>`, which it extends. A property is a readonly
 view. A string's own `length` and indices are the calculus's `lenStr` and
 `elemStr`, never the prototype's; `s[i]` is `string | undefined`.
 
+### Native footprints
+
+A native's **footprint** states which locations that existed before a call
+the call may change, and how: a list of regions, each with a change `keep`,
+`grow` or `any` (`lean/Verification/Semantics/Footprints.lean`). The regions
+are rooted at the call's operands: `store(x)` the store location of array
+`x`, `own(x)` every own location of `x`, `class(value)` every location
+holding no store. `grow` changes a store so that every dense prefix stays
+present and it lists no old element location it did not list before. A
+**fresh result** has every own location allocated by the call. A native's
+**state** is the locations its mutable state occupies; an object sharing
+another's state, an iterator and its collection, holds the other through an
+immutable hidden field and lists the other's state as read, never as its own.
+The signatures above state the two effects `preservesInputHeap`, the empty
+footprint, and `unrestricted`, the footprint `all: any`. The footprints
+below are the specification of each native for the footprint mechanism:
+
+- `push`, `unshift`: `store(receiver): grow`, `class(value): any`.
+- `pop`, `shift`, `reverse`, a shorter `length`, `splice` removing, `delete`:
+  `store(receiver): any`, `class(value): any`.
+- a longer `length`, `splice` inserting: `store(receiver): grow`,
+  `class(value): any`.
+- `sort` with comparator footprint `ε`: `ε`, `class(value): any`, and
+  `store(receiver): grow` when `ε` changes stores at most by `grow`,
+  `store(receiver): any` otherwise.
+- `map`, `forEach`, `every`, `some`, `filter`, `find`, `findIndex`,
+  `flatMap`: their callback's footprint; a fresh result where they return an
+  array.
+- `new Set()`, `new Map()`: empty, fresh result, state `own(result)`.
+- `Set`/`Map` `add`, `set`, `delete`, `clear`: `own(receiver): any`. `size`,
+  `has`, `get`: empty.
+- `Set`/`Map` iterators and `%Iterate:Set%`, `%Iterate:Map%`: creation empty
+  with a fresh iterator whose state is its own position, which holds the
+  collection and reads its state at every step; a step `own(self): any`.
+- `%Iterate%(xs)`, an array's iterator: creation empty with a fresh step
+  function whose state is its position; a step `own(self): any`, reading the
+  array's current length and an element.
+- a regex literal: empty, fresh result; a native regex's state is its own
+  locations, `lastIndex` the only mutable one. `exec`, `test`,
+  `[Symbol.match]` and `[Symbol.replace]` of a global or sticky regex
+  (`s.replace(re, t)` dispatching to the last): `own(receiver): any`; the
+  other members empty, `[Symbol.search]` restoring `lastIndex` before it
+  returns. A match iterator's state is its own locations and its clone's,
+  which it alone references.
+
+What is proved and what is audited:
+
+- **Proved** of the array mutators' specification steps (`Set` of an index,
+  `Delete`, a length change, in the order ECMA-262 gives them;
+  `lean/Verification/Semantics/FootprintNatives.lean`): `push`, `unshift`, a
+  longer length and `sort` over the whole call change the store by `grow`
+  (`Arr.push_grow`, `Arr.unshift_grow`, `Arr.setLength_grow`, `sort_grow`);
+  `pop`, `shift`, `reverse` of a store with a hole and a shorter length do
+  not (controls in `Tests/FootprintControls.lean`). `array_native_post`
+  turns a store change by `grow`, with element contents the only other old
+  locations changed, into the footprint's postcondition. `map_rely` proves
+  `map`'s density below its captured length at every presence test from
+  callbacks whose footprints the check of its bound accepts, a return
+  postcondition per callback; `denseCheck_stable` shows that check to be an
+  instance of the stability check.
+- **Audited** for every row: that the native changes no old location outside
+  its footprint, that its fresh result is allocated by the call, and its
+  sharing; for an array mutator, that it changes nothing but its store and
+  element contents, and for `map`, that it tests presence only between
+  callbacks. These are host assumptions, with the Node runs of
+  `tests/node-runs.mts` as their counterexample controls: each removing
+  mutator in a `map` callback leaves a hole and each growing one none;
+  `sort`'s writeback deletes past its snapshot's count; a Set iterator
+  observes a later `add`; a regex literal is fresh at each evaluation, and a
+  shared global regex keeps `lastIndex`.
+
 ## Library globals
 
 A standard library global is read only through the reviewed overlay

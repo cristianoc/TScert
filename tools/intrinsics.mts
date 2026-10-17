@@ -283,6 +283,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // a fresh promise: a promise of the input's observation.
     [promiseResolveName]: () => ({ typeParams: [awaitable], type: fn([input], promise(observed)) }),
     [asyncCompleteName]: () => ({ typeParams: [], type: fn([], promise(atom("void"))) }),
+    // The array's iterator, fresh: its state is its own position. Each step
+    // reads the array's current length and an element, and writes only that
+    // position: the footprint `state(self): any` (SOURCE-CONTRACTS.md,
+    // "Native footprints").
     [iterateName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],
       type: fn([{ k: "array", presence: "readable", readonly: true, element: binder, span }], step) }),
     [promiseAllName]: () => ({ typeParams: [{ name: "T", bound: null, resolution: null }],

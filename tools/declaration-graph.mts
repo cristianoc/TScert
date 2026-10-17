@@ -1499,7 +1499,10 @@ export function collectDeclarations(file: string, options: {
         try {
           values.push({ binding: { local: name, imported: name, specifier: intrinsicModule, span },
             declaration: { module: intrinsicModule, name, span: [0, 0] }, construct: false, typeParams: [],
-            // Evaluating a literal allocates the regex and runs no code.
+            // Evaluating a literal allocates the regex and runs no code. Its
+            // footprint is empty and its result fresh: every own location of
+            // the regex, `lastIndex` its only mutable one, is allocated by
+            // this evaluation (SOURCE-CONTRACTS.md, "Native footprints").
             type: { k: "function", effect: "preservesInputHeap", receiver: null, params: [], rest: null,
               result: nativeRegExp(shape, nativeMatches()), span: [0, 0] } });
         } catch (error) {
