@@ -284,3 +284,9 @@ export function isKind(x: unknown, k: "number"): x is number;
 export function isKind(x: unknown, k: "string" | "number"): boolean {
   return typeof x === k;
 }
+/** A function stating its receiver; the case
+ * invalid-namespace-import-receiver-value-import calls it through a
+ * namespace import. */
+export function limited(this: { limit: number } | undefined): number {
+  return this === undefined ? 0 : this.limit;
+}

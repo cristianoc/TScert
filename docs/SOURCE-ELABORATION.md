@@ -202,6 +202,28 @@ reads); a pattern element may name one bound before it in the pattern:
      {\text{refused (temporal dead zone)}}
 ```
 
+**Namespace imports.** A module namespace object's members are the module's
+export bindings, read as an import binding reads them
+([ECMA-262](REFERENCES.md#ecma-262)). So `import * as ns from M`, where every
+mention TypeScript binds to `ns` is a member read `ns.x` or a qualified type
+name `ns.T`, is the named import of each member, under a name no other
+binding of the file spells:
+
+```math
+\frac{\mathrm{mentions}(ns)\subseteq\{\,ns.x_1,\ldots,ns.x_n\,\}\quad ns\$x_i\notin\mathrm{names}(S)}
+     {\mathtt{import}\ \ast\ \mathtt{as}\ ns\ \mathtt{from}\ M;\ S\;\equiv\;\mathtt{import}\ \{\,x_1\ \mathtt{as}\ ns\$x_1,\ldots,x_n\ \mathtt{as}\ ns\$x_n\,\}\ \mathtt{from}\ M;\ S[ns\$x_i/ns.x_i]}\ \textsf{namespace-import}
+```
+
+A member used only in types is a type import. The parser writes the
+elaborated text at the source's offsets (`namespace-imports.mts`): the
+namespace import becomes blank text of its length, each `ns.x` the identifier
+`ns$x`, and the named imports follow the last statement; a refusal located
+in them is reported at the namespace import. A call `ns.f(a)` passes the
+namespace object as the receiver, where `ns$f(a)` passes `undefined`; the two
+agree for a callee whose signatures state no `this` parameter, and a call of
+one that does is refused. Any other mention of `ns` (`const m = ns`,
+`ns[k]`, `ns?.x`, `{ ns }`, an export) is refused at the mention.
+
 **A `let` nothing assigns.** A `let` statement whose bindings are all
 initialized and which no assignment, compound or logical assignment, update,
 destructuring assignment or `for` head in their scope writes (closures

@@ -16,6 +16,7 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 // intrinsics.mts declares the intrinsics this reader lists among the client's values: the trusted steps async functions, loops, spreads and patterns lower to.
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
+import type { NamespaceCall } from "./namespace-imports.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type TermScope } from "./type-term.mts";
@@ -112,12 +113,17 @@ export function tsconfigOf(path: string): string {
  * `tsconfigPath` when given, otherwise the project that owns the file. The
  * compiler reads the files on disk; only a probe program (`type-probe.mts`)
  * reads some of them with text of its own, in a snapshot of its own. */
-function withProject<T>(file: string, tsconfigPath: string | undefined,
+function withProject<T>(file: string, tsconfigPath: string | undefined, clientText: string | undefined,
   use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
   const overlay = new Map<string, string>();
+  // The client's text where the parser read an elaboration of it
+  // (`namespace-imports.mts`), unless a probe replaces it.
+  const clientPaths = clientText === undefined ? [] : [file, realpathSync(file)];
+  const read = (name: string): string | undefined =>
+    overlay.get(name) ?? (clientPaths.includes(name) ? clientText : undefined);
   const api = new API({ cwd: dirname(file), fs: {
-    readFile: name => overlay.get(name),
-    fileExists: name => (overlay.has(name) ? true : undefined),
+    readFile: read,
+    fileExists: name => (read(name) !== undefined ? true : undefined),
   } });
   // The files the last probe replaced, read from disk again by the next. The
   // compiler keeps an open file's text over its changes: the client, open
@@ -301,6 +307,14 @@ function importBindings(client: SourceFile): { local: Identifier; imported: stri
 export function collectDeclarations(file: string, options: {
   tsconfigPath?: string;
   client?: SourceFile;
+  /** The text the parser read for `file`, where it elaborated the source
+   * (`namespace-imports.mts`): TypeScript reads it in place of the file's. */
+  clientText?: string;
+  /** The callees of the client's calls through a namespace import
+   * (`namespace-imports.mts`), which pass the namespace object as the
+   * receiver: each is refused where its signatures state a `this`
+   * parameter. */
+  namespaceReceivers?: readonly NamespaceCall[];
   locals?: readonly Span[];
   /** The client's type-reference names that are neither imported nor its own
    * declarations: each that TypeScript binds to a global declaration becomes
@@ -505,7 +519,7 @@ export function collectDeclarations(file: string, options: {
   seen?: (diagnostic: SeenDiagnostic) => void;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
-  return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
+  return withProject(clientFile, options.tsconfigPath, options.clientText, (checker, client, root, program, probeProgram) => {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
     const idOf = moduleIds(clientFile, root);
@@ -1106,6 +1120,16 @@ export function collectDeclarations(file: string, options: {
         if (error instanceof DeclarationError) throw error;
         throw new DeclarationError(binding.span, error instanceof Error ? error.message : String(error));
       }
+    }
+    // A call through a namespace import passes the namespace object as the
+    // receiver, where the named import standing for it passes `undefined`:
+    // the two agree for a callee whose contract states no receiver.
+    for (const { span, written } of options.namespaceReceivers ?? []) {
+      const identifier = identifierAt(client, span);
+      const type = identifier ? checker.getTypeAtLocation(identifier) : undefined;
+      if (!identifier || !type) throw new DeclarationError(span, "TypeScript types no namespace member here");
+      if (checker.getSignaturesOfType(type, SignatureKind.Call).some(s => s.thisParameter !== undefined))
+        throw new DeclarationError(span, `the call of ${written} passes the namespace object as \`this\`, which ${written}'s declared \`this\` parameter constrains`);
     }
     // The client's ambient declarations (PROGRAM-TYPING.md,
     // "Imported, ambient and global values"):
@@ -2626,7 +2650,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
  * only; never a premise of acceptance. */
 export function clientErrors(file: string, tsconfigPath?: string): SeenDiagnostic[] {
   const clientFile = resolve(file);
-  return withProject(clientFile, tsconfigPath, (_checker, client, _root, program) =>
+  return withProject(clientFile, tsconfigPath, undefined, (_checker, client, _root, program) =>
     [...program.getSyntacticDiagnostics(client.fileName), ...program.getSemanticDiagnostics(client.fileName)]
       .filter(d => d.category === DiagnosticCategory.Error)
       .map(d => ({ file: client.fileName, client: true, pos: [d.pos, d.end],

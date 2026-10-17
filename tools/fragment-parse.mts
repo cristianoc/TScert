@@ -15,7 +15,7 @@
  * are in fragment-support.mts. All five are this one trusted program. The fragment it accepts is stated in
  * ../AGENTS.md and, as a grammar, in the pull request description.
  */
-import { API } from "typescript/unstable/sync";
+import { API, type Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
@@ -41,6 +41,7 @@ import * as classes from "./fragment-classes.mts";
 import * as expressions from "./fragment-expressions.mts";
 import * as statements from "./fragment-statements.mts";
 import * as guards from "./fragment-guards.mts";
+import { elaborateNamespaceImports, type Elaboration } from "./namespace-imports.mts";
 
 /* --------------------------------------------------------- the compiler -- */
 // The compiler runs out of process and is addressed through one API instance.
@@ -103,7 +104,7 @@ export function openText(absolute: string, text: string): SourceFile {
   return file;
 }
 
-function openFile(absolute: string, text: string): SourceFile {
+function openFile(absolute: string, text: string): { file: SourceFile; checker: Checker } {
   contents.set(absolute, text);
   const project = projectFor(absolute);
   const syntax = project.program.getSyntacticDiagnostics(absolute);
@@ -112,7 +113,7 @@ function openFile(absolute: string, text: string): SourceFile {
   const file = project.program.getSourceFile(absolute);
   if (!file)
     throw new Error(`gate: the compiler produced no tree for ${absolute}`);
-  return file;
+  return { file, checker: project.checker };
 }
 
 /** Release the compiler. A long-lived caller may parse again afterwards. */
@@ -299,8 +300,13 @@ export class Gate {
   /* Whether the function whose body is being read is async: its returns
      settle the promise its call returned (`intrinsics.mts`). */
   asyncBody = false;
-  constructor(file: SourceFile) {
+  /** The namespace imports the file was elaborated from, if any: a position
+   * in the appended named imports is reported at the namespace import. */
+  readonly elaboration: Elaboration | null;
+
+  constructor(file: SourceFile, elaboration: Elaboration | null = null) {
     this.file = file;
+    this.elaboration = elaboration;
     this.scope = this.termScope();
   }
 
@@ -433,7 +439,8 @@ export class Gate {
   registerDeclaredType = classes.registerDeclaredType;
 
   fail(node: Node | null, message: string): never {
-    const start = node ? node.getStart(this.file) : 0;
+    const written = node ? node.getStart(this.file) : 0;
+    const start = this.elaboration && written >= this.elaboration.appended ? this.elaboration.origin : written;
     const at = this.file.getLineAndCharacterOfPosition(start);
     throw new Error(
       `gate: ${message} (line ${at.line + 1}, col ${at.character + 1})`,
@@ -875,8 +882,11 @@ export function parseFile(file: string, carriesContext = false,
   seen?: (diagnostic: SeenDiagnostic) => void): Ast {
   const absolute = resolve(file);
   const text = readFileSync(absolute, "utf8");
-  const source = openFile(absolute, text);
-  const gate = new Gate(source);
+  const original = openFile(absolute, text);
+  const elaboration = elaborateNamespaceImports(original.file, original.checker,
+    (node, message) => new Gate(original.file).fail(node, message));
+  const source = elaboration ? openFile(absolute, elaboration.text).file : original.file;
+  const gate = new Gate(source, elaboration);
   const aliasNodes: TypeAliasDeclaration[] = [];
   const interfaceNodes: InterfaceDeclaration[] = [];
   const classNodes: ClassDeclaration[] = [];
@@ -1389,6 +1399,7 @@ export function parseFile(file: string, carriesContext = false,
     // one named explicitly: the declaration graph is the compiler's.
     try {
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
+        ...(elaboration ? { clientText: elaboration.text, namespaceReceivers: elaboration.receivers } : {}),
         locals: localNodes.map(node => gate.span(node)),
         globals: globalNodes.map(node => gate.span(node)),
         globalValues: globalValueNodes.map(node => gate.span(node)),

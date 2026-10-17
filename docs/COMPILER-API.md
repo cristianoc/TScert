@@ -9,7 +9,9 @@ audited corrections where a declaration cannot be its own contract, the
 assumptions the result is relative to, the restrictions it imposes, and the
 tests that exercise it.
 
-The rules below are a design. The pipeline does not implement them, and
+The pipeline implements namespace imports
+([derived source forms](SOURCE-ELABORATION.md#derived-source-forms)); the
+other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
 [Source contracts](SOURCE-CONTRACTS.md), the record clauses of
@@ -617,7 +619,11 @@ promise may be a union of node shapes.
 `import * as ns from M`, where every occurrence of `ns` is a member read
 `ns.x` or a qualified type name `ns.T`, is the named import of each `x` and
 `T`: a module namespace object's members are immutable bindings
-([ECMA-262](REFERENCES.md#ecma-262)). Any other use of `ns` is refused.
+([ECMA-262](REFERENCES.md#ecma-262)). Any other use of `ns` is refused, and
+so is a call `ns.f(…)` of a member whose signatures state a `this`
+parameter, since the call passes the namespace object as the receiver
+(`namespace-import` in
+[derived source forms](SOURCE-ELABORATION.md#derived-source-forms)).
 
 `a & b`, `a | b`, `a ^ b`, `~a`, `a << b`, `a >> b` and `a >>> b` with
 operands of type `number` evaluate `ToInt32` or `ToUint32` of numbers, run
@@ -743,7 +749,7 @@ JavaScript and could be admitted with more machinery:
 | --- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | L1  | A guard outside the accepted syntax is refused at its use               | `isLeftHandSideExpression`, `isUnaryExpression` as narrowings       |
 | L2  | A node list admits only the operations of its table                     | `nodes.pos`, `nodes.at(i)`, `for…in` over a node list               |
-| L3  | A namespace import is used only through member reads and qualified type names | `const m = ts`, `ts[name]`, passing `ts`                      |
+| L3  | A namespace import is used only through member reads and qualified type names, and a member stating a `this` parameter is not called through it | `const m = ts`, `ts[name]`, passing `ts`, `ts.f()` for `f(this: X)` |
 | L4  | A member whose read allocates is refused at its read; it could be stated as a host operation returning a fresh array | Reading `node.jsDoc`  |
 | L5  | A host parameter of a branded type is refused; an opaque primitive type would admit the package's own values | Passing a `Path` back to `getSourceFileMetadataByPath` |
 | L6  | A host class member outside its named view is refused at its use        | Calling a `Checker` method the view does not list                   |
