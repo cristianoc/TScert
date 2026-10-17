@@ -260,7 +260,8 @@ did not mention grow it, and the request carries the result. -/
     cuts := built.source.cuts
     hints := built.hints
     codeSources := built.codeSources
-    nodePlans := built.nodePlans }
+    nodePlans := built.nodePlans
+    effect := fc.effect }
 
 end
 

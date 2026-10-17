@@ -554,6 +554,7 @@ let encode (proposal : Proposal_types.t) =
       "params",Array (List.map (fun (n,t) -> named (n,Value t)) source.params);
       "result",claim_type source.result;
       "contracts",contracts f.contracts;
+      "effect",effect_json f.declared_effect;
       "entries",entries f.entries;
       "expressions",expressions f.expressions]
       @ arrows)) proposal.functions in

@@ -1270,6 +1270,39 @@ All code certificates remain in the submitted response, and final acceptance
 independently checks every one; withholding a search hint cannot hide a failure. Qualified graph claims can
 already be submitted and certified through the ordinary source pipeline.
 
+**Function declarations.** A declaration's claim states the effect proposed
+for its signature (`effect` in the [claims](SOURCE-CLAIMS.md)). The unit of
+a declaration claiming `preservesInputHeap` is checked as a code entry's
+graph is: its nodes pure, or each node preserving by `inspect` or a fixed
+qualified call (`effectResult`, alongside ordinary safety), for a plain
+result under the ordinary checker; a guard, an assertion function and a
+unit qualified by a resolution descriptor are refused the claim. With $`P`$
+the unit's graph, $`\Gamma`$ its inputs and $`B`$ its result,
+
+```math
+\frac{\vdash P:\Gamma\to B\qquad \forall l.\ P_l\ \text{pure, an inspection, or a fixed qualified call}}
+     {\vdash P:\Gamma\to B\;!\;\mathsf{preservesInputHeap}}\ \textsf{declaration-effect}
+```
+
+and `SourceClaimJson.checkJson_safe` states, for each such unit, that its
+graph run as code from inputs it admits returns with its entry heap a prefix
+of the heap it leaves (`SourceExtraction.checkRequests_preserving_at`).
+Every other unit reads the declaration at its annotation's signature stating
+that effect, its variadic extension included (`moduleArrow`), as it reads the
+declaration's ordinary signature: that each declaration meets the signature
+the others read it at is the [module composition](../WORK.md#module-composition)
+argument. A parameter default executes in the declaration's graph, so the
+check covers it. An imported function is read at its declaration's type,
+which states no effect (`invalid-preserving-callback-value-import`). OCaml
+proposes the effect at the greatest fixpoint over the module: every
+declaration whose body could preserve the heap, were its callees to, is
+assumed preserving, recursion included, and rounds of inference withdraw the
+assumption from each whose claims then do not show it; a body calling a
+quantified callee at an instance is not proposed. A forged effect fails at
+the first node that does not preserve the heap, in evidence production and
+in checking (`declaration-preserving-callback`,
+`invalid-declaration-write-callback`).
+
 ## Parameter initialization order
 
 The source adapter also performs acyclic closure conversion for literal

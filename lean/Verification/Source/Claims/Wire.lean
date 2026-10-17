@@ -174,6 +174,10 @@ structure Function (ι : Type) where
   entries : List (Entry ι)
   expressions : List (Expression ι)
   contracts : List (StorageContract ι)
+  /-- The effect the producer proposes for the declaration's signature:
+  `unrestricted`, or `preservesInputHeap`, which the unit's graph must
+  certify. Its annotation states none. -/
+  effect : CallEffects.Effect
   /-- Omitted by a document whose closures each advertise one signature. -/
   arrows : Option (List (ArrowClaims ι)) := none
   deriving FromJson
@@ -184,7 +188,7 @@ instance [ToJson ι] : ToJson (Function ι) where
   toJson f := Json.mkObj ([("name", toJson f.name), ("namePos", toJson f.namePos),
     ("params", toJson f.params), ("result", toJson f.result),
     ("entries", toJson f.entries), ("expressions", toJson f.expressions),
-    ("contracts", toJson f.contracts)] ++
+    ("contracts", toJson f.contracts), ("effect", toJson f.effect)] ++
     (match f.arrows with
      | none | some [] => []
      | some rows => [("arrows", toJson rows)]))
@@ -237,6 +241,7 @@ def Function.normalized (f : Function ι) : SourceClaims.Function ι :=
     ret := f.result.ground, envs := sites.envs, exprs := sites.exprs
     entryCurrent := sites.entryCurrent, exprCurrent := sites.exprCurrent
     points := pointTable f.entries f.expressions, contracts := storageContracts f.contracts
+    effect := f.effect
     arrowClaims := (f.arrows.getD []).map fun a => (a.pos, a.rows.map fun row =>
       { toPointData := pointData row.entries row.expressions
         points := pointTable row.entries row.expressions
@@ -289,6 +294,9 @@ private def validContracts (T : EquationStore.State) (cs : List (StorageContract
   cs.all (fun c => validSpan c.pos && !c.name.isEmpty && validType T c.type)
 private def validFunction (T : EquationStore.State) (f : Function Tree) : Bool :=
   !f.name.isEmpty && validSpan f.namePos && validBindings T f.params &&
+  -- A declaration's signature is a heap effect's: a promise is its
+  -- annotation's, never a claim's.
+  (f.effect == .unrestricted || f.effect == .preservesInputHeap) &&
   f.params.all (fun b => b.current.isNone) && validType T f.result &&
   validInterior T f.entries f.expressions && validContracts T f.contracts &&
   let arrows := f.arrows.getD []

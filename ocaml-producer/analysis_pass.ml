@@ -34,7 +34,7 @@ let infer diagnostics flows offered declarations module_functions arities bounds
   let seen = Hashtbl.create 64 in
   let entries = List.filter (fun x ->
     not (Hashtbl.mem seen x) && (Hashtbl.add seen x (); true)) (List.rev output.Analysis_capabilities.entries) in
-  {contracts=List.rev output.Analysis_capabilities.contracts;source=f;entries;expressions;arrows=List.sort_uniq compare (List.rev output.Analysis_capabilities.arrows)},List.sort_uniq compare output.Analysis_capabilities.requests
+  {contracts=List.rev output.Analysis_capabilities.contracts;source=f;entries;expressions;arrows=List.sort_uniq compare (List.rev output.Analysis_capabilities.arrows);declared_effect=Semantic.Unrestricted},List.sort_uniq compare output.Analysis_capabilities.requests
   in
   let result = try Ok (run ()) with Json.Error m -> Error m in
   result,Owner.writes (),Owner.uses ()

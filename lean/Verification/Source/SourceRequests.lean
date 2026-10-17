@@ -36,6 +36,9 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   codeSources : List CodeSource := []
   /-- Plans for nodes the lowering knows how to derive: search hints only. -/
   nodePlans : List (DirectProof.Plan ι) := []
+  /-- The effect the unit's declaration claims, which its graph must
+  establish (`checkRequestResult`): `preservesInputHeap`, or none. -/
+  effect : CallEffects.Effect := .unrestricted
 
 @[nospecialize] def SourceRequest.codeHints (r : SourceRequest σ ι) : List RequestJson.CodeHints :=
   r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.cuts⟩
@@ -119,11 +122,37 @@ def checkGraphAssertions (cuts : List Nat) (assertions : List (Nat × HeapKnowle
   r.codeSources.length == c.codes.length &&
   (r.codeSources.zip c.codes).all fun (q, C) => checkGraphAssertions q.cuts q.assertions C
 
+/-- A unit's claimed effect, established by its own graph and certificate: heap
+preservation by a graph of pure nodes, or node by node
+(`GraphCode.compositionalChecked`), for a unit returning a plain result under
+the ordinary checker. A promise is never a declaration's claimed effect. -/
+@[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
+  match r.effect with
+  | .unrestricted => pure ()
+  | .preservesInputHeap =>
+    (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.promise.isNone)).bind fun _ =>
+    (ProgramCertificates.CheckResult.ofBool (r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
+    GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) r.program
+      c.certificate
+  | .guards _ | .asserts _ => ProgramCertificates.CheckResult.ofBool false
+
+theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
+    (h : (effectResult r c).accepted = true) (he : r.effect = .preservesInputHeap) :
+    r.qualification = none ∧ r.promise = none ∧
+      (r.program.all (fun n => Purity.pureTerm n.expression) = true ∨
+        GraphCode.compositionalChecked (RequestJson.graph r.toRequest) (StoreView.images r.types) r.program
+          c.certificate = true) := by
+  simp only [effectResult, he, ProgramCertificates.CheckResult.accepted_bind,
+    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_orElse,
+    Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true] at h
+  exact ⟨h.1.1, h.1.2, h.2⟩
+
 /-- Validate one unit, sharing its checked code table with supplemental obligations. -/
 @[nospecialize] def checkRequestResult (r : SourceRequest σ ι) (c : Response ι)
     (es : List (ProgramCertificates.Evidence ι)) : ProgramCertificates.CheckResult ι Unit :=
   (verifyResult r.toRequest c r.checker).bind fun table =>
     (ProgramCertificates.CheckResult.ofBool (checkAssertions r c)).bind fun _ =>
+    (effectResult r c).bind fun _ =>
     ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
       (StoreView.valid r.types) r.obligations es (GraphCode.admits table)
 
@@ -131,6 +160,7 @@ theorem checkRequestResult_accepted_iff (r : SourceRequest σ ι) (c : Response 
     (es : List (ProgramCertificates.Evidence ι)) :
     (checkRequestResult r c es).accepted = true ↔
       verify r.toRequest c r.checker = true ∧ checkAssertions r c = true ∧
+      (effectResult r c).accepted = true ∧
       ∃ table, codeTable r.toRequest c = some table ∧
         ExpressionClaims.checkAllUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
           (StoreView.valid r.types) r.obligations es (GraphCode.admits table) = true := by
@@ -139,14 +169,14 @@ theorem checkRequestResult_accepted_iff (r : SourceRequest σ ι) (c : Response 
   constructor
   · rintro ⟨table, ht, hc⟩
     obtain ⟨hv, htable⟩ := (verifyResult_hasTable _ _ _ r.checker).mp ht
-    rw [ProgramCertificates.CheckResult.accepted_bind,
-      ProgramCertificates.CheckResult.accepted_ofBool] at hc
-    exact ⟨hv, (Bool.and_eq_true_iff.mp hc).1, table, htable, (Bool.and_eq_true_iff.mp hc).2⟩
-  · rintro ⟨hv, ha, table, ht, ho⟩
+    simp only [ProgramCertificates.CheckResult.accepted_bind,
+      ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true] at hc
+    exact ⟨hv, hc.1, hc.2.1, table, htable, hc.2.2⟩
+  · rintro ⟨hv, ha, hf, table, ht, ho⟩
     refine ⟨table, (verifyResult_hasTable _ _ _ r.checker).mpr ⟨hv, ht⟩, ?_⟩
-    rw [ProgramCertificates.CheckResult.accepted_bind,
-      ProgramCertificates.CheckResult.accepted_ofBool]
-    exact Bool.and_eq_true_iff.mpr ⟨ha, ho⟩
+    simp only [ProgramCertificates.CheckResult.accepted_bind,
+      ProgramCertificates.CheckResult.accepted_ofBool, Bool.and_eq_true]
+    exact ⟨ha, hf, ho⟩
 
 @[nospecialize] def checkRequestsResult (rs : List (SourceRequest σ ι)) (b : Bundle ι) :
     ProgramCertificates.CheckResult ι Unit :=
@@ -212,6 +242,88 @@ theorem checkRequests_safe_at {rs : List (SourceRequest σ ι)} {b : (Bundle ι)
     obtain ⟨θ, As, length, allowed, bounded, rfl⟩ := admitted
     exact verify_qualified_safe_at q.source q.domain q.body q.aliases q.aliases_sound q.check_eq checked
       θ As length allowed bounded n W heap ρ he hw hh
+
+/-- A graph is the code its node lists describe. -/
+theorem program_nodes (P : Program) :
+    GraphCode.program (P.map (·.expression)) (P.map fun n => (n.continuation, n.handler)) = P := by
+  induction P with
+  | nil => rfl
+  | cons node P ih =>
+    cases node
+    simp only [GraphCode.program, List.map_cons, List.zip_cons_cons] at ih ⊢
+    rw [ih]
+
+/-- **A unit claiming heap preservation preserves its input heap.** Run as the
+code its graph describes, from any environment of values its inputs admit, it
+is safe, and on normal return its entry heap is a prefix of the heap it leaves:
+every location existing at entry holds what it held. -/
+theorem checkRequests_preserving_at {rs : List (SourceRequest σ ι)} {b : Bundle ι}
+    (h : checkRequests rs b = true) {r c} (hm : (r,c) ∈ rs.zip b.functions)
+    (heffect : r.effect = .preservesInputHeap)
+    (η : PositiveGraphs.MixedAssignment ι) (n W heap) (L : List Tm) (d : Tm)
+    (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
+    (hh : HeapOk n W heap) (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true) :
+    HeapObservations.SafePost (excOf (reassign (RequestJson.graph r.toRequest) η))
+      (meaning (reassign (RequestJson.graph r.toRequest) η) r.result)
+      (CallEffects.Effect.preservesInputHeap.post heap) n W heap
+      (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
+        r.start L d) := by
+  obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
+  obtain ⟨checked, -, heff, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
+  obtain ⟨hq, hpromise, hp⟩ := effectResult_preserving heff heffect
+  simp only [SourceRequest.checker, hq] at checked
+  rw [verify_eq] at checked
+  simp only [Bool.and_eq_true] at checked
+  have hx := checked.2
+  split at hx
+  · rename_i table ht
+    let G := RequestJson.graph r.toRequest
+    let images := StoreView.images r.types
+    have hcodes : ProgramCertificates.CodesSound (reassign G η) (GraphCode.admits table) :=
+      fun e he η' => codeTable_sound ht e he η'
+    have hacc := (Parametricity.accept_reassign G η images r.goal r.program r.claims c.certificate
+      r.start r.inputs (GraphCode.admits table)).trans hx
+    simp only [CertificateProducer.acceptUsing_eq, Bool.and_eq_true] at hacc
+    have hgoal : r.goal = .plain r.result := by simp [Request.goal, hpromise]
+    have hP := program_nodes r.program
+    have hc := hacc.2
+    rw [hgoal, ← hP] at hc
+    have hs := GraphCode.goto_safe hc hcodes n W heap L d he hw hh
+    rcases hp with hp | hp
+    · have hp : ∀ e ∈ r.program.map (·.expression), Purity.pureTerm e = true := by
+        intro e he
+        obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he
+        exact List.all_eq_true.mp hp node hn
+      exact CallEffects.pure_safe (.goto hp hvalues hd) hs
+    · rw [← hP] at hp
+      erw [← GraphCode.compositionalChecked_reassign G images η, GraphCode.compositionalChecked_eq] at hp
+      apply GraphCode.goto_preserving hc hcodes _ n W heap L d he hw hh
+      intro l node point hn hpoint
+      have hzip : ((GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))).zip c.certificate)[l]? = some (node,point) :=
+        List.getElem?_zip_eq_some.mpr ⟨hn,hpoint⟩
+      have hmem := List.mem_of_getElem? hzip
+      have hp := List.all_eq_true.mp hp (node,point) hmem
+      simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hp
+      refine ⟨hp.1.1, ?_⟩
+      intro j V h' ρ henv himp hknowledge hworld hheap
+      have hgraph : checkGraphUsing (reassign G η) (images.reassign η) (Goal.plain r.result)
+          (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))) c.certificate (GraphCode.admits table) = true := by
+        have hchecked := hc
+        simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
+        exact hchecked.1
+      obtain ⟨actual,hactual,hterm,-⟩ := graph_node hgraph hcodes hpoint
+      cases hn.symm.trans hactual
+      have hcases := hp.2
+      simp only [Bool.or_eq_true] at hcases
+      rcases hcases with hexpr | hcall
+      · exact ExpressionEffects.sound hexpr hp.1.2 henv hworld hheap
+          (HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
+            (hterm j V h' ρ henv himp hknowledge hworld hheap)))
+      · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
+        have hs := ExpressionEffects.selectedCall_sound point.expression hcall.1.2 hcall.2
+          (ProgramCertificates.codesSound_none _) henv hworld hheap
+        simpa only [ControlFlow.result, hcall.1.1] using hs
+  · contradiction
 
 /-- The source region represented by a graph, for checks on synthetic nodes. -/
 def sourceMapRegion (sourceMap : SourceMap) : Option SourceMapEntry :=
@@ -298,7 +410,7 @@ def SourceRequest.over (F : Frozen) (r : SourceRequest EquationStore.State Tree)
     return body
   return { toRequest := request, sourceScheme, qualification, obligations := obligations, sourceMap := r.sourceMap,
            assertions := r.assertions, cuts := r.cuts, hints := hints, codeSources := r.codeSources,
-           nodePlans := nodePlans }
+           nodePlans := nodePlans, effect := r.effect }
 
 end
 

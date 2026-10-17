@@ -1281,6 +1281,71 @@ for (const [file, marker, arity, accepted] of [
 }
 
 {
+  // A declaration's claimed effect is established by its own unit's graph.
+  // `collect` verifies at its honest claims, and writes a `let` cell and
+  // pushes onto its parameter. Claimed preserving, evidence production
+  // refuses at one of those writes, and the evidence for the honest claims
+  // does not justify the forged ones.
+  const artifacts = run("optional-call-loop-cell");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  must(claims.functions.find(f => f.name === "collect"), "collect's claims").effect = "preservesInputHeap";
+  const input = writeClaims(artifacts, "forged-declaration-effect", claims);
+  const produce = produceWith(artifacts, input, "forged-declaration-effect");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  const refused = /source effect refusal at \[(\d+),\d+\): the heap preservation claimed for 'collect'/
+    .exec(produce.stdout + produce.stderr);
+  assert.ok(refused, produce.stdout + produce.stderr);
+  const at = Number(refused[1]);
+  assert.ok(source.indexOf("target?.push(line)") <= at && at < source.indexOf("target = into") + "target = into".length,
+    `refused at the push or the write, not at ${at}`);
+  invoke(input, join(artifacts, "evidence.json"), artifacts);
+  process.stdout.write("forged declaration effect: a cell write and a push onto a parameter refused, in search and in checking\n");
+}
+
+{
+  // A guard's promise is its annotation's: a guard declaration claimed
+  // heap-preserving is refused at the declaration.
+  const artifacts = run("type-guards");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const guard = must(claims.functions.find(f => f.name === "isPresence"), "isPresence's claims");
+  assert.ok(source.slice(guard.namePos[1]).startsWith("(value: unknown): value is Presence"));
+  guard.effect = "preservesInputHeap";
+  const input = writeClaims(artifacts, "forged-guard-effect", claims);
+  refusedAt(artifacts, input, "forged-guard-effect",
+    `source effect refusal at [${guard.namePos[0]},${guard.namePos[1]}): the heap preservation claimed for '${guard.name}'`);
+  process.stdout.write("forged guard effect: refused at the guard declaration\n");
+}
+
+{
+  // An imported function is read at its declaration's type, which states no
+  // effect: its call claimed preserving, with the callback through it, is
+  // refused at a node's typing.
+  const artifacts = run("invalid-preserving-callback-value-import");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const expressions = claims.functions.flatMap(f => f.expressions);
+  const arrowsAt = (start: number) => {
+    const claim = must(expressions.find(e => e.pos[0] === start && Array.isArray(e.type) && e.type.length === 1),
+      `the claim at ${start}`);
+    const label = Array.isArray(claim.type) ? claim.type[0] : undefined;
+    assert.ok(typeof label === "number");
+    const row = must(claims.types[label], `the type row at ${start}`);
+    return row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
+  };
+  const forged = [...arrowsAt(source.indexOf("double(x)")), ...arrowsAt(source.indexOf("(x) =>"))];
+  assert.ok(forged.length > 0, "the callee's and the callback's contracts");
+  for (const s of forged) s.effect = "preservesInputHeap";
+  const input = writeClaims(artifacts, "forged-import-effect", claims);
+  const produce = produceWith(artifacts, input, "forged-import-effect");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  process.stdout.write("forged import effect: an imported function's call refused heap preservation\n");
+}
+
+{
   // A guard's promise is its function type's, checked at its body: the lying
   // guard's claims forged to hold its argument at `string` throughout the
   // body, and its answer at `true`, are refused at the edge into its

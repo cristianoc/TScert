@@ -65,6 +65,7 @@ Each function object has these fields:
 | `params` | Ordered parameter points: `{name,type,current}` |
 | `result` | Claimed return type |
 | `contracts` | Mutable declaration contracts: `{pos,name,type}` |
+| `effect` | The effect proposed for the declaration's signature: `"unrestricted"` or `"preservesInputHeap"` |
 | `entries` | Entry claims: `{point,start,bindings}` |
 | `expressions` | Expression claims: `{point,pos,type,current}` |
 | `arrows` | Optional per-signature interior claims, described below |
@@ -82,6 +83,13 @@ contents for its lifetime. The initializer and every write must satisfy it.
 An annotation, when present, must have the same meaning as the supplied
 contract. Entry types and contents assertions describe execution points;
 they do not replace this lifetime obligation.
+
+A function's `effect` strengthens its annotated signature only as a claim:
+`preservesInputHeap` is an obligation on the function's own graph, which
+must establish it ([effect certification](SOURCE-ELABORATION.md#certifying-inferred-call-effects)),
+and the other units then read the function at its annotation's signature
+stating that effect. A guard's or an assertion function's claim states
+`unrestricted`; its promise is its annotation's.
 
 A source containing top-level executable code has an `init` object with
 `contracts`, `entries`, `expressions`, and optional `arrows`. It has no
@@ -110,7 +118,7 @@ executable input; its identity and point associations must match a Fragment:
   "functions": [{
     "name": "identity", "namePos": [9,17],
     "params": [{"name":"flag","type":[1,2],"current":null}],
-    "result": [1,2], "contracts": [],
+    "result": [1,2], "contracts": [], "effect": "preservesInputHeap",
     "entries": [{"point":"9:17:1","start":43,
       "bindings":[{"name":"flag","type":[1,2],"current":null}]}],
     "expressions": [{"point":"9:17:1","pos":[50,54],

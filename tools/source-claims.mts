@@ -119,6 +119,9 @@ interface FunctionClaims<L = Label> {
   params: NamedPoint<L>[];
   result: ClaimType<L>;
   contracts: StorageContract<L>[];
+  /** The effect proposed for the declaration's signature, which its unit's
+   * graph must establish: `unrestricted` or `preservesInputHeap`. */
+  effect: CallEffect;
   entries: EntryClaim<L>[];
   expressions: ExpressionClaim<L>[];
   /** One interior claim set per advertised signature of the closure at pos. */

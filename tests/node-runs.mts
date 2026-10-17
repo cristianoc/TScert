@@ -29,6 +29,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("invalid-map-collection-write-callback",
     `(() => { const counts = new Map(); seen(["a", "a"], counts); return counts.get("a"); })()`), 2,
     "invalid-map-collection-write-callback: the callback's call writes the map");
+  // The declaration called by the callback writes the counter it is passed.
+  assert.equal(runExample("invalid-declaration-write-callback",
+    `(() => { const counter = { n: 0 }; counted(["a", "b"], counter); return counter.n; })()`), 2,
+    "invalid-declaration-write-callback: the declaration's call writes its parameter's field");
   // The `filter` callback's `push` writes the array it captures.
   assert.equal(runExample("invalid-filter-writing-callback",
     `(() => { const kept = []; words(["a b", "c"], kept); return kept.join(); })()`), "a,b,c",

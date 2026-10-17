@@ -535,7 +535,7 @@ contributes its tuple's positions or its array's element. A function without
 a rest parameter is code that discards the actuals past its parameters, so it
 also meets its signature extended by a rest of `unknown` elements: the
 further actuals a caller writes may be any values. -/
-def moduleArrow (g : Fragment.Fn) : Except String Json := do
+def moduleArrow (g : Fragment.Fn) (effect : CallEffects.Effect := .unrestricted) : Except String Json := do
   let top := Json.mkObj [("top", toJson true), ("atoms", toJson ([] : List Json))]
   let (receiver, params) := match g.params with
     | p :: ps => if p.name == "this" then (p.ty, ps) else (top, g.params)
@@ -557,11 +557,17 @@ def moduleArrow (g : Fragment.Fn) : Except String Json := do
     | some guard => [(guard.type, [("effect", toJson (if guard.asserts then CallEffects.Effect.asserts guard.param
         else .guards guard.param))])]
     | none => []
+  -- The plain signature states the effect the declaration's claim proposes,
+  -- which the declaration's own unit certifies; its extension discarding
+  -- further actuals runs the same code, so it states the same.
+  let plain : List (String × Json) := match effect with
+    | .unrestricted => []
+    | e => [("effect", toJson e)]
   let extra := promised.map (fun (result, effect) => Json.mkObj (signature rest result effect)) ++
     if params.any (·.rest) then []
-    else ((g.ret, []) :: promised).map fun (result, effect) => Json.mkObj (signature [("rest", top)] result effect)
+    else ((g.ret, plain) :: promised).map fun (result, effect) => Json.mkObj (signature [("rest", top)] result effect)
   let conjuncts := if extra.isEmpty then [] else [("and", toJson extra)]
-  return Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj (signature rest g.ret [] ++ conjuncts)])]
+  return Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj (signature rest g.ret plain ++ conjuncts)])]
 
 /-- The same values with each label that is a union row, a declaration such as
 `type Maybe = number | undefined`, replaced by one label per clause: a tag
