@@ -321,6 +321,11 @@ private def grows (a : Arr) (f : Arr → Arr) : Bool := Change.grow.holdsB a.nex
 #guard grows ⟨[some 0, none, some 2], 3⟩ Arr.push
 #guard grows ⟨[some 0, none, some 2], 3⟩ Arr.unshift
 #guard grows ⟨[some 0, none], 2⟩ (·.setLength 4)
+-- `unshift` ends by setting the length: [1, hole] becomes [9, 1, hole]
+#guard (Arr.unshift ⟨[some 0, none], 2⟩).ls.length == 3
+#guard present (Arr.unshift ⟨[some 0, none], 2⟩).ls 0 && present (Arr.unshift ⟨[some 0, none], 2⟩).ls 1
+#guard !present (Arr.unshift ⟨[some 0, none], 2⟩).ls 2
+#guard grows ⟨[some 0, none], 2⟩ Arr.unshift
 -- sort's writeback, judged from the entry store, after a comparator that removed both indices
 #guard Change.grow.holdsB 2 (.arr [some 0, some 1])
   (.arr ((Arr.mk [] 2).writeback (itemCount [some 0, some 1] 2) 2).ls)

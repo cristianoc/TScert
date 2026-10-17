@@ -675,6 +675,20 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   ys[3] = 2;
   ys.sort((a, b) => { ys[2] = 0; return a - b; });
   assert.deepEqual([Object.keys(ys), ys.length], [["0", "1", "2"], 4], "sort's writeback deletes past its count");
+  // `unshift` ends by setting the length: a trailing hole stays one.
+  const trailing: number[] = [1];
+  trailing.length = 2;
+  trailing.unshift(9);
+  assert.deepEqual([trailing.length, Object.keys(trailing)], [3, ["0", "1"]], "unshift keeps a trailing hole");
+  // An element-returning or receiver-returning native returns an existing
+  // value, never a fresh one; `map` allocates its result.
+  const old = [1];
+  const nested = [old];
+  assert.equal(nested.find(() => true), old, "find returns an existing element");
+  assert.equal(nested.at(0), old, "at returns an existing element");
+  assert.equal(nested.sort(), nested, "sort returns its receiver");
+  assert.equal(nested.reverse(), nested, "reverse returns its receiver");
+  assert.notEqual(nested.map((x) => x), nested, "map allocates its result");
   // A Set iterator reads the set's state at each step: it sees a later `add`.
   const set = new Set([1]);
   const values = set.values();

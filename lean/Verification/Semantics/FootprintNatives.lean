@@ -191,8 +191,9 @@ def Arr.unshiftMoves : Nat → Arr → Arr
   | 0, a => a
   | j + 1, a => Arr.unshiftMoves j (if present a.ls j then a.set (j + 1) else a.delete (j + 1))
 
-/-- `unshift(v)`: the moves, then `Set(O, 0, v)`. -/
-def Arr.unshift (a : Arr) : Arr := (Arr.unshiftMoves a.ls.length a).set 0
+/-- `unshift(v)`: the moves, then `Set(O, 0, v)`, then
+`Set(O, "length", len + 1)`, which keeps a trailing hole the moves leave. -/
+def Arr.unshift (a : Arr) : Arr := ((Arr.unshiftMoves a.ls.length a).set 0).setLength (a.ls.length + 1)
 
 /-- `reverse()`: each pair of a lower and an upper index, from the outside in:
 both present, two `Set`s; only the upper, `Set` lower and `Delete` upper; only
@@ -236,7 +237,7 @@ theorem Arr.unshiftMoves_within {b orig} : ∀ (j : Nat) (a : Arr), a.Within b o
     · exact h.delete _
 
 theorem Arr.unshift_within {b} {a : Arr} (h : b ≤ a.next) : a.unshift.Within b a.ls :=
-  (Arr.unshiftMoves_within _ _ (Arr.Within.refl h)).set _
+  ((Arr.unshiftMoves_within _ _ (Arr.Within.refl h)).set _).setLength _
 
 theorem Arr.writeback_within {b orig} (n len : Nat) {a : Arr} (h : a.Within b orig) :
     (a.writeback n len).Within b orig :=
@@ -284,7 +285,12 @@ hole, beyond every dense prefix, and `Set(O, 0, v)` fills index 0. -/
 theorem Arr.unshift_dense {a : Arr} {n} (hd : DensePrefix n a.ls) : DensePrefix n a.unshift.ls := by
   rw [dense_iff_present] at hd ⊢
   intro i hi
+  have hn : n ≤ a.ls.length := by
+    cases n with
+    | zero => exact Nat.zero_le _
+    | succ n => exact present_lt (hd n (by omega))
   unfold Arr.unshift
+  rw [present_setLength (by omega)]
   cases i with
   | zero => exact present_set_self _ _
   | succ i =>

@@ -1546,8 +1546,13 @@ below are the specification of each native for the footprint mechanism:
   `store(receiver): grow` when `ε` changes stores at most by `grow`,
   `store(receiver): any` otherwise.
 - `map`, `forEach`, `every`, `some`, `filter`, `find`, `findIndex`,
-  `flatMap`: their callback's footprint; a fresh result where they return an
-  array.
+  `flatMap`: their callback's footprint.
+- **Fresh results** are those a native allocates: `map`, `filter`, `flatMap`
+  and `slice` (each creates its result by `ArraySpeciesCreate`, ordinary
+  construction), `new Set()`, `new Map()`, a regex literal, and the
+  iterators below. A native returning an element or its receiver returns an
+  existing value, never a fresh one: `find`, `at`, `pop`, `shift` return an
+  element; `sort`, `reverse` and `Set`'s `add` return their receiver.
 - `new Set()`, `new Map()`: empty, fresh result, state `own(result)`.
 - `Set`/`Map` `add`, `set`, `delete`, `clear`: `own(receiver): any`. `size`,
   `has`, `get`: empty.
