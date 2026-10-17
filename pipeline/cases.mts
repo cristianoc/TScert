@@ -122,6 +122,7 @@ export const cases: Case[] = [
     /no derivation of its node-typing claim/),
   positive("array-spread-named-union", "an array literal of a value of a named union and a spread of an array of it holds that union, so a callback at it keeps `map` dense"),
   positive("exceptional-footprint-handler", "a call whose signature states its footprint on a throw (`onThrow`) is caught by a handler within the caller's footprint: map callbacks catching a declaration's, a constant arrow's and a relaying declaration's throws stay dense"),
+  positive("exceptional-footprint-fresh", "a body allocating a fresh store and catching a throw: the handler keeps the store fresh, the thrown value never is, so the handler writes the store within the empty footprint"),
   negative("invalid-exceptional-handler-fact", "a handler starts after what the throwing call wrote: a field the guard before it narrowed is read at its contract there (run under Node)",
     /The available claim for o.v is undefined \| string/),
   negative("invalid-exceptional-handler-mutation", "a callee shrinking the mapped array before it throws: the catching callback leaves a hole in the result (run under Node)"),

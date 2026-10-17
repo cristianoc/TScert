@@ -553,20 +553,21 @@ body that catches can be certified at a footprint.
 
 **Semantics.** `SafePost Ξ T Q` states `Q` of the heap a value is returned in
 and nothing of a throw. Its generalization `SafePostExc Ξ T Q R` states, in its
-throw disjunct, `R h v` of the heap `h` at which the term raises `v`:
+throw disjunct, `R h` of the heap `h` at which the term raises, whatever
+value it raises:
 
 ```math
 \mathsf{SafePostExc}\,\Xi\,T\,Q\,R\,(n{+}1)\,W\,h\,t \iff
 (\mathsf{val}\,t \wedge T\,W\,t \wedge Q\,h\,t)
-\vee (\exists v.\ \mathsf{Raises}\,t\,v \wedge \mathsf{Scoped}_0\,v \wedge \Xi\,W\,v \wedge R\,h\,v)
+\vee (\exists v.\ \mathsf{Raises}\,t\,v \wedge \mathsf{Scoped}_0\,v \wedge \Xi\,W\,v \wedge R\,h)
 \vee (\exists W'\,h'\,t'.\ \ldots \wedge \mathsf{SafePostExc}\,\Xi\,T\,Q\,R\,n\,W'\,h'\,t')
 ```
 
 with the step disjunct as in `SafePost`. `SafePost Ξ T Q` is
-`SafePostExc Ξ T Q (fun _ _ => True)`, and `erase` holds for both. An
+`SafePostExc Ξ T Q (fun _ => True)`, and `erase` holds for both. An
 effect $`e`$ with `onThrow` gives the arrow's run, from entry heap
 $`h_0`$, the exceptional postcondition
-$`R\,h\,v \iff e.\mathsf{footprint}.\mathsf{HoldsOn}\,P\,h_0\,h`$, with
+$`R\,h \iff e.\mathsf{footprint}.\mathsf{HoldsOn}\,P\,h_0\,h`$, with
 $`P`$ the locations its `receiverStore` leaves bounded, as `Effect.within`
 reads them. Without `onThrow`, $`R`$ is `True`. Coverage
 (`Effect.Covers`) gains one clause: an effect with `onThrow` covers one
@@ -587,9 +588,9 @@ about the arguments a normal return establishes, and `fresh` a fact about
 the returned value. A throw establishes neither, so neither moves onto an
 exceptional edge. A handler binds the thrown value at the graph's exception
 family, `unknown`, and the thrown slot is never fresh; the slots the node
-already held keep their freshness. The handler receives only the
-current-content facts the footprint keeps stable, as a normal edge receives
-those its call keeps.
+already held keep their freshness (`handlerFresh`; the candidate facts
+`inferFresh` proposes flow along handler edges the same way). The handler
+receives no current-content fact ([handler facts](#exceptional-footprints)).
 
 **Composition through a body.** `GraphCode.BoundState` states the run's
 invariant from the body's entry heap $`h_0`$, with $`b`$ the body's

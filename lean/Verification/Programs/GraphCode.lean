@@ -648,9 +648,13 @@ below decides whether the result holds on every edge. -/
   nodes.foldr (fun ((node, _), l) facts =>
     let F := facts.getD l []
     let out := varFresh F node.expression || calls.getD l false
-    (destinations node.continuation).foldl (fun facts t =>
+    let facts := (destinations node.continuation).foldl (fun facts t =>
       facts.modify t.label fun D => D.filter fun i =>
-        freshSlot F (pushes node.continuation) out (slot t.mapping i)) facts) facts
+        freshSlot F (pushes node.continuation) out (slot t.mapping i)) facts
+    -- A handler binds the thrown value, never fresh, before the node's slots.
+    match node.handler with
+    | some t => facts.modify t.label fun D => D.filter fun i => freshSlot F true false (slot t.mapping i)
+    | none => facts) facts
 
 @[nospecialize] def freshIterate (nodes : List ((Node × NodeEvidence ι) × Nat)) (calls : Array Bool) :
     Nat → Array (List Nat) → Option (Array (List Nat))

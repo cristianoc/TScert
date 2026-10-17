@@ -85,6 +85,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("exceptional-footprint-handler",
     `JSON.stringify([orZero([1, -1]), halvesOrSelf([4, 3]), relayedOrOne([-2, 2]), largest(1, 2)])`),
     "[[1,0],[2,3],[1,2],2]", "exceptional-footprint-handler: each handler's value");
+  assert.equal(runExample("exceptional-footprint-fresh", `JSON.stringify(counts(["a,b", "c"], 2))`), "[0,2]",
+    "exceptional-footprint-fresh: the handler pushes onto the fresh store");
   assert.equal(runExample("invalid-exceptional-handler-fact", `wrong({ v: "x" })`), undefined,
     "invalid-exceptional-handler-fact: the handler reads the field the throwing call cleared");
   assert.equal(runExample("invalid-exceptional-handler-mutation", "(r => r.length === 3 && !(2 in r))(wrong([1, 2, 3]))"), true,
