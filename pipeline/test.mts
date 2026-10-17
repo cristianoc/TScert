@@ -1328,6 +1328,32 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // The non-empty form's store contract forbids a removal: a call whose
+  // result is shrunk (popped, through an alias) or held at `string[]`, its
+  // honest evidence at the general form, forged at `[string, ...string[]]`,
+  // is refused in search and in checking, whatever the producer proposes.
+  const artifacts = run("split-non-empty");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  for (const name of ["popped", "aliasShrunk", "annotated"]) {
+    const claims = readClaims(artifacts);
+    const call = 'text.split(",")';
+    const at = source.indexOf(call, source.indexOf(`function ${name}(`));
+    const claim = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at && e.pos[1] === at + call.length),
+      `${name}'s split claim`);
+    const str = claims.types.findIndex(row => JSON.stringify(row) === JSON.stringify(["str"]));
+    assert.ok(str >= 0);
+    claims.types.push([{ list: { first: { required: [[str]], optional: [], rest: [str], readonly: false, presence: "dense" }, rest: [] } }]);
+    claim.type = [{ array: [claims.types.length - 1], readonly: false }];
+    const input = writeClaims(artifacts, `forged-split-tuple-${name}`, claims);
+    const produce = produceWith(artifacts, input, `forged-split-tuple-${name}`);
+    assert.ifError(produce.error);
+    assert.equal(produce.status, 1, `${name}: ${produce.stdout}${produce.stderr}`);
+    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject|source expression obligation/, name);
+  }
+  process.stdout.write("forged split tuple: shrunk, aliased and annotated results claimed non-empty refused in search and in checking\n");
+}
+
+{
   // A receiver claimed without its `undefined` takes no nullish guard: the
   // read of `b` in `b.n`, a parameter that may be absent, forged at the box
   // alone, is refused in search, and checking the honest evidence, whose

@@ -111,6 +111,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-nullish-member-reads: the member is a number");
   assert.throws(() => runExample("nullish-member-write-refused", "reset(undefined)"), /Cannot set properties/);
   assert.equal(runExample("split-non-empty", `[firstLine("").subject, firstField("a;b", true), firstWord("x y"), lastLines(["a", "b\\nc"])].join("|")`), "|a|X|2");
+  assert.equal(runExample("split-non-empty", `[lineCount("a\\nb", true), lineCount("a", false), popped("a,b"), aliasShrunk("a"), annotated("a,b")].join()`), "2,0,1,0,2");
+  assert.equal(runExample("invalid-split-alias-shrink", `String(first("a"))`), "undefined");
+  assert.equal(runExample("invalid-split-element-write", `String(first("a", undefined))`), "undefined");
+  assert.equal(runExample("split-array-members", `joined("a,b")`), "a;b");
   assert.equal(runExample("invalid-split-empty-separator", `String(first(""))`), "undefined");
   assert.equal(runExample("invalid-split-limit", `[first("a,b", 0), first("a,b", 4294967296)].map(String).join()`), "undefined,undefined");
   assert.equal(runExample("invalid-split-string-separator", `String(first("", ""))`), "undefined");

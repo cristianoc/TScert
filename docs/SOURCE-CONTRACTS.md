@@ -1589,17 +1589,22 @@ collected bounds only which calls it serves. Its result's store contract has
 a required position, which forbids a removal, so the producer proposes the
 form only for a call whose result nothing shrinks (`Source.unshrunk`): read
 by index at once, or bound to an unannotated constant every use of which
-reads it (an element, its `length`, a member that reads, an iteration); any
-other call takes the general form, and Lean checks whichever is proposed. It has no limit parameter, so a
+reads it (an element, its `length`, a member that reads, an iteration),
+directly or as a conditional's arm; any other call takes the general form,
+and Lean checks whichever is proposed: a shrunk, aliased or annotated result
+forged at the non-empty form is refused in search and in checking
+(`pipeline/test.mts`). It has no limit parameter, so a
 call passing a limit takes the general form: a limit is not stated, since a
 numeric literal of at least `1` does not exclude `[]`, `ToUint32` reducing it
 modulo $`2^{32}`$ (`split(",", 4294967296)` is `[]`). A `RegExp` separator
 keeps the general form: an empty receiver and a pattern matching the empty
 string give `[]`. The form states the same footprint and fresh result as the
 general one (audited). Controls: `split-non-empty` (a literal and a union of
-literals), `invalid-split-empty-separator`, `invalid-split-limit` (beside a
-stated form for the same separator), `invalid-split-string-separator`, each
-with a Node run, and a separator forged at `string`, refused in search and in
+literals, a conditional's arm, results popped, aliased and annotated),
+`invalid-split-empty-separator`, `invalid-split-limit` (beside a stated form
+for the same separator), `invalid-split-string-separator`,
+`invalid-split-alias-shrink`, `invalid-split-element-write`, each with a Node
+run, and a separator forged at `string`, refused in search and in
 checking (`pipeline/test.mts`).
 
 What is proved and what is audited:

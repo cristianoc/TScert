@@ -23,3 +23,31 @@ export function lastLines(ps: string[]): number {
   const lines = ps.length > 1 ? ps[ps.length - 1].split("\n") : [];
   return lines.length;
 }
+
+// A constant holding a conditional of a non-empty `split` and an empty
+// literal, read only: the split's result has its required position, and the
+// value is the readonly array of strings both arms meet.
+export function lineCount(text: string, keep: boolean): number {
+  const lines = keep ? text.split("\n") : [];
+  return lines.length;
+}
+
+// A result something shrinks takes the general form: popped, through an
+// alias, or held at an annotation of `string[]`.
+export function popped(text: string): number {
+  const cells = text.split(",");
+  cells.pop();
+  return cells.length;
+}
+
+export function aliasShrunk(text: string): number {
+  const cells = text.split(",");
+  const alias = cells;
+  alias.pop();
+  return cells.length;
+}
+
+export function annotated(text: string): number {
+  const cells: string[] = text.split(",");
+  return cells.length;
+}

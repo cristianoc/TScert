@@ -1040,6 +1040,12 @@ and collect_unshrunk_stmts = function
     (match s.statement with
      | Declare (false,[(name,None,({node=(Call _ | Invoke _);_} as init))]) when stmts_read_only name rest ->
        unshrunk := init.pos :: !unshrunk
+     (* A conditional's call arm, the value the constant holds where it is
+        taken. *)
+     | Declare (false,[(name,None,{node=Conditional (_,a,b);_})]) when stmts_read_only name rest ->
+       List.iter (fun (arm:expr) -> match arm.node with
+         | Call _ | Invoke _ -> unshrunk := arm.pos :: !unshrunk
+         | _ -> ()) [a;b]
      | _ -> ());
     (match s.statement with
      | If (_,a,b) -> collect_unshrunk_stmts a; collect_unshrunk_stmts b
