@@ -1,6 +1,7 @@
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Verification.Semantics.FootprintProvenance
+import Verification.Programs.FootprintTyping
 import Verification.Semantics.HeapFacts
 import Verification.Types.PositiveNormalization
 
@@ -236,6 +237,21 @@ theorem elems_class_needs_two_levels :
     subst hl
     exact ⟨_, rfl, fun _ _ => trivial⟩
   | l + 2, hl => simp at hl
+
+/-! ## The stability check
+
+A cell fact about `x.k` survives a write to `class(value)` only where the
+field's class is known to be another one, and never a write to the field
+itself. -/
+
+private def noKnowledge : SepKnowledge := ⟨fun _ _ => none, ⟨fun _ => none, fun _ => none⟩, fun _ => [], []⟩
+private def storeK : SepKnowledge := { noKnowledge with cl := fun x k => if x = 0 ∧ k = "k" then some .store else none }
+private def cellK : FactKind := .cell ⟨0, [.nul], "k"⟩
+
+#guard !stable noKnowledge cellK.support [(.cls .value, .any)]
+#guard stable storeK cellK.support [(.cls .value, .any)]
+#guard !stable storeK cellK.support [(.field 0 "k", .any)]
+#guard stable storeK cellK.support [(.field 0 "k", .keep)]
 
 /-! ## The lemmas rest on the standard axioms
 
