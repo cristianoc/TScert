@@ -30,7 +30,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 18 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 27 of 291 verify in `tools/` (2026-10-16), 19 of 23 in `dev/` and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -190,12 +190,12 @@ producer's arrow search builds no nested `combine`. An element read keeps no
 heap fact: it reads the heap only, but the value it finds is a value only
 where the store's contract says so, which the frame rule would have to take
 from the read's typing (a length is a number, and keeps them). An element
-read the code guards is read at the element type or `undefined`
-(`guarded-element-read-refused`): `out[out.length - 1]` under a nonzero
-length needs the index and the length related by arithmetic the typing does
-not decide, and `xs[0] !== undefined && known.has(xs[0])` needs a
-current-content fact about an element location, kept from the test to the
-second read, as a field path would need one (`o.a !== undefined &&
+read the code guards is read at the element type or `undefined`; a member of
+it is read past a nullish guard, which throws where JavaScript does, but the
+value itself passed on keeps `undefined`
+(`guarded-element-read-refused`): `xs[0] !== undefined && known.has(xs[0])`
+needs a current-content fact about an element location, kept from the test
+to the second read, as a field path would need one (`o.a !== undefined &&
 f(o.a)` is refused the same way). A `flatMap` callback returning a
 primitive or an array of primitives (`flat-map-scalar-result-refused`)
 needs a second signature quantifying a binder bounded by the primitives,
@@ -256,7 +256,7 @@ The first blockers, by the number of slices each stops (2026-10-16):
 
 Seven slices reach the producer and fail there, and twenty-two fail in
 search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 18 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
+dump, 19 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
 the same-file declarations it uses). The first blockers of the others in
 `dev/`, with the functions each stops directly and through callees:
 
@@ -266,18 +266,11 @@ the same-file declarations it uses). The first blockers of the others in
   imported function's effect needs a contract its own module's
   certification establishes ([module composition](#module-composition))
   (group: 1);
-- a member of a value whose type admits `undefined`, read where JavaScript
-  throws on `undefined` (`paragraphs[paragraphs.length - 1].split("\n")`,
-  `guarded-element-read-refused`), designed in
-  [PROGRAM-TYPING](docs/PROGRAM-TYPING.md#judgments-and-constructor-views)
-  ("a member of `null` or `undefined`"), with RegExp `test` at
-  `string | undefined` and a compound assignment to an element beside it
-  (parseTrailers: 1);
-- in parseRecord, beside those reads, an unguarded element read stored at a
-  `string` field (`subject: lines[0]`), refused: an element read is
-  `T | undefined`; and a `let` holding an object narrowed by the truthiness
-  of an optional chain on it (`if (current?.block.length) current.block…`)
-  (parseRecord: 1);
+- in parseRecord, a `let` holding an object narrowed by the truthiness of an
+  optional chain on it (`if (current?.block.length) current.block…`), which
+  the cell's knowledge does not state, and an unguarded element read stored
+  at a `string` field (`subject: lines[0]`), refused: an element read is
+  `T | undefined` (parseRecord: 1);
 - in lowering-dump, a mapped type whose value names its key, `SHOW_STEP`'s
   `{ [K in KeysOf<Step>]: (a: Extract<Step, Record<K, unknown>>[K]) => string }`,
   refuses the file; showStep's assertions, which state what `decodeNode`
@@ -291,10 +284,10 @@ of `node:path`, `Number` read as a value, or a top-level block.
 
 Two forms of the record tools are rewritten for a verifier limit, not
 for a departure from the fragment; each rewrite is reverted when its limit
-lifts: element reads the code already guards, by a length or a test of the
-same element (`dedent`, `effects`, `mathRoles`' `afterRelation` and
-`textWord`; `guarded-element-read-refused`); and a `flatMap` callback
-returning a string (`card`; `flat-map-scalar-result-refused`).
+lifts: element reads the code already guards by a test of the same element
+(`mathRoles`' `afterRelation` and `textWord`; `guarded-element-read-refused`);
+and a `flatMap` callback returning a string (`card`;
+`flat-map-scalar-result-refused`).
 
 The goal is every function of the repository's own TypeScript verified:
 `tools/`, `pipeline/`, `tests/` and `dev/`, about 21,000 lines (the sources

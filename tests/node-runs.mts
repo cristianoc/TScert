@@ -91,6 +91,25 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("conditional-empty-array", `lineCount("a\\nb", true) + lineCount("a", false)`), 2);
   assert.equal(runExample("invalid-conditional-empty-array", `typeof lengths("a")[0]`), "string",
     "invalid-conditional-empty-array: the elements are strings");
+  // A member access of null or undefined throws a TypeError, in the order
+  // `nullish-member-order` states.
+  assert.equal(runExample("nullish-member-reads",
+    `JSON.stringify([lastLines(["a", "b\\nc"]), trimEnd(["x", " "]), size({ n: 2, tags: [] }), upper("a"), caught(undefined), startsBlank([]), appended([["k", "v"]], "w")])`),
+    '[["b","c"],["x"],2,"A",-1,false,"vw"]');
+  for (const call of ["size(undefined)", "upper(null)", "tagAt(undefined, 0)", "lastLines([\"a\", undefined])", "appended([], \"w\")"])
+    assert.throws(() => runExample("nullish-member-reads", call), /TypeError|Cannot read properties|Cannot set properties/, call);
+  assert.equal(runExample("nullish-member-order",
+    `(() => { const log = []; try { keyFirst(undefined, log); } catch (e) { return e instanceof TypeError && log.join(); } })()`), "key");
+  assert.equal(runExample("nullish-member-order",
+    `(() => { const log = []; try { argumentsSkipped(null, log); } catch (e) { return e instanceof TypeError && log.join(); } })()`), "");
+  assert.equal(runExample("nullish-member-order",
+    `(() => { const log = []; try { bumped(undefined, log); } catch (e) { return e instanceof TypeError && log.join(); } })()`), "key");
+  assert.equal(runExample("nullish-member-order",
+    `(() => { const log = []; return [optionalKey(undefined, log), log.length, optionalKey({ n: 3, tags: [] }, log), log.join()]; })().join()`), ",0,3,key");
+  assert.throws(() => runExample("nullish-member-order", "chained(undefined)"), /Cannot read properties/);
+  assert.equal(runExample("invalid-nullish-member-reads", `typeof label({ n: 1 })`), "number",
+    "invalid-nullish-member-reads: the member is a number");
+  assert.throws(() => runExample("nullish-member-write-refused", "reset(undefined)"), /Cannot set properties/);
   assert.equal(runExample("logical-string-values", `[both("x"), both(""), either("", "y"), joined("a", "b"), fallback("", "c")].join()`), "1,0,1,b,c");
   assert.equal(runExample("invalid-logical-string-values", `JSON.stringify(length("", 3))`), '""',
     "invalid-logical-string-values: the empty string, no number");

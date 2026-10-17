@@ -100,7 +100,8 @@ function splitResult(shape: RegExpShape | null): TypeTerm {
  * A native regex's standard members run no client code: each reads the
  * regex's pattern, flags and `lastIndex` (a number by its contract),
  * allocates only its result, and writes `lastIndex` only where the regex is
- * global or sticky. `[Symbol.search]` restores the `lastIndex` it saved,
+ * global or sticky. Their `exec` and `test` take `undefined` too, as the
+ * string `"undefined"`. `[Symbol.search]` restores the `lastIndex` it saved,
  * `[Symbol.split]` and `[Symbol.matchAll]` step a fresh clone: the empty
  * footprint. `exec`, `test`, `[Symbol.match]` and `[Symbol.replace]` (at a
  * string replacement) state the empty footprint where the regex is neither
@@ -115,9 +116,13 @@ function members(shape: RegExpShape | null, keys: RegExpKeys, native: boolean): 
   const restoring: Effect = native && shape !== null ? emptyEffect : ordinaryEffect;
   const stateless: Effect = !native || shape === null ? ordinaryEffect
     : shape.global || shape.sticky ? footprintEffect({ value: "any", store: "keep" }) : emptyEffect;
+  // A native `exec` and `test` convert their argument by `ToString`, which
+  // runs no code on `undefined` (`"undefined"`): stated there too. A
+  // structural regex's keep their declared parameter.
+  const input = native ? either(atom("string"), atom("undefined")) : atom("string");
   return [
-    methodField("exec", [atom("string")], either(exec, atom("null")), stateless),
-    methodField("test", [atom("string")], atom("boolean"), stateless),
+    methodField("exec", [input], either(exec, atom("null")), stateless),
+    methodField("test", [input], atom("boolean"), stateless),
     methodField({ symbol: keys.match }, [atom("string")], either(matchResult(shape), atom("null")), stateless),
     methodField({ symbol: keys.replace }, [atom("string"), atom("string")], atom("string"), stateless),
     methodField({ symbol: keys.search }, [atom("string")], atom("number"), restoring),

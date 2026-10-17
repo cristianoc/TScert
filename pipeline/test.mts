@@ -969,11 +969,13 @@ for (const [artifacts, arity, refusal] of [
     /is not in scope/);
 }
 {
+  // Each run reaches a field that is null or absent and throws there: where
+  // the source verifies, the nested read's guard throws as JavaScript does.
   for (const [file, witness] of [
-    ["invalid-nullish-field-write", "(() => { const x = { child: { b: 1 } }; return invalid(x, x); })()"],
-    ["invalid-nullish-field-call", "(() => { const x = { child: { b: 1 } }; return invalid(x, () => { x.child = null; }); })()"],
+    ["nullish-field-write-throws", "(() => { const x = { child: { b: 1 } }; return invalid(x, x); })()"],
+    ["nullish-field-call-throws", "(() => { const x = { child: { b: 1 } }; return invalid(x, () => { x.child = null; }); })()"],
     ["invalid-nullish-field-pattern", "invalid({ child: { b: 1 } })"],
-    ["invalid-nullish-field-undefined", "invalid({})"],
+    ["nullish-field-undefined-refused", "invalid({})"],
   ]) {
     assert.ok(file && witness);
     assert.throws(() => runExample(file, witness), /Cannot read properties/);
@@ -1301,6 +1303,28 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     }
   }
   process.stdout.write(`callback footprint claim {${footprint.value}, ${footprint.store}}, ${file}: ${accepted ? "certified" : consumed ? "refused in search and in checking" : "refused in search"}\n`);
+}
+
+{
+  // A receiver claimed without its `undefined` takes no nullish guard: the
+  // read of `b` in `b.n`, a parameter that may be absent, forged at the box
+  // alone, is refused in search, and checking the honest evidence, whose
+  // guard the forged claim no longer lowers, refuses it there.
+  const artifacts = run("nullish-member-reads");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("b.n;", source.indexOf("function size("));
+  const receiver = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at && e.pos[1] === at + 1),
+    "the receiver's claim");
+  const undef = claims.types.findIndex(row => JSON.stringify(row) === JSON.stringify(["undef"]));
+  assert.ok(Array.isArray(receiver.type) && receiver.type.includes(undef), "the honest receiver admits undefined");
+  receiver.type = receiver.type.filter(label => label !== undef);
+  const input = writeClaims(artifacts, "forged-nullish-receiver", claims);
+  const produce = produceWith(artifacts, input, "forged-nullish-receiver");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /source expression obligation|reject/);
+  process.stdout.write("forged nullish receiver: a receiver claimed without undefined refused in search and in checking\n");
 }
 
 {

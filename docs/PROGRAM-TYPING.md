@@ -1200,46 +1200,44 @@ record or dictionary owning $`\sigma`$ are built-in arrays
 reads; on the false edge `tagSlice` drops the array labels. The test reads
 no heap, and each arm is JavaScript's read for the values reaching it.
 
-**Design: a member of `null` or `undefined`.** JavaScript's read of a
-member of `null` or `undefined`, `x.k` and `x[i]`, a method call's
-included, throws a `TypeError` before reading anything. The dispatch above
-sends such a value to the object read, where it is stuck, so a read whose
-operand's type admits `null` or `undefined` beside other values is refused
-(`field read on non-object`; `guarded-element-read-refused`: an element a
-length guards, `paragraphs[paragraphs.length - 1].split("\n")`). The
-design adds the nullish arm to the dispatch, before the others:
+**A member of `null` or `undefined`.** JavaScript's read of a member of
+`null` or `undefined`, `x.k`, `x[k]` and a method call's, throws a
+`TypeError` before reading anything. Where the operand's type admits `null`
+or `undefined` beside other values (`nullishSplit`), the operand, held in a
+slot, is tested first (`nullishGuard`):
 
 ```math
-\mathsf{if}\ \mathsf{isNullish}(x)\ \mathsf{then}\ \mathsf{throw}\;\mathit{err}\ \mathsf{else}\ \cdots,
-\qquad
-\mathit{err}=\mathsf{makeAt}\;\mathsf{absent}\;[\,]\;[\,]
+\mathsf{tagBind}\ \mathsf{isNullish}(x):\quad
+\mathsf{true}\mapsto \mathsf{let}\ e=\mathsf{makeAt}\;\mathsf{absent}\;[\,]\;[\,]\ \mathsf{in}\ \mathsf{throw}\;e,
+\qquad \mathsf{false}\mapsto \text{the access, } x : \mathsf{tagSlice}_G(B,\mathsf{isNullish},\mathsf{false})
 ```
 
-with $`\mathit{err}`$ a fresh object owning no key, the error object
-`binopThrows` throws for the `TypeError` instance
-([throws](SOURCE-MODEL.md#throws)). It is typed by existing rules only:
-`ifTag` on $`\mathsf{isNullish}`$ selects the arm, `throw` has every type, and
-the other arms read at $`\mathsf{tagSlice}_G(B,\mathsf{isNullish},\mathsf{false})`$.
-So a read is typed at its operand's non-nullish values, and a run reaching
-`null` or `undefined` throws, an outcome the safety statement admits; a
-handler binds the thrown value at `unknown`. The arm is emitted only where
-the operand's type admits a nullish value, so every read the fragment types
-today lowers as it does. Scope: member reads, index reads and method calls
-through the shared dispatch (the producer's `field read on non-object`
-refusal lifts there), and the element write `x[i] = v`, `x.k = v` on a
-nullish base, which JavaScript also throws. Not changed: a read whose
-operand holds no object and no primitive member at all (`undefined` alone),
-which stays refused as it reads nothing. Controls: a guarded and an unguarded
-element read whose run throws under Node, a handler around one, and a
-forged claim reading the nullish arm at a member type.
+with $`e`$ a fresh object owning no key, the error object `binopThrows`
+throws for the `TypeError` instance ([throws](SOURCE-MODEL.md#throws)). It is
+typed by existing rules only: `tagBind` refines the slot on each edge,
+`throw` has every type, and the access reads the non-nullish slice. A run
+reaching `null` or `undefined` throws, an outcome the safety statement
+admits; a handler binds the thrown value at `unknown`. The guard sits where
+JavaScript throws:
 
-`dev/record-render.mts`'s `parseTrailers` needs the design and two
-extensions beside it: RegExp `test` and `exec` stated at `string | undefined`
-(`ToString` of `undefined` is `"undefined"` and runs no code; an audited row
-of [native footprints](SOURCE-CONTRACTS.md#native-footprints)) and a compound
-assignment to an element, `e[1] += s` (an ordinary lowering, base and index
-evaluated once). `parseRecord` also stores an unguarded `lines[0]` at a
-`string` field, which stays refused: an element read is `T | undefined`.
+- `x.k` and `x[key()]`: after the operand, and the key where there is one;
+- `x.m(arg())`: before the member is read, so the actuals are not evaluated;
+  a method dispatched on a union of shapes takes only actuals that run no
+  code, as before;
+- `x[key()] += rhs()`: after the key, where the old value is read, so the
+  right side is not evaluated; the write tests the operand again, which then
+  never throws, to be typed at the refined operand. A compound assignment to
+  an element of an array's store, `e[1] += s`, writes the store as an element
+  write does.
+
+An optional chain keeps its own test, `x?.[key()]` skipping the key where
+`x` is nullish, and a member of its result, `(x?.a).b`, is an ordinary
+access. A primitive other than `null` and `undefined` keeps its wrapper and
+prototype arms. A plain write to a member of a nullish operand is refused
+(`nullish-member-write-refused`). The producer reads a member at the
+operand's other values (`nullish-member-reads`, `nullish-member-order`,
+`invalid-nullish-member-reads`; a receiver forged without `undefined` is
+refused in `pipeline/test.mts`).
 
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
 bigints, for string concatenation, relational comparison and equality alike ([its

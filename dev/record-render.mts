@@ -239,11 +239,7 @@ function dedent(lines: string[]): string[] {
   const indents = lines.filter(l => l.trim()).map(l => /^ */.exec(l)?.[0].length ?? 0);
   const cut = indents.length ? Math.min(...indents) : 0;
   const out = lines.map(l => l.slice(cut));
-  let last = out.at(-1);
-  while (last !== undefined && !last.trim()) {
-    out.pop();
-    last = out.at(-1);
-  }
+  while (out.length && !out[out.length - 1].trim()) out.pop();
   return out;
 }
 

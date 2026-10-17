@@ -76,8 +76,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let receiver_type = match receiver, target.node with
         | Some r, _ -> expr env r
         | None, (Read (o,_) | Index (o,_)) when (match e.node with Invoke _ -> true | _ -> false) ->
+          (* The object past the member read's guard: values other than
+             `null` and `undefined`, at which the read throws. *)
           (match latest_claim o.pos with
-           | Some t -> t
+           | Some t -> (match Semantic.without_nullish t with Atoms [] -> t | p -> p)
            | None -> Atoms [Undef])
         | None, _ -> Atoms [Undef] in
       (* A closure passed where a callback is offered more parameters than it

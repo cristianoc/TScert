@@ -1948,7 +1948,10 @@ $`g`$ and $`y`$ whether the flags hold `g` and `y`,
 writes no `lastIndex`; one that is leaves it where its last match ended,
 changing one location, which holds a number by its contract
 (`map-stable-regexp-test`). At $`\Sigma_\top`$ the flags are not read, and
-no member states an effect.
+no member states an effect. A native regex's `exec` and `test` take
+`string | undefined`: they convert their argument by `ToString`, which runs no
+code on `undefined` and gives `"undefined"` (`/^undefined$/.test(undefined)`
+is true); a structural regex's keep their declared `string` (audited).
 
 **Literals and dispatch.** Each evaluation of a literal allocates a regex;
 a call of `String.prototype`'s `match`, `matchAll`, `replace`, `replaceAll`,

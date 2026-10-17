@@ -39,16 +39,54 @@ a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
   let some A := Γ[i]? | throw "internal execution plan: saved value has no type"
   return (i, A)
 
+/-- A location a reference names: a cell's or a field's, or an element of an
+array's store, each read and written where the receiver is. -/
+private inductive Location where
+  | field (object : Tm) (fld : PropKey) (contract : Ty Tree)
+  | element (object : Tm) (index : Tm) (contract : Ty Tree)
+
+private def Location.read : Location → Tm
+  | .field object fld _ => .readAt fld object
+  | .element object index _ => .elemAt (.readAt SourceTypes.storeField object) index
+
+private def Location.contract : Location → Ty Tree
+  | .field _ _ T | .element _ _ T => T
+
+/-- The write of `value` at the location, its object shifted by `shift` slots. -/
+private def Location.write (shift : Nat) (value : Tm) : Location → Except String Tm
+  | .field (.var i) fld _ => pure (.writeAt fld (.var (i+shift)) value)
+  | .element (.var i) index _ =>
+    let object := Tm.var (i+shift)
+    pure (.writeAt SourceTypes.storeField object (.setElem (.readAt SourceTypes.storeField object) index value))
+  | _ => throw "internal execution plan: reference is not a saved location"
+
+/-- The saved receiver slot of a field or element reference, and its nullish
+split (`nullishSplit`): a reference to a nullish receiver's member throws
+before the member is read. -/
+@[nospecialize] private def referenceReceiver (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) :
+    SourceExecution.Reference → Compiler (Option (Nat × Option (Ty Tree × Ty Tree)))
+  | .field _ receiver _ => do
+    match resolve scope receiver.name with
+    | some (i, _) => pure (some (i, (Γ[i]?).bind (nullishSplit (SourceTypes.graph (← table)))))
+    | none => pure none
+  | .local .. => pure none
+
+/-- `Γ` with a reference's receiver refined past its nullish guard. -/
+@[nospecialize] private def refinedReceiver (Γ : List (Ty Tree)) :
+    Option (Nat × Option (Ty Tree × Ty Tree)) → List (Ty Tree)
+  | some (i, some (_, F)) => Γ.set i F
+  | _ => Γ
+
 @[nospecialize] private partial def executionReference (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
-    (reference : SourceExecution.Reference) : Compiler (Tm × PropKey × Ty Tree) := do
+    (reference : SourceExecution.Reference) : Compiler Location := do
   match reference with
   | .local name _ =>
     match resolve scope name with
-    | some (i, .cell contract _) => return (.var i, valueField, contract)
+    | some (i, .cell contract _) => return .field (.var i) valueField contract
     -- A slot is read at what it holds now; `localSlot` keeps it from being
     -- read or written as a cell.
-    | some (i, .slot _) => return (.var i, valueField, Γ[i]?.getD [])
+    | some (i, .slot _) => return .field (.var i) valueField (Γ[i]?.getD [])
     | _ => throw s!"assignment to '{name}', which is not a mutable local"
   | .field original receiver key =>
     let (i, B) ← executionSaved scope Γ receiver
@@ -63,6 +101,10 @@ a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
         pure (.elemAt pos object (.var key.source key.name))
       | _ => throw "only field and local assignments are supported"
     let prepared ← comparisonsExpr fc prepared
+    -- An element of an array's store, at the position the key names.
+    if let .elemAt _ _ keyExpr := prepared then
+      let index ← arrayKeyTerm (← exprType fc keyExpr)
+      return .element (.var i) index (← exprType fc original)
     let fld ← match prepared with
       | .read _ fld _ => pure fld
       | .index _ (some fld) _ _ => pure (.str fld)
@@ -72,7 +114,7 @@ a union, and dropped where it contradicts every one: `T ⊓ (null | number)` is
       let some T := fs.lookup fld
         | throw (locatedRefusal (← table) original.span .storageWrite
           s!"update of a field '{fld}' the contract does not name as a writable location")
-      pure (.var i, fld, T)
+      pure (.field (.var i) fld T)
     | _ => throw (locatedRefusal (← table) original.span .storageWrite
         "an assignment needs one cell contract")
 
@@ -113,8 +155,9 @@ held in a slot. -/
   | .methodRead .. | .invokeSaved .. => LoweringAtoms.methodPlanType fc scope Γ operation
   | .snapshotSpread .. | .snapshotObject .. => snapshotPlanType fc scope Γ operation
   | .referenceRead source reference =>
-    let (_, _, T) ← executionReference fc scope Γ reference
-    executionClaim fc source (pure T)
+    let location ← executionReference fc scope
+      (refinedReceiver Γ (← referenceReceiver scope Γ reference)) reference
+    executionClaim fc source (pure location.contract)
   | .referenceWrite source _ value =>
     executionClaim fc source (do return (← executionSaved scope Γ value).2)
   | .updateSaved original _ previous _ =>
@@ -421,8 +464,14 @@ one for an increment), and the slot of the old value. -/
   | .referenceRead _ reference =>
     if let some (i, _) := localSlot scope reference then
       return ← emitAt source (.var i) (.bind next) Γ A (scope := scope)
-    let (object, fld, _) ← executionReference fc scope Γ reference
-    emitAt source (.readAt fld object) (.bind next) Γ A (scope := scope)
+    -- A nullish receiver throws before its member is read.
+    let receiver ← referenceReceiver scope Γ reference
+    let Δ := refinedReceiver Γ receiver
+    let location ← executionReference fc scope Δ reference
+    let read ← emitAt source location.read (.bind next) Δ A (scope := scope)
+    match receiver with
+    | some (i, split) => LoweringAtoms.guarded source Γ i split scope read
+    | none => pure read
   | .referenceWrite _ reference value =>
     if let some (j, contract) := localSlot scope reference then
       -- The value, checked at the contract, rebinds the slot.
@@ -431,7 +480,9 @@ one for an increment), and the slot of the old value. -/
         (fun k => if k == j+1 then 0 else k)
       let result ← emitAt source (.var i) (.bind ⟨next.label, some mapping⟩) Γ A "expression-claim" (scope := scope)
       return ← emitAt source (.var i) (.effect result) Γ contract "storage-contract" (scope := scope)
-    let (object, fld, _) ← executionReference fc scope Γ reference
+    let location ← executionReference fc scope Γ reference
+    let .field object fld _ := location
+      | throw "only field and local assignments are supported"
     let (i, _) ← executionSaved scope Γ value
     let result ← emitAt source (.var i) (.bind next) Γ A "expression-claim" (scope := scope)
     emitAt source (.writeAt fld object (.var i)) (.effect result) Γ [Labels.nul]
@@ -449,16 +500,21 @@ one for an increment), and the slot of the old value. -/
         (N::Γ) A "expression-claim" (scope := scope')
       let check ← emitAt source (.var 0) (.effect result) (N::Γ) contract "storage-contract" (scope := scope')
       return ← emitAt source (.arith op (.var old) delta) (.bind check) Γ N (scope := scope)
-    let (object, fld, _) ← executionReference fc scope Γ reference
+    -- The old value was read past the receiver's nullish guard; the write
+    -- tests the receiver again, which then never throws, so that it is
+    -- typed at the refined receiver.
+    let receiver ← referenceReceiver scope Γ reference
+    let Δ := refinedReceiver Γ receiver
+    let location ← executionReference fc scope Δ reference
     let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1)
     let result ← emitAt source (.var (if post then old+1 else 0)) (.bind ⟨next.label, some mapping⟩)
       (N::Γ) A "expression-claim" (scope := scope')
-    let object ← match object with
-      | .var i => pure (Tm.var (i+1))
-      | _ => throw "internal execution plan: reference is not a saved location"
-    let write ← emitAt source (.writeAt fld object (.var 0)) (.effect result)
-      (N::Γ) [Labels.nul] "storage-contract" (scope := scope')
+    let write ← emitAt source (← location.write 1 (.var 0)) (.effect result)
+      (N::Δ) [Labels.nul] "storage-contract" (scope := scope')
+    let write ← match receiver with
+      | some (i, split) => LoweringAtoms.guarded source (N::Γ) (i+1) split scope' write
+      | none => pure write
     emitAt source (.arith op (.var old) delta) (.bind write) Γ N (scope := scope)
   | .positionRead _ array index =>
     let (i, _) ← executionSaved scope Γ array
