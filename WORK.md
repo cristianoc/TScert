@@ -335,10 +335,7 @@ sliced with the same-file declarations it uses. The first blocker of the other i
 - `group` maps `readRecord`, which calls `parseRecord`, a certified import
   whose footprint lets the heap change: `parseTrailers` writes a tuple's
   element (`entries[entries.length - 1][1] += …`), and an array element
-  write has no bound ([footprints](#footprints)); its range branch also
-  reads the second element of `arg.split("..")`, which the model types
-  `string | undefined`: the `arg.includes("..")` test before it, which makes
-  the element present, states no fact about the split's length (group: 1).
+  write has no bound ([footprints](#footprints)) (group: 1).
 
 `printGraph` and `decodeUnits` verify with their imports from
 `control-flow` and `calculus` certified, `printGraph` in 71 s of wall time

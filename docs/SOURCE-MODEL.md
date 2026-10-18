@@ -715,11 +715,14 @@ declaration, binders of its own none, no rest parameter, no receiver, no
 guard and no promise. The two readings of
 its ordinary signature, the importer's declaration document's and the
 module's own annotation, are compared structurally, a mismatch refused:
-the parameter and result terms, and recursively every declaration either reaches, under the identity mapping of
-declaration identities, its equation, parameters, heritage and written
-applications, symbol keys by the identity of their symbol's declaration
-rather than a document's index, with a visited set for recursive
-definitions. Every field of a term takes part, array presence and host
+the parameter and result terms, and recursively every declaration either
+reaches, under the identity mapping of declaration identities: its equation,
+parameters and heritage, and the written applications listed in it, in the
+unit's own declaration alike, with their scopes, arguments and bounds. An
+array or tuple term reaches `ArrayProto`, which its lowering reads, as a
+reference reaches its target. Symbol keys compare by the identity of their
+symbol's declaration rather than a document's index, and a visited set
+closes recursive definitions. Every field of a term takes part, array presence and host
 classification among them. Each of the following is refused, named by the
 unit's origin: a qualified read naming no unit, a unit of another origin, a
 unit not eligible, a structural mismatch, a module's claims about other bytes

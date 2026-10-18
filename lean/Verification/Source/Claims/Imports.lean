@@ -51,45 +51,92 @@ partial def referenced : Json → List Json
       | _ => [])
   | _ => []
 
-/-- A declaration document's parts the comparison reads: its definitions
-and its symbols. -/
+/-- Whether a term or definition holds an array or tuple term, whose
+lowering reads the document's `ArrayProto`. -/
+partial def mentionsArray : Json → Bool
+  | .arr xs => xs.any mentionsArray
+  | j@(.obj kvs) =>
+    (match j.getObjVal? "k" with | .ok (.str "array") | .ok (.str "tuple") => true | _ => false) ||
+      kvs.toArray.any fun (_, v) => mentionsArray v
+  | _ => false
+
+/-- A declaration document's parts the comparison reads: its definitions,
+its symbols and its written applications. -/
 structure Reading where
   definitions : List Json
   symbols : Array Json
+  applications : List Json
 
 def Reading.of (declarations : Json) : Except String Reading := do
-  return ⟨← jArr declarations "definitions", (← jArr declarations "symbols").toArray⟩
+  return ⟨← jArr declarations "definitions", (← jArr declarations "symbols").toArray,
+    ← jArr declarations "applications"⟩
 
 def Reading.definition (r : Reading) (id : Json) : Option Json :=
   r.definitions.find? fun d => (d.getObjVal? "declaration").toOption == some id
+
+/-- The written applications a reading lists in the declaration `site`
+names (`module#name`), each with its symbol keys by identity and without its
+span, which only the document whose own file it is written in has. -/
+def Reading.applicationsAt (r : Reading) (site : String) : List Json :=
+  (r.applications.filter fun a => (a.getObjValAs? String "site").toOption == some site).map fun a =>
+    canonical r.symbols (a.setObjVal! "span" .null)
+
+/-- The site name of a declaration identity. -/
+def siteOf (id : Json) : String :=
+  s!"{(id.getObjValAs? String "module").toOption.getD ""}#{(id.getObjValAs? String "name").toOption.getD ""}"
 
 /-- **The two readings agree.** The terms `a` (the importer's) and `b` (the
 module's) are equal once their symbol keys name declarations, and so,
 recursively, is every declaration either reaches: its definition in each
 reading, both present and equal, or both absent (a declaration neither
-document defines, the standard library's, which both read alike). A visited
-set closes recursive definitions; a mismatch is refused, never proved
-equivalent. -/
-partial def sameReading (ra rb : Reading) (pairs : List (Json × Json)) : Except String Unit := do
+document defines, the standard library's, which both read alike). The
+declarations an array or tuple term reaches implicitly, `ArrayProto`, are
+reached as an explicit reference is. In each declaration reached, and in the
+`sites` given, both readings list the same written applications, whose
+arguments and bounds reach declarations in turn. A visited set closes
+recursive definitions; a mismatch is refused, never proved equivalent. -/
+partial def sameReading (ra rb : Reading) (sites : List String) (pairs : List (Json × Json)) :
+    Except String Unit := do
   let mut work : List Json := []
+  let mut arrays := false
   for (a, b) in pairs do
     if canonical ra.symbols a != canonical rb.symbols b then
       throw "the importer's and the module's readings of an imported signature differ"
     work := work ++ referenced a ++ referenced b
+    arrays := arrays || mentionsArray a || mentionsArray b
   let mut seen : List Json := []
+  let mut siteWork := sites
+  let mut seenSites : List String := []
   for _ in [0:100000] do
+    if let site :: rest := siteWork then
+      siteWork := rest
+      if seenSites.contains site then continue
+      seenSites := site :: seenSites
+      let as := ra.applicationsAt site
+      let bs := rb.applicationsAt site
+      if as.length != bs.length || !as.all (fun x => as.count x == bs.count x) then
+        throw s!"the importer's and the module's readings of the written applications in {site} differ"
+      for x in as do
+        work := work ++ referenced x
+        arrays := arrays || mentionsArray x
+      continue
     match work with
-    | [] => return ()
+    | [] =>
+      if arrays && !seen.contains EquationLowering.arrayProtoIdentity then
+        work := [EquationLowering.arrayProtoIdentity]
+      else return ()
     | id :: rest =>
       work := rest
       if seen.contains id then continue
       seen := id :: seen
+      siteWork := siteWork ++ [siteOf id]
       match ra.definition id, rb.definition id with
       | none, none => pure ()
       | some da, some db =>
         if canonical ra.symbols da != canonical rb.symbols db then
           throw s!"the importer's and the module's readings of a declaration differ: {id.compress}"
         work := work ++ referenced da
+        arrays := arrays || mentionsArray da
       | _, _ => throw s!"a declaration one reading of an imported signature reaches and the other lacks: {id.compress}"
   throw "the readings of an imported signature reach too many declarations"
 
@@ -162,7 +209,7 @@ private def qualifiedRead (importer : Reading) (values : List Json) (fragmentMod
   if ps.length != params.length then
     throw s!"the importer's and the module's readings of an imported signature differ: {location}#{name}"
   let module ← Reading.of (← jField m.document "declarations")
-  sameReading importer module (((← jField type "result"), (← jField unit "retType")) ::
+  sameReading importer module [s!"{location}#{name}"] (((← jField type "result"), (← jField unit "retType")) ::
     (← (ps.zip params).mapM fun (a, p) => do return (a, ← jField p "type")))
   let namePos ← jField unit "namePos"
   let some uc := (← jArr c "functions").find? fun f =>

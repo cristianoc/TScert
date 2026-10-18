@@ -974,13 +974,16 @@ export function parseFile(file: string, carriesContext = false,
  * module, and the program modules it imports functions from. */
 type Lowered = { ast: Ast; module: ModuleAst | null; imported: ImportedModule[] };
 
-/** The same value with each `module` field naming `from` naming `to`: an
- * imported module's own declarations, which its lowering names by its
- * path, named by its identity in the importer's documents. */
+/** The same value with each `module` field naming `from` naming `to`, and
+ * each written application's `site` in `from` sited in `to`: an imported
+ * module's own declarations, which its lowering names by its path, named by
+ * its identity in the importer's documents. */
 function renamedModule<T>(value: T, from: string, to: string): T {
   const rename = (v: unknown): unknown => Array.isArray(v) ? v.map(rename)
     : v && typeof v === "object"
-      ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "module" && x === from ? to : rename(x)]))
+      ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "module" && x === from ? to
+        : k === "site" && typeof x === "string" && x.startsWith(`${from}#`) ? `${to}${x.slice(from.length)}`
+        : rename(x)]))
       : v;
   // asserted: a structural copy of the value, its shape unchanged
   return rename(value) as T;

@@ -10,6 +10,12 @@ function describe(n: number): string {
 export function label(n: number): string {
   return describe(n);
 }
+export interface Bounded<T extends number> {
+  value: T;
+}
+export function unwrap(b: Bounded<number>): number {
+  return b.value;
+}
 export function tally(seen: number[], x: number): number {
   seen.push(x);
   return seen.length;

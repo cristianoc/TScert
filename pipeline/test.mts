@@ -1801,7 +1801,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // The importer's claims without their qualified reads: the imports are
   // read at their declared types, and the dense results are refused.
   const unqualified = readClaims(imported);
-  assert.equal(unqualified.qualified.length, 3, "twice, label and tally are read qualified");
+  assert.equal(unqualified.qualified.length, 4, "twice, label, tally and unwrap are read qualified");
   unqualified.qualified = [];
   // The honest evidence states its typings at the qualified signatures, which
   // the importer's document no longer has.
@@ -1842,7 +1842,33 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   writeFileSync(rebound, JSON.stringify(rebinding));
   refuse(imported, "forged-certified-rebinding", readClaims(imported),
     /certified import \.\/certified\.ts#twice: a qualified read names a unit whose module writes its binding/, rebound);
-  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature and a rebound unit refused in search and in checking\n");
+  // A module document whose `ArrayProto` lacks a member the importer's has:
+  // `tally`'s array parameter reads it implicitly, and the readings differ.
+  const prototype: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const proto = must(must(prototype.modules.find(m => m.location === "./certified.ts"), "the module").declarations
+    .definitions.find(d => d.declaration.name === "ArrayProto"), "the module's ArrayProto");
+  const members = proto.expression?.k === "object" ? proto.expression.fields : [];
+  assert.ok(members.length > 0, "ArrayProto's members");
+  members.pop();
+  const shortened = join(imported, "forged-certified-prototype.fragment.json");
+  writeFileSync(shortened, JSON.stringify(prototype));
+  refuse(imported, "forged-certified-prototype", readClaims(imported),
+    /certified import \.\/certified\.ts#tally: the importer's and the module's readings of a declaration differ: .*ArrayProto/,
+    shortened);
+  // A module document whose written application in `unwrap`'s signature
+  // states another bound: the readings of the application differ.
+  const bounded: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const application = must(must(bounded.modules.find(m => m.location === "./certified.ts"), "the module").declarations
+    .applications.find(a => a.site === "./certified.ts#unwrap"), "unwrap's written application");
+  const bound = must(application.bounds[0], "Bounded's bound");
+  assert.ok(bound.k === "atom" && bound.name === "number", "Bounded's bound is number");
+  application.bounds = [{ ...bound, name: "unknown" }];
+  const rebounded = join(imported, "forged-certified-application.fragment.json");
+  writeFileSync(rebounded, JSON.stringify(bounded));
+  refuse(imported, "forged-certified-application", readClaims(imported),
+    /certified import \.\/certified\.ts#unwrap: the importer's and the module's readings of the written applications in \.\/certified\.ts#unwrap differ/,
+    rebounded);
+  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature, a module prototype lacking a member, a differing written application and a rebound unit refused in search and in checking\n");
 }
 
 {
