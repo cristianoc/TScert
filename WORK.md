@@ -22,9 +22,9 @@ design, not its progress.
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
-| [Module composition](#module-composition) | open: certified imports designed (2026-10-17), the document shape revised for review (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
+| [Module composition](#module-composition) | open: certified imports designed (2026-10-17), the design revised and approved (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
 | [Cell facts by tag, and label slices](#cell-fact-slices) | open: label slices and reads by a record field's tag done; `decodeTarget` reads its field from a `Record<string, unknown>`, whose entries take no facts | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
-| [Decoders' dictionary reads](#decoders-dictionary-reads) | investigation, waiting for the owner | a route is chosen for reading `unknown` JSON by key |
+| [Decoders' dictionary reads](#decoders-dictionary-reads) | open: parsed JSON chosen (2026-10-17); `Array.isArray` of it leaves the built-ins' sparse `unknown[]` for its dictionary arm | the decoders of `calculus`/`control-flow` take parsed JSON and verify in their modules |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -158,7 +158,13 @@ refused. Two general routes: a key fact, that an element of
 `Object.keys(o)` names an own key of `o` while `o` is unchanged, admitting
 `o[k]` as a `for...in` entry is admitted; or a contract for `JSON.parse`
 whose result is a JSON value, plain objects and arrays of them, which the
-decoders then take instead of `unknown`.
+decoders then take instead of `unknown`. The owner chose the second. A
+dictionary type is of values meeting the array invariant
+(`builtinInvariant`), so an array may be of it, with a store of the
+built-ins' `unknown`: `Array.isArray` of a parsed JSON value then keeps the
+array arm and adds the built-ins' sparse `readonly unknown[]` for the
+dictionary arm (`arrayRefine`), and a `map` over it is sparse
+(observed with the contract stated, 2026-10-18).
 
 <a id="exceptional-footprints"></a>
 **Exceptional footprints**: a call's promise that its footprint also holds
