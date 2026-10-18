@@ -1065,7 +1065,12 @@ export function declarations(this: Gate, list: ts.VariableDeclarationList, at: N
       }
       return n.forEachChild(reads);
     };
-    const read = reads(d.initializer);
+    // A function literal's body and defaults run only when it is called,
+    // after the binding holds it: there the read is the closure's self entry
+    // (SOURCE-MODEL.md, "Recursive constants").
+    let literal: Node = d.initializer;
+    while (ts.isParenthesizedExpression(literal)) literal = literal.expression;
+    const read = ts.isArrowFunction(literal) || ts.isFunctionExpression(literal) ? undefined : reads(d.initializer);
     if (read)
       gate.fail(read, `a binding read in its own initializer is outside the fragment: ${self} is bound after its initializer runs`);
     return {

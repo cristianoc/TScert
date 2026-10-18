@@ -245,6 +245,27 @@ what `CodesSound` states. For code with a rest the evidence also lists the
 store types $`Q_\sigma`$, in the signatures' order (`Rule.funGraph arrays`), and
 each table entry the store its frame starts with (`CodeEntry.store`).
 
+A **recursive closure** is graph code of fixed arity whose frame has one more
+slot after its captures, its self entry, which every invocation fills with the
+invoked object ([graph code](SEMANTICS.md#graph-code)). Its code is checked
+with the self entry at the closure's own type $`F`$, and the closure meets
+$`F`$ (`HasTyWith.funGraphSelf`):
+
+```math
+\frac{F=\mathsf{arrs}(L,S)\quad\mathrm{Kind}_G(k,L,S)\quad\mathrm{Offers}_G(\kappa,\vec C\,F,L,S)
+      \quad\forall i.\;\Gamma\vdash_G x_i:C_i}
+     {\Gamma\vdash_G \mathsf{make}(\kappa[\vec x],\mathsf{null}):F}\ (\texttt{funGraphSelf})
+```
+
+Soundness is by induction on the level (`offers_self`): at level $`n`$, every
+invocation of the closure runs at a level $`j<n`$, where the induction
+hypothesis gives the invoked object $`F`$ at $`j`$, so the frame with the self
+entry meets the code's checked context there (`EnvOk.withSelfAt`,
+`graph_invoke_at`) and the invocation is safe at the signature's result and
+effect. The evidence is `Rule.funGraphSelf`: as `funGraph`'s, each signature an
+entry of the code table, its context the captures' types then $`F`$
+(`graphCodesCheckedSelf`).
+
 A generic closure is graph code at a scheme row $`j`$, $`G(j)=\forall\vec p.\,(L,S)`$
 with binders $`\vec p`$ (parameter rows) and signatures $`L`$ and $`S`$ over them
 (`HasTyUsing.funScheme`). Its code is checked once, at the scheme's own signatures:

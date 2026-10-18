@@ -114,6 +114,9 @@ private structure GraphFrame where
   /-- While a type guard's body is compiled: a return is claimed at its
   value's own type, the answer its promise is checked against. -/
   answers : Bool := false
+  /-- While a constant's function-literal initializer is compiled: the
+  constant, which the literal's body may read as its self entry. -/
+  selfConstant : Option String := none
 
 /-- Equation growth, obligations and nested code are shared across graph frames. -/
 private structure Built extends GraphFrame where
@@ -263,6 +266,14 @@ def withHandler (handler : Option (Target × Nat)) (action : Compiler α) : Comp
 def withAnswers (answers : Bool) (action : Compiler α) : Compiler α :=
   scopeState (fun s => { s with answers := answers })
     (fun before after => { after with answers := before.answers }) action
+
+/-- The initializer compiled in the scope is the function literal of the
+constant `name`, whose body may read it as its self entry. -/
+def withSelfConstant (name : Option String) (action : Compiler α) : Compiler α :=
+  scopeState (fun s => { s with selfConstant := name })
+    (fun before after => { after with selfConstant := before.selfConstant }) action
+
+def currentSelfConstant : Compiler (Option String) := readBuilt (·.selfConstant)
 
 /-- The claim of a return of a value of type `A` in a body returning `R`. -/
 def returnClaim (A R : Ty ι) : Compiler (Ty ι) := do

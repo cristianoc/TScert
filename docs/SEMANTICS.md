@@ -463,12 +463,14 @@ continuing by $k$, a throw out of $t$ going to the handler $x$. Neither is
 source syntax (`sourceTerm` refuses both). An environment is a list of slots
 and the value every slot past it holds (`envOf`). Invocation enters the code
 with the receiver, the parameters padded as a closure's are, then the
-captures; entering a node instantiates its expression in the environment; the
+captures, then the invoked object itself, the code's self entry (a recursive
+closure's read of itself, [recursive constants](SOURCE-MODEL.md#recursive-constants));
+entering a node instantiates its expression in the environment; the
 node's value then leaves the run or moves along an edge, whose slot map
 $\mu$ acts on the pushed environment as a program's does:
 
 ```math
-\frac{r,\vec a\ \text{values}\quad\mathrm{binds}(\kappa,r)}{h,\mathsf{invoke}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\kappa,\varrho)),r,\vec a)\to h,\mathrm{entry}_\varrho(r,\vec a)}\ (\texttt{callGraph})
+\frac{r,\vec a\ \text{values}\quad\mathrm{binds}(\kappa,r)}{h,\mathsf{invoke}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\kappa,\varrho)),r,\vec a)\to h,\mathrm{entry}^{o}_\varrho(r,\vec a)}\ (\texttt{callGraph})
 ```
 
 where the code's kind $`\kappa`$ binds the receiver (`Invoke.binds`):
@@ -487,14 +489,14 @@ first case, the receiver bound unchanged, and no step for the others, so a
 safe run calls sloppy code with objects only.
 
 ```math
-\frac{\vec a\ \text{values}}{h,\mathsf{construct}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{construct},\varrho)),\vec a)\to h,\mathrm{entry}_\varrho(\mathsf{undefined},\vec a)}\ (\texttt{constructGraph})
+\frac{\vec a\ \text{values}}{h,\mathsf{construct}(\mathsf{obj}(\mathit{fs},\mathsf{graph}(m,E,K,s,\vec c,\mathsf{construct},\varrho)),\vec a)\to h,\mathrm{entry}^{o}_\varrho(\mathsf{undefined},\vec a)}\ (\texttt{constructGraph})
 ```
 
-where code without a rest enters at once,
-$\mathrm{entry}_{\mathsf{false}}(r,\vec a)=\mathsf{goto}(E,K,s,[r,\mathrm{pad}_m(\vec a),\vec c])$,
+where $o$ is the invoked object, and code without a rest enters at once,
+$\mathrm{entry}^o_{\mathsf{false}}(r,\vec a)=\mathsf{goto}(E,K,s,[r,\mathrm{pad}_m(\vec a),\vec c,o])$,
 and code with one first allocates the actuals past its $m$ parameters as a
 fresh store, found in slot 0, below the receiver,
-$\mathrm{entry}_{\mathsf{true}}(r,\vec a)=\mathsf{let}\ x=[\vec a_{\ge m}]\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\mathrm{pad}_m(\vec a),\vec c])$
+$\mathrm{entry}^o_{\mathsf{true}}(r,\vec a)=\mathsf{let}\ x=[\vec a_{\ge m}]\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\mathrm{pad}_m(\vec a),\vec c,o])$
 (`CallArguments.graphEntry`). Padding never enters the store. Code with
 $\kappa=\mathsf{construct}$ has no call step: a plain call of a class value
 throws. `new` on code with a rest is not yet a construction

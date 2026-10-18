@@ -1847,6 +1847,45 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
 }
 
 {
+  // A recursive closure's self entry is at the closure's own claimed type,
+  // which its code must establish (SOURCE-MODEL.md, "Recursive constants"):
+  // the claim forged to a result its body does not return, or to a footprint
+  // its body exceeds, is refused in search and in checking the honest
+  // evidence, within the closure.
+  const artifacts = run("recursive-constants");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  for (const [name, label] of [["depth", "result"], ["writes", "footprint"]] as const) {
+    const claims = readClaims(artifacts);
+    const start = source.indexOf("const visit = ", source.indexOf(`function ${name}(`)) + "const visit = ".length;
+    // The literal's claim: the longest claim starting at it.
+    const claim = must(claims.functions.flatMap(f => f.expressions).filter(e => e.pos[0] === start)
+      .sort((a, b) => b.pos[1] - a.pos[1])[0], `${name}: the literal's claim`);
+    assert.ok(Array.isArray(claim.type));
+    const rows = claim.type.map(l => must(typeof l === "number" ? claims.types[l] : undefined, "a row"));
+    claim.type = rows.map(row => claims.types.push(row.map(clause => {
+      if (typeof clause !== "object" || !("arrs" in clause)) return clause;
+      const arrows = clause.arrs.arrows.map(a => {
+        const copy = structuredClone(a);
+        if (label === "result") copy.result = [rowOf(claims, "str")];
+        else copy.effect = footprintEffect(keepAll);
+        return copy;
+      });
+      return { arrs: { ...clause.arrs, arrows } };
+    })) - 1);
+    const input = writeClaims(artifacts, `forged-self-${label}`, claims);
+    const searched = produceWith(artifacts, input, `forged-self-${label}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+    for (const detail of [searched.stdout + searched.stderr, checked]) {
+      const at = must(/(?:obligation|refusal) at \[(\d+),(\d+)\)/.exec(detail), detail);
+      const body = source.indexOf(`function ${name}(`);
+      assert.ok(Number(at[1]) >= body && Number(at[2]) <= source.indexOf("\n}\n", body) + 2, detail);
+    }
+  }
+  process.stdout.write("forged recursive closures: a self type at a result and at a footprint the body does not establish refused in search and in checking\n");
+}
+
+{
   // Reading rule 1 on a stand-in host package (`pipeline/host-fixture/`,
   // whose `Node` reaches no node list), installed as the host through the
   // test-only channel: the shape omits the allocating `jsDoc`, so every form

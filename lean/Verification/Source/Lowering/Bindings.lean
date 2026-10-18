@@ -26,7 +26,12 @@ set_option maxHeartbeats 1000000
   let next ← after (bound::scope)
   let annotation ← emitAt b.init.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
     (scope := held ⟨b.name,some b.init.span⟩::scope)
-  LoweringExecution.compileExpr recursive fc scope Γ b.init annotation
+  -- A function literal reading the constant: its self entry
+  -- (SOURCE-MODEL.md, "Recursive constants").
+  let self := match b.init with
+    | .lambda .. => if b.init.freeNames.contains b.name then some b.name else none
+    | _ => none
+  withSelfConstant self (LoweringExecution.compileExpr recursive fc scope Γ b.init annotation)
 
 /-- A mutable declaration allocates one private cell at its explicit lifetime
     contract, with obligations for the annotation and initializer. -/
