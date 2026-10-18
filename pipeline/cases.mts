@@ -477,6 +477,8 @@ export const cases: Case[] = [
   { file: "invalid-let-arrow-value-import", area: "an imported `let` holding an arrow may be reassigned: its initializer states no type for it, and it is refused",
     kind: "negative", status: "unsupported", phase: "source", diagnostic: /a declared value must be an annotated constant, function or class: swapped/,
     project: "pipeline/imports-project" },
+  { file: "invalid-loop-head-own-name", area: "a loop head's binding is uninitialized while its head runs: `for (const xs of xs)` throws (run under Node), refused at the read",
+    kind: "negative", status: "unsupported", phase: "source", diagnostic: /a read of `xs` before its declaration/ },
   { ...positive("function-constant-value-import", "an imported constant holding a function literal is read at the literal's parameter and result annotations: plain, generic, a function expression"),
     project: "pipeline/imports-project" },
   { file: "invalid-function-constant-value-import", area: "an imported constant holding a function literal without a result annotation states no type and is refused",

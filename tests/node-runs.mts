@@ -283,6 +283,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-preserving-arrow-value-import: the last index is a hole in map's result, its element popped before map reached it");
   assert.equal(runImporting("invalid-builtin-iterator-return-value-import", "first(new Map()) === undefined"), true,
     "invalid-builtin-iterator-return-value-import: a done step's value is undefined, returned at string");
+  assert.equal(runExample("invalid-loop-head-own-name", `(() => { try { total([1]); return "none"; } catch (e) { return e instanceof ReferenceError; } })()`),
+    true, "invalid-loop-head-own-name: the head's read of its own binding throws a ReferenceError");
   assert.equal(runImporting("invalid-node-path-resolve-callback",
     `(() => { const xs = ["a", "b", "c"]; process.cwd = () => { xs.pop(); return "/"; }; return 2 in absolute(xs); })()`),
     false, "invalid-node-path-resolve-callback: a replaced process.cwd shrinks the array map visits, leaving a hole");

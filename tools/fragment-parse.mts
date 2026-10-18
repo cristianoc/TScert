@@ -1529,7 +1529,12 @@ export function parseFile(file: string, carriesContext = false,
           while (declaration && ts.isBindingElement(declaration)) declaration = declaration.parent?.parent;
           const initializer = declaration && ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
           const inInitializer = !!initializer && start >= initializer.getStart(source) && end <= initializer.end;
-          if (read && (start < dStart || inInitializer)) early.push(read);
+          // A loop head's binding exists, uninitialized, while the head's
+          // own expression runs: `for (const xs of xs)` throws there.
+          const loop = declaration?.parent?.parent;
+          const iterated = loop && (ts.isForOfStatement(loop) || ts.isForInStatement(loop)) ? loop.expression : undefined;
+          const inHead = !!iterated && start >= iterated.getStart(source) && end <= iterated.end;
+          if (read && (start < dStart || inInitializer || inHead)) early.push(read);
           gate.renames.set(`${start}:${end}`, renamed);
         },
         staticTypes: staticTypeNodes.map(node => gate.span(node)),
