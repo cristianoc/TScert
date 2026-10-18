@@ -1195,9 +1195,8 @@ def decodeModule (j : Json) : Except String ModuleAst := do
 
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
   fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions", "modules"]
-  -- No module is read yet: an import is read at its declaration's type.
-  let modules ← (← jArr j "modules").mapM decodeModule
-  if !modules.isEmpty then throw "imported modules are not read: certified imports are not yet admitted"
+  -- A document's modules are read apart from it (`planImports`).
+  if !(← jArr j "modules").isEmpty then throw "a document's modules are read apart from it"
   let document ← jField j "declarations"
   fieldsExactly document ["roots", "definitions", "values", "symbols", "applications"]
   if !(← jArr document "roots").isEmpty || !(← jArr document "definitions").isEmpty ||

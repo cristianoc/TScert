@@ -273,6 +273,12 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-own-property-descriptor-value: the descriptor's value is a string returned at number");
   assert.equal(runExample("invalid-record-index-named-key", "classOf([], 0)"), undefined,
     "invalid-record-index-named-key: the element past the end is undefined, whose member is undefined at string");
+  // An imported unit certified as preserving gives `map` dense results; one
+  // popping the array `map` reads leaves a hole below the result's length.
+  assert.equal(runImporting("certified-value-import", `JSON.stringify([doubled([1, 2]), labels([1, -1]), tallies([5, 6], [])])`),
+    '[[2,4],["positive","other"],[1,2]]', "certified-value-import: the results are dense");
+  assert.equal(runImporting("invalid-certified-write-value-import", "((r) => Object.keys(r).length)(zeros([1, 2, 3]))"), 2,
+    "invalid-certified-write-value-import: the result has three positions, two present");
   assert.equal(runImporting("invalid-node-exec-stdout-ignored", `run(["-e", ""])`), null,
     "invalid-node-exec-stdout-ignored: standard output not piped, the result is null at string");
   assert.equal(runExample("invalid-array-flat-map-value", "first()"), 1,

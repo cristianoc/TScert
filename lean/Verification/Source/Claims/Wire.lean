@@ -313,9 +313,12 @@ private def validFunction (T : EquationStore.State) (f : Function Tree) : Bool :
 labels. Unknown and missing fields are refused, and every label is one the
 store holds. -/
 def decodeDocument (T : EquationStore.State) (claims : Json) : Except String (Document EquationStore.State Tree) := do
-  fieldsExactly claims (["file", "sourceSha256", "types", "functions", "modules"] ++
+  fieldsExactly claims (["file", "sourceSha256", "types", "functions", "modules", "qualified"] ++
     if (claims.getObjVal? "init").isOk then ["init"] else [])
-  if !(← jArr claims "modules").isEmpty then throw "module claims are not read: certified imports are not yet admitted"
+  -- A module's claims and the qualified reads are read by `planImports`;
+  -- a document checked here has its modules' read apart.
+  if !(← jArr claims "modules").isEmpty then throw "a document's module claims are read apart from it"
+  let _ ← jArr claims "qualified"
   let functions : List (Function Tree) ← decodeStrict (← jField claims "functions")
   let init : Option (InitClaims Tree) ← match claims.getObjVal? "init" with
     | .ok j => some <$> decodeStrict j

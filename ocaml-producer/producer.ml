@@ -9,9 +9,18 @@ let () =
     print_endline (Json.encode (Json.Array (List.rev_map (fun (pos,reason) ->
       Json.Object ["pos",pos;"reason",Json.String reason]) !(state.Proposal_diagnostics.explanations))))
   | _ -> try
-    let file,flow_file = match Array.to_list Sys.argv with
-      | [_;file;flow_file] -> file,flow_file
-      | _ -> Json.fail "usage: producer [--explain] fragment.json flow.json" in
-    let result = file |> Json.read |> Source.decode |> Proposal.infer (List.map Flow.decode (Json.list (Json.read flow_file))) |> Claims.encode in
+    let file,flow_file,qualified_file = match Array.to_list Sys.argv with
+      | [_;file;flow_file] -> file,flow_file,None
+      | [_;file;flow_file;qualified] -> file,flow_file,Some qualified
+      | _ -> Json.fail "usage: producer [--explain] fragment.json flow.json [qualified.json]" in
+    (* The imports the pipeline reads qualified: each by its name, its
+       declaration identity, and its unit's certified footprint and on-throw
+       flag. *)
+    let qualified = match qualified_file with
+      | None -> []
+      | Some f -> List.map (fun q -> Json.str (Json.field "local" q),Json.field "declaration" q,
+          Source.footprint_of (Json.field "footprint" q),Json.boolean (Json.field "onThrow" q)) (Json.list (Json.read f)) in
+    let program = {(file |> Json.read |> Source.decode) with Source.qualified} in
+    let result = program |> Proposal.infer (List.map Flow.decode (Json.list (Json.read flow_file))) |> Claims.encode in
     print_endline (Json.encode result)
   with Json.Error e -> prerr_endline e; exit 2

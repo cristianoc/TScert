@@ -493,11 +493,14 @@ its module reassigns. Its terminal declaration identity is the one
 TypeScript resolves the import to, through re-exports; a re-exporting
 module's own execution is part of the runtime module graph below. Default
 imports stay refused, as the parser refuses them. Any other import is read
-at its ordinary signature.
+at its ordinary signature. Lean refuses a unit whose module's document writes
+its binding, and the parser lists no module whose code it leaves unlowered
+writes one.
 
 **Two graphs.** The **qualified-dependency graph** has an edge from a unit to
-each unit it reads at a qualified signature; it is acyclic: the pipeline
-lists no read qualified that would close a cycle in it, and Lean refuses one. The **runtime
+each unit it reads at a qualified signature. It has one level: a module's
+claims read no import qualified, and Lean refuses a module's claims that list
+one, so it has no cycle. The **runtime
 module graph** is the modules' import relation as the host evaluates it,
 ordinary imports and re-exports included; it may have cycles. Qualification
 reasons about the first; the second bears on initialisation and binding,
@@ -518,8 +521,7 @@ from the parser's resolution and snapshot, never from a claim of the
 producer's. The claims document's required `modules` array holds one claims
 document per fragment module, over that module's own type table, and the
 importer's claims list the imports it reads qualified (`qualified`), each by
-its declaration identity. The pipeline copies each module's snapshot beside
-the checked file's. A census slice keeps its own identity: a slice verified
+its declaration identity. A census slice keeps its own identity: a slice verified
 is not a certification of the module it was cut from.
 
 **Failure boundary.** A module function the parser cannot lower is absent
@@ -535,15 +537,13 @@ table: its module's initialisation (the existing initialisation unit and
 order, `Extraction.lean`), its own code at its claimed signature, the
 module's functions its code reads, and, recursively, every unit it reads
 at a qualified signature. So the certified set is the closure of the units
-the claims read qualified, together with the initialisation obligations
-behind each and the module functions they read; the module's other
-functions are not checked. Every other fact of its environment is an
+the claims read qualified under the module functions they read, together with
+the module's initialisation; the module's other functions are not checked. Every other fact of its environment is an
 explicit assumption, the
 [import assumption](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)
 its module's own run also makes. An initialiser that is not checked never
-supplies a qualified signature. Lean enforces the closure and the cycle
-policy itself: a qualified read naming a unit outside the certified set,
-or closing a cycle, is refused at its span, whatever order the producer
+supplies a qualified signature. Lean computes the closure and restricts
+each module's document and claims to it itself, whatever the producer
 chose.
 
 **Binding.** Lean reads an import at a qualified signature only where the
@@ -551,18 +551,19 @@ importer's claims list it qualified and the documents hold a unit of its
 origin: the import's declaration identity names a module whose artifact
 the fragment lists, and a function of it whose name is the declaration's
 and whose name lies in the declaration's span. The unit is eligible: one
-declaration, binders of its own none, no rest parameter. The two readings of
+declaration, binders of its own none, no rest parameter, no receiver, no
+guard and no promise. The two readings of
 its ordinary signature, the importer's declaration document's and the
 module's own annotation, are compared structurally, a mismatch refused:
-the parameter, receiver and result terms, a guard's promise, and
-recursively every declaration either reaches, under the identity mapping of
+the parameter and result terms, and recursively every declaration either reaches, under the identity mapping of
 declaration identities, its equation, parameters, heritage and written
 applications, symbol keys by the identity of their symbol's declaration
 rather than a document's index, with a visited set for recursive
 definitions. Every field of a term takes part, array presence and host
-classification among them. Each of the following is refused at the
-import's span: a qualified read naming no unit, a unit of another origin, a
-unit not eligible, a structural mismatch, and a unit whose check fails. The
+classification among them. Each of the following is refused, named by the
+unit's origin: a qualified read naming no unit, a unit of another origin, a
+unit not eligible, a structural mismatch, a module's claims about other bytes
+than its document's, and a module run whose check fails. The
 importer's evidence and the units' are checked by one `checkJson` call, so
 the evidence that certifies the effect is evidence about that declaration's
 code, not about a name.
@@ -578,12 +579,13 @@ discard further actuals, so it may be passed where a signature binding more
 parameters is expected.
 
 **Inference.** OCaml proposes each module's effects as it proposes a
-file's own (the greatest fixpoint over that module), in the order of the
-qualified-dependency graph, then the importer's claims at them. No effect
-follows from a comment, a name or a module's role. The pipeline searches
-evidence for the units first; a unit whose module's search fails, its
-footprint refuted or its initialisation unchecked, is not listed qualified,
-and the import is read at its ordinary signature. The final check is one
+file's own (the greatest fixpoint over that module), then the importer's
+claims at them. No effect
+follows from a comment, a name or a module's role. The pipeline lists
+qualified each eligible read whose unit has claims. Where the search over the
+whole document refuses a read or a module run, its footprint refuted or its
+initialisation unchecked, the pipeline withdraws those reads, proposes the
+importer again, and the import is read at its ordinary signature. The final check is one
 `checkJson` call over the whole document. Dense `map` needs a callback
 footprint that keeps dense prefixes
 ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).

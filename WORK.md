@@ -22,7 +22,8 @@ design, not its progress.
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
-| [Module composition](#module-composition) | open: certified imports designed (2026-10-17), the design revised and approved (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
+| [Module composition](#module-composition) | open: certified imports one level deep (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
+| [Certified imports across levels](#certified-imports-across-levels) | open | a module's claims read its own imports qualified, over an acyclic qualified-dependency graph, and `printGraph` verifies |
 | [Cell facts by tag, and label slices](#cell-fact-slices) | open: label slices and reads by a record field's or a dictionary entry's tag done (2026-10-18); `decodeTarget` passes an imported function as a callback | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
 | [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 29 s of evidence search, near the 30 s limit (2026-10-18); their time waits on shape-directed comparison of discriminated unions | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
 | [Optional-field truthiness over unions](#optional-field-truthiness) | open: an investigation, cause unknown | `optional-field-truthiness-union-refused` verifies |
@@ -133,12 +134,22 @@ merge result at the instance's row.
 <a id="module-composition"></a>
 **Module composition** as a Lean theorem: the step-indexed argument that
 units certified against each other's signatures compose.
-[Certified imports](docs/SOURCE-MODEL.md#certified-imports), over acyclic
-module graphs, check an imported function's code in the importer's run, at
-its effect-qualified signature. `checkJson_safe` keeps its statement.
+[Certified imports](docs/SOURCE-MODEL.md#certified-imports) check an
+imported function's code in the importer's run, at its effect-qualified
+signature. `checkJson_safe` keeps its statement.
 Combining a certified import's conclusion with the importer's is left to
 this theorem, plus the review obligation that the import binds the certified
 unit's closure ([the linking obligation](docs/SOURCE-MODEL.md#certified-imports)).
+
+<a id="certified-imports-across-levels"></a>
+**Certified imports across levels.** A module's claims read their own
+imports at ordinary signatures: Lean refuses a module's claims listing a
+read qualified, so the qualified-dependency graph has one level. `printGraph`
+passes `decodeNode`, imported from `control-flow`, to `map`, and
+`decodeNode` passes `nat`, imported from `calculus`, to `map`: its
+certificate needs a qualified read in a module run. Lifting the level needs
+each module run's own qualified reads, its module runs restricted alike, and
+Lean refusing a cycle among them.
 
 <a id="cell-fact-slices"></a>
 **Cell facts by tag, and label slices**

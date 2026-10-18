@@ -10,6 +10,7 @@
     "noEmit": true,
     "paths": {
       "@fixture/lib": ["./lib.ts"],
+      "@fixture/certified": ["./certified.ts"],
       "@fixture/relay": ["./relay.ts"],
       "@fixture/whole": ["./whole.ts", "./defaulted.ts"],
       "@fixture/defaulted": ["./defaulted.ts"],
@@ -19,6 +20,7 @@
   "include": [
     "../examples/*value-import*.ts",
     "./lib.ts",
+    "./certified.ts",
     "./relay.ts",
     "./whole.ts",
     "./defaulted.ts",

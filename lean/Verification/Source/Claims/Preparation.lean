@@ -16,7 +16,8 @@ and the generic module values. -/
 structure Prepared where
   ast : Json
   document : Document EquationStore.State Tree
-  imported : List (String × Span × Json)
+  /-- Each imported value: its name, its import's span and its declared type's labels. -/
+  imported : List (String × Span × List Tree)
   generics : List Instantiable
   /-- Each generic function's binders, by its name and position: an owned
   parameter each, with its declared bound. -/
@@ -186,7 +187,7 @@ def equationFront (ast claims : Json) (fileKey : String)
       | some a => arrayClaim a
       | none => graphClaim U)) ast
   let ast := ast.setObjVal! "declarations" emptyDeclarations
-  let imported := L.values.map fun (n, sp, U) => (n, sp, graphClaim U)
+  let imported := L.values
   let instantiate (g : GenericValue) (θ : List (String × Json)) (T : EquationStore.State) :
       Except String ((Json × List (String × Option Json)) × EquationStore.State) := do
     let θ ← θ.mapM fun (n, j) => do return (n, ← claimLabels j)

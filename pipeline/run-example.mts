@@ -20,7 +20,7 @@ export const runImporting = (file: string, expression: string): unknown => {
   const out = mkdtempSync(join(tmpdir(), "imports-"));
   const project = join(here, "imports-project");
   const relink = (text: string): string => stripTypes(text).replace(/from "@fixture\/([\w-]+)"/g, 'from "./$1.mjs"');
-  for (const name of ["lib", "relay"])
+  for (const name of ["lib", "relay", "certified"])
     writeFileSync(join(out, `${name}.mjs`), relink(readFileSync(join(project, `${name}.ts`), "utf8")));
   writeFileSync(join(out, "main.mjs"), `${relink(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))}
 console.log(JSON.stringify(${expression}));

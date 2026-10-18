@@ -11,7 +11,7 @@
 
 import type { Span } from "./span.mts";
 import type { CallEffect, ClosedFootprint, Labels, Row } from "./type-graph.mts";
-import type { SourceTypeParameter } from "./declaration-types.mts";
+import type { DeclarationIdentity, SourceTypeParameter } from "./declaration-types.mts";
 export type { Row } from "./type-graph.mts";
 
 /** A label: a row of the document's own `types`, or a tree naming a row
@@ -143,7 +143,10 @@ export interface SourceClaims<L = Label> {
   /** The module initialization unit, present exactly when the source has
    * top-level code: its entries and expressions, with no parameters. */
   init?: Pick<FunctionClaims<L>, "contracts" | "entries" | "expressions" | "arrows">;
-  /** One claims document per fragment module, in its order, over the
-   * module's own rows. */
-  modules: Omit<SourceClaims<L>, "modules">[];
+  /** Claims documents of fragment modules, each a module run's own, over
+   * its own rows, its `modules` and `qualified` empty. */
+  modules: SourceClaims<L>[];
+  /** The imports read qualified (certified imports), each by its
+   * declaration identity. */
+  qualified: DeclarationIdentity[];
 }
