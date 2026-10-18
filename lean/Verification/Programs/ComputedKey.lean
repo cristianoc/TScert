@@ -84,24 +84,28 @@ theorem numberToString_unreserved (b : UInt64) : reservedSpelling (numberToStrin
   · rw [h]; decide
   · exact digitLead_unreserved h
 
-/-- A key the model does not keep for itself: neither the prototype's nor the
-array store's. -/
+/-- A key the model does not keep for itself: not the prototype's, the array
+store's or the host classification's. -/
 def Unreserved (f : PropKey) : Prop :=
-  f ≠ CallArguments.protoField ∧ f ≠ CallArguments.arrayStoreField
+  (f ≠ CallArguments.protoField ∧ f ≠ CallArguments.arrayStoreField) ∧ f ≠ hostKey
 
 theorem unreserved_str {s : String} (h : reservedSpelling s.toList = false) : Unreserved (.str s) := by
-  refine ⟨fun he => ?_, fun he => ?_⟩
+  refine ⟨⟨fun he => ?_, fun he => ?_⟩, fun he => ?_⟩
   · have hs : s = "[[proto]]" := by
       simpa [CallArguments.protoField] using he
     subst hs; exact absurd h (by decide)
   · have hs : s = "[]" := by
       simpa [CallArguments.arrayStoreField, arrayStoreKey] using he
     subst hs; exact absurd h (by decide)
+  · have hs : s = "[[host]]" := by
+      simpa [hostKey] using he
+    subst hs; exact absurd h (by decide)
 
 theorem unreserved_sym (i : Nat) : Unreserved (.sym i) := by
-  refine ⟨fun he => ?_, fun he => ?_⟩
+  refine ⟨⟨fun he => ?_, fun he => ?_⟩, fun he => ?_⟩
   · simp [CallArguments.protoField] at he
   · simp [CallArguments.arrayStoreField, arrayStoreKey] at he
+  · simp [hostKey] at he
 
 /-- Where a value of the key's clause converts to, and that the keyed object
 owns it: the one field, or a key the class admits. -/
@@ -156,7 +160,7 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
   | some d =>
   rw [hkc] at hd
   have hdR : d ∈ expand G R := List.mem_of_elem_eq_true hd
-  obtain ⟨f, hf, ⟨hnp, hns⟩, hshape⟩ := keyed_key hkc hcv
+  obtain ⟨f, hf, ⟨⟨hnp, hns⟩, hnh⟩, hshape⟩ := keyed_key hkc hcv
   have hadmA : Adm (meaning G A) := setSem_adm (normalDenote_adm G) _
   have hval : isVal av = true := ObjectMerge.meaning_isVal hav
   have hav' : meaning G A p (trunc p (Nat.le_succ p) W) av :=
@@ -179,11 +183,14 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
     (by simp only [List.mem_singleton]; exact fun he => hnp he.symm)
   have hstore := slots_lookup_none (base := h.length) (ns := [f]) (f := CallArguments.arrayStoreField)
     (by simp only [List.mem_singleton]; exact fun he => hns he.symm)
+  have hhost := slots_lookup_none (base := h.length) (ns := [f]) (f := hostKey)
+    (by simp only [List.mem_singleton]; exact fun he => hnh he.symm)
   refine (expand_sem G R (plain_of_mem_expand hdR) j U _).mpr
     ⟨d, hdR, ?_, builtinInvariant_of_lookup hstore⟩
   rcases hshape with rfl | ⟨K, rfl, hKf⟩
   · simp only [oneField, semWithArgs]
-    refine ⟨⟨by simpa [ReferenceConjunctions.famsOf] using hrec, by simp⟩,
+    refine ⟨⟨by simpa [ReferenceConjunctions.famsOf] using hrec, by simp,
+        fun _ _ _ he => by cases he; exact hhost⟩,
       fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       by simpa using optT_nil, MethodMembers.methodT_nil _ _ _,
       fun B hB => ?_⟩
@@ -191,12 +198,13 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
     subst hB
     exact ownKeysT_slots fun g hg => by simp_all [KeyBound.admits]
   · have hcell : dictCellT K (meaning G A) j U (.objAt (slots h.length [f]) .absent (h.length + 1)) :=
-      dictCellT_of_recT hrec hown hproto fun g T hT _ => by
+      dictCellT_of_recT hrec hown hproto hhost fun g T hT _ => by
         simp only [List.zip_cons_cons, List.zip_nil_right, List.mem_singleton, Prod.mk.injEq] at hT
         obtain ⟨-, rfl⟩ := hT
         exact fun _ _ _ _ => Iff.rfl
     simp only [classDict, semWithArgs]
-    refine ⟨⟨⟨_, _, rfl, fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp⟩,
+    refine ⟨⟨⟨_, _, rfl, fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp,
+        by simp [ReferenceConjunctions.famsOf]⟩,
       fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       ⟨fun y hy => ?_, fun y hy => ?_⟩, by simpa using optT_nil, MethodMembers.methodT_nil _ _ _,
       fun B hB => ?_⟩

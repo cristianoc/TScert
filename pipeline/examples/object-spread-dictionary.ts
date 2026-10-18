@@ -23,7 +23,7 @@ export function two(
 // side's type.
 export function thenOptional(): { a?: string | number } {
   const obj1: { [k: string]: number } = {};
-  const obj2: { a?: string } = {};
+  const obj2: { a?: string; b: number } = { b: 0 };
   return { ...obj1, ...obj2 };
 }
 

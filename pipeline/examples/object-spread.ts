@@ -12,13 +12,13 @@ function after(o: { a: number }): { a: number; b: string } {
 function overwritten(o: { a: number }): { a: number } {
   return { a: 0, ...o };
 }
-function writable(o: { readonly a: number }): number {
+function writable(o: { readonly a: number; b: number }): number {
   const c = { ...o };
   c.a = 2;
   return c.a;
 }
 // An optional field the operand may hold: the result holds one or the other.
-function optionalOverlap(o: { a?: number }): { a: string | number } {
+function optionalOverlap(o: { a?: number; b: number }): { a: string | number } {
   return { a: "", ...o };
 }
 // A spread of `false` copies nothing; a fresh literal owns exactly its keys.
@@ -46,7 +46,7 @@ export function main(): number {
     copy({ a: 1 }).a +
     after({ a: 1 }).a +
     overwritten({ a: 1 }).a +
-    writable({ a: 1 }) +
+    writable({ a: 1, b: 2 }) +
     instance(new Counter()).count
   );
 }

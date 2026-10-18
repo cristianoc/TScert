@@ -1109,8 +1109,8 @@ read/value rule may succeed when ordinary derivation search cannot. -/
       let answers := (([Tag.isUndef, .isNul, .isNullish].map (·, false)) ++ observed).eraseDups.filter
         fun (t, q) => cells.any fun f => f.contents.all (·.answers t q)
       if HeapExpressionRules.fieldOperand (expand G Ref) fld && !answers.isEmpty then
-        if let [.refs fs _ _ _ _ _] := expand G Ref then
-          if let some C := fs.lookup fld then
+        if let [.refs fs _ vs _ _ _] := expand G Ref then
+          if let some C := fs.lookup fld <|> vs.lookup fld then
             let searched := expressionWithUsing G images (C :: own) suggestions aliases fuel j.context j.term C
             incomplete := incomplete <|> searched.exhaustion
             if let some e := searched.value then

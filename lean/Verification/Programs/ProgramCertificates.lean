@@ -829,14 +829,14 @@ declared bounds. -/
     | .makeAt .absent ns inits, ps =>
       match expand G j.type with
       | [.refs fs [] [] [] [] ks] =>
-        ns.Nodup ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
+        ns.Nodup ∧ hostKey ∉ ns ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
         (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
         (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocBuiltinsUsing images fs = true
       -- A literal allocated directly at a dictionary: each field an index's
       -- class may admit at exactly that index's type, each optional field
       -- absent (`HasTyUsing.allocDict`).
       | [.dict fs [] [] ix os [] [] cs] =>
-        ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ CallArguments.arrayStoreField ∉ ns ∧
+        ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ CallArguments.arrayStoreField ∉ ns ∧ hostKey ∉ ns ∧
         ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
         (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
         (∀ f ∈ fs, ∀ y ∈ ix ++ cs, y.1.may f.1 = true → f.2 = y.2) ∧
@@ -1694,7 +1694,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
   · rename_i _ ps _ _ ns inits
     split at hl
     · rename_i fs ks he
-      obtain ⟨hnd, hlen, hterms, hctx, rfl, hk, hreal⟩ := hl
+      obtain ⟨hnd, hnh, hlen, hterms, hctx, rfl, hk, hreal⟩ := hl
       have hzl : (ns.zip ps).length = ns.length := by simp [hlen]
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
@@ -1716,7 +1716,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         rfl
       have := HasTyUsing.alloc (G := G) (images := images) (Γ := Γ) (Ref := A)
         (parts := (ns.zip ps).map fun r => (r.1, r.2.type, r.2.term))
-        (by rw [hfst]; exact hnd)
+        (by rw [hfst]; exact hnd) (by rw [hfst]; exact hnh)
         (by
           intro q hq
           obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hq
@@ -1735,7 +1735,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       rw [hfst, hsnd] at this
       exact this
     · rename_i fs ix os cs he
-      obtain ⟨hnd, hnp, hns, hlen, hterms, hctx, rfl, hix, habs, hos⟩ := hl
+      obtain ⟨hnd, hnp, hns, hnh, hlen, hterms, hctx, rfl, hix, habs, hos⟩ := hl
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
         exact List.map_fst_zip (by omega)
@@ -1756,7 +1756,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         rfl
       have := HasTyUsing.allocDict (G := G) (images := images) (Γ := Γ) (Ref := A)
         (parts := (ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)) (ix := ix) (cs := cs) (os := os)
-        (by rw [hfst]; exact hnd) (by rw [hfst]; exact hnp) (by rw [hfst]; exact hns)
+        (by rw [hfst]; exact hnd) (by rw [hfst]; exact hnp) (by rw [hfst]; exact hns) (by rw [hfst]; exact hnh)
         (by
           intro q hq
           obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hq

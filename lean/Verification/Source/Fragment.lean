@@ -38,7 +38,8 @@ construct signature (`SourceClaimJson`, the module values). -/
 def selfBindingOf (cls : String) : String := cls ++ ".[[self]]"
 
 #guard reservedSourceKey (classKeyOf "C") && reservedSourceKey "[[proto]]" && reservedSourceKey "[]" &&
-  reservedSourceKey "[!x" && !reservedSourceKey "[x" && !reservedSourceKey "a"
+  reservedSourceKey "[!x" && !reservedSourceKey "[x" && !reservedSourceKey "a" &&
+  reservedSourceKey "[[host]]"
 
 /-- A key the source spells: any but a reserved one. -/
 def protoKeyName : String := "[[proto]]"

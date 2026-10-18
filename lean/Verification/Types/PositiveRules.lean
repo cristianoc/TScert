@@ -1027,7 +1027,7 @@ no index. A writable index is met so only at an uninhabited contract, where
 code holding it can add no key (`CoversWith`). -/
 abbrev CoversKeys (R : List ι → List ι → Prop) (fields views : List (PropKey × List ι))
     (bounds : List KeyBound) (ix cx : List (IndexKeys × List ι)) : Prop :=
-  ∃ K ∈ bounds, K.among = true ∧ CallArguments.protoField ∉ K.keys ∧ ∀ k ∈ K.keys,
+  ∃ K ∈ bounds, K.among = true ∧ CallArguments.protoField ∉ K.keys ∧ hostKey ∉ K.keys ∧ ∀ k ∈ K.keys,
     (∀ y ∈ ix, y.1.may k = true → ∃ p ∈ fields ++ views, p.1 = k ∧ R p.2 y.2) ∧
     ∀ y ∈ cx, y.1.may k = true → ∃ p ∈ fields, p.1 = k ∧ R p.2 y.2 ∧ R y.2 p.2
 
@@ -1396,11 +1396,31 @@ theorem covers_fields_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : 
     intro x hx
     rcases List.mem_cons.mp hx with rfl | hx
     · exact hv.1
-    · exact hv.2 _ (List.mem_map_of_mem hx)
+    · exact hv.2.1 _ (List.mem_map_of_mem hx)
   have key := covers_recs hc n hr W flds hsrc
-  exact ⟨key c (by simp), fun B hB => by
+  refine ⟨key c (by simp), fun B hB => by
     obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hB
-    exact key b (List.mem_cons_of_mem c hb)⟩
+    exact key b (List.mem_cons_of_mem c hb), fun hne => hv.2.2 fun hsrc0 => hne ?_⟩
+  -- A target field is a source field: no source field, no target field.
+  rw [List.eq_nil_iff_forall_not_mem]
+  intro q hq
+  obtain ⟨L, hL, hqL⟩ := List.mem_flatten.mp hq
+  have hL' : ∃ b ∈ c :: ds, q ∈ famsOf (mixedValues G η) b := by
+    rcases List.mem_cons.mp hL with rfl | hL
+    · exact ⟨c, List.mem_cons_self, hqL⟩
+    · obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hL
+      exact ⟨b, List.mem_cons_of_mem _ hb, hqL⟩
+  obtain ⟨b, hb, hqb⟩ := hL'
+  obtain ⟨q', hq', -⟩ := List.mem_map.mp hqb
+  obtain ⟨p, hp, -⟩ := hc b hb q' hq'
+  obtain ⟨L', hL'', hpL⟩ := List.mem_flatten.mp hp
+  have : (p.1, mixedValues G η p.2) ∈ (famsOf (mixedValues G η) a :: bs.map (famsOf (mixedValues G η))).flatten := by
+    refine List.mem_flatten.mpr ⟨famsOf (mixedValues G η) L', ?_, mem_famsOf.mpr ⟨p.2, hpL, rfl⟩⟩
+    rcases List.mem_cons.mp hL'' with rfl | hL''
+    · exact List.mem_cons_self
+    · exact List.mem_cons_of_mem _ (List.mem_map_of_mem hL'')
+  rw [hsrc0] at this
+  cases this
 
 /-- A covered view field reads a location whose contract implies its family,
 whether the source states that location invariantly or as a view. -/
@@ -1422,7 +1442,7 @@ theorem covers_views_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : L
     have hsrc : recT (famsOf (mixedValues G η) L) n W v := by
       rcases List.mem_cons.mp hL with rfl | hL
       · exact hv.1.1
-      · exact hv.1.2 _ (List.mem_map_of_mem hL)
+      · exact hv.1.2.1 _ (List.mem_map_of_mem hL)
     obtain ⟨flds, l, c0, oid, he, hf, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hsrc
     exact ⟨flds, l, c0, oid, he, hf, hl, fun j hj W' u hu => (hag j hj W' u).mp hu⟩
   intro f T hm
@@ -1474,7 +1494,7 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     intro L hL
     rcases List.mem_cons.mp hL with rfl | hL
     · exact hv.1.1
-    · exact hv.1.2 _ (List.mem_map_of_mem hL)
+    · exact hv.1.2.1 _ (List.mem_map_of_mem hL)
   -- What each source slot says of its key: present, with a contract within its
   -- type (equivalent when writable), or, for an optional slot, possibly absent
   -- with no prototype.
@@ -2409,7 +2429,7 @@ theorem fields_at {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (Prop
     have hrec : recT (famsOf (mixedValues G η) L) n W v := by
       rcases List.mem_cons.mp hL with rfl | hL
       · exact hr.1
-      · exact hr.2 _ (List.mem_map_of_mem hL)
+      · exact hr.2.1 _ (List.mem_map_of_mem hL)
     obtain ⟨flds, l, c, oid', he, hfl, hl, hag⟩ := recT_at (mem_famsOf.mpr ⟨f.2, hfL, rfl⟩) hrec
     exact ⟨flds, l, c, oid', he, hfl, hl, fun j hj U u hu => (hag j hj U u).mp hu⟩
   · obtain ⟨hf, hfl⟩ := List.mem_filter.mp hf
@@ -2428,7 +2448,7 @@ theorem fields_agree {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (P
   have hrec : recT (famsOf (mixedValues G η) L) n W v := by
     rcases List.mem_cons.mp hL with rfl | hL
     · exact hr.1
-    · exact hr.2 _ (List.mem_map_of_mem hL)
+    · exact hr.2.1 _ (List.mem_map_of_mem hL)
   exact recT_at (mem_famsOf.mpr ⟨f.2, hfL, rfl⟩) hrec
 
 /-- A present own key of an object whose own keys a bound lists is in it. -/
@@ -2450,12 +2470,13 @@ theorem covers_keys_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Li
     (hw : viewsT (famsOf (mixedValues G η) vs) n W v) (hb : ∀ K ∈ ks, ownKeysT K n W v) :
     (∀ y ∈ iy, dictViewT y.1 (mixedValues G η y.2) n W v) ∧
       ∀ y ∈ cy, dictCellT y.1 (mixedValues G η y.2) n W v := by
-  obtain ⟨K, hK, ha, hproto, hkeys⟩ := hc
+  obtain ⟨K, hK, ha, hproto, hhost, hkeys⟩ := hc
   obtain ⟨flds, oid, rfl, -⟩ := hb K hK
   have hown := hb K hK
   have hnp := ownKeysT_lookup (f := CallArguments.protoField) hown (by simp [KeyBound.admits, ha, hproto])
-  refine ⟨fun y hy => ⟨flds, oid, rfl, hnp, fun f l hl hk => ?_⟩,
-    fun y hy => ⟨flds, oid, rfl, hnp, fun f l hl hk => ?_⟩⟩
+  have hnh := ownKeysT_lookup (f := hostKey) hown (by simp [KeyBound.admits, ha, hhost])
+  refine ⟨fun y hy => ⟨flds, oid, rfl, ⟨hnp, hnh⟩, fun f l hl hk => ?_⟩,
+    fun y hy => ⟨flds, oid, rfl, ⟨hnp, hnh⟩, fun f l hl hk => ?_⟩⟩
   · obtain ⟨p, hp, hpk, hpy⟩ :=
       (hkeys _ (ownKeysT_mem ha hown hl)).1 y hy (IndexKeys.may_of_admits hk)
     obtain ⟨flds', l', c, oid', he, hl', hc, hag⟩ := fields_at hrefs hw p hp
@@ -2647,8 +2668,8 @@ theorem covers_bag_views_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
     (hv : CallableConjunctions.viewsT (famsOf (mixedValues G η) vs) n W v) :
     CallableConjunctions.viewsT (famsOf (mixedValues G η) ws) n W v := by
   obtain ⟨flds, code, oid, rfl, -, ha⟩ := hp.1
-  have hsrc : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W
-      (.objAt flds .absent oid) := by
+  have hsrc : recT (famsOf (mixedValues G η) a) n W (.objAt flds .absent oid) ∧
+      ∀ B ∈ bs.map (famsOf (mixedValues G η)), recT B n W (.objAt flds .absent oid) := by
     refine ⟨ha, fun B hB => ?_⟩
     obtain ⟨flds', code', oid', he, -, hb⟩ := hp.2 B hB
     cases he

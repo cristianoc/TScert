@@ -288,12 +288,15 @@ def presentViews (k : PropKey) (ds : List (IndexKeys × α)) : List (PropKey × 
 /-- The record clause `c` with its optional key `k` taken as present, and
 the dictionary clause with `k` a view at each index type whose class surely
 admits it. Other clauses, and a record without that optional key, are
-unchanged. -/
+unchanged. A writable optional key becomes an invariant field only of a
+record whose objects are ordinary (an invariant field already, or a closed
+own-key bound): a field a host object might hold is read as a view. -/
 def promote (k : PropKey) : Clause α → Clause α
   | .refs a bs vs os ms ks =>
     match os.find? (fun o => decide (o.key = k)) with
     | some o =>
-      if o.readonly then .refs a bs (vs ++ [(k, o.type)]) os ms ks
+      if o.readonly || ((a :: bs).flatten.isEmpty && !ks.any KeyBound.closed) then
+        .refs a bs (vs ++ [(k, o.type)]) os ms ks
       else .refs (a ++ [(k, o.type)]) bs vs os ms ks
     | none => .refs a bs vs os ms ks
   | .dict a bs vs ds os ms ks cs => .dict a bs (vs ++ presentViews k ds) ds os ms ks cs
@@ -329,18 +332,33 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
           cases hp
       have hl' : flds.lookup (o.map X).key = some l := by simpa [OptionalField.map, hkey] using hl
       obtain ⟨c', hw, hsc⟩ := optT_present hmem' hopt hl'
-      cases hro : o.readonly
-      · simp only [Bool.false_eq_true, ↓reduceIte]
-        refine ⟨⟨⟨flds, oid, rfl, ?_⟩, hbs⟩, hview, hopt, hmeth, hkeys⟩
-        intro f T hm
-        simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
-          List.map_cons, List.map_nil, List.mem_singleton] at hm
-        rcases hm with hm | hm
-        · exact hrec f T hm
-        · cases hm
-          refine ⟨l, c', hl, hw, fun j hj W' u => ⟨(hsc j hj W' u).1, ?_⟩⟩
-          exact (hsc j hj W' u).2 (by simp [OptionalField.map, hro])
-      · simp only [↓reduceIte]
+      by_cases hcond : (o.readonly || ((a :: bs).flatten.isEmpty && !ks.any KeyBound.closed)) = false
+      · rw [if_neg (by rw [hcond]; exact Bool.false_ne_true)]
+        simp only [Bool.or_eq_false_iff, Bool.and_eq_false_iff, Bool.not_eq_false'] at hcond
+        have hro : o.readonly = false := hcond.1
+        refine ⟨⟨⟨flds, oid, rfl, ?_⟩, hbs.1, fun _ => ?_⟩, hview, hopt, hmeth, hkeys⟩
+        · intro f T hm
+          simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
+            List.map_cons, List.map_nil, List.mem_singleton] at hm
+          rcases hm with hm | hm
+          · exact hrec f T hm
+          · cases hm
+            refine ⟨l, c', hl, hw, fun j hj W' u => ⟨(hsc j hj W' u).1, ?_⟩⟩
+            exact (hsc j hj W' u).2 (by simp [OptionalField.map, hro])
+        · by_cases hne : (a :: bs).flatten = []
+          · have hc : ks.any KeyBound.closed = true := by
+              rcases hcond.2 with h | h
+              · simp [hne] at h
+              · exact h
+            obtain ⟨K, hK, hKc⟩ := List.any_eq_true.mp hc
+            intro flds' oid' he
+            cases he
+            exact KeyBound.closed_lookup hKc (hkeys K hK)
+          · exact hbs.2 (ReferenceConjunctions.famsOf_flatten_ne hne)
+      · have hc' : (o.readonly || ((a :: bs).flatten.isEmpty && !ks.any KeyBound.closed)) = true := by
+          revert hcond
+          cases (o.readonly || ((a :: bs).flatten.isEmpty && !ks.any KeyBound.closed)) <;> simp
+        rw [if_pos hc']
         refine ⟨⟨⟨flds, oid, rfl, hrec⟩, hbs⟩, ?_, hopt, hmeth, hkeys⟩
         intro f T hm
         simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
@@ -366,7 +384,7 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
         | some l => exact ⟨l, rfl⟩
         | none =>
           have hp := hk flds .absent oid rfl hlk
-          rw [hnp] at hp
+          rw [hnp.1] at hp
           cases hp
       obtain ⟨c, hw, hag⟩ := dictViewT_present (hd x hxd) (IndexKeys.surely_admits hs) hl
       exact .inl (viewT_single ⟨flds, l, c, oid, rfl, hl, hw, hag⟩)
@@ -389,6 +407,27 @@ def weaker [DecidableEq α] : Clause α → Clause α → Bool
       within ms ms' && within ks ks' && within cs cs'
   | _, _ => false
 
+/-- Asking fewer operands names an invariant field only where asking more
+does. -/
+theorem fewer_named [DecidableEq α] {X : α → Fam} {a a' : List (PropKey × α)}
+    {bs bs' : List (List (PropKey × α))} (ha : within a a' = true) (hb : within bs bs' = true)
+    (hne : (ReferenceConjunctions.famsOf X a :: bs.map (ReferenceConjunctions.famsOf X)).flatten ≠ []) :
+    (ReferenceConjunctions.famsOf X a' :: bs'.map (ReferenceConjunctions.famsOf X)).flatten ≠ [] := by
+  intro he
+  apply hne
+  rw [List.eq_nil_iff_forall_not_mem]
+  intro q hq
+  obtain ⟨L, hL, hqL⟩ := List.mem_flatten.mp hq
+  have hm : q ∈ (ReferenceConjunctions.famsOf X a' :: bs'.map (ReferenceConjunctions.famsOf X)).flatten := by
+    rcases List.mem_cons.mp hL with rfl | hL
+    · obtain ⟨⟨f, i⟩, hi, rfl⟩ := List.mem_map.mp hqL
+      exact List.mem_flatten.mpr ⟨_, List.mem_cons_self,
+        ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩⟩
+    · obtain ⟨b, hb', rfl⟩ := List.mem_map.mp hL
+      exact List.mem_flatten.mpr ⟨_, List.mem_cons_of_mem _ (List.mem_map_of_mem (within_mem hb hb')), hqL⟩
+  rw [he] at hm
+  cases hm
+
 theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c : Clause α} {n W v}
     (hw : weaker d c = true) (hc : semWithArgs Ξ X P c n W v) : semWithArgs Ξ X P d n W v := by
   cases d with
@@ -398,12 +437,13 @@ theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c 
       simp only [weaker, Bool.and_eq_true] at hw
       obtain ⟨⟨⟨⟨⟨ha, hb⟩, hv⟩, ho⟩, hm⟩, hk⟩ := hw
       obtain ⟨⟨⟨flds, oid, hvf, hrec⟩, hbs⟩, hview, hopt, hmeth, hkeys⟩ := hc
-      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_⟩, fun B hB => ?_⟩, fun f T hmem => ?_, ?_,
+      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_⟩, fun B hB => ?_,
+        fun hne => hbs.2 (fewer_named ha hb hne)⟩, fun f T hmem => ?_, ?_,
         fun m hm' => ?_, fun K hK => hkeys K (within_mem hk hK)⟩
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
         exact hrec f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
       · obtain ⟨B', hB', rfl⟩ := List.mem_map.mp hB
-        exact hbs _ (List.mem_map.mpr ⟨B', within_mem hb hB', rfl⟩)
+        exact hbs.1 _ (List.mem_map.mpr ⟨B', within_mem hb hB', rfl⟩)
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
         exact hview f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem hv hi, rfl⟩)
       · obtain ⟨flds', oid', hv', hp, hf⟩ := hopt
@@ -421,13 +461,14 @@ theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c 
       simp only [weaker, Bool.and_eq_true] at hw
       obtain ⟨⟨⟨⟨⟨⟨⟨ha, hb⟩, hv⟩, hds⟩, ho⟩, hm⟩, hk⟩, hcs⟩ := hw
       obtain ⟨⟨⟨flds, oid, hvf, hrec⟩, hbs⟩, hview, ⟨hd, hc⟩, hopt, hmeth, hkeys⟩ := hc
-      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_⟩, fun B hB => ?_⟩, fun f T hmem => ?_,
+      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_⟩, fun B hB => ?_,
+        fun hne => hbs.2 (fewer_named ha hb hne)⟩, fun f T hmem => ?_,
         ⟨fun x hx => hd x (within_mem hds hx), fun x hx => hc x (within_mem hcs hx)⟩, ?_,
         fun m hm' => ?_, fun K hK => hkeys K (within_mem hk hK)⟩
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
         exact hrec f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
       · obtain ⟨B', hB', rfl⟩ := List.mem_map.mp hB
-        exact hbs _ (List.mem_map.mpr ⟨B', within_mem hb hB', rfl⟩)
+        exact hbs.1 _ (List.mem_map.mpr ⟨B', within_mem hb hB', rfl⟩)
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
         exact hview f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem hv hi, rfl⟩)
       · obtain ⟨flds', oid', hv', hp, hf⟩ := hopt
@@ -751,7 +792,8 @@ theorem builtinArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
       refine ⟨L, List.mem_singleton_self L, (unfold_plain hplain n W _).mpr
         ⟨.refs [] [] [(CallArguments.arrayStoreField, S), (CallArguments.protoField, r.proto)] [] []
           [⟨false, r.keys⟩], by rw [hGL]; simp, ?_, ?_⟩⟩
-      · refine ⟨⟨⟨flds, oid, rfl, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp⟩,
+      · refine ⟨⟨⟨flds, oid, rfl, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp,
+          by simp [ReferenceConjunctions.famsOf]⟩,
           fun f T hm => ?_, by simpa [OptionalField.map] using optT_nil,
           MethodMembers.methodT_nil _ _ _, fun K hK => ?_⟩
         · simp only [ReferenceConjunctions.famsOf, List.map_cons, List.map_nil, List.mem_cons,

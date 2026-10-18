@@ -13,8 +13,10 @@ The pipeline implements namespace imports
 ([derived source forms](SOURCE-ELABORATION.md#derived-source-forms)), host
 enums (reading rule 3, [enums](SOURCE-CONTRACTS.md#enums)), the check C1,
 the bitwise operators, reading rule 1 (the host types' members as readonly
-views, `jsDoc` omitted from its shape, checked by C4 under Node) and C0's
-binding of the host package to the audited installation's declarations;
+views, `jsDoc` omitted from its shape, checked by C4 under Node), C0's
+binding of the host package to the audited installation's declarations, and
+the host classification with R8 for the steps that merge objects (an object
+spread, an object pattern's rest, `Object.assign` and a key-adding write);
 the other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
@@ -281,10 +283,11 @@ are stuck on one and carry an obligation excluding it.
 #### The host classification
 
 Every object of the model carries a classification, **host** or
-**ordinary**, in its immutable descriptor (the `objAt` term's call code,
-which fixes a function's code and a bound function's target): fixed when
-the object is allocated, or, for an object of the external heap, when it
-first enters the world, and never changed. World extension (`Adm.mono`) and
+**ordinary**, in its field map, which maps each own key to a location and is
+fixed with the object as its call code is: a host object owns the model's
+reserved key `[[host]]`, which no source key spells. The classification is
+fixed when the object is allocated, or, for an object of the external heap,
+when it first enters the world, and never changed. World extension (`Adm.mono`) and
 truncation to a lower step index (`Adm.down`) keep every value, so they keep
 every classification. Exactly the package's instances and its node lists
 are host; no step of the calculus allocates one, and a host entry's result
@@ -412,9 +415,18 @@ transparent entry may.
 
 #### Lean
 
-The host classification is a constructor of the object descriptor; the
-families listed above admit it or not as stated, the merge and
-`Object.assign` steps are stuck on it, and the stated parameter of the
+The host classification is the reserved key `[[host]]` (`hostKey`) of an
+object's field map, beside the model's `[[proto]]`, `[]` and `[[code]]`. No
+source key spells it, since the model spells a JavaScript string key apart
+from its own keys (`escapeKey`), so neither a written key, a computed one
+nor `in` reaches it; no certified allocation makes one, since the literal
+rules exclude the key (`HasTyWith.alloc`, `allocDict`), a merge copies no
+model key (`copiedKey`, `mergeParts_host`) and a computed key is never one
+(`Unreserved`). The families listed above admit it or not as stated
+(`refsT` of a non-empty field list, `dictViewT`, `dictCellT`, an own-key
+bound without the key, `NoHost`), the merge step, which `Object.assign`
+lowers to, is stuck on it (`ownAll`, `ownData`) and its rule requires
+`hostFree` of every operand clause (`MergeOk`, `hostFree_sound`), and the stated parameter of the
 obligated `Object` members is the family of **non-host values**: the
 primitives, the callables and the ordinary-classified objects. The
 checker's admission rule for an argument at that parameter is
@@ -482,7 +494,10 @@ and the field slice's exclusion is timeless.
 The refinements of `unknown` (`typeof`, `in`, `Array.isArray`) must give
 readonly views or optional fields, so that no writable view of a host object
 arises from `unknown` either. This is an obligation on the existing
-refinement rules, which the provenance controls of [Tests](#tests) check.
+refinement rules, which the provenance controls of [Tests](#tests) check. A
+test finding a writable optional key present reads it as an invariant field
+only on a record excluding host values, and as a readonly view otherwise
+(`BranchRefinement.promote`).
 
 ## The node invariant
 
@@ -969,14 +984,14 @@ the corpus runs are regression evidence, not proofs.
 - **T7 (stated type guards).** For each stated guard $`g`$ promising $`X`$:
   when $`g`$ returns `true` on a value of a host type, the members $`X`$
   adds over `Type` return values of their declared types.
-- **T8 (external code).** Every value code outside the certified units
+- **T8 (external code).** Every value code outside the linked certified closure
   gives a certified function or closure meets the classified
   interpretation recursively: its arguments, the results of external
   functions it calls, the arguments external code passes to its callbacks,
   and every location reachable from them hold no host object where their
   contract excludes one. An external callable's contract respects the
   operations' obligations: no external declaration gives an obligated
-  library value (`Object.keys` under another name) at an ordinary function
+  library value (`Object.values` under another name) at an ordinary function
   type. For the front end, the external entries are the package's modules
   (`typescript/unstable/ast`, `typescript/unstable/sync`, under T1, T3 and
   T6); the members of `node:fs`, `node:path`, `node:crypto` and
@@ -985,7 +1000,12 @@ the corpus runs are regression evidence, not proofs.
   listed overloads (`execFileSync`, `writeFileSync`), every other one an
   assumption of this clause needing its own review; and the front end's own
   functions not yet verified, which call verified ones, for each of which
-  the clause is an assumption until it is verified.
+  the clause is an assumption until it, its initialization and its
+  dependencies are in the linked certified closure. Inside that closure a
+  call or a return is an internal edge, whose classified values the checking
+  of both sides gives; the clause stays on external callers and callbacks,
+  uncertified imports, native results and the storage they reach, and the
+  environment the closure captures.
 
 ## Restrictions
 
@@ -1013,6 +1033,7 @@ JavaScript and could be admitted with more machinery:
 | L4  | A member whose read allocates is refused at its read; it could be stated as a host operation returning a fresh array | Reading `node.jsDoc`  |
 | L5  | A host parameter of a branded type is refused; an opaque primitive type would admit the package's own values | Passing a `Path` back to `getSourceFileMetadataByPath` |
 | L6  | A host class member outside its named view is refused at its use        | Calling a `Checker` method the view does not list                   |
+| L7  | A merge's accumulator needs a type excluding host values, which a fresh copy's type states only through a field, a closed bound or an index | A spread after a spread of a value whose copy states none (`{ ...c, n: 1 }` with `c` holding only private fields); a key-adding write on a local annotated by optional fields alone (`const o: { a?: number } = {}; o.a = 3`) |
 
 The front end uses `isTypeAliasDeclaration` (24 times) and
 `isImportDeclaration` (5 times) and then reads members the JavaScript kinds

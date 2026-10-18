@@ -14,16 +14,20 @@ namespace Verification.ReferenceConjunctions
 abbrev Fields := List (PropKey × Fam)
 
 def refsT (A : Fields) (Bs : List Fields) : Fam := fun n W v =>
-  recT A n W v ∧ ∀ B ∈ Bs, recT B n W v
+  recT A n W v ∧ (∀ B ∈ Bs, recT B n W v) ∧ ((A :: Bs).flatten ≠ [] → NoHost v)
 
 theorem adm (A : Fields) (Bs : List Fields) : Adm (refsT A Bs) := by
   constructor
   · intro n W v h
     exact ⟨(recT_adm A).down n W v h.1,
-      fun B hb => (recT_adm B).down n W v (h.2 B hb)⟩
+      fun B hb => (recT_adm B).down n W v (h.2.1 B hb), h.2.2⟩
   · intro n W U hx v h
     exact ⟨(recT_adm A).mono n W U hx v h.1,
-      fun B hb => (recT_adm B).mono n W U hx v (h.2 B hb)⟩
+      fun B hb => (recT_adm B).mono n W U hx v (h.2.1 B hb), h.2.2⟩
+
+/-- A conjunction naming an invariant field admits no host object. -/
+theorem noHost {A : Fields} {Bs : List Fields} {n : Nat} {W : WorldT n} {v : Val}
+    (h : refsT A Bs n W v) (hne : (A :: Bs).flatten ≠ []) : NoHost v := h.2.2 hne
 
 /-- The families a label map denotes, field by field. -/
 def famsOf {ι : Type} (X : ι → Fam) (fs : List (PropKey × ι)) : Fields :=
@@ -38,6 +42,16 @@ theorem mem_famsOf {ι : Type} {X : ι → Fam} {fs : List (PropKey × ι)} {f :
     exact ⟨i, hp, rfl⟩
   · rintro ⟨i, hi, rfl⟩
     exact ⟨(f, i), hi, rfl⟩
+
+/-- Naming an invariant field is a fact about the labels, whatever they
+denote. -/
+theorem famsOf_flatten_ne {ι : Type} {X : ι → Fam} {a : List (PropKey × ι)} {bs : List (List (PropKey × ι))}
+    (h : (a :: bs).flatten ≠ []) : (famsOf X a :: bs.map (famsOf X)).flatten ≠ [] := by
+  intro he
+  apply h
+  simp only [List.flatten_cons, List.append_eq_nil_iff, List.flatten_eq_nil_iff, List.mem_map,
+    forall_exists_index, and_imp, forall_apply_eq_imp_iff₂, famsOf, List.map_eq_nil_iff] at he ⊢
+  exact he
 
 theorem recT_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι)) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
@@ -100,14 +114,19 @@ theorem congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι))
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     refsT (famsOf X a) (bs.map (famsOf X)) n W v ↔
       refsT (famsOf Y a) (bs.map (famsOf Y)) n W v := by
+  have hne : ∀ Z : ι → Fam, (famsOf Z a :: bs.map (famsOf Z)).flatten = [] ↔ (a :: bs).flatten = [] := by
+    intro Z
+    simp [famsOf, List.flatten_eq_nil_iff]
   simp only [refsT, List.forall_mem_map]
   constructor
-  · rintro ⟨ha, hb⟩
+  · rintro ⟨ha, hb, hh⟩
     exact ⟨(recT_congr_below X Y a n h W v).mp ha,
-      fun b hm => (recT_congr_below X Y b n h W v).mp (hb b hm)⟩
-  · rintro ⟨ha, hb⟩
+      fun b hm => (recT_congr_below X Y b n h W v).mp (hb b hm),
+      fun hy => hh fun hx => hy ((hne Y).mpr ((hne X).mp hx))⟩
+  · rintro ⟨ha, hb, hh⟩
     exact ⟨(recT_congr_below X Y a n h W v).mpr ha,
-      fun b hm => (recT_congr_below X Y b n h W v).mpr (hb b hm)⟩
+      fun b hm => (recT_congr_below X Y b n h W v).mpr (hb b hm),
+      fun hx => hh fun hy => hx ((hne X).mpr ((hne Y).mp hy))⟩
 
 /-- One operand naming the fields of two: a value has one own-field map, so
 the two operands' fields are fields of that one map, and one operand listing
@@ -130,9 +149,21 @@ into one: the record the meet of two object contracts is, whose named fields
 the read rules find in its first operand. -/
 theorem flatten (A C : Fields) (Bs Ds : List Fields) (n : Nat) (W : WorldT n) (v : Val) :
     refsT (A ++ C) (Bs ++ Ds) n W v ↔ interT (refsT A Bs) (refsT C Ds) n W v := by
+  have hfl : ((A ++ C) :: (Bs ++ Ds)).flatten ≠ [] ↔ (A :: Bs).flatten ≠ [] ∨ (C :: Ds).flatten ≠ [] := by
+    simp only [List.flatten_cons, List.flatten_append, ne_eq, List.append_eq_nil_iff]
+    constructor
+    · intro h
+      by_cases h1 : A = [] ∧ Bs.flatten = []
+      · exact .inr fun h2 => h ⟨⟨h1.1, h2.1⟩, h1.2, h2.2⟩
+      · exact .inl h1
+    · rintro (h | h) ⟨⟨ha, hc⟩, hb, hd⟩
+      · exact h ⟨ha, hb⟩
+      · exact h ⟨hc, hd⟩
   simp only [refsT, recT_append, interT, List.mem_append, or_imp, forall_and]
   constructor
-  · rintro ⟨⟨ha, hc⟩, hb, hd⟩; exact ⟨⟨ha, hb⟩, hc, hd⟩
-  · rintro ⟨⟨ha, hb⟩, hc, hd⟩; exact ⟨⟨ha, hc⟩, hb, hd⟩
+  · rintro ⟨⟨ha, hc⟩, ⟨hb, hd⟩, hh⟩
+    exact ⟨⟨ha, hb, fun hn => hh (hfl.mpr (.inl hn))⟩, hc, hd, fun hn => hh (hfl.mpr (.inr hn))⟩
+  · rintro ⟨⟨ha, hb, hh1⟩, hc, hd, hh2⟩
+    exact ⟨⟨ha, hc⟩, ⟨hb, hd⟩, fun hn => (hfl.mp hn).elim hh1 hh2⟩
 
 end Verification.ReferenceConjunctions

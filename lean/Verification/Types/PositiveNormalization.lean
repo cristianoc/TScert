@@ -668,7 +668,7 @@ theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause 
         have hrec : recT (famsOf X L) n W v := by
           rcases List.mem_cons.mp hL with rfl | hL
           · exact hr.1
-          · exact hr.2 _ (List.mem_map_of_mem hL)
+          · exact hr.2.1 _ (List.mem_map_of_mem hL)
         obtain ⟨flds, l, -, oid, he, hl, -⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hrec
         exact ⟨flds, l, oid, he, hl⟩
       · obtain ⟨hp, hpl⟩ := List.mem_filter.mp hp
@@ -697,7 +697,7 @@ theorem semWithArgs_owns {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n
       have hrec : recT (famsOf X L) n W v := by
         rcases List.mem_cons.mp hL with rfl | hL
         · exact hr.1
-        · exact hr.2 _ (List.mem_map_of_mem hL)
+        · exact hr.2.1 _ (List.mem_map_of_mem hL)
       obtain ⟨flds, l, -, oid, he, hl, -⟩ := recT_at (mem_famsOf.mpr ⟨p.2, hpL, rfl⟩) hrec
       exact ⟨flds, l, oid, he, hl⟩
     · obtain ⟨hp, hpl⟩ := List.mem_filter.mp hp

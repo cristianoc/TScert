@@ -130,11 +130,12 @@ the allocation of both, $b$'s over $a$'s:
      {h,\ \mathsf{merge}_\delta(v_a,v_b)\to h,\ \mathsf{makeAt}(\mathsf{absent},\ P\lhd(Q\setminus\delta))}\ (\texttt{mergeV})
 ```
 
-where $\mathsf{own}_h(\mathsf{obj}(\mathit{fs},\mathsf{absent}))$ is each key of
+where $\mathsf{own}_h(\mathsf{obj}(\mathit{fs},\mathsf{absent}))$, of an
+object whose $\mathit{fs}$ lacks the host key $\kappa_{\mathsf{host}}$, is each key of
 $\mathit{fs}$ but $\sigma$ at its value (the first entry of a key, as a read
 finds it); $\mathsf{data}_h(\mathsf{obj}(\mathit{fs},c))$, of an object with
-any call code $c$, is each string key of $\mathit{fs}$ but $\sigma$, $\pi$ and
-the code field $\kappa_{\mathsf{code}}$ at its value, then, for an array, each
+any call code $c$ but a host object, is each string key of $\mathit{fs}$ but $\sigma$, $\pi$,
+the code field $\kappa_{\mathsf{code}}$ and $\kappa_{\mathsf{host}}$ at its value, then, for an array, each
 element under its index's decimal spelling; $\mathsf{data}_h$ of a string is
 each code unit, a one-unit string as `elemAt` reads it, under its index's
 decimal spelling, as JavaScript's string wrapper owns them enumerable
@@ -147,7 +148,9 @@ creates holds one field, under $\kappa_{\mathsf{code}}$ (`codeField`, spelled
 takes none of it, as JavaScript's function owns no enumerable property. A
 class value the program creates holds that field and its static fields, which
 a copy takes, as JavaScript's class owns each static field as an enumerable
-data property. A
+data property. A host object (`hostKey`, spelled `[[host]]`, owned by the
+package's instances and node lists, [restricted values](COMPILER-API.md#restricted-values))
+has neither, so a merge of one is stuck. A
 value the heap lacks, or a term that is not a value there, reads as
 `undefined`, so the step never depends on one (`heapVal`). It allocates
 nothing itself; the `makeAt` it steps to does, as a literal's. Symbol-keyed
@@ -326,7 +329,8 @@ on any other key is stuck:
 ```
 
 The model keeps keys for itself: the array store's `[]`, and names in double
-brackets, the prototype's `[[proto]]`, a function's `[[code]]` and a class's
+brackets, the prototype's `[[proto]]`, a function's `[[code]]`, a host
+object's `[[host]]` and a class's
 prototype object's own key. JavaScript's string key $`s`$ is represented
 under $`\mathsf{esc}(s)`$ (`escapeKey`), which prefixes `[!` to a reserved
 spelling and to one beginning `[!`, and is $`s`$ otherwise:
