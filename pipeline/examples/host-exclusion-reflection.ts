@@ -19,3 +19,8 @@ export function descriptor(o: { a: number }): boolean {
 export function log(n: number, s: string): void {
   console.log(n, s);
 }
+// Key enumeration is transparent: a fresh array of strings. A member read at
+// an enumerated key reads only the stated member the key is tested to be.
+export function keyed(o: { readonly a: number }): unknown[] {
+  return Object.keys(o).map((k) => (k === "a" ? o[k] : undefined));
+}
