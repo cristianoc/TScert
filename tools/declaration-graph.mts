@@ -2054,24 +2054,37 @@ export function collectDeclarations(file: string, options: {
               ts.isMethodDeclaration(declaration) || ts.isGetAccessorDeclaration(declaration) ||
               ts.isSetAccessorDeclaration(declaration))))
             throw Error(`the contextual record ${text} has a member ${p.name} no object contract states (a method, an accessor or a symbol key), which an annotation states`);
-          // A member written at a type that names none of its declaration's
-          // binders is that written type, as the annotation reader reads it
-          // (an optional member's without the `undefined` TypeScript adds
-          // where it is read); any other is TypeScript's instantiation.
-          const node = declaration && (ts.isPropertySignatureDeclaration(declaration) ||
+          const member = checker.getTypeOfSymbol(p);
+          if (!member) throw Error(`TypeScript gives the member ${p.name} of ${text} no type`);
+          const optional = (p.flags & SymbolFlags.Optional) !== 0;
+          // A member of the record's own type literal is described by its
+          // syntax: its modifiers, and its written type where that names
+          // none of the literal's binders, read as the annotation reader
+          // reads it. A mapped type's member keeps its originating property
+          // as declaration, which describes it no more: it, and an object
+          // literal's, is the member TypeScript instantiates, readonly where
+          // the instantiation makes it so (`checkFlags & 8`).
+          const own = !!declaration && !!only && ts.isTypeLiteralNode(only) && declaration.parent === only &&
+            (ts.isPropertySignatureDeclaration(declaration) || ts.isPropertyDeclaration(declaration));
+          const node = own && declaration && (ts.isPropertySignatureDeclaration(declaration) ||
             ts.isPropertyDeclaration(declaration)) ? declaration.type : undefined;
           const binders = declaration ? enclosingBinders(declaration) : [];
           const mentions = (n: Node): boolean => (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) &&
             binders.includes(n.typeName.text)) || (n.forEachChild(c => mentions(c) || undefined) ?? false);
-          const member = checker.getTypeOfSymbol(p);
-          if (!member) throw Error(`TypeScript gives the member ${p.name} of ${text} no type`);
-          const memberType = node && declaration && !libraryFile(declaration.getSourceFile()) && !mentions(node)
+          const writtenType = !!node && !!declaration && !libraryFile(declaration.getSourceFile()) && !mentions(node);
+          // An optional member's present value is its written type; where
+          // TypeScript gives only the type it reads, with the `undefined`
+          // optionality adds, the written contract is not recovered, save
+          // for a member read at `undefined` alone (an object literal's
+          // union normalization).
+          if (optional && !writtenType && !(member.flags & TypeFlags.Undefined && !member.isUnionType()))
+            throw Error(`the contextual record ${text} has an optional member ${p.name} at a type TypeScript instantiates, whose written optional contract the reader does not recover; an annotation states it`);
+          const memberType = writtenType && node && declaration
             ? computedContext.annotation(node, declaration, binders) : contextualTerm(member, span);
-          const written = !!declaration && childrenOf(declaration, "modifiers").some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword);
-          // `checkFlags & 8`: a property a mapped type or a synthesis makes readonly.
-          const readonly = written || (p.checkFlags & 8) !== 0;
-          return { name: p.name, optional: (p.flags & SymbolFlags.Optional) !== 0, readonly,
-            type: memberType, span };
+          const readonly = own
+            ? !!declaration && childrenOf(declaration, "modifiers").some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword)
+            : (p.checkFlags & 8) !== 0;
+          return { name: p.name, optional, readonly, type: memberType, span };
         });
         let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
         let numberIndex: Extract<TypeTerm, { k: "object" }>["numberIndex"];

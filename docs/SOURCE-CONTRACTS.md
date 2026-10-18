@@ -914,7 +914,10 @@ $`\mathsf{key}(n)=\mathsf{ToString}(n)`$ and $`m`$ its modifiers:
 
 `number` without `string` is a number index and `symbol` a symbol index
 beside the remaining literals' fields; an optional one, a type parameter or
-any other key is refused. The keys are the union TypeScript computes for $`K`$
+any other key is refused. A mapped type over `keyof X` copies `X`'s modifiers
+to each key where it writes none of its own, so it is read only where it
+writes both, readonly (`readonly` or `-readonly`) and optional (`?` or `-?`),
+and is refused otherwise (`mapped-keyof-modifiers-refused`). The keys are the union TypeScript computes for $`K`$
 ([computed types](#computed-types)). A library alias whose equation is a
 mapped type is that type at the reference's arguments:
 

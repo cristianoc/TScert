@@ -1044,10 +1044,16 @@ interpretation gives it; and an anonymous record as an object contract. A
 type literal written outside any generic declaration is read as written, by
 the annotation reader; any other record (an object literal's type, a mapped
 type's instance such as `Record<string, unknown>`, a type literal of a
-generic declaration at its instance) is read member by member: each property
-optional and readonly as declared, at its written type where that names no
-binder of its declaration and otherwise at TypeScript's instantiation, and
-each index signature by its key, string, number or symbol, with its
+generic declaration at its instance) is read member by member. A member of
+the record's own type literal has its written modifiers, and its written
+type where that names no binder of its declaration. Any other member (a
+mapped type's, an object literal's, one whose type names a binder) is the
+member TypeScript instantiates: at its type, optional as instantiated and
+readonly where the instantiation makes it so. An optional member at an
+instantiated type is refused unless that type is `undefined`, since
+TypeScript gives it with the `undefined` optionality adds, from which the
+written contract is not recovered (`closure-contextual-optional-instance-refused`).
+Each index signature is read by its key, string, number or symbol, with its
 capability. A method, an accessor, a symbol key, a call signature or an
 index of another key of such a record is refused at the parameter
 (`closure-contextual-records`, `closure-contextual-method-refused`). A tuple with an optional position is refused, since TypeScript

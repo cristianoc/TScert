@@ -59,3 +59,27 @@ type NumberHolder = Holder<number>;
 export function held(xs: readonly NumberHolder[]): number[] {
   return xs.map((x) => x.held);
 }
+
+// A mapped type's members at its instance: `Record`'s at the value it maps
+// to; an alias over `keyof` writing both modifiers, each member writable and
+// required; a const literal's, readonly.
+interface Point {
+  readonly x: number;
+  y?: number;
+}
+
+export function recorded(rs: readonly Record<"k", Point>[]): number[] {
+  return rs.map((r) => r.k.x);
+}
+
+type Open = { -readonly [K in keyof Point]-?: number };
+
+export function opened(ps: readonly Open[]): void {
+  ps.forEach((p) => {
+    p.x = p.y;
+  });
+}
+
+export function constant(): number[] {
+  return [{ c: 1 } as const].map((o) => o.c);
+}

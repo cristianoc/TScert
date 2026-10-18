@@ -512,9 +512,9 @@ function constructorForms(scope: TermScope, node: ts.ConstructorTypeNode | ts.Co
 }
 
 /** A mapped type `{ [P in K]: V }` whose value does not name its key `P`:
- * the key and value terms as read, and its modifiers. A `-` modifier removes
- * what a homomorphic mapped type would copy from its source; over a key union
- * nothing is copied, so it states nothing. */
+ * the key and value terms as read, and its modifiers. Over a key union
+ * nothing is copied, so a `-` modifier states nothing; over `keyof X` both
+ * modifiers are written, since X's would be copied where none is. */
 export type Mapped = { key: TypeTerm; value: TypeTerm; optional: boolean; readonly: boolean };
 
 export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
@@ -526,6 +526,13 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
     (ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && t.typeName.text === name) ||
     (t.forEachChild(names) ?? false);
   if (!node.type || names(node.type)) scope.fail(node, "a mapped type's value names its key");
+  // A homomorphic mapped type, `{ [P in keyof X]: V }`, copies X's
+  // modifiers to each key where it writes none of its own.
+  const constraint = parameter.constraint;
+  if (constraint && ts.isTypeOperatorNode(constraint) && constraint.operator === ts.SyntaxKind.KeyOfKeyword &&
+      (!node.readonlyToken || !node.questionToken))
+    scope.fail(node, "a mapped type over `keyof` copies its source's modifiers where it writes none; " +
+      "the mapped type states both (`readonly` or `-readonly`, `?` or `-?`)");
   const plus = (token: Node | undefined, keyword: ts.SyntaxKind) =>
     !!token && (token.kind === keyword || token.kind === ts.SyntaxKind.PlusToken);
   const key = parameter.constraint && scope.keys?.(parameter.constraint);

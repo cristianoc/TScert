@@ -280,23 +280,25 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
 }
 {
   // A contextual closure parameter's record is the parser's reading of its
-  // context, which the closure's claim must stay within: claimed at the
-  // record without its field, or with the field at another type, it is
-  // refused where evidence is produced and where it is checked.
+  // context. The closure's claim must stay within it: claimed at the record
+  // without its field, or with the field at another type, it is refused at
+  // the closure. A claim within it, at a record with a field added or an
+  // optional field made required, is a narrower domain the closure may
+  // take, and is refused where `map` is offered it at the broader one.
+  // Each is refused where evidence is produced and where it is checked.
   const good = run("closure-contextual-records");
-  const source = readFileSync(join(good, "source.ts"), "utf8");
   // The parameter's record row, `{ a: number; readonly b?: string }`, and
   // the closure's arrow row naming it, located by their text; each forged
   // document is the claims' text with the arrow's parameter at a new row.
-  const forge = (name: string, fields: (claims: SourceClaims) => string): void => {
+  const forge = (name: string, at: string, edit: (row: string, claims: SourceClaims) => string): void => {
     const claims = readClaims(good);
     const rows = claims.types.map(row => JSON.stringify(row));
     const record = rows.findIndex(r => r.startsWith('[{"refs":{"first":[["a",') && r.includes('"key":"b"'));
     assert.ok(record >= 0, "the parameter's record row");
     const arrow = rows.findIndex(r => r.includes(`"arguments":[[${record}],`));
     assert.ok(arrow >= 0, "the closure's arrow row");
-    const replaced = rows[record]?.replace(/"first":\[\["a",\[\d+\]\]\]/, `"first":${fields(claims)}`);
-    assert.ok(replaced && replaced !== rows[record], "the forged record row");
+    const replaced = edit(rows[record] ?? "", claims);
+    assert.ok(replaced !== rows[record], "the forged record row");
     const text = JSON.stringify(claims).replace(rows[arrow] ?? "", (rows[arrow] ?? "")
       .replace(`"arguments":[[${record}],`, `"arguments":[[${claims.types.length}],`));
     const forged: unknown = JSON.parse(text);
@@ -304,12 +306,22 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     forged.types.push(JSON.parse(replaced));
     const path = join(good, `${name}.json`);
     writeFileSync(path, JSON.stringify(forged));
-    refusedAt(good, path, name, "closure signature claim is outside the source annotation");
+    refusedAt(good, path, name, at);
     invoke(path, join(good, "evidence.json"), good);
   };
-  forge("contextual-record-dropped-field", () => "[]");
-  forge("contextual-record-narrowed-field", claims => `[["a",[${rowOf(claims, "str")}]]]`);
-  process.stdout.write("forged contextual records: a closure claimed at the record without a field, or at another field type, refused\n");
+  const outside = "closure signature claim is outside the source annotation";
+  const map = readFileSync(join(good, "source.ts"), "utf8").indexOf("pairs.map");
+  const offered = `obligation at [${map},${map + "pairs.map".length}): evidence search failed`;
+  const first = /"first":\[\["a",\[(\d+)\]\]\]/;
+  forge("contextual-record-dropped-field", outside, row => row.replace(first, '"first":[]'));
+  forge("contextual-record-narrowed-field", outside,
+    (row, claims) => row.replace(first, `"first":[["a",[${rowOf(claims, "str")}]]]`));
+  forge("contextual-record-added-field", offered,
+    (row, claims) => row.replace(first, `"first":[["a",[$1]],["c",[${rowOf(claims, "num")}]]]`));
+  forge("contextual-record-optional-required", offered, row => row.replace(first, '"first":[["a",[$1]],["b",[STR]]]')
+    .replace(/"optional":\[\{"key":"b","readonly":true,"type":\[(\d+)\]\}\]/, '"optional":[]')
+    .replace("STR", String(/"key":"b","readonly":true,"type":\[(\d+)\]/.exec(row)?.[1])));
+  process.stdout.write("forged contextual records: a closure claimed outside its record refused at the closure, within it refused where map takes it\n");
 }
 {
   // An early binding's cell, its marker and its checked accesses are the
