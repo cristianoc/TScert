@@ -2028,17 +2028,17 @@ unrestricted in its effect unless its entry states one. The entries:
   $`(\mathtt{string})\Rightarrow\mathtt{string}`$; an encoding option, which
   may select a `Buffer`, is outside the stated call
   (`invalid-node-realpath-options`).
-- `node:path`'s `join` of any number of strings, `dirname` and `basename`
-  with an optional suffix compute a string from their strings alone, within
-  the empty footprint on their throw too (Node 25.2.1's `lib/path.js`; `join`
-  pushes onto an array of its own, whose standard `push` the model assumes).
-  `resolve` of any number and `relative` of two compute one too, but read
-  `process.cwd()` for a relative path, a writable property of the global
-  `process` other code may replace, so they are unrestricted in their
-  effect, as `realpathSync` is, which resolves its path the same way
-  (`node-path-strings`; `invalid-node-path-resolve-callback`, run under
-  Node). The module exports one object (`export = path`), whose methods
-  are the overloads an entry names.
+- `node:path`'s `dirname` and `basename` with an optional suffix compute a
+  string from their strings alone, within the empty footprint on their throw
+  too (Node 25.2.1's `lib/path.js`). `join` of any number of strings,
+  `resolve` of any number and `relative` of two compute one too, but `join`
+  calls `posix.normalize` and `resolve` and `relative` call `process.cwd()`
+  for a relative path, writable properties other code may replace, so they
+  are unrestricted in their effect, as `realpathSync` is, which resolves its
+  path the same way (`node-path-strings`; `invalid-node-path-join-callback`
+  and `invalid-node-path-resolve-callback`, run under Node). The module
+  exports one object (`export = path`), whose methods are the overloads an
+  entry names.
 
 ## Regular expressions
 

@@ -124,16 +124,15 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "fs", name: "realpathSync",
     signature: "export function realpathSync(path: PathLike, options?: EncodingOption): string;",
     stated: { binders: [], params: [atom("string")], result: atom("string") } },
-  // `node:path`'s string functions compute a path from strings. `join` of
-  // any number, `dirname`, and `basename` with an optional suffix validate
-  // their strings and compute from them alone (Node 25.2.1's lib/path.js;
-  // `join` pushes onto an array of its own, whose standard `push` the model
-  // assumes): they run no code of the client's, write nothing and allocate
-  // the string they return. `resolve`, and `relative` through it, read
-  // `process.cwd()` for a relative path, which other code may replace: they
-  // are unrestricted in their effect.
+  // `node:path`'s string functions compute a path from strings. `dirname`
+  // and `basename` with an optional suffix validate their strings and
+  // compute from them alone (Node 25.2.1's lib/path.js): they run no code of
+  // the client's, write nothing and allocate the string they return. `join`
+  // calls `posix.normalize`, and `resolve`, and `relative` through it, read
+  // `process.cwd()` for a relative path: writable properties other code may
+  // replace, so the three are unrestricted in their effect.
   { module: "path", name: "join", signature: "join(...paths: string[]): string;",
-    stated: { binders: [], params: [], rest: atom("string"), result: atom("string") }, effect: pathEffect },
+    stated: { binders: [], params: [], rest: atom("string"), result: atom("string") } },
   { module: "path", name: "resolve", signature: "resolve(...paths: string[]): string;",
     stated: { binders: [], params: [], rest: atom("string"), result: atom("string") } },
   { module: "path", name: "dirname", signature: "dirname(path: string): string;",
