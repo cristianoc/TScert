@@ -1374,29 +1374,34 @@ mapping reads one holding it, those every predecessor carries. Untrusted: the
 checker follows each edge again. -/
 @[nospecialize] def argumentSlots (P : Program) (claims : List (PointClaim ι)) (start : Nat)
     (slot : Option Nat) : List (List Nat) := Id.run do
-  -- `none`: not reached yet.
-  let mut table : List (Option (List Nat)) := List.replicate P.length none
-  table := table.set start (some slot.toList)
+  -- `none`: not reached yet. Arrays: nodes are visited by label.
+  let widths := (claims.map (·.context.length)).toArray
+  let mut table : Array (Option (List Nat)) := Array.replicate P.length none
+  table := table.set! start (some slot.toList)
   for _ in List.range (2 * P.length + 2) do
     let mut changed := false
     for (node, l) in P.zipIdx do
-      let some here := (table[l]?).getD none | continue
+      let some here := table.getD l none | continue
       let edges := (successors node.continuation).zipIdx.map (fun (t, _) =>
           (t, match node.continuation with | .effect _ | .branch _ _ => false | _ => true)) ++
         node.handler.toList.map (fun t => (t, true))
       for (t, pushed) in edges do
         let sources := if pushed then ControlFlow.pushedSources here (ControlFlow.aliasedRead here node.expression)
           else here
-        let width := ((claims[t.label]?).map (·.context.length)).getD 0
-        let carried := (List.range width).filter fun i => sources.contains (PointClaims.slot t.mapping i)
-        let merged := match (table[t.label]?).getD none with
+        let width := widths.getD t.label 0
+        let carried := match t.mapping with
+          | none => (List.range width).filter sources.contains
+          | some slots => ((List.range width).zip (slots ++ List.replicate (width - slots.length) 0)).filterMap
+              fun (i, s) => if sources.contains s then some i else none
+        let current := table.getD t.label none
+        let merged := match current with
           | none => some carried
           | some old => some (old.filter carried.contains)
-        if merged != (table[t.label]?).getD none then
-          table := table.set t.label merged
+        if merged != current then
+          table := table.set! t.label merged
           changed := true
     if !changed then break
-  return table.map fun x => x.getD []
+  return table.toList.map fun x => x.getD []
 
 /-- Propagate established postconditions along single-predecessor paths. Entry
 starts empty; source cuts use exactly their supplied requirements, even when
@@ -1412,13 +1417,16 @@ Every edge is still checked by the independent consumer. -/
     (goal : ControlFlow.Goal ι := .plain []) :
     Except (Failure ι) (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
-  let arguments := argumentSlots P claims start goal.slot
+  -- Arrays: every pass visits nodes and their predecessors by label.
+  let arguments := (argumentSlots P claims start goal.slot).toArray
+  let nodes := P.toArray
+  let claimed := claims.toArray
   let handlerTargets := P.filterMap fun node => node.handler.map (·.label)
-  let incoming := (List.range P.length).map fun target =>
-    P.zipIdx.flatMap fun (node,l) =>
-      (successors node.continuation).zipIdx.filterMap fun (t,index) =>
-        if t.label == target then some (l,index,t) else none
-  let mut table : List (Option (NodeEvidence ι)) := List.replicate P.length none
+  let incoming : Array (List (Nat × Nat × Target)) := P.zipIdx.foldl (fun acc (node,l) =>
+      (successors node.continuation).zipIdx.foldl (fun acc (t,index) =>
+        if t.label < acc.size then acc.modify t.label (· ++ [(l,index,t)]) else acc) acc)
+    (Array.replicate P.length [])
+  let mut table : Array (Option (NodeEvidence ι)) := Array.replicate P.length none
   -- A merge waits for its predecessors while some pass still makes progress;
   -- once none does, the merges still waiting (a cycle through no cut) take
   -- their stated requirements alone, as every merge did before.
@@ -1426,19 +1434,19 @@ Every edge is still checked by the independent consumer. -/
   for _ in List.range (2 * P.length + 2) do
     let mut progress := false
     for l in List.range P.length do
-      if ((table[l]?).getD none).isSome then continue
-      let some node := P[l]? | throw .claimCount
-      let some c := claims[l]? | throw .claimCount
+      if (table.getD l none).isSome then continue
+      let some node := nodes[l]? | throw .claimCount
+      let some c := claimed[l]? | throw .claimCount
       let required := (requirements.lookup l).getD ⟨[],[],[]⟩
       let mut k := required
       let mut implies : List (PromiseCalls.Implication ι) := []
       -- At the entry and at cuts, the argument slots every edge carries.
-      let mut held := (arguments[l]?).getD []
+      let mut held := arguments.getD l []
       if l != start && !cuts.contains l then
         match incoming[l]? with
         | some [(pred,index,target)] =>
-          let some previous := (table[pred]?).getD none | continue
-          let some source := P[pred]? | throw .claimCount
+          let some previous := table.getD pred none | continue
+          let some source := nodes[pred]? | throw .claimCount
           k := HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) previous.output source.continuation index)
             target.mapping c.context.length
           implies := projectImplications (edgeImplicationsOf previous source.continuation) target.mapping
@@ -1453,7 +1461,7 @@ Every edge is still checked by the independent consumer. -/
           let mut holding : List (List Nat) := []
           let mut ready := true
           for (pred,index,target) in preds do
-            match (table[pred]?).getD none, P[pred]? with
+            match table.getD pred none, nodes[pred]? with
             | some previous, some source =>
               projections := projections ++ [HeapKnowledge.project
                 (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) previous.output source.continuation index) target.mapping c.context.length]
@@ -1476,15 +1484,15 @@ Every edge is still checked by the independent consumer. -/
       -- implication, and the argument slots the throwing nodes carry.
       if handlerTargets.contains l then
         implies := []
-        held := held.filter ((arguments[l]?).getD []).contains
+        held := held.filter (arguments.getD l []).contains
       let evidence ← produceNode G images pool fuel l node claims k suggestions known codes aliases checker
         implies held goal
-      table := table.set l (some evidence)
+      table := table.set! l (some evidence)
       progress := true
     if !progress then
       if force then break else force := true
     else force := false
-  table.mapM fun c => match c with
+  table.toList.mapM fun c => match c with
     | some e => pure e
     | none => throw .rejected
 
