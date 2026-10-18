@@ -91,9 +91,23 @@ normal form. -/
 def Label.ofTree? (t : Tree) : Option (Label sig) :=
   if h : t.scoped sig 0 0 = true ∧ t.meetNormal = true then some ⟨t, h.1⟩ else none
 
+/-- `Label.ofTree?` with the scope check over the signature as an array. -/
+def Label.ofTreeIn? (headers : Array Header) (hh : headers = sig.toArray) (t : Tree) :
+    Option (Label sig) :=
+  if h : t.scopedIn headers 0 0 = true ∧ t.meetNormal = true then
+    some ⟨t, by rw [hh, Tree.scopedIn_toArray] at h; exact h.1⟩
+  else none
+
 /-- A closed tree as a label, or the located reason it is not one. -/
 def Label.ofTree (sig : Signature) (t : Tree) : Except String (Label sig) :=
   match Label.ofTree? t with
+  | some l => .ok l
+  | none => .error ((t.problem sig 0 0 .label).getD "not a closed label")
+
+/-- `Label.ofTree` with the scope check over the signature as an array. -/
+def Label.ofTreeIn (sig : Signature) (headers : Array Header) (hh : headers = sig.toArray)
+    (t : Tree) : Except String (Label sig) :=
+  match Label.ofTreeIn? headers hh t with
   | some l => .ok l
   | none => .error ((t.problem sig 0 0 .label).getD "not a closed label")
 
