@@ -33,7 +33,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 92 of 329 verify in `tools/` (2026-10-18, at a 60 s step limit), 23 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 94 of 332 verify in `tools/` (2026-10-18, at a 60 s step limit), 23 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -301,7 +301,7 @@ probe's correspondence to the application.
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 329 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 332 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-18):
 
@@ -309,26 +309,28 @@ The first blockers, by the number of slices each stops (2026-10-18):
   not state (73): an anonymous record (52, of which `{ name: PropertyKey;
   optional; readonly; type; span }`, an object type term's field, 19, and
   `{ cell: string; name: Identifier }` 19), an enum member
-  (`SyntaxKind.AbstractKeyword`, 12) and `Record<string, unknown>` (9);
-  `tools/unchecked.mts` admits no missing annotation and no value typed
-  `any` in the node side, so these are the whole of the group;
+  (`SyntaxKind.AbstractKeyword`, 12) and `Record<string, unknown>` (9). A
+  function written as an argument is inside its unit, typed by its context,
+  and `tools/unchecked.mts` requires no annotation of it; no slice stops at a
+  missing annotation the check requires or at a value typed `any`;
 - library globals absent from the overlay or refused (12): the global
   function `parseInt` (3), `Reflect` ([refused](docs/SOURCE-FRAGMENT.md))
-  (3), `Object.fromEntries` (2), `Array.from`, `Math.ceil`, `new RegExp`,
-  `instanceof Error`;
+  (3), `Object.fromEntries` (2), `Array.from` (2), `Math.ceil`,
+  `new RegExp`, `instanceof Error`;
 - an object built with a `then` member (12);
-- members of `Type` outside its named view (14);
+- members of `Type` and `Checker` outside their named views (14);
 - the sync API's `API` class, whose type parameter has a default (8);
   `createRequire`, whose type names a qualified one (2); `node:path`'s
   `sep`, a constant of the object the module exports (2); a default import
-  (3);
-- the compiler's synchronous API failing on a query (3), reported as tool
+  (4);
+- the compiler's synchronous API failing on a query (2), reported as tool
   failures: `TypeObject.getTypes` panics converting a type reference to a
-  tuple (`forInEntryReads`), and `Checker.getTypeAtLocation` and
-  `Checker.getTypeFromTypeNode` return a reply the client cannot decode
-  (`readDiagnostic`, `diagnosticNode`), cause unknown.
+  tuple (`forInEntryReads`), and `Checker.getTypeFromTypeNode` returns a
+  reply the client cannot decode (`diagnosticNode`), cause unknown;
+- the parser exceeding the call stack (`readDiagnostic`, "Maximum call stack
+  size exceeded"), cause unknown.
 
-Thirty-two slices reach the producer and fail there, and 55 fail in
+Thirty-one slices reach the producer and fail there, and 55 fail in
 search. Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
 24 of `dev/`, the record tools and the lowering dump, 23 (2026-10-18), each
 sliced with the same-file declarations it uses. The first blocker of the other in
