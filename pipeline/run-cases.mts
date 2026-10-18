@@ -47,7 +47,7 @@ export async function pooled<T, R>(items: readonly T[], work: (item: T) => Promi
       shown();
     }
   };
-  await Promise.all(Array.from({ length: Math.min(width, items.length) }, worker));
+  await Promise.all<Promise<void>[]>(Array.from({ length: Math.min(width, items.length) }, worker));
   return results;
 }
 

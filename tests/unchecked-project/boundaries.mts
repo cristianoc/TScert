@@ -8,6 +8,11 @@ export function inferred(x: number) { // expected: unannotated
 export const arrow = (x: number) => x; // expected: unannotated
 export const chosen = flag ? (x: number) => x : (x: number): number => x + 1; // expected: unannotated
 export const listed = [(x: number) => x]; // expected: unannotated
+export const sequenced = (Math.random(), (x: number) => x); // expected: unannotated
+export let assignedLater = (x: number): number => x;
+// The type of `assignedLater`, which its annotated initializer states, gives
+// the assigned function its context.
+export const reassigned = (assignedLater = (x) => x);
 export const object = {
   method(x: number) { // expected: unannotated
     return x;

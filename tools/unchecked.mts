@@ -33,10 +33,20 @@
  *   function taking `any` may store it anywhere (`Object.assign`);
  * - an expression whose type holds `any` deeper, at a positive position (a
  *   property, an index signature's value, a signature's result, a parameter
- *   of a parameter), is reported where its contextual type differs there
- *   from its own and is not `unknown`, as `JSON.parse` bound at
- *   `(s: string) => number` is; and where it is an argument bound to a type
- *   parameter the call infers, which takes it whatever it holds;
+ *   of a function at a parameter), is compared with its contextual type: a
+ *   property with the place's property of its name or the place's index
+ *   signature of its key, an index signature with the place's of its key, a
+ *   signature's result with the place's, the arguments of one generic type
+ *   pairwise, and a signature's parameter the other way, the place's
+ *   parameter type taken at the value's (so a place's callback called with
+ *   the value's `any` is found). Each `any` must meet `unknown`, or below the
+ *   place itself the same type. `JSON.parse` bound at
+ *   `(s: string) => number` is reported, and so is an argument holding `any`
+ *   bound to a type parameter the call infers without a written type
+ *   argument, which takes it whatever it holds (`Object.assign`). Of the
+ *   compiler's syntax tree, the brands (`_expressionBrand` and its kind),
+ *   declared `any`, hold no value (reading rule 2 of COMPILER-API.md,
+ *   checked by tests/compiler-api.mts) and are not inspected;
  * - a member's receiver whose type holds `any` only inside it (`xs.map` of
  *   an `any[]`) is not itself reported: the member's type is, and so is what
  *   the member passes on, such as a callback's parameter, where it is
@@ -58,9 +68,10 @@
  * and constructor and every function its fields hold; an object literal's
  * methods, accessors and function-valued properties, unless a written type
  * gives the literal its contextual type; and every function a module binding
- * or `export default` holds (through parentheses, assertions, conditionals,
- * logical operators and array literals), unless a written type gives it its
- * contextual type. Each states the type of every parameter and, but for a
+ * or `export default` holds as its value or an element of it (through
+ * parentheses, assertions, `await`, a comma's last operand, an assignment's
+ * right side, conditionals, logical operators, array literals and their
+ * spreads), unless a type gives it its contextual type. Each states the type of every parameter and, but for a
  * constructor or a setter, its result. What lies inside a unit is inferred
  * and checked there: a local `const` or `let`, and a function written as an
  * argument or held by a local.
@@ -85,7 +96,7 @@ import fs from "node:fs";
 import { availableParallelism } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { API, SignatureKind, TypeFlags, isTypeReference, type Checker, type NodeHandle, type Program, type Type } from "typescript/unstable/sync";
+import { API, SignatureKind, TypeFlags, isTypeReference, type Checker, type NodeHandle, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node, SourceFile } from "typescript/unstable/ast";
 import { nameOf } from "./syntax.mts";
@@ -156,21 +167,36 @@ function unstated(node: ts.SignatureDeclaration, result: boolean): string[] {
   return result && node.type === undefined ? [...missing, "result"] : missing;
 }
 
-/** The functions a value holds as itself: through parentheses, assertions,
- * the branches of a conditional or a logical operator, and the elements of
- * an array literal. An object literal's members are checked as every object
- * literal's are; a function written as an argument is the call's. */
+/** The function expressions written in `node` that may be its value or an
+ * element of it: every subexpression whose value may become the whole's
+ * (an operand of parentheses, an assertion, `await`, a comma's last, an
+ * assignment's right side, a conditional's branches, a logical operator's
+ * operands) and an array literal's elements and spreads. A function
+ * written as an argument, a property or a body is the call's, the object
+ * literal's or the function's, not the value's. */
 function heldFunctions(node: Node | undefined): (ts.ArrowFunction | ts.FunctionExpression)[] {
   if (node === undefined) return [];
   if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return [node];
   if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node) ||
-    ts.isNonNullExpression(node)) return heldFunctions(node.expression);
+    ts.isNonNullExpression(node) || ts.isAssertionExpression(node) || ts.isAwaitExpression(node) ||
+    ts.isSpreadElement(node)) return heldFunctions(node.expression);
   if (ts.isConditionalExpression(node)) return [...heldFunctions(node.whenTrue), ...heldFunctions(node.whenFalse)];
-  if (ts.isBinaryExpression(node) && LOGICAL.includes(node.operatorToken.kind))
-    return [...heldFunctions(node.left), ...heldFunctions(node.right)];
+  if (ts.isBinaryExpression(node)) {
+    const operator = node.operatorToken.kind;
+    if (LOGICAL.includes(operator) || LOGICAL_ASSIGNMENT.includes(operator))
+      return [...heldFunctions(node.left), ...heldFunctions(node.right)];
+    if (operator === ts.SyntaxKind.CommaToken || operator === ts.SyntaxKind.EqualsToken) return heldFunctions(node.right);
+    return [];
+  }
   if (ts.isArrayLiteralExpression(node)) return node.elements.flatMap((element) => heldFunctions(element));
   return [];
 }
+
+const LOGICAL_ASSIGNMENT: number[] = [
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+];
 
 /** Whether a written type gives `node` its contextual type: one exists and
  * is neither `any` nor a type parameter. */
@@ -199,6 +225,18 @@ function boundary(checker: Checker, node: Node, moduleLevel: boolean): [Node, st
 }
 
 /* ------------------------------------------------------------ the types -- */
+
+/** The compiler's syntax tree, as the front end resolves it. */
+const HOST_AST = `${path.sep}node_modules${path.sep}typescript${path.sep}dist${path.sep}ast${path.sep}`;
+
+/** Whether a property holds a value. The syntax tree's brands (`_expressionBrand`
+ * and its kind), declared `any`, hold none: no node owns or inherits one
+ * (reading rule 2 of COMPILER-API.md, checked by tests/compiler-api.mts). */
+function held(property: CompilerSymbol): boolean {
+  if (!/^_\w+Brand$/.test(property.name)) return true;
+  const declarations = property.declarations;
+  return !declarations.length || !declarations.every((declaration) => declaration.path.includes(HOST_AST));
+}
 
 /** The checker's types, inspected for `any` once each. A type holds `any`
  * at a positive position: itself, a member of a union or an intersection, a
@@ -265,8 +303,9 @@ class Inspection {
     // A value the code supplies is read by the code it is given to; only a
     // function it supplies is given values in return, at its parameters.
     if (!positive) return [...out, ...(this.signaturePositions(type) ?? [])];
-    const properties = this.ask(() => checker.getPropertiesOfType(type));
-    if (!properties) return null;
+    const all = this.ask(() => checker.getPropertiesOfType(type));
+    if (!all) return null;
+    const properties = all.filter(held);
     const propertyTypes = properties.length ? this.ask(() => checker.getTypeOfSymbol(properties)) : [];
     if (!propertyTypes) return null;
     for (const property of propertyTypes) if (property) out.push([property, true]);
@@ -490,9 +529,13 @@ class Inspection {
         return false;
       }
       if (source.id === target.id || this.canonical(source) === this.canonical(target)) continue;
+      // `any` matters where the value holds it at a positive position, or
+      // where the place holds it at a negative one: a function the place
+      // gives the value may be called with an `any` the value supplies.
       const held = this.holds(source);
-      if (held === false) continue;
-      if (held === null) {
+      const given = this.holds(target, false);
+      if (held === false && given === false) continue;
+      if (held === null || given === null) {
         failed = true;
         continue;
       }
@@ -561,7 +604,7 @@ class Inspection {
     const pairs: [Type, Type][] = [];
     const properties = this.ask(() => checker.getPropertiesOfType(target));
     if (!properties) return null;
-    for (const property of properties) {
+    for (const property of properties.filter(held)) {
       const from = this.ask(() => checker.getPropertyOfType(source, property.name));
       if (from === null) return null;
       if (!from) continue;
@@ -576,6 +619,16 @@ class Inspection {
     for (const index of targetIndexes) {
       const from = sourceIndexes.find((info) => info.keyType.id === index.keyType.id);
       if (from) pairs.push([from.valueType, index.valueType]);
+      // The source's properties are read through the place's index.
+      const keyed = index.keyType.flags & TypeFlags.String ? (name: string) => !name.startsWith("__@")
+        : index.keyType.flags & TypeFlags.Number ? (name: string) => String(Number(name)) === name : undefined;
+      if (!keyed) continue;
+      const sourceProperties = this.ask(() => checker.getPropertiesOfType(source));
+      if (!sourceProperties) return null;
+      const readable = sourceProperties.filter((property) => keyed(property.name) && held(property));
+      const types = readable.length ? this.ask(() => checker.getTypeOfSymbol(readable)) : [];
+      if (!types) return null;
+      for (const type of types) if (type) pairs.push([type, index.valueType]);
     }
     for (const kind of [SignatureKind.Call, SignatureKind.Construct]) {
       const sourceSignatures = this.ask(() => checker.getSignaturesOfType(source, kind));
@@ -588,6 +641,18 @@ class Inspection {
         const toResult = this.ask(() => checker.getReturnTypeOfSignature(signature));
         if (fromResult === null || toResult === null) return null;
         if (fromResult && toResult) pairs.push([fromResult, toResult]);
+        // A parameter runs the other way: the place's caller supplies it, at
+        // the place's parameter type, to the value, at its own.
+        const fromParameters = from.getParameters(), toParameters = signature.getParameters();
+        const count = Math.min(fromParameters.length, toParameters.length);
+        if (!count) continue;
+        const fromTypes = this.ask(() => checker.getTypeOfSymbol(fromParameters.slice(0, count)));
+        const toTypes = this.ask(() => checker.getTypeOfSymbol(toParameters.slice(0, count)));
+        if (!fromTypes || !toTypes) return null;
+        for (let p = 0; p < count; p++) {
+          const given = toTypes[p], taken = fromTypes[p];
+          if (given && taken) pairs.push([given, taken]);
+        }
       }
     }
     return pairs;
@@ -645,10 +710,11 @@ function patternInitializer(node: Node): boolean {
 }
 
 /** Whether argument `node` is bound to a parameter typed by a type parameter
- * of the signature the call resolves to, which the call infers from it. */
+ * of the signature the call resolves to, which the call infers from it: no
+ * type argument is written. */
 function inferredBinding(node: Node, checker: Checker): boolean {
   const call = node.parent;
-  if (!call || !(ts.isCallExpression(call) || ts.isNewExpression(call))) return false;
+  if (!call || !(ts.isCallExpression(call) || ts.isNewExpression(call)) || call.typeArguments?.length) return false;
   const index = (call.arguments ?? []).findIndex((argument) => argument === node);
   if (index < 0) return false;
   const resolved = checker.getResolvedSignature(call);
@@ -783,7 +849,16 @@ function findIn(file: string, source: SourceFile, context: Context): Found[] {
     // A place at the value's own type adds no assumption, and neither does
     // the initializer of a binding pattern, whose names are checked as
     // declarations.
-    if ((place.id === type.id && !value) || patternInitializer(node)) return;
+    if (patternInitializer(node)) return;
+    if (place.id === type.id && !value) {
+      // Unless a type parameter the call infers from the value is that
+      // place: the callee may store what the value holds anywhere.
+      if (!inferredBinding(node, checker)) return;
+      const held = inspection.holds(type);
+      if (held === null) at(node, "uninspected");
+      else if (held) report();
+      return;
+    }
     if (value && inferredBinding(node, checker)) return report();
     if (value && emptyCollection(node, checker, program) && inspection.isAny(place) === false) return;
     if (value && !(place.flags & TypeFlags.Any) && parseOfText(node, checker, program) && checker.isTypeAssignableTo(json, place)) return;
@@ -844,11 +919,11 @@ if (workerAt >= 0) {
 }
 // The files are checked in parallel, each part by a compiler of its own.
 const parts = Math.max(1, Math.min(8, availableParallelism() - 1));
-const results = await Promise.all(Array.from({ length: parts }, (_, part) => new Promise<{ files: string[]; found: Found[] }>((done, fail) => {
+const results = await Promise.all<Promise<{ files: string[]; found: Found[] }>[]>(Array.from({ length: parts }, (_, part) => new Promise<{ files: string[]; found: Found[] }>((done, fail) => {
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--project", projectDir, "--worker", `${part}/${parts}`],
     { stdio: ["ignore", "pipe", "inherit"] });
   let out = "";
-  child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString()));
+  child.stdout.on("data", (chunk: unknown) => (out += String(chunk)));
   child.on("close", (code) => {
     const parsed: unknown = code === 0 ? JSON.parse(out) : undefined;
     if (isResult(parsed)) done(parsed);

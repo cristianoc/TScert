@@ -257,22 +257,22 @@ increasing trust silently.
 - A unit's boundary is written and what lies inside a unit is inferred.
   Every function declaration and class member, every function a module
   binding, a class field or `export default` holds, and every method and
-  function-valued property of an object literal no written type gives its
-  context, states the type of each parameter and of its result.
+  function-valued property of an object literal no type gives its context,
+  states the type of each parameter and of its result.
   `tools/tsconfig.json` sets `isolatedDeclarations`: an export's type is
   determined by its own syntax, annotated wherever TypeScript would infer it
   from other code. A local `const` or `let`, and a function written as an
   argument, are typed by inference. No value is typed `any`: a value the
   checker types `any` (a written `any`, a library member typed `any`, an
   array literal no annotation types) flows only into a place that reads it
-  as `unknown`, and a value holding `any` deeper (a property, a signature's
-  result) only into a place of its own type there or `unknown`; a place
-  typed `any` is no such place. `JSON.parse` of a text also flows into one
-  typed `Json`, the parsed data the overlay of library globals states.
-  `node tools/unchecked.mts` ([source](tools/unchecked.mts)) states the rules
-  exactly and reports every breach over every file that configuration
-  includes; no comment excuses one. `test-all.sh` runs it as a suite, and
-  runs it over `tests/unchecked-project/`, the counterexamples it must
+  as `unknown`; a place typed `any` is no such place. A value holding `any`
+  deeper is compared with its place position by position, along the forms
+  `tools/unchecked.mts` ([source](tools/unchecked.mts)) lists, which are
+  the rules as they are checked. `JSON.parse` of a text also flows into a
+  place typed `Json`, the parsed data the overlay of library globals states.
+  The command reports these over every file that configuration includes and
+  fails on one; no comment excuses one. `test-all.sh` runs it as a suite,
+  and runs it over `tests/unchecked-project/`, the counterexamples it must
   report.
 - A decoder is the only place that asserts a shape. Everything else narrows:
   a type predicate, a `typeof` before a comparison, a case table keyed by the

@@ -17,17 +17,23 @@ import { decodeFlowDocument } from "../tools/source-flow.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
 
 /** A Fragment document this pipeline's parser wrote, read back by a test that
- * forges it. */
+ * forges it. The tests (18 reads) edit fields deep in the document through
+ * its type; checking those fields at each test, in place of this assertion,
+ * would rewrite each of them, and no TypeScript decoder of the Fragment
+ * exists. The assertion stands for the parser's output; it is not checked
+ * before the test reads it. */
 export function readFragmentFile(file: string): Ast {
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-  return parsed as Ast; // asserted: the parser wrote the file from an Ast; a TypeScript decoder of the Fragment would cost more than it guards a test's forgery, and Lean's decoder checks every document a test feeds back
+  return parsed as Ast; // asserted: the parser wrote the file from an Ast; a check of every field the tests read would cost more than it guards a test's forgery
 }
 
 /** A claims document this pipeline's producer wrote, read back by a test that
- * forges it. */
+ * forges it. The tests (83 reads) edit fields deep in the document through
+ * its type, and no TypeScript decoder of the claims exists; the assertion
+ * stands for the producer's output, unchecked before the test reads it. */
 export function readClaimsFile(file: string): SourceClaims {
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-  return parsed as SourceClaims; // asserted: the producer wrote the file against SourceClaims; a TypeScript decoder of the claims would cost more than it guards a test's forgery, and Lean's decoder checks every document a test feeds back
+  return parsed as SourceClaims; // asserted: the producer wrote the file against SourceClaims; a check of every field the tests read would cost more than it guards a test's forgery
 }
 
 const here = import.meta.dirname;
@@ -539,7 +545,7 @@ function startWorker(): ChildProcess {
   const worker = fork(import.meta.filename, ["--serve"], { cwd: repo, stdio: ["ignore", "ignore", "pipe", "ipc"] });
   // What the worker writes to standard error is shown only with a failure.
   worker.stderr?.setEncoding("utf8");
-  worker.stderr?.on("data", (text: string) => { logs.set(worker, (logs.get(worker) ?? "") + text); });
+  worker.stderr?.on("data", (text: unknown) => { logs.set(worker, (logs.get(worker) ?? "") + String(text)); });
   if (worker.stderr instanceof Socket) worker.stderr.unref();
   worker.on("exit", () => {
     workers--;

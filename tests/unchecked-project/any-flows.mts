@@ -23,6 +23,20 @@ export function rejected(settled: PromiseRejectedResult): { reason: number } {
 }
 export const nested: number[][][][][] = [[[[new Array(1)]]]]; // expected: typed any
 
+// A value holding `any` bound to a type parameter the call infers: the
+// callee copies the rejection's `reason` into `target`, which returns it.
+export function corrupt(r: PromiseRejectedResult): number {
+  const target = { reason: 0 };
+  Object.assign(target, r); // expected: typed any
+  return target.reason;
+}
+// A property read through the place's index signature, and a parameter of a
+// parameter: the place's callback is called with the `any` the value gives.
+declare const foreign: { x: any }; // expected: any, typed any
+declare const invoke: (f: (x: any) => void) => void; // expected: any, typed any
+export const dictionary: { [key: string]: number } = foreign; // expected: typed any
+export const sink: (f: (x: number) => void) => void = invoke; // expected: typed any
+
 // A construction of something other than the library's Map or Set.
 interface Box<T> {
   value: T;
