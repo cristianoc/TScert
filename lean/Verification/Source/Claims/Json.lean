@@ -12,6 +12,8 @@ import Verification.Source.Claims.Preparation
 import Verification.Source.Claims.Plans
 -- Claims/Extraction.lean coordinates source units and reconstructs graph requests.
 import Verification.Source.Claims.Extraction
+-- Claims/Imports.lean plans certified imports: the module runs and the qualified reads.
+import Verification.Source.Claims.Imports
 
 /-! Source claim validation, evidence production and the theorem relating
 exact accepted plans to modeled graph safety. -/
@@ -83,9 +85,10 @@ private def obligationRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : 
     !(ExpressionClaims.checkResult G (StoreView.images r.types) (StoreView.valid r.types) q.sequent e codes).accepted).map
     fun (q, _) => s!"source evidence refusal at [{q.pos.1},{q.pos.2}): the evidence does not establish this obligation's claim"
 
-def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
-    (budget : PositiveCertificates.SearchBudget := {}) : Except String Unit := do
-  let (T, plans) ← extractPlans ast claims fileKey budget
+def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
+    (budget : PositiveCertificates.SearchBudget := {})
+    (qualified : List (String × Footprints.Closed × Bool) := []) : Except String Unit := do
+  let (T, plans) ← extractPlans ast claims fileKey budget qualified
   let ⟨F, frozen⟩ ← freezePlans T plans
   let certified ← certifyPlans frozen
   let rs := CertifiedPlan.requests certified
@@ -102,9 +105,10 @@ def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
      (((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
       | .graph _ _ r => nodeRefusal r c <|> obligationRefusal r c es)).getD fallback)
 
-def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
-    (budget : PositiveCertificates.SearchBudget := {}) : Except String Json := do
-  let (T, plans) ← extractPlans ast claims fileKey budget
+def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
+    (budget : PositiveCertificates.SearchBudget := {})
+    (qualified : List (String × Footprints.Closed × Bool) := []) : Except String Json := do
+  let (T, plans) ← extractPlans ast claims fileKey budget qualified
   let ⟨F, frozen⟩ ← freezePlans T plans
   let rs := FunctionPlan.requests frozen
   let es ← rs.mapM fun r => ExpressionClaims.produceUsing (RequestJson.graph r.toRequest)
@@ -133,26 +137,78 @@ private def codeJson {ι : Type} [ToJson ι] (c : CodeEntry ι) : Json :=
 inspection: per unit its name, entry node and nodes, and per code its arity,
 entry node and nodes. -/
 def lowerJson (ast claims : Json) (fileKey : String) : Except String Json := do
-  let (T, plans) ← extractPlans ast claims fileKey {}
+  let p ← planImports ast claims
+  let (T, plans) ← extractPlans p.ast p.claims fileKey {} p.qualified
   let ⟨_, frozen⟩ ← freezePlans T plans
   return toJson (frozen.map fun
     | .graph name _ r => Json.mkObj [("name", toJson name), ("start", toJson r.toRequest.start),
         ("program", toJson r.toRequest.program),
         ("codes", toJson (r.toRequest.codes.map fun (c : CodeRequest _) => codeJson c.entry))])
 
-/-- Every extracted plan crosses the exhaustive certification boundary, and its
-graph request proves the enclosing execution safe at every assignment admitted
-by its source signature, including its descriptor contract when qualified. A
-unit whose declaration claims a footprint other than the one letting every
-location change, run as the code its graph describes, also returns with a heap
-its footprint relates to its entry heap, and a value meeting its goal (a
-guard's or an assertion function's promise included).
-The graph is `Equations.graph` of the equations the extracted store presents,
-validated by `Equations.ofRaw` (`freezePlans`). -/
-theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
-    {budget : PositiveCertificates.SearchBudget}
-    (h : checkJson ast claims fileKey evidence budget = .ok ()) :
-    ∃ T plans, extractPlans ast claims fileKey budget = .ok (T, plans) ∧
+/-- The evidence of a document with certified imports: the importer's, and
+each module run's, by the module's identity. -/
+def evidenceParts (evidence : Json) (p : ImportPlan) : Except String (List Json) := do
+  fieldsExactly evidence ["main", "modules"]
+  let modules ← jArr evidence "modules"
+  if modules.length != p.modules.length then throw "evidence for another set of module runs"
+  (p.modules.zip modules).mapM fun (m, e) => do
+    fieldsExactly e ["location", "evidence"]
+    if (← jStr (← jField e "location")) != m.location then throw "evidence for another module run"
+    jField e "evidence"
+
+/-- Search evidence for the importer at its qualified reads, then for every
+module run. -/
+def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
+    (budget : PositiveCertificates.SearchBudget := {}) : Except String Json := do
+  let p ← planImports ast claims
+  let main ← produceDocument p.ast p.claims fileKey fuel budget p.qualified
+  let modules ← p.modules.mapM fun m => do
+    let e ← (produceDocument m.ast m.claims m.location fuel budget m.qualified).mapError
+      (s!"module {m.location}: " ++ ·)
+    return Json.mkObj [("location", toJson m.location), ("evidence", e)]
+  return Json.mkObj [("main", main), ("modules", Json.arr modules.toArray)]
+
+/-- Each module run checked as a document of its own, at its evidence. -/
+def checkModules : List (ModuleRun × Json) → PositiveCertificates.SearchBudget → Except String Unit
+  | [], _ => pure ()
+  | (m, e) :: rest, budget => do
+    (checkDocument m.ast m.claims m.location e budget m.qualified).mapError (s!"module {m.location}: " ++ ·)
+    checkModules rest budget
+
+theorem checkModules_each {runs : List (ModuleRun × Json)} {budget : PositiveCertificates.SearchBudget}
+    (h : checkModules runs budget = .ok ()) :
+    ∀ m e, (m, e) ∈ runs → checkDocument m.ast m.claims m.location e budget m.qualified = .ok () := by
+  induction runs with
+  | nil => intro m e hm; cases hm
+  | cons x rest ih =>
+    obtain ⟨m', e'⟩ := x
+    unfold checkModules at h
+    cases hd : checkDocument m'.ast m'.claims m'.location e' budget m'.qualified with
+    | error err => rw [hd] at h; contradiction
+    | ok u =>
+      rw [hd] at h
+      simp only [Bind.bind, Except.bind] at h
+      intro m e hm
+      rcases List.mem_cons.mp hm with he | hr
+      · cases he; cases u; exact hd
+      · exact ih h m e hr
+
+/-- **The check.** The importer at its qualified reads, then every module
+run, each a document of its own over its own store: one call, so the
+evidence certifying a unit's effect is checked with the importer's. -/
+def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
+    (budget : PositiveCertificates.SearchBudget := {}) : Except String Unit := do
+  let p ← planImports ast claims
+  checkDocument p.ast p.claims fileKey (evidence.getObjValD "main") budget p.qualified
+  let parts ← evidenceParts evidence p
+  checkModules (p.modules.zip parts) budget
+
+/-- What a document's successful check gives: its plans cross the
+exhaustive certification boundary, and every certified request is safe, and
+within its footprint where it claims one, as `checkDocument_safe` states. -/
+def DocumentSafe (ast claims : Json) (fileKey : String) (evidence : Json)
+    (budget : PositiveCertificates.SearchBudget) (qualified : List (String × Footprints.Closed × Bool)) : Prop :=
+    ∃ T plans, extractPlans ast claims fileKey budget qualified = .ok (T, plans) ∧
       ∃ F : EquationStore.Frozen, ∃ frozen certified b,
       freezePlans T plans = .ok ⟨F, frozen⟩ ∧
       certifyPlans frozen = .ok certified ∧
@@ -174,9 +230,24 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
             (fun h' _ => r.footprint.Holds heap h') (fun h' => r.onThrow = true → r.footprint.Holds heap h')
             n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
-              r.start L d)) := by
-  unfold checkJson at h
-  cases he : extractPlans ast claims fileKey budget with
+              r.start L d)) 
+
+/-- Every extracted plan crosses the exhaustive certification boundary, and its
+graph request proves the enclosing execution safe at every assignment admitted
+by its source signature, including its descriptor contract when qualified. A
+unit whose declaration claims a footprint other than the one letting every
+location change, run as the code its graph describes, also returns with a heap
+its footprint relates to its entry heap, and a value meeting its goal (a
+guard's or an assertion function's promise included).
+The graph is `Equations.graph` of the equations the extracted store presents,
+validated by `Equations.ofRaw` (`freezePlans`). -/
+theorem checkDocument_safe {ast claims evidence : Json} {fileKey : String}
+    {budget : PositiveCertificates.SearchBudget} {qualified : List (String × Footprints.Closed × Bool)}
+    (h : checkDocument ast claims fileKey evidence budget qualified = .ok ()) :
+    DocumentSafe ast claims fileKey evidence budget qualified := by
+  unfold DocumentSafe
+  unfold checkDocument at h
+  cases he : extractPlans ast claims fileKey budget qualified with
   | error e => rw [he] at h; contradiction
   | ok tp =>
     obtain ⟨T, plans⟩ := tp
@@ -205,5 +276,36 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
               exact checkRequests_footprint_at hx hm heffect η n W heap L d he hw hh hvalues hd
           · simp only [checkRequests] at hx
             simp [hx] at h
+
+/-- **The acceptance theorem.** A successful CLI check gives, for the
+importer, what a document's check gives (`DocumentSafe`), its qualified
+reads among its inputs, and the same for each module run certifying a
+qualified unit, its own qualified reads among its inputs, each over its own
+store. -/
+theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
+    {budget : PositiveCertificates.SearchBudget}
+    (h : checkJson ast claims fileKey evidence budget = .ok ()) :
+    ∃ p parts, planImports ast claims = .ok p ∧ evidenceParts evidence p = .ok parts ∧
+      DocumentSafe p.ast p.claims fileKey (evidence.getObjValD "main") budget p.qualified ∧
+      ∀ m e, (m, e) ∈ p.modules.zip parts → DocumentSafe m.ast m.claims m.location e budget m.qualified := by
+  unfold checkJson at h
+  cases hp : planImports ast claims with
+  | error err => rw [hp] at h; contradiction
+  | ok p =>
+    rw [hp] at h
+    simp only [Bind.bind, Except.bind] at h
+    cases hd : checkDocument p.ast p.claims fileKey (evidence.getObjValD "main") budget p.qualified with
+    | error err => rw [hd] at h; contradiction
+    | ok u =>
+      rw [hd] at h
+      simp only at h
+      cases he : evidenceParts evidence p with
+      | error err => rw [he] at h; contradiction
+      | ok parts =>
+        rw [he] at h
+        simp only at h
+        cases u
+        refine ⟨p, parts, rfl, he, checkDocument_safe hd, fun m e hme => ?_⟩
+        exact checkDocument_safe (checkModules_each h m e hme)
 
 end Verification.SourceClaimJson

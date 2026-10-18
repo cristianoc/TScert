@@ -232,6 +232,31 @@ and a fresh result forged onto code returning its parameter. A fresh array
 popped inside `try` is refused with every node a handler covers, though its
 result is dense (`map-fresh-handler-refused`, a gap).
 
+## Element writes (design)
+
+`a[i] = v` is `setElem` on `a`'s store, then the write of the store it
+returns back to `a`'s store field. At an index the store lists, `setElem`
+writes `v` into the element's location, a location of `class(value)`, and
+returns the store unchanged; at a hole or past the end it allocates a fresh
+location, at or above the entry heap's length, and returns the store with it
+listed there. Either way every old present index stays present and the
+store lists no old element location it did not list, so an element write is
+within $`\{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{grow}\}`$,
+and within $`\{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{keep}\}`$
+where the index is proved present at the write, after its operands are
+evaluated: a required position of the store's tuple contract, or an index
+inside a dense prefix the write's facts prove. A length alone proves no
+presence, since a hole may lie below it. The rule, stated for the node
+checker as the typed field write is: the typed atomic element write runs
+within `{value: any, store: grow}`, and within `{value: any, store: keep}`
+with presence evidence; its operands' evaluation keeps its own footprint. Its proof obligation is a lemma of `setElem`'s step
+and of the store-field write, composed by `Closed.Holds.trans`. A store
+write through any other operation (`length` assignment, `delete` of an
+element) is outside the rule. `record-render`'s `parseTrailers`
+(`entries[entries.length - 1][1] += …`, a required position of a pair) is
+the motivating program: with the rule, `parseRecord` is within
+`{value: any, store: grow}`, the stable set.
+
 ## The rule users see
 
 > `xs.map(f)` has type `U[]` with no holes when `xs` has none and `f`, with

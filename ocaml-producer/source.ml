@@ -607,7 +607,11 @@ type program = { file: Json.t; digest: Json.t; declarations: declaration list;
                  functions: fn list; init: stmt list; values: (string * ty) list;
                  (* The binders of the generic classes the top-level code
                     declares: the initialization unit's. *)
-                 init_quantified: quantifier list }
+                 init_quantified: quantifier list;
+                 (* The imports read qualified (certified imports): each by
+                    its name, its declaration identity, and its certified
+                    unit's footprint and on-throw flag. *)
+                 qualified: (string * Json.t * footprint * bool) list }
 
 (* A pattern's defaults, in evaluation order. *)
 let rec pattern_defaults = function
@@ -1200,6 +1204,7 @@ and decode_program ast =
        rest is the argument lists of its instance's array. *)
     init=List.map (stmt {init_binders with value_packs=true}) (items "init" ast);
     init_quantified;
+    qualified=[];
     values=List.mapi (fun index v ->
       (* A generic value's binders quantify each of its signatures. *)
       let binders,quantified = quantify top (-1000-index) (items "typeParams" v) in

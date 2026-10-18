@@ -132,8 +132,13 @@ and infer_assuming ?(thrown=[]) ~state flows program assumed =
       ~on_throw:(List.mem g.name thrown)
       (Option.value (List.assoc_opt g.name assumed) ~default:top_footprint) (module_type g)))
     program.Source.functions
-    @ List.map (fun (name,t) -> name,lazy t) program.Source.values in
-  let arities = List.map (fun (g:Source.fn) -> g.name,arity g) program.Source.functions in
+    (* A qualified import is read as its unit's module reads the unit: at its
+       certified footprint, its code discarding further actuals. *)
+    @ List.map (fun (name,t) -> name,lazy (match List.find_opt (fun (n,_,_,_) -> n = name) program.Source.qualified with
+        | Some (_,_,footprint,on_throw) -> with_footprint ~on_throw footprint t
+        | None -> t)) program.Source.values in
+  let arities = List.map (fun (g:Source.fn) -> g.name,arity g) program.Source.functions
+    @ List.map (fun (n,_,_,_) -> n,Module_contract.Discards) program.Source.qualified in
   let infer_with = infer_function state flows program.Source.declarations arities in
   (* A class's instance members read the class as its own binding, `C.[[self]]`,
      at its construct signature: a module value of the initialization unit. *)

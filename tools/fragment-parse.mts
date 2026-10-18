@@ -15,7 +15,7 @@
  * are in fragment-support.mts. All five are this one trusted program. The fragment it accepts is stated in
  * ../AGENTS.md and, as a grammar, in the pull request description.
  */
-import { API, type Checker } from "typescript/unstable/sync";
+import { API, SymbolFlags, type Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
@@ -23,7 +23,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, substitute, typeTerm, visitType, type TermScope } from "./type-term.mts";
-import type { Ast, Expr, Stmt, TypeParamAst } from "./fragment.mts";
+import type { Ast, Expr, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
@@ -37,7 +37,7 @@ import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, t
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
   throwUninitializedName, type EnumMemberValue } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
-import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writtenElement } from "./fragment-support.mts";
+import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
 import * as expressions from "./fragment-expressions.mts";
 import * as statements from "./fragment-statements.mts";
@@ -941,9 +941,73 @@ export class Gate {
   guardOf: typeof guards.guardOf = guards.guardOf;
 }
 
+/** A program module a lowered file imports a function from: its file, and
+ * its identity in the declaration documents (`DeclarationIdentity.module`). */
+type ImportedModule = { absolute: string; location: string };
+
+/**
+ * The fragment of `file`, with every program module it imports a function
+ * from, directly or through another such module, lowered as a run of that
+ * module alone lowers it, under the same project (`modules`). A module whose
+ * declarations or top-level code the gate refuses is left out: its imports
+ * stay at their declared types.
+ */
 export function parseFile(file: string, carriesContext = false,
   tsconfigPath?: string, resolutionFile = file,
   seen?: (diagnostic: SeenDiagnostic) => void): Ast {
+  const main = lowerFile(file, carriesContext, tsconfigPath, resolutionFile, seen, null);
+  const modules: ModuleAst[] = [];
+  const done = new Set<string>();
+  const work = [...main.imported];
+  for (let next = work.shift(); next; next = work.shift()) {
+    if (done.has(next.location)) continue;
+    done.add(next.location);
+    let lowered: Lowered;
+    try {
+      lowered = lowerFile(next.absolute, false, tsconfigPath, next.absolute, undefined, next.location);
+    } catch {
+      continue;
+    }
+    if (lowered.module) modules.push(lowered.module);
+    work.push(...lowered.imported);
+  }
+  return { ...main.ast, modules };
+}
+
+/** A lowered file: its fragment, the module entry it is as an imported
+ * module, and the program modules it imports functions from. */
+type Lowered = { ast: Ast; module: ModuleAst | null; imported: ImportedModule[] };
+
+/** The same value with each `module` field naming `from` naming `to`, each
+ * written application's `site` in `from` sited in `to`, and each binder name
+ * a declaration of `from` gives (`T@from:offset`) given by `to`: in a binder's
+ * declaration (a type parameter's `name` and its resolution slots) and in a
+ * binder term's `name`, and nowhere else, so a literal type or a property key
+ * spelling such a name keeps it. An imported module's own declarations, which
+ * its lowering names by its path, named by its identity in the importer's
+ * documents. */
+function renamedModule<T>(value: T, from: string, to: string): T {
+  const binderName = (x: unknown): unknown => typeof x === "string" ? x.split(`@${from}:`).join(`@${to}:`) : x;
+  const rename = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(rename);
+    if (!v || typeof v !== "object") return v;
+    const binderTerm = "k" in v && v.k === "binder";
+    const binderDeclaration = "name" in v && "bound" in v && "resolution" in v;
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k,
+      k === "module" && x === from ? to
+      : k === "site" && typeof x === "string" && x.startsWith(`${from}#`) ? `${to}${x.slice(from.length)}`
+      : k === "name" && (binderTerm || binderDeclaration) ? binderName(x)
+      : k === "resolution" && binderDeclaration && x && typeof x === "object"
+        ? Object.fromEntries(Object.entries(x).map(([s, n]) => [s, binderName(n)]))
+      : rename(x)]));
+  };
+  // asserted: a structural copy of the value, its shape unchanged
+  return rename(value) as T;
+}
+
+function lowerFile(file: string, carriesContext: boolean,
+  tsconfigPath: string | undefined, resolutionFile: string,
+  seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null): Lowered {
   const absolute = resolve(file);
   const text = readFileSync(absolute, "utf8");
   const { file: source, checker } = openFile(absolute, text);
@@ -1684,19 +1748,80 @@ export function parseFile(file: string, carriesContext = false,
   // retained declaration now has one source equation, shared with imports.
   // A function without a body is a declaration, not an example of one.
   const declared = carriesContext ? fnNodes.filter((s) => s.body) : fnNodes;
-  const parsed = declared.map((s) => gate.functionDecl(s));
+  // An imported module's function the gate refuses is absent, with the
+  // reason; its other functions stay. Its code is not lowered, so the gate
+  // refuses the module where any of its code, lowered or not, writes the
+  // binding of one of its function declarations: an import reads that
+  // binding as the declaration's closure.
+  if (location !== null)
+    for (const s of declared)
+      if (s.name && writesName(source, s.name.text))
+        gate.fail(s.name, `a module whose code writes the binding of its function ${s.name.text}`);
+  const absent: ModuleAst["absent"] = [];
+  const parsed = location === null ? declared.map((s) => gate.functionDecl(s))
+    : declared.flatMap((s) => {
+      try {
+        return [gate.functionDecl(s)];
+      } catch (error) {
+        absent.push({ name: s.name?.text ?? "", namePos: s.name ? gate.span(s.name) : gate.span(s),
+          reason: messageOf(error) });
+        return [];
+      }
+    });
   // Every enum's members must have values, whether or not it runs.
   for (const e of enumNodes) gate.enumMembers(e.name.text);
   const init = initNodes.flatMap((s) => ts.isClassDeclaration(s) ? [gate.classStmt(s)]
     : ts.isEnumDeclaration(s) ? gate.enumStmt(s) : [gate.stmt(s)]);
-  if (parsed.length === 0 && init.length === 0) gate.fail(null, "no functions in file");
-  return {
-    file,
-    sourceSha256: createHash("sha256").update(text).digest("hex"),
-    declarations,
-    functions: parsed,
-    init,
-  };
+  if (location === null && parsed.length === 0 && init.length === 0) gate.fail(null, "no functions in file");
+  const sourceSha256 = createHash("sha256").update(text).digest("hex");
+  // A module identity is its path from the project's root, the directory of
+  // its tsconfig: where a file names its project, its imports resolve from
+  // there, a snapshot's included.
+  const root = tsconfigPath ? (tsconfigPath.endsWith(".json") ? dirname(resolve(tsconfigPath)) : resolve(tsconfigPath))
+    : null;
+  const importedFrom = importedModules(importNodes, checker, declarations.values, root);
+  const ast: Ast = { file, sourceSha256, declarations, functions: parsed, init, modules: [] };
+  const module: ModuleAst | null = location === null ? null : renamedModule({ location, sourceSha256,
+    declarations, init, functions: parsed, absent }, absolute, location);
+  return { ast, module, imported: importedFrom };
+}
+
+/** The program modules a file imports functions from: each named value
+ * import TypeScript binds to a function declaration with a body in a source
+ * file of the program, outside the standard library, the tool's own
+ * declarations and installed packages, with the module identity the
+ * declaration document gives it. */
+function importedModules(importNodes: ImportDeclaration[], checker: Checker,
+    values: Ast["declarations"]["values"], root: string | null): ImportedModule[] {
+  const elements = importNodes.flatMap((node) => {
+    const bindings = node.importClause?.namedBindings;
+    const clause = node.importClause;
+    const typeOnly = !!clause && "isTypeOnly" in clause && clause.isTypeOnly === true;
+    return typeOnly || !bindings || !ts.isNamedImports(bindings) ? []
+      : bindings.elements.filter((e) => !e.isTypeOnly);
+  });
+  if (elements.length === 0) return [];
+  const symbols = checker.getSymbolAtLocation(elements.map((e) => e.name));
+  return elements.flatMap((element, i) => {
+    const value = values.find((v) => v.binding.local === element.name.text);
+    if (!value || value.construct || value.typeParams.length > 0 || value.type.k !== "function") return [];
+    const location = value.declaration.module;
+    if (location.startsWith("typescript/lib/") || location.startsWith("tscert/")) return [];
+    if (root !== null) {
+      const absolute = resolve(root, location);
+      return /\.[cm]?ts$/.test(absolute) && !/\.d\.[cm]?ts$/.test(absolute) && !absolute.split("/").includes("node_modules")
+        ? [{ absolute, location }] : [];
+    }
+    const symbol = symbols[i];
+    if (!symbol) return [];
+    const target = symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+    const declaration = target.declarations[0]?.resolve();
+    if (target.declarations.length !== 1 || !declaration || !ts.isFunctionDeclaration(declaration) ||
+        !declaration.body) return [];
+    const source = declaration.getSourceFile();
+    if (source.isDeclarationFile || source.fileName.split("/").includes("node_modules")) return [];
+    return [{ absolute: source.fileName, location }];
+  });
 }
 
 

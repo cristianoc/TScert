@@ -1181,8 +1181,35 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
     ← decodeGuard (← jField j "guard")⟩
   return (fn, typeParams)
 
+/-- A program module a certified import may read: its artifact, the
+module identity its declarations carry and the sha256 of the bytes lowered;
+its document, as a fragment of that file; and the functions it could not
+lower, each with the parser's reason. -/
+structure ModuleAst where
+  location : String
+  sourceSha256 : String
+  document : Json
+  absent : List (String × Span × String)
+
+def decodeModule (j : Json) : Except String ModuleAst := do
+  fieldsExactly j ["location", "sourceSha256", "declarations", "init", "functions", "absent"]
+  let location ← jStr (← jField j "location")
+  let sha ← jStr (← jField j "sourceSha256")
+  let absent ← (← jArr j "absent").mapM fun a => do
+    fieldsExactly a ["name", "namePos", "reason"]
+    let pos : Span ← match fromJson? (← jField a "namePos") with
+      | .ok p => pure p
+      | .error e => throw e
+    return (← jStr (← jField a "name"), pos, ← jStr (← jField a "reason"))
+  let document := Json.mkObj [("file", toJson location), ("sourceSha256", toJson sha),
+    ("declarations", ← jField j "declarations"), ("init", ← jField j "init"),
+    ("functions", ← jField j "functions"), ("modules", Json.arr #[])]
+  return ⟨location, sha, document, absent⟩
+
 def decodeAstWithParams (j : Json) : Except String (List (Fn × List TypeParam)) := do
-  fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions"]
+  fieldsExactly j ["file", "sourceSha256", "declarations", "init", "functions", "modules"]
+  -- A document's modules are read apart from it (`planImports`).
+  if !(← jArr j "modules").isEmpty then throw "a document's modules are read apart from it"
   let document ← jField j "declarations"
   fieldsExactly document ["roots", "definitions", "values", "symbols", "applications"]
   if !(← jArr document "roots").isEmpty || !(← jArr document "definitions").isEmpty ||

@@ -273,6 +273,18 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-own-property-descriptor-value: the descriptor's value is a string returned at number");
   assert.equal(runExample("invalid-record-index-named-key", "classOf([], 0)"), undefined,
     "invalid-record-index-named-key: the element past the end is undefined, whose member is undefined at string");
+  // An imported unit certified as preserving gives `map` dense results; one
+  // popping the array `map` reads leaves a hole below the result's length.
+  assert.equal(runImporting("certified-value-import", `JSON.stringify([doubled([1, 2]), labels([1, -1]), tallies([5, 6], []), values([{ value: 3 }]), innerValues([{ inner: { value: 4 } }])])`),
+    '[[2,4],["positive","other"],[1,2],[3],[4]]', "certified-value-import: the results are dense");
+  assert.equal(runImporting("certified-mts-value-import", "JSON.stringify(doubled([1, 2]))"), "[2,4]",
+    "certified-mts-value-import: the result is dense");
+  assert.equal(runImporting("certified-nested-value-import", "JSON.stringify([quadrupled([1, 2]), doubledRows([[1], [2, 3]])])"),
+    "[[4,8],[[2],[4,6]]]", "certified-nested-value-import: the results are dense");
+  assert.equal(runImporting("certified-cycle-value-import", "JSON.stringify([parity(3), parity(4)])"), "[1,0]",
+    "certified-cycle-value-import: the cycle runs");
+  assert.equal(runImporting("invalid-certified-write-value-import", "((r) => Object.keys(r).length)(zeros([1, 2, 3]))"), 2,
+    "invalid-certified-write-value-import: the result has three positions, two present");
   assert.equal(runExample("invalid-json-stringify-boxed-key",
     `(() => { let ran = false; const k = new String("a"); k.toString = () => { ran = true; return "a"; }; keyed({ a: 1 }, k); return ran; })()`),
     true, "invalid-json-stringify-boxed-key: a String object's toString runs inside JSON.stringify");

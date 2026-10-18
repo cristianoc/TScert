@@ -44,7 +44,7 @@ source-claims document (§9.1). -/
 def source (ast claims : Json) (budget : PositiveCertificates.SearchBudget := {}) : Except Failure SourceLowering := do
   let document ← (field ast "declarations").mapError Failure.refusal
   let ds ← (definitions document).mapError Failure.refusal
-  if let some i := (List.range ds.size).find? (fun i => ds[i]!.identity == arrayProtoIdentity) then
+  if let some i := (List.range ds.size).find? (fun i => ImplicitDependency.arrayProto.selects ds[i]!.identity) then
     if i != 0 || !ds[i]!.parameters.isEmpty then throw (.refusal "ArrayProto must be the first declaration")
   let ((annotations, values, generics, units, initBinders, claims), s) ←
     ((lowerSource ast claims).run { doc := ds, subtypeBudget := budget }).mapError Failure.refusal
