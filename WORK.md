@@ -111,7 +111,8 @@ Left open:
   callable object, a packed call) consume no footprint, so a bounded body
   refuses them;
 - an array element write has no bound; the fragment writes elements only at
-  proved index singletons; `group` in `dev/` needs one (below).
+  proved index singletons; `group` in `dev/` needs one (below), and
+  [element writes](docs/FOOTPRINTS.md#element-writes-design) states the rule.
 
 **Footprint precision** is deferred
 ([FOOTPRINTS](docs/FOOTPRINTS.md#deferred-extra-precision)): separating one
