@@ -15,13 +15,13 @@ That ranking is how the next rule is found: discriminated unions by a literal
 field are the first entry, and the data names the next ones
 ([candidates](#6-candidates-the-data-names)).
 
-None of the rules is implemented. Each claim carries its status: **proved**
-(with the theorem and where it lives), **sketched** (an argument in this
-document), **cited** (with the source's scope), **measured** (with date and
-commit), or **open**. Several lemmas are proved in Lean against the library
-at commit 84b326a in a file outside the repository; their statements are
-given here, and moving them into `lean/Verification/Types/` is part of the
-[plan](#9-a-measured-plan).
+R1–R5 are implemented in the structural engine
+([implementation](#9-the-implementation)); R6 and R7 are not. Each claim
+carries its status: **proved** (with the theorem and where it lives),
+**sketched** (an argument in this document), **cited** (with the source's
+scope), **measured** (with date and commit), or **open**. The lemmas of R1–R5
+are in `lean/Verification/Types/ClauseSelection.lean`; the others are proved
+in a file outside the repository against the library at commit 84b326a.
 
 The types, their meaning and the subtyping rules the framework restricts are
 those of [POSITIVE-TYPES](POSITIVE-TYPES.md): a type $`A`$ is a finite union
@@ -182,7 +182,7 @@ its status. The coverage columns are [measured](#5-measurement).
 - **Eligible:** every clause pair.
 - **Excludes** $`b`$ when $`b\notin\{\mathsf{top},\mathsf{source}\}`$ and
   $`\sigma(b)\ne\sigma(a)`$.
-- **Lemma 1 (proved, `covers_shape`):**
+- **Lemma 1 (proved, `ClauseSelection.covers_shape`):**
   $`\Delta;S\vdash a\sqsubseteq b\Rightarrow b=\mathsf{top}\lor b=\mathsf{source}\lor\sigma(a)=\sigma(b)`$,
   for every table, by cases on the coverage rule. The meanings are disjoint
   too: for $`c\notin\{\mathsf{top},\mathsf{source}\}`$,
@@ -194,13 +194,14 @@ its status. The coverage columns are [measured](#5-measurement).
 - **Excludes** a primitive target that does not admit the source's cell: a
   literal not equal to the source's literal, or a literal when the source is
   the whole family.
-- **Lemma 2 (sketched):** the coverage rule's primitive cases are exactly
-  identity, a literal under its family, and `top` or `source`.
+- **Lemma 2 (proved, `ClauseSelection.covers_prim`):** the coverage rule's
+  primitive cases are exactly identity, a literal under its family, and `top`
+  or `source`.
 
 ### R3. Literal discriminants
 
-- **Eligible:** a record source with an entry at a key the record target
-  fixes at a plain type.
+- **Eligible:** a record or dictionary source with an entry at a key the
+  record or dictionary target fixes at a plain type.
 - **Excludes** $`b`$ when $`b`$ fixes $`f`$ at a plain $`B_f`$, the source has
   an entry at $`f`$, and every source entry $`(f{:}A)`$ has its own literal
   $`\ell_A\in L(A)`$ with $`\ell_A\notin\gamma(C(B_f))`$.
@@ -214,27 +215,26 @@ its status. The coverage columns are [measured](#5-measurement).
   \Delta;S\nvdash\mathsf{Ref}(\Phi;\psi;\ldots)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\ldots).
   ```
 
-  The literal form the exclusion uses is `refs_exclude_lits` (proved): each
-  source entry at $`f`$ holds some $`\mathsf{strLit}\,s_A`$ that no clause of
-  the plain type $`B`$ admits; whichever entry coverage selects supplies its
-  own counterexample. The lemma is about the field types, so it carries no
-  level or heap premise, unlike separation (Lemma 7). It is a coverage
-  exclusion, not a disjointness of meanings. For `dict` and `callable`
-  targets, which reach the same field and view conditions, and for number,
-  boolean and bigint literals, the argument is the same (sketched; each needs
-  its own proof). Entries at `"x"` and `"y"` exclude a target fixing `"z"`, and
-  exclude no target admitting `"x"` or `"y"`.
+  The literal form the exclusion uses is `ClauseSelection.covers_litExcl`
+  (proved, for record and dictionary clauses on both sides and every
+  singleton: string, number, boolean, bigint, symbol, null, undefined): each
+  source entry at $`f`$ holds some literal that no clause of the plain type
+  $`B`$ admits; whichever entry coverage selects supplies its own
+  counterexample. The lemma is about the field types, so it carries no level
+  or heap premise, unlike separation (Lemma 7). It is a coverage exclusion,
+  not a disjointness of meanings. Callable targets reach the same field
+  condition and are not selected by R3. Entries at `"x"` and `"y"` exclude a
+  target fixing `"z"`, and exclude no target admitting `"x"` or `"y"`.
 
 ### R4. Required keys
 
-- **Eligible:** a record (or dictionary, or callable) source and target.
+- **Eligible:** a record or dictionary source and target.
 - **Excludes** $`b`$ when $`b`$ fixes a key at which the source has no field
   and no view.
-- **Lemma 4 (proved for records, `refs_exclude_absent`):** a record target
-  fixing $`f`$ is covered by a record source only if the source holds a field
-  or a view at $`f`$, whatever the table. The dictionary and callable cases
-  reach the same field and view conditions and need their own proofs
-  (sketched). This is where a Term arm meets an array arm: an array holds no
+- **Lemma 4 (proved, `ClauseSelection.covers_keyExcl`):** a record or
+  dictionary target fixing $`f`$ is covered by a record or dictionary source
+  only if the source holds a field or a view at $`f`$, whatever the table.
+  Callable clauses are not selected by R4. This is where a Term arm meets an array arm: an array holds no
   `kind`, and a Term arm holds no store.
 
 ### R5. The dictionary bound
@@ -242,11 +242,14 @@ its status. The coverage columns are [measured](#5-measurement).
 - **Eligible:** a record source and a dictionary target.
 - **Excludes** $`b`$ when the source has no own-key bound listing its keys
   ($`\mathsf{among}`$) without the prototype key.
-- **Lemma 5 (proved, `dict_needs_among`):** coverage of a dictionary by a
+- **Lemma 5 (proved, `ClauseSelection.covers_boundExcl`):** coverage of a dictionary by a
   record needs such a bound (`CoversKeys`), a necessary condition of the rule,
   not a disjointness of meanings. An array clause's bound excludes keys, so a
   dictionary covers no array clause without a further qualifying
   $`\mathsf{among}`$ bound, and `Json`'s object arm is then no candidate.
+
+Together (proved, `ClauseSelection.covers_candidate`): under a sound
+relation, every target clause covering a source clause is a candidate.
 
 ### R6. Decomposition of a source spanning cells
 
@@ -594,23 +597,90 @@ with unique and repeated contexts and sets counted.
   types; disjointness of the arms' meanings holds only as Lemma 7 states it,
   at a successor level under a heap satisfying the world.
 
-## 9. A measured plan
+## 9. The implementation
 
-The steps are for the owner to choose; nothing here is built. In order:
+`ClauseSelection.candidates G a B` is the target clauses of $`B`$ that R1–R5
+leave for the source clause $`a`$. With `SearchBudget.select` on, the
+default:
 
-1. **Measurement attribution and proof scopes** (this document).
-2. **R1–R5 as the decoder slice.** Lean only, no wire change, no new clause:
-   the lemmas of §3 move into `Types/`; one function computes
-   $`\mathsf{cand}_B(a)`$ and serves `demandPairs`, `coveredIn`, the table
-   growth's coverage test and `checkEntries`, so search and checking share the
-   reduced work. Soundness is the sublist monotonicity of §2.2. Every pipeline
-   case keeping its outcome is regression evidence; completeness for the
-   checker is the open bridge of §2.2, and where the restricted search
-   refuses, the general search runs. Benchmark against the same commit
-   without the rules on `termsOf`, the `tools/` slices and the series of
-   $`n`$ record arms narrowed by `kind` (1.2 s at 20 arms, 9.4 s at 50, over
-   30 s at 100; [arms per unit](COMPILER-API.md#arms-per-unit)), including the
-   index construction and the dependencies actually not generated.
+- table growth adds only the demand pairs of candidate clause pairs
+  (`demandPairs`), and the greatest fixed point's coverage test reads only
+  candidates (`coveredIn`);
+- the table check reads the candidates first and then every target clause
+  (`checkEntries`, its existential over `candidates ++ clausesOf`);
+- a structural comparison or a comparison step not established with
+  selection is redone with selection off (`compareStructural`,
+  `compareStepState`), so the restricted search establishes nothing less than
+  the general one.
+
+**Soundness (proved).** A candidate is a target clause
+(`ClauseSelection.mem_candidates`), so each covering found is one of the
+general rule's, and `checkEntries_sound`, `compareStructural_sound` and
+`compareStepState_sound` hold with their statements unchanged, as does
+`checkJson_safe`. Completeness of the restricted table search alone stays
+the open bridge of §2.2; the rerun stands in for it.
+
+### 9.1 Measured
+
+On 2026-10-18 at the merge of main 71fe5e6, before (the merge alone) and
+after (with the selection), user time, median of 3 runs of the verifier on
+the same artifacts, on a machine other work was loading (load averages 4 to
+30 during the runs; wall time exceeded user time by up to 2.3 times in the
+earlier runs of the day). `termsOf`, `decodeTerm` and `decodeCode` are
+three slices of `calculus.mts` holding the same functions, and measure the
+same.
+
+| Unit | Search before | Search after | Check before | Check after |
+| --- | --- | --- | --- | --- |
+| `termsOf` | 30.2 s | 23.5 s | 5.0 s | 3.2 s |
+| `printGraph` | 48.6 s | 38.0 s | 9.7 s | 6.8 s |
+| `pageBody` | 12.7 s | 13.8 s | 4.9 s | 4.8 s |
+| `card` | 10.2 s | 11.1 s | 4.0 s | 4.1 s |
+| `statementsOnPath` | 16.0 s | 16.9 s | 11.7 s | 11.8 s |
+
+The engine's own counts, from one profiled run of each (the scratch profile
+of §5.1, growth lines only; "restricted" counts the comparisons with
+selection on, "reruns" those redone with it off):
+
+| Unit, search | Demand pairs before | restricted | reruns | Clause pairs before | restricted | Engine time before | restricted | reruns |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `termsOf` | 470,306 | 41,560 | 215,809 | 473,597 | 13,204 | 26.1 s | 9.3 s | 9.8 s |
+| `printGraph` | 872,480 | 92,331 | 461,345 | 854,027 | 24,573 | 37.6 s | 16.5 s | 13.6 s |
+| `pageBody` | 62,218 | 61,874 | 16,860 | 49,650 | 29,340 | 1.6 s | 1.8 s | 0.5 s |
+| `card` | 36,879 | 36,707 | 13,613 | 36,897 | 19,687 | 1.1 s | 1.1 s | 0.4 s |
+| `statementsOnPath` | 82,999 | 20,361 | 62,951 | 64,982 | 684 | 1.06 s | 1.23 s | 0.80 s |
+
+- **Where selection works,** the restricted engine generates an eleventh of
+  the demand pairs and reads a thirty-sixth of the clause pairs on
+  `termsOf`, and its time falls from 26.1 s to 9.3 s.
+- **The reruns cost as much as they save elsewhere, and rescue nothing
+  measured.** On `termsOf`, 9,143 of the 11,895 comparisons are not
+  established, as many as the general engine leaves unestablished,
+  and each is redone in full: 9.8 s, none established. Over the seven units,
+  no rerun establishes its comparison.
+- **The index's cost.** Computing every source clause's candidates once over
+  each grown table takes 0.57 s on `termsOf`'s search and 0.55 s on
+  `statementsOnPath`'s, where it exceeds what selection saves; the engine
+  recomputes candidates in each round of the greatest fixed point, so its
+  cost is a multiple of that pass.
+- **Evidence** is byte-identical before and after on all five units: the
+  restricted engine chooses the same derivations there.
+- **The suite and the census.** `make suite` passes before and after (63 s
+  and 73 s of wall time, the second under a load average of 82). The `tools/`
+  census at the 60 s limit verifies 79 slices before and 83 after, its 4
+  search timeouts gone (176 s and 153 s of wall time); the `dev/` census
+  verifies 23 of 24 both times (65 s and 52 s).
+
+### 9.2 Next steps
+
+The steps are for the owner to choose. In order:
+
+1. **The rerun.** On these units it costs about as much as selection saves
+   and establishes nothing. Removing it needs completeness of the restricted
+   table search (§2.2) or a narrower trigger, such as a rerun only where the
+   restricted table lost a row the general one keeps.
+2. **The index's cost.** Candidates computed once per table instead of once
+   per round of the greatest fixed point.
 3. **R7, R6 and evidence sharing for `statementsOnPath`.** The kind-set atom
    and its string analogue, with the decomposition, measured at 347 literals
    against the 4-literal cut (1.2 s, 0.3 s, 2.9 MB) with phase timings and
@@ -620,6 +690,13 @@ The steps are for the owner to choose; nothing here is built. In order:
    profiling moves outside the checker's proof scope (§5.1).
 
 ## Lean
+
+In the library (`Types/ClauseSelection.lean`): `excludes`, `candidates`,
+`mem_candidates`, `any_candidates`, `covers_shape` (Lemma 1), `covers_prim`
+(Lemma 2), `covers_litExcl` (Lemma 3), `covers_keyExcl` (Lemma 4),
+`covers_boundExcl` (Lemma 5), `covers_candidate`; in
+`Types/PositiveCertificates.lean`: `SearchBudget.select`,
+`InstanceImageCheck.general`, `compareStructural`, `compareStepState`.
 
 Proved outside the repository against the library at commit 84b326a, each
 depending on no axiom beyond `propext`, `Classical.choice` and `Quot.sound`:
