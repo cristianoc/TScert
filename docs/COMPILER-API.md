@@ -315,7 +315,7 @@ The steps that copy, write or expose the values of an object's own keys
 (an object's merge, which a spread, an object pattern's rest and
 `Object.assign` lower to; `Object.assign`'s copy onto its target; and the
 parameter of `Object.values`, `Object.entries` and
-`Object.getOwnPropertyDescriptor`, stated at the ordinary objects) are
+`Object.getOwnPropertyDescriptor`, stated at the non-host values) are
 stuck on a host object. So the
 safety of an accepted program gives every operand of these steps ordinary:
 capability preservation is type soundness over the classified families,
@@ -363,7 +363,7 @@ overlays (`library-globals.mts`, `array-prototype.mts`) has one
 classification: **transparent**, its model holding of a restricted value as
 of any value of its operand's type (a callback the operation calls keeps its
 own callable contract and effect); **obligated**, a step stuck on a host
-object, or a library parameter stated at the ordinary objects, whose rule
+object, or a library parameter stated at the non-host values, whose rule
 requires $`\mathrm{excludesHost}`$ of its operands; or
 refused, a form the fragment does not admit. A library entry's model is its
 reviewed contract (a result type and an effect), so an entry whose contract
@@ -414,9 +414,18 @@ transparent entry may.
 
 The host classification is a constructor of the object descriptor; the
 families listed above admit it or not as stated, the merge and
-`Object.assign` steps are stuck on it, and the ordinary objects are a
-family, the stated parameter of the obligated `Object` members, which
-admits a type exactly where $`\mathrm{excludesHost}`$ holds of it. The
+`Object.assign` steps are stuck on it, and the stated parameter of the
+obligated `Object` members is the family of **non-host values**: the
+primitives, the callables and the ordinary-classified objects. The
+checker's admission rule for an argument at that parameter is
+$`\mathrm{excludesHost}`$ of the argument's claimed type, and the lemma
+proved for it is semantic inclusion: $`\mathrm{excludesHost}(A)`$ gives
+$`⟦A⟧\subseteq`$ the non-host values. The family is no structural type
+(an empty object type would admit host objects), and subtyping into it is
+this rule alone. A type parameter is included only through its certified
+bound; an unconstrained parameter and a recursive occurrence in its own
+bound supply nothing; a union needs every arm and an intersection one
+conjunct. The
 checker's rules for those steps and parameters require
 $`\mathrm{excludesHost}`$ of the operands' claimed types, proved sound
 against the families. An operation without a certified rule fails
@@ -1141,7 +1150,7 @@ The implementation needs, beside these:
   source form the fragment admits, checked complete by its type; then in
   Lean the host classification in the object descriptor, the families
   admitting it, the merge and `Object.assign` steps stuck on it, the
-  ordinary objects as the obligated `Object` members' parameter,
+  non-host values as the obligated `Object` members' parameter,
   $`\mathrm{excludesHost}`$ with its soundness and the `JsonValue` lemma,
   and the obligated rules' premises.
 - **A compact representation of kind sets** in claims and evidence, and a
