@@ -628,17 +628,21 @@ Subtyping is inclusion of sets, and every kind set is a number:
 \frac{}{\mathsf{numIn}(S)\le\mathsf{Number}}
 ```
 
-A test answers on a kind set by membership, and its slices are sets again
+A test answers on a kind set element by element, and its slices are sets again
 (a set of one element its literal, an empty one no atom):
 
 ```math
-T_{\mathsf{numEq}(b)}(\mathsf{numIn}(S))=S\cap\{b\},\qquad
-T_{\lnot\mathsf{numEq}(b)}(\mathsf{numIn}(S))=S\setminus\{b\},\qquad
+T_{\mathsf{numEq}(b)}(\mathsf{numIn}(S))=\{s\in S\mid\mathrm{numberEqual}(s,b)\},\qquad
+T_{\lnot\mathsf{numEq}(b)}(\mathsf{numIn}(S))=\{s\in S\mid\lnot\mathrm{numberEqual}(s,b)\},\qquad
 T_{\mathsf{truthy}}(\mathsf{numIn}(S))=S\setminus Z,\qquad
 T_{\lnot\mathsf{truthy}}(\mathsf{numIn}(S))=S\cap Z
 ```
 
-with $`Z`$ the bit patterns of $`0`$, $`-0`$ and the NaNs; `typeof` answers
+with $`\mathrm{numberEqual}`$ the step's equality of numbers (`Calculus.numberEqual`,
+ECMAScript's `Number::equal`): $`+0`$ and $`-0`$ are equal and a NaN equals
+nothing, so for $`S=\{-0,1\}`$ a test against $`+0`$ keeps $`-0`$ on its true
+edge, and a NaN in $`S`$ is on every false edge. $`Z`$ is the bit patterns of
+$`0`$, $`-0`$ and the NaNs; `typeof` answers
 `"number"`. A test of a slot at $`\mathsf{numIn}(S)`$ is one node of
 evidence whatever $`|S|`$ is, its two arms at the two slices, and a field
 test reaches the record arms through the field slice $`F^f`$ unchanged. On
