@@ -123,6 +123,20 @@ Reads and calls deliberately do not qualify, even if their types look stable. -/
     | _ => none
   | _ => none
 
+/-- The field, tag and polarity a singleton or shape test of a field read of
+an immutable variable tests: the variable's slot, the field, the tag and
+whether the test holds where the tag does. -/
+@[nospecialize] def fieldConditionTag (scope : List (ScopeBinding ι)) :
+    Fragment.Expr → Option (Nat × PropKey × Tag × Bool)
+  | .not _ e => (fieldConditionTag scope e).map fun (i, f, tag, equal) => (i, f, tag, !equal)
+  | .shapeTest _ tag equal (.read _ f (.var _ name)) =>
+    (valueSlot scope name).map (·, f, tag, equal)
+  | .singletonTest _ tag equal testLeft left right =>
+    match (if testLeft then left else right) with
+    | .read _ f (.var _ name) => (valueSlot scope name).map (·, f, tag, equal)
+    | _ => none
+  | _ => none
+
 /-- The tag a condition tests on an immutable variable: its own shape or
 singleton test, or, for a variable that is not a Boolean, its truthiness
 (`ToBoolean`), which is how JavaScript reads any other value as a condition. -/

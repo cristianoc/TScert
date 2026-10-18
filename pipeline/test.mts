@@ -280,6 +280,32 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged operand entry: a parameter read claimed narrower than its test refused\n");
 }
 {
+  // Where `n.kind === 1 || b.kind === 2` holds, `n` may be of any arm: a
+  // read of `n` claimed at the first arm is refused where evidence is
+  // produced and where it is checked.
+  const good = run("field-test-disjunction");
+  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "mixed"), "mixed function");
+  const start = source.indexOf("return n.kind", source.indexOf("function mixed")) + "return ".length;
+  const read = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + 1), "the read of n");
+  assert.ok(Array.isArray(read.type) && read.type.length === 3, JSON.stringify(read.type));
+  read.type = read.type.slice(0, 1);
+  const forged = writeClaims(good, "disjunction-one-arm", claims);
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+      join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+        ? "disjunction-one-arm-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      { encoding: "utf8", timeout: 30_000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    if (mode === "--produce-source-claims")
+      assert.match(result.stdout + result.stderr, new RegExp(`at \\[${start},${start + 1}\\)`));
+  }
+  process.stdout.write("forged disjunction: an object read claimed at one arm where another object's test holds refused\n");
+}
+{
   // An array literal's spread is copied before a later element that runs
   // code, as JavaScript reads it there; a spread operand claimed at other
   // than an array is refused where the elements are produced and checked.

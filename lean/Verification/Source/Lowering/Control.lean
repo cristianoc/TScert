@@ -120,8 +120,10 @@ source bindings are refined; every generated edge checks this candidate context.
 A true conjunction / false disjunction establishes both operand outcomes. The
 other outcome came from either operand: a slot both paths refine holds what
 either refined it to (`joinContexts`), and any other slot keeps its input
-type. A passed equality with a singleton `single` names (`conditionSingletons`)
-leaves its operand that value alone, which `tagMember` checks on the edge. -/
+type. A test of a field of an immutable binding's object refines the object
+to the arms whose field can pass it (`fieldSlice`). A passed equality with a
+singleton `single` names (`conditionSingletons`) leaves its operand that value
+alone, which `tagMember` checks on the edge. -/
 @[nospecialize] def conditionContext (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (cond : Fragment.Expr) (answer : Bool) (arrays : Option (Ty ι) := none)
     (single : Tag → Option ι := fun _ => none) : List (Ty ι) :=
@@ -143,6 +145,10 @@ leaves its operand that value alone, which `tagMember` checks on the edge. -/
         match (if holds && !sliced.isEmpty then single tag else none) with
         | some l => Γ.set i [l]
         | none => Γ.set i sliced
+    else if let some (i, f, tag, equal) := fieldConditionTag scope cond then
+      -- The test's dispatch re-reads the field and records its link, which
+      -- justifies the object's arms on the edge (`fieldSlice`).
+      Γ.set i (BranchRefinement.fieldSlice G (Γ[i]?.getD []) f tag (answer == equal))
     else if let some i := testedSlot scope Γ cond then
       -- A tested Boolean is the outcome; any other tested value is of the
       -- labels its truthiness admits.
