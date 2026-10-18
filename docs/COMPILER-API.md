@@ -289,9 +289,15 @@ truncation to a lower step index (`Adm.down`) keep every value, so they keep
 every classification. Exactly the package's instances and its node lists
 are host; no step of the calculus allocates one, and a host entry's result
 reveals the classification of the object it gives and changes none. The
-model value of a host object owns its stated members, holding their values,
-and every other key its runtime prototype chain has; a node list's also owns
-its store of the $`v_i`$ (T4).
+model value of a host object keeps own fields and inherited lookup
+separate, as the calculus's prototype-chain lookup does: it owns its stated
+members, holding their values, and the runtime object's undeclared own
+data fields (`parent`, `view`, `_cursorIndex`, …), whose contents the model
+leaves unknown; its prototype field leads to model prototype objects owning
+the keys its runtime chain provides beyond its own (a node list's `at`,
+`pos`, `forEachNode`, then `Array.prototype`'s). A node list's own keys are
+its store of the $`v_i`$, `length` and those data fields, none of them a key
+its prototypes provide (T4).
 
 The families of the types a host value can be held at admit host objects:
 readonly views (`viewT`), optional members (`optT`), methods, readonly
@@ -305,9 +311,12 @@ a callable or a primitive:
   (`ownKeysT`), and a dictionary (`dictViewT`, `dictCellT`);
 - a call or construct signature, whose objects carry code.
 
-The steps that copy or write an object's own keys (an object's merge, which
-a spread, an object pattern's rest and `Object.assign` lower to, and
-`Object.assign`'s copy onto its target) are stuck on a host object. So the
+The steps that copy, write or expose the values of an object's own keys
+(an object's merge, which a spread, an object pattern's rest and
+`Object.assign` lower to; `Object.assign`'s copy onto its target; and the
+parameter of `Object.values`, `Object.entries` and
+`Object.getOwnPropertyDescriptor`, stated at the ordinary objects) are
+stuck on a host object. So the
 safety of an accepted program gives every operand of these steps ordinary:
 capability preservation is type soundness over the classified families,
 proved with it, relative to the host entry contracts (T1, T3, T6) and to code
@@ -354,14 +363,20 @@ overlays (`library-globals.mts`, `array-prototype.mts`) has one
 classification: **transparent**, its model holding of a restricted value as
 of any value of its operand's type (a callback the operation calls keeps its
 own callable contract and effect); **obligated**, a step stuck on a host
-object whose rule requires $`\mathrm{excludesHost}`$ of its operands; or
+object, or a library parameter stated at the ordinary objects, whose rule
+requires $`\mathrm{excludesHost}`$ of its operands; or
 refused, a form the fragment does not admit. A library entry's model is its
 reviewed contract (a result type and an effect), so an entry whose contract
 holds of every value of its parameter types, host objects among them, is
 transparent although the runtime answer depends on own keys: `Object.keys`
 of a node is a fresh array of strings, which is all its contract states.
 The obligated forms are those whose model result states the operand's
-members as own keys. An unclassified form or entry is refused.
+members as own keys, and those that hand the values of a host object's own
+fields to the program: those fields hold the package's mutable internal
+heap (a list's `_cursorIndex`, which an indexed read changes; its
+`sourceFile`, whose `nodes` cache grows as nodes materialise), which the
+model does not describe, and an `unknown` result does not stop its later
+refinement and reflection. An unclassified form or entry is refused.
 
 | Operation                                                                                                                      | Model                                                                                  | Classification                                                                  |
 | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -371,9 +386,10 @@ members as own keys. An unclassified form or entry is refused.
 | `f.apply(t, x)`, `f.call(t, …)`, `f.bind(t, …)` of a client function                                                          | `x`'s `length` and indices                                                             | transparent                                                                     |
 | `new Set(x)`; `new Map(x)` with `x` an array of pairs                                                                          | the store's elements; a pair's `0` and `1`                                             | transparent; a node list is no array of pairs                                   |
 | `Promise.all(x)`                                                                                                               | elements at `Promise` types                                                            | transparent: realm promises by the [await assumption](SOURCE-CONTRACTS.md#async-functions-and-await), never host objects |
-| `String(x)`, a template, `+` with a string, `join`, `toString`                                                                 | the [conversion contract](SOURCE-CONTRACTS.md#prototype-contracts)                     | transparent: a node list inherits `join` and `toString`, and its elements, nodes, meet no conversion contract |
+| `String(x)`, a template, `+` with a string, `join`, `toString`                                                                 | the complete [conversion contract](SOURCE-CONTRACTS.md#prototype-contracts)            | transparent where the operand meets the complete contract: a node list owns no `toString`, `join` or `Symbol.toPrimitive`, its prototypes provide none but `Array.prototype`'s, and its elements, nodes, meet the contract nowhere, so only an empty list can |
 | every member of the array overlay on a readonly receiver, `at` included                                                        | its contract                                                                           | transparent: a node list inherits each but `at`, whose override gives `undefined` where `Array.prototype.at` gives an element, within the contract `T \| undefined` |
-| `Object.keys`, `Object.values`, `Object.entries` at `{}`, `Object.getOwnPropertyDescriptor`, `for…in` (`%ForIn%`)              | a fresh array of strings, of `unknown`s, of pairs; a descriptor or `undefined`; strings | transparent                                                                     |
+| `Object.keys`, `for…in` (`%ForIn%`)                                                                                            | a fresh array of strings; strings                                                      | transparent                                                                     |
+| `Object.values`, `Object.entries` at `{}`, `Object.getOwnPropertyDescriptor`                                                   | the values of the operand's own fields                                                 | obligated: $`\mathrm{excludesHost}`$ of the operand                             |
 | `Object.values` and `Object.entries` at a dictionary, `%Iterate:ForIn%`                                                        | the dictionary's values                                                                | transparent; the parameter excludes host values                                 |
 | `JSON.stringify(x)`                                                                                                            | a string                                                                               | `x` at `JsonValue`                                                              |
 | a `console` method                                                                                                             | nothing observed                                                                       | every argument's type a primitive or a union of primitives                      |
@@ -384,21 +400,26 @@ members as own keys. An unclassified form or entry is refused.
 | `sort`, `reverse`, `push`, `pop`, `shift`, `unshift`                                                                           | the receiver's store written                                                           | a writable receiver, which excludes host values                                 |
 | an `Array.prototype` member called with another receiver (`Array.prototype.sort.call(l)`)                                      | —                                                                                      | refused: no library value but `Boolean` is admitted as a value                  |
 
-**First-class library values.** `Object.assign`, the only obligated library
-call, is a call form of the parser, recognized by its binding, and
-`Object` is admitted as no value, so no alias (`const assign =
-Object.assign`), extraction (`const { assign } = Object`) or argument
-(`consume(Object.assign)`) reaches it. A library global is read as a value
+**First-class library values.** The obligated library calls are members of
+`Object`: `Object.assign`, a call form of the parser recognized by its
+binding, and `Object.values`, `Object.entries` and
+`Object.getOwnPropertyDescriptor`, entries without `value`. `Object` is
+admitted as no value, so no alias (`const values = Object.values`),
+extraction (`const { assign } = Object`) or argument
+(`consume(Object.entries)`) reaches one. A library global is read as a value
 only where its entry says so (`value`: `Boolean` alone), and only a
 transparent entry may.
 
 #### Lean
 
 The host classification is a constructor of the object descriptor; the
-families listed above admit it or not as stated, and the merge and
-`Object.assign` steps are stuck on it. The checker's rules for those steps
-require $`\mathrm{excludesHost}`$ of the operands' claimed types, proved
-sound against the families. An operation without a certified rule fails
+families listed above admit it or not as stated, the merge and
+`Object.assign` steps are stuck on it, and the ordinary objects are a
+family, the stated parameter of the obligated `Object` members, which
+admits a type exactly where $`\mathrm{excludesHost}`$ holds of it. The
+checker's rules for those steps and parameters require
+$`\mathrm{excludesHost}`$ of the operands' claimed types, proved sound
+against the families. An operation without a certified rule fails
 its plan's certification, so no recognizer's completeness is assumed. The
 headline theorem stays `SourceClaimJson.checkJson_safe`, its premise
 exactly `checkJson ast claims fileKey evidence budget = .ok ()`; its
@@ -410,8 +431,8 @@ semantics is otherwise unchanged: certified operations use the existing
 array and record rules, and their agreement with the runtime objects is T4.
 
 The policy refuses some ordinary programs: a spread or an object rest of a
-readonly record that holds no host value, `Object.assign` from one,
-`console.log` of an object, `structuredClone` of any value. Each refusal is
+readonly record that holds no host value, `Object.assign`, `Object.values`
+or `Object.entries` of one, `console.log` of an object, `structuredClone` of any value. Each refusal is
 a coverage loss, recorded as such.
 
 ### Stable members as readonly views
@@ -910,11 +931,12 @@ the corpus runs are regression evidence, not proofs.
   order, and propagates the same exception; its hidden effects (a node
   list's cursor fields, `sourceFile.nodes`, a memoized node) are observed
   by no transparent operation. Each host object corresponds to a
-  host-classified model object owning its stated members and every other
-  key of its runtime prototype chain, so `in` and `%HasProperty%` answer as
-  at run time; a node list's also owns its store of the $`v_i`$; a
-  library entry's contract holds of these as of any value of its parameter
-  types. Host values are objects, not callable,
+  host-classified model object owning its stated members and its runtime
+  object's undeclared own data fields, with model prototype objects owning
+  the keys its runtime chain provides beyond those, so `in` and
+  `%HasProperty%` answer as at run time; a node list's also owns its store
+  of the $`v_i`$; a transparent library entry's contract holds of these as
+  of any value of its parameter types. Host values are objects, not callable,
   `typeof` gives `"object"` for them, and `Array.isArray` gives `true`
   exactly for node lists. Node lists are the only array-like host values;
   their length and elements never change. A node list's iterator is a
@@ -969,7 +991,7 @@ Behaviours excluded because soundness needs it:
 | R5  | Bitwise operators take `number` operands only, but `^`, which also takes two bigint operands, and `~`, which also takes one | `obj & 1` (runs `valueOf`), `1n & x`                                                                                                                  |
 | R6  | An abstract node type is the union of the shapes below it, with brands optional   | Using a brand member as evidence (`"_expressionBrand" in n`)                                                                                                                     |
 | R7  | Every admitted `API` instance runs the executable the package selects             | `new API({ tsserverPath })`, `pipe` options, `API.fromLSPConnection`                                                                                                             |
-| R8  | An object spread, an object pattern's rest and `Object.assign` need operand types that exclude host values | `{ ...node }`, `const { kind, ...rest } = node`, `Object.assign({}, node)`, through `unknown`, readonly records, `Array.isArray`, type parameters and callbacks |
+| R8  | An object spread, an object pattern's rest, `Object.assign`, `Object.values`, `Object.entries` and `Object.getOwnPropertyDescriptor` need operand types that exclude host values | `{ ...node }`, `const { kind, ...rest } = node`, `Object.assign({}, node)`, `Object.values(list)`, `Object.getOwnPropertyDescriptor(list, "_cursorIndex")`, through `unknown`, readonly records, `Array.isArray`, type parameters and callbacks |
 
 Limits of the mechanism, each a scoped refusal of behaviour that is safe in
 JavaScript and could be admitted with more machinery:
@@ -1041,13 +1063,17 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
   (with a bound that excludes nothing, and with a recursive bound), stored
   in a container, passed to a callback, thrown and caught, and taken by a
   separately verified function: an object spread, an object pattern's rest,
-  `Object.assign` from and onto it; under Node each answers otherwise than
-  the model (`{ ...node }` has `parent` and no `kind`); the same operations
+  `Object.assign` from and onto it, `Object.values`, `Object.entries` and
+  `Object.getOwnPropertyDescriptor` of it; under Node each answers otherwise
+  than the model (`{ ...node }` has `parent` and no `kind`; a descriptor of
+  a list's `_cursorIndex` changes after an indexed read, and its
+  `sourceFile.nodes` grows); the same operations
   on values whose types exclude host values, verified;
 - transparent library entries on a node and a node list, verified and run
-  under Node, each result within its contract: `Object.keys`,
-  `Object.values`, `Object.entries`, `Object.getOwnPropertyDescriptor`,
-  `for…in`, `in`, a list's `at` at a non-integer index;
+  under Node, each result within its contract: `Object.keys`, `for…in`,
+  `in` of a stated member, of an undeclared own field (`"_cursorIndex"`)
+  and of a prototype-provided key (`"pos"` of a list), and a list's `at` at
+  a non-integer index;
 - traversal: `JSON.stringify` of a `JsonValue` built from node members,
   verified; of a record holding a node, refused; `console.log` of an object,
   refused;
@@ -1055,8 +1081,8 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
   `f.apply`, argument spread, array destructuring with a rest, `join` of an
   empty list; `new Map` of an ordinary array of pairs holding nodes,
   verified; `new Map(list)` refused;
-- first-class: `const assign = Object.assign`, `const { assign } = Object`
-  and `consume(Object.assign)`, refused;
+- first-class: `const assign = Object.assign`, `const values = Object.values`,
+  `const { assign } = Object` and `consume(Object.entries)`, refused;
 - forged claims, bypassing the producer, refused by the checker: each
   obligated operation at an operand type that does not exclude host values,
   and a type parameter's bound claimed excluding;
@@ -1114,7 +1140,8 @@ The implementation needs, beside these:
 - **The restricted-value policy**: the audit, a classification of every
   source form the fragment admits, checked complete by its type; then in
   Lean the host classification in the object descriptor, the families
-  admitting it, the merge and `Object.assign` steps stuck on it,
+  admitting it, the merge and `Object.assign` steps stuck on it, the
+  ordinary objects as the obligated `Object` members' parameter,
   $`\mathrm{excludesHost}`$ with its soundness and the `JsonValue` lemma,
   and the obligated rules' premises.
 - **A compact representation of kind sets** in claims and evidence, and a
