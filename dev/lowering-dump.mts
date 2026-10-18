@@ -10,7 +10,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { showTag, showTerm, unmatched } from "../tools/calculus.mts";
+import { fields, nat, showTag, showTerm, unmatched, type Json } from "../tools/calculus.mts";
 import { decodeNode, type Continuation, type ProgramNode, type Target } from "../tools/control-flow.mts";
 import { verifier } from "../pipeline/verify-source.mts";
 
@@ -30,9 +30,25 @@ if (!existsSync(claims)) process.exit(0);
 const lowered = spawnSync(verifier, ["--lower-program", join(artifacts, "fragment.json"), claims, join(artifacts, "source.ts")], { encoding: "utf8" });
 if (lowered.status !== 0) throw new Error(lowered.stderr);
 
-interface Unit { name: string; start: number; program: unknown[]; codes: { arity: number; start: number; program: unknown[] }[] }
-// asserted: the verifier's own lowerJson output, whose nodes are decoded below
-const units = JSON.parse(lowered.stdout) as Unit[];
+interface Unit { name: string; start: number; program: Json[]; codes: { arity: number; start: number; program: Json[] }[] }
+/** The verifier's lowerJson output: per unit its name, entry node and nodes,
+ * and per code its arity, entry node and nodes; the nodes are decoded where
+ * they are printed. */
+function decodeUnits(v: Json): Unit[] {
+  if (!Array.isArray(v)) throw Error("invalid lowering: units expected");
+  return v.map((u: Json): Unit => {
+    const o = fields(u, ["name", "start", "program", "codes"]);
+    const name = o.name, program = o.program, codes = o.codes;
+    if (typeof name !== "string" || !Array.isArray(program) || !Array.isArray(codes)) throw Error("invalid lowering unit");
+    return { name, start: nat(o.start), program, codes: codes.map((c: Json) => {
+      const k = fields(c, ["arity", "start", "program"]);
+      const nodes = k.program;
+      if (!Array.isArray(nodes)) throw Error("invalid lowering code");
+      return { arity: nat(k.arity), start: nat(k.start), program: nodes };
+    }) };
+  });
+}
+const units = decodeUnits(JSON.parse(lowered.stdout));
 
 const to = (t: Target) => `n${t.label}`;
 function showStep(k: Continuation): string {
@@ -46,7 +62,7 @@ function showStep(k: Continuation): string {
     default: return unmatched(k);
   }
 }
-function printGraph(start: number, program: unknown[]): void {
+function printGraph(start: number, program: Json[]): void {
   const nodes: ProgramNode[] = program.map(decodeNode);
   const width = Math.max(...nodes.map(n => showTerm(n.expression).length));
   nodes.forEach((n, i) => {

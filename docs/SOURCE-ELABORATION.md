@@ -478,12 +478,14 @@ TypeScript's type of the key has another part, and which narrows nothing:
 ```math
 k\ \mathtt{in}\ o\;\equiv\;\%\mathsf{HasProperty}\%(k,\ o)
 \qquad
-\%\mathsf{HasProperty}\%:(\mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol},\ \mathtt{object})\Rightarrow\mathtt{boolean}
+\%\mathsf{HasProperty}\%:(\mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol},\ \mathtt{object})\Rightarrow_{\emptyset}\mathtt{boolean}
 ```
 
 The call evaluates the key, then the object, then the lookup, as `in` does;
 converting the key runs no code, and neither does the lookup on the objects
-a program holds (no proxy, [trust surface](DESIGN.md#trust-surface)).
+a program holds (no proxy, [trust surface](DESIGN.md#trust-surface)), which
+writes nothing: the signature states the empty footprint, so a callback
+testing a key keeps a `map`'s result dense (`library-preserving-reflection`).
 
 A read `o[k]` of an object whose key is claimed at a union of string and number
 singletons $`\kappa_1\mid\cdots\mid\kappa_n`$ dispatches the same way, each

@@ -48,7 +48,7 @@ export type CallCode =
   /** Graph code; `mode` is the wire's `kind`, left out for `[[Call]]` code,
    * and `rest` is left out when the code collects none, the one spelling of
    * each. */
-  | { kind: "graph"; arity: number; exprs: Term[]; conts: [unknown, unknown][]; start: number; caps: Term[];
+  | { kind: "graph"; arity: number; exprs: Term[]; conts: [Json, Json][]; start: number; caps: Term[];
       mode: "construct" | "sloppy" | null; rest: boolean };
 /** Every binary operator, as `Arith` in Calculus.lean names them. */
 const OPERATORS = ["add", "sub", "mul", "div", "pow", "xor", "rem", "bitAnd", "bitOr", "shl", "shr", "ushr",
@@ -105,65 +105,69 @@ export type Term =
    * property at the key `key`'s value converts to, holding `init`'s value. */
   | { kind: "makeKey"; key: Term; init: Term };
 
+/** What `JSON.parse` returns without a reviver (`ParsedJson` in
+ * library-globals.mts): the decoders read the wire from it. A read of a key
+ * of a parsed object finds a `Json`, or `undefined` where the object lacks
+ * the key. */
+export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 /* JSON shape checks, shared with the program graph in control-flow.mts. They
  * belong to neither language, so they name neither: a malformed target is not
  * a malformed term. */
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === "object" && !Array.isArray(v);
-export function fields(v: unknown, keys: string[]): Record<string, unknown> {
-  if (
-    !isRecord(v) ||
-    Object.keys(v).length !== keys.length ||
-    keys.some((k) => !(k in v))
-  )
-    throw Error("unexpected or missing field");
+/** A parsed object, or `undefined` for any other value. */
+function recordOf(v: Json | undefined): { [key: string]: Json } | undefined {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
   return v;
 }
+export function fields(v: Json | undefined, keys: string[]): { [key: string]: Json } {
+  const o = recordOf(v);
+  if (o === undefined || Object.keys(o).length !== keys.length || keys.some((k) => !(k in o)))
+    throw Error("unexpected or missing field");
+  return o;
+}
 /** A non-negative integer. */
-export function nat(v: unknown): number {
+export function nat(v: Json | undefined): number {
   if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0)
     throw Error("expected a non-negative integer");
   return v;
 }
 /** The one key of a constructor written as an object, and what it holds. */
-export function constructorOf(v: unknown): { key: string; value: unknown } {
-  if (!isRecord(v)) throw Error("invalid constructor");
-  const keys = Object.keys(v);
-  if (keys.length !== 1) throw Error("unexpected or missing field");
-  const key = keys[0];
-  return { key, value: v[key] };
+export function constructorOf(v: Json | undefined): { key: string; value: Json } {
+  const o = recordOf(v);
+  if (o === undefined) throw Error("invalid constructor");
+  const entries = Object.entries(o);
+  const entry = entries[0];
+  if (entries.length !== 1 || entry === undefined) throw Error("unexpected or missing field");
+  const [key, value] = entry;
+  return { key, value };
 }
 /** A double's bit pattern: decimal, unsigned, at most 64 bits. */
-function bitsOf(v: unknown): string {
+function bitsOf(v: Json | undefined): string {
   if (typeof v !== "string" || !/^[0-9]+$/.test(v) || BigInt(v) > 0xffffffffffffffffn)
     throw Error("invalid number");
   return v;
 }
-function stringOf(v: unknown, what: string): string {
+function stringOf(v: Json | undefined, what: string): string {
   if (typeof v !== "string") throw Error(what);
   return v;
 }
-function termsOf(v: unknown): Term[] {
+function termsOf(v: Json | undefined): Term[] {
   if (!Array.isArray(v)) throw Error("invalid arguments");
   return v.map(decodeTerm);
 }
-function keyOf(v: unknown): Key {
+function keyOf(v: Json | undefined): Key {
   if (typeof v === "string") return v;
   const s = fields(v, ["symbol"]).symbol;
   if (typeof s !== "number") throw Error("invalid symbol key");
   return { symbol: s };
 }
 
-export function decodeTag(v: unknown): Tag {
+export function decodeTag(v: Json | undefined): Tag {
   const bare = BARE_TAGS.find((t) => t === v);
   if (bare !== undefined) return { kind: bare };
   const { key, value } = constructorOf(v);
   switch (key) {
     case "hasKey": {
-      const k = fields(value, ["key"]).key;
-      if (typeof k !== "string" && !(isRecord(k) && Object.keys(k).length === 1 && typeof k.symbol === "number"))
-        throw Error("unknown tag");
-      return { kind: "hasKey", key: keyOf(k) };
+      return { kind: "hasKey", key: keyOf(fields(value, ["key"]).key) };
     }
     case "numEq": {
       const b = fields(value, ["bits"]).bits;
@@ -190,7 +194,7 @@ export function decodeTag(v: unknown): Tag {
   }
 }
 
-function decodeCode(v: unknown): CallCode {
+function decodeCode(v: Json | undefined): CallCode {
   if (v === "absent") return { kind: "absent" };
   const { key, value } = constructorOf(v);
   switch (key) {
@@ -209,11 +213,13 @@ function decodeCode(v: unknown): CallCode {
       return { kind: "bound", target, receiver, pre: c.pre.map(decodeTerm) };
     }
     case "graph": {
-      const optional = isRecord(value) ? ["kind", "rest"].filter((k) => k in value) : [];
+      const o = recordOf(value);
+      const optional = o === undefined ? [] : ["kind", "rest"].filter((k) => k in o);
       const c = fields(value, ["arity", "exprs", "conts", "start", "caps", ...optional]);
       let mode: "construct" | "sloppy" | null = null;
       if ("kind" in c) {
-        if (c.kind === "construct" || c.kind === "sloppy") mode = c.kind;
+        const kind = c.kind;
+        if (kind === "construct" || kind === "sloppy") mode = kind;
         else throw Error("invalid code kind");
       }
       if ("rest" in c && c.rest !== true) throw Error("invalid code rest flag");
@@ -221,9 +227,10 @@ function decodeCode(v: unknown): CallCode {
       const { exprs, conts, caps } = c;
       if (!Array.isArray(exprs) || !Array.isArray(conts) || !Array.isArray(caps) || exprs.length !== conts.length)
         throw Error("invalid graph code");
-      const pairs: [unknown, unknown][] = conts.map((k: unknown) => {
+      const pairs: [Json, Json][] = conts.map((k: Json): [Json, Json] => {
         if (!Array.isArray(k) || k.length !== 2) throw Error("invalid graph code");
         const [continuation, handler] = k;
+        if (continuation === undefined || handler === undefined) throw Error("invalid graph code");
         return [continuation, handler];
       });
       return { kind: "graph", arity, exprs: exprs.map(decodeTerm), conts: pairs, start, caps: caps.map(decodeTerm),
@@ -234,7 +241,7 @@ function decodeCode(v: unknown): CallCode {
   }
 }
 
-export function decodeTerm(v: unknown): Term {
+export function decodeTerm(v: Json | undefined): Term {
   switch (v) {
     case "nul": return { kind: "nul" };
     case "undef": return { kind: "undef" };
@@ -267,7 +274,7 @@ export function decodeTerm(v: unknown): Term {
     case "objAt": {
       const o = fields(value, ["fields", "call", "identity"]);
       if (!Array.isArray(o.fields)) throw Error("invalid object fields");
-      const pairs: [string, number][] = o.fields.map((pair: unknown) => {
+      const pairs: [string, number][] = o.fields.map((pair: Json): [string, number] => {
         if (!Array.isArray(pair) || pair.length !== 2) throw Error("invalid object field");
         const [name, location] = pair;
         if (typeof name !== "string") throw Error("invalid object field");
@@ -280,7 +287,7 @@ export function decodeTerm(v: unknown): Term {
       const call = decodeCode(o.call);
       const names = o.names;
       if (!Array.isArray(names)) throw Error("invalid field names");
-      const strings = names.map((n: unknown) => stringOf(n, "invalid field names"));
+      const strings = names.map((n: Json) => stringOf(n, "invalid field names"));
       return { kind: "makeAt", call, names: strings, inits: termsOf(o.inits) };
     }
     case "readAt": {
@@ -322,16 +329,14 @@ export function decodeTerm(v: unknown): Term {
     case "arr": {
       const elems = fields(value, ["elems"]).elems;
       if (!Array.isArray(elems)) throw Error("invalid store");
-      return { kind: "arr", elems: elems.map((l: unknown) => (l === null ? null : nat(l))) };
+      return { kind: "arr", elems: elems.map((l: Json) => (l === null ? null : nat(l))) };
     }
     case "spread": return { kind: "spread", a: decodeTerm(fields(value, ["a"]).a) };
     case "throw": return { kind: "throw", a: decodeTerm(fields(value, ["a"]).a) };
     case "merge": {
       const o = fields(value, ["drop", "a", "b"]);
       const drop = o.drop;
-      if (!Array.isArray(drop) || drop.some((key: unknown) => typeof key !== "string" &&
-          !(isRecord(key) && Object.keys(key).length === 1 && typeof key.symbol === "number")))
-        throw Error("invalid dropped keys");
+      if (!Array.isArray(drop)) throw Error("invalid dropped keys");
       return { kind: "merge", drop: drop.map(keyOf), a: decodeTerm(o.a), b: decodeTerm(o.b) };
     }
     case "makeKey": {

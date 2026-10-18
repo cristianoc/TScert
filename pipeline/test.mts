@@ -1247,7 +1247,8 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
 // writing a cell it captures, a `Map`'s internal slots through `set`, or a
 // fresh `Set`'s through `add` is within `{value: any, store: keep}` and not
 // the empty one; one calling a member stated unrestricted (`pop` on the source
-// beside a string's `trim` or alone) or beyond the footprint (a global regex's
+// beside a string's `trim` or alone, `Object.entries` of an interface's
+// object) or beyond the footprint (a global regex's
 // `test`) is refused at its own typing, even at the footprint `map`'s dense
 // signature accepts. A refused control marked `consumed` also checks the
 // fixture's honest evidence against the forged claim, which must refuse; its
@@ -1282,6 +1283,8 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   ["map-fresh-controls-sparse", "(y) =>", 3, false, writeValues, true],
   ["map-fresh-controls-sparse", "(z) =>", 3, false, writeValues, true],
   ["map-fresh-controls-sparse", "(w) =>", 3, false, writeValues, true],
+  ["object-entries-sparse", "(n) =>", 3, false, keepAll, true],
+  ["invalid-object-entries-preserving", "(n) =>", 3, false, keepAll, false],
 ] as const) {
   const artifacts = run(file);
   const claims = readClaims(artifacts);
@@ -1649,50 +1652,53 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
-  // A test's answer is a fact of the field only where an edge establishes
-  // it. Claimed where the field is untested, or past a write that may alias
-  // it or a call, the read at the test's slice is refused where evidence is
-  // produced and, for the claim before the test, where it is checked.
-  const artifacts = run("field-tag-read");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  const claims = readClaims(artifacts);
-  const size = must(claims.functions.find(f => f.name === "size"), "size's claims");
-  const tested = source.indexOf("return t.mapping.map", source.indexOf("function size"));
-  const after = must(size.entries.find(e => e.start === tested), "the entry past the test");
-  const first = must(size.entries.find(e => e.start === source.indexOf("if (!Array.isArray", source.indexOf("function size"))),
-    "the entry of the test");
-  must(first.bindings.find(b => b.name === "t"), "t at the test").current =
-    must(after.bindings.find(b => b.name === "t"), "t past the test").current;
-  const input = writeClaims(artifacts, "forged-field-tag-before", claims);
-  const produce = produceWith(artifacts, input, "forged-field-tag-before");
-  assert.ifError(produce.error);
-  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
-  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
-    assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify)/);
-  // Past the aliasing write and past the call, the honest claims read the
-  // field at its type; claims keeping the test's fact there are refused.
-  for (const name of ["afterWrite", "afterCall"]) {
+  // A test's answer is a fact of the field, or of a dictionary's entry, only
+  // where an edge establishes it. Claimed where the field is untested, or
+  // past a write that may alias it or a call, the read at the test's slice is
+  // refused where evidence is produced and where it is checked.
+  for (const [file, afterNames] of [["field-tag-read", ["afterWrite", "afterCall"]],
+      ["dictionary-field-tag-read", ["afterCall"]]] as const) {
+    const artifacts = run(file);
+    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
     const claims = readClaims(artifacts);
-    const fn = must(claims.functions.find(f => f.name === name), `${name}'s claims`);
-    const from = source.indexOf(`function ${name}`);
-    const test = source.indexOf("Array.isArray", from);
-    const ret = source.indexOf("return t.mapping;", from);
-    const between = must(fn.entries.filter(e => e.start > test && e.start < ret)
-      .find(e => e.bindings.some(b => b.name === "t" && b.current !== null)), `${name}: the entry holding the test's fact`);
-    const fact = must(between.bindings.find(b => b.name === "t")?.current, `${name}: the test's fact`);
-    const at = must(fn.entries.find(e => e.start === ret), `${name}: the read's entry`);
-    must(at.bindings.find(b => b.name === "t"), `${name}: t at the read`).current = fact;
-    const read = must(fn.expressions.find(e => e.pos[0] === ret + "return ".length && e.pos[1] === ret + "return t.mapping".length),
-      `${name}: the read's claim`);
-    read.type = must(fact.find(([field]) => field === "mapping"), `${name}: the mapping's fact`)[1];
-    const input = writeClaims(artifacts, `forged-field-tag-${name}`, claims);
-    const produce = produceWith(artifacts, input, `forged-field-tag-${name}`);
+    const size = must(claims.functions.find(f => f.name === "size"), "size's claims");
+    const tested = source.indexOf("return t.mapping.map", source.indexOf("function size"));
+    const after = must(size.entries.find(e => e.start === tested), "the entry past the test");
+    const first = must(size.entries.find(e => e.start === source.indexOf("if (!Array.isArray", source.indexOf("function size"))),
+      "the entry of the test");
+    must(first.bindings.find(b => b.name === "t"), "t at the test").current =
+      must(after.bindings.find(b => b.name === "t"), "t past the test").current;
+    const input = writeClaims(artifacts, "forged-field-tag-before", claims);
+    const produce = produceWith(artifacts, input, "forged-field-tag-before");
     assert.ifError(produce.error);
     assert.equal(produce.status, 1, produce.stdout + produce.stderr);
     for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
       assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify)/);
+    // Past the aliasing write and past the call, the honest claims read the
+    // field at its type; claims keeping the test's fact there are refused.
+    for (const name of afterNames) {
+      const claims = readClaims(artifacts);
+      const fn = must(claims.functions.find(f => f.name === name), `${name}'s claims`);
+      const from = source.indexOf(`function ${name}`);
+      const test = source.indexOf("Array.isArray", from);
+      const ret = source.indexOf("return t.mapping;", from);
+      const between = must(fn.entries.filter(e => e.start > test && e.start < ret)
+        .find(e => e.bindings.some(b => b.name === "t" && b.current !== null)), `${name}: the entry holding the test's fact`);
+      const fact = must(between.bindings.find(b => b.name === "t")?.current, `${name}: the test's fact`);
+      const at = must(fn.entries.find(e => e.start === ret), `${name}: the read's entry`);
+      must(at.bindings.find(b => b.name === "t"), `${name}: t at the read`).current = fact;
+      const read = must(fn.expressions.find(e => e.pos[0] === ret + "return ".length && e.pos[1] === ret + "return t.mapping".length),
+        `${name}: the read's claim`);
+      read.type = must(fact.find(([field]) => field === "mapping"), `${name}: the mapping's fact`)[1];
+      const input = writeClaims(artifacts, `forged-field-tag-${name}`, claims);
+      const produce = produceWith(artifacts, input, `forged-field-tag-${name}`);
+      assert.ifError(produce.error);
+      assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+      for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+        assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify)/);
+    }
   }
-  process.stdout.write("forged field tag facts: claimed before the test, past an aliasing write and past a call, refused in search and in checking\n");
+  process.stdout.write("forged field tag facts, of a record's field and of a dictionary's entry: claimed before the test, past an aliasing write and past a call, refused in search and in checking\n");
 }
 
 {

@@ -316,17 +316,12 @@ theorem slice_value {G : NormalGraph ι} {C B : Ty ι} {Q : Post} {n W h v o}
 contract `C` by the ordinary rule: its result is of every type that answer
 refines `C` to. The fact is about the location the read finds, so the value
 it returns is one the fact describes. -/
-theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref C B R ρ n W h tag q}
-    (ht : HasTyUsing G images Γ (.readAt fld (.var i)) C) (hi : Γ[i]? = some Ref)
-    (hr : fieldOperand (expand G Ref) fld = true)
+theorem slicedRead_sound {G : NormalGraph ι} {k i fld C B R ρ n W h tag q} {Q : Post}
+    (base : SafePost (excOf G) (meaning G C) Q n W h (.readAt fld (ρ i)))
     (hm : Fact.mk i R fld ∈ k.cells) (hR : R.all (·.answers tag q) = true)
     (hsub : BranchRefinement.ObservedSub G C B (.tag tag q))
-    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G B)
-      (fun h' v => HeapKnowledge.Holds (readFrame k i fld) (push v ρ) h') n W h
-      (.readAt fld (ρ i)) := by
-  have base := typedRead_sound ht hi hr he hk hw hh
+    (hk : HeapKnowledge.Holds k ρ h) :
+    SafePost (excOf G) (meaning G B) Q n W h (.readAt fld (ρ i)) := by
   obtain ⟨flds,c,oid,v,hl,hrd,a,ha,hav⟩ := hk.1 _ hm
   have hq := Atom.answers_sound (List.all_eq_true.mp hR a ha) hav
   have hvv : isVal v = true := Atom.isValue hav
@@ -340,13 +335,18 @@ theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
     · obtain ⟨rfl,rfl⟩ := Step_det step' step
       exact Or.inr ⟨U,h',t',hx,hu,step',hh',slice_value hs' hvv hsub hq⟩
 
+/-- Whether a string-keyed index reaches a key. -/
+def stringIndex (d : IndexKeys × α) (fld : PropKey) : Bool :=
+  d.1 == .strings && match fld with | .str _ => true | .sym _ => false
+
 /-- Whether every alternative is a plain record naming the field `fld`,
-required or optional: a read of it is then of a location of the object, or,
-where an optional key is absent, `undefined`, since such an object has no
-prototype. -/
+required or optional, or a dictionary whose string index reaches it: a read
+of it is then of a location of the object, or, where the key is absent,
+`undefined`, since such an object has no prototype. -/
 def optionalOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
   !cs.isEmpty && cs.all fun c => match c with
     | .refs a _ _ os _ _ => a.any (fun p => decide (p.1 = fld)) || os.any (fun o => decide (o.key = fld))
+    | .dict _ _ _ ds _ _ _ cs => (ds ++ cs).any (stringIndex · fld)
     | _ => false
 
 /-- What such a read finds: the object, and, where it has the key, a
@@ -386,6 +386,26 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
         rw [hl] at hl'
         cases hl'
       · exact optT_no_proto (List.mem_map.mpr ⟨o, hmem, rfl⟩) hc.2.2.1 hl
+  | dict a bs vs ds os ms ks cs =>
+    obtain ⟨d, hd, hidx⟩ := List.any_eq_true.mp hb
+    simp only [stringIndex, Bool.and_eq_true, beq_iff_eq] at hidx
+    obtain ⟨hstr, hkey⟩ := hidx
+    have hadm : d.1.Admits fld := by
+      rw [hstr]; cases fld with
+      | str _ => trivial
+      | sym _ => simp at hkey
+    obtain ⟨-, -, ⟨hds, hcs⟩, -⟩ := hc
+    -- Each index the clause states is a view or a cell over the object:
+    -- an object with no prototype whose string keys hold the index's values.
+    have hview : dictViewT d.1 (meaning G d.2) (n+1) W v := by
+      rcases List.mem_append.mp hd with hd | hd
+      · exact hds d hd
+      · exact dictCellT_view (hcs d hd)
+    obtain ⟨flds, oid, hvf, hproto, hkeys⟩ := hview
+    subst hvf
+    refine ⟨flds, oid, rfl, fun l hl => ?_, fun _ => hproto⟩
+    obtain ⟨c', hw, hag⟩ := hkeys fld l hl hadm
+    exact ⟨c', hw, fun W' u hu => meaning_valOnly G d.2 0 W' u (hag 0 (by omega) W' u hu)⟩
   | _ => simp at hb
 
 /-- A read of a field that may be optional: it records a read link that also
@@ -1064,11 +1084,11 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     match readSlot j.term with
     | some (fld, i') =>
       (CheckResult.ofBool (decide ((claim e).context = j.context ∧ (claim e).term = j.term ∧ i' = i ∧
-        (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld) ∧
+        (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld || optionalOperand (expand G Ref) fld) ∧
         (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (·.answers tag q))))).bind fun _ =>
       (checkTreeResult G images e codes).bind fun _ =>
       (BranchRefinement.checkObservedSubResult G images (claim e).type j.type (.tag tag q) p).map
-        fun _ => readFrame k i fld
+        fun _ => readFrame k i fld (!(j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld))
     | none => failure
   | .knownValue i R =>
     CheckResult.fromOption (if j.term = .var i ∧ i < j.context.length ∧
@@ -1153,10 +1173,10 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     match readSlot j.term with
     | some (fld, i') =>
       if (claim e).context = j.context ∧ (claim e).term = j.term ∧ checkTreeUsing G images e codes = true ∧ i' = i ∧
-          (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld) ∧
+          (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld || optionalOperand (expand G Ref) fld) ∧
           (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (·.answers tag q)) ∧
           BranchRefinement.checkObservedSubUsing G images (claim e).type j.type (.tag tag q) p = true
-      then some (readFrame k i fld) else none
+      then some (readFrame k i fld (!(j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld))) else none
     | none => none
   | .knownValue i R =>
     if j.term = .var i ∧ i < j.context.length ∧
@@ -1311,7 +1331,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         cases hi : j.context[i']? with
         | none => simp [hi] at hr
         | some Ref =>
-          have hrep : fieldOperand (expand G Ref) fld = true := by simpa [hi] using hr
+          have hrep : fieldOperand (expand G Ref) fld = true ∨ optionalOperand (expand G Ref) fld = true := by
+            simpa [hi] using hr
           obtain ⟨f,hfm,hff⟩ := List.any_eq_true.mp hf
           simp only [Bool.and_eq_true, beq_iff_eq] at hff
           obtain ⟨⟨hfs,hfd⟩,hfc⟩ := hff
@@ -1324,8 +1345,15 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
           rw [hj,term] at typed
           cases hc
           rw [term]
-          have hs := slicedRead_sound typed hi hrep hm hfc (BranchRefinement.checkObservedSub_sound hsub) he hk hw hh
-          simpa [instantiate] using hs
+          simp only [hi, Option.any_some]
+          by_cases hfo : fieldOperand (expand G Ref) fld = true
+          · have hs := slicedRead_sound (typedRead_sound typed hi hfo he hk hw hh) hm hfc
+              (BranchRefinement.checkObservedSub_sound hsub) hk
+            simpa [instantiate, hfo] using hs
+          · have hopt := hrep.resolve_left hfo
+            have hs := slicedRead_sound (optionalRead_sound typed hi hopt he hk hw hh) hm hfc
+              (BranchRefinement.checkObservedSub_sound hsub) hk
+            simpa [instantiate, hfo] using hs
       · contradiction
     · contradiction
   | knownValue i R =>

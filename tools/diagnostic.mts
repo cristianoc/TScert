@@ -1,7 +1,7 @@
 import { decodeGraph, decodeLabels, type TypeGraph, type Labels, type Clause } from "./type-graph.mts";
 // calculus.mts decodes the native terms a record's judgements and source map name.
 // control-flow.mts decodes the program-graph node a node or edge obligation names.
-import { decodeTag, decodeTerm, type Tag, type Term } from "./calculus.mts";
+import { decodeTag, decodeTerm, type Json, type Tag, type Term } from "./calculus.mts";
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
 import type { Span } from "./span.mts";
 
@@ -40,15 +40,15 @@ type HeapAtom = "nul" | "undef" | "tru" | "fls" | "num" | "str" | "defined" | "n
 const HEAP_ATOMS: Record<Extract<HeapAtom, string>, true> = {
   nul: true, undef: true, tru: true, fls: true, num: true, str: true, defined: true, nonNull: true, nonNullish: true,
 };
-const heapAtoms: readonly unknown[] = Object.keys(HEAP_ATOMS);
-function heapAtom(v: unknown): void {
+const heapAtoms: readonly Json[] = Object.keys(HEAP_ATOMS);
+function heapAtom(v: Json): void {
   if (heapAtoms.includes(v)) return;
   // Singleton payloads use the graph language's existing decoder.
-  if (typeof v === "object" && v !== null && "strLit" in v) {
+  if (isRecord(v) && "strLit" in v) {
     decodeGraph([[{strLit: record(v,["strLit"]).strLit}]]);
     return;
   }
-  if (typeof v === "object" && v !== null && "tag" in v) {
+  if (isRecord(v) && "tag" in v) {
     const t = record(record(v,["tag"]).tag,["test","answer"]);
     decodeTag(t.test);
     if (typeof t.answer !== "boolean") throw Error("invalid tag atom answer");
@@ -99,7 +99,7 @@ export type DiagnosticOutcome =
       kind: "subtype-frontier"; limit: number; rounds: number; visited: number;
     } };
 
-function diagnosticOutcome(value: unknown): void {
+function diagnosticOutcome(value: Json | undefined): void {
   if (!isRecord(value)) throw Error("invalid diagnostic outcome");
   switch (value.kind) {
     case "not-established": record(value, ["kind"]); return;
@@ -219,12 +219,12 @@ export type ObligationDiagnostic =
   | SourceRefusal
   | ProductionFailure;
 
-const PHASES: readonly unknown[] = [
+const PHASES: readonly (Json | undefined)[] = [
   "proof-search",
   "certificate-check",
   "request-validation",
 ];
-const KINDS: readonly unknown[] = [
+const KINDS: readonly (Json | undefined)[] = [
   "node-typing",
   "edge-coverage",
   "expression-claim",
@@ -234,15 +234,24 @@ const KINDS: readonly unknown[] = [
 ];
 const PREFIX = "obligation-diagnostic: ";
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === "object" && !Array.isArray(v);
-function record(v: unknown, required: string[], optional: string[] = []): Record<string, unknown> {
+/** A parsed object: the record is read from `JSON.parse`'s data. */
+type Fields = { [key: string]: Json };
+function isRecord(v: Json | undefined): v is Fields {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  return true;
+}
+function record(v: Json | undefined, required: string[], optional: string[] = []): Fields {
   if (!isRecord(v) || required.some(k => !(k in v)) || Object.keys(v).some(k => ![...required,...optional].includes(k))) throw Error("invalid diagnostic fields");
   return v;
 }
-function nat(v: unknown) { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw Error("invalid diagnostic index"); }
-function span(v: unknown): asserts v is Span { if (!Array.isArray(v) || v.length !== 2) throw Error("invalid diagnostic span"); v.forEach(nat); if (v[1] < v[0]) throw Error("reversed span"); }
-function sourceMap(v: unknown): asserts v is SourceMapEntry | null {
+function nat(v: Json | undefined) { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw Error("invalid diagnostic index"); }
+function span(v: Json | undefined): asserts v is Span {
+  if (!Array.isArray(v) || v.length !== 2) throw Error("invalid diagnostic span");
+  const [start, end] = v;
+  nat(start); nat(end);
+  if (typeof start !== "number" || typeof end !== "number" || end < start) throw Error("reversed span");
+}
+function sourceMap(v: Json | undefined): void {
   if (v === null) return;
   const m = record(v,["pos","role","environmentStart","context"]);
   span(m.pos); if (typeof m.role !== "string") throw Error("invalid role");
@@ -255,19 +264,21 @@ function sourceMap(v: unknown): asserts v is SourceMapEntry | null {
   }
 }
 
-function directJudgment(v: unknown, size: number): DirectJudgment {
+function directJudgment(v: Json | undefined, size: number): DirectJudgment {
   const j = record(v,["kind","subject","actual","expected"]);
   if (j.kind !== "subtyping") throw Error("unknown direct-obligation judgment");
-  span(j.subject);
-  return {kind:"subtyping",subject:j.subject,
+  const subject = j.subject;
+  span(subject);
+  return {kind:"subtyping",subject,
     actual:decodeLabels(j.actual,size),expected:decodeLabels(j.expected,size)};
 }
-function knowledge(v: unknown) {
+function knowledge(v: Json | undefined) {
   if (v === null) return;
   const k = record(v,["cells","values","links"]);
   for (const key of ["cells","values"]) {
-    if (!Array.isArray(k[key])) throw Error("invalid heap facts");
-    for (const fact of k[key]) {
+    const facts = k[key];
+    if (!Array.isArray(facts)) throw Error("invalid heap facts");
+    for (const fact of facts) {
       const f = record(fact,["slot","contents","field"]); nat(f.slot);
       if (typeof f.field !== "string") throw Error("invalid heap fact field");
       if (!Array.isArray(f.contents)) throw Error("invalid heap contents");
@@ -284,7 +295,9 @@ function knowledge(v: unknown) {
     if (typeof l.alias !== "boolean") throw Error("invalid alias");
   }
 }
-function diagnosticNode(v: unknown, size: number) {
+/** A node record with its node decoded in place of its wire form, as the
+ * term and tag below are. */
+function diagnosticNode(v: Json | undefined, size: number) {
   const n = record(v,["label","sourceMap","node","claim","requiredKnowledge"]);
   nat(n.label); sourceMap(n.sourceMap); knowledge(n.requiredKnowledge);
   if (n.claim !== null) {
@@ -292,8 +305,7 @@ function diagnosticNode(v: unknown, size: number) {
     if (!Array.isArray(c.context)) throw Error("invalid context");
     c.context.forEach(t => decodeLabels(t,size)); decodeLabels(c.type,size);
   }
-  // The decoded node replaces its wire form, as the term and tag below do.
-  if (n.node !== null) n.node = decodeNode(n.node);
+  return { ...n, node: n.node === null ? null : decodeNode(n.node) };
 }
 
 export function readDiagnostic(
@@ -301,19 +313,23 @@ export function readDiagnostic(
 ): ObligationDiagnostic | undefined {
   const lines = detail.split(/\r?\n/).filter((line) => line.startsWith(PREFIX));
   if (lines.length !== 1) return undefined;
-  let d: Record<string, unknown>;
+  // The decoded parts replace their wire forms in the result.
+  let result: { [key: string]: unknown };
   try {
-    const parsed: unknown = JSON.parse(lines[0].slice(PREFIX.length));
+    const parsed: Json = JSON.parse(lines[0].slice(PREFIX.length));
     if (!isRecord(parsed)) return undefined;
-    d = parsed;
+    const d = parsed;
     const variants: Record<string,string[]> = {
       "node-typing":["id","source","sequent"], "expression-claim":["id","sourceMap","sequent"],
       "direct-obligation":["id","sourceMap","judgment"],
       "source-refusal":["id","sourceMap","reason"],
       "edge-coverage":["id","edgeIndex","source","destination","transfer"], "production-failure":["failure"],
     };
-    if (typeof d.kind !== "string" || !variants[d.kind]) return undefined;
-    record(d,["phase","outcome","fuel","types","kind",...variants[d.kind]],["requiredResult","names"]);
+    const kind = d.kind;
+    if (typeof kind !== "string") return undefined;
+    const fields = variants[kind];
+    if (!fields) return undefined;
+    record(d,["phase","outcome","fuel","types","kind",...fields],["requiredResult","names"]);
     diagnosticOutcome(d.outcome);
     // The graph decides how many labels there are, so it is decoded first and
     // everything after counts against what it returned.
@@ -324,73 +340,78 @@ export function readDiagnostic(
       for (const entry of d.names) {
         if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[1] !== "string" || !entry[1]) return undefined;
         const [row] = entry;
+        if (typeof row !== "number") return undefined;
         nat(row);
         if (row <= previous || row >= types.length) return undefined;
         previous = row;
       }
     }
-    if (d.source !== undefined) diagnosticNode(d.source,types.length);
-    if (d.destination !== undefined) diagnosticNode(d.destination,types.length);
+    result = { ...d };
+    if (d.source !== undefined) result.source = diagnosticNode(d.source,types.length);
+    if (d.destination !== undefined) result.destination = diagnosticNode(d.destination,types.length);
     if (d.sourceMap !== undefined) sourceMap(d.sourceMap);
-    if (d.kind === "direct-obligation") {
+    if (kind === "direct-obligation") {
       const judgment = directJudgment(d.judgment,types.length);
       const at = judgment.subject;
       const map = d.sourceMap;
-      if (map === null || map === undefined) return undefined;
-      if (map.pos[0] !== at[0] || map.pos[1] !== at[1] || map.context.length !== 0)
+      if (!isRecord(map)) return undefined;
+      const pos = map.pos, context = map.context;
+      if (!Array.isArray(pos) || !Array.isArray(context) ||
+          pos[0] !== at[0] || pos[1] !== at[1] || context.length !== 0)
         return undefined;
-      d.judgment = judgment;
+      result.judgment = judgment;
     }
-    if (d.kind === "source-refusal" && typeof d.reason !== "string") return undefined;
-    if (d.kind === "production-failure" && typeof d.failure !== "string") return undefined;
-    const labels = (v: unknown) => decodeLabels(v,types.length);
+    if (kind === "source-refusal" && typeof d.reason !== "string") return undefined;
+    if (kind === "production-failure" && typeof d.failure !== "string") return undefined;
+    const labels = (v: Json) => decodeLabels(v,types.length);
     if (d.requiredResult !== undefined) labels(d.requiredResult);
-    if (d.kind === "node-typing" || d.kind === "expression-claim") {
+    if (kind === "node-typing" || kind === "expression-claim") {
       const q = d.sequent;
       if (!isRecord(q) || Object.keys(q).sort().join() !== "context,term,type" || !Array.isArray(q.context)) return undefined;
-      q.context.forEach(labels); labels(q.type); q.term = decodeTerm(q.term);
+      q.context.forEach(labels);
+      const type = q.type;
+      if (type === undefined) return undefined;
+      labels(type);
+      result.sequent = { ...q, term: decodeTerm(q.term) };
     }
-    if (d.kind === "edge-coverage") {
+    if (kind === "edge-coverage") {
       nat(d.edgeIndex);
       const transfer = record(d.transfer,["available","target","booleanObservation","tagObservation"]);
       const target = record(transfer.target,["label","mapping"]);
       if (transfer.tagObservation !== null) {
         const tag = record(transfer.tagObservation,["test","answer","slot"]);
         nat(tag.slot);
-        tag.test = decodeTag(tag.test);
         if (typeof tag.answer !== "boolean") return undefined;
+        result.transfer = { ...transfer, tagObservation: { ...tag, test: decodeTag(tag.test) } };
       }
       const destination = record(d.destination,["label","sourceMap","node","claim","requiredKnowledge"]);
       const claim = destination.claim;
       const available = transfer.available;
       if (!isRecord(claim) || !Array.isArray(available) || !Array.isArray(claim.context)) return undefined;
       available.forEach(labels); claim.context.forEach(labels);
-      if (!Number.isSafeInteger(target.label)) return undefined;
+      if (typeof target.label !== "number" || !Number.isSafeInteger(target.label)) return undefined;
       const mapping = target.mapping;
       if (mapping !== null && (!Array.isArray(mapping) || mapping.some(i => typeof i !== "number" || !Number.isSafeInteger(i) || i < 0 || i >= available.length))) return undefined;
       if (transfer.booleanObservation !== null && typeof transfer.booleanObservation !== "boolean") return undefined;
     }
+    if (
+      !PHASES.includes(d.phase) ||
+      !Array.isArray(d.types) ||
+      typeof d.fuel !== "number" ||
+      !Number.isSafeInteger(d.fuel) ||
+      d.fuel < 0
+    )
+      return undefined;
+    if (!KINDS.includes(kind)) return undefined;
+    if (kind !== "production-failure" && typeof d.id !== "string")
+      return undefined;
+    if (kind === "edge-coverage" && (!d.source || !d.destination || !d.transfer))
+      return undefined;
+    if ((kind === "node-typing" || kind === "expression-claim") && !d.sequent)
+      return undefined;
   } catch {
     return undefined;
   }
-  if (
-    !PHASES.includes(d.phase) ||
-    !Array.isArray(d.types) ||
-    typeof d.fuel !== "number" ||
-    !Number.isSafeInteger(d.fuel) ||
-    d.fuel < 0
-  )
-    return undefined;
-  if (!KINDS.includes(d.kind)) return undefined;
-  if (d.kind !== "production-failure" && typeof d.id !== "string")
-    return undefined;
-  if (d.kind === "edge-coverage" && (!d.source || !d.destination || !d.transfer))
-    return undefined;
-  if (
-    (d.kind === "node-typing" || d.kind === "expression-claim") &&
-    !d.sequent
-  )
-    return undefined;
   // asserted: the decoder's result, checked field by field and variant by variant above
-  return d as unknown as ObligationDiagnostic;
+  return result as unknown as ObligationDiagnostic;
 }

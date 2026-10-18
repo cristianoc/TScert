@@ -1108,10 +1108,26 @@ read/value rule may succeed when ordinary derivation search cannot. -/
         | _ => none
       let answers := (([Tag.isUndef, .isNul, .isNullish].map (·, false)) ++ observed).eraseDups.filter
         fun (t, q) => cells.any fun f => f.contents.all (·.answers t q)
-      if HeapExpressionRules.fieldOperand (expand G Ref) fld && !answers.isEmpty then
-        if let [.refs fs _ _ _ _ _] := expand G Ref then
-          if let some C := fs.lookup fld then
-            let searched := expressionWithUsing G images (C :: own) suggestions aliases fuel j.context j.term C
+      -- The contract the read is typed at: the record's field, or a
+      -- dictionary's index, with `undefined` where the key is absent.
+      let contract : Option (Ty ι) := match expand G Ref with
+        | [.refs fs _ _ _ _ _] => if HeapExpressionRules.fieldOperand (expand G Ref) fld then fs.lookup fld else none
+        | [.dict _ _ _ ds _ _ _ cs] =>
+          if HeapExpressionRules.optionalOperand (expand G Ref) fld then
+            -- The graph's `undefined` row, among the labels the search knows.
+            let undef := (j.type :: own ++ pool).findSome? fun T => T.find? fun l =>
+              G.plain l && match G l with | [.undef] => true | _ => false
+            match ((ds ++ cs).find? (HeapExpressionRules.stringIndex · fld)), undef with
+            | some d, some u => some (u :: d.2).eraseDups
+            | _, _ => none
+          else none
+        | _ => none
+      if !answers.isEmpty then
+          if let some C := contract then
+            -- A dictionary's read finds `undefined` where the key is absent:
+            -- its row is searched beside the contract.
+            let undefs := C.filterMap fun l => match G l with | [.undef] => some [l] | _ => none
+            let searched := expressionWithUsing G images (C :: undefs ++ own) suggestions aliases fuel j.context j.term C
             incomplete := incomplete <|> searched.exhaustion
             if let some e := searched.value then
               for (tag, q) in answers do
@@ -1198,6 +1214,13 @@ where
         (fun best B => match best with
           | some b => if B.length < b.length then some B else best
           | none => some B) none
+      -- A passed `Array.isArray` also drops the labels of no array or of
+      -- indexed dictionaries (`arraySlice`).
+      let arrays := sliced.filter fun a => !(G.plain a && G.builtins.isSome &&
+        (G a).all fun c => tagClause .isArray c == some false || BranchRefinement.indexedDict c)
+      if tag == .isArray && q && arrays != sliced && BranchRefinement.arraySlice G A arrays then
+        [{ conditional := true, target := i, type := arrays, evidence := some {} }]
+      else
       match (if sliced != A then none else decided) with
       | some B => [{ conditional := true, target := i, type := B, evidence := some {} }]
       | none => match (subtypeUsing G images sliced sliced).value with

@@ -1741,12 +1741,20 @@ client code and writes no location it did not allocate:
      {⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow_{\emptyset} R}\ \textsf{library-effect}
 ```
 
-`String` and `Number` of a primitive, `Number.isFinite`, `Number.isInteger`,
+`String`, `Number` and `BigInt` of a primitive, `Number.isFinite`, `Number.isInteger`,
 `Number.isSafeInteger`, `Object.is` and `Boolean` state it: each converts
 only a primitive, or nothing, and reads and writes no location
 (`library-preserving-callback`, `library-preserving-tests`). An object
 argument, whose conversion runs its methods, is outside the stated
-parameter (`invalid-number-object`).
+parameter (`invalid-number-object`). `Object.keys` of an object, and the
+generic `Object.values` and `Object.entries` of a dictionary, state it too:
+each lists the object's own keys, which runs no code (no object is a proxy),
+reads values the fragment creates as data properties, an external
+dictionary's getters being assumed to write nothing, and writes only the
+arrays it allocates (`library-preserving-reflection`). The overloads at
+`{}` read an arbitrary object's values by [[Get]], which may run an external
+getter, and state no preservation (`object-entries-sparse`,
+`invalid-object-entries-preserving`).
 
 The entries, each with the code its restriction keeps from running:
 

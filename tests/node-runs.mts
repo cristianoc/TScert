@@ -94,6 +94,12 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-json-parse-inherited: Object.prototype's toString where parsed JSON is promised");
   assert.equal(runExample("json-parse-own-proto", `value('{"__proto__": 1, "a": 2}', "a")`), 2,
     "json-parse-own-proto: the own __proto__ member set no prototype");
+  assert.equal(runExample("invalid-json-parse-mutation", `typeof wrong('{"a": 1}')`), "function",
+    "invalid-json-parse-mutation: the function the alias stored where parsed JSON is promised");
+  assert.equal(runExample("array-test-disjunction", `[lengths([1], [2, 3]), pairs({ exprs: [1, "x"], conts: [0, 0] }).join()].join(";")`),
+    "3;1,2", "array-test-disjunction: the lengths, and the map over the parsed array");
+  assert.equal(runExample("invalid-array-test-disjunction", `wrong(1, [2])`), undefined,
+    "invalid-array-test-disjunction: the number's length where a number is promised");
   assert.equal(runExample("invalid-field-alias-binder", `wrong({ value: 5 })`), undefined,
     "invalid-field-alias-binder: the parameter is number, and the object has no n");
   assert.equal(runExample("field-tag-read", `[size({ mapping: [1, 2] }), size({ mapping: "abc" }), count({ mapping: [7] })].join()`),
@@ -102,6 +108,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-field-tag-alias: the write through the alias leaves a number where an array is promised");
   assert.equal(runExample("invalid-field-tag-call", `(() => { const o = { mapping: [1] }; return wrong(o, () => { o.mapping = 5; }); })()`), 5,
     "invalid-field-tag-call: the call leaves a number where an array is promised");
+  assert.equal(runExample("dictionary-field-tag-read", `[size({ mapping: [1, "x", 2] }), label({ label: 4 })].join()`), "3,5",
+    "dictionary-field-tag-read: the entries counted, and the label read past its test");
+  assert.equal(runExample("invalid-dictionary-field-tag-call", `(() => { const o = { mapping: [1] }; return wrong(o, () => { o.mapping = "x"; }); })()`), "x",
+    "invalid-dictionary-field-tag-call: the call leaves a string where an array is promised");
   assert.equal(runExample("exceptional-footprint-handler",
     `JSON.stringify([orZero([1, -1]), halvesOrSelf([4, 3]), relayedOrOne([-2, 2]), largest(1, 2)])`),
     "[[1,0],[2,3],[1,2],2]", "exceptional-footprint-handler: each handler's value");

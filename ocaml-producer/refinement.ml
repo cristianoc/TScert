@@ -98,10 +98,14 @@ let array_slice declarations t =
   match flat_atoms declarations sliced with
   | None -> sliced
   | Some atoms ->
-  if not (List.mem Top atoms || List.exists open_record_atom atoms) then sliced
-  else match typeof_slice "array" true (Atoms atoms) with
-    | Atoms kept -> union (ground (List.filter (fun a -> a <> Top && not (open_record_atom a)) kept)) any_array
-    | _ -> sliced
+  (* The definitions' arms are sliced first: an indexed dictionary's arm,
+     which owns no array, leaves before an open record's adds the
+     built-ins' array (Lean's `arrayRefine`). *)
+  match typeof_slice "array" true (Atoms atoms) with
+  | Atoms kept when List.mem Top kept || List.exists open_record_atom kept ->
+    union (ground (List.filter (fun a -> a <> Top && not (open_record_atom a)) kept)) any_array
+  | Atoms kept when List.length kept < List.length atoms -> ground kept
+  | _ -> sliced
 (* Keep the atoms that may own the key where `key in o` held, and those that
    may lack it where it failed: a record's required field is owned, a fresh
    literal's keys are exactly its fields', and a primitive owns none. *)
@@ -148,6 +152,10 @@ let record_field ?(allow_optional=false) declarations t field =
     | Some (Atoms (_::_ as atoms)) -> List.for_all (function
         | Shape {fields;calls=[];elements=None;indexes=[]} | Exact fields ->
           List.exists (fun (f:Semantic.field) -> f.name = Name field && (allow_optional || not f.optional)) fields
+        (* A dictionary's string index reaches every string key: a read of a
+           key it lacks gives `undefined` (Lean's `optionalOperand`). *)
+        | Shape ({calls=[];elements=None;indexes=_::_;_} as s) when allow_optional ->
+          index_for s (Name field) <> None
         | Named (id,_) as atom when not (List.mem id seen) -> has (id::seen) (Atoms [atom])
         | _ -> false) atoms
     | _ -> false in

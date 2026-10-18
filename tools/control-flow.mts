@@ -4,7 +4,7 @@
  * data the reader validates rather than structure it infers from terms. As in
  * calculus.mts, the wire writes a continuation as an object with one key, its
  * constructor's name, and the decoder builds a value naming it in `kind`. */
-import { constructorOf, decodeTag, decodeTerm, fields, nat, type Tag, type Term } from "./calculus.mts";
+import { constructorOf, decodeTag, decodeTerm, fields, nat, type Json, type Tag, type Term } from "./calculus.mts";
 
 export interface Target { label: number; mapping: number[] | null }
 export type Continuation =
@@ -17,14 +17,14 @@ export type Continuation =
 /** A node's handler is where a throw out of its expression goes, the thrown
  * value bound first; none lets the throw leave the program. */
 export interface ProgramNode { expression: Term; continuation: Continuation; handler: Target | null }
-function decodeTarget(value: unknown): Target {
+function decodeTarget(value: Json | undefined): Target {
   const t = fields(value, ["label", "mapping"]);
   const label = nat(t.label);
   if (t.mapping === null) return { label, mapping: null };
   if (!Array.isArray(t.mapping)) throw Error("invalid slot mapping");
   return { label, mapping: t.mapping.map(nat) };
 }
-function decodeContinuation(continuation: unknown): Continuation {
+function decodeContinuation(continuation: Json | undefined): Continuation {
   if (continuation === "ret") return { kind: "ret" };
   if (!continuation || typeof continuation !== "object") throw Error("invalid continuation");
   const { key, value } = constructorOf(continuation);
@@ -47,7 +47,7 @@ function decodeContinuation(continuation: unknown): Continuation {
     default: throw Error("unknown continuation");
   }
 }
-export function decodeNode(value: unknown): ProgramNode {
+export function decodeNode(value: Json | undefined): ProgramNode {
   const n = fields(value, ["expression", "continuation", "handler"]);
   const expression = decodeTerm(n.expression);
   const handler = n.handler === null ? null : decodeTarget(n.handler);

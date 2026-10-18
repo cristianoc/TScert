@@ -157,8 +157,9 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   { global: "console", member: "log", signature: "log(...data: any[]): void;" },
   // `BigInt(v)` throws a RangeError for a number that is not an integer and
   // a SyntaxError for a string that is not an integer's spelling; it runs no
-  // code of the client's on a primitive, and returns a bigint otherwise.
-  { global: "BigInt", signature: "(value: bigint | boolean | number | string): bigint;" },
+  // code of the client's on a primitive, and returns a bigint otherwise. It
+  // writes nothing: heap preservation.
+  { global: "BigInt", signature: "(value: bigint | boolean | number | string): bigint;", effect: emptyEffect },
   // A new symbol whose description is the argument converted to a string,
   // which a string or number never fails.
   { global: "Symbol", signature: "(description?: string | number): symbol;" },
@@ -231,9 +232,10 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   { global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
-  // (no getter is called). ES5 declares it at `object`, ES2015 at `{}`.
-  { global: "Object", member: "keys", signature: "keys(o: object): string[];" },
-  { global: "Object", member: "keys", signature: "keys(o: {}): string[];" },
+  // (no getter is called) and writes only the array it allocates: the empty
+  // footprint. ES5 declares it at `object`, ES2015 at `{}`.
+  { global: "Object", member: "keys", signature: "keys(o: object): string[];", effect: emptyEffect },
+  { global: "Object", member: "keys", signature: "keys(o: {}): string[];", effect: emptyEffect },
   // The values of those keys, and the key-value pairs: nothing is known of
   // them, `any` read as `unknown`, and each pair is a fresh array. Reading a
   // value runs an accessor's getter: the fragment writes none, and a host
@@ -260,10 +262,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // true of a dictionary, whose every own string key holds a `T`
   // (`dictViewT`), and the parameter is stated at one: an open record may
   // own further keys of other types (`invalid-object-values-record.ts`),
-  // and `ArrayLike<T>` is not read. Each pair is a fresh array.
+  // and `ArrayLike<T>` is not read. Each pair is a fresh array. The
+  // fragment creates data properties only, and an external dictionary's
+  // getters are assumed to write nothing, so each writes only what it
+  // allocates: the empty footprint.
   { global: "Object", member: "values", signature: "values<T>(o: { [s: string]: T; } | ArrayLike<T>): T[];",
+    effect: emptyEffect,
     stated: { binders: ["T"], params: [dictionary(binder("T"))], result: array(binder("T")) } },
-  { global: "Object", member: "entries",
+  { global: "Object", member: "entries", effect: emptyEffect,
     signature: "entries<T>(o: { [s: string]: T; } | ArrayLike<T>): [string, T][];",
     stated: { binders: ["T"], params: [dictionary(binder("T"))],
       result: array({ k: "tuple", presence: "dense", readonly: false, required: [atom("string"), binder("T")], optional: [],
