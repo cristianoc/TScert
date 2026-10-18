@@ -1891,6 +1891,9 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
       ["invalid-host-fixture-branded-callback-result", /branded string Path where the client would produce one/],
       ["invalid-host-fixture-branded-held", /branded string Path where the client would produce one/],
       ["invalid-host-fixture-branded-argument", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-nested", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-curried", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-optional-parameter", /branded string Path where the client would produce one/],
       ["invalid-host-fixture-branded-return", /the intersection is empty/],
       ["invalid-host-fixture-branded-alias", /the intersection is empty/],
     ] as const) {
@@ -1898,8 +1901,10 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
       assert.ok(refused.status !== "verified" && "detail" in refused && refusal.test(refused.detail),
         `${file}: ${JSON.stringify(refused)}`);
     }
-    const supplied = check(example("host-fixture-branded-callback"), project);
-    assert.equal(supplied.status, "verified", JSON.stringify(supplied));
+    for (const file of ["host-fixture-branded-callback", "host-fixture-branded-positions"]) {
+      const supplied = check(example(file), project);
+      assert.equal(supplied.status, "verified", `${file}: ${JSON.stringify(supplied)}`);
+    }
     // A member declared `any`: optional, of type `unknown` (reading rule 2).
     const brand = check(example("host-fixture-brand-optional"), project);
     assert.equal(brand.status, "verified", JSON.stringify(brand));

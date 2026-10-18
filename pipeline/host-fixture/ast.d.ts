@@ -36,3 +36,11 @@ export interface Holder<T> {
   readonly value: T;
 }
 export declare function holder(): Holder<Path>;
+export declare function nested(visit: (each: (path: Path) => void) => void): void;
+export declare function nestedOut(visit: (each: (take: (path: Path) => void) => void) => void): void;
+export declare function curried(): () => (path: Path) => void;
+export declare function maybe(): Path | undefined;
+export declare function optionally(path?: Path): void;
+export interface Located extends Node {
+  readonly alternative?: Path;
+}
