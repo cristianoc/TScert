@@ -123,13 +123,18 @@ let present key =
   let ordinary fields = List.exists (fun (f:Semantic.field) -> f.write <> None && not f.optional) fields in
   let as_view = List.map (fun (f:Semantic.field) ->
     if f.name = Name key && f.optional then {f with optional=false; write=None} else f) in
-  (* A readonly optional key found present stays optional in the arm: the
-     read's cell fact says it is present, and the arm keeps its declared
-     shape, methods included. *)
-  let readonly_key fields = List.exists (fun (f:Semantic.field) ->
+  (* A record holding a generic method has no claim but its declaration's
+     (Lean allocates the method's scheme with the declaration): an arm of it
+     stays as declared, and what a test found of its readonly optional key
+     is known only as the field's contents. *)
+  let generic (f:Semantic.field) = match f.read with
+    | Atoms [Shape {calls=(_::_ as calls);_}] ->
+      List.exists (fun (c:Semantic.signature) -> c.quantified <> []) calls
+    | _ -> false in
+  let declared_only fields = List.exists generic fields && List.exists (fun (f:Semantic.field) ->
     f.name = Name key && f.optional && f.write = None) fields in
   function
-  | Shape ({calls=[];elements=None;indexes=[];_} as s) when readonly_key s.fields -> Shape s
+  | Shape ({calls=[];elements=None;indexes=[];_} as s) when declared_only s.fields -> Shape s
   | Shape ({calls=[];elements=None;indexes=[];_} as s) ->
     Shape {s with fields=(if ordinary s.fields then promote s.fields else as_view s.fields)}
   | Shape ({calls=[];elements=None;indexes=_::_;fields} as s)
@@ -222,7 +227,13 @@ let refine_field ?(answer = false) bounds declarations env name field refine =
     let flat f =
       let rec plain = function
         | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
-      if plain f then (try (match flat_atoms declarations f with None | Some [] -> f | Some atoms -> Atoms (List.sort_uniq compare atoms))
+      let primitive = function
+        | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _
+        | Bigint | Symbol | BigintLit _ | SymbolLit _ -> true
+        | _ -> false in
+      if plain f then (try (match flat_atoms declarations f with
+          | Some (_::_ as atoms) when List.for_all primitive atoms -> Atoms (List.sort_uniq compare atoms)
+          | _ -> f)
         with Json.Error _ -> f) else f in
     let current = match List.assoc_opt key env with
       | Some (Value c) -> Some c
