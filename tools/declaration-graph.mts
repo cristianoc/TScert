@@ -145,6 +145,7 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     if (!project) throw Error("TypeScript did not load the probe program");
     return read(project.program, project.checker);
   };
+  let failed = false;
   try {
     const snapshot = api.updateSnapshot({ openFiles: [file],
       ...(tsconfigPath ? { openProjects: [tsconfigPath] } : {}) });
@@ -161,8 +162,14 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     if (broken) throw new DeclarationError([0, 0], `TypeScript reports an error in the project: ${broken.text}`);
     config = project.configFileName;
     return use(project.checker, client, dirname(project.configFileName), project.program, probe);
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    api.close();
+    // A failure closing the API after another error is not the report:
+    // the error that was in flight is.
+    if (!failed) api.close();
+    else try { api.close(); } catch { /* the error in flight is reported */ }
   }
 }
 

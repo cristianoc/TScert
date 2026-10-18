@@ -26,7 +26,7 @@ import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositio
 import type { Ast, Expr, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
-import { messageOf } from "./thrown.mts";
+import { messageOf, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
 import { childOf, isStatic, nameOf } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
@@ -463,6 +463,14 @@ export class Gate {
   classBody: typeof classes.classBody = classes.classBody;
 
   registerDeclaredType: typeof classes.registerDeclaredType = classes.registerDeclaredType;
+
+  /** A failure of the compiler's API: reported as a tool failure, never
+   * as a gate refusal, so no verdict on the source follows. */
+  toolFailure(node: Node | null, failure: ToolFailure): never {
+    const start = node ? node.getStart(this.file) : 0;
+    const at = this.file.getLineAndCharacterOfPosition(start);
+    throw new Error(toolFailureText(failure, `(line ${at.line + 1}, col ${at.character + 1})`));
+  }
 
   fail(node: Node | null, message: string): never {
     const start = node ? node.getStart(this.file) : 0;
@@ -1594,6 +1602,8 @@ export function parseFile(file: string, carriesContext = false,
             ...keyTypeNodes, ...bindingNodes, ...privateNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
+      const failure = toolFailureOf(error);
+      if (failure) gate.toolFailure(at, failure);
       gate.fail(at, messageOf(error));
     }
     if (early[0])

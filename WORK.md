@@ -327,8 +327,11 @@ The first blockers, by the number of slices each stops (2026-10-18):
 - members of `Type` outside its named view (11);
 - module-level `let` and `var` (8); Node's modules, `path` and `fs` (7);
   a default import (3);
-- the compiler's synchronous API failing on a query (2: "Expected fixed
-  3-element array", a panic converting a type reference to a tuple).
+- the compiler's synchronous API failing on a query (3), reported as tool
+  failures: `TypeObject.getTypes` panics converting a type reference to a
+  tuple (`forInEntryReads`), and `Checker.getTypeAtLocation` and
+  `Checker.getTypeFromTypeNode` return a reply the client cannot decode
+  (`readDiagnostic`, `diagnosticNode`), cause unknown.
 
 Twenty-nine slices reach the producer and fail there, 47 fail in search, and
 three exceed the 60 s search limit (`termsOf`, `decodeCode`, `decodeTerm`). Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the

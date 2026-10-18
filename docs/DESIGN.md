@@ -210,7 +210,10 @@ The outcome is one of:
 - **unverified**: search or checking did not establish the required derivation;
 - **exhausted**: a verification resource budget was reached before the
   obligation could be decided;
-- **error**: a subprocess failed or exceeded its time limit.
+- **error**: a subprocess failed or exceeded its time limit, or the
+  compiler's API failed on a query: a `tool failure`, which names the query,
+  the front end's call site and the compiler's reason, and certifies
+  nothing.
 
 A whole-file failure can precede claim generation.
 Neither an unsupported result nor an infrastructure error is a safety verdict.
