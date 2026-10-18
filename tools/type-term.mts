@@ -238,6 +238,11 @@ export type TermScope = {
    * computes for it, `"a" | "b"` for an alias of those, or null. A scope
    * without it reads the keys as written. */
   keys?(node: TypeNode): TypeTerm | null;
+  /** A mapped type over `keyof X` at a finite record `X`: each property of
+   * the type TypeScript resolves it to, with the modifiers it copies from
+   * `X` and its own overrides, or null where TypeScript resolves no such
+   * record. A scope without it reads only a mapped type writing both. */
+  modifiers?(node: ts.MappedTypeNode): readonly MappedMember[] | null;
   /** A reference to a declared type alias of an array, a tuple or another
    * alias: its equation at the reference's arguments, or null. A scope
    * without it reads no rest parameter through an alias. */
@@ -513,9 +518,12 @@ function constructorForms(scope: TermScope, node: ts.ConstructorTypeNode | ts.Co
 
 /** A mapped type `{ [P in K]: V }` whose value does not name its key `P`:
  * the key and value terms as read, and its modifiers. Over a key union
- * nothing is copied, so a `-` modifier states nothing; over `keyof X` both
- * modifiers are written, since X's would be copied where none is. */
-export type Mapped = { key: TypeTerm; value: TypeTerm; optional: boolean; readonly: boolean };
+ * nothing is copied, so a `-` modifier states nothing; over `keyof X`, X's
+ * are copied where none is written, and each member's are TypeScript's. */
+export type Mapped = { key: TypeTerm; value: TypeTerm; optional: boolean; readonly: boolean;
+  members?: readonly MappedMember[] };
+/** A property of a mapped type over `keyof X` and its modifiers. */
+export type MappedMember = { name: string; optional: boolean; readonly: boolean };
 
 export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
   if (node.nameType) scope.fail(node, "a mapped type with an 'as' clause is outside the fragment");
@@ -527,18 +535,20 @@ export function mapped(scope: TermScope, node: ts.MappedTypeNode): Mapped {
     (t.forEachChild(names) ?? false);
   if (!node.type || names(node.type)) scope.fail(node, "a mapped type's value names its key");
   // A homomorphic mapped type, `{ [P in keyof X]: V }`, copies X's
-  // modifiers to each key where it writes none of its own.
+  // modifiers to each key where it writes none of its own: each member at
+  // the modifiers TypeScript resolves.
   const constraint = parameter.constraint;
-  if (constraint && ts.isTypeOperatorNode(constraint) && constraint.operator === ts.SyntaxKind.KeyOfKeyword &&
-      (!node.readonlyToken || !node.questionToken))
-    scope.fail(node, "a mapped type over `keyof` copies its source's modifiers where it writes none; " +
-      "the mapped type states both (`readonly` or `-readonly`, `?` or `-?`)");
+  const members = constraint && ts.isTypeOperatorNode(constraint) &&
+      constraint.operator === ts.SyntaxKind.KeyOfKeyword && (!node.readonlyToken || !node.questionToken)
+    ? scope.modifiers?.(node) ?? scope.fail(node, "a mapped type over `keyof` copies its source's modifiers " +
+      "where it writes none, and TypeScript resolves it to no record whose members state them")
+    : undefined;
   const plus = (token: Node | undefined, keyword: ts.SyntaxKind) =>
     !!token && (token.kind === keyword || token.kind === ts.SyntaxKind.PlusToken);
   const key = parameter.constraint && scope.keys?.(parameter.constraint);
   return { key: key ?? typeTerm(scope, parameter.constraint, parameter), value: typeTerm(scope, node.type),
     optional: plus(node.questionToken, ts.SyntaxKind.QuestionToken),
-    readonly: plus(node.readonlyToken, ts.SyntaxKind.ReadonlyKeyword) };
+    readonly: plus(node.readonlyToken, ts.SyntaxKind.ReadonlyKeyword), ...(members ? { members } : {}) };
 }
 
 /** A mapped type at a known key, as TypeScript expands it: over string and
@@ -564,6 +574,7 @@ export function expandMapped(m: Mapped, span: Span, fail: (message: string) => n
     ...(atom("symbol") ? { symbolIndex: index } : {}),
   };
   if (atom("string") || atom("number") || atom("symbol")) {
+    if (m.members) fail("a mapped type over `keyof` an indexed type copies its index modifiers, which the reader does not read");
     if (keys.some(k => !(k.k === "atom" && (k.name === "string" || k.name === "number" || k.name === "symbol")) &&
         !(k.k === "literal" && (k.name === "string" || k.name === "number"))))
       fail("a mapped type's keys must be strings, numbers, symbols or their literals");
@@ -582,23 +593,46 @@ export function expandMapped(m: Mapped, span: Span, fail: (message: string) => n
   }
   // No key: an object type with no member, which is `{}`.
   if (!names.length && !atom("string") && !atom("number") && !atom("symbol")) return emptyObject(span);
-  return { k: "object", fields: names.map(name => ({ name, optional: m.optional, readonly: m.readonly,
-    type: m.value, span })), ...indexes, calls: [], span };
+  return { k: "object", fields: names.map(name => {
+    const member = m.members ? m.members.find(x => x.name === name)
+      ?? fail(`TypeScript resolves the mapped type over \`keyof\` with no member ${name}`) : m;
+    return { name, optional: member.optional, readonly: member.readonly, type: m.value, span };
+  }), ...indexes, calls: [], span };
 }
 
 /** `term` with each of its declaration's parameters replaced by the term at
  * that position of `args`. */
 export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm {
-  const go = (t: TypeTerm): TypeTerm => substitute(t, args);
-  const fn = (f: FunctionTerm): FunctionTerm => ({ ...f, receiver: f.receiver && go(f.receiver),
-    params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) });
+  return replaceLeaves(term, t => {
+    if (t.k !== "parameter") return t;
+    const arg = args[t.index];
+    if (!arg) throw Error("declaration parameter index outside its application");
+    return arg;
+  });
+}
+
+/** `term` with each binder `actuals` names replaced by its term, save under
+ * a scheme rebinding that name. Fields keep their modifiers. */
+export function substituteBinders(term: TypeTerm, actuals: ReadonlyMap<string, TypeTerm>): TypeTerm {
+  return replaceLeaves(term, t => t.k === "binder" ? actuals.get(t.name) ?? t : t,
+    binders => binders.some(b => actuals.has(b.name))
+      ? (inner: TypeTerm) => substituteBinders(inner, new Map([...actuals].filter(([name]) =>
+        !binders.some(b => b.name === name))))
+      : null);
+}
+
+/** `term` with each parameter and binder leaf replaced by `leaf`'s result,
+ * every other part kept. Under a scheme, `under` may give the replacement
+ * its binders call for. */
+function replaceLeaves(term: TypeTerm, leaf: (t: Extract<TypeTerm, { k: "parameter" | "binder" }>) => TypeTerm,
+    under: (binders: Extract<TypeTerm, { k: "scheme" }>["binders"]) => ((t: TypeTerm) => TypeTerm) | null = () => null):
+    TypeTerm {
+  const go = (t: TypeTerm): TypeTerm => replaceLeaves(t, leaf, under);
+  const fn = (f: FunctionTerm, g: (t: TypeTerm) => TypeTerm = go): FunctionTerm => ({ ...f,
+    receiver: f.receiver && g(f.receiver), params: f.params.map(g), rest: f.rest && g(f.rest), result: g(f.result) });
   switch (term.k) {
-    case "parameter": {
-      const arg = args[term.index];
-      if (!arg) throw Error("declaration parameter index outside its application");
-      return arg;
-    }
-    case "atom": case "literal": case "unique": case "self": case "binder": case "callable": return term;
+    case "parameter": case "binder": return leaf(term);
+    case "atom": case "literal": case "unique": case "self": case "callable": return term;
     case "union": case "intersection": return { ...term, parts: term.parts.map(go) };
     case "array": return { ...term, element: go(term.element) };
     case "tuple": return { ...term, required: term.required.map(go), optional: term.optional.map(go),
@@ -608,14 +642,17 @@ export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm 
       ...(term.numberIndex ? { numberIndex: { ...term.numberIndex, value: go(term.numberIndex.value) } } : {}),
       ...(term.symbolIndex ? { symbolIndex: { ...term.symbolIndex, value: go(term.symbolIndex.value) } } : {}),
       ...(term.prototype ? { prototype: go(term.prototype) } : {}),
-      calls: term.calls.map(fn) };
+      calls: term.calls.map(f => fn(f)) };
     case "function": return fn(term);
     case "constructor": return { ...term, params: term.params.map(go), rest: term.rest && go(term.rest),
       result: go(term.result) };
     case "pack": return { ...term, of: go(term.of) };
-    case "scheme": return { ...term, binders: term.binders.map(b => ({ ...b, bound: b.bound && go(b.bound),
-      default: b.default && go(b.default) })), signatures: term.signatures.map(f => f.k === "function" ? fn(f)
-        : { ...f, params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) }) };
+    case "scheme": {
+      const g = under(term.binders) ?? go;
+      return { ...term, binders: term.binders.map(b => ({ ...b, bound: b.bound && g(b.bound),
+        default: b.default && g(b.default) })), signatures: term.signatures.map(f => f.k === "function" ? fn(f, g)
+          : { ...f, params: f.params.map(g), rest: f.rest && g(f.rest), result: g(f.result) }) };
+    }
     case "reference": return { ...term, args: term.args.map(go) };
   }
 }

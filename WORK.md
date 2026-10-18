@@ -264,7 +264,12 @@ needs a second signature quantifying a binder bounded by the primitives,
 which the first does not use: neither the producer's instance of a member
 read nor Lean's search for one assigns a binder no parameter of the
 selected signature names. The design question is per-signature binders, or
-bounds, in a prototype member's scheme.
+bounds, in a prototype member's scheme. A closure passed to `map` over an array literal of
+records with different members (`closure-contextual-literal-union`) is read
+at TypeScript's contextual records, `{ a: number; b?: undefined } |
+{ a?: undefined; b: number }`; the producer claims it at the literals'
+records `{ a: number } | { b: number }`, which state no absence of the
+other's member and so are outside the parameter's records.
 
 <a id="a-semantics-of-the-fragment"></a>
 **A semantics of the Fragment.** The parser's rewrites and extraction rest

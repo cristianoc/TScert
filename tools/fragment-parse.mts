@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, substitute, typeTerm, visitType, type TermScope } from "./type-term.mts";
+import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, substitute, typeTerm, visitType, type MappedMember, type TermScope } from "./type-term.mts";
 import type { Ast, Expr, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
@@ -190,6 +190,9 @@ export class Gate {
    * annotations, by span: the union of literals and primitives TypeScript
    * computes for each, or null. */
   readonly keyTypes: Map<string, TypeTerm | null> = new Map();
+  /** Mapped types over `keyof` in the file's annotations, by span: their
+   * members as TypeScript resolves them, or null. */
+  readonly mappedMembers: Map<string, readonly MappedMember[] | null> = new Map();
   /** `C.x` member names TypeScript binds to a static member of the file's
    * class `C`, by span: the class. */
   staticReads: Map<string, string> = new Map();
@@ -646,6 +649,7 @@ export class Gate {
         return result !== undefined && typeof result !== "number" && "literal" in result ? result.literal : null;
       },
       keys: (node) => this.keyTypes.get(this.span(node).join(":")) ?? null,
+      modifiers: (node) => this.mappedMembers.get(this.span(node).join(":")) ?? null,
       // The alias the reference names, as TypeScript resolved it, at every
       // one of its parameters.
       equation: (reference) => {
@@ -1552,6 +1556,7 @@ function lowerFile(file: string, carriesContext: boolean,
   const computedNodes: Node[] = [];
   const symbolNameNodes: Node[] = [];
   const keyTypeNodes: Node[] = [];
+  const mappedNodes: Node[] = [];
   // The file's aliases TypeScript computes from their parameters
   // (`computedAlias`): an application of one is a computed type too.
   const localAlias = (reference: ts.TypeReferenceNode): TypeAliasDeclaration | null => {
@@ -1582,6 +1587,8 @@ function lowerFile(file: string, carriesContext: boolean,
     // A mapped type's keys, and a global generic's arguments, which may be
     // a library mapped type's keys, `Record<K, V>`: TypeScript computes them.
     if (ts.isMappedTypeNode(node) && node.typeParameter.constraint) keyTypeNodes.push(node.typeParameter.constraint);
+    if (ts.isMappedTypeNode(node) && node.typeParameter.constraint && ts.isTypeOperatorNode(node.typeParameter.constraint) &&
+        node.typeParameter.constraint.operator === ts.SyntaxKind.KeyOfKeyword) mappedNodes.push(node);
     if (ts.isIndexSignatureDeclaration(node) && node.parameters[0]?.type) keyTypeNodes.push(node.parameters[0].type);
     if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && !rooted.has(node.typeName.text))
       keyTypeNodes.push(...(node.typeArguments ?? []));
@@ -1593,7 +1600,7 @@ function lowerFile(file: string, carriesContext: boolean,
       classTestNodes.length || classReadNodes.length || contextualNodes.length || assignNodes.length ||
       staticTypeNodes.length ||
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
-      keyTypeNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
+      keyTypeNodes.length || mappedNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
       restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length ||
       regexpNodes.length || dispatchNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
@@ -1706,6 +1713,8 @@ function lowerFile(file: string, carriesContext: boolean,
         symbolNames: symbolNameNodes.map(node => gate.span(node)),
         keyTypes: keyTypeNodes.map(node => gate.span(node)),
         keyType: ([start, end], keys) => gate.keyTypes.set(`${start}:${end}`, keys),
+        mappedTypes: mappedNodes.map(node => gate.span(node)),
+        mappedType: ([start, end], members) => gate.mappedMembers.set(`${start}:${end}`, members),
         symbolName: ([start, end], result) => gate.symbolNames.set(`${start}:${end}`, result),
         globalTest: ([start, end]) => gate.globalTests.add(`${start}:${end}`),
         globalIntrinsic: ([start, end], name) => gate.globalIntrinsics.set(`${start}:${end}`, name),

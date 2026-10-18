@@ -1041,22 +1041,37 @@ literals, unions, intersections, arrays, type parameters, declarations by
 name, and tuples of required positions and a rest, readonly as TypeScript
 types them; an enum member's literal type at the value the enum's
 interpretation gives it; and an anonymous record as an object contract. A
-type literal written outside any generic declaration is read as written, by
-the annotation reader; any other record (an object literal's type, a mapped
-type's instance such as `Record<string, unknown>`, a type literal of a
-generic declaration at its instance) is read member by member. A member of
-the record's own type literal has its written modifiers, and its written
-type where that names no binder of its declaration. Any other member (a
-mapped type's, an object literal's, one whose type names a binder) is the
-member TypeScript instantiates: at its type, optional as instantiated and
-readonly where the instantiation makes it so. An optional member at an
-instantiated type is refused unless that type is `undefined`, since
-TypeScript gives it with the `undefined` optionality adds, from which the
-written contract is not recovered (`closure-contextual-optional-instance-refused`).
-Each index signature is read by its key, string, number or symbol, with its
-capability. A method, an accessor, a symbol key, a call signature or an
-index of another key of such a record is refused at the parameter
-(`closure-contextual-records`, `closure-contextual-method-refused`). A tuple with an optional position is refused, since TypeScript
+type literal or mapped type the program writes is read as written, by the
+annotation reader, when TypeScript gives it outside any generic
+declaration or at its declaration's own binders. At an instance of the
+generic declaration $`D`$ whose parameters $`\vec X`$ are its binders, it is
+read where the closure's callee reads it from such an instance: the
+callee's chain of member reads has a nearest base $`e`$ of type
+$`D\langle\vec A\rangle`$, and the member read off $`e`$ is declared in $`D`$
+around the record. With $`R`$ the record as written,
+
+```math
+\frac{e:D\langle\vec A\rangle\quad e.m\ \text{read by the callee}\quad m\ \text{declared in}\ D\ \text{around}\ R}
+     {\text{the parameter is at}\ ⟦R⟧[⟦\vec A⟧/\vec X]}
+```
+
+where the substitution replaces types and keeps every field's modifiers, so
+`{ v?: T }` is `{ v?: number }`, `{ v?: number | undefined }` and
+`{ v?: never }` (absent only) at `number`, `number | undefined` and `never`
+(`closure-contextual-optional-instances`). Any other record (an object
+literal's type, a library mapped type's instance such as
+`Record<string, unknown>`, a generic declaration's record at an instance
+not so located) is read member by member: a member of its own type literal
+at its written modifiers, and at its written type where that names no
+binder; any other at the type TypeScript instantiates, readonly where the
+instantiation makes it so. An optional member at an instantiated type is
+refused, save an object literal's at `undefined` alone (an array literal's
+records, each given the others' members so): TypeScript gives an optional
+member's type with the `undefined` optionality adds, from which the written
+contract is not recovered. Each index signature is read by its key, string,
+number or symbol, with its capability. A method, an accessor, a symbol key,
+a call signature or an index of another key of such a record is refused at
+the parameter (`closure-contextual-records`, `closure-contextual-method-refused`). A tuple with an optional position is refused, since TypeScript
 gives that position's type with `undefined` whether or not an annotation
 wrote it (`invalid-contextual-optional-tuple`). It is a proposal like any claim, since the body is checked at
 $`A_j\sqsubseteq_G D_j`$ and the closure at $`\bigwedge L`$ wherever it goes, the

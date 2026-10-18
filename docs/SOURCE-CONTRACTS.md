@@ -914,10 +914,20 @@ $`\mathsf{key}(n)=\mathsf{ToString}(n)`$ and $`m`$ its modifiers:
 
 `number` without `string` is a number index and `symbol` a symbol index
 beside the remaining literals' fields; an optional one, a type parameter or
-any other key is refused. A mapped type over `keyof X` copies `X`'s modifiers
-to each key where it writes none of its own, so it is read only where it
-writes both, readonly (`readonly` or `-readonly`) and optional (`?` or `-?`),
-and is refused otherwise (`mapped-keyof-modifiers-refused`). The keys are the union TypeScript computes for $`K`$
+any other key is refused. A mapped type over `keyof X` copies each member's
+modifiers from `X` where it writes none of its own; with $`m_k`$ the modifiers
+of `X`'s member $`k`$ that TypeScript resolves, overridden by those the
+mapped type writes:
+
+```math
+\frac{P\notin\mathrm{fv}(V)\quad ⟦\mathtt{keyof}\ X⟧=\lambda_1\mid\cdots\mid\lambda_n\ \text{literals}}
+     {⟦\{[P\ \mathtt{in}\ \mathtt{keyof}\ X]^m\colon V\}⟧=\{\mathsf{key}(\lambda_1)^{m\,\triangleleft\,m_{\lambda_1}}\colon⟦V⟧;\ \ldots;\ \mathsf{key}(\lambda_n)^{m\,\triangleleft\,m_{\lambda_n}}\colon⟦V⟧\}}
+```
+
+where $`m\triangleleft m_k`$ takes each modifier $`m`$ writes and $`m_k`$'s
+otherwise (`mapped-keyof-modifiers`, `invalid-mapped-keyof-readonly`). Over
+`keyof` an indexed type, or a type TypeScript resolves to no record, it is
+refused. The keys are the union TypeScript computes for $`K`$
 ([computed types](#computed-types)). A library alias whose equation is a
 mapped type is that type at the reference's arguments:
 
