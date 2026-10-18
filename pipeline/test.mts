@@ -1868,27 +1868,54 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   refuse(imported, "forged-certified-application", readClaims(imported),
     /certified import \.\/certified\.ts#unwrap: the importer's and the module's readings of the written applications in \.\/certified\.ts#unwrap differ/,
     rebounded);
-  // Readings of `twice` holding a resolution-qualified binder alike, whose
-  // scheme domain lowering takes relative to `%Stable%` and native
-  // `Promise`, and a module document stating a `%Stable%` the importer's
-  // does not: the implicit dependencies differ.
-  const qualifiedBinder: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
-  const resolution = { observation: "O", result: "R" };
-  const value = must(qualifiedBinder.declarations.values.find(v => v.declaration.name === "twice"), "twice's value");
-  const unitTwice = must(qualifiedBinder.modules.flatMap(m => m.functions).find(f => f.name === "twice"), "the unit twice");
-  // A field no source term has, written into both readings' result alike.
-  if (value.type.k !== "function") assert.fail("twice's value is a function");
-  Object.assign(value.type.result, { resolution });
-  Object.assign(unitTwice.retType, { resolution });
-  must(qualifiedBinder.modules.find(m => m.location === "./certified.ts"), "the module").declarations.definitions.push({
-    declaration: { module: "tscert/intrinsics", name: "%Stable%", span: [0, 0] },
-    parameters: [], bases: [], expression: { k: "atom", name: "unknown", span: [0, 0] } });
-  const resolved = join(imported, "forged-certified-resolution.fragment.json");
-  writeFileSync(resolved, JSON.stringify(qualifiedBinder));
-  refuse(imported, "forged-certified-resolution", readClaims(imported),
-    /certified import \.\/certified\.ts#twice: a declaration one reading of an imported signature reads implicitly and the other lacks: .*stable/,
-    resolved);
-  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature, a module prototype lacking a member, a differing implicit resolution dependency, a differing written application and a rebound unit refused in search and in checking\n");
+  // Readings of `twice` whose parameter is a scheme with a
+  // resolution-qualified binder, alike in both, whose domain lowering takes
+  // relative to `%Stable%` and native `Promise` (no reference in the term
+  // names either). Refused where the module's document lacks `%Stable%` the
+  // importer's states, and where both state `%Stable%` or `Promise` under
+  // one identity and the definitions differ.
+  const resolvable: Ast = JSON.parse(readFileSync(join(run("generic-promise-resolvable"), "fragment.json"), "utf8"));
+  const intrinsic = (name: string): TypeDefinition =>
+    must(resolvable.declarations.definitions.find(d => d.declaration.name === name), `${name}'s definition`);
+  const qualifiedScheme = (): Ast => {
+    const doc: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+    const value = must(doc.declarations.values.find(v => v.declaration.name === "twice"), "twice's value");
+    const unit = must(doc.modules.flatMap(m => m.functions).find(f => f.name === "twice"), "the unit twice");
+    if (value.type.k !== "function") assert.fail("twice's value is a function");
+    const signature = structuredClone(value.type);
+    const scheme = (): TypeTerm => ({ k: "scheme", span: [0, 0], signatures: [structuredClone(signature)],
+      binders: [{ name: "X", bound: null, resolution: { observation: "X#observed", result: "X#result" },
+        default: null, span: [0, 0] }] });
+    must(value.type.params[0], "twice's parameter");
+    value.type.params[0] = scheme();
+    must(unit.params[0], "the unit's parameter").type = scheme();
+    return doc;
+  };
+  const moduleOf = (doc: Ast) => must(doc.modules.find(m => m.location === "./certified.ts"), "the module").declarations;
+  const resolutionControls: [string, (doc: Ast) => void, RegExp][] = [
+    ["lacking", (doc) => { moduleOf(doc).definitions.push(intrinsic("%Stable%")); },
+      /a declaration one reading of an imported signature reads implicitly and the other lacks: .*stable/],
+    ["stable", (doc) => {
+      doc.declarations.definitions.push(intrinsic("%Stable%"));
+      moduleOf(doc).definitions.push({ ...intrinsic("%Stable%"), expression: { k: "atom", name: "unknown", span: [0, 0] } });
+    }, /the importer's and the module's readings of a declaration differ: .*%Stable%/],
+    ["promise", (doc) => {
+      doc.declarations.definitions.push(intrinsic("Promise"));
+      const promise = structuredClone(intrinsic("Promise"));
+      if (promise.expression?.k === "object") promise.expression.fields.pop();
+      else assert.fail("Promise's definition is an object type");
+      moduleOf(doc).definitions.push(promise);
+    }, /the importer's and the module's readings of a declaration differ: .*"Promise"/],
+  ];
+  for (const [name, forge, refusal] of resolutionControls) {
+    const doc = qualifiedScheme();
+    forge(doc);
+    const path = join(imported, `forged-certified-resolution-${name}.fragment.json`);
+    writeFileSync(path, JSON.stringify(doc));
+    refuse(imported, `forged-certified-resolution-${name}`, readClaims(imported),
+      new RegExp(`certified import \\./certified\\.ts#twice: ${refusal.source}`), path);
+  }
+  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature, a module prototype lacking a member, under a nested resolution-qualified binder a `%Stable%` one reading lacks, a differing `%Stable%` and a differing native `Promise`, a differing written application and a rebound unit refused in search and in checking\n");
 }
 
 {

@@ -193,3 +193,39 @@ function fixtureProject(files: Record<string, string>) {
   closeParser();
   process.stdout.write("array prototype: overlay members read from TypeScript's declarations\n");
 }
+
+{
+  // An imported module's document names its binders by the module's
+  // identity, not its path: the binder of a bounded application under a
+  // generic declaration's scope, and only binders. A literal type and a
+  // property key spelling such a name keep it.
+  const dir = mkdtempSync(join(tmpdir(), "tscert-binder-names-"));
+  const spelled = (offset: number) => `T@${join(dir, "mod.ts")}:${offset}`;
+  writeFileSync(join(dir, "mod.ts"), `export interface Box<T extends number> {
+  value: T;
+}
+export interface Holder<U extends number> {
+  inner: Box<U>;
+  "${spelled(1)}": "${spelled(2)}";
+}
+export function read(h: Holder<number>, tag: "${spelled(3)}"): number {
+  return h.inner.value;
+}
+`);
+  writeFileSync(join(dir, "client.ts"), `import { read, type Holder } from "./mod.ts";
+export function first(h: Holder<number>): number {
+  return read(h, "${spelled(3)}");
+}
+`);
+  const config = join(dir, "tsconfig.json");
+  writeFileSync(config, JSON.stringify({ compilerOptions: { strict: true, noEmit: true, module: "Node16",
+    moduleResolution: "Node16", allowImportingTsExtensions: true }, include: ["*.ts"] }));
+  const ast = parseFile(join(dir, "client.ts"), false, config);
+  const module = JSON.stringify(must(ast.modules.find(m => m.location === "./mod.ts"), "the module's document"));
+  for (const offset of [1, 2, 3])
+    assert.ok(module.includes(JSON.stringify(spelled(offset))), `the spelling ${offset} is kept`);
+  assert.equal(module.split(`@${join(dir, "mod.ts")}:`).length - 1, 3, "only the three spellings name the path");
+  assert.match(module, /"U@\.\/mod\.ts:\d+"/, "the generic declaration's binder is named by the module's identity");
+  closeParser();
+  process.stdout.write("imported module binders: named by the module's identity, literal types and keys kept\n");
+}

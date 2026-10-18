@@ -975,22 +975,30 @@ export function parseFile(file: string, carriesContext = false,
 type Lowered = { ast: Ast; module: ModuleAst | null; imported: ImportedModule[] };
 
 /** The same value with each `module` field naming `from` naming `to`, each
- * written application's `site` in `from` sited in `to`, and, in its
- * declaration document, each binder name a declaration of `from` gives
- * (`T@from:offset`) given by `to`: an imported module's own declarations,
- * which its lowering names by its path, named by its identity in the
- * importer's documents. Its code's string literals are kept. */
+ * written application's `site` in `from` sited in `to`, and each binder name
+ * a declaration of `from` gives (`T@from:offset`) given by `to`: in a binder's
+ * declaration (a type parameter's `name` and its resolution slots) and in a
+ * binder term's `name`, and nowhere else, so a literal type or a property key
+ * spelling such a name keeps it. An imported module's own declarations, which
+ * its lowering names by its path, named by its identity in the importer's
+ * documents. */
 function renamedModule<T>(value: T, from: string, to: string): T {
-  const binder = `@${from}:`;
-  const rename = (v: unknown, binders: boolean): unknown => Array.isArray(v) ? v.map((x) => rename(x, binders))
-    : typeof v === "string" ? (binders ? v.split(binder).join(`@${to}:`) : v)
-    : v && typeof v === "object"
-      ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "module" && x === from ? to
-        : k === "site" && typeof x === "string" && x.startsWith(`${from}#`) ? `${to}${x.slice(from.length)}`
-        : rename(x, binders || k === "declarations")]))
-      : v;
+  const binderName = (x: unknown): unknown => typeof x === "string" ? x.split(`@${from}:`).join(`@${to}:`) : x;
+  const rename = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(rename);
+    if (!v || typeof v !== "object") return v;
+    const binderTerm = "k" in v && v.k === "binder";
+    const binderDeclaration = "name" in v && "bound" in v && "resolution" in v;
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k,
+      k === "module" && x === from ? to
+      : k === "site" && typeof x === "string" && x.startsWith(`${from}#`) ? `${to}${x.slice(from.length)}`
+      : k === "name" && (binderTerm || binderDeclaration) ? binderName(x)
+      : k === "resolution" && binderDeclaration && x && typeof x === "object"
+        ? Object.fromEntries(Object.entries(x).map(([s, n]) => [s, binderName(n)]))
+      : rename(x)]));
+  };
   // asserted: a structural copy of the value, its shape unchanged
-  return rename(value, false) as T;
+  return rename(value) as T;
 }
 
 function lowerFile(file: string, carriesContext: boolean,
