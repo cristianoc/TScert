@@ -569,6 +569,27 @@ export function collectDeclarations(file: string, options: {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
     const { idOf, libraryFile } = moduleIds(clientFile, root, program);
+    // A read of a host class's member its named view does not list is
+    // refused where it is written, naming the view (COMPILER-API.md, reading
+    // rule 4, L6).
+    const outsideViews = (node: Node): void => {
+      if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
+        const declarations = (checker.getTypeAtLocation(node.expression)?.getSymbol()?.declarations ?? [])
+          .map(d => d.resolve()).filter((d): d is TypeDeclaration => !!d && isTypeDeclaration(d));
+        for (const d of declarations) {
+          if (!(ts.isClassDeclaration(d) || ts.isInterfaceDeclaration(d)) || !isHostFile(d.getSourceFile().fileName)) continue;
+          const owner = d.name?.text ?? "";
+          const view = hostViews.find(v => v.owner === owner);
+          if (!view && !ts.isClassDeclaration(d)) continue;
+          if (!(view?.members ?? []).some(m => m.name === node.name.text))
+            // At the read's receiver, which the gate locates (`memberReceivers`).
+            throw new DeclarationError([node.expression.getStart(client), node.expression.end],
+              `${owner}.${node.name.text} is outside the named view ${owner} of the compiler-API contract (compiler-api.mts, reading rule 4)`);
+        }
+      }
+      node.forEachChild(outsideViews);
+    };
+    outsideViews(client);
     // Everything the graph uses must be code TypeScript accepts: an error in a
     // used declaration or on the resolution path refuses it. Errors elsewhere in
     // those files, and in the client's function bodies, are not the graph's.
@@ -3256,13 +3277,17 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           throw Error(`${node.name?.text}.${entry.name} is not declared as reviewed: ${entry.text}`);
     const admitted = (member: Node): boolean =>
       !view || view.some(entry => member.getText(member.getSourceFile()).trim() === entry.text);
+    // A view is the whole shape: no declaration outside the audited
+    // installation merges into it, and it inherits nothing.
+    if ((view || context.hostType(node)) && parts.some(part => !isHostFile(part.getSourceFile().fileName)))
+      throw Error(`a declaration merged into the host type ${node.name?.text} outside the audited installation is refused: the installation's declarations are its whole shape (COMPILER-API.md, reading rules 1 and 4)`);
     let expression = ts.isTypeAliasDeclaration(node)
       ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
         ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end], admitted), parts.flatMap(part => {
             if (part === node || !ts.isInterfaceDeclaration(part)) return [];
             const file = part.getSourceFile();
-            return [members(scopeOf(file), part.members, part, [part.getStart(file), part.end], true)];
+            return [members(scopeOf(file), part.members.filter(admitted), part, [part.getStart(file), part.end], true)];
           }), (at, message) => scope.fail(at, message), node)
         : mergeMembers(parts.map(part => {
             const file = part.getSourceFile();
@@ -3375,7 +3400,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // A class's `implements` clauses are obligations on the class, not part of
     // its instance type; the class it extends is a base of that type, as an
     // interface's are.
-    const bases = parts.flatMap(part => {
+    const bases = view ? [] : parts.flatMap(part => {
       if (!ts.isInterfaceDeclaration(part) && !ts.isClassDeclaration(part)) return [];
       const file = part.getSourceFile();
       const read = (t: TypeNode): TypeTerm => typeTerm(partScope(part), t);

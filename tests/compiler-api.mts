@@ -224,14 +224,31 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
 }
 
 // Declaration texts: every member a named view lists (reading rule 4) is
-// declared as reviewed in the sync API's declarations.
+// declared as reviewed by its owner, the class or interface of that name in
+// the sync API's declarations of the installation, and by no other part.
 {
-  const declared = ["api.d.ts", "types.d.ts"].map(f => readFileSync(join(root, "dist", "api", "sync", f), "utf8"))
-    .join("\n").split("\n").map(l => l.trim());
-  for (const view of hostViews)
-    for (const { name, text } of view.members)
-      assert.ok(declared.includes(text), `${view.owner}.${name} is declared as reviewed: ${text}`);
-  console.log(`views: ${hostViews.length} named views, ${hostViews.reduce((n, v) => n + v.members.length, 0)} members, each declared as reviewed`);
+  let members = 0;
+  const owners = new Map<string, string[]>();
+  for (const name of ["api.d.ts", "types.d.ts"]) {
+    const file = join(root, "dist", "api", "sync", name);
+    const text = readFileSync(file, "utf8");
+    const tree = openText(file, text);
+    for (const statement of tree.statements) {
+      const declared = statement as unknown as { name?: { text?: string }; members?: readonly { getText(f: unknown): string }[] }; // asserted: a statement's optional name and members, read as the compiler declares them
+      const owner = declared.name?.text;
+      if (!owner || !declared.members) continue;
+      owners.set(owner, [...(owners.get(owner) ?? []), ...declared.members.map(m => m.getText(tree).trim())]);
+    }
+  }
+  for (const view of hostViews) {
+    const declared = owners.get(view.owner);
+    assert.ok(declared, `the view ${view.owner} names a class or interface of the installation`);
+    for (const { name, text } of view.members) {
+      assert.equal(declared.filter(t => t === text).length, 1, `${view.owner}.${name} is declared as reviewed by its owner: ${text}`);
+      members++;
+    }
+  }
+  console.log(`views: ${hostViews.length} named views, ${members} members, each declared as reviewed by its owner`);
 }
 
 // C4 for the allocating members: each is declared as reviewed, and under Node

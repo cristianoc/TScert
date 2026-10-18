@@ -226,9 +226,12 @@ are ordinary types.
    which holds because each listed member is read exactly as declared and a
    record states nothing of the keys it does not name. Host values reach
    the client only from the package, so the client never produces a view.
-   A member outside the view is a member the type does not state, refused
-   at its use by ordinary typing ("missing field"), and adding it is a
-   reviewed edit. An overloaded member is the overloads its view lists; a
+   A read of a member outside the view is a located refusal naming the
+   view, the member being no member of the type its view reads, and adding
+   it is a reviewed edit. The view is the type's whole shape: it inherits
+   nothing, and a declaration merged into a host type from outside the
+   audited installation (a project's module augmentation) is refused where
+   the type is reached. An overloaded member is the overloads its view lists; a
    host class without a view has no member. Node shapes are read member-complete. Read
    member-complete, `Checker` alone brings 50 methods whose types reach
    `CompletionInfo`, `Uint8Array` and `ReadonlyMap<__String, …>`, and 38
