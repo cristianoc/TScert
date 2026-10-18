@@ -123,7 +123,13 @@ let present key =
   let ordinary fields = List.exists (fun (f:Semantic.field) -> f.write <> None && not f.optional) fields in
   let as_view = List.map (fun (f:Semantic.field) ->
     if f.name = Name key && f.optional then {f with optional=false; write=None} else f) in
+  (* A readonly optional key found present stays optional in the arm: the
+     read's cell fact says it is present, and the arm keeps its declared
+     shape, methods included. *)
+  let readonly_key fields = List.exists (fun (f:Semantic.field) ->
+    f.name = Name key && f.optional && f.write = None) fields in
   function
+  | Shape ({calls=[];elements=None;indexes=[];_} as s) when readonly_key s.fields -> Shape s
   | Shape ({calls=[];elements=None;indexes=[];_} as s) ->
     Shape {s with fields=(if ordinary s.fields then promote s.fields else as_view s.fields)}
   | Shape ({calls=[];elements=None;indexes=_::_;fields} as s)
@@ -201,8 +207,11 @@ let refine_field ?(answer = false) bounds declarations env name field refine =
         | Shape {fields;_} | Exact fields ->
           List.exists (fun (f:Semantic.field) -> f.name = Name field && f.optional) fields
         | _ -> false in
-      if atoms <> [] && List.for_all names atoms && List.exists optional atoms
-      then refine_value env name (fun _ -> Atoms (List.map (present field) atoms))
+      let promoted = List.map (present field) atoms in
+      (* Where no arm changes (a readonly key stays optional), the binding
+         keeps its declared type. *)
+      if atoms <> [] && List.for_all names atoms && List.exists optional atoms && promoted <> atoms
+      then refine_value env name (fun _ -> Atoms promoted)
       else env
     | _ -> env in
   match List.assoc_opt name env with

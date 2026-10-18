@@ -2023,6 +2023,8 @@ export const cases: Case[] = [
   negative("invalid-switch-nested-exhaustive", "a nested `switch` not covering its scrutinee leaves a path out"),
   positive("switch-case-narrowing", "each case narrows the discriminant, `default` sees the rest, an exhaustive switch never completes, clauses join what each left"),
   negative("invalid-switch-case-narrowing", "`default` never sees a label's value"),
+  positive("readonly-optional-generic-method", "a test finding a readonly optional key present keeps the object's declared shape: a generic method called after it, the key's read pushed"),
+  negative("invalid-readonly-optional-generic-method", "TypeScript keeps a readonly optional key found present across a method call; the read after the call is read anew", /source expression obligation at \[419,424\)/),
   positive("field-test-disjunction", "a disjunction or conjunction of field tests keeps the arms either outcome admits: on one object, on two, over three arms"),
   { file: "invalid-field-test-disjunction", area: "a disjunction holding by its test of another object leaves the first object at every arm, whose missing field is refused",
     kind: "negative", status: "unsupported", phase: "proposal", diagnostic: /missing field x/ },

@@ -871,8 +871,10 @@ narrows a union's arms, never `unknown`, since JavaScript gives any object
 immutable binding's object against a singleton, or of its truthiness where
 an arm leaves the field optional (an `IteratorResult`'s `done`), narrows the
 object's arms; a
-key found present promotes an optional field to a field, since an object
-keeps its keys. A test on a mutable cell refines the read, never the cell.
+key found present promotes a writable optional field to a field, since an
+object keeps its keys; a readonly optional field keeps the object's declared
+shape, methods included, and the field's read until a call is the value the
+test found. A test on a mutable cell refines the read, never the cell.
 `&&`, `||` and `??` return an operand, as JavaScript's do, by the same
 tests; a chain of one of them reads right-nested, so each operand sees what
 every earlier one answered. `x instanceof C` of a class whose chain of bases
