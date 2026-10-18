@@ -163,11 +163,14 @@ line, and throws at a call made before it.
 pattern), in a function body or a block statement, a loop's body included.
 Each entry of the block creates its bindings anew, so a closure created in
 one iteration keeps that iteration's. Refused at their location, as
-explicit restrictions: an early binding (below) declared by a pattern, in a
-`switch`'s case block (one environment for every clause, entered after the
-discriminant, whose clauses may skip a declaration), a class declaration's
-binding, a parameter whose default reads a later parameter, and a
-generator's body. A module's top level keeps the initialization order
+explicit restrictions, each the behaviour of reading a binding of an
+environment the model does not represent before its initialization: an
+early binding (below) declared by a pattern; one in a `switch`'s case block
+(one environment for every clause, entered after the discriminant, whose
+clauses may skip a declaration); a class declaration's binding; a
+generator's body; a parameter default that mentions its own parameter or a
+later one, a closure's mention included (`initializedBefore`); and a loop
+head's binding mentioned in its own head (`for (const xs of xs)`). A module's top level keeps the initialization order
 check (`Sites.checkInitializationOrder`), which refuses an initialization
 step that may reach a constant not yet bound; it does not model the
 module's dead zone, a caught `ReferenceError` there or a module cycle.
@@ -176,19 +179,30 @@ A binding is **early** when one of its mentions is in a closure or a
 function declaration of its scope, which may run at any time after its
 creation, a hoisted declaration from the scope's entry (in
 `f(); let x = 1; function f() { return x; }` the call throws), or when a
-mention in the scope's own code is not dominated by the declaration on
-every path through the scope. Every other binding is lowered as before.
+mention in the scope's own code is not dominated, within the same
+activation, by the binding's **initialization point**: the write after its
+initializer completed normally, which follows the initializer's own
+evaluation (`let x = x` and `let a = b, b = 1` throw), one binding of a
+declaration list at a time. A function literal that is a constant's whole
+initializer is the exception: creating it runs nothing, so its reads of the
+constant are the [recursive constant](#recursive-constants)'s self entry,
+not checked accesses. Every other binding is lowered as before.
 
 **Representation.** An early binding $`x`$ of storage contract $`T`$ is a
 cell of the block's activation, allocated when the block is entered, before
 its statements and before its hoisted function declarations are created,
 holding the activation's **uninitialized marker** $`u`$: one fresh object per
-block entry, owning the key $`\kappa_u`$ (`[[uninitialized]]`). Every string
-key a JavaScript object has is represented under $`\mathsf{esc}`$, whose
-image misses the model's reserved spellings
-(`reservedSpelling_escapeKey`, [keys](SEMANTICS.md)), so no object the
-program reaches, a host object or a prototype among them, owns
-$`\kappa_u`$, and $`\kappa_u`$ is never copied (`copiedKey`). The cell's
+block entry, owning the key $`\kappa_u`$ (`[[uninitialized]]`), and the only
+objects that own it. This is a representation invariant, an obligation of
+the lowering: every string key a JavaScript object has is represented
+under $`\mathsf{esc}`$, whose image misses the model's reserved spellings
+(`reservedSpelling_escapeKey`, [keys](SEMANTICS.md)); the model's own
+reserved keys (`[[proto]]`, `[]`, `[[code]]`, `[[host]]`, a class's
+prototype key) are other spellings; and no allocation but the marker's,
+source, native or host, adds $`\kappa_u`$, so no source-visible value or
+object on its prototype chain owns it. `copiedKey` excludes $`\kappa_u`$,
+as it excludes `[[host]]`, though by confinement (below) no copy receives a
+marker. The cell's
 contract is $`T\cup U`$, with $`U`$ a label of its own whose one clause
 requires $`\kappa_u`$; closures and function declarations capture the cell
 itself, never its contents.
@@ -270,6 +284,36 @@ annotation completes; the checker derives each from the claimed type. Every
 other read of a binding in its own initializer is refused at its location
 (`recursive-const-before-initialization-refused`), and module initialization
 order is checked as before (`Sites`).
+
+<a id="module-cells"></a>
+**Module cells.** A module-level `let x: T = e`, not exported, is a
+**module cell**: a module constant of the initialization unit whose value is
+a private cell, the object $`\{\mathtt{value}{:}T\}`$ a captured `let` is
+([slot or cell](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)).
+The initialization unit allocates it where the declaration runs, with the
+initializer's value checked at $`T`$, and binds the constant to it; every
+function of the module, and every closure, reads $`x`$ by reading the cell
+at its contract $`T`$ and writes it by a write checked at $`T`$:
+
+```math
+\frac{\mathtt{let}\ x{:}T=e\ \text{at the module's top level}\quad \Gamma_I\vdash e:T}
+     {\Gamma_f(x)=\mathsf{cell}(T)\ \text{for every unit } f\ \text{of the module}}\ \textsf{module-cell}
+```
+
+The constant never changes: it holds the one cell from its binding on, so
+a unit assuming it at $`\mathsf{cell}(T)`$ assumes what the initialization
+unit establishes, as for a constant ([modules](DESIGN.md#modules-and-code-units)).
+The cell's contents are any value of $`T`$ at a unit's entry and after each
+call, since any unit may write it; a read in a unit has the facts the unit
+itself established since its last call, as a captured `let`'s. The
+contract is the annotation, or the producer's proposal checked against the
+initializer and every write, as a local `let`'s; a `let x;` is
+$`T\cup\mathsf{Undefined}`$ initialized to `undefined`. A read or write that
+initialization may run before the cell is bound is refused by the
+initialization order check (`Sites`), as a constant's read is. An exported
+`let` is a live binding an importer reads at its current contents, outside
+the fragment, and so is a `var`, whose binding exists from the module's
+entry at `undefined`.
 
 A module function is an immutable slot holding its code. A file without
 imports or exports may run as a script, whose top-level functions are
