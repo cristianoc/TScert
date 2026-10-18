@@ -267,6 +267,10 @@ inductive Rule (ι : Type) where
   unit's checked code table. With a rest, `arrays` are the rest-store types of
   the variadic signatures, in their order. -/
   | funGraph (arrays : List (Ty ι))
+  /-- A recursive closure: graph code of fixed arity whose table entries are
+  checked with its self entry, at the closure's own type, after its
+  captures; the captures are the premises. -/
+  | funGraphSelf
   /-- A class value: construct-only graph code, checked at each construct
   signature with `undef`, the `undefined` type, for its receiver. -/
   | ctorGraph (undef : Ty ι)
@@ -401,6 +405,16 @@ instantiation of the scheme's binders. -/
     match expand G A with
     | [.arrs L S] => decide (KindOffers G kind L S) && offersChecked G codes arity E K start Cs rest L S As
     | _ => false
+
+/-- A recursive closure's signatures, each a checked entry of its graph code
+of fixed arity with captures at `Cs` and the self entry at the closure's own
+type `A` after them. -/
+@[nospecialize] def graphCodesCheckedSelf [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (codes : CodeEntry ι → Bool)
+    (kind : Invoke) (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
+    (start : Nat) (Cs : List (Ty ι)) : Bool :=
+  match expand G A with
+  | [.arrs L S] => decide (KindOffers G kind L S) && offersChecked G codes arity E K start (Cs ++ [A]) false L S []
+  | _ => false
 
 /-- A class value's construct signatures, each a checked entry of its graph
 code at the row whose receiver is `U`, the `undefined` type `new` passes; a
@@ -775,6 +789,15 @@ declared bounds. -/
       ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
       (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
       graphCodesChecked G j.type codes kind arity E K start (ps.map Sequent.type) rest As = true
+    | _, _ => False
+  -- A recursive closure: as graph code, of fixed arity, its entries checked
+  -- with the self entry after the captures.
+  | .funGraphSelf =>
+    match j.term, ps with
+    | .makeAt (.graph arity E K start caps kind false) ns inits, ps =>
+      ns = [codeField] ∧ inits = [Tm.nul] ∧ ps.map Sequent.term = caps ∧
+      (∀ q ∈ ps, q.context = j.context) ∧ capSlotsBelow caps j.context.length = true ∧
+      graphCodesCheckedSelf G j.type codes kind arity E K start (ps.map Sequent.type) = true
     | _, _ => False
   -- A class value: as a function's code, construct-only, at its construct
   -- signatures with `undefined` for the receiver; its code field, then one
@@ -1239,7 +1262,7 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
           checkMemberProofs G images j.context[i]? j.type k proofs rests receivers
     | _, _ => failure
   | .var | .nul | .undef | .tru | .fls | .truLit | .flsLit | .numLit | .num | .strLit | .str
-    | .bigintLit | .bigint | .funGraph .. | .ctorGraph .. | .callableGraph .. | .app ..
+    | .bigintLit | .bigint | .funGraph .. | .funGraphSelf | .ctorGraph .. | .callableGraph .. | .app ..
     | .letE | .alloc | .read | .readView | .write | .arith | .test | .readDict .. | .indexDict ..
     | .readOptional .. | .readProto .. | .arrLit | .elem | .setElem | .len | .lenStr | .elemStr ..
     | .elemOpt .. | .elemAny .. | .ifBool | .ifTrue | .ifFalse | .ifKnown .. | .ifBoolVar ..
@@ -1526,6 +1549,28 @@ theorem funGraph_of_local [DecidableEq ι] {G : NormalGraph ι}
         (of_decide_eq_true hok.1) (by rw [hfst]; exact offersChecked_sound hcodes hok.2 G.env) hlt hcap
     · contradiction
 
+/-- A recursive closure creation whose captures are slots and whose
+signatures the table has checked with the self entry is derivable. -/
+theorem funGraphSelf_of_local [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ : List (Ty ι)} {A : Ty ι}
+    {codes : CodeEntry ι → Bool} (hcodes : CodesSound G codes) {arity start : Nat}
+    {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
+    {kind : Invoke}
+    {ps : List (Sequent ι)} (hctx : ∀ q ∈ ps, q.context = Γ)
+    (hslots : capSlotsBelow (ps.map Sequent.term) Γ.length = true)
+    (hok : graphCodesCheckedSelf G A codes kind arity E K start (ps.map Sequent.type) = true)
+    (hp : ∀ p ∈ ps, HasTyUsing G images (subtyping := subtyping) p.context p.term p.type) :
+    HasTyUsing G images (subtyping := subtyping) Γ (.makeFn (.graph arity E K start (ps.map Sequent.term) kind false) .nul) A := by
+  obtain ⟨caps, hvar, hfst, hlt, hcap⟩ := caps_of_local hctx hslots hp
+  rw [← hvar]
+  unfold graphCodesCheckedSelf at hok
+  split at hok
+  · rename_i L S hL
+    simp only [Bool.and_eq_true] at hok
+    exact HasTyUsing.funGraphSelf (caps := caps) (E := E) (K := K) (start := start) (arity := arity) hL
+      (of_decide_eq_true hok.1) (by rw [hfst]; exact offersChecked_sound hcodes hok.2 G.env) hlt hcap
+  · contradiction
+
 theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {subtyping : BodySubtyping G} {j r ps} {codes : CodeEntry ι → Bool}
     (hl : LocalUsing G images j r ps codes subtyping.check) (hcodes : CodesSound G codes)
@@ -1550,6 +1595,10 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     obtain ⟨rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
     subst caps
     exact funGraph_of_local hcodes hctx hslots hok hp
+  · rename_i ps _ _ arity E K start caps kind ns inits
+    obtain ⟨rfl, rfl, hterms, hctx, hslots, hok⟩ := hl
+    subst caps
+    exact funGraphSelf_of_local hcodes hctx hslots hok hp
   · rename_i U ps _ _ arity E K start caps kind rest f ns inits
     obtain ⟨rfl, rfl, rfl, hnd, hlen, hterms, hctx, hcaps, hslots, hu, hok⟩ := hl
     have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=

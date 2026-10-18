@@ -26,6 +26,7 @@ design, not its progress.
 | [Cell facts by tag, and label slices](#cell-fact-slices) | open: label slices and reads by a record field's or a dictionary entry's tag done (2026-10-18); `decodeTarget` passes an imported function as a callback | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
 | [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 43 s of evidence search, past the 30 s limit (2026-10-18) | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
 | [Field equality facts over objects](#field-equality-facts) | open: an investigation, cause unknown | `c.kind === "a"` of a field whose type holds objects is a fact a later read of `c.kind` uses, as it is of a `string` field |
+| [Optional-field truthiness over unions](#optional-field-truthiness) | open: an investigation, cause unknown | `optional-field-truthiness-union-refused` verifies |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -34,7 +35,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 31 of 306 verify in `tools/` and 4 of 13 in `tests/` (2026-10-17), 21 of 24 in `dev/` (2026-10-18) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 57 of 313 verify in `tools/` (2026-10-18), 21 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -180,6 +181,16 @@ read into a constant before its equality tests
 required current-content facts") where its type also holds objects, a
 `Json` field of a record or a dictionary's entry (observed 2026-10-18).
 
+<a id="optional-field-truthiness"></a>
+**Optional-field truthiness over unions**, an investigation: after
+`if (o.m)`, a read of `o.m` is of `m`'s type where `o` is one record leaving
+`m` optional. Where `o` is a union of records one of which requires `m` and
+one leaves it optional, the claim where the test fails, without the arm
+requiring `m`, is refused at the incoming edge
+(`optional-field-truthiness-union-refused`), and where
+each arm leaves `m` optional, the producer claims the read at `m`'s type or
+`undefined` (observed 2026-10-18).
+
 <a id="exceptional-footprints"></a>
 **Exceptional footprints**: a call's promise that its footprint also holds
 when it throws (`onThrow`), carried through handlers and concluded by
@@ -307,24 +318,21 @@ probe's correspondence to the application.
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 306 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 313 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
-The first blockers, by the number of slices each stops (2026-10-17):
+The first blockers, by the number of slices each stops (2026-10-18):
 
 - a value imported from the front end's own modules that the declaration
   reader does not read (76), listed below as the source annotations to add;
-- the compiler API's `NodeArray`, which extends the standard library's
-  `ReadonlyArray`, there read as a plain interface because `@types/node`
-  merges an interface of its own into it ("duplicate field name in a
-  record", 64); without that merge, extending a library array is refused;
 - the parser's `Gate` class (30);
-- a missing annotation, or a value TypeScript types `any` (29);
-- the compiler API's host classes read member-complete, `Checker` and
-  `Symbol` (11); library globals absent from the overlay or refused (10):
+- a missing annotation, or a value TypeScript types `any` (31);
+- the standard library's `BuiltinIteratorReturn`, an intrinsic type a
+  node list's or an array's iterator reaches (9); library globals absent
+  from the overlay or refused (10):
   the global function `parseInt`, `Reflect`
   ([refused](docs/SOURCE-FRAGMENT.md)), `Array.from`, `Object.fromEntries`,
   `new RegExp`, `JSON.stringify` with an indent; Node's modules, `path` and
-  `fs` (9); module-level `let` and `var` (5); a default import (3).
+  `fs` (8); module-level `let` and `var` (8); a default import (3).
 
 The source annotations to add, apart from the compiler API (2026-10-17, by
 the slices each stops): the module constants holding arrows without an
@@ -381,7 +389,8 @@ against the fragment (2026-10-16) gives the work, each item its own design:
   through `typescript/unstable/ast` and its checker through
   `typescript/unstable/sync`; [the compiler API](docs/COMPILER-API.md)
   specifies the contract they are verified under. Its implementation waits
-  on `NodeList` (the rest of the restricted-value policy holds), a compact
+  on reading rules 2 and 4 and the node invariant (the restricted-value
+  policy and `NodeList` hold), a compact
   representation of kind sets in claims and evidence, and guard signatures
   for the sync API's type guards.
 - **Guard signatures.** A guard's promise is part of its function type,

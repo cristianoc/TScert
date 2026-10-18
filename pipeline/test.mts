@@ -280,6 +280,32 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged operand entry: a parameter read claimed narrower than its test refused\n");
 }
 {
+  // Where `n.kind === 1 || b.kind === 2` holds, `n` may be of any arm: a
+  // read of `n` claimed at the first arm is refused where evidence is
+  // produced and where it is checked.
+  const good = run("field-test-disjunction");
+  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "mixed"), "mixed function");
+  const start = source.indexOf("return n.kind", source.indexOf("function mixed")) + "return ".length;
+  const read = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + 1), "the read of n");
+  assert.ok(Array.isArray(read.type) && read.type.length === 3, JSON.stringify(read.type));
+  read.type = read.type.slice(0, 1);
+  const forged = writeClaims(good, "disjunction-one-arm", claims);
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+      join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+        ? "disjunction-one-arm-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])],
+      { encoding: "utf8", timeout: 30_000 });
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    if (mode === "--produce-source-claims")
+      assert.match(result.stdout + result.stderr, new RegExp(`at \\[${start},${start + 1}\\)`));
+  }
+  process.stdout.write("forged disjunction: an object read claimed at one arm where another object's test holds refused\n");
+}
+{
   // An array literal's spread is copied before a later element that runs
   // code, as JavaScript reads it there; a spread operand claimed at other
   // than an array is refused where the elements are produced and checked.
@@ -370,7 +396,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
       assert.equal(result.status, 1, result.stdout + result.stderr);
       assert.match(result.stdout + result.stderr, variant === "unbound"
         ? /a label names a binder no unit or closure reads/
-        : /evidence search failed|source evidence does not justify/);
+        : /evidence search failed|source evidence does not justify|source evidence refusal at/);
     }
   }
   process.stdout.write("prototype contracts: invented read types and unbound parameters refused in both modes\n");
@@ -447,7 +473,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const forgedImport = join(good, "forged-import.json");
   writeFileSync(forgedImport, JSON.stringify({ ...fragment, declarations: json.declarations }));
   assert.match(invoke(join(good, "claims.json"), join(good, "evidence.json"), good, forgedImport),
-    /source evidence does not justify/);
+    /source evidence (does not justify|refusal at)/);
   process.stdout.write("forged import closure: refused\n");
 }
 {
@@ -865,7 +891,7 @@ for (const [artifacts, arity, refusal] of [
     if (site === "initializer") must(fn.expressions[0], "the initializer's claim").type = [1, 2];
     else must(fn.entries.flatMap((e) => e.bindings).find((b) => b.name === "saved"), "saved").type = [1, 2];
     assert.match(invoke(writeClaims(generic, `forged-${site}`, claims), join(generic, "evidence.json"), generic),
-      /source evidence does not justify the extracted program and exact claims/);
+      /source evidence (does not justify the extracted program and exact claims|refusal at \[\d+,\d+\))/);
   }
 }
 {
@@ -879,7 +905,7 @@ for (const [artifacts, arity, refusal] of [
     !e.bindings.some((b) => b.name === "read")), "the entry at the closure's declaration");
   must(declaration.bindings.find((b) => b.name === "store"), "store").type = [1, 2];
   assert.match(invoke(writeClaims(captured, "forged-capture", claims), join(captured, "evidence.json"), captured),
-    /does not justify|evidence search failed/);
+    /does not justify|evidence refusal at|evidence search failed/);
 }
 {
   // A module function is reached at its own annotated signature, which Lean
@@ -1616,7 +1642,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     }, /source effect refusal at \[\d+,\d+\): the footprint claimed for 'largest'/],
     ["forged-throw-footprint-checked", (c: SourceClaims) => {
       must(c.functions.find(f => f.name === "checked"), "checked's claims").onThrow = false;
-    }, /reject: source (expression obligation at \[\d+,\d+\)|evidence does not justify)/],
+    }, /reject: source (expression obligation at \[\d+,\d+\)|evidence does not justify|evidence refusal at)/],
   ] as const) {
     const claims = readClaims(artifacts);
     forge(claims);
@@ -1649,7 +1675,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   assert.ifError(produce.error);
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
-    assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify)/);
+    assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
   process.stdout.write("forged field contents: an arm excluded before its field failed every value refused in search and in checking\n");
 }
 
@@ -1675,7 +1701,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     assert.ifError(produce.error);
     assert.equal(produce.status, 1, produce.stdout + produce.stderr);
     for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
-      assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify)/);
+      assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
     // Past the aliasing write and past the call, the honest claims read the
     // field at its type; claims keeping the test's fact there are refused.
     for (const name of afterNames) {
@@ -1697,7 +1723,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
       assert.ifError(produce.error);
       assert.equal(produce.status, 1, produce.stdout + produce.stderr);
       for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
-        assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify)/);
+        assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
     }
   }
   process.stdout.write("forged field tag facts, of a record's field and of a dictionary's entry: claimed before the test, past an aliasing write and past a call, refused in search and in checking\n");
@@ -1787,11 +1813,12 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   process.stdout.write("forged import footprints: an imported function's call refused each footprint narrower than everything\n");
 }
 
-/** Bypass the producer's refusal: propose claims and search evidence over a
- * parser document weakened by `change`, then require both verifier entry
- * points to refuse that claims document and its evidence against the honest
- * document. */
-const bypassed = (artifacts: string, name: string, change: (fragment: Ast) => void): void => {
+/** Bypass the producer's refusal: propose claims over a parser document
+ * weakened by `change`, then require search over those claims against the
+ * honest document to refuse at the obligation located at `at`, and checking
+ * to refuse the evidence searched over the weakened document. That evidence
+ * is over another graph, so checking refuses it unlocated. */
+const bypassed = (artifacts: string, name: string, at: [number, number], change: (fragment: Ast) => void): void => {
   const ast: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
   change(ast);
   const weak = join(artifacts, `${name}-fragment.json`);
@@ -1804,33 +1831,84 @@ const bypassed = (artifacts: string, name: string, change: (fragment: Ast) => vo
   assert.equal(proposal.status, 0, proposal.stderr);
   const claims = join(artifacts, `${name}-claims.json`);
   writeFileSync(claims, proposal.stdout);
-  // The weakened document's evidence exists, so checking reaches the rule.
   const made = produceWith(artifacts, claims, name, weak);
   assert.equal(made.status, 0, made.stdout + made.stderr);
-  const searched = produceWith(artifacts, claims, `${name}-honest`);
-  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  refusedAt(artifacts, claims, `${name}-honest`, `obligation at [${at[0]},${at[1]})`);
   invoke(claims, join(artifacts, `${name}-evidence.json`), artifacts);
+};
+/** A verified case's operand claim at `operand`, of a record whose field `a`
+ * is a number, weakened to `{ readonly a: number }`, which admits a host
+ * object. The entry contracts stay honest; search must refuse at the
+ * operation spanning the first `operation`, and checking of the honest
+ * evidence within it. */
+const weakenedOperand = (file: string, name: string, operation: string, operand: string): void => {
+  const artifacts = run(file);
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const op = source.indexOf(operation);
+  assert.ok(op >= 0, `${file}: ${operation}`);
+  const start = op + operation.indexOf(operand);
+  const claim = must(claims.functions.flatMap(f => f.expressions)
+    .find(e => e.pos[0] === start && e.pos[1] === start + operand.length), `${file}: the claim of ${operand}`);
+  claim.type = [rowOf(claims, { refs: { first: [], rest: [], views: [["a", [rowOf(claims, "num")]]] } })];
+  const input = writeClaims(artifacts, name, claims);
+  const at = `[${op},${op + operation.length})`;
+  refusedAt(artifacts, input, name, `obligation at ${at}`);
+  // Checking the honest evidence refuses within the operation: at it, or at
+  // an obligation of its operands, whose evidence states the honest claim.
+  const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+  const located = must(/source evidence refusal at \[(\d+),(\d+)\)/.exec(checked), checked);
+  assert.ok(op <= Number(located[1]) && Number(located[2]) <= op + operation.length, checked);
 };
 
 {
-  // The non-host parameter of `Object.values` (COMPILER-API.md, "Restricted
-  // values"): the interface's readonly field forged writable in the parser's
-  // document, so the producer and search take the call at the non-host
-  // values; against the honest readonly interface, which admits a host
-  // object, search and checking refuse the strengthened argument.
-  bypassed(run("object-values-readonly-refused"), "forged-non-host-argument", fragment => {
-    const definition = must(fragment.declarations?.definitions.find(d => d.declaration.name === "R"), "the interface R");
-    assert(definition.expression?.k === "object");
-    for (const f of definition.expression.fields) f.readonly = false;
-  });
-  // A merge's operand alike: the spread's readonly record forged writable.
-  bypassed(run("spread-readonly-record-refused"), "forged-non-host-spread", fragment => {
-    const fn = must(fragment.functions.find(f => f.name === "copy"), "copy");
-    const param = must(fn.params[0], "copy's parameter");
-    assert(param.type?.k === "object");
-    for (const f of param.type.fields) f.readonly = false;
-  });
-  process.stdout.write("forged non-host operands: a readonly record strengthened to the non-host values refused in search and in checking\n");
+  // The non-host parameter of `Object.values` and a merge's operands
+  // (COMPILER-API.md, "Restricted values"): an argument claimed at a record of
+  // readonly fields alone, which admits a host object, is refused at the
+  // call, and a spread's operand so claimed at the merge, in search and in
+  // checking the honest evidence.
+  weakenedOperand("host-exclusion-reflection", "forged-non-host-argument", "Object.values(o)", "o");
+  weakenedOperand("host-exclusion-merges", "forged-non-host-spread", "{ ...o }", "o");
+  process.stdout.write("forged host-admitting operands: an argument and a spread operand claimed at readonly fields refused at the call and the merge, in search and in checking\n");
+}
+
+{
+  // A recursive closure's self entry is at the closure's own claimed type,
+  // which its code must establish (SOURCE-MODEL.md, "Recursive constants"):
+  // the claim forged to a result its body does not return, or to a footprint
+  // its body exceeds, is refused in search and in checking the honest
+  // evidence, within the closure.
+  const artifacts = run("recursive-constants");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  for (const [name, label] of [["depth", "result"], ["writes", "footprint"]] as const) {
+    const claims = readClaims(artifacts);
+    const start = source.indexOf("const visit = ", source.indexOf(`function ${name}(`)) + "const visit = ".length;
+    // The literal's claim: the longest claim starting at it.
+    const claim = must(claims.functions.flatMap(f => f.expressions).filter(e => e.pos[0] === start)
+      .sort((a, b) => b.pos[1] - a.pos[1])[0], `${name}: the literal's claim`);
+    assert.ok(Array.isArray(claim.type));
+    const rows = claim.type.map(l => must(typeof l === "number" ? claims.types[l] : undefined, "a row"));
+    claim.type = rows.map(row => claims.types.push(row.map(clause => {
+      if (typeof clause !== "object" || !("arrs" in clause)) return clause;
+      const arrows = clause.arrs.arrows.map(a => {
+        const copy = structuredClone(a);
+        if (label === "result") copy.result = [rowOf(claims, "str")];
+        else copy.effect = footprintEffect(keepAll);
+        return copy;
+      });
+      return { arrs: { ...clause.arrs, arrows } };
+    })) - 1);
+    const input = writeClaims(artifacts, `forged-self-${label}`, claims);
+    const searched = produceWith(artifacts, input, `forged-self-${label}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+    for (const detail of [searched.stdout + searched.stderr, checked]) {
+      const at = must(/(?:obligation|refusal) at \[(\d+),(\d+)\)/.exec(detail), detail);
+      const body = source.indexOf(`function ${name}(`);
+      assert.ok(Number(at[1]) >= body && Number(at[2]) <= source.indexOf("\n}\n", body) + 2, detail);
+    }
+  }
+  process.stdout.write("forged recursive closures: a self type at a result and at a footprint the body does not establish refused in search and in checking\n");
 }
 
 {
@@ -1856,12 +1934,48 @@ const bypassed = (artifacts: string, name: string, change: (fragment: Ast) => vo
     // on the host `Node`, the claims and evidence so made refused against the
     // honest document, whose shape omits it.
     const dot = check(example("invalid-host-fixture-jsdoc-dot"), project);
-    bypassed(dot.artifacts, "forged-host-jsdoc", fragment => {
+    const read = readFileSync(join(dot.artifacts, "source.ts"), "utf8").indexOf("n.jsDoc");
+    bypassed(dot.artifacts, "forged-host-jsdoc", [read, read + "n.jsDoc".length], fragment => {
       const definition = must(fragment.declarations?.definitions.find(d => d.declaration.name === "Node"), "the host Node");
       assert(definition.expression?.k === "object");
       const kind = must(definition.expression.fields.find(f => f.name === "kind"), "Node's kind");
       definition.expression.fields.push({ ...kind, name: "jsDoc", optional: true, type: { k: "atom", name: "unknown", span: kind.span } });
     });
+    // Node lists: read as dense readonly arrays; their own members unread.
+    const rows = check(example("host-fixture-node-list"), project);
+    assert.equal(rows.status, "verified", JSON.stringify(rows));
+    const written = check(example("invalid-host-fixture-node-list-write"), project);
+    assert.ok(written.status !== "verified" && "detail" in written && /transformFlags/.test(written.detail),
+      JSON.stringify(written));
+    // Branded strings (reading rule 5): read as strings, refused as a host
+    // parameter (L5).
+    const branded = check(example("host-fixture-branded-read"), project);
+    assert.equal(branded.status, "verified", JSON.stringify(branded));
+    for (const [file, refusal] of [
+      ["invalid-host-fixture-branded-parameter", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-callback-result", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-held", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-argument", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-nested", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-curried", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-optional-parameter", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-return", /the intersection is empty/],
+      ["invalid-host-fixture-branded-alias", /the intersection is empty/],
+    ] as const) {
+      const refused = check(example(file), project);
+      assert.ok(refused.status !== "verified" && "detail" in refused && refusal.test(refused.detail),
+        `${file}: ${JSON.stringify(refused)}`);
+    }
+    for (const file of ["host-fixture-branded-callback", "host-fixture-branded-positions"]) {
+      const supplied = check(example(file), project);
+      assert.equal(supplied.status, "verified", `${file}: ${JSON.stringify(supplied)}`);
+    }
+    // A member declared `any`: optional, of type `unknown` (reading rule 2).
+    const brand = check(example("host-fixture-brand-optional"), project);
+    assert.equal(brand.status, "verified", JSON.stringify(brand));
+    const required = check(example("invalid-host-fixture-brand-required"), project);
+    assert.ok(required.status === "unverified" && /No rule derives this invoke/.test(required.detail),
+      JSON.stringify(required));
     const kept = check(example("host-fixture-jsdoc-other-reads"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
     const lookalike = check(example("host-fixture-lookalike"), project);
@@ -1869,7 +1983,7 @@ const bypassed = (artifacts: string, name: string, change: (fragment: Ast) => vo
   } finally {
     useHostInstallationForTests(null);
   }
-  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified\n");
+  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, its members unread; a branded string read as a string where the host produces it, refused where the client would; a member declared any optional\n");
 }
 
 {

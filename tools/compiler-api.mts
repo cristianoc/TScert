@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, sep } from "node:path";
+import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 
 /** The host package: its name and the version the contract was reviewed
  * against (`tools/package-lock.json`). */
@@ -49,6 +50,163 @@ export const allocatingMembers: readonly { owner: string; name: string; text: st
  * `NodeArray`, and the sync API's `Type`, its sub-interfaces reaching it.
  * Every class the package declares is a host type too. */
 export const hostTypeRoots: readonly string[] = ["Node", "NodeArray", "Type"];
+
+/** The branded strings (COMPILER-API.md, reading rule 5): host-introduced
+ * types whose values are strings the package produces. Read as `string` where
+ * the client receives one; a host signature's parameter mentioning one is
+ * refused (L5), since the calculus has no opaque primitive type to admit only
+ * the package's own values. Each entry is its declaration as reviewed. */
+export const brandedTypes: readonly { name: string; text: string }[] = [
+  { name: "Path", text: "export type Path = string & {\n    __pathBrand: any;\n};" },
+  { name: "__String", text: "export type __String = (string & {\n    __escapedIdentifier: void;\n}) | InternalSymbolName;" },
+];
+
+/** A host-produced type with each branded string where the host produces it
+ * (`out`) read as `string` (reading rule 5): a primitive result, a readonly
+ * member, a callback's parameter. Where the client produces one (`out`
+ * false: a parameter of a host function, a callback's result) or both
+ * (`null`: a writable member, a type argument, a binder's bound), the brand
+ * is an introduction obligation only a value the package produced meets,
+ * which the calculus cannot state: refused (L5). A brand left unread here, as
+ * a client annotation naming it or an alias of it, keeps its declared
+ * definition, `string & { … }`, which no value meets and which is refused
+ * where it is used. */
+export function hostBrands(t: TypeTerm, out: boolean | null, brand: (id: DeclarationIdentity) => boolean,
+    fail: (message: string) => never): TypeTerm {
+  const go = (u: TypeTerm, o: boolean | null): TypeTerm => hostBrands(u, o, brand, fail);
+  switch (t.k) {
+    case "reference":
+      if (brand(t.reference.target)) {
+        if (out === true) return { k: "atom", name: "string", span: t.span };
+        return fail(`the host's branded string ${t.reference.name} where the client would produce one: only the package produces its values (COMPILER-API.md, L5)`);
+      }
+      return { ...t, args: t.args.map(a => go(a, null)) };
+    case "union": case "intersection": return { ...t, parts: t.parts.map(p => go(p, out)) };
+    case "array": return { ...t, element: go(t.element, t.readonly ? out : null) };
+    case "tuple": {
+      const o = t.readonly ? out : null;
+      return { ...t, required: t.required.map(e => go(e, o)), optional: t.optional.map(e => go(e, o)),
+        rest: t.rest && go(t.rest, o) };
+    }
+    case "object":
+      return { ...t, fields: t.fields.map(f => ({ ...f, type: go(f.type, f.readonly ? out : null) })),
+        stringIndex: t.stringIndex && { ...t.stringIndex, value: go(t.stringIndex.value, t.stringIndex.readonly ? out : null) },
+        ...(t.numberIndex ? { numberIndex: { ...t.numberIndex, value: go(t.numberIndex.value, t.numberIndex.readonly ? out : null) } } : {}),
+        ...(t.symbolIndex ? { symbolIndex: { ...t.symbolIndex, value: go(t.symbolIndex.value, t.symbolIndex.readonly ? out : null) } } : {}),
+        calls: t.calls.map(c => hostBrandsFunction(c, out, brand, fail)),
+        ...(t.prototype ? { prototype: go(t.prototype, out) } : {}) };
+    case "function": return hostBrandsFunction(t, out, brand, fail);
+    case "constructor": return hostBrandsConstructor(t, out, brand, fail);
+    case "pack": return { ...t, of: go(t.of, out) };
+    case "scheme":
+      return { ...t, binders: t.binders.map(b => ({ ...b, bound: b.bound && go(b.bound, null), default: b.default && go(b.default, null) })),
+        signatures: t.signatures.map(s => s.k === "function" ? hostBrandsFunction(s, out, brand, fail)
+          : hostBrandsConstructor(s, out, brand, fail)) };
+    default: return t;
+  }
+}
+function hostBrandsConstructor(t: Extract<TypeTerm, { k: "constructor" }>, out: boolean | null,
+    brand: (id: DeclarationIdentity) => boolean, fail: (message: string) => never): Extract<TypeTerm, { k: "constructor" }> {
+  const flip = out === null ? null : !out;
+  const go = (u: TypeTerm, o: boolean | null): TypeTerm => hostBrands(u, o, brand, fail);
+  return { ...t, params: t.params.map(p => go(p, flip)), rest: t.rest && go(t.rest, flip), result: go(t.result, out),
+    ...(t.statics ? { statics: t.statics.map(s => ({ ...s, type: go(s.type, s.readonly ? out : null) })) } : {}) };
+}
+function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolean | null,
+    brand: (id: DeclarationIdentity) => boolean, fail: (message: string) => never): Extract<TypeTerm, { k: "function" }> {
+  const flip = out === null ? null : !out;
+  const go = (u: TypeTerm, o: boolean | null): TypeTerm => hostBrands(u, o, brand, fail);
+  return { ...t, receiver: t.receiver && go(t.receiver, flip), params: t.params.map(p => go(p, flip)),
+    rest: t.rest && go(t.rest, flip), result: go(t.result, out) };
+}
+
+/** The named views of the host classes (reading rule 4): each class is read
+ * through the members its view lists, each read exactly as its reviewed
+ * declaration text states it; an overloaded member is the overloads listed.
+ * A class the contract lists no view for has none: no member. The members
+ * are the ones the front end reads (2026-10-18), but `Symbol.getExports` and
+ * `getMembers`, whose `ReadonlyMap<__String, Symbol>` takes the branded key
+ * from the client at `get` (reading rule 5), and `Type`'s `this is X`
+ * methods, which wait for stated type guards. `Type`, an interface, has a
+ * view of its own as a class does. */
+export const hostViews: readonly { owner: string; members: readonly { name: string; text: string }[] }[] = [
+  { owner: "API", members: [
+    { name: "close", text: "close(): void;" },
+    { name: "updateSnapshot", text: "updateSnapshot(params?: FromLSP extends true ? LSPUpdateSnapshotParams : UpdateSnapshotParams): Snapshot;" },
+  ] },
+  { owner: "Snapshot", members: [
+    { name: "getDefaultProjectForFile", text: "getDefaultProjectForFile(file: DocumentIdentifier): Project | undefined;" },
+    { name: "getProject", text: "getProject(configFileName: string): Project | undefined;" },
+  ] },
+  { owner: "Project", members: [
+    { name: "checker", text: "readonly checker: Checker;" },
+    { name: "compilerOptions", text: "readonly compilerOptions: CompilerOptions;" },
+    { name: "configFileName", text: "readonly configFileName: string;" },
+    { name: "program", text: "readonly program: Program;" },
+  ] },
+  { owner: "Program", members: [
+    { name: "getProgramDiagnostics", text: "getProgramDiagnostics(): readonly Diagnostic[];" },
+    { name: "getSemanticDiagnostics", text: "getSemanticDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
+    { name: "getSourceFile", text: "getSourceFile(file: DocumentIdentifier): SourceFile | undefined;" },
+    { name: "getSourceFileNames", text: "getSourceFileNames(): readonly string[];" },
+    { name: "getSyntacticDiagnostics", text: "getSyntacticDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
+    { name: "isSourceFileDefaultLibrary", text: "isSourceFileDefaultLibrary(file: SourceFile): boolean;" },
+  ] },
+  { owner: "Checker", members: [
+    { name: "getAliasedSymbol", text: "getAliasedSymbol(symbol: Symbol): Symbol;" },
+    { name: "getConstantValue", text: "getConstantValue(node: Node): string | number | undefined;" },
+    { name: "getExportsOfModule", text: "getExportsOfModule(symbol: Symbol): readonly Symbol[];" },
+    { name: "getImmediateAliasedSymbol", text: "getImmediateAliasedSymbol(symbol: Symbol): Symbol | undefined;" },
+    { name: "getIndexInfosOfType", text: "getIndexInfosOfType(type: Type): readonly IndexInfo[];" },
+    { name: "getNonNullableType", text: "getNonNullableType(type: Type): Type | undefined;" },
+    { name: "getParameterType", text: "getParameterType(signature: Signature, index: number): Type | undefined;" },
+    { name: "getPropertiesOfType", text: "getPropertiesOfType(type: Type): readonly Symbol[];" },
+    { name: "getPropertyOfType", text: "getPropertyOfType(type: Type, name: string): Symbol | undefined;" },
+    { name: "getResolvedSignature", text: "getResolvedSignature(node: Node): Signature | undefined;" },
+    { name: "getReturnTypeOfSignature", text: "getReturnTypeOfSignature(signature: Signature): Type | undefined;" },
+    { name: "getShorthandAssignmentValueSymbol", text: "getShorthandAssignmentValueSymbol(node: Node): Symbol | undefined;" },
+    { name: "getSignaturesOfType", text: "getSignaturesOfType(type: Type, kind: SignatureKind): readonly Signature[];" },
+    { name: "getSymbolAtLocation", text: "getSymbolAtLocation(node: Node): Symbol | undefined;" },
+    { name: "getTypeArguments", text: "getTypeArguments(type: TypeReference): readonly Type[];" },
+    { name: "getTypeAtLocation", text: "getTypeAtLocation(node: Node): Type | undefined;" },
+    { name: "getTypeFromTypeNode", text: "getTypeFromTypeNode(node: TypeNode): Type | undefined;" },
+    { name: "getTypeOfSymbol", text: "getTypeOfSymbol(symbol: Symbol): Type | undefined;" },
+    { name: "isArrayType", text: "isArrayType(type: Type): boolean;" },
+    { name: "isTupleType", text: "isTupleType(type: Type): boolean;" },
+    { name: "isUndefinedSymbol", text: "isUndefinedSymbol(symbol: Symbol): boolean;" },
+    { name: "isUnknownSymbol", text: "isUnknownSymbol(symbol: Symbol): boolean;" },
+    { name: "resolveName", text: "resolveName(name: string, meaning: SymbolFlags, location?: Node | DocumentPosition, excludeGlobals?: boolean): Symbol | undefined;" },
+    { name: "typeToString", text: "typeToString(type: Type, enclosingDeclaration?: Node, flags?: number): string;" },
+  ] },
+  { owner: "NodeHandle", members: [
+    { name: "resolve", text: "resolve(project?: Project): Node | undefined;" },
+  ] },
+  { owner: "Symbol", members: [
+    { name: "declarations", text: "readonly declarations: readonly NodeHandle[];" },
+    { name: "flags", text: "readonly flags: SymbolFlags;" },
+    { name: "id", text: "readonly id: number;" },
+    { name: "name", text: "readonly name: string;" },
+    { name: "valueDeclaration", text: "readonly valueDeclaration: NodeHandle | undefined;" },
+  ] },
+  { owner: "Type", members: [
+    { name: "flags", text: "readonly flags: TypeFlags;" },
+    { name: "id", text: "readonly id: number;" },
+    { name: "getSymbol", text: "getSymbol(): Symbol | undefined;" },
+    { name: "getAliasTypeArguments", text: "getAliasTypeArguments(): readonly Type[];" },
+    { name: "getAliasSymbol", text: "getAliasSymbol(): Symbol | undefined;" },
+    { name: "isErrorType", text: "isErrorType(): boolean;" },
+  ] },
+  { owner: "Signature", members: [
+    { name: "getParameters", text: "getParameters(): readonly Symbol[];" },
+    { name: "getTypeParameters", text: "getTypeParameters(): readonly TypeParameter[];" },
+    { name: "thisParameter", text: "readonly thisParameter?: number | undefined;" },
+  ] },
+];
+
+/** The host package's node list interface, read as a dense readonly array of
+ * its elements (COMPILER-API.md, "Node lists in the model"), never through
+ * its declaration. */
+export const hostNodeList = "NodeArray";
 
 /** The reviewed host declarations' digest (C0): the SHA-256 of every
  * `.d.ts` file under the audited installation's `dist/`, each its path from

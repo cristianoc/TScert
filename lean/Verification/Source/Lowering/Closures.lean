@@ -44,7 +44,7 @@ state resume afterwards. -/
     (params : List (String × Ty Tree)) (rest : Option (String × (RestEntry Tree)))
     (defaults : List (Nat × Fragment.Expr)) (order : List Nat)
     (captures : List (ScopeBinding Tree)) (Cs : List (Ty Tree)) (Rt R : Ty Tree) (bodyExpr : Fragment.Expr)
-    (answers : Bool) :
+    (answers : Bool) (selfEntry : Option (ScopeBinding Tree × Ty Tree) := none) :
     Compiler (Program × Nat × List (PointClaim Tree) × CodeSource) := withFreshGraph <| withAnswers answers do
   -- The layout the rest's array is bound in: the receiver, the parameters,
   -- the array, then the captures. While an expression body has defaults, its
@@ -53,8 +53,12 @@ state resume afterwards. -/
   let paramScope : List (ScopeBinding Tree) :=
     params.map fun (n, _) => held ⟨if named then n else "", some pos⟩
   let restScope : List (ScopeBinding Tree) := (rest.map fun (n, _) => held ⟨n, some pos⟩).toList
-  let layout := receiver :: paramScope ++ restScope ++ captures
-  let inputs := Rt :: params.map Prod.snd ++ (rest.map fun (_, r) => r.array).toList ++ Cs
+  -- A recursive closure's self entry follows its captures.
+  let layout := receiver :: paramScope ++ restScope ++ captures ++ (selfEntry.map Prod.fst).toList
+  let inputs := Rt :: params.map Prod.snd ++ (rest.map fun (_, r) => r.array).toList ++ Cs ++
+    (selfEntry.map Prod.snd).toList
+  if selfEntry.isSome && rest.isSome then
+    throw "a recursive closure with a rest parameter is outside the fragment"
   let arity := params.length + restScope.length
   let mut first ← match bodyExpr with
     | .block _ stmts => do
@@ -142,9 +146,14 @@ state resume afterwards. -/
 one code request per signature, the graph `closureCode` compiles from that
 signature's frame, whose certificate the unit's code table records. -/
 @[nospecialize] partial def lambdaCode (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
-    (Γ : List (Ty Tree)) (lam : Fragment.Expr) (A : Ty Tree) (mode : CodeMode Tree) :
+    (Γ : List (Ty Tree)) (lam : Fragment.Expr) (A : Ty Tree) (mode : CodeMode Tree)
+    (self : Option String := none) :
     Compiler (LambdaCode Tree) := do
   let s ← lambdaSetup fc scope Γ lam A mode
+  -- A recursive closure is checked with its self entry, at its own type,
+  -- after its captures.
+  let selfEntry : Option (ScopeBinding Tree × Ty Tree) :=
+    self.map fun name => ({ source := ⟨name, some s.pos⟩ }, A)
   let Cs := s.capSlots.map Prod.fst
   let mut code : Option (Program × Nat) := none
   for ((sig, store, restTy), i) in s.rows.zipIdx do
@@ -169,14 +178,14 @@ signature's frame, whose certificate the unit's code table records. -/
         pure (name, .tuple ((Di.drop s.fixedParams.length).take s.restElements) S restTy)
     let (P, start, claims, source) ←
       closureCode recursive row s.pos receiver ps restEntry s.defaults s.order s.captures Cs Rt Ri s.body
-        (match effect.promise with | some (.guards _) => true | _ => false)
+        (match effect.promise with | some (.guards _) => true | _ => false) selfEntry
     match code with
     | some c =>
       if c != (P, start) then
         throw "a closure's body lowers differently under one of its signatures"
     | none => code := some (P, start)
     let entry : CodeEntry Tree := ⟨s.arity, P.map (·.expression), P.map fun n => (n.continuation, n.handler),
-      start, Cs, sig, store⟩
+      start, Cs ++ (selfEntry.map Prod.snd).toList, sig, store⟩
     recordCode ⟨entry, claims⟩ source
   let some (P, start) := code | throw "closure claim must name a source arrow"
   let exprs := P.map fun n => n.expression
@@ -188,7 +197,16 @@ signature's frame, whose certificate the unit's code table records. -/
 code (`lambdaCode`) with the captured slots. -/
 @[nospecialize] partial def graphClosure (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (lam : Fragment.Expr) (A : Ty Tree) : Compiler (DirectProof.Plan Tree) := do
-  let c ← lambdaCode recursive fc scope Γ lam A .fn
+  -- A constant's function literal reading the constant: a recursive closure
+  -- (`Rule.funGraphSelf`), of fixed arity, at an arrow type.
+  if let some name := (← currentSelfConstant).filter (lam.freeNames.contains ·) then
+    let c ← withSelfConstant none (lambdaCode recursive fc scope Γ lam A .fn (self := some name))
+    if c.rest then throw "a recursive closure with a rest parameter is outside the fragment"
+    match PositiveRules.expand (SourceTypes.graph (← table)) A with
+    | [.arrs _ _] => pure ()
+    | _ => throw "a recursive closure's claim must be an arrow type"
+    return DirectProof.node Γ (Tm.makeFn (c.code c.kind) .nul) c.type .funGraphSelf (c.capturePlans Γ)
+  let c ← withSelfConstant none (lambdaCode recursive fc scope Γ lam A .fn)
   pure (DirectProof.node Γ (Tm.makeFn (c.code c.kind) .nul) c.type (.funGraph c.arrays) (c.capturePlans Γ))
 
 

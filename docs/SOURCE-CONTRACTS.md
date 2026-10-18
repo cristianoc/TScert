@@ -2655,7 +2655,10 @@ input type keeping that type:
 with $`\Gamma[a\mapsto q]`$ the refinement by $`a`$'s answer $`q`$, and `&&`'s
 false outcome the same join. Each edge into $`S_1`$ is checked against the
 joined context, so `v === "dense" || v === "sparse"` leaves `v` at
-`"dense" | "sparse"` (`literal-union-narrowing`).
+`"dense" | "sparse"` (`literal-union-narrowing`). An operand testing a field
+of an immutable binding's object refines that object by its field slice
+$`F^f`$, as `if-field` does, so `n.kind === 1 || n.kind === 2` leaves `n` at
+the arms whose `kind` admits 1 or 2 (`field-test-disjunction`).
 
 `x === y` with `x` claimed at a union of
 singletons is dispatched as the disjunction over its singletons $`c`$ of

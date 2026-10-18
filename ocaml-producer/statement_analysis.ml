@@ -214,7 +214,20 @@ let transfer (expr:Analysis_state.expression_infer) =
             && not (List.exists (function Some (Some t) -> writable_dictionary t | _ -> false) used) then
            mark_exact_allocations [init.pos]
        | _ -> ());
-      let initial = expr ?expected:(if committed <> None then committed else written) env init in
+      (* A constant's function literal reading the constant: its body reads
+         the closure's self entry, at the constant's annotation or the
+         literal's own signature (SOURCE-MODEL.md, "Recursive constants"). *)
+      let init_env = match mutable_,init.node with
+        | false,Lambda (_,[],ps,defaults,false,result,_,_) when mentions n init ->
+          let self = match written,result with
+            | Some t,_ -> t
+            | None,Some r -> arrow (List.mapi (fun i (_,t) ->
+                if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps) r
+            | None,None -> Proposal_diagnostics.unsupported
+                "a recursive closure needs its result annotated or the constant's type" in
+          extend env n (Value self)
+        | _ -> env in
+      let initial = expr ?expected:(if committed <> None then committed else written) init_env init in
       if not mutable_ then named_closure n written init;
       let binding = match mutable_,written with
         (* TypeScript's declared type for an unannotated `let`: its

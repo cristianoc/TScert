@@ -378,7 +378,7 @@ def Constructible (v : Val) : Prop :=
 /-- What `new v(args)` runs, in one step: a class value's body, with
 `undefined` for its receiver and the actuals for its parameters. -/
 def ConstructsTo (v : Val) (args : List Tm) (result : Tm) : Prop :=
-  ∃ fs c enter oid, v = .objAt fs c oid ∧ CallArguments.construction c = some enter ∧ result = enter args
+  ∃ fs c enter oid, v = .objAt fs c oid ∧ CallArguments.construction v c = some enter ∧ result = enter args
 
 /-- The actual lists a variadic construct signature admits: its fixed
 parameters' actuals exactly, then, as one argument pack, the rest. -/

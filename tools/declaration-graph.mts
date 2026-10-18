@@ -24,7 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
-import { allocatingMembers, hostEnums, hostTypeRoots, isHostFile } from "./compiler-api.mts";
+import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -70,7 +70,8 @@ export interface SeenDiagnostic {
  * mapped type, such as `Record<K, V>`, is that mapped type at the
  * reference's arguments. */
 export type LibraryType =
-  | { k: "array"; readonly: boolean }
+  /** `dense`: the host package's node list, which has no hole. */
+  | { k: "array"; readonly: boolean; dense?: true }
   | { k: "mapped"; parameters: number; template: Mapped };
 
 /** A reference to `library` at `args`, located at `span`. */
@@ -79,7 +80,7 @@ export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], spa
   if (library.k === "array") {
     const [element] = args;
     if (!element || args.length !== 1) return fail("an array type takes one type argument");
-    return { k: "array", presence: "readable", readonly: library.readonly, element, span };
+    return { k: "array", presence: library.dense ? "dense" : "readable", readonly: library.readonly, element, span };
   }
   if (args.length !== library.parameters) return fail("a mapped library type needs all its type arguments");
   const t = library.template;
@@ -568,6 +569,27 @@ export function collectDeclarations(file: string, options: {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
     const { idOf, libraryFile } = moduleIds(clientFile, root, program);
+    // A read of a host class's member its named view does not list is
+    // refused where it is written, naming the view (COMPILER-API.md, reading
+    // rule 4, L6).
+    const outsideViews = (node: Node): void => {
+      if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
+        const declarations = (checker.getTypeAtLocation(node.expression)?.getSymbol()?.declarations ?? [])
+          .map(d => d.resolve()).filter((d): d is TypeDeclaration => !!d && isTypeDeclaration(d));
+        for (const d of declarations) {
+          if (!(ts.isClassDeclaration(d) || ts.isInterfaceDeclaration(d)) || !isHostFile(d.getSourceFile().fileName)) continue;
+          const owner = d.name?.text ?? "";
+          const view = hostViews.find(v => v.owner === owner);
+          if (!view && !ts.isClassDeclaration(d)) continue;
+          if (!(view?.members ?? []).some(m => m.name === node.name.text))
+            // At the read's receiver, which the gate locates (`memberReceivers`).
+            throw new DeclarationError([node.expression.getStart(client), node.expression.end],
+              `${owner}.${node.name.text} is outside the named view ${owner} of the compiler-API contract (compiler-api.mts, reading rule 4)`);
+        }
+      }
+      node.forEachChild(outsideViews);
+    };
+    outsideViews(client);
     // Everything the graph uses must be code TypeScript accepts: an error in a
     // used declaration or on the resolution path refuses it. Errors elsewhere in
     // those files, and in the client's function bodies, are not the graph's.
@@ -589,13 +611,25 @@ export function collectDeclarations(file: string, options: {
       const error = found.find(d => d.pos < node.end && d.end > start);
       if (error) throw Error(`TypeScript reports an error in ${what}: ${error.text}`);
     };
+    // The host's branded strings met (reading rule 5), by identity.
+    const brands = new Set<string>();
+    const brandKey = (id: DeclarationIdentity): string => `${id.module}#${id.name}#${id.span.join(":")}`;
     const identityOf = (node: TypeDeclaration): DeclarationIdentity => {
       const source = node.getSourceFile();
       // An anonymous class is refused where it is reached, so every
       // declaration here has a name.
-      return { module: idOf(source), name: node.name?.text ?? "",
+      const identity: DeclarationIdentity = { module: idOf(source), name: node.name?.text ?? "",
         span: [node.getStart(source), node.end] };
+      const brand = ts.isTypeAliasDeclaration(node) && isHostFile(source.fileName)
+        ? brandedTypes.find(b => b.name === node.name.text) : undefined;
+      if (brand) {
+        if (node.getText(source).trim() !== brand.text)
+          throw Error(`the branded string ${brand.name} is not declared as reviewed: ${brand.text}`);
+        brands.add(brandKey(identity));
+      }
+      return identity;
     };
+    const isBrand = (id: DeclarationIdentity): boolean => brands.has(brandKey(id));
     // The one declaration TypeScript binds a name to, with no error on it or
     // on the path to it.
     const resolveDeclarations = (identifier: Identifier, what: string): Node[] => {
@@ -784,6 +818,12 @@ export function collectDeclarations(file: string, options: {
     // read as any other interface.
     const library = (identifier: Identifier, what: string): LibraryType | null => {
       const nodes = (targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve());
+      // The host package's `NodeArray<T>` (COMPILER-API.md, "Node lists"): a
+      // host type of its own, a node list read as a dense readonly array of
+      // its elements. Its heritage and members are not read.
+      if (nodes.length && nodes.every(n => !!n && ts.isInterfaceDeclaration(n) && n.name.text === hostNodeList &&
+          isHostFile(n.getSourceFile().fileName)))
+        return { k: "array", readonly: true, dense: true };
       const types: TypeDeclaration[] = [];
       for (const node of nodes) {
         if (!node || !libraryFile(node.getSourceFile())) return null;
@@ -1036,7 +1076,15 @@ export function collectDeclarations(file: string, options: {
     // type is their intersection. A generic function has one signature. An
     // interface or type alias of the same name is the name's other meaning,
     // which a value reference does not denote.
+    // A host value is the host's: its branded strings read where it produces
+    // them (reading rule 5).
     const valueOf = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
+      const read = valueRead(declared, what);
+      return declared.some(n => isHostFile(n.getSourceFile().fileName))
+        ? { ...read, type: hostBrands(read.type, true, isBrand, message => { throw Error(`${message} in ${what}`); }) }
+        : read;
+    };
+    const valueRead = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
       const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !ts.isTypeAliasDeclaration(n));
       valueDeclarations.push(...nodes);
       const [node] = nodes;
@@ -2265,6 +2313,13 @@ export function collectDeclarations(file: string, options: {
           return partners.get(node) ?? [node];
         },
         library: node => libraryFile(node.getSourceFile()),
+        // A host class's members are its view's (reading rule 4).
+        admits: member => member.declarations.length === 0 || member.declarations.some(d => {
+          const owner = d.parent;
+          if (!owner || !ts.isClassDeclaration(owner) || !isHostFile(d.getSourceFile().fileName)) return true;
+          const view = hostViews.find(v => v.owner === owner.name?.text)?.members ?? [];
+          return view.some(entry => d.getText(d.getSourceFile()).trim() === entry.text);
+        }),
         read: (node, binder) => typeTerm(sweepScope(node, binder), node),
         reference: (name, args) => {
           const node = lookup(name, name.text);
@@ -2332,7 +2387,7 @@ export function collectDeclarations(file: string, options: {
       for (const { node: start, span } of list) {
         try {
           collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
-            enumType: enumTypeAt, enumerated, memberName, identityOf, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+            enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
             libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
             keys: keyTypeOf, alias: aliasOf, awaited });
         } catch (error) {
@@ -3043,6 +3098,8 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
+  /** Whether an identity is a branded string of the host (reading rule 5). */
+  isBrand: (id: DeclarationIdentity) => boolean;
   /** Whether a file is the standard library's (`moduleIds`). */
   libraryFile: (file: SourceFile) => boolean;
   /** Whether a declaration is a host type, whose members are readonly views. */
@@ -3207,18 +3264,35 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         }) });
       continue;
     }
+    // A host class, and a host interface the contract names a view for, is
+    // read through its named view (reading rule 4): the members the contract
+    // lists, each as its reviewed text declares it.
+    const named = isHostFile(source.fileName) ? hostViews.find(v => v.owner === node.name?.text) : undefined;
+    const view = ts.isClassDeclaration(node) && isHostFile(source.fileName) ? named?.members ?? []
+      : ts.isInterfaceDeclaration(node) ? named?.members ?? null : null;
+    if (view && (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)))
+      for (const entry of view)
+        if (!parts.some(part => (ts.isClassDeclaration(part) || ts.isInterfaceDeclaration(part)) &&
+            part.members.some((m: Node) => m.getText(part.getSourceFile()).trim() === entry.text)))
+          throw Error(`${node.name?.text}.${entry.name} is not declared as reviewed: ${entry.text}`);
+    const admitted = (member: Node): boolean =>
+      !view || view.some(entry => member.getText(member.getSourceFile()).trim() === entry.text);
+    // A view is the whole shape: no declaration outside the audited
+    // installation merges into it, and it inherits nothing.
+    if ((view || context.hostType(node)) && parts.some(part => !isHostFile(part.getSourceFile().fileName)))
+      throw Error(`a declaration merged into the host type ${node.name?.text} outside the audited installation is refused: the installation's declarations are its whole shape (COMPILER-API.md, reading rules 1 and 4)`);
     let expression = ts.isTypeAliasDeclaration(node)
       ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
-        ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end]), parts.flatMap(part => {
+        ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end], admitted), parts.flatMap(part => {
             if (part === node || !ts.isInterfaceDeclaration(part)) return [];
             const file = part.getSourceFile();
-            return [members(scopeOf(file), part.members, part, [part.getStart(file), part.end], true)];
+            return [members(scopeOf(file), part.members.filter(admitted), part, [part.getStart(file), part.end], true)];
           }), (at, message) => scope.fail(at, message), node)
         : mergeMembers(parts.map(part => {
             const file = part.getSourceFile();
             if (!ts.isInterfaceDeclaration(part)) return scope.fail(part, "a declaration merged with an interface is not one");
-            return members(partScope(part), part.members, part,
+            return members(partScope(part), part.members.filter(admitted), part,
               [part.getStart(file), part.end], true);
           }), (at, message) => scope.fail(at, message), node);
     // A host type's members are readonly views, whether or not they are
@@ -3237,9 +3311,22 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         if (declared.length !== 1 || declared.some(m => m.getText(m.getSourceFile()).trim() !== entry.text))
           throw Error(`${entry.owner}.${entry.name} is not declared as reviewed: ${entry.text}`);
       }
+      // A member declared `any` states nothing (reading rule 2): an optional
+      // member of type `unknown`, as the brands (`_expressionBrand: any`),
+      // which no runtime node owns, are read.
+      const anyMembers = new Set(parts.flatMap(part => ts.isInterfaceDeclaration(part) || ts.isClassDeclaration(part)
+        ? [...part.members] : []).flatMap(m => {
+          const name = nameOf(m);
+          const type = ts.isPropertySignatureDeclaration(m) || ts.isPropertyDeclaration(m) ? m.type : undefined;
+          return name && ts.isIdentifier(name) && type?.kind === ts.SyntaxKind.AnyKeyword ? [name.text] : [];
+        }));
+      // The host produces each member: a branded string there is read as a
+      // string, and one the client would produce refused (reading rule 5).
       expression = { ...expression, fields: expression.fields
         .filter(f => !omitted.some(m => m.name === f.name))
-        .map(f => ({ ...f, readonly: true })) };
+        .map(f => ({ ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)),
+          type: hostBrands(f.type, true, context.isBrand,
+            message => { throw Error(`${message} in ${identity.module}#${identity.name}.${String(f.name)}`); }) })) };
     }
     // Native promise observation uses PromiseResolve's constructor equality
     // fast path. Its standard constructor and methods are inherited, and a
@@ -3313,7 +3400,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // A class's `implements` clauses are obligations on the class, not part of
     // its instance type; the class it extends is a base of that type, as an
     // interface's are.
-    const bases = parts.flatMap(part => {
+    const bases = view ? [] : parts.flatMap(part => {
       if (!ts.isInterfaceDeclaration(part) && !ts.isClassDeclaration(part)) return [];
       const file = part.getSourceFile();
       const read = (t: TypeNode): TypeTerm => typeTerm(partScope(part), t);

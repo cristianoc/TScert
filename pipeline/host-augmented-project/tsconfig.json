@@ -1,0 +1,23 @@
+{
+  // A project augmenting host types (`augment.d.ts`): the `*host-augmentation*`
+  // cases, which import the host package as the compiler-API examples do.
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+    "types": [],
+    "paths": {
+      "typescript/unstable/ast": [
+        "../../tools/node_modules/typescript/dist/ast/index.d.ts"
+      ],
+      "typescript/unstable/sync": [
+        "../../tools/node_modules/typescript/dist/api/sync/api.d.ts"
+      ]
+    }
+  },
+  "include": ["augment.d.ts", "../examples/*host-augmentation*.ts"]
+}

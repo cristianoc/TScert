@@ -142,6 +142,31 @@ parameters, `for...of` and `catch` bindings in any body
 declaration, a closure's included, or in its own initializer is refused, as
 JavaScript's temporal dead zone throws there.
 
+<a id="recursive-constants"></a>
+**Recursive constants.** A constant whose initializer is a function literal,
+an arrow or a function expression with nothing else evaluated, reads its own
+name inside the literal's body and parameter defaults:
+`const visit = (n: Node): R => … visit(child) …`. Creating the literal runs
+neither, so every such read runs during an invocation, after the binding
+holds the closure. The read is the code's **self entry**: every invocation of
+graph code enters it with the invoked object, the exact
+$`\mathsf{obj}(\mathit{fs},\mathsf{graph}(\ldots))`$ the call step matched, in
+the slot after the captures ([graph code](SEMANTICS.md#graph-code)); a bound
+function forwards to its target first, so self is the original closure, never
+the wrapper. A nested closure captures the self entry as any other slot. The
+literal's code, of fixed arity, is checked from the frame with self at the
+closure's claimed type, and the closure rule proves the closure meets that
+whole type, its effects and exceptional guarantee included, by induction on
+the step index (`funGraphSelf`,
+[program typing](PROGRAM-TYPING.md#judgments-and-constructor-views)): at
+budget $`n`$ every invocation runs at a lower index, where the induction
+hypothesis gives self its type. The producer types the body's reads at the
+constant's annotation or the literal's own signature, which its result
+annotation completes; the checker derives each from the claimed type. Every
+other read of a binding in its own initializer is refused at its location
+(`recursive-const-before-initialization-refused`), and module initialization
+order is checked as before (`Sites`).
+
 A module function is an immutable slot holding its code. A file without
 imports or exports may run as a script, whose top-level functions are
 properties of the global object other scripts can write; the slot rests on
@@ -847,7 +872,9 @@ immutable binding's object against a singleton, or of its truthiness where
 an arm leaves the field optional (an `IteratorResult`'s `done`), narrows the
 object's arms; a
 key found present promotes an optional field to a field, since an object
-keeps its keys. A test on a mutable cell refines the read, never the cell.
+keeps its keys, except in a record holding a generic method, whose only
+claim is its declaration: there the field's read until a call is the value
+the test found. A test on a mutable cell refines the read, never the cell.
 `&&`, `||` and `??` return an operand, as JavaScript's do, by the same
 tests; a chain of one of them reads right-nested, so each operand sees what
 every earlier one answered. `x instanceof C` of a class whose chain of bases

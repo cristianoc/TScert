@@ -207,20 +207,20 @@ inductive Invoke : Frame → Tm → Prop where
   where its kind binds the receiver (`Invoke.binds`). -/
   | graph : isVal r = true → Values args → kind.binds r = true →
       Invoke ⟨.objAt fs (.graph arity E K start caps kind rest) oid, r, args⟩
-        (graphEntry arity E K start caps rest r args)
+        (graphEntry arity E K start caps (.objAt fs (.graph arity E K start caps kind rest) oid) rest r args)
 
 /-- What `new` runs for construct code without a rest, for each ready
 argument list: the code's body or graph run, with `undefined` for the
 receiver. Other code has none: `new` on call code, and on code collecting a
 rest, is not a class value here. -/
-def construction : CallCode → Option (List Tm → Tm)
+def construction (self : Tm) : CallCode → Option (List Tm → Tm)
   | .graph arity E K start caps .construct false =>
-      some fun args => graphEntry arity E K start caps false .undef args
+      some fun args => graphEntry arity E K start caps self false .undef args
   | _ => none
 
 /-- Construction reads the parameters it binds: omitted trailing positions
 padded with `undefined` construct the same. -/
-theorem construction_pad {c : CallCode} {enter : List Tm → Tm} (h : construction c = some enter)
+theorem construction_pad {self : Tm} {c : CallCode} {enter : List Tm → Tm} (h : construction self c = some enter)
     (args pad : List Tm) (hp : ∀ a ∈ pad, a = .undef) : enter (args ++ pad) = enter args := by
   unfold construction at h
   split at h <;> cases h
@@ -228,7 +228,7 @@ theorem construction_pad {c : CallCode} {enter : List Tm → Tm} (h : constructi
 
 /-- A ready construction is one step of the machine. -/
 theorem construction_step {fs : List (PropKey × Nat)} {c : CallCode} {enter : List Tm → Tm}
-    (h : construction c = some enter) {args : List Tm} (hv : Values args) (heap : Heap) :
+    (h : construction (.objAt fs c oid) c = some enter) {args : List Tm} (hv : Values args) (heap : Heap) :
     Step heap (.construct (.objAt fs c oid) args) heap (enter args) := by
   unfold construction at h
   split at h <;> cases h

@@ -191,7 +191,7 @@ end PrototypeChain
 /-! ## Calls and construction -/
 
 -- `new` runs no call-only code: an arrow's `new` throws in JavaScript.
-#guard (CallArguments.construction (.graph 1 [.var 1] [(.ret, none)] 0 [])).isNone
+#guard (CallArguments.construction .nul (.graph 1 [.var 1] [(.ret, none)] 0 [])).isNone
 
 namespace CallOrder
 -- The initializer writes true, allocates an intermediate object, and returns

@@ -296,6 +296,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   // value, its static fields.
   assert.equal(runExample("spread-string-class", `JSON.stringify([afterSpread(), afterClass()])`),
     '[{"a":""},{"x":1,"b":2}]', "spread-string-class: the copies JavaScript makes");
+  assert.equal(runExample("recursive-constants", "String(main())"), "139",
+    "recursive-constants: each recursive constant computes what the model's self entry does");
   assert.equal(runExample("invalid-spread-string-index", `typeof overIndex("x")[0]`), "string",
     "invalid-spread-string-index: the string's code unit overwrites the number under `0`");
   assert.equal(runExample("invalid-spread-class-static", `class D { static a = "s"; }

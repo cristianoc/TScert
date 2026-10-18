@@ -271,7 +271,7 @@ each seeing the codes before it; the program is then checked seeing them all. Ea
 one subtype-evidence list per outgoing edge. A derivation node names the
 [typing rule](PROGRAM-TYPING.md#judgments-and-constructor-views) it applies:
 `var`, `nul`, `undef`, `tru`, `fls`, `truLit`, `flsLit`, `numLit`, `num`,
-`strLit`, `str`, `bigintLit`, `bigint`, `funGraph`, `ctorGraph`, `callableGraph`, `app`, `letE`, `alloc`,
+`strLit`, `str`, `bigintLit`, `bigint`, `funGraph`, `funGraphSelf`, `ctorGraph`, `callableGraph`, `app`, `letE`, `alloc`,
 `read`, `readOptional`, `readDict`, `indexDict`, `write`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `callCallable`, `readCallable`, `readBagView`, `writeCallable`, `readView`, `lenView`, `readProto`, `arith`, `test`,
 `arrLit`, `elem`, `elemOpt`, `elemAny`, `setElem`, `len`, `lenStr`, `elemStr`,
@@ -408,7 +408,9 @@ result, in that order; each row offers at least the code's arity. Code with a
 rest offers the variadic signatures only, each taking exactly the code's
 parameters, and the rule's `arrays` name their rest-store types, in order:
 each is the `store` of that signature's entry. At a scheme row the signatures
-are the scheme's. `ctorGraph` creates a class value's construct-only code: an
+are the scheme's. `funGraphSelf` creates a recursive closure, of fixed arity
+at an arrow type: as `funGraph`, with each entry's capture types followed by
+the created type, the self entry's. `ctorGraph` creates a class value's construct-only code: an
 entry per construct signature, its receiver the rule's `undef`, the
 `undefined` type, its effect the signature's (a variadic signature's effect is
 plain), with the code field, then one initializer premise per

@@ -81,7 +81,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
     "wrong-rest-instance",
     wrongCall,
     ast,
-    /evidence search failed|does not justify|head \d+ takes \d+ arguments, given \d+/,
+    /evidence search failed|does not justify|evidence refusal at|head \d+ takes \d+ arguments, given \d+/,
   );
 
   const fixed = structuredClone(ast);
@@ -150,7 +150,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
     "forged-rigid-operand",
     operand,
     ast,
-    /evidence search failed|does not justify/,
+    /evidence search failed|does not justify|evidence refusal at/,
   );
 
   const source = stripTypes(readFileSync(join(artifacts, "source.ts"), "utf8"));

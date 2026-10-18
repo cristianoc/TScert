@@ -308,7 +308,8 @@ inductive CallCode where
   `[[Construct]]` for a class constructor), and whether it collects a rest
   (`rest`). Invocation starts the
   graph at `start` in the environment
-  `[this, parameter_0, …, parameter_{arity-1}] ++ captures`; `new` on
+  `[this, parameter_0, …, parameter_{arity-1}] ++ captures ++ [self]`, self
+  the invoked object; `new` on
   construct code passes `undefined` for `this`. Code with a rest first
   collects the actuals past its `arity` fixed parameters into one fresh store,
   which the run finds in slot 0, before the receiver
@@ -1443,18 +1444,19 @@ a read of a key the object lacks continues there (`Step.readProto`). -/
 def protoField : PropKey := "[[proto]]"
 
 /-- What invoking graph code yields: a run at its entry, the receiver in slot
-0, then the `arity` parameters `parameters` binds, then the captures. Code with
+0, then the `arity` parameters `parameters` binds, then the captures, then the
+invoked object itself, the code's self entry. Code with
 a rest first allocates the store of the actuals past its parameters, a fresh
 array store, and the run finds that store in slot 0, before the receiver.
 Invocation itself allocates nothing: the store is allocated by the ordinary
 steps of the term it yields. -/
 def graphEntry (arity : Nat) (E : List Tm)
     (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
-    (caps : List Tm) (rest : Bool) (recv : Tm) (args : List Tm) : Tm :=
+    (caps : List Tm) (self : Tm) (rest : Bool) (recv : Tm) (args : List Tm) : Tm :=
   match rest with
-  | false => .goto E K start (recv :: parameters arity args ++ caps) .nul
+  | false => .goto E K start (recv :: parameters arity args ++ (caps ++ [self])) .nul
   | true => .letE (.arrLit (args.drop arity))
-      (.goto E K start (.var 0 :: recv :: parameters arity args ++ caps) .nul)
+      (.goto E K start (.var 0 :: recv :: parameters arity args ++ (caps ++ [self])) .nul)
 
 end CallArguments
 
@@ -1975,17 +1977,17 @@ inductive Step : Heap → Tm → Heap → Tm → Prop where
       Step h (.makeKey k a) h (.makeAt .absent [f] [a])
   /-- Graph code with `[[Call]]` is invoked in one step, changing no heap: its
   run starts at the entry label, the receiver in slot 0, then the parameters,
-  then the captures, after collecting the rest's store when it has one
-  (`CallArguments.graphEntry`). Its kind binds the receiver (`Invoke.binds`):
-  sloppy code is invoked only with an object. -/
+  then the captures, then the invoked object, after collecting the rest's
+  store when it has one (`CallArguments.graphEntry`). Its kind binds the
+  receiver (`Invoke.binds`): sloppy code is invoked only with an object. -/
   | callGraph : isVal r = true → (∀ a ∈ args, isVal a = true) → k.binds r = true →
       Step h (.invoke (.objAt fs (.graph n E K s caps k rest) oid) r args) h
-        (CallArguments.graphEntry n E K s caps rest r args)
+        (CallArguments.graphEntry n E K s caps (.objAt fs (.graph n E K s caps k rest) oid) rest r args)
   /-- `new` on construct-only graph code enters it as a call does, with
   `undefined` for the receiver. -/
   | constructGraph : (∀ a ∈ args, isVal a = true) →
       Step h (.construct (.objAt fs (.graph n E K s caps .construct rest) oid) args) h
-        (CallArguments.graphEntry n E K s caps rest .undef args)
+        (CallArguments.graphEntry n E K s caps (.objAt fs (.graph n E K s caps .construct rest) oid) rest .undef args)
   /-- Entering a node instantiates its expression in the run's environment. -/
   | gotoEnter : E[l]? = some e → K[l]? = some (k, x) →
       Step h (.goto E K l L d) h (.frame E K (instantiate 0 (envOf L d) e) L d k x)
