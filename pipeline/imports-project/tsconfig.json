@@ -11,6 +11,7 @@
     "paths": {
       "@fixture/lib": ["./lib.ts"],
       "@fixture/certified": ["./certified.ts"],
+      "@fixture/early": ["./early.ts"],
       "@fixture/scaled": ["./scaled.mts"],
       "@fixture/outer": ["./outer.ts"],
       "@fixture/ping": ["./ping.ts"],
@@ -25,6 +26,7 @@
     "../examples/*value-import*.ts",
     "./lib.ts",
     "./certified.ts",
+    "./early.ts",
     "./scaled.mts",
     "./outer.ts",
     "./ping.ts",
