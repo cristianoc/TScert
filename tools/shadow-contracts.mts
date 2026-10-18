@@ -45,7 +45,7 @@ import type { Node, SourceFile } from "typescript/unstable/ast";
 import { globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import type { TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { readsAsOptionalUnknown } from "./compiler-api.mts";
-import { childOf } from "./syntax.mts";
+import { childOf, childrenOf } from "./syntax.mts";
 
 /** The opaque type every value-level `any` of a declaration is read as. */
 export const OPAQUE = "TScertAny";
@@ -280,14 +280,19 @@ export function shadowText(source: SourceFile, text: string, host: boolean): { t
       const fallback = node.defaultType;
       if (fallback?.kind === ts.SyntaxKind.AnyKeyword) {
         // A signature's parameter is inferred at each call: its default
-        // `any` is deleted, the constraint kept. A type's stands where a
-        // reference leaves it out, as a value with no guarantee.
+        // `any` is deleted, the constraint kept, unless an earlier parameter
+        // has a default, after which a required one may not follow: then the
+        // default is the opaque type, a value-level `any`. A type's stands
+        // where a reference leaves it out, as a value with no guarantee.
         const owner = node.parent;
         const signature = owner !== undefined && (ts.isFunctionLikeDeclaration(owner) || ts.isMethodSignatureDeclaration(owner) ||
           ts.isCallSignatureDeclaration(owner) || ts.isConstructSignatureDeclaration(owner) ||
           ts.isFunctionTypeNode(owner) || ts.isConstructorTypeNode(owner));
-        edits.push(signature ? { start: (node.constraint ?? node.name).end, end: fallback.end, text: "" }
-          : { start: fallback.getStart(source), end: fallback.end, text: "unknown" });
+        const siblings: readonly Node[] = owner === undefined ? [] : childrenOf(owner, "typeParameters");
+        const earlier = siblings.slice(0, siblings.indexOf(node))
+          .some((sibling) => ts.isTypeParameterDeclaration(sibling) && sibling.defaultType !== undefined);
+        edits.push(signature && !earlier ? { start: (node.constraint ?? node.name).end, end: fallback.end, text: "" }
+          : { start: fallback.getStart(source), end: fallback.end, text: signature ? OPAQUE : "unknown" });
       } else if (fallback) visit(fallback, wildcard);
       return;
     }

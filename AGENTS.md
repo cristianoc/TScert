@@ -273,7 +273,9 @@ increasing trust silently.
   literal no annotation types). `node tools/unchecked.mts`
   ([source](tools/unchecked.mts)) reports these, with the boundaries and
   the assertions, over every file that configuration includes, and fails on
-  one; its header states each rule and what it leaves out. Freedom from
+  one; its header states each rule and what it leaves out, among them a
+  stated limit: the relations that `any` satisfied in an outside
+  declaration are not re-established. Freedom from
   `any` does not establish that a mutation, a callback's effect, a guard or
   a native contract keeps a type; that is TScert's to verify. `test-all.sh`
   runs the command as a suite, over `tests/unchecked-project/`, the

@@ -53,13 +53,14 @@
  * states what its review says and no more (`JSON.stringify` of a function
  * gives `undefined`, typed `string`). TypeScript's own unsound rules (method
  * parameter bivariance among them) stay as they are. Those are what TScert
- * verifies, not this check. The shadowed declarations do not all check: a
+ * verifies, not this check. A limit the check states: the relations that
+ * `any` satisfied in an outside declaration are not re-established. A
  * declaration relying on `any` as at once a subtype and a supertype of every
  * type (an override, a constraint, an index signature, a conditional type, a
- * default) is invalid or computes another type there, and TypeScript's
- * decisions about the sources may then differ from the written program's
- * (WORK.md, "The any check over external declarations";
- * tests/unchecked-project/gaps.mts holds the cases, accepted).
+ * default) is invalid in the shadow program or computes another type there,
+ * and TypeScript's decisions about the sources may then differ from the
+ * written program's (WORK.md, "The any check over external declarations";
+ * tests/unchecked-project/gaps.mts holds the documented cases, accepted).
  *
  * A function without annotations leaves its boundary to inference.
  * `[unannotated]`: every function declaration; a class's methods, accessors

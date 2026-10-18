@@ -1,7 +1,9 @@
 /* Accepted by the check, and not by the written program or by the type the
- * declarations write: the class of declarations WORK.md describes (any as
- * both top and bottom in a relation or a type computation). No line here is
- * expected: each is a known gap, kept to be refused once the class is. */
+ * declarations write: the relations that `any` satisfied in an outside
+ * declaration are not re-established, a limit the check states (WORK.md,
+ * "The any check over external declarations"). No line here is expected:
+ * each is a documented gap; and `JSON.stringify` of a function is typed
+ * `string`. */
 import { box, chosen, f, sink, D } from "./gaps/index.mjs";
 
 export const overloaded: string = f(new D());
