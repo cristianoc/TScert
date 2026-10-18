@@ -322,8 +322,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
           required: [atom("string"), { k: "binder", name: "V", span }], optional: [], rest: null, span })) }),
     [forInName]: () => ({ typeParams: [],
       type: fn([atom("unknown")], { k: "array", presence: "readable", readonly: true, element: atom("string"), span }) }),
+    // The lookup runs no code, no object being a proxy, and writes nothing.
     [hasPropertyName]: () => ({ typeParams: [],
-      type: fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")) }),
+      type: { ...fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")),
+        effect: emptyEffect } }),
     [symbolForName]: () => ({ typeParams: [], type: fn([atom("string")], atom("symbol")) }),
     [symbolKeyForName]: () => ({ typeParams: [], type: fn([atom("symbol")], either(atom("string"), atom("undefined"))) }),
     // The read runs no code and writes nothing: an own numeric key of an

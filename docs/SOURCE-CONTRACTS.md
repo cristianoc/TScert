@@ -1741,12 +1741,21 @@ client code and writes no location it did not allocate:
      {⟦s⟧_\Omega=\forall\vec X.\ (\vec P)\Rightarrow_{\emptyset} R}\ \textsf{library-effect}
 ```
 
-`String` and `Number` of a primitive, `Number.isFinite`, `Number.isInteger`,
+`String`, `Number` and `BigInt` of a primitive, `Number.isFinite`, `Number.isInteger`,
 `Number.isSafeInteger`, `Object.is` and `Boolean` state it: each converts
 only a primitive, or nothing, and reads and writes no location
 (`library-preserving-callback`, `library-preserving-tests`). An object
 argument, whose conversion runs its methods, is outside the stated
-parameter (`invalid-number-object`).
+parameter (`invalid-number-object`). `Object.keys` of an object, and the
+generic `Object.values` and `Object.entries` of a dictionary, state it too:
+each lists the object's own keys, which runs no code (no object is a proxy),
+reads a dictionary's values, which are data properties by the
+[caller contract](DESIGN.md#trust-surface) and the fragment's own objects
+alike, a dictionary being no host object, and writes only the arrays it
+allocates (`library-preserving-reflection`). `Object.keys` reads no value
+at all. The overloads at `{}` read the values of keys the object's type
+need not state, by [[Get]], and state no preservation
+(`object-entries-sparse`, `invalid-object-entries-preserving`).
 
 The entries, each with the code its restriction keeps from running:
 
@@ -1817,7 +1826,29 @@ declaration no library has, which joins the document with the entry:
 \mathsf{JsonValue}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\{\mathsf{readonly}\ [k:\mathsf{string}]:\mathsf{JsonValue}\}
 ```
 
-(`JSON.stringify`'s parameter). At a `JsonValue`, `JSON.stringify` reads own
+(`JSON.stringify`'s parameter), and
+
+```math
+\mathsf{ParsedJson}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\mathsf{ParsedJson}[\,]\mid\{[k:\mathsf{string}]:\mathsf{ParsedJson}\}
+```
+
+(`JSON.parse`'s result). [ECMA-262](REFERENCES.md#ecma-262)'s `JSON.parse`
+without a reviver builds a fresh array (ArrayCreate) with an element at every
+index below its length for each JSON array, and a fresh ordinary object of
+`%Object.prototype%` for each JSON object, defining every member as an own
+data property (CreateDataProperty: a `"__proto__"` member becomes an own key
+and sets no prototype); InternalizeJSONProperty runs only with a reviver. In
+the model an object of a dictionary type owns no prototype key, and a read at
+a key `Object.prototype` may provide is refused, so an ordinary object meets
+the dictionary arm. The arms are writable, as the client may go on writing
+what is fresh. `JSON.parse` runs no code of the client's and writes only
+what it allocates, also before it throws a SyntaxError: the empty
+footprint, on a throw too. A reviver is client code: the call is read with
+the text only (`json-parse-reviver-refused`). A dictionary arm is no array
+(its members own no prototype key), so `Array.isArray` of a `ParsedJson`
+leaves its array arm, whose `map` stays dense (`json-parse-data`). Unlike
+`JsonValue`, `ParsedJson` admits arrays, which may own keys their type does
+not state: it is no argument of `JSON.stringify`. At a `JsonValue`, `JSON.stringify` reads own
 data properties, calls no `toJSON` and no getter, and allocates its string,
 so it states the empty footprint, on a throw too (a cycle); so does `Error`
 at a string message, which it stores without conversion code

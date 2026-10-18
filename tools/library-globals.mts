@@ -130,6 +130,29 @@ const jsonValueDefinition: TypeDefinition = { declaration: jsonValueIdentity, pa
 
 
 
+/** What `JSON.parse` returns without a reviver: `null`, a Boolean, a number,
+ * a string, an array of such values, or an object of them,
+ *
+ *     type ParsedJson = null | boolean | number | string | ParsedJson[] | { [k: string]: ParsedJson };
+ *
+ * ECMA-262's `JSON.parse` evaluates the text as a JSON value: each array it
+ * builds is a fresh array (ArrayCreate) with one element at every index below
+ * its length, each object a fresh ordinary object (OrdinaryObjectCreate of
+ * `%Object.prototype%`) whose members it defines as own data properties
+ * (CreateDataProperty, a `"__proto__"` member included, which becomes an own
+ * key and sets no prototype); without a reviver, InternalizeJSONProperty
+ * never runs. The array is `T[]` at writable elements, the object a writable
+ * dictionary, as a client may go on writing what is fresh. Unlike
+ * `JsonValue`, which `JSON.stringify` takes, it admits arrays: nothing here
+ * calls a member. */
+const parsedJsonIdentity: DeclarationIdentity = { module: "tscert/json", name: "ParsedJson", span: at };
+const parsedJson: TypeTerm = { k: "reference", args: [], span: at,
+  reference: { name: parsedJsonIdentity.name, span: at, arguments: [], target: parsedJsonIdentity } };
+const parsedJsonDefinition: TypeDefinition = { declaration: parsedJsonIdentity, parameters: [], bases: [],
+  expression: { k: "union", span: at, parts: [atom("null"), atom("boolean"), atom("number"), atom("string"),
+    { k: "array", presence: "readable", readonly: false, element: parsedJson, span: at },
+    { k: "object", fields: [], stringIndex: { readonly: false, value: parsedJson, span: at }, calls: [], span: at }] } };
+
 /** An entry whose parameters are primitives or whose contract states nothing
  * of an object argument's members. */
 const contract = transparent("its contract holds of any value of its parameter types");
@@ -143,8 +166,9 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     stated: { binders: [], params: [], rest: primitive, result: atom("undefined") } },
   // `BigInt(v)` throws a RangeError for a number that is not an integer and
   // a SyntaxError for a string that is not an integer's spelling; it runs no
-  // code of the client's on a primitive, and returns a bigint otherwise.
-  { host: contract, global: "BigInt", signature: "(value: bigint | boolean | number | string): bigint;" },
+  // code of the client's on a primitive, and returns a bigint otherwise. It
+  // writes nothing: heap preservation.
+  { host: contract, global: "BigInt", signature: "(value: bigint | boolean | number | string): bigint;", effect: emptyEffect },
   // A new symbol whose description is the argument converted to a string,
   // which a string or number never fails.
   { host: contract, global: "Symbol", signature: "(description?: string | number): symbol;" },
@@ -217,9 +241,10 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   { host: contract, global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
-  // (no getter is called). ES5 declares it at `object`, ES2015 at `{}`.
-  { host: transparent("a fresh array of strings, which is all its contract states"), global: "Object", member: "keys", signature: "keys(o: object): string[];" },
-  { host: transparent("a fresh array of strings, which is all its contract states"), global: "Object", member: "keys", signature: "keys(o: {}): string[];" },
+  // (no getter is called) and writes only the array it allocates: the empty
+  // footprint. ES5 declares it at `object`, ES2015 at `{}`.
+  { host: transparent("a fresh array of strings, which is all its contract states"), global: "Object", member: "keys", signature: "keys(o: object): string[];", effect: emptyEffect },
+  { host: transparent("a fresh array of strings, which is all its contract states"), global: "Object", member: "keys", signature: "keys(o: {}): string[];", effect: emptyEffect },
   // The values of those keys, and the key-value pairs: nothing is known of
   // them, `any` read as `unknown`, and each pair is a fresh array. Reading a
   // value runs an accessor's getter: the fragment writes none, and a host
@@ -249,10 +274,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // true of a dictionary, whose every own string key holds a `T`
   // (`dictViewT`), and the parameter is stated at one: an open record may
   // own further keys of other types (`invalid-object-values-record.ts`),
-  // and `ArrayLike<T>` is not read. Each pair is a fresh array.
+  // and `ArrayLike<T>` is not read. Each pair is a fresh array. A
+  // dictionary's keys hold data properties (the caller contract, and the
+  // fragment's own objects), so each reads them without running code and
+  // writes only what it allocates: the empty footprint.
   { host: transparent("the parameter is a dictionary, whose family admits no host object"), global: "Object", member: "values", signature: "values<T>(o: { [s: string]: T; } | ArrayLike<T>): T[];",
+    effect: emptyEffect,
     stated: { binders: ["T"], params: [dictionary(binder("T"))], result: array(binder("T")) } },
-  { host: transparent("the parameter is a dictionary, whose family admits no host object"), global: "Object", member: "entries",
+  { host: transparent("the parameter is a dictionary, whose family admits no host object"), global: "Object", member: "entries", effect: emptyEffect,
     signature: "entries<T>(o: { [s: string]: T; } | ArrayLike<T>): [string, T][];",
     stated: { binders: ["T"], params: [dictionary(binder("T"))],
       result: array({ k: "tuple", presence: "dense", readonly: false, required: [atom("string"), binder("T")], optional: [],
@@ -352,13 +381,15 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     signature: "new (year: number, monthIndex: number, date?: number, hours?: number, minutes?: number, seconds?: number, ms?: number): Date;" },
   // The current time, a number.
   { host: contract, global: "Date", member: "now", signature: "now(): number;" },
-  // `JSON.parse(text)` is a fresh value built from the text, or a
-  // SyntaxError: nothing is stated of it, `any` read as `unknown`. A
-  // reviver is client code the host would call on every member, and whose
+  // `JSON.parse(text)` is a fresh `ParsedJson` built from the text, or a
+  // SyntaxError. It runs no code of the client's and writes only what it
+  // allocates, also before it throws: the empty footprint, on a throw too.
+  // A reviver is client code the host would call on every member, and whose
   // results replace them: the call is read with the text only.
   { host: contract, global: "JSON", member: "parse",
     signature: "parse(text: string, reviver?: (this: any, key: string, value: any) => any): any;",
-    stated: { binders: [], params: [atom("string")], result: atom("unknown") } },
+    stated: { binders: [], params: [atom("string")], result: parsedJson }, definitions: [parsedJsonDefinition],
+    effect: { ...emptyEffect, onThrow: true } },
   // `JSON.stringify(v)` returns `undefined` for `undefined`, a symbol or a
   // function, calls a `toJSON` it finds, and throws on a bigint or a cycle;
   // at a `JsonValue` it does none of the first two and returns a string. A

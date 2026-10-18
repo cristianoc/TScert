@@ -460,33 +460,76 @@ signature, which states no effect. A **certified import** is read at an
 effect-qualified signature that the same run certifies from the imported
 declaration's code. This is the checked evidence the
 [previous section](#inferred-call-effects-elaboration-and-certification)
-requires; the import's TypeScript declaration still supplies none. Module
-graphs whose certified imports form a cycle are left to a later stage: an
-import on such a cycle is read at its ordinary signature.
+requires; the import's TypeScript declaration still supplies none.
 
-**The exported unit.** For each import the claims read at a qualified
-signature, the document holds the exported declaration as a unit of its own,
-lowered from its module's source like a declaration of the checked file. The
-unit carries its origin: the module's file, that file's `sha256` (the
-snapshot the parser lowers, as `sourceSha256` is for the checked file), and
-the declaration's span and exported name. The parser resolves the import to
-the declaration TypeScript binds it to. The unit is checked in its own
-module's environment: the declarations of its file at their signatures, and
-its own imports.
+**Eligibility.** A read may be qualified only where its binding's value is
+stable: a named import of an exported function declaration that no code of
+its module reassigns. Its terminal declaration identity is the one
+TypeScript resolves the import to, through re-exports; a re-exporting
+module's own execution is part of the runtime module graph below. Default
+imports stay refused, as the parser refuses them. Any other import is read
+at its ordinary signature.
 
-**Binding.** An origin comes from the parser's resolution of the import
-and from the snapshot it lowers: the trusted front end states it, and no
-claim of the producer's does, whether or not the claims agree with each
-other. Lean reads an import at a qualified signature only where the
+**Two graphs.** The **qualified-dependency graph** has an edge from a unit to
+each unit it reads at a qualified signature; it is acyclic, and a read that
+would close a cycle in it is read at its ordinary signature. The **runtime
+module graph** is the modules' import relation as the host evaluates it,
+ordinary imports and re-exports included; it may have cycles. Qualification
+reasons about the first; the second bears on initialisation and binding,
+below.
+
+**The document.** The parser lowers its documents before any claim exists,
+so it lowers every module the qualified-dependency graph may need: every
+program module the checked file imports a function from, transitively. The
+fragment document has a required `modules` array (empty where there are
+none), each entry a module lowered once per snapshot and project context:
+its file, the `sha256` of the snapshot the parser lowers (as `sourceSha256`
+is for the checked file), its top-level code, its functions and its own
+declaration document. A function of such a module is a **unit**, named by
+its origin: the module's file and hash, the declaration's span and its
+exported name. Origins come from the parser's resolution and snapshot, never
+from a claim of the producer's. The claims document has a required `modules`
+array too, one entry per fragment module, over the one type table the
+checked file's claims use. The pipeline copies each module's snapshot beside
+the checked file's. A census slice keeps its own identity: a slice verified
+is not a certification of the module it was cut from.
+
+**Failure boundary.** A module function the parser cannot lower is absent
+from its module, with the parser's reason, and its module's other functions
+stay; declaration collection and function lowering fail per declaration,
+not per file. An import of an absent function is read at its ordinary
+signature, where that signature is representable in full; otherwise it is
+refused, as today. A unit whose required environment obligation (below)
+cannot be lowered or checked is not qualified.
+
+**What a unit's certification covers.** A unit is checked in its module's
+run, as a run of that file alone checks it: its module's initialisation
+(the existing initialisation unit and order, `Extraction.lean`), its own
+code at its claimed signature, and, recursively, every unit it reads at a
+qualified signature. So the certified set is the closure of the units the
+claims read qualified, together with the initialisation obligations behind
+each: the constants and functions of its module it reads. Every other fact
+of its environment is an explicit assumption, the
+[import assumption](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)
+its module's own run also makes. An initialiser that is not checked never
+supplies a qualified signature: its inferred effect is not a premise read
+as if it were a declaration's. Lean enforces the closure and the cycle
+policy itself: a qualified read naming a unit outside the certified set, or
+closing a cycle, is refused at its span, whatever order the producer chose.
+
+**Binding.** Lean reads an import at a qualified signature only where the
 document holds a unit of that origin certified at the same signature. The
-two signatures are compared by meaning, in the checked equation
-environment: the same binders and bounds, the same parameter and result
-types, and the same effect. The ordinary part is the declaration's
-annotation; the effect is the one the read states. Each of the following is
-refused at the import's span: a read naming no unit, a unit of another
-origin or signature, and a unit whose check fails. The importer's evidence and the unit's are checked by one
-`checkJson` call, so the evidence that certifies the effect is evidence
-about that declaration's code, not about a name.
+modules of the two documents correspond exactly, module and unit identities
+are unique, and origins and hashes match. The two signatures are compared by
+meaning in the shared equation environment: their generic binders aligned in
+scope and bounds, then the parameter and result types and the effect, one
+subtype check each way. The ordinary part is the declaration's annotation;
+the effect is the one the read states. Each of the following is refused at
+the import's span: a read naming no unit, a unit of another origin or
+signature, a unit without its certificate, and a unit whose check fails.
+The importer's evidence and the units' are checked by one `checkJson` call,
+so the evidence that certifies the effect is evidence about that
+declaration's code, not about a name.
 
 **The ordinary signature is kept.** The unit is checked at its annotation's
 signature with the effect added, its annotation obligations retained, as
@@ -497,46 +540,43 @@ types unchanged. A certified import is read as a module function is
 function passes. Its code is then known to discard further actuals, so it
 may be passed where a signature binding more parameters is expected.
 
-**The dependency's own assumptions.** The unit's inputs are those of any
-unit of its module. A declaration of its module that it reads at a qualified
-signature is a unit of the document too, certified the same way. An import
-it reads at a qualified signature is a certified import, recursively. Every
-other input is read at its declared type, the ordinary
-[import assumption](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)
-the module's own run also makes. Recursion within one module is inferred as
-the module's functions are, at the greatest fixpoint.
-
-**Inference.** OCaml proposes the dependency's effects as it proposes its
-module's own (the greatest fixpoint over that module), then the importer's
-claims at them. No effect follows from a comment, a name or a module's
-role. A proposal its check refutes is withdrawn, and the import is then
-read at its ordinary signature. Dense `map` needs a callback footprint that
-keeps dense prefixes ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
+**Inference.** OCaml proposes each module's effects as it proposes a
+file's own (the greatest fixpoint over that module), in the order of the
+qualified-dependency graph, then the importer's claims at them. No effect
+follows from a comment, a name or a module's role. The pipeline searches
+evidence for the units first; an effect its search refutes is withdrawn,
+and the import is then read at its ordinary signature. The final check is
+one `checkJson` call over the whole document. Dense `map` needs a callback
+footprint that keeps dense prefixes
+([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
 `record-render`'s `parseRecord` is proposed at `{value: any, store: grow}`
 or a narrower footprint in that set. The empty footprint would need the
 checker to know that the maps it mutates and the section `pushProse`
 receives are fresh, which it does not.
 
 **What the theorem states.** `SourceClaimJson.checkJson_safe` keeps its
-statement. The exported units are requests of the same document. Its
-conclusion therefore gives each of them safety and its footprint under
-`EnvOk` of its own inputs, and gives the importer's functions safety under
-`EnvOk` of theirs, the qualified import among them.
+statement. The certified units are requests of the same document, so its
+conclusion gives each of them safety and its footprint, and gives the
+importer's functions safety, each under `EnvOk` of its own inputs, the
+qualified import among the importer's, and under `WorldAdm` and `HeapOk`.
+It does not construct a module's environment, prove that initialisation
+succeeds, or prove that the value an import binds at run time meets the
+qualified signature: those are the linking obligation's.
 
-**The linking obligation.** The two conclusions combine into safety of the
-linked program only under two premises:
-
-- the value the import binds at run time is the closure of the certified
-  unit's code over its module's environment;
-- units certified against each other's signatures compose, so that closure
-  meets the qualified signature at every step index.
-
-The second is the [module composition](../WORK.md#module-composition)
-argument. The units of one module already rely on it when they read each
-other at qualified signatures. The first is a review obligation on the
-parser's resolution and the host's module loader. Until module composition
-is proved, both are obligations of review, listed with the import
-assumption.
+**The linking obligation.** The conclusions combine into safety of the
+linked program under a runtime invariant: at every qualified read, the
+binding holds the certified unit's closure, whose captures meet its input
+contracts in the current heap and world, and the module's initialisation and
+all execution after it preserve that. The eligibility rule makes the first
+half a property of the parser's resolution and of the host's module loader
+(an exported declaration never reassigned holds its closure once its module
+is evaluated); the second is the [module composition](../WORK.md#module-composition)
+argument for units certified against each other's signatures, on which the
+units of one module already rely. A dependency whose initialisation throws
+stops the importer's evaluation: certifying a body proves no initialisation
+succeeds. Until module composition is proved, the invariant is a review
+obligation, listed with the import assumption and in the
+[parser, extraction, declared-types and host bridges](TRUST-REDUCTION.md#the-bridges).
 
 **A catch.** A certified import's footprint holds on normal return, and on
 a throw where its effect states `onThrow`

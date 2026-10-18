@@ -22,9 +22,10 @@ design, not its progress.
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
-| [Module composition](#module-composition) | open: certified imports designed (2026-10-17) | a Lean theorem composes units certified against each other's signatures |
-| [Cell facts by tag, and label slices](#cell-fact-slices) | open: label slices and reads by a record field's tag done; `decodeTarget` reads its field from a `Record<string, unknown>`, whose entries take no facts | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
-| [Decoders' dictionary reads](#decoders-dictionary-reads) | investigation, waiting for the owner | a route is chosen for reading `unknown` JSON by key |
+| [Module composition](#module-composition) | open: certified imports designed (2026-10-17), the design revised and approved (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
+| [Cell facts by tag, and label slices](#cell-fact-slices) | open: label slices and reads by a record field's or a dictionary entry's tag done (2026-10-18); `decodeTarget` passes an imported function as a callback | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
+| [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 43 s of evidence search, past the 30 s limit (2026-10-18) | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
+| [Field equality facts over objects](#field-equality-facts) | open: an investigation, cause unknown | `c.kind === "a"` of a field whose type holds objects is a fact a later read of `c.kind` uses, as it is of a `string` field |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -33,7 +34,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 47 of 311 verify in `tools/` (2026-10-18), 21 of 23 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 47 of 311 verify in `tools/` (2026-10-18), 21 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -143,22 +144,41 @@ unit's closure ([the linking obligation](docs/SOURCE-MODEL.md#certified-imports)
 **Cell facts by tag, and label slices**
 ([the design](docs/PROGRAM-TYPING.md#current-content-rules-semantic-layer)):
 a sliced read by any heap-independent tag, and the labels of an object a
-cell fact about its field excludes. `decodeTarget` tests `t.mapping` where
-`t` is a dictionary, whose entry reads take no cell facts; the parsed-JSON
-decoders change what `t` is.
+cell fact about its field excludes. A dictionary's entry takes facts as a
+record's field does (`dictionary-field-tag-read`). `decodeTarget` passes
+`nat`, imported from `calculus`, to `map`
+([module composition](#module-composition)).
 
 <a id="decoders-dictionary-reads"></a>
-**Decoders' dictionary reads**, an investigation for the owner: the
-decoders of `calculus.mts` read `unknown` JSON through
-`isRecord(v): v is Record<string, unknown>` and `v[key]`. In the model a
-dictionary owns no prototype, so a class instance, which `typeof` finds an
-object, meets no `Record<string, unknown>`: the guard's promise is false of
-it, and a read at a key that may name an `Object.prototype` member is
-refused. Two general routes: a key fact, that an element of
-`Object.keys(o)` names an own key of `o` while `o` is unchanged, admitting
-`o[k]` as a `for...in` entry is admitted; or a contract for `JSON.parse`
-whose result is a JSON value, plain objects and arrays of them, which the
-decoders then take instead of `unknown`.
+**Decoders' dictionary reads.** The decoders of `calculus.mts`,
+`control-flow.mts` and `diagnostic.mts` read the wire as `Json`, what
+`JSON.parse` returns without a reviver
+([the contract](docs/SOURCE-CONTRACTS.md#library-globals)): a parsed object
+is a dictionary of parsed data, read by key as the index's value or
+`undefined`, and a key it may inherit from `Object.prototype` is refused
+(`invalid-json-parse-inherited`). A constructor object's one key and its
+value are `Object.entries`' pair, so no read at a key known only at run
+time is needed. In `calculus`, `decodeTerm`'s unit, a switch over the term
+constructors, has an evidence search of 43 s and a check of 5 s, its
+evidence 9.5 MB, measured on its slice (2026-10-18); profiling shows the
+time in subtype comparisons of the `Term` union. `dev/lowering-dump.mts`
+decodes the verifier's output with `decodeUnits`, which calls `fields` and
+`nat` in `map` callbacks: imported functions, whose effect no certificate
+states ([module composition](#module-composition)).
+
+Two forms of `calculus.mts` are written for a verifier limit, each to be
+reverted when its limit lifts: the record test is `recordOf`, returning the
+object or `undefined`, since a type guard's declaration claims no
+footprint and so makes a `map` calling it sparse; and the code kind is
+read into a constant before its equality tests
+([field equality facts](#field-equality-facts)).
+
+<a id="field-equality-facts"></a>
+**Field equality facts over objects**, an investigation: after
+`c.kind === "a"`, a read of `c.kind` is of `"a"` where the field is a
+`string`, and is refused ("the incoming claims do not establish the
+required current-content facts") where its type also holds objects, a
+`Json` field of a record or a dictionary's entry (observed 2026-10-18).
 
 <a id="exceptional-footprints"></a>
 **Exceptional footprints**: a call's promise that its footprint also holds
@@ -315,9 +335,9 @@ each needing its function type written on the constant or the arrow written
 as a function declaration.
 
 Ten slices reach the producer and fail there, and twenty-two fail in
-search. Of the 23 functions of `dev/`, the record tools and the lowering
-dump, 21 verify, and of the 13 of `tests/`, 4 (2026-10-17, each sliced with
-the same-file declarations it uses). The first blockers of the others in
+search. Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
+24 of `dev/`, the record tools and the lowering dump, 21 (2026-10-18), each
+sliced with the same-file declarations it uses. The first blockers of the others in
 `dev/`, with the functions each stops directly and through callees:
 
 - `group`'s range branch reads the second element of `arg.split("..")`,
@@ -329,15 +349,14 @@ the same-file declarations it uses). The first blockers of the others in
   actuals; only a module function's own code is known to discard them
   ([module composition](#module-composition)), and so is `showTerm`, which a callback calls. A certified import of
   either needs its module's code to verify. In `control-flow` and
-  `calculus` (2026-10-17), 4 of 16 functions verify. `decodeTarget`,
-  `decodeContinuation` and `decodeNode` stop at `Array.isArray` of a field
-  holding an object, which a cell fact does not record; `showTag`, and
-  through it `showTerm` and `showCode`, at `{ kind: BareTag }`, an arm
-  successive tests of its field exclude together (both
-  [designed](docs/PROGRAM-TYPING.md#current-content-rules-semantic-layer)).
-  `fields`, `keyOf`, `constructorOf`, `decodeTag`, `decodeTerm`,
-  `decodeCode` and `termsOf` stop at the
-  [decoders' dictionary reads](#decoders-dictionary-reads) (printGraph: 1).
+  `calculus` (2026-10-18), 12 of 18 functions verify, `showTag`, `showTerm`
+  and `showCode` among them; `decodeTarget`, `decodeContinuation` and
+  `decodeNode` pass `nat`, imported from `calculus`, to `map`, and
+  `decodeTerm`, `decodeCode` and `termsOf` exceed the time limit
+  ([decoders' dictionary reads](#decoders-dictionary-reads)) (printGraph: 1);
+- `decodeUnits` calls `fields` and `nat`, imported from `calculus`, in
+  `map` callbacks, which an import's ordinary signature makes sparse
+  ([module composition](#module-composition)) (decodeUnits: 1).
 
 In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
 verify; the others stop at a namespace import, Node's `Buffer` type, `join`

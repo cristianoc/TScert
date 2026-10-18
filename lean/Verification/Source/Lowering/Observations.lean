@@ -147,9 +147,16 @@ uniformly; this is a located proof obligation, never a discarded assertion. -/
 builtins's `readonly unknown[]`, `R`, for the records and `unknown` it does not:
 the refinement the edge's observation establishes. -/
 @[nospecialize] def arrayRefine (G : PositiveGraphs.NormalGraph ι) (A R : Ty ι) : Ty ι :=
-  let sliced := BranchRefinement.tagSlice G A .isArray true
+  -- A label of no array or of indexed dictionaries is dropped: where the
+  -- graph states the built-ins, an array owns the prototype key a dictionary
+  -- does not (`BranchRefinement.not_array_of_indexed`).
+  let sliced := (BranchRefinement.tagSlice G A .isArray true).filter fun a => !(G.plain a && G.builtins.isSome &&
+    (G a).all fun c => ProgramTyping.tagClause .isArray c == some false || BranchRefinement.indexedDict c)
+  -- A label each clause of which owns no array, or is a record that may be
+  -- one without being one, gives way to the built-ins' array.
   let kept := sliced.filter fun a => !(G.plain a && (G a).all fun c =>
-    ProgramTyping.tagClause .isArray c == some false || c.carriesInvariant)
+    ProgramTyping.tagClause .isArray c == some false ||
+      (c.carriesInvariant && ProgramTyping.tagClause .isArray c != some true))
   if kept.length == sliced.length then sliced else kept ++ R
 
 /-- The built-in `readonly unknown[]`: the array shape over a possibly sparse
@@ -168,17 +175,30 @@ store of `unknown`. -/
 
 /-- The atom of a test's answer whose refinement of a field's contract `C` is
 within the type `A` a claim states the field holds, of the tests whose answer
-depends on the value alone and whose refinements a primitive predicate does
-not state. The atom is an assertion every edge into the point must establish;
-choosing it proves nothing. -/
+depends on the value alone, where no primitive predicate states `A`: a
+`typeof` test that fails leaves objects beside primitives. The atom is an
+assertion every edge into the point must establish; choosing it proves
+nothing. -/
 @[nospecialize] def answerAtoms (C A : Ty Tree) : Compiler (Option (List HeapFacts.Atom)) := do
   let T ← table
   let G := SourceTypes.graph T
-  for tag in [Tag.isArray, .isFun, .typeofObject, .isRef, .truthy] do
-    for q in [true, false] do
-      let S := BranchRefinement.tagSlice G C tag q
-      let R ← tagRefine C tag q
-      if (S != C && within T S A) || (R != C && within T R A) then return some [.tag tag q]
+  let tags := [Tag.isArray, .isFun, .typeofObject, .isRef, .truthy, .isNum, .isStr, .isBool, .isBigint, .isSymbol]
+  -- First the answers whose slice of `C` is within `A`, the one keeping
+  -- most of `C` first, the weakest
+  -- assertion; then `Array.isArray`'s refinement, which also admits the
+  -- built-ins' array, so that it is chosen only where no slice is.
+  let answers := tags.flatMap fun tag => [true, false].filterMap fun q =>
+    let S := BranchRefinement.tagSlice G C tag q
+    -- An answer no value of `C` gives describes no value the field holds.
+    if !S.isEmpty && S != C && within T S A then
+      some (S.length, tag, q)
+    else none
+  if let some (_, tag, q) := answers.foldl (fun best x => match best with
+      | some b => if x.1 > b.1 then some x else best
+      | none => some x) none then
+    return some [.tag tag q]
+  let R ← tagRefine C .isArray true
+  if (R != C && within T R A) || BranchRefinement.arraySlice G C A then return some [.tag .isArray true]
   return none
 
 /-- The atoms a claim that a field holds `A` asserts, where the field's
@@ -204,6 +224,8 @@ private def declaredRead (c : PositiveNormalization.Clause (Ty Tree)) (fld : Pro
   | .refs W [] vs os _ _ =>
     (W.lookup fld).orElse fun _ => (vs.lookup fld).orElse fun _ =>
       (os.find? (fun o => o.key == fld)).map (fun o => o.type ++ [Labels.undef])
+  | .dict _ _ _ ds _ _ _ cs =>
+    ((ds ++ cs).find? (HeapExpressionRules.stringIndex · fld)).map (fun d => d.2 ++ [Labels.undef])
   | _ => none
 
 /-- Mutable entry types are assertions about contents, not reference types.

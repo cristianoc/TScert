@@ -2219,22 +2219,30 @@ Four implementations discharge the tested-slot obligation:
   row $`L`$ holding the array shape over a store of `unknown`,
   $`P_{\mathcal B}`$ and $`N_{\mathcal B}`$, the built-ins' `unknown` row holding
   `source` only (`builtinArrayLabel`, `exactUnknown`, `builtinArray_of_record`).
-  Each label the tag slice keeps is kept in the destination, or is a clause
-  row each clause of which answers `false` or is one the invariant applies
-  to; and the destination holds $`L`$ (`arraySlice`, `arraySlice_sound`, with
-  the marker `subset`). A label with `top`, and a parameter row, is none of
-  these: `top` and a type parameter are not narrowed so:
+  An indexed dictionary's members own no prototype key, which an array
+  owns under the invariant, so none of them is an array
+  (`not_array_of_indexed`). Each label the tag slice keeps is kept in the
+  destination, or is a clause row each clause of which answers `false`, is
+  an indexed dictionary's (where the graph states the built-ins), or is one
+  the invariant applies to with $`L`$ in the destination (`arraySlice`,
+  `arraySlice_sound`, with the marker `subset`). A label with `top`, and a
+  parameter row, is none of these: `top` and a type parameter are not
+  narrowed so:
 
 ```math
 \frac{\forall a\in T_{\mathsf{isArray}}(A).\;a\in B\ \lor\ \forall c\in G(a).\;
-         \mathsf{tag}(\mathsf{isArray},c)=\mathsf{false}\lor c\ \text{a record's, a dictionary's or}\ \mathsf{source}
-       \qquad L\in B\qquad G(L)=[\mathsf{Ref}(;\sigma{:}S,\mathsf{proto}{:}P_{\mathcal B};\langle\mathsf{outside}\,N_{\mathcal B}\rangle)]}
+         \mathsf{tag}(\mathsf{isArray},c)=\mathsf{false}\lor c\ \text{an indexed dictionary's}\lor
+         (c\ \text{a record's, a dictionary's or}\ \mathsf{source}\land L\in B)
+       \qquad G(L)=[\mathsf{Ref}(;\sigma{:}S,\mathsf{proto}{:}P_{\mathcal B};\langle\mathsf{outside}\,N_{\mathcal B}\rangle)]}
       {A\preceq_{\mathsf{isArray}=\mathsf{true}}B}\ \textsf{tag-array}
 ```
 
   with $`S`$ a readonly store at a type holding `top` or `source`. Each
   operand of `&&` and `||` sees this refinement where an earlier operand's
-  `Array.isArray` holds (`arrayRefine`, `tagRefine`).
+  `Array.isArray` holds (`arrayRefine`, `tagRefine`): a label of an array
+  stays, and a label each clause of which is of no array, or of a record
+  not known to be an array, gives way to $`L`$ (`array-test-disjunction`,
+  `invalid-array-test-disjunction`).
 
 - **Present key:** a passed `in` test finds its key on the object's chain:
   its own, or, where it lacks it, one a prototype holds (`KeyFound`). An
@@ -2648,11 +2656,12 @@ location to link where the object lacks the key; there the read gave
 `undefined`, since such an object has no prototype (`optT`). Its link is the
 optional one, $`x.f\mapsto^{?}r`$ ([its meaning](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch)),
 written for every record of $`\Gamma(x)`$ naming $`f`$, as a field or an optional
-key (`optionalOperand`, `optionalRead_sound`):
+key, and for every dictionary whose string index reaches $`f`$, whose key
+may be absent too (`optionalOperand`, `optionalRead_sound`):
 
 ```math
 \frac{\Gamma\vdash_G\mathrm{read}_f(x):A\qquad
-      \forall c\in\mathrm{expand}_G(\Gamma(x)).\ f\in\mathrm{fields}(c)\cup\mathrm{optional}(c)}
+      \forall c\in\mathrm{expand}_G(\Gamma(x)).\ f\in\mathrm{fields}(c)\cup\mathrm{optional}(c)\cup\mathrm{indexed}(c)}
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow\mathrm{read}_f(x):A
   \dashv \Pi\;;\;\Sigma,\{y.f\mapsto^{?} r\mid y\approx_\Pi x\}}
 ```
@@ -2825,9 +2834,12 @@ value read from $`x.f`$ whose slice no primitive predicate states records it
 through the read's link (`observeTyped`), beside `nonNullish` where the slice
 is of objects. A claim that $`x.f`$ holds a type $`A`$ at a point asserts
 the answer whose refinement of the field's contract is within $`A`$
-(`answerAtoms`, among `isArray`, `isFun`, `typeofObject`, `isRef` and
-truthiness), where no nullish exclusion of the contract is, and every edge
-into the point establishes it. Observed contents follow the existing
+(`answerAtoms`, among `isArray`, `isFun`, `typeofObject`, `isRef`,
+truthiness and the primitive `typeof` tests, the one keeping most of the
+contract), where no nullish exclusion of the contract is, and every edge
+into the point establishes it. A dictionary's entry is such a field: its
+contract is what the index holds or `undefined`
+(`dictionary-field-tag-read`, `invalid-dictionary-field-tag-call`). Observed contents follow the existing
 invalidation rules: a write that may alias the location discards them, a
 write a distinct link separates from it keeps them, and a call discards them.
 So after `Array.isArray(t.mapping)` a read of `t.mapping` is of an array
