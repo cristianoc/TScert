@@ -167,8 +167,8 @@ pairs, each direction of the costliest about 0.25 s though each side is one
 clause. The time is in the structural comparison of the recursive `Term`
 and `Json` union arms beneath; absorbing `source & X` into `X` before the
 check takes it from 16.5 s to 16.2 s, `X` being source-valued in only 56 of
-the 172 checks (a probe, 2026-10-18). These functions wait on the theory
-track's shape-directed comparison of discriminated unions. `dev/lowering-dump.mts`
+the 172 checks (a probe, 2026-10-18). These functions wait on
+[structure-directed comparison](docs/UNION-SHAPES.md). `dev/lowering-dump.mts`
 decodes the verifier's output with `decodeUnits`, which calls `fields` and
 `nat` in `map` callbacks: imported functions, whose effect no certificate
 states ([module composition](#module-composition)).

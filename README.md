@@ -173,6 +173,7 @@ owner; other documents link to them and give only the context their readers need
 | [SEMANTICS](docs/SEMANTICS.md) | The term and value grammar, execution, worlds, heap satisfaction, membership and safety predicates. |
 | [POSITIVE-TYPES](docs/POSITIVE-TYPES.md) | Types as positive formulas (clauses under union and intersection, no negation): type and state-assertion grammars, normalization, declarative subtyping and subtype certificates. |
 | [RECURSIVE-EQUATIONS](docs/RECURSIVE-EQUATIONS.md) | Generic declarations as parameterized equations: labels, unfolding, substitution, family subtyping, lowering, wire format and acceptance statement. |
+| [UNION-SHAPES](docs/UNION-SHAPES.md) | Structure-directed comparison: shapes and cells, the catalogue of selection rules with their lemmas and measured coverage, the profiling dataset and the candidates it names. |
 | [PROGRAM-TYPING](docs/PROGRAM-TYPING.md) | Core expression, graph and state typing rules, their side conditions and soundness scope. |
 | [SOURCE-ELABORATION](docs/SOURCE-ELABORATION.md) | Evidence search and source compilation obligations, including bindings, closures and parameter initialization. |
 | [SOURCE-CONTRACTS](docs/SOURCE-CONTRACTS.md) | Source declarations, library contracts and the interpretation of annotations. |
