@@ -45,7 +45,7 @@ obstacle named. A search failure is neither.
 | An async return annotated with a nested promise when fresh resolution yields a non-promise payload | `Promise<A>` states the fulfillment value's type. The [async return rule](SOURCE-CONTRACTS.md#async-functions-and-await) checks the freshly resolved promise against that annotation; a number payload does not meet a promise payload contract. |
 | `catch` or `finally` promising to preserve an open record payload without restricting its `then` | The fresh result resolves that payload again, which can adopt a callable `then` and change the fulfillment value. |
 | A `finally` callback returning an open record without a stable non-thenable contract | Resolving the cleanup result invokes a hidden `then`, whose arguments and effects the record contract does not constrain. A native cleanup promise has a separate identity contract. |
-| `String(o)`, `Number(o)`, `Math.max(o)`, `Math.min(o)`, `String.fromCodePoint(o)`, `String.fromCharCode(o)` (an object spread from an array too), `Object.getOwnPropertyDescriptor(x, o)`, `o + ""`, `new Date(o)`, `new Set(it)` of a non-array iterable, `JSON.parse` with a reviver, `JSON.stringify` with a replacer, of an array or an open record; a relational comparison with an object operand | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`). |
+| `String(o)`, `Number(o)`, `Math.max(o)`, `Math.min(o)`, `String.fromCodePoint(o)`, `String.fromCharCode(o)` (an object spread from an array too), `Object.getOwnPropertyDescriptor(x, o)`, `o + ""`, `new Date(o)`, `new Set(it)` of a non-array iterable, `JSON.parse` with a reviver, `JSON.stringify` with a replacer function, of an array or an open record; a relational comparison with an object operand | The host runs client code (`toString`, `valueOf`, an iterator, a callback, a `toJSON`). |
 | `Reflect` and its functions, `Reflect.get(o, k)` among them | `Reflect` is a namespace, no annotated variable, and `Reflect.get` runs [[Get]], which calls an accessor's getter, code no type of `o` states. |
 | `+` on a bigint, number–bigint arithmetic, a symbol in a concatenation; a relational comparison of a string with a number | TypeScript refuses these operations. |
 | `==` or `!=` that may convert an object to a primitive, including an array | Conversion may invoke client hooks and mutate aliases. Standard array string conversion does not justify default-hint conversion, which calls `valueOf` first. TypeScript reports an array compared with a primitive as having no overlap, so only a union reaches the conversion: too rare to justify a `valueOf` restriction and a runtime array dispatch ([utility](DESIGN.md#principles)). |
@@ -102,15 +102,27 @@ nothing itself.
 | Declaration | Determined by |
 | --- | --- |
 | Interface, type alias | Its whole syntax |
-| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too |
+| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too; a `const` initialized by a function literal, its parameter and result annotations |
 | Property declaration or signature | Its annotation |
 | Property assignment, default export | Its value's: a literal naming nothing; a function's parameter and result annotations; a nested object literal's properties, each by its kind; an assertion's type (`as` or angle-bracket) |
-| Function, method, signature | The symbol's overload signatures if it has any, else its parameter and result annotations |
+| Function, method, signature | The symbol's overload signatures if it has any, else its parameter and result annotations; a function's or method's defaulted parameter is optional to its callers |
 | Accessor | The symbol's getter result or setter parameter, either for the pair |
 | Constructor | Its parameter annotations, or its overloads' with the implementation's parameter properties |
 | Class | Its type parameters, its heritage, and every instance and static member symbol |
 | Namespace, module | Every exported symbol, `export =` and a default export included |
 | Enum, enum member | Its value |
+
+The standard library's `BuiltinIteratorReturn`, an alias TypeScript
+declares `intrinsic`, is `undefined` in the interfaces of ECMA-262's
+iterators, `ArrayIterator`, `MapIterator`, `SetIterator`, `StringIterator`
+and `RegExpStringIterator`: they complete with
+`CreateIterResultObject(undefined, true)`, as `strictBuiltinIteratorReturn`,
+which `strict` sets, reads it (`builtin-iterator-return-value-import`,
+`invalid-builtin-iterator-return-value-import`, run under Node). Anywhere
+else, Intl's and the DOM's iterator interfaces among them, it is refused:
+another specification states those iterators' done value. No control
+reaches the refusal yet: an imported `Intl.SegmentIterator` is refused
+earlier, as a qualified type reference (observed 2026-10-18).
 
 ### Model limits
 
@@ -131,6 +143,7 @@ representation cannot state it yet; the paths are in
 | A template literal type with a `${string}` hole; `keyof` with a unique-symbol key; `typeof` of a binding whose inferred type is not an object literal's record of literals and primitives, or of a class with a static method or a private static | No term of the fragment states it exactly: a static method is a binding of its own, which no member of the class value's type states. |
 | An intersection with a union holding a type parameter, `(T \| null) & A`; a function type met with a record of readonly or optional fields, methods or an index | It distributes into meets known only at an instance; no clause states such a callable. |
 | An imported constant initialized by an array literal, or by an object literal `as const` or holding one | The table below admits them; the declaration reader reads an imported constant's literal as the type TypeScript infers for it, which it states for a primitive literal, `as const` or not, and a record of such whose properties are no `as const` (`literal-array-constant-value-import`). |
+| A binding read before its initialization in an environment the model does not represent: an early `let` or `const` declared by a pattern, in a `switch` case block, a class declaration's binding, in a generator, a parameter default mentioning its own or a later parameter (a closure's mention included), a loop head's binding mentioned in its own head | JavaScript throws a `ReferenceError` there; the model's early bindings are one-name `let` and `const` cells of function bodies and blocks ([lexical bindings before initialization](SOURCE-MODEL.md#lexical-bindings-before-initialization)). |
 | `declare let`, `declare var`, a module-level `let` or `var` | A unit's module inputs are immutable slots; module storage needs cells every call may write. |
 | A NaN or infinite member; a reverse key naming a member; an empty enum | A NaN or infinite value has no literal type; the reverse entry would replace the member; an empty object leaves no record. |
 | A `this` read in sloppy code whose receiver type may hold a value other than an object (`this: unknown`, `this: string`, no `this` annotation, a type parameter) | A sloppy call converts such a receiver (the global object, a wrapper), which the model has no step for ([graph code](SEMANTICS.md#graph-code)). |

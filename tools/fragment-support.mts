@@ -286,8 +286,11 @@ export type EnumMember = { name: string; node: ts.EnumMember; span: Span; nameSp
 /** An enum: where its declaration ends, whether it is ambient (`declare
  * enum`, not `const`), and its members, each value `undefined` until the
  * declaration graph reports it. */
-export type EnumInfo = { end: number; ambient: boolean;
-  members: (Omit<EnumMember, "value"> & { value: string | number | undefined })[] };
+export type EnumInfo = { end: number; ambient: boolean; members: EnumEntry[] };
+/** An enum's member as the parser holds it: its value `undefined` until the
+ * declaration graph reports it. */
+export type EnumEntry = { name: string; node: ts.EnumMember; span: Span; nameSpan: Span; init: Span | null;
+  value: string | number | undefined };
 
 /** Whether an element access is written rather than read: the target of an
  * assignment, a compound assignment or an update, or `delete`'s operand. */

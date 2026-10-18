@@ -393,13 +393,28 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `JSON.stringify(v)` returns `undefined` for `undefined`, a symbol or a
   // function, calls a `toJSON` it finds, and throws on a bigint or a cycle;
   // at a `JsonValue` it does none of the first two and returns a string. A
-  // replacer is client code: the call is read with the value only. At a
-  // `JsonValue` it runs no code of the client's and writes nothing: it
-  // reads own data properties and allocates the string, also before it
-  // throws on a cycle, so the empty footprint holds on a throw too.
+  // replacer is client code: the call is read with the value, a replacer
+  // that is `null` or absent, and an indent that is a primitive number or
+  // string, which `ToIntegerOrInfinity` or the string's own characters give
+  // without running code. At a `JsonValue` it runs no code of the client's
+  // and writes nothing: it reads own data properties and allocates the
+  // string, also before it throws on a cycle, so the empty footprint holds
+  // on a throw too.
   { host: transparent("the parameter is JsonValue, whose string-key traversal reaches no host object"), global: "JSON", member: "stringify",
     signature: "stringify(value: any, replacer?: (this: any, key: string, value: any) => any, space?: string | number): string;",
-    stated: { binders: [], params: [jsonValue], result: atom("string") }, definitions: [jsonValueDefinition],
+    stated: { binders: [], params: [jsonValue, optional(atom("null")),
+      optional({ k: "union", parts: [atom("number"), atom("string")], span: at })], result: atom("string") },
+    definitions: [jsonValueDefinition],
+    effect: { ...emptyEffect, onThrow: true } },
+  // The overload whose replacer is a list of keys, which `JSON.stringify`
+  // reads by its length and indices, primitive numbers and strings whose
+  // conversion runs no code; or `null` or absent, as the other.
+  { host: transparent("the parameter is JsonValue, whose string-key traversal reaches no host object"), global: "JSON", member: "stringify",
+    signature: "stringify(value: any, replacer?: (number | string)[] | null, space?: string | number): string;",
+    stated: { binders: [], params: [jsonValue, optional({ k: "union", span: at, parts: [atom("null"),
+      readonlyArray({ k: "union", parts: [atom("number"), atom("string")], span: at })] }),
+      optional({ k: "union", parts: [atom("number"), atom("string")], span: at })], result: atom("string") },
+    definitions: [jsonValueDefinition],
     effect: { ...emptyEffect, onThrow: true } },
   // `%PromiseReject%`: a promise rejected with the reason, whose await
   // throws it, an outcome; it settles to no value, so it is a promise of

@@ -994,8 +994,8 @@ export function confined(this: Gate, seen: Set<number>, followed: Set<string>, f
   return true;
 }
 
-export function localArrow(this: Gate, node: Expression, seen = new Set<number>(), followed = new Set<string>(),
-    functions = new Set<Node>()): boolean {
+export function localArrow(this: Gate, node: Expression, seen: Set<number> = new Set(), followed: Set<string> = new Set(),
+    functions: Set<Node> = new Set()): boolean {
   const gate: Gate = this;
   if (ts.isParenthesizedExpression(node))
     return gate.localArrow(node.expression, seen, followed, functions);

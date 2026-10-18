@@ -322,3 +322,39 @@ export function call(n: number): number {
 export const greeting = "hello";
 export const origin = { x: 0, y: -1, label: "o" };
 export const offsets = [1, 2];
+// Constants holding function literals, each stating its type by the
+// literal's parameter and result annotations; one states no result.
+export const halve = (x: number): number => x / 2;
+export const head = <T>(xs: readonly T[]): T | undefined => xs[0];
+export const named = function (s: string): string {
+  return s;
+};
+export const unstated = (x: number) => x + 1;
+// A class whose method defaults a parameter, and one whose field is the type
+// of a function declared elsewhere, whose parameter names a library type.
+export class Scaler {
+  readonly by: number = 2;
+  scale(x: number, offset: number = 0): number {
+    return x * this.by + offset;
+  }
+}
+export function seenIn(
+  this: Seen,
+  x: number,
+  seen: Set<number> = new Set(),
+): boolean {
+  return seen.has(x) || this.n > x;
+}
+export class Seen {
+  readonly n: number = 1;
+  check: typeof seenIn = seenIn;
+}
+export class Counts {
+  readonly counts: Map<string, number> = new Map();
+}
+export function keysOf(m: Map<string, number>): MapIterator<string> {
+  return m.keys();
+}
+// A constant arrow that writes its argument, and a reassignable one.
+export const shrink = (xs: number[]): number => xs.pop() ?? 0;
+export let swapped = (x: number): number => x;
