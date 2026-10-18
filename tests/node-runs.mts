@@ -94,6 +94,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-json-parse-inherited: Object.prototype's toString where parsed JSON is promised");
   assert.equal(runExample("json-parse-own-proto", `value('{"__proto__": 1, "a": 2}', "a")`), 2,
     "json-parse-own-proto: the own __proto__ member set no prototype");
+  assert.equal(runExample("invalid-field-equality-call", `(() => { const c = { kind: "a" }; return wrong(c, () => { c.kind = "b"; }); })()`), "b",
+    "invalid-field-equality-call: the call's \"b\" where \"a\" is promised");
   assert.equal(runExample("invalid-guard-ternary-false-arm", `wrong("a")`), "a",
     "invalid-guard-ternary-false-arm: \"a\" where \"b\" is promised");
   assert.equal(runExample("invalid-guard-footprint", `(() => { const a = ["x", "y", "z"]; return 2 in wrong(a, a); })()`), false,

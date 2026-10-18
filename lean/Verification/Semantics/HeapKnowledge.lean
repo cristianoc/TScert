@@ -369,6 +369,28 @@ theorem atoms_sem {G : NormalGraph ι} {A R} (h : atoms G A = some R) (n W v) :
     exact primitive_sem h n W v
   · cases h
 
+/-- The atoms a tag's answer leaves a value of `A` among: a string
+equality's `true`, the one string; else, where a primitive predicate states
+it, the answer's slice of `A`. -/
+def observedAtoms (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Option (List Atom) :=
+  match tag, q with
+  | .strEq s, true => some [.strLit s]
+  | _, _ => atoms G (BranchRefinement.tagSlice G A tag q)
+
+theorem observedAtoms_sound {G : NormalGraph ι} {A : Ty ι} {tag q R n W v}
+    (h : observedAtoms G A tag q = some R) (hm : meaning G A n W v)
+    (ho : (BranchRefinement.Observation.tag tag q).holds v) : ∃ a ∈ R, a.holds v := by
+  unfold observedAtoms at h
+  split at h
+  · rename_i s
+    cases h
+    have hv := (meaning_value hm).1
+    simp only [BranchRefinement.Observation.holds, protoFree, Bool.true_eq_false, or_false] at ho
+    cases v <;> simp [tagHolds] at ho
+    subst ho
+    exact ⟨.strLit _, by simp, rfl⟩
+  · exact (atoms_sem h n W v).mp (BranchRefinement.tagSlice_sound hm ho)
+
 /-- A tag observation combines the saved predicate with the tested value's
 ordinary type. This retains facts such as a falsy object-or-undefined being
 undefined, whose broad saved nullish predicate alone is insufficient. -/
@@ -377,7 +399,7 @@ undefined, whose broad saved nullish predicate alone is insufficient. -/
   let out := observe k slot o
   match o, Γ[slot]? with
   | .tag tag q, some A =>
-    match atoms G (BranchRefinement.tagSlice G A tag q) with
+    match observedAtoms G A tag q with
     | some R => ⟨linkFacts k slot R ++ out.cells, ⟨slot,R,valueField⟩ :: out.values, out.links⟩
     -- Otherwise the answer itself is a fact of every cell the value was
     -- read from (a separate fact: all of a cell's facts hold). A slice of
@@ -400,8 +422,7 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
   · rename_i tag q A hi
     split
     · rename_i R hr
-      have hv := (atoms_sem hr n W (ρ slot)).mp
-        (BranchRefinement.tagSlice_sound (he.2 slot A hi) ho)
+      have hv := observedAtoms_sound hr (he.2 slot A hi) ho
       refine ⟨?_, ?_, hout.2.2⟩
       · intro f hf
         rcases List.mem_append.mp hf with hf | hf

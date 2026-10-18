@@ -221,8 +221,7 @@ function decodeCode(v: Json | undefined): CallCode {
       const c = fields(value, ["arity", "exprs", "conts", "start", "caps", ...optional]);
       let mode: "construct" | "sloppy" | null = null;
       if ("kind" in c) {
-        const kind = c.kind;
-        if (kind === "construct" || kind === "sloppy") mode = kind;
+        if (c.kind === "construct" || c.kind === "sloppy") mode = c.kind;
         else throw Error("invalid code kind");
       }
       if ("rest" in c && c.rest !== true) throw Error("invalid code rest flag");

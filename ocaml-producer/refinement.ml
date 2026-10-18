@@ -241,6 +241,23 @@ let refine_field ?(answer = false) bounds declarations env name field refine =
     (match current with
      | Some c ->
        let contents = refine c in
+       (* A test leaving one of a declared union's primitive arms (`Json`
+          at `=== "a"`): the arms the test keeps of the definition's, where
+          they are all primitive, a fact Lean records of the field. *)
+       let contents =
+         let primitive = function
+           | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _
+           | Bigint | Symbol | BigintLit _ | SymbolLit _ -> true
+           | _ -> false in
+         let rec plain = function
+           | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
+         if not (plain c) then contents else
+         match (try flat_atoms declarations c with Json.Error _ -> None) with
+         | Some (_::_ as atoms) ->
+           (match refine (Atoms (List.sort_uniq compare atoms)) with
+            | Atoms (_::_ as kept) as sliced when List.for_all primitive kept -> sliced
+            | _ -> contents)
+         | _ -> contents in
        let env = fact ~answer:(answer && contents <> c) env key (field_type bounds declarations [] t (Name field)) contents in
        (* The object's arms whose field the contents rule out are dropped
           (Lean's `factSlice`): a primitive arm none of whose atoms meets one

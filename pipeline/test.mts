@@ -1730,6 +1730,29 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A field's equality test is a fact of the field only where an edge
+  // establishes it: claimed at the test, before it, the write of the field's
+  // read past the test is refused where evidence is produced and where it is
+  // checked.
+  const artifacts = run("field-equality-union");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const fn = must(claims.functions.find(f => f.name === "kindOf"), "kindOf's claims");
+  const from = source.indexOf("function kindOf");
+  const test = must(fn.entries.find(e => e.start === source.indexOf("if (c.kind", from)), "the entry of the test");
+  const past = must(fn.entries.find(e => e.start === source.indexOf("mode = c.kind", from)), "the entry past the test");
+  must(test.bindings.find(b => b.name === "c"), "c at the test").current =
+    must(past.bindings.find(b => b.name === "c"), "c past the test").current;
+  const input = writeClaims(artifacts, "forged-field-equality-before", claims);
+  const produce = produceWith(artifacts, input, "forged-field-equality-before");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+    assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify|evidence refusal at)/);
+  process.stdout.write("forged field equality fact: claimed before the test refused in search and in checking\n");
+}
+
+{
   // A guard declaration claims the footprint its body stays within, as a
   // plain declaration does: claimed narrower, it is refused at the
   // declaration, where evidence is produced and where the honest evidence is
