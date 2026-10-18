@@ -113,11 +113,16 @@ nothing itself.
 | Enum, enum member | Its value |
 
 The standard library's `BuiltinIteratorReturn`, an alias TypeScript
-declares `intrinsic`, is `undefined`: ECMAScript's built-in iterators of
-arrays, maps, sets and strings complete with
+declares `intrinsic`, is `undefined` in the interfaces of ECMA-262's
+iterators, `ArrayIterator`, `MapIterator`, `SetIterator`, `StringIterator`
+and `RegExpStringIterator`: they complete with
 `CreateIterResultObject(undefined, true)`, as `strictBuiltinIteratorReturn`,
 which `strict` sets, reads it (`builtin-iterator-return-value-import`,
-`invalid-builtin-iterator-return-value-import`, run under Node).
+`invalid-builtin-iterator-return-value-import`, run under Node). Anywhere
+else, Intl's and the DOM's iterator interfaces among them, it is refused:
+another specification states those iterators' done value. No control
+reaches the refusal yet: an imported `Intl.SegmentIterator` is refused
+earlier, as a qualified type reference (observed 2026-10-18).
 
 ### Model limits
 

@@ -3117,6 +3117,10 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
 }
 
 /** Every declaration reachable from `start`, each once across roots. */
+/** The standard library's iterator interfaces ECMA-262 specifies, whose
+ * done value `BuiltinIteratorReturn` names. */
+const ecmaIterators = ["ArrayIterator", "MapIterator", "SetIterator", "StringIterator", "RegExpStringIterator"];
+
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
@@ -3190,6 +3194,20 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       if (known) return libraryTerm(known, libraryArguments(known, arguments_, read, context.keys), pos,
         message => { throw Error(`${message} in ${identity.module}#${identity.name}`); });
       const targetNode = lookup(identifier, what);
+      // `BuiltinIteratorReturn`, the standard library's `intrinsic` alias, is
+      // what an iterator of ECMA-262 returns when it is done: the iterators
+      // of arrays, maps, sets, strings and `matchAll` complete with
+      // CreateIterResultObject(undefined, true), so in their interfaces it
+      // is `undefined`, as `strictBuiltinIteratorReturn` reads it. Another
+      // interface naming it (Intl's, the DOM's) is another specification's
+      // iterator, which this reading does not attribute.
+      if (ts.isTypeAliasDeclaration(targetNode) && targetNode.name.text === "BuiltinIteratorReturn" &&
+          context.libraryFile(targetNode.getSourceFile())) {
+        const owner = ts.isInterfaceDeclaration(node) ? node.name.text : "";
+        if (context.libraryFile(source) && ecmaIterators.includes(owner))
+          return { k: "atom", name: "undefined", span: pos };
+        throw Error(`BuiltinIteratorReturn in ${identity.module}#${identity.name} is the done value of an iterator ECMA-262 does not specify; only ${ecmaIterators.join(", ")} are read`);
+      }
       // An alias TypeScript computes from its parameters is the type it
       // computes at this reference's arguments.
       if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
@@ -3303,16 +3321,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // installation merges into it, and it inherits nothing.
     if ((view || context.hostType(node)) && parts.some(part => !isHostFile(part.getSourceFile().fileName)))
       throw Error(`a declaration merged into the host type ${node.name?.text} outside the audited installation is refused: the installation's declarations are its whole shape (COMPILER-API.md, reading rules 1 and 4)`);
-    // `BuiltinIteratorReturn`, the standard library's `intrinsic` alias, is
-    // what a built-in iterator returns when it is done: ECMAScript's
-    // iterators of arrays, maps, sets and strings complete with
-    // `CreateIterResultObject(undefined, true)`, so it is `undefined`, as
-    // `strictBuiltinIteratorReturn` (which `strict` sets) reads it.
-    const builtinReturn = ts.isTypeAliasDeclaration(node) && node.name.text === "BuiltinIteratorReturn" &&
-      node.type.kind === ts.SyntaxKind.IntrinsicKeyword && context.libraryFile(source);
     let expression = ts.isTypeAliasDeclaration(node)
-      ? builtinReturn ? ({ k: "atom", name: "undefined", span: [node.type.getStart(source), node.type.end] } satisfies TypeTerm)
-      : typeTerm(scope, node.type)
+      ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
         ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end], admitted), parts.flatMap(part => {
             if (part === node || !ts.isInterfaceDeclaration(part)) return [];
