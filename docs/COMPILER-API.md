@@ -604,6 +604,50 @@ union of $`n`$ record arms narrowed by `kind` took 1.2 s for $`n=20`$ and
 9.4 s for $`n=50`$, and exceeded the 30 s search limit for $`n=100`$; 20 arms
 plus one arm whose `kind` is a union of 330 literals took 9.2 s.
 
+### Compact kind sets
+
+A residual's `kind`, and any other union of two or more number literals, is
+one atom of the type language, a **kind set**: for a finite set $`S`$ of
+number bit patterns with $`|S|\ge 2`$, the atom $`\mathsf{numIn}(S)`$ means
+exactly the numbers whose bit pattern is in $`S`$. A union of number
+literals normalizes to it, and a kind set of one element is that literal:
+
+```math
+\mathsf{numLit}(b_1)\cup\cdots\cup\mathsf{numLit}(b_n)=\mathsf{numIn}(\{b_1,\ldots,b_n\})\quad(n\ge 2),
+\qquad
+\mathsf{numIn}(S)\cup\mathsf{numIn}(T)=\mathsf{numIn}(S\cup T)
+```
+
+Subtyping is inclusion of sets, and every kind set is a number:
+
+```math
+\frac{S\subseteq T}{\mathsf{numIn}(S)\le\mathsf{numIn}(T)}
+\qquad
+\frac{b\in S}{\mathsf{numLit}(b)\le\mathsf{numIn}(S)}
+\qquad
+\frac{}{\mathsf{numIn}(S)\le\mathsf{Number}}
+```
+
+A test answers on a kind set by membership, and its slices are sets again
+(a set of one element its literal, an empty one no atom):
+
+```math
+T_{\mathsf{numEq}(b)}(\mathsf{numIn}(S))=S\cap\{b\},\qquad
+T_{\lnot\mathsf{numEq}(b)}(\mathsf{numIn}(S))=S\setminus\{b\},\qquad
+T_{\mathsf{truthy}}(\mathsf{numIn}(S))=S\setminus Z,\qquad
+T_{\lnot\mathsf{truthy}}(\mathsf{numIn}(S))=S\cap Z
+```
+
+with $`Z`$ the bit patterns of $`0`$, $`-0`$ and the NaNs; `typeof` answers
+`"number"`. A test of a slot at $`\mathsf{numIn}(S)`$ is one node of
+evidence whatever $`|S|`$ is, its two arms at the two slices, and a field
+test reaches the record arms through the field slice $`F^f`$ unchanged. On
+the wire a kind set is `{"numIn": {"bits": [b, …]}}`, the bit patterns as
+`numLit` spells them, sorted and distinct, at least two; a decoder refuses
+any other list. Its obligations in Lean are the meaning, the soundness of
+the three subtyping rules, of normalization, and of each slice
+(`tagSlice`'s for the new atom).
+
 ### Host-admissible worlds
 
 $`K_u`$ is fixed per verification run, so every occurrence of a node type
@@ -1206,10 +1250,8 @@ The implementation needs, beside these:
   non-host values as the obligated `Object` members' parameter,
   $`\mathrm{excludesHost}`$ with its soundness and the `JsonValue` lemma,
   and the obligated rules' premises.
-- **A compact representation of kind sets** in claims and evidence, and a
-  benchmark of the complete generated contract (member-complete shapes,
-  inherited methods, exact literal unions) on a slice larger than the one
-  below.
+- **Kind sets** ([compact kind sets](#compact-kind-sets)) in the type
+  language, claims and evidence.
 - **Guard signatures** for the stated type guards of the sync API.
 - From the pipeline: a method call on a union receiver whose arms share the
   member (`n.getText()`, `n.forEachChild(f)`); a generic method whose
@@ -1252,49 +1294,67 @@ nodes among them.
 
 ## A measured slice
 
-`prototype/compiler-api-slice/` at commit 5c8af91 runs `statementsOnPath`
-(`tools/declaration-graph.mts`, 30 lines) through the pipeline against a
-reduced form of the reading above, written as a declaration file
-(`generate.mjs` writes `contract.d.ts`). The function follows an
-identifier's alias chain through import and export statements across files:
-checker queries, handles resolved into other files, upward `parent` walks,
-guards and a flag test. The reduced reading has the shapes the unit reaches
-(`SourceFile`, `ImportDeclaration`, `ExportDeclaration` and the 12 their
-members name), `kind` at its literal, the 15 modifier keywords merged into
-one arm, one residual arm built as the join over the other 321 kinds, and
-the views `CheckerView`, `SymbolView`, `NodeHandleView`. It is a search and
-cost experiment and departs from the contract:
+`statementsOnPath` (`tools/declaration-graph.mts`) runs through the
+pipeline against a generated reading of the package for the unit's kinds
+$`K_u=\{79,273,279,307\}`$: every reached kind's shape member-complete,
+with the corrections, readonly views, node lists as dense readonly arrays,
+the guards' kind sets computed by running the real guards
+(`isSourceFile` $`\{307\}`$, `isImportDeclaration` $`\{273,346\}`$,
+`isExportDeclaration` $`\{279\}`$), and the views of the members the
+function reads. The reading has 15 shapes and 4 residuals, whose `kind`
+unions hold 347 (`Node`), 48 (`Expression`), 31 (`Statement`) and 16
+(`ModifierLike`) literals; the declaration document is 279 KB of 43
+definitions. The source departs from `statementsOnPath` where the fragment
+limits it:
 
-- shapes omit the inherited node methods and other members;
-- some literal unions are widened (`ImportAttributes.token` and
-  `ImportClause.phaseModifier` are `number`);
-- members are mutable-typed in place of readonly views, which a mutable
-  field does not faithfully represent;
-- node lists are ordinary `readonly` arrays, the guards are written as their
-  expanded kind tests, and the flag test is a declared `isAlias(flags)`.
+- each guard is the kind test its expansion makes, `isImportDeclaration`
+  the exact kind 273, since `JSImportDeclaration` (346) has no
+  `moduleSpecifier`;
+- the loop tests a constant holding the reassigned `let node` each
+  iteration, and a constant holds it after the loop, since a test narrows
+  no reassigned binding of an object union;
+- a star export's `moduleSpecifier` and the found statement's are read into
+  constants: `push` (footprint `value: any`) ends what a test found of a
+  field, and a truthiness test of a field one arm requires and another
+  leaves optional is refused
+  ([WORK.md](../WORK.md#optional-field-truthiness)).
 
-Measured on 2026-10-16 at commit 5c8af91 with `verify-source.mts`:
+Measured on 2026-10-18 at commit db22bec, one run each, the parser's time
+the remainder of the pipeline's:
 
-- `slice.mts` (`statementsOnPath`, `starExports`, `enclosing`; 17 arms plus
-  the residual): verified; 17.7 s for the pipeline run, of which about
-  6.6 s is the check of the saved evidence; 57.4 MB of evidence.
-- `enclosing.mts` (7 lines) alone: verified; 9.3 s for the pipeline, about
-  3.6 s for the check; 32 MB of evidence with 52,767 number literals, the
-  residual's kinds repeated at the claims that mention a node. This shows a
-  large representation overhead from kind sets; it does not show that kind
-  sets account for all of the run time.
-- `controls/`, a unit naming only `Identifier` (3 arms and a 335-kind
-  residual): `n.parent` returned at `Node` is refused, since the residual
-  includes source files and its `parent` is optional; returned at
-  `Node | undefined` it is verified; `n.kind === 79 ? n.text : ""` is
-  verified in 2.9 s.
-- The slice's source departs from `statementsOnPath` where the fragment
-  limits it, independently of the API: the `while` loop over the reassigned
-  `let node` is a recursion (`enclosing`), since a test does not narrow a
-  reassigned binding; a three-operand `||` condition is separate
-  statements; a field tested `!== undefined` and read again is a local
-  constant.
+| Unit | Outcome | Parse | Proposal | Search | Check | Claims | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `statementsOnPath` | verified | 0.3 s | 0.09 s | 16.9 s | 11.9 s | 57 KB | 108 MB |
+| `n.kind === 79 ? n.text : ""`, $`K_u=\{79\}`$ | verified | 0.3 s | 0.03 s | 1.7 s | 1.3 s | 18 KB | 11 MB |
+| `n.kind === 307 ? n.fileName : ""`, $`K_u=\{307\}`$ | verified | 0.3 s | 0.03 s | 1.7 s | 1.3 s | 18 KB | 11 MB |
 
-The slice leaves untested the host provenance key and its controls, the
-$`\mathsf{NodeList}`$ type, guard expansion with its single evaluation, host
-enums, and the callback and lifetime controls under Node.
+The evidence is the residuals' literals: of its 388 nodes' certificates,
+7,016 are `flsLit` and 7,004 `ifFalse`, one per literal of a `kind` tested
+against a constant, each repeating the context. The same function against
+the reading with each residual's `kind` cut to a common set of kept
+literals (a cost experiment, whose residuals are no reading of the
+package):
+
+| Literals kept | Search | Check | Evidence |
+| --- | --- | --- | --- |
+| 4 | 1.2 s | 0.3 s | 2.9 MB |
+| 22 | 1.3 s | 0.4 s | 4.8 MB |
+| 102 | 2.7 s | 1.4 s | 17.9 MB |
+| 347 (the reading) | 16.9 s | 11.9 s | 108 MB |
+
+A kind set ([compact kind sets](#compact-kind-sets)) makes each residual's
+`kind` one atom, which the 4-literal row approximates.
+
+Controls, against the same readings:
+
+- $`K_u=\{79\}`$: the residual holds `SourceFile`, whose `parent` is
+  absent, so `return n.parent` at `Node` is refused at the read, and at
+  `Node | undefined` it is verified.
+- A guard's operand evaluated once into a constant, `const y = h.resolve();
+  if (y && y.kind === 273) out.push(y)`, is verified; evaluated again,
+  `if (h.resolve()?.kind === 273) out.push(h.resolve())`, the second
+  result is any node and the push is refused.
+- The two units at $`\{79\}`$ and $`\{307\}`$ verify separately under
+  residuals that differ (`parent` optional in the first); a call between
+  them is the import rule's, relative to host-admissible worlds, and was
+  not run.
