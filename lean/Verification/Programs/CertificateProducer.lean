@@ -1111,7 +1111,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
       -- The contract the read is typed at: the record's field, or a
       -- dictionary's index, with `undefined` where the key is absent.
       let contract : Option (Ty ι) := match expand G Ref with
-        | [.refs fs _ _ _ _ _] => if HeapExpressionRules.fieldOperand (expand G Ref) fld then fs.lookup fld else none
+        | [.refs fs _ vs _ _ _] => if HeapExpressionRules.fieldOperand (expand G Ref) fld then fs.lookup fld <|> vs.lookup fld else none
         | [.dict _ _ _ ds _ _ _ cs] =>
           if HeapExpressionRules.optionalOperand (expand G Ref) fld then
             -- The graph's `undefined` row, among the labels the search knows.

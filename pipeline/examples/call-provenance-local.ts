@@ -9,7 +9,7 @@ function readOwn(this: Reader): number {
 }
 
 function captured(source: Reader): () => number {
-  let alias: { readonly read: (this: Reader) => number } = { read: readOwn };
+  let alias: { read: (this: Reader) => number } = { read: readOwn };
   alias = { read: readOwn };
   return () => {
     const copy = { ...alias };

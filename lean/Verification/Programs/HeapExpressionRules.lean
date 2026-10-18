@@ -241,17 +241,29 @@ def clauseBagOperand : PositiveNormalization.Clause α → Option (List (PropKey
   | .refs B _ _ _ _ _ | .callable B _ _ _ => some B
   | _ => none
 
-/-- Whether every alternative is a record whose first invariant operand has
-the field `fld`, whatever its type in each: a read of it is then of a
-location of the object. -/
-def fieldOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
-  !cs.isEmpty && cs.all fun c => match clauseBagOperand c with
+/-- Whether a clause states the field `fld` of a location: in its first
+invariant operand, or, for a record, as a readonly view other than `length`
+(a view of `length` an array meets too, whose length is no field location). -/
+def clauseField (c : PositiveNormalization.Clause α) (fld : PropKey) : Bool :=
+  (match clauseBagOperand c with
     | some B => B.any fun p => decide (p.1 = fld)
-    | none => false
+    | none => false) ||
+  (match c with
+    | .refs _ _ vs _ _ _ => fld != lengthKey && vs.any fun p => decide (p.1 = fld)
+    | _ => false)
 
+/-- Whether every alternative is a record stating the field `fld`, an
+invariant field or a readonly view, whatever its type in each: a read of it
+is then of a location of the object. -/
+def fieldOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
+  !cs.isEmpty && cs.all fun c => clauseField c fld
+
+/-- What such a read finds: the object, its location at `fld`, and that
+location's stored contract, which admits only members of the field's type. -/
 theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     (hr : fieldOperand (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
-    ∃ B El, (fld, El) ∈ B ∧ bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
+    ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
+      lookup W l = some c ∧ ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u := by
   simp only [fieldOperand, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
     List.all_eq_true] at hr
   have hp : G.plainTy Ref = true := by
@@ -259,14 +271,30 @@ theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     exact plain_of_mem_expand (c := c) hc
   obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
   have hb := hr.2 c hm
-  cases c <;> simp only [clauseBagOperand] at hb
-  all_goals try contradiction
-  all_goals
-    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hb
-    simp only [decide_eq_true_eq] at hg
-    subst hg
-  · exact ⟨_, El, hmem, recT_bag hc.1.1⟩
-  · exact ⟨_, El, hmem, hc.1.1.1⟩
+  have ofBag : ∀ {B : List (PropKey × Ty ι)} {El : Ty ι}, (fld, El) ∈ B →
+      bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v →
+      ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
+        lookup W l = some c ∧ ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u := by
+    intro B El hmem hbag
+    obtain ⟨flds,code,oid,hl,_,hrec⟩ := hbag
+    obtain ⟨flds',l,c',oid',hproj,hfd,hlookup,hagree⟩ :=
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
+    cases hproj
+    exact ⟨El, flds, code, oid, l, c', hl, hfd, hlookup, fun j hj W' u hu => (hagree j hj W' u).mp hu⟩
+  cases c with
+  | refs a bs vs os ms ks =>
+    simp only [clauseField, clauseBagOperand, Bool.or_eq_true, Bool.and_eq_true, bne_iff_ne, ne_eq,
+      List.any_eq_true, decide_eq_true_eq] at hb
+    rcases hb with ⟨⟨g, El⟩, hmem, rfl⟩ | ⟨hlen, ⟨g, El⟩, hmem, rfl⟩
+    · exact ofBag hmem (recT_bag hc.1.1)
+    · obtain ⟨flds,l,c',oid,hl,hfd,hlookup,himp⟩ :=
+        viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hlen hc.2.1
+      exact ⟨El, flds, .absent, oid, l, c', hl, hfd, hlookup, himp⟩
+  | callable a bs L S =>
+    simp only [clauseField, clauseBagOperand, Bool.or_false, List.any_eq_true, decide_eq_true_eq] at hb
+    obtain ⟨⟨g, El⟩, hmem, rfl⟩ := hb
+    exact ofBag hmem hc.1.1.1
+  | _ => simp [clauseField, clauseBagOperand] at hb
 
 theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref A ρ n W h}
     (ht : HasTyUsing G images Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
@@ -279,13 +307,9 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
   cases n with
   | zero => trivial
   | succ n =>
-    obtain ⟨B,El,hmem,hbag⟩ := fieldOperand_sound hr (he.2 i Ref hi)
-    obtain ⟨flds,code,oidb,hl,_,hrec⟩ := hbag
-    obtain ⟨flds',l,c,oid'',hproj,hfd,hlookup,hagree⟩ :=
-      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
-    cases hproj
+    obtain ⟨El,flds,code,oidb,l,c,hl,hfd,hlookup,himp⟩ := fieldOperand_sound hr (he.2 i Ref hi)
     obtain ⟨v,hv,hmm⟩ := hh.2 l c hlookup
-    have hval := meaning_valOnly G El 0 _ v ((hagree 0 (by omega) _ v).mp (hmm 0 (by omega)))
+    have hval := meaning_valOnly G El 0 _ v (himp 0 (by omega) _ v (hmm 0 (by omega)))
     have hs : Safe (excOf G) (meaning G A) (n+1) W h (.readAt fld (ρ i)) := by
       simpa [instantiate] using ht.sound (n+1) W h ρ he hw hh
     rw [hl] at hs ⊢
@@ -403,7 +427,7 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
       · exact dictCellT_view (hcs d hd)
     obtain ⟨flds, oid, hvf, hproto, hkeys⟩ := hview
     subst hvf
-    refine ⟨flds, oid, rfl, fun l hl => ?_, fun _ => hproto⟩
+    refine ⟨flds, oid, rfl, fun l hl => ?_, fun _ => hproto.1⟩
     obtain ⟨c', hw, hag⟩ := hkeys fld l hl hadm
     exact ⟨c', hw, fun W' u hu => meaning_valOnly G d.2 0 W' u (hag 0 (by omega) W' u hu)⟩
   | _ => simp at hb
@@ -609,10 +633,7 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hg
       obtain ⟨i,hi,hpi⟩ := List.mem_iff_getElem.mp hfld
       obtain ⟨Ref,hidx,hfo⟩ := contractFields_mem hq
-      obtain ⟨B,El,hmem,hbag⟩ := fieldOperand_sound hfo (he.2 q.1 Ref hidx)
-      obtain ⟨flds0,code0,oid0,hl0,_,hrec⟩ := hbag
-      obtain ⟨flds1,l1,c1,oid',hproj,hfd1,hlookup,_⟩ :=
-        recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
+      obtain ⟨_,flds1,code0,oid0,l1,c1,hl0,hfd1,hlookup,_⟩ := fieldOperand_sound hfo (he.2 q.1 Ref hidx)
       obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
       have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
       simp only [ite_true]
@@ -624,7 +645,6 @@ theorem alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h} {cod
       have hleq : l = h.length + i := Option.some.inj (hfl.symm.trans hsl)
       rw [hl0] at hs'
       cases hs'
-      cases hproj
       have hl'eq : l' = l1 := Option.some.inj (hfl'.symm.trans hfd1)
       omega
     · exact HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames (parts.map fun p => ρ p.2) hshift.2.2) g hg
@@ -660,10 +680,7 @@ theorem fresh_holds [DecidableEq ι] {G : NormalGraph ι} {Γ k ρ n W h}
     · obtain ⟨fld,_,hg⟩ := List.mem_flatMap.mp hg
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hg
       obtain ⟨Ref,hidx,hfo⟩ := contractFields_mem hq
-      obtain ⟨B,El,hmem,hbag⟩ := fieldOperand_sound hfo (he.2 q.1 Ref hidx)
-      obtain ⟨flds0,code0,oid0,hl0,_,hrec⟩ := hbag
-      obtain ⟨flds1,l1,c1,oid',hproj,hfd1,hlookup,_⟩ :=
-        recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
+      obtain ⟨_,flds1,code0,oid0,l1,c1,hl0,hfd1,hlookup,_⟩ := fieldOperand_sound hfo (he.2 q.1 Ref hidx)
       obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
       have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
       simp only [ite_true]
@@ -673,7 +690,6 @@ theorem fresh_holds [DecidableEq ι] {G : NormalGraph ι} {Γ k ρ n W h}
       have hge : h.length ≤ l := slots_lookup_ge hfl
       rw [hl0] at hs'
       cases hs'
-      cases hproj
       have hl'eq : l' = l1 := Option.some.inj (hfl'.symm.trans hfd1)
       omega
     · exact HeapLinks.alloc_frames [.nul] (HeapLinks.alloc_frames vs hshift.2.2) g hg

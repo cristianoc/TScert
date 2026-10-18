@@ -1147,8 +1147,11 @@ export function parseFile(file: string, carriesContext = false,
       return;
     if (ts.isIdentifier(node) && !bound.has(node.text) && node.text !== "undefined") {
       const parent = node.parent;
+      // `Object.assign(…)` is a call form; `Object.assign` read otherwise is a
+      // read of `Object` as a value, which no overlay entry admits.
       const intrinsic = node.text === "Object" && ts.isPropertyAccessExpression(parent) &&
-        parent.expression === node && parent.name.text === "assign";
+        parent.expression === node && parent.name.text === "assign" &&
+        ts.isCallExpression(parent.parent) && parent.parent.expression === parent;
       if (intrinsic) gate.assignObjects.add(gate.span(node).join(":"));
       if (childOf(parent, "name") !== node && childOf(parent, "propertyName") !== node &&
           childOf(parent, "label") !== node && !intrinsic)

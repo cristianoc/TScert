@@ -23,6 +23,7 @@
  *
  * A global declared outside the standard library, such as Node's `process`,
  * is read as its declaration states, member by member (`selectGlobal`). */
+import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { asyncCompleteName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
   symbolKeyForName } from "./intrinsics.mts";
@@ -79,6 +80,9 @@ export type GlobalEntry = {
    * parameters it states runs no client code and leaves every location it
    * did not allocate as it was. Absent, the signature states none. */
   effect?: CallEffect;
+  /** The entry's classification against restricted values
+   * (`host-operations.mts`). */
+  host: HostClass;
 };
 
 const at: [number, number] = [0, 0];
@@ -149,44 +153,49 @@ const parsedJsonDefinition: TypeDefinition = { declaration: parsedJsonIdentity, 
     { k: "array", presence: "readable", readonly: false, element: parsedJson, span: at },
     { k: "object", fields: [], stringIndex: { readonly: false, value: parsedJson, span: at }, calls: [], span: at }] } };
 
+/** An entry whose parameters are primitives or whose contract states nothing
+ * of an object argument's members. */
+const contract = transparent("its contract holds of any value of its parameter types");
+
 export const globalsOverlay: readonly GlobalEntry[] = [
   // Output, which the model does not observe. The host formats each argument
   // without running client code the fragment can write (no getters, no
   // symbol-keyed methods such as a custom inspection), and returns
   // `undefined`. `any` is read as `unknown`, so any argument is admitted.
-  { global: "console", member: "log", signature: "log(...data: any[]): void;" },
+  { host: obligated("each argument", "the host formats every reachable key of an object argument"), global: "console", member: "log", signature: "log(...data: any[]): void;",
+    stated: { binders: [], params: [], rest: primitive, result: atom("undefined") } },
   // `BigInt(v)` throws a RangeError for a number that is not an integer and
   // a SyntaxError for a string that is not an integer's spelling; it runs no
   // code of the client's on a primitive, and returns a bigint otherwise. It
   // writes nothing: heap preservation.
-  { global: "BigInt", signature: "(value: bigint | boolean | number | string): bigint;", effect: emptyEffect },
+  { host: contract, global: "BigInt", signature: "(value: bigint | boolean | number | string): bigint;", effect: emptyEffect },
   // A new symbol whose description is the argument converted to a string,
   // which a string or number never fails.
-  { global: "Symbol", signature: "(description?: string | number): symbol;" },
+  { host: contract, global: "Symbol", signature: "(description?: string | number): symbol;" },
   // The registry's members, which read no receiver: each call is a call of
   // the intrinsic stating its step, so `Symbol` called and read through them
   // is a callable value of its call signature alone.
-  { global: "Symbol", member: "for", signature: "for(key: string): symbol;", intrinsic: symbolForName },
-  { global: "Symbol", member: "keyFor", signature: "keyFor(sym: symbol): string | undefined;",
+  { host: contract, global: "Symbol", member: "for", signature: "for(key: string): symbol;", intrinsic: symbolForName },
+  { host: contract, global: "Symbol", member: "keyFor", signature: "keyFor(sym: symbol): string | undefined;",
     intrinsic: symbolKeyForName },
   // The well-known symbols, each a symbol: stated at `symbol`, since the
   // reader has no `unique symbol` type of a library property. Which symbol
   // each is, a key the library's types use, is not read.
   ...["iterator", "asyncIterator", "hasInstance", "toPrimitive", "toStringTag"].map(
-    (member): GlobalEntry => ({ global: "Symbol", member, signature: `readonly ${member}: unique symbol;`,
+    (member): GlobalEntry => ({ host: contract, global: "Symbol", member, signature: `readonly ${member}: unique symbol;`,
       stated: { binders: [], params: [], result: atom("symbol") } })),
   // `String(v)` converts a primitive, a symbol included, without running
   // client code; an object's conversion calls its `toString` or `valueOf`,
   // which may throw or return an object, and then `String` throws.
   // At a primitive it writes nothing, so it states heap preservation.
-  { global: "String", signature: "(value?: any): string;", effect: emptyEffect,
+  { host: contract, global: "String", signature: "(value?: any): string;", effect: emptyEffect,
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
   // `Number(v)` converts a primitive without running client code: a bigint
   // to the nearest number, a symbol throws a TypeError, an outcome. An
   // object's conversion calls its `Symbol.toPrimitive`, `valueOf` or
   // `toString`, client code, so the parameter is stated at the primitives,
   // where the call writes nothing and states heap preservation.
-  { global: "Number", signature: "(value?: any): number;", effect: emptyEffect,
+  { host: contract, global: "Number", signature: "(value?: any): number;", effect: emptyEffect,
     admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
   // `Boolean(v)` is ToBoolean of its first argument, which reads no property
   // and runs no code of any value's, and ignores every further argument;
@@ -195,7 +204,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `(value: unknown, ...rest: unknown[]) => boolean`. The declaration
   // promises no narrowing, and none is stated: its result is a Boolean, which
   // a guard's promise is not. It writes nothing: heap preservation.
-  { global: "Boolean", signature: "<T>(value?: T): boolean;", value: true, effect: emptyEffect,
+  { host: contract, global: "Boolean", signature: "<T>(value?: T): boolean;", value: true, effect: emptyEffect,
     stated: { binders: [], params: [atom("unknown")], rest: atom("unknown"), result: atom("boolean") } },
   // `Math.max(...vs)` and `Math.min(...vs)` convert every argument with
   // ToNumber before comparing: a primitive without running code (`undefined`
@@ -207,41 +216,44 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `-Infinity` (`max`) or `Infinity` (`min`) of no argument. At primitives
   // they run no code and write nothing: the empty footprint, as the
   // `String` conversions below.
-  ...["max", "min"].map((member): GlobalEntry => ({ global: "Math", member, effect: emptyEffect,
+  ...["max", "min"].map((member): GlobalEntry => ({ host: contract, global: "Math", member, effect: emptyEffect,
     signature: `${member}(...values: number[]): number;`,
     stated: { binders: [], params: [], rest: primitive, result: atom("number") } })),
   // `String.fromCodePoint(...cs)` converts every argument with ToNumber, as
   // `Math.max` does, and throws a RangeError where the number is no integer
   // from 0 to 0x10FFFF, an outcome; otherwise its result is a string.
-  { global: "String", member: "fromCodePoint", signature: "fromCodePoint(...codePoints: number[]): string;", effect: emptyEffect,
+  { host: contract, global: "String", member: "fromCodePoint", signature: "fromCodePoint(...codePoints: number[]): string;", effect: emptyEffect,
     stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
   // `String.fromCharCode(...cs)` likewise, each number taken modulo 2^16 to a
   // code unit, which never throws.
-  { global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;", effect: emptyEffect,
+  { host: contract, global: "String", member: "fromCharCode", signature: "fromCharCode(...codes: number[]): string;", effect: emptyEffect,
     stated: { binders: [], params: [], rest: primitive, result: atom("string") } },
   // Tests of a number that convert nothing: `false` for any argument that is
   // not a number, an object included, whose methods are never read. They
   // write nothing.
-  { global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;", effect: emptyEffect },
-  { global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: emptyEffect },
-  { global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;",
+  { host: contract, global: "Number", member: "isFinite", signature: "isFinite(number: unknown): boolean;", effect: emptyEffect },
+  { host: contract, global: "Number", member: "isInteger", signature: "isInteger(number: unknown): boolean;", effect: emptyEffect },
+  { host: contract, global: "Number", member: "isSafeInteger", signature: "isSafeInteger(number: unknown): boolean;",
     effect: emptyEffect },
   // SameValue of the two arguments: identity of objects, equality of
   // primitives, no conversion and no client code, and no write. `any` is
   // read as `unknown`.
-  { global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
+  { host: contract, global: "Object", member: "is", signature: "is(value1: any, value2: any): boolean;", effect: emptyEffect },
   // A fresh array of the object's own enumerable string keys: true of every
   // object, whatever its type says of its keys, and it runs no client code
   // (no getter is called) and writes only the array it allocates: the empty
   // footprint. ES5 declares it at `object`, ES2015 at `{}`.
-  { global: "Object", member: "keys", signature: "keys(o: object): string[];", effect: emptyEffect },
-  { global: "Object", member: "keys", signature: "keys(o: {}): string[];", effect: emptyEffect },
+  { host: transparent("a fresh array of strings, which is all its contract states"), global: "Object", member: "keys", signature: "keys(o: object): string[];", effect: emptyEffect },
+  { host: transparent("a fresh array of strings, which is all its contract states"), global: "Object", member: "keys", signature: "keys(o: {}): string[];", effect: emptyEffect },
   // The values of those keys, and the key-value pairs: nothing is known of
   // them, `any` read as `unknown`, and each pair is a fresh array. Reading a
   // value runs an accessor's getter: the fragment writes none, and a host
   // object's is assumed to return.
-  { global: "Object", member: "values", signature: "values(o: {}): any[];" },
-  { global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];" },
+  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "values", signature: "values(o: {}): any[];",
+    stated: { binders: [], params: [atom("nonHost")], result: array(atom("unknown")) } },
+  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];",
+    stated: { binders: [], params: [atom("nonHost")], result: array({ k: "tuple", presence: "dense", readonly: false,
+      required: [atom("string"), atom("unknown")], optional: [], rest: null, span: at }) } },
   // `Object.getOwnPropertyDescriptor(o, k)`: ToObject of `o` (a TypeError of
   // `null` or `undefined`, an outcome; a primitive's wrapper otherwise), then
   // the key, which a string, number or symbol converts to without running
@@ -252,9 +264,9 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // descriptor: `configurable` and `enumerable` Booleans, and `value` and
   // `writable`, or `get` and `set`. Nothing is known of `value`, a getter or
   // a setter: each is `unknown`, and the fields are stated readonly.
-  { global: "Object", member: "getOwnPropertyDescriptor",
+  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "getOwnPropertyDescriptor",
     signature: "getOwnPropertyDescriptor(o: any, p: PropertyKey): PropertyDescriptor | undefined;",
-    stated: { binders: [], params: [atom("unknown"),
+    stated: { binders: [], params: [atom("nonHost"),
       { k: "union", parts: [atom("string"), atom("number"), atom("symbol")], span: at }],
       result: optional(propertyDescriptor) } },
   // The generic overloads, which TypeScript selects for a record type whose
@@ -262,14 +274,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // true of a dictionary, whose every own string key holds a `T`
   // (`dictViewT`), and the parameter is stated at one: an open record may
   // own further keys of other types (`invalid-object-values-record.ts`),
-  // and `ArrayLike<T>` is not read. Each pair is a fresh array. The
-  // fragment creates data properties only, and an external dictionary's
-  // getters are assumed to write nothing, so each writes only what it
-  // allocates: the empty footprint.
-  { global: "Object", member: "values", signature: "values<T>(o: { [s: string]: T; } | ArrayLike<T>): T[];",
+  // and `ArrayLike<T>` is not read. Each pair is a fresh array. A
+  // dictionary's keys hold data properties (the caller contract, and the
+  // fragment's own objects), so each reads them without running code and
+  // writes only what it allocates: the empty footprint.
+  { host: transparent("the parameter is a dictionary, whose family admits no host object"), global: "Object", member: "values", signature: "values<T>(o: { [s: string]: T; } | ArrayLike<T>): T[];",
     effect: emptyEffect,
     stated: { binders: ["T"], params: [dictionary(binder("T"))], result: array(binder("T")) } },
-  { global: "Object", member: "entries", effect: emptyEffect,
+  { host: transparent("the parameter is a dictionary, whose family admits no host object"), global: "Object", member: "entries", effect: emptyEffect,
     signature: "entries<T>(o: { [s: string]: T; } | ArrayLike<T>): [string, T][];",
     stated: { binders: ["T"], params: [dictionary(binder("T"))],
       result: array({ k: "tuple", presence: "dense", readonly: false, required: [atom("string"), binder("T")], optional: [],
@@ -278,7 +290,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // (`Tag.isArray`): true of exactly the objects that own an array store,
   // JavaScript's Array exotic objects. The declared guard, `arg is any[]`,
   // is not read: Lean narrows by the clauses of the tested value's type.
-  { global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
+  { host: contract, global: "Array", member: "isArray", signature: "isArray(arg: any): arg is any[];", test: "isArray" },
   // `e instanceof Array`, entered by the variable's declaration: the same
   // test. `Array` owns no `[Symbol.hasInstance]`, and `Function.prototype`'s
   // cannot be replaced, so the operator walks `e`'s prototype chain for
@@ -287,13 +299,13 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // object inherits from `Array.prototype` but an array (the fragment makes
   // none: `class extends Array` and `Object.create` are refused, and it
   // cannot name `Array.prototype`).
-  { global: "Array", signature: "Array: ArrayConstructor", test: "isArray" },
+  { host: contract, global: "Array", signature: "Array: ArrayConstructor", test: "isArray" },
   // `new Array()` and `new Array<T>()` are a fresh empty array, which is a
   // `T[]` at every `T`: the non-generic declaration's `any[]` states less
   // than that. An argument is refused: a single number is a length, and the
   // array it makes has holes, whose element contract would need a separate check.
   ...["new (arrayLength?: number): any[];", "new <T>(...items: T[]): T[];"].map(
-    (signature): GlobalEntry => ({ global: "Array", signature,
+    (signature): GlobalEntry => ({ host: contract, global: "Array", signature,
       stated: { binders: ["T"], params: [], result: { k: "array", presence: "readable", readonly: false, element: binder("T"), span: at } } })),
   // `new Error(m)` with a string owns `message`, that string, as a property
   // that is not enumerable: the model holds it on a prototype it gives the
@@ -310,7 +322,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // too.
   ...["new (message?: string): Error;", "new (message?: string, options?: ErrorOptions): Error;",
     "(message?: string): Error;", "(message?: string, options?: ErrorOptions): Error;"].map(
-    (signature): GlobalEntry => ({ global: "Error", signature,
+    (signature): GlobalEntry => ({ host: contract, global: "Error", signature,
       ...(signature.startsWith("new ") ? {} : { construct: true }), effect: { ...emptyEffect, onThrow: true },
       stated: { binders: [], params: [atom("string")],
         result: { k: "object", fields: [], stringIndex: null, calls: [], span: at,
@@ -319,14 +331,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // PromiseResolve retains a native promise with the built-in standard
   // constructor, and freshly resolves stably non-thenable values. Without a
   // value, the promise settles to `undefined`, as an async completion does.
-  { global: "Promise", member: "resolve", signature: "resolve<T>(value: T): Promise<Awaited<T>>;",
+  { host: contract, global: "Promise", member: "resolve", signature: "resolve<T>(value: T): Promise<Awaited<T>>;",
     intrinsic: promiseResolveName },
-  { global: "Promise", member: "resolve", signature: "resolve(): Promise<void>;", intrinsic: asyncCompleteName },
+  { host: contract, global: "Promise", member: "resolve", signature: "resolve(): Promise<void>;", intrinsic: asyncCompleteName },
   // `%PromiseAll%`: an array of promises, each settling to its type
   // argument as `%Await%` assumes, gives a promise of the array of their
   // values. The declaration's parameter, values of any kind each adopted, is
   // stated as an array of promises.
-  { global: "Promise", member: "all",
+  { host: transparent("elements at Promise types: realm promises by the await assumption"), global: "Promise", member: "all",
     signature: "all<T extends readonly unknown[] | []>(values: T): Promise<{ -readonly [P in keyof T]: Awaited<T[P]>; }>;",
     intrinsic: promiseAllName },
   // `new Set<T>(xs)` is a fresh set of the array's elements, `new Set<T>()`
@@ -339,10 +351,10 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `new Set(s)` is a fresh set of the string's code points, a
   // `Set<string>`. One form at `readonly T[] | string` would be false at
   // `T := number`.
-  { global: "Set", signature: "new <T = any>(values?: readonly T[] | null): Set<T>;", effect: emptyEffect,
+  { host: transparent("the array's store: a node list's table"), global: "Set", signature: "new <T = any>(values?: readonly T[] | null): Set<T>;", effect: emptyEffect,
     stated: library => ({ binders: ["T"], params: [optional(readonlyArray(binder("T")))],
       result: library("Set", [binder("T")]) }) },
-  { global: "Set", signature: "new <T>(iterable?: Iterable<T> | null): Set<T>;", effect: emptyEffect,
+  { host: transparent("the array's store: a node list's table"), global: "Set", signature: "new <T>(iterable?: Iterable<T> | null): Set<T>;", effect: emptyEffect,
     stated: library => [
       { binders: ["T"], params: [optional(readonlyArray(binder("T")))], result: library("Set", [binder("T")]) },
       { binders: ["T"], params: [atom("string")], result: library("Set", [atom("string")]) }] },
@@ -350,7 +362,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // its indices 0 and 1, and `new Map()` an empty one, at every `K` and `V`.
   ...["new (): Map<any, any>;", "new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;",
     "new <K, V>(iterable?: Iterable<readonly [K, V]> | null): Map<K, V>;"]
-    .map((signature): GlobalEntry => ({ global: "Map", signature, effect: emptyEffect,
+    .map((signature): GlobalEntry => ({ host: transparent("an array of pairs, which no node list is"), global: "Map", signature, effect: emptyEffect,
       stated: library => ({ binders: ["K", "V"],
         params: [optional(readonlyArray({ k: "tuple", presence: "dense", readonly: true, required: [binder("K"), binder("V")],
           optional: [], rest: null, span: at }))],
@@ -360,21 +372,21 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // interface is, is converted by its own `valueOf` or `toString`: it is
   // stated at the primitives. With several numbers, each is a component.
   // An invalid date is a `Date` all the same, whose getters give `NaN`.
-  { global: "Date", signature: "new (): Date;" },
+  { host: contract, global: "Date", signature: "new (): Date;" },
   ...["new (value: number | string): Date;", "new (value: number | string | Date): Date;"]
-    .map((signature): GlobalEntry => ({ global: "Date", signature,
+    .map((signature): GlobalEntry => ({ host: contract, global: "Date", signature,
       stated: library => ({ binders: [], params: [{ k: "union", parts: [atom("number"), atom("string")], span: at }],
         result: library("Date", []) }) })),
-  { global: "Date",
+  { host: contract, global: "Date",
     signature: "new (year: number, monthIndex: number, date?: number, hours?: number, minutes?: number, seconds?: number, ms?: number): Date;" },
   // The current time, a number.
-  { global: "Date", member: "now", signature: "now(): number;" },
+  { host: contract, global: "Date", member: "now", signature: "now(): number;" },
   // `JSON.parse(text)` is a fresh `ParsedJson` built from the text, or a
   // SyntaxError. It runs no code of the client's and writes only what it
   // allocates, also before it throws: the empty footprint, on a throw too.
   // A reviver is client code the host would call on every member, and whose
   // results replace them: the call is read with the text only.
-  { global: "JSON", member: "parse",
+  { host: contract, global: "JSON", member: "parse",
     signature: "parse(text: string, reviver?: (this: any, key: string, value: any) => any): any;",
     stated: { binders: [], params: [atom("string")], result: parsedJson }, definitions: [parsedJsonDefinition],
     effect: { ...emptyEffect, onThrow: true } },
@@ -385,20 +397,20 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `JsonValue` it runs no code of the client's and writes nothing: it
   // reads own data properties and allocates the string, also before it
   // throws on a cycle, so the empty footprint holds on a throw too.
-  { global: "JSON", member: "stringify",
+  { host: transparent("the parameter is JsonValue, whose string-key traversal reaches no host object"), global: "JSON", member: "stringify",
     signature: "stringify(value: any, replacer?: (this: any, key: string, value: any) => any, space?: string | number): string;",
     stated: { binders: [], params: [jsonValue], result: atom("string") }, definitions: [jsonValueDefinition],
     effect: { ...emptyEffect, onThrow: true } },
   // `%PromiseReject%`: a promise rejected with the reason, whose await
   // throws it, an outcome; it settles to no value, so it is a promise of
   // every type. The declared `any` is read as `unknown`: nothing runs on it.
-  { global: "Promise", member: "reject", signature: "reject<T = never>(reason?: any): Promise<T>;",
+  { host: contract, global: "Promise", member: "reject", signature: "reject<T = never>(reason?: any): Promise<T>;",
     intrinsic: promiseRejectName },
   // `%NewPromise%`: the executor is called at once with the promise's
   // resolving functions, and a throw out of it rejects the promise. The
   // declared `resolve` adopts a thenable (`T | PromiseLike<T>`); stated, it
   // takes a primitive, on which it settles.
-  { global: "Promise",
+  { host: contract, global: "Promise",
     signature: "new <T>(executor: (resolve: (value: T | PromiseLike<T>) => void, reject: (reason?: any) => void) => void): Promise<T>;",
     intrinsic: newPromiseName },
 ];

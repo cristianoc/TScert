@@ -33,6 +33,11 @@ TypeScript's structural types are; every field it does name keeps its exact
 contract, which is what makes that openness sound and each field invariant. -/
 abbrev Fields := List (PropKey × Fam)
 
+/-- **Not a host object** (`hostKey`): a primitive, a callable, or an
+ordinary object. The families that grant a capability over an object's own
+keys (an invariant field, a dictionary, an own-key bound) admit only these. -/
+def NoHost (v : Val) : Prop := ∀ flds oid, v = .objAt flds .absent oid → flds.lookup hostKey = none
+
 def recT (fs : Fields) : Fam := fun k W v =>
   ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
     ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs →
@@ -340,7 +345,7 @@ than `A`. The plain-object restriction is the same one used by `recT` and
 `viewT`. -/
 def dictViewT (K : IndexKeys) (A : Fam) : Fam := fun k W v =>
   ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
-    flds.lookup CallArguments.protoField = none ∧
+    (flds.lookup CallArguments.protoField = none ∧ flds.lookup hostKey = none) ∧
     ∀ (f : PropKey) (l : Nat), flds.lookup f = some l → K.Admits f →
       ∃ c : Ctr k, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u
@@ -354,7 +359,7 @@ lets code holding the dictionary add keys at `A` is the trust boundary
 ([Source index signatures](../../../docs/SOURCE-CONTRACTS.md#index-signatures)). -/
 def dictCellT (K : IndexKeys) (A : Fam) : Fam := fun k W v =>
   ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
-    flds.lookup CallArguments.protoField = none ∧
+    (flds.lookup CallArguments.protoField = none ∧ flds.lookup hostKey = none) ∧
     ∀ (f : PropKey) (l : Nat), flds.lookup f = some l → K.Admits f →
       ∃ c : Ctr k, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u
@@ -583,13 +588,30 @@ theorem dictViewT_no_proto {K : IndexKeys} {A : Fam} {k : Nat} {W : WorldT k}
     fs.lookup CallArguments.protoField = none := by
   obtain ⟨fs', oid, heq, hp, -⟩ := hd
   cases heq
-  exact hp
+  exact hp.1
+
+/-- A dictionary is no host object. -/
+theorem dictViewT_noHost {K : IndexKeys} {A : Fam} {k : Nat} {W : WorldT k} {v : Val}
+    (hd : dictViewT K A k W v) : NoHost v := by
+  obtain ⟨fs', oid, rfl, hp, -⟩ := hd
+  intro flds oid' he
+  cases he
+  exact hp.2
 
 private theorem slots_names (base : Nat) (ns : List PropKey) :
     (slots base ns).map Prod.fst = ns := by
   induction ns generalizing base with
   | nil => simp [slots]
   | cons name rest ih => simp [slots, ih]
+
+/-- An own-key bound the host key is not among: one listing keys without
+it, or one excluding it. Its objects are ordinary. -/
+def KeyBound.closed (K : KeyBound) : Bool := !K.admits hostKey
+
+theorem KeyBound.closed_lookup {K : KeyBound} (hK : K.closed = true) {n : Nat} {W : WorldT n}
+    {flds : List (PropKey × Nat)} {oid : Nat} (h : ownKeysT K n W (.objAt flds .absent oid)) :
+    flds.lookup hostKey = none :=
+  ownKeysT_lookup h (by simpa [KeyBound.closed] using hK)
 
 /-- A fresh object's own keys are exactly the names it allocated. -/
 theorem ownKeysT_slots {K : KeyBound} {k : Nat} {W : WorldT k} {base : Nat}
@@ -605,11 +627,11 @@ object allocated with exactly those fields is a dictionary from the start. -/
 theorem dictCellT_of_recT {fs : Fields} {flds : List (PropKey × Nat)} {K : IndexKeys} {A : Fam}
     {k : Nat} {W : WorldT k} (hrec : recT fs k W (.objAt flds .absent oid))
     (hown : ∀ f l, flds.lookup f = some l → ∃ T, (f, T) ∈ fs)
-    (hproto : flds.lookup CallArguments.protoField = none)
+    (hproto : flds.lookup CallArguments.protoField = none) (hhost : flds.lookup hostKey = none)
     (hA : ∀ f T, (f, T) ∈ fs → K.Admits f →
       ∀ (j : Nat) (_hj : j < k) (W' : WorldT j) (u : Val), T j W' u ↔ A j W' u) :
     dictCellT K A k W (.objAt flds .absent oid) := by
-  refine ⟨flds, oid, rfl, hproto, fun f l hl hk => ?_⟩
+  refine ⟨flds, oid, rfl, ⟨hproto, hhost⟩, fun f l hl hk => ?_⟩
   obtain ⟨T, hT⟩ := hown f l hl
   obtain ⟨flds', oid, he, hfs⟩ := hrec
   cases he

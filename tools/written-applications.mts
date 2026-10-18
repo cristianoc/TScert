@@ -557,7 +557,7 @@ function constant(node: ts.VariableDeclaration): boolean {
 /** Whether an expression is a literal naming nothing: a string, number,
  * bigint, Boolean or null, signed or parenthesized, an object or array
  * literal of these, or one of these `as const`. */
-function literal(node: Node): boolean {
+export function literal(node: Node): boolean {
   if (ts.isStringLiteral(node) || ts.isNumericLiteral(node) || ts.isBigIntLiteral(node) ||
       ts.isNoSubstitutionTemplateLiteral(node) || node.kind === ts.SyntaxKind.TrueKeyword ||
       node.kind === ts.SyntaxKind.FalseKeyword || node.kind === ts.SyntaxKind.NullKeyword)

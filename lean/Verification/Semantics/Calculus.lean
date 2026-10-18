@@ -65,6 +65,15 @@ No source property names it, so an object owns it exactly when it is an array:
 that is what `Array.isArray` tests (`Tag.isArray`). -/
 def arrayStoreKey : PropKey := "[]"
 
+/-- The key a host object owns (COMPILER-API.md, "The host classification"):
+the package's instances and node lists, which the model reads as records and
+readonly arrays. No source property names it (a double-bracketed key is the
+model's, `RequestJson.reservedKey`), so no allocation of the program makes
+one, and the field map is fixed at allocation: an object's classification
+never changes. The steps that copy an object's own keys are stuck on one. -/
+def hostKey : PropKey := "[[host]]"
+
+
 /-- The string keys `Object.prototype` holds (node's
 `Object.getOwnPropertyNames(Object.prototype)`): every ordinary object
 inherits a member under each, which the model's objects do not hold. -/
@@ -1511,12 +1520,13 @@ theorem tagHolds_of_heap {h : List Tm} {t : Tag} {v : Tm} {q : Bool} (hq : tagHo
   · exact .inl ((tagHoldsIn_of_protoFree hp).symm.trans hq)
 
 /-- A key a spread copies: a string key the model does not keep for itself
-(the prototype, the array store, a function object's code field). A
+(the prototype, the array store, a function object's code field, the host
+classification). A
 symbol-keyed field is never copied: the model's are the library's, whose
 enumerability it does not record, and
 no allocation of the fragment makes one. -/
 def copiedKey : PropKey → Bool
-  | .str s => s != "[[proto]]" && s != "[]" && s != "[[code]]"
+  | .str s => s != "[[proto]]" && s != "[]" && s != "[[code]]" && s != "[[host]]"
   | .sym _ => false
 
 /-- The first entry of each key, which is the one `List.lookup` finds. -/
@@ -1539,13 +1549,18 @@ under its index's decimal spelling (`unitString`, as `elemAt` reads it); its
 def stringData (s : String) : List (PropKey × Tm) :=
   (utf16Units s).zipIdx.map fun p => (.str (toString p.2), .str (unitString p.1))
 
+/-- An ordinary object, or no object: not a host object. -/
+def hostOwned : Tm → Bool
+  | .objAt fs .absent _ => (fs.lookup hostKey).isSome
+  | _ => false
+
 /-- The own enumerable data properties a spread copies from a value: an
 object's copied fields, a function's included, then an array's elements; a
 string's code units at their indices; nothing from `null`, `undefined`, a
 Boolean, a number, a bigint or a symbol, whose wrappers own no enumerable
 property. -/
 def ownData (h : List Tm) : Tm → Option (List (PropKey × Tm))
-  | .objAt fs _ _ => some (firstKeys
+  | v@(.objAt fs _ _) => if hostOwned v then none else some (firstKeys
       ((fs.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fs))
   | .str s => some (firstKeys (stringData s))
   | .nul | .undef | .tru | .fls | .num _ | .bigint _ | .sym _ => some []
@@ -1554,7 +1569,7 @@ def ownData (h : List Tm) : Tm → Option (List (PropKey × Tm))
 /-- The fields of the accumulator a copy is made onto: all of a plain
 object's own fields, its prototype included, but its store. -/
 def ownAll (h : List Tm) : Tm → Option (List (PropKey × Tm))
-  | .objAt fs .absent _ => some (firstKeys
+  | .objAt fs .absent _ => if (fs.lookup hostKey).isSome then none else some (firstKeys
       ((fs.filter (·.1 != arrayStoreKey)).map (fun p => (p.1, heapVal h p.2))))
   | _ => none
 
@@ -1650,7 +1665,9 @@ theorem mergeParts_vals {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (
   have hA : ∀ p ∈ pa, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) ∨ ∃ u, p.2 = .str u := by
     unfold ownAll at ha
     split at ha
-    · cases ha
+    · split at ha
+      · cases ha
+      cases ha
       intro p hp
       obtain ⟨r, -, rfl⟩ := List.mem_map.mp (mem_firstKeys hp)
       exact (heapVal_mem h r.2).imp_right .inl
@@ -1658,7 +1675,9 @@ theorem mergeParts_vals {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (
   have hB : ∀ p ∈ qb, p.2 = .undef ∨ (p.2 ∈ h ∧ isVal p.2 = true) ∨ ∃ u, p.2 = .str u := by
     unfold ownData at hb
     split at hb
-    · cases hb
+    · split at hb
+      · cases hb
+      cases hb
       intro p hp
       rcases List.mem_append.mp (mem_firstKeys hp) with hp | hp
       · obtain ⟨r, -, rfl⟩ := List.mem_map.mp hp

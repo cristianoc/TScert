@@ -311,9 +311,8 @@ of ordinary TypeScript the pipeline can be asked about: 306 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-17):
 
-- a value imported from the front end's own modules that is no annotated
-  constant, function or class: an unannotated arrow such as `nameOf`, a
-  constant such as `asyncCompleteName` or `promiseEffect` (76);
+- a value imported from the front end's own modules that the declaration
+  reader does not read (76), listed below as the source annotations to add;
 - the compiler API's `NodeArray`, which extends the standard library's
   `ReadonlyArray`, there read as a plain interface because `@types/node`
   merges an interface of its own into it ("duplicate field name in a
@@ -326,6 +325,15 @@ The first blockers, by the number of slices each stops (2026-10-17):
   ([refused](docs/SOURCE-FRAGMENT.md)), `Array.from`, `Object.fromEntries`,
   `new RegExp`, `JSON.stringify` with an indent; Node's modules, `path` and
   `fs` (9); module-level `let` and `var` (5); a default import (3).
+
+The source annotations to add, apart from the compiler API (2026-10-17, by
+the slices each stops): the module constants holding arrows without an
+annotation of their own, `nameOf` (20), `skipParentheses` (17),
+`promiseEffect` (16), `footprintEffect` (7), `isStatic` (6),
+`numberOfBits` (5), `enumIntrinsicName`, `enumMemberName`, `freshName`,
+`parameterName` and `selfName` (1 each),
+each needing its function type written on the constant or the arrow written
+as a function declaration.
 
 Ten slices reach the producer and fail there, and twenty-two fail in
 search. Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
@@ -373,7 +381,7 @@ against the fragment (2026-10-16) gives the work, each item its own design:
   through `typescript/unstable/ast` and its checker through
   `typescript/unstable/sync`; [the compiler API](docs/COMPILER-API.md)
   specifies the contract they are verified under. Its implementation waits
-  on immutable fields and foreign arrays in the calculus, a compact
+  on `NodeList` (the rest of the restricted-value policy holds), a compact
   representation of kind sets in claims and evidence, and guard signatures
   for the sync API's type guards.
 - **Guard signatures.** A guard's promise is part of its function type,

@@ -1,18 +1,28 @@
 // The compiler-API contract (COMPILER-API.md, "Binding the contract to the
 // implementation") checked against the installed package, without a build.
 //
+// C0, binding: the host package is the installation the front end resolves,
+// its declarations' digest the reviewed one; another package naming the host
+// in its manifest is no host.
+//
 // C1, enums: for every host enum the contract reads (`hostEnums` in
 // tools/compiler-api.mts), each member of its `.enum.d.ts` is a plain integer
 // literal equal to the value of the runtime object Node loads for
 // `#enums/<file>` under the `default` condition, the runtime object's keys are
 // exactly the members and their reverse mappings, and the entry points that
 // export the enum export that object.
+//
+// C4, allocating members: each member the contract refuses as allocating is
+// declared as reviewed, and under Node two reads of it give different values
+// where a stable member gives one.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
+import { allocatingMembers, declarationsDigest, hostDeclarationsDigest, hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
+import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 
 // The package the front end resolves, from tools/.
 const root = dirname(createRequire(resolve(import.meta.dirname, "../tools/package.json"))
@@ -23,6 +33,11 @@ assert.ok("name" in manifest && manifest.name === hostPackage.name && "version" 
   manifest.version === hostPackage.version,
   `the installed host package is ${hostPackage.name} ${hostPackage.version}`);
 assert.ok(isHostFile(join(root, "dist", "ast", "index.d.ts")), "the package's declarations are host files");
+// C0, binding: the installed declarations have the reviewed digest, and a
+// package elsewhere whose manifest names the host package is no host.
+assert.equal(declarationsDigest(root), hostDeclarationsDigest, "the host declarations are the reviewed ones");
+const lookalike = resolve(import.meta.dirname, "../pipeline/host-fixture/ast.d.ts");
+assert.ok(!isHostFile(lookalike), "a lookalike package with the host's manifest is no host");
 
 // `#enums/*` under the `default` condition, as the manifest's `imports` map
 // states it.
@@ -70,3 +85,30 @@ for (const { name, file } of hostEnums) {
   members += declared.length;
 }
 console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the runtime value`);
+
+// C4 for the allocating members: each is declared as reviewed, and under Node
+// two reads of a documented node's `jsDoc` give different arrays, while a
+// stable member gives one value.
+{
+  const declarations = readFileSync(join(root, "dist", "ast", "ast.d.ts"), "utf8");
+  for (const { owner, name, text } of allocatingMembers)
+    assert.ok(declarations.includes(text), `${owner}.${name} is declared as reviewed: ${text}`);
+  const file = join(mkdtempSync(join(tmpdir(), "tscert-jsdoc-")), "documented.ts");
+  const source = "/** The answer. */\nexport const answer = 42;\n";
+  writeFileSync(file, source);
+  const tree = openText(file, source);
+  const [statement] = tree.statements;
+  assert.ok(statement, "the documented statement");
+  const first = statement.jsDoc;
+  const second = statement.jsDoc;
+  assert.ok(first && second && first.length === 1, "the statement's documentation");
+  assert.notEqual(first, second, "two reads of jsDoc give different arrays");
+  assert.equal(statement.parent, statement.parent, "two reads of a stable member give one value");
+  // A node's stable members are prototype getters, not own keys: a copy of
+  // its own enumerable keys has none of them (COMPILER-API.md, own keys of
+  // host objects).
+  const copy: Record<string, unknown> = { ...statement };
+  assert.ok(!("kind" in copy) && "parent" in copy, "a spread of a node copies parent and no kind");
+  closeParser();
+  console.log("C4: jsDoc allocates on each read; a stable member does not");
+}

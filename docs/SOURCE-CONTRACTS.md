@@ -1749,12 +1749,13 @@ argument, whose conversion runs its methods, is outside the stated
 parameter (`invalid-number-object`). `Object.keys` of an object, and the
 generic `Object.values` and `Object.entries` of a dictionary, state it too:
 each lists the object's own keys, which runs no code (no object is a proxy),
-reads values the fragment creates as data properties, an external
-dictionary's getters being assumed to write nothing, and writes only the
-arrays it allocates (`library-preserving-reflection`). The overloads at
-`{}` read an arbitrary object's values by [[Get]], which may run an external
-getter, and state no preservation (`object-entries-sparse`,
-`invalid-object-entries-preserving`).
+reads a dictionary's values, which are data properties by the
+[caller contract](DESIGN.md#trust-surface) and the fragment's own objects
+alike, a dictionary being no host object, and writes only the arrays it
+allocates (`library-preserving-reflection`). `Object.keys` reads no value
+at all. The overloads at `{}` read the values of keys the object's type
+need not state, by [[Get]], and state no preservation
+(`object-entries-sparse`, `invalid-object-entries-preserving`).
 
 The entries, each with the code its restriction keeps from running:
 
@@ -1782,15 +1783,36 @@ The entries, each with the code its restriction keeps from running:
   lookup runs no code on the objects a program holds, none of which is a
   proxy ([trust surface](DESIGN.md#trust-surface)). The result is
   `undefined` or a fresh descriptor, nothing known of what it holds
-  (`invalid-own-property-descriptor-value`):
+  (`invalid-own-property-descriptor-value`). Its object is a non-host value
+  ($`\mathsf{NonHost}`$ below), since a host object's own fields are the
+  package's internal ones:
 
 ```math
-\mathtt{getOwnPropertyDescriptor}:(\mathtt{unknown},\ \mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol})\Rightarrow\mathsf{Desc}\mid\mathtt{undefined}
+\mathtt{getOwnPropertyDescriptor}:(\mathsf{NonHost},\ \mathtt{string}\mid\mathtt{number}\mid\mathtt{symbol})\Rightarrow\mathsf{Desc}\mid\mathtt{undefined}
 ```
 
 ```math
 \mathsf{Desc}=\{\mathtt{readonly}\ \mathit{configurable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{enumerable}:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{value}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{writable}?:\mathtt{boolean};\ \mathtt{readonly}\ \mathit{get}?:\mathtt{unknown};\ \mathtt{readonly}\ \mathit{set}?:\mathtt{unknown}\}
 ```
+
+- `Object.values(o)` and `Object.entries(o)` at TypeScript's `{}` overload
+  read the values of `o`'s own enumerable string keys:
+  $`(\mathsf{NonHost})\Rightarrow\mathtt{unknown}[]`$ and
+  $`(\mathsf{NonHost})\Rightarrow[\mathtt{string},\mathtt{unknown}][]`$;
+  their dictionary overloads are stated at a dictionary.
+- `console.log(…)` formats every reachable key of an object argument; its
+  arguments are stated at $`\mathsf{Prim}`$:
+  $`(\ldots\mathsf{Prim})\Rightarrow\mathtt{undefined}`$
+  (`console-log-object-refused`).
+
+$`\mathsf{NonHost}`$, which no source spells, is every value but a host
+object ([restricted values](COMPILER-API.md#restricted-values)): the
+primitives, the callables and the objects owning no `[[host]]`, the record
+clause bounded by an exclusion of that key. A type is below it when each of
+its clauses is: an object clause names an invariant field or an index, or
+bounds its own keys without the key (`CoversBounds`), so `{ a: number }` is
+below it and `{ readonly a: number }`, `object` and `unknown` are not
+(`host-exclusion-reflection`, `object-values-readonly-refused`).
 
 `Reflect` is a namespace, whose functions are no annotated variable's
 members, and `Reflect.get(o, k)` runs [[Get]], which calls an accessor's

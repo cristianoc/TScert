@@ -8,6 +8,8 @@ import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, verifier } from "./verify-source.mts";
+import { tsconfigOf } from "../tools/declaration-graph.mts";
+import { useHostInstallationForTests } from "../tools/compiler-api.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
@@ -1783,6 +1785,111 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   }
   process.stdout.write("forged import footprints: an imported function's call refused each footprint narrower than everything\n");
+}
+
+/** Bypass the producer's refusal: propose claims and search evidence over a
+ * parser document weakened by `change`, then require both verifier entry
+ * points to refuse that claims document and its evidence against the honest
+ * document. */
+const bypassed = (artifacts: string, name: string, change: (fragment: Ast) => void): void => {
+  const ast: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  change(ast);
+  const weak = join(artifacts, `${name}-fragment.json`);
+  writeFileSync(weak, JSON.stringify(ast));
+  const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(lowered.status, 0, lowered.stderr);
+  const flow = join(artifacts, `${name}-flow.json`);
+  writeFileSync(flow, lowered.stdout);
+  const proposal = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(proposal.status, 0, proposal.stderr);
+  const claims = join(artifacts, `${name}-claims.json`);
+  writeFileSync(claims, proposal.stdout);
+  // The weakened document's evidence exists, so checking reaches the rule.
+  const made = produceWith(artifacts, claims, name, weak);
+  assert.equal(made.status, 0, made.stdout + made.stderr);
+  const searched = produceWith(artifacts, claims, `${name}-honest`);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  invoke(claims, join(artifacts, `${name}-evidence.json`), artifacts);
+};
+
+{
+  // The non-host parameter of `Object.values` (COMPILER-API.md, "Restricted
+  // values"): the interface's readonly field forged writable in the parser's
+  // document, so the producer and search take the call at the non-host
+  // values; against the honest readonly interface, which admits a host
+  // object, search and checking refuse the strengthened argument.
+  bypassed(run("object-values-readonly-refused"), "forged-non-host-argument", fragment => {
+    const definition = must(fragment.declarations?.definitions.find(d => d.declaration.name === "R"), "the interface R");
+    assert(definition.expression?.k === "object");
+    for (const f of definition.expression.fields) f.readonly = false;
+  });
+  // A merge's operand alike: the spread's readonly record forged writable.
+  bypassed(run("spread-readonly-record-refused"), "forged-non-host-spread", fragment => {
+    const fn = must(fragment.functions.find(f => f.name === "copy"), "copy");
+    const param = must(fn.params[0], "copy's parameter");
+    assert(param.type?.k === "object");
+    for (const f of param.type.fields) f.readonly = false;
+  });
+  process.stdout.write("forged non-host operands: a readonly record strengthened to the non-host values refused in search and in checking\n");
+}
+
+{
+  // Reading rule 1 on a stand-in host package (`pipeline/host-fixture/`,
+  // whose `Node` reaches no node list), installed as the host through the
+  // test-only channel: the shape omits the allocating `jsDoc`, so every form
+  // of its read is refused, and reads of other members verify.
+  const project = tsconfigOf(join(import.meta.dirname, "host-fixture-project"));
+  const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
+  useHostInstallationForTests(join(import.meta.dirname, "host-fixture"));
+  try {
+    for (const [form, refusal] of [
+      ["dot", /missing field jsDoc/], ["element", /missing field jsDoc/], ["paren-key", /missing field jsDoc/],
+      ["const-key", /missing field jsDoc/], ["template-key", /dynamic index requires a dictionary over its keys/],
+      ["binding", /missing field jsDoc/], ["optional", /missing field jsDoc/],
+      ["view", /no derivation of its binding-annotation claim/],
+    ] as const) {
+      const outcome = check(example(`invalid-host-fixture-jsdoc-${form}`), project);
+      assert.notEqual(outcome.status, "verified", `invalid-host-fixture-jsdoc-${form}: refused`);
+      assert.ok("detail" in outcome && refusal.test(outcome.detail), `invalid-host-fixture-jsdoc-${form}: ${JSON.stringify(outcome)}`);
+    }
+    // Recovering the omitted member: the parser's document given `jsDoc` back
+    // on the host `Node`, the claims and evidence so made refused against the
+    // honest document, whose shape omits it.
+    const dot = check(example("invalid-host-fixture-jsdoc-dot"), project);
+    bypassed(dot.artifacts, "forged-host-jsdoc", fragment => {
+      const definition = must(fragment.declarations?.definitions.find(d => d.declaration.name === "Node"), "the host Node");
+      assert(definition.expression?.k === "object");
+      const kind = must(definition.expression.fields.find(f => f.name === "kind"), "Node's kind");
+      definition.expression.fields.push({ ...kind, name: "jsDoc", optional: true, type: { k: "atom", name: "unknown", span: kind.span } });
+    });
+    const kept = check(example("host-fixture-jsdoc-other-reads"), project);
+    assert.equal(kept.status, "verified", JSON.stringify(kept));
+    const lookalike = check(example("host-fixture-lookalike"), project);
+    assert.equal(lookalike.status, "unsupported", JSON.stringify(lookalike));
+  } finally {
+    useHostInstallationForTests(null);
+  }
+  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified\n");
+}
+
+{
+  // A test of a readonly view narrows a union by the arms whose view answers
+  // it: the read of `o` after `o.k === "a"` forged to the arm whose `k` is
+  // "b" is refused, the edge's field slice keeping only the "a" arm.
+  const artifacts = run("readonly-view-narrowing");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const measure = must(claims.functions.find((f) => f.name === "measure"), "measure's claims");
+  const at = source.indexOf("o.x");
+  const read = must(measure.expressions.find((e) => e.pos[0] === at && e.pos[1] === at + 1), "the read of o on the true edge");
+  const other = must(measure.expressions.find((e) => e.pos[0] === source.indexOf("o.y") && e.pos[1] === source.indexOf("o.y") + 1),
+    "the read of o on the false edge");
+  read.type = other.type;
+  const forged = writeClaims(artifacts, "forged-view-narrowing", claims);
+  const searched = produceWith(artifacts, forged, "forged-view-narrowing");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /evidence search failed/);
+  process.stdout.write("forged view narrowing: the other arm on the true edge refused\n");
 }
 
 {

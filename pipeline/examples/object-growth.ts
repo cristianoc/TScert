@@ -64,8 +64,8 @@ export function spreadBuilt(p: { a: number }): { a: number; b: string } {
 }
 
 // An optional field of the annotation, written: its key added at its type.
-export function optionalAnnotated(): { a?: number } {
-  const o: { a?: number } = {};
+export function optionalAnnotated(): { a?: number; b: number } {
+  const o: { a?: number; b: number } = { b: 0 };
   o.a = 3;
   return o;
 }
@@ -82,6 +82,7 @@ export function inCellWithAlias(src: { [k: string]: number }): number {
 // A `new` of a class the file declares: its constructor reads no `this` and
 // ends in the instance's allocation, which nothing else has reached.
 class WithOptional {
+  x: number = 0;
   constructor(public y?: string) {}
 }
 export function onInstance(): string | undefined {
@@ -93,8 +94,8 @@ export function onInstance(): string | undefined {
 // A write through an annotated constant bound to the object: every holder
 // holds the copy with the key, at which a view stating the key reads it.
 export function throughAnnotatedAlias(): number {
-  const o = {};
-  const w: { x?: number } = o;
+  const o = { y: 0 };
+  const w: { x?: number; y: number } = o;
   w.x = 1;
   const view: { x?: number } = o;
   return (view.x ?? 0) + (w.x ?? 0);

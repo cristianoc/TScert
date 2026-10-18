@@ -131,6 +131,70 @@ theorem index_key_not_store (i : Nat) : PropKey.str (toString i) ≠ arrayStoreK
   revert this
   decide
 
+/-- No index key is the host key either. -/
+theorem index_key_not_host (i : Nat) : PropKey.str (toString i) ≠ hostKey := by
+  intro h
+  have hs : toString i = "[[host]]" := by simpa [hostKey] using h
+  have hm : '[' ∈ Nat.toDigits 10 i := by
+    rw [← Nat.toList_repr]
+    change '[' ∈ (toString i).toList
+    rw [hs]
+    decide
+  have := Nat.isDigit_of_mem_toDigits (by decide) (by decide) hm
+  revert this
+  decide
+
+/-- **A merge allocates no host object.** The accumulator is ordinary, so it
+owns no host key, and a source's copy takes no model key and no index key is
+one: an object a merge allocates is ordinary. -/
+theorem mergeParts_host {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List (PropKey × Tm)}
+    (hp : mergeParts h d a b = some ps) : ∀ e ∈ ps, e.1 ≠ hostKey := by
+  simp only [mergeParts, Option.bind_eq_bind, Option.bind_eq_some_iff] at hp
+  obtain ⟨pa, ha, qb, hb, he⟩ := hp
+  cases he
+  intro e he
+  rcases mem_mergeData he with he | he
+  · unfold ownAll at ha
+    split at ha
+    · rename_i fs _
+      split at ha
+      · cases ha
+      rename_i hno
+      cases ha
+      obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (mem_firstKeys he)
+      intro hk
+      apply hno
+      have hmem : r.1 ∈ fs.map Prod.fst := List.mem_map_of_mem (List.mem_filter.mp hr).1
+      change r.1 = hostKey at hk
+      rw [hk] at hmem
+      exact lookup_isSome hmem |>.elim fun v hv => by simp [hv]
+    · cases ha
+  · have he := (List.mem_filter.mp he).1
+    unfold ownData at hb
+    split at hb
+    · split at hb
+      · cases hb
+      cases hb
+      rcases List.mem_append.mp (mem_firstKeys he) with he | he
+      · obtain ⟨r, hr, rfl⟩ := List.mem_map.mp he
+        have := (List.mem_filter.mp hr).2
+        intro hk
+        change r.1 = hostKey at hk
+        rw [hk] at this
+        simp [hostKey, copiedKey] at this
+      · unfold storeData at he
+        split at he
+        · split at he
+          · obtain ⟨q, -, hq⟩ := List.mem_filterMap.mp he
+            obtain ⟨m, -, rfl⟩ := Option.map_eq_some_iff.mp hq
+            exact index_key_not_host _
+          · simp at he
+        · simp at he
+    · cases hb
+      obtain ⟨q, -, rfl⟩ := List.mem_map.mp (mem_firstKeys he)
+      exact index_key_not_host _
+    all_goals first | (simp at he; done) | (cases hb; simp at he; done) | (cases hb; done)
+
 /-- **A merge allocates no store.** The accumulator's fields are copied but its
 store, and a source gives its copied keys and its elements' index keys, none
 of which is the store key: an object a merge allocates is no array. -/
@@ -143,7 +207,9 @@ theorem mergeParts_store {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List 
   rcases mem_mergeData he with he | he
   · unfold ownAll at ha
     split at ha
-    · cases ha
+    · split at ha
+      · cases ha
+      cases ha
       obtain ⟨r, hr, rfl⟩ := List.mem_map.mp (mem_firstKeys he)
       have := (List.mem_filter.mp hr).2
       simp only [bne_iff_ne, ne_eq] at this
@@ -152,7 +218,9 @@ theorem mergeParts_store {h : List Tm} {d : List PropKey} {a b : Tm} {ps : List 
   · have he := (List.mem_filter.mp he).1
     unfold ownData at hb
     split at hb
-    · cases hb
+    · split at hb
+      · cases hb
+      cases hb
       rcases List.mem_append.mp (mem_firstKeys he) with he | he
       · obtain ⟨r, hr, rfl⟩ := List.mem_map.mp he
         have := (List.mem_filter.mp hr).2
@@ -238,7 +306,10 @@ theorem ownData_lookup {h : List Tm} {fs : List (PropKey × Nat)} {qs : List (Pr
     {cb : CallCode} (hq : ownData h (.objAt fs cb oid) = some qs) (k : PropKey) :
     qs.lookup k = ((if copiedKey k then fs.lookup k else none).map (heapVal h)).or
       ((storeData h fs).lookup k) := by
-  simp only [ownData, Option.some.injEq] at hq
+  simp only [ownData] at hq
+  split at hq
+  · cases hq
+  simp only [Option.some.injEq] at hq
   subst hq
   rw [lookup_firstKeys, lookup_append]
   congr 1
@@ -250,14 +321,19 @@ theorem ownData_nodup {h : List Tm} {v : Tm} {qs : List (PropKey × Tm)} (hq : o
     (qs.map Prod.fst).Nodup := by
   unfold ownData at hq
   split at hq
-  · cases hq; exact firstKeys_nodup _
+  · split at hq
+    · cases hq
+    cases hq; exact firstKeys_nodup _
   · cases hq; exact firstKeys_nodup _
   all_goals (cases hq <;> simp)
 
 theorem ownAll_lookup {h : List Tm} {fs : List (PropKey × Nat)} {ps : List (PropKey × Tm)}
     (hp : ownAll h (.objAt fs .absent oid) = some ps) (k : PropKey) :
     ps.lookup k = (if k != arrayStoreKey then fs.lookup k else none).map (heapVal h) := by
-  simp only [ownAll, Option.some.injEq] at hp
+  simp only [ownAll] at hp
+  split at hp
+  · cases hp
+  simp only [Option.some.injEq] at hp
   subst hp
   rw [lookup_firstKeys, lookup_map_snd, lookup_filter_key (fun k => k != arrayStoreKey)]
 
@@ -265,7 +341,9 @@ theorem ownAll_nodup {h : List Tm} {v : Tm} {ps : List (PropKey × Tm)} (hp : ow
     (ps.map Prod.fst).Nodup := by
   unfold ownAll at hp
   split at hp
-  · cases hp; exact firstKeys_nodup _
+  · split at hp
+    · cases hp
+    cases hp; exact firstKeys_nodup _
   · cases hp
 
 
@@ -540,6 +618,63 @@ inductive Src (ι : Type) where
     | some o => some (.obj o)
     | none => (codeOf c).map .obj
 
+/-- **A clause excluding host values** (COMPILER-API.md, "Excluding host
+values"): a record naming an invariant field, a dictionary, a record whose own
+keys a bound lists without the host key, a callable, whose objects carry code,
+or a clause of primitives. A merge reads only operands of such clauses, since
+its copy is stuck on a host object. -/
+@[nospecialize] def hostFree : Clause (List ι) → Bool
+  | .refs a bs _ _ _ ks => !(a :: bs).flatten.isEmpty || ks.any KeyBound.closed
+  | .dict a bs _ ds _ _ ks cs => !(ds ++ cs).isEmpty || !(a :: bs).flatten.isEmpty || ks.any KeyBound.closed
+  | .arrs .. | .callable .. | .ctors .. => true
+  | c => emptyClause c || stringClause c
+
+omit [DecidableEq ι] in
+theorem hostFree_sound {G : NormalGraph ι} {c : Clause (List ι)} (hc : hostFree c = true)
+    {n : Nat} {W : WorldT n} {v : Val} (hv : clauseSem G c n W v) : NoHost v := by
+  obtain ⟨hv, -⟩ := hv
+  intro flds oid he
+  subst he
+  cases c with
+  | refs a bs vs os ms ks =>
+    obtain ⟨hr, -, -, -, hb⟩ := hv
+    simp only [hostFree, Bool.or_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+      List.any_eq_true] at hc
+    rcases hc with hne | ⟨K, hK, hc⟩
+    · exact ReferenceConjunctions.noHost hr (ReferenceConjunctions.famsOf_flatten_ne hne) flds oid rfl
+    · exact KeyBound.closed_lookup hc (hb K hK)
+  | dict a bs vs ds os ms ks cs =>
+    obtain ⟨hr, -, ⟨hd, hcs⟩, -, -, hb⟩ := hv
+    simp only [hostFree, Bool.or_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+      List.any_eq_true] at hc
+    rcases hc with (hix | hne) | ⟨K, hK, hc⟩
+    · cases hx : ds ++ cs with
+      | nil => exact absurd hx hix
+      | cons x _ =>
+        have hm : x ∈ ds ++ cs := by rw [hx]; exact List.mem_cons_self
+        rcases List.mem_append.mp hm with hm | hm
+        · exact dictViewT_noHost (hd x hm) flds oid rfl
+        · exact dictViewT_noHost (dictCellT_view (hcs x hm)) flds oid rfl
+    · exact ReferenceConjunctions.noHost hr (ReferenceConjunctions.famsOf_flatten_ne hne) flds oid rfl
+    · exact KeyBound.closed_lookup hc (hb K hK)
+  | arrs L S =>
+    obtain ⟨fs, code, oid', he, hcode, -⟩ := hv.1.1
+    cases he
+    cases hcode
+  | callable a bs L S =>
+    obtain ⟨fs, code, oid', he, hcode, -⟩ := hv.1.2.1
+    cases he
+    cases hcode
+  | ctors L S a bs vs =>
+    obtain ⟨fs, n, E, K, s', caps, rest, oid', he, -⟩ := hv.1.1.1
+    cases he
+  | _ =>
+    simp only [hostFree, emptyClause, stringClause, Bool.or_false, Bool.false_or] at hc
+    all_goals first
+      | (simp [semWithArgs, nulT, undefT, boolT, numT, strT, bigintT, symbolT] at hv; done)
+      | (simp only [semWithArgs] at hv; split at hv <;> cases hv; done)
+      | (cases hc; done)
+
 /-- The source never gives the key: it is dropped or a reserved string key,
 or a bound excludes it and, if an array could give it as an index, the store
 too. A symbol key the model's copy does not take, JavaScript's takes where
@@ -767,7 +902,7 @@ theorem indexKey_of_not_copied {k : PropKey} (h : copiedKey k = false) : indexKe
   | sym => rfl
   | str s =>
     simp only [copiedKey, Bool.and_eq_false_iff, bne_eq_false_iff_eq] at h
-    rcases h with (rfl | rfl) | rfl <;> decide
+    rcases h with ((rfl | rfl) | rfl) | rfl <;> decide
 
 theorem src_never {G : NormalGraph ι} {o : Obj ι} {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)}
     (hf : ObjFacts G o n W fs) {h : List Tm} {qs : List (PropKey × Tm)}
@@ -1128,11 +1263,12 @@ would deny: each bound of a result with one keeps its writable classes
       ks.all (fun K => cs.all fun y => K.keeps y.1)
   | _, _, _ => false
 
-/-- Every pair of the operands' clauses merges into a clause of the result. -/
+/-- Every pair of the operands' clauses merges into a clause of the result,
+and every operand clause excludes host values (`hostFree`). -/
 @[nospecialize] def MergeOk (G : NormalGraph ι) (d : List PropKey) (A B R : List ι) : Bool :=
   G.plainTy A && G.plainTy B &&
-    (expand G A).all fun ca => (expand G B).all fun cb => (expand G R).any fun cr =>
-      MergeClause G d ca cb cr
+    (expand G A).all fun ca => hostFree ca && (expand G B).all fun cb => hostFree cb &&
+      (expand G R).any fun cr => MergeClause G d ca cb cr
 
 theorem lookup_slots_none {ns : List PropKey} {k : PropKey} (h : k ∉ ns) (base : Nat) :
     (slots base ns).lookup k = none := by
@@ -1500,6 +1636,11 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     exact (List.nodup_append.mp hnd).2.2 _ hm _ (List.mem_map_of_mem hq) rfl
   let ix : List (IndexKeys × List ι) := ds ++ cs
   generalize mergeData pa qs = ps at hparts hnodup hF hO hP hK hcls hnp
+  have hnohost : (slots h.length (ps.map Prod.fst)).lookup hostKey = none := by
+    apply lookup_slots_none
+    intro hm
+    obtain ⟨e, he, hek⟩ := List.mem_map.mp hm
+    exact mergeParts_host hparts e he hek
   have hvals : ∀ v ∈ ps.map Prod.snd, isVal v = true := by
     intro v hv
     obtain ⟨e, he, rfl⟩ := List.mem_map.mp hv
@@ -1565,7 +1706,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       exact ⟨v, c, hv, hU, hag⟩
     have hrefs : ReferenceConjunctions.refsT (ReferenceConjunctions.famsOf (meaning G) fs) [] j U
         (.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + (ps.map Prod.snd).length)) := by
-      refine ⟨⟨_, _, rfl, ?_⟩, by simp⟩
+      refine ⟨⟨_, _, rfl, ?_⟩, by simp, fun _ _ _ he => by cases he; exact hnohost⟩
       intro f F hm
       obtain ⟨T, hT, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hm
       obtain ⟨v, hv, -⟩ := hF (f, T) hT
@@ -1671,8 +1812,8 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
         intro hm
         obtain ⟨v, hv⟩ := lookup_isSome hm
         rw [hnp hne] at hv; cases hv
-      refine ⟨hrefs, viewsT_of_viewT hviews, ⟨fun x hx => ⟨_, _, rfl, hnoproto, fun f l hl hxf => ?_⟩,
-        fun x hx => ⟨_, _, rfl, hnoproto, fun f l hl hxf => ?_⟩⟩, hopt, MethodMembers.methodT_nil _ _ _,
+      refine ⟨hrefs, viewsT_of_viewT hviews, ⟨fun x hx => ⟨_, _, rfl, ⟨hnoproto, hnohost⟩, fun f l hl hxf => ?_⟩,
+        fun x hx => ⟨_, _, rfl, ⟨hnoproto, hnohost⟩, fun f l hl hxf => ?_⟩⟩, hopt, MethodMembers.methodT_nil _ _ _,
         hbounds⟩
       · obtain ⟨c, hU, -, himp⟩ := hkey x (List.mem_append_left _ hx) f l hl hxf
         exact ⟨c, hU, himp⟩
@@ -1728,13 +1869,15 @@ theorem dictOk_facts {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
 theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (List ι)}
     {oa : Obj ι} {sb : Src ι} (hoa : objOf ca = some oa) (hsrc : srcOf cb = some sb)
     {p : Nat} {W : WorldT (p + 1)} {h : Heap} {va vb : Val} (hok : HeapOk (p + 1) W h)
-    (hsa : clauseSem G ca (p + 1) W va) (hsb : clauseSem G cb (p + 1) W vb) :
+    (hsa : clauseSem G ca (p + 1) W va) (hsb : clauseSem G cb (p + 1) W vb)
+    (hna : NoHost va) (hnb : NoHost vb) :
     ∃ pa qs, (pa.map Prod.fst).Nodup ∧ (qs.map Prod.fst).Nodup ∧ isVal va = true ∧
       isVal vb = true ∧ mergeParts h d va vb = some (mergeData pa qs) ∧
       Sides G d oa sb p W pa qs := by
   obtain ⟨fa, oid, rfl, hfa⟩ := objFacts_of_sem hoa hsa
   have hp : ownAll h (.objAt fa .absent oid) = some (firstKeys
-      ((fa.filter (·.1 != arrayStoreKey)).map (fun p => (p.1, heapVal h p.2)))) := rfl
+      ((fa.filter (·.1 != arrayStoreKey)).map (fun p => (p.1, heapVal h p.2)))) := by
+    simp [ownAll, hna fa oid rfl]
   unfold srcOf at hsrc
   split at hsrc
   · rename_i hempty
@@ -1768,7 +1911,12 @@ theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (Lis
         exact ⟨ob, fb, code, oidb, rfl, rfl, hfb⟩
     obtain ⟨ob, fb, code, oidb, rfl, rfl, hfb⟩ := hfacts
     have hq : ownData h (.objAt fb code oidb) = some (firstKeys
-        ((fb.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fb)) := rfl
+        ((fb.filter (copiedKey ·.1)).map (fun p => (p.1, heapVal h p.2)) ++ storeData h fb)) := by
+      have hno : hostOwned (.objAt fb code oidb) = false := by
+        cases code with
+        | absent => simp [hostOwned, hnb fb oidb rfl]
+        | _ => rfl
+      simp [ownData, hno]
     exact ⟨_, _, ownAll_nodup hp,
       (ownData_nodup hq).sublist (List.Sublist.map _ List.filter_sublist), rfl, rfl,
       by simp [mergeParts, hp, hq], sides_obj hfa hfb hok hp hq⟩
@@ -1785,17 +1933,20 @@ theorem merge_values_safe {G : NormalGraph ι} {d : List PropKey} {A B R : List 
   obtain ⟨⟨hpA, hpB⟩, hall⟩ := hm
   obtain ⟨ca, hca, hsa⟩ := (expand_sem G A hpA _ _ _).mp ha
   obtain ⟨cb, hcb, hsb⟩ := (expand_sem G B hpB _ _ _).mp hb
-  obtain ⟨cr, hcr, hmc⟩ := hall ca hca cb hcb
+  obtain ⟨hfa, hrest⟩ := hall ca hca
+  obtain ⟨hfb, cr, hcr, hmc⟩ := hrest cb hcb
+  have hna := hostFree_sound hfa hsa
+  have hnb := hostFree_sound hfb hsb
   unfold MergeClause at hmc
   split at hmc
   · rename_i oa sb fs os ks hoa hsrc
-    obtain ⟨pa, qs, hpn, hqn, hva, hvb, hparts, hs⟩ := merge_sides (d := d) hoa hsrc hok hsa hsb
+    obtain ⟨pa, qs, hpn, hqn, hva, hvb, hparts, hs⟩ := merge_sides (d := d) hoa hsrc hok hsa hsb hna hnb
     obtain ⟨hnd, hfs, hos, hpr, hks⟩ := fieldsOk_facts hmc
     exact merge_finish (ds := []) (cs := []) hadm hok hs hpn hqn hva hvb hparts hcr
       (.inl rfl) hnd hfs hos hpr hks (by simp) (by simp) (by simp)
       (fun _ _ => ⟨by simp, by simp⟩) (fun _ _ => ⟨by simp, by simp⟩)
   · rename_i oa sb fs ds os ks cs hoa hsrc
-    obtain ⟨pa, qs, hpn, hqn, hva, hvb, hparts, hs⟩ := merge_sides (d := d) hoa hsrc hok hsa hsb
+    obtain ⟨pa, qs, hpn, hqn, hva, hvb, hparts, hs⟩ := merge_sides (d := d) hoa hsrc hok hsa hsb hna hnb
     simp only [Bool.and_eq_true] at hmc
     obtain ⟨⟨hmf, hmd⟩, -⟩ := hmc
     obtain ⟨hnd, hfs, hos, hpr, hks⟩ := fieldsOk_facts hmf

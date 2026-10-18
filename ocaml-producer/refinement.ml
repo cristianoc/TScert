@@ -117,8 +117,15 @@ let array_slice declarations t =
 let present key =
   let promote = List.map (fun (f:Semantic.field) ->
     if f.name = Name key && f.optional then {f with optional=false} else f) in
+  (* A writable optional key becomes an invariant field only of a record whose
+     objects are ordinary: one naming an invariant field already, or a fresh
+     literal's. Otherwise a host object might hold it, and it is a view. *)
+  let ordinary fields = List.exists (fun (f:Semantic.field) -> f.write <> None && not f.optional) fields in
+  let as_view = List.map (fun (f:Semantic.field) ->
+    if f.name = Name key && f.optional then {f with optional=false; write=None} else f) in
   function
-  | Shape ({calls=[];elements=None;indexes=[];_} as s) -> Shape {s with fields=promote s.fields}
+  | Shape ({calls=[];elements=None;indexes=[];_} as s) ->
+    Shape {s with fields=(if ordinary s.fields then promote s.fields else as_view s.fields)}
   | Shape ({calls=[];elements=None;indexes=_::_;fields} as s)
     when not (List.exists (fun (f:Semantic.field) -> f.name = Name key) fields) ->
     (match index_for s (Name key) with

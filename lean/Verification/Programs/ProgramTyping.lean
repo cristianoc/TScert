@@ -179,7 +179,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   names are distinct, which is what makes the object a map from them. Its own
   keys are exactly those names, so any bound admitting them holds of it. -/
   | alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List KeyBound} :
-      (parts.map Prod.fst).Nodup →
+      (parts.map Prod.fst).Nodup → hostKey ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       Represents G Ref (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) →
       (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) →
@@ -196,7 +196,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   | allocDict {parts : List (PropKey × Ty ι × Tm)} {ix cs : List (IndexKeys × Ty ι)}
       {os : List (OptionalField (Ty ι))} :
       (parts.map Prod.fst).Nodup → CallArguments.protoField ∉ parts.map Prod.fst →
-      CallArguments.arrayStoreField ∉ parts.map Prod.fst →
+      CallArguments.arrayStoreField ∉ parts.map Prod.fst → hostKey ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       Represents G Ref (.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix os [] [] cs) →
       (∀ p ∈ parts, ∀ y ∈ ix ++ cs, y.1.may p.1 = true → p.2.1 = y.2) →
@@ -934,7 +934,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       have he' := ((he.transfer (k+1) hj U hx).push ha').transfer k (Nat.le_succ k)
         (trunc k (Nat.le_succ k) U) (WExt_refl _)
       exact ihb k _ heap (push av ρ) he' (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
-  | @alloc Γ Ref parts ks hnd hp hr hbound hreal ih =>
+  | @alloc Γ Ref parts ks hnd hhostp hp hr hbound hreal ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
@@ -970,7 +970,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
     have hrec' := hrec
     rw [← hfam] at hrec'
-    refine (represents_sem hr k V _).mpr ⟨⟨⟨hrec', by simp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+    refine (represents_sem hr k V _).mpr ⟨⟨⟨hrec', by simp, fun _ _ _ he => by
+        cases he; exact slots_lookup_none hhostp⟩, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _,
         fun K hK => ownKeysT_slots fun n hn => by
           obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hn
@@ -979,7 +980,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) (base := heap.length) (k := k) (V := V)
       (by simpa [List.map_map, Function.comp_def] using hrec)
     simpa [List.map_map, Function.comp_def] using hinv
-  | @allocDict Γ Ref parts ix cs os hnd hproto hstore hp hr hix habs _ ih =>
+  | @allocDict Γ Ref parts ix cs os hnd hproto hstore hhostp hp hr hix habs _ ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
@@ -1021,10 +1022,11 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact ⟨meaning G p.2.1, by
         rw [← hfam]; exact List.mem_map.mpr ⟨(p.1, p.2.1), List.mem_map_of_mem hp, rfl⟩⟩
     have hnp := slots_lookup_none (base := heap.length) hproto
+    have hnh := slots_lookup_none (base := heap.length) hhostp
     have hcell : ∀ y ∈ ix ++ cs,
         dictCellT y.1 (meaning G y.2) k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)) := by
       intro y hy
-      refine dictCellT_of_recT hrec hown hnp fun f T hT hk => ?_
+      refine dictCellT_of_recT hrec hown hnp hnh fun f T hT hk => ?_
       rw [← hfam] at hT
       obtain ⟨q, hq, hqe⟩ := List.mem_map.mp hT
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
@@ -1033,7 +1035,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact fun _ _ _ _ => Iff.rfl
     have hrec' := hrec
     rw [← hfam] at hrec'
-    refine (represents_sem hr k V _).mpr ⟨⟨⟨hrec', by simp⟩,
+    refine (represents_sem hr k V _).mpr ⟨⟨⟨hrec', by simp, fun _ _ _ he => by cases he; exact hnh⟩,
       fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       ⟨fun y hy => dictCellT_view (hcell y (List.mem_append_left _ hy)),
         fun y hy => hcell y (List.mem_append_right _ hy)⟩,

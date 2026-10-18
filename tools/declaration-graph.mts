@@ -24,7 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
-import { hostEnums, isHostFile } from "./compiler-api.mts";
+import { allocatingMembers, hostEnums, hostTypeRoots, isHostFile } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -33,7 +33,7 @@ import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, m
   type RegExpKeys } from "./regexp.mts";
 import { computedType, enclosingBinders, inferredTerm, literalUnion, type ComputedContext } from "./computed-types.mts";
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
-import { SweepError, writtenApplications, type Entity } from "./written-applications.mts";
+import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 
@@ -610,6 +610,28 @@ export function collectDeclarations(file: string, options: {
         clean(statement, `${idOf(statement.getSourceFile())} on the path to ${what}`);
       return nodes;
     };
+    // Whether a declaration is a host type (COMPILER-API.md, reading rule
+    // 1): a class of the host package, or an interface of it that is one of
+    // `hostTypeRoots` or reaches one through `extends`.
+    const hostTypes = new Map<Node, boolean>();
+    const hostType = (node: TypeDeclaration): boolean => {
+      const known = hostTypes.get(node);
+      if (known !== undefined) return known;
+      hostTypes.set(node, false);
+      let result = false;
+      if (isHostFile(node.getSourceFile().fileName)) {
+        if (ts.isClassDeclaration(node)) result = true;
+        else if (ts.isInterfaceDeclaration(node))
+          result = hostTypeRoots.includes(node.name.text) || (node.heritageClauses ?? []).some(clause =>
+            clause.types.some(base => ts.isIdentifier(base.expression) &&
+              (targetOf(checker, base.expression)?.declarations ?? []).some(d => {
+                const target = d.resolve();
+                return !!target && isTypeDeclaration(target) && hostType(target);
+              })));
+      }
+      hostTypes.set(node, result);
+      return result;
+    };
     // The name a type reference reads: an identifier, or the member of a
     // namespace import a qualified name `ns.T` reads, which TypeScript binds
     // to the export it names (`namespace-members.mts`); null for any other
@@ -1065,7 +1087,22 @@ export function collectDeclarations(file: string, options: {
       }
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
         const list = node.parent;
-        if (!ts.isVariableDeclarationList(list) || !(list.flags & ts.NodeFlags.Const) || !node.type)
+        const constant = ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) !== 0;
+        // A constant initialized by a literal naming nothing states its type
+        // by that literal (SOURCE-FRAGMENT.md, "Types stated by
+        // annotations"): a primitive literal its literal type, an object
+        // literal of such the record TypeScript infers. An array literal or
+        // one `as const` is no type the reader states yet.
+        if (constant && !node.type && node.initializer && literal(node.initializer)) {
+          const type = checker.getTypeAtLocation(node.name);
+          const term = type ? inferredTerm(checker, type, span) : null;
+          if (!term)
+            throw Error(`a declared value must be an annotated constant, function or class, or a constant initialized by a primitive literal or an object literal of such: ${what}`);
+          clean(node, `${idOf(source)}#${node.name.text}`);
+          return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
+            typeParams: [], type: term };
+        }
+        if (!constant || !node.type)
           throw Error(`a declared value must be an annotated constant, function or class: ${what}`);
         clean(node, `${idOf(source)}#${node.name.text}`);
         // A `unique symbol` constant holds the symbol its declaration names,
@@ -2295,7 +2332,7 @@ export function collectDeclarations(file: string, options: {
       for (const { node: start, span } of list) {
         try {
           collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
-            enumType: enumTypeAt, enumerated, memberName, identityOf, libraryFile, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+            enumType: enumTypeAt, enumerated, memberName, identityOf, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
             libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
             keys: keyTypeOf, alias: aliasOf, awaited });
         } catch (error) {
@@ -3008,6 +3045,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
   /** Whether a file is the standard library's (`moduleIds`). */
   libraryFile: (file: SourceFile) => boolean;
+  /** Whether a declaration is a host type, whose members are readonly views. */
+  hostType: (node: TypeDeclaration) => boolean;
   symbol: (written: Identifier | ts.PropertyAccessExpression) => number;
   literalKey: (written: Identifier | ts.PropertyAccessExpression) => string | null;
   privateName: (name: ts.PrivateIdentifier) => number;
@@ -3182,6 +3221,26 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
             return members(partScope(part), part.members, part,
               [part.getStart(file), part.end], true);
           }), (at, message) => scope.fail(at, message), node);
+    // A host type's members are readonly views, whether or not they are
+    // declared `readonly` (COMPILER-API.md, reading rule 1): a client write
+    // to one is refused, and a test of one narrows as an invariant field's.
+    // A member whose read allocates is no member of the host type's shape
+    // (`allocatingMembers`, declared as reviewed): every read of it, in any
+    // form, is a read of a member the type does not state, and no structural
+    // type requiring it admits a value of the host type.
+    if (context.hostType(node) && expression.k === "object") {
+      const omitted = ts.isInterfaceDeclaration(node)
+        ? allocatingMembers.filter(m => m.owner === node.name.text) : [];
+      for (const entry of omitted) {
+        const declared = parts.flatMap(part => ts.isInterfaceDeclaration(part) ? part.members : [])
+          .filter(m => { const name = nameOf(m); return !!name && ts.isIdentifier(name) && name.text === entry.name; });
+        if (declared.length !== 1 || declared.some(m => m.getText(m.getSourceFile()).trim() !== entry.text))
+          throw Error(`${entry.owner}.${entry.name} is not declared as reviewed: ${entry.text}`);
+      }
+      expression = { ...expression, fields: expression.fields
+        .filter(f => !omitted.some(m => m.name === f.name))
+        .map(f => ({ ...f, readonly: true })) };
+    }
     // Native promise observation uses PromiseResolve's constructor equality
     // fast path. Its standard constructor and methods are inherited, and a
     // promise owns none of those keys. The ordinary prototype/own-key
