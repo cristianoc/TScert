@@ -337,6 +337,26 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const npath = writeClaims(cells, "module-cell-narrow-contract", narrowed);
     refusedAt(cells, npath, "module-cell-narrow-contract", "claimed storage contract differs from the source annotation for 'count'");
     invoke(npath, join(cells, "evidence.json"), cells);
+    // A unit's entry knows nothing of a module cell's contents, and a call
+    // may write it: a narrower entry claim, or a read after the call claimed
+    // at the value written before it, is refused.
+    const entry = readClaims(cells);
+    const after = must(entry.functions.find(f => f.name === "afterCall"), "afterCall");
+    const first = must(after.entries.reduce<(typeof after.entries)[number] | undefined>(
+      (a, e) => (!a || e.start < a.start ? e : a), undefined), "afterCall's entry");
+    for (const b of first.bindings) if (b.name === "count") b.type = [rowOf(entry, { numLit: { bits: "0" } })];
+    const epath = writeClaims(cells, "module-cell-entry-fact", entry);
+    refusedAt(cells, epath, "module-cell-entry-fact", "count");
+    invoke(epath, join(cells, "evidence.json"), cells);
+    const stale = readClaims(cells);
+    const sfn = must(stale.functions.find(f => f.name === "afterCall"), "afterCall");
+    const src = readFileSync(join(cells, "source.ts"), "utf8");
+    const at = src.indexOf("return count;", src.indexOf("function afterCall")) + "return ".length;
+    const read = must(sfn.expressions.find(x => x.pos[0] === at && x.pos[1] === at + "count".length), "the read after the call");
+    read.type = [rowOf(stale, { numLit: { bits: "4607182418800017408" } })];
+    const spath = writeClaims(cells, "module-cell-stale-read", stale);
+    refusedAt(cells, spath, "module-cell-stale-read", `at [${at},${at + "count".length})`);
+    invoke(spath, join(cells, "evidence.json"), cells);
   }
   process.stdout.write("forged early bindings: a dropped or narrowed contract, a literal's contract unlike its annotations and a narrowed checked access refused; the intrinsic listed exactly\n");
 }
@@ -1977,6 +1997,37 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
       new RegExp(`certified import \\./certified\\.ts#twice: ${refusal.source}`), path);
   }
   process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature, a module prototype lacking a member, under a nested resolution-qualified binder a `%Stable%` one reading lacks, a differing `%Stable%` and a differing native `Promise`, a differing written application and a rebound unit refused in search and in checking\n");
+}
+
+{
+  // An element write is within `{value: any, store: keep}` at a required
+  // position of its store's tuple contract, and within
+  // `{value: any, store: grow}` elsewhere: `setSecond` writes a pair's second
+  // position, `setThird` a triple's optional one. Claimed `keep` at the
+  // required position, the claims are certified; claimed `keep` at the
+  // optional one, or the empty footprint at the required one, refused where
+  // evidence is produced and where the honest evidence is checked.
+  const artifacts = run("map-stable-element-write");
+  const forge = (name: string, footprint: ClosedFootprint): string => {
+    const claims = readClaims(artifacts);
+    must(claims.functions.find(f => f.name === name), `${name}'s claims`).footprint = footprint;
+    return writeClaims(artifacts, `forged-element-write-${name}-${footprint.value}-${footprint.store}`, claims);
+  };
+  const kept = forge("setSecond", { value: "any", store: "keep" });
+  const accepted = produceWith(artifacts, kept, "forged-element-write-kept");
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  const checked = spawnSync(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), kept,
+    join(artifacts, "source.ts"), join(artifacts, "forged-element-write-kept-evidence.json")],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
+  for (const [name, footprint] of [["setThird", { value: "any", store: "keep" }],
+      ["setSecond", emptyFootprint]] as const) {
+    const input = forge(name, footprint);
+    const refusal = `the footprint claimed for '${name}' is not established by its body`;
+    refusedAt(artifacts, input, `forged-element-write-${name}`, refusal);
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  }
+  process.stdout.write("element writes: keep at a required position certified in search and checking, keep at an optional one and the empty footprint refused in search and in checking\n");
 }
 
 {

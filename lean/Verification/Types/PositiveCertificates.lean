@@ -1,4 +1,5 @@
 import Verification.Types.PairFamilies
+import Verification.Types.ClauseSelection
 
 /-! Executable certificates for PositiveRules. Completeness concerns existence
 of accepted evidence for a declarative derivation, not semantic completeness or
@@ -463,8 +464,9 @@ checked evidence. -/
   decide (∀ f ∈ F, ∀ p ∈ f.pairs, SameKind G p.1 p.2 = true ∧
     OpaqueFamily G sub (Prem G sub look gen f) known
       (ArrowsCheckedWith G (Prem G sub look gen f) arrows) f.hypotheses p.1 p.2 ∧
-    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses, ∃ b ∈ clausesOf G p.2,
-      checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b = true)
+    ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses,
+      ∃ b ∈ ClauseSelection.candidates G a p.2 ++ clausesOf G p.2,
+        checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b = true)
 
 theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {look : Lookup ι}
@@ -478,6 +480,10 @@ theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (
   · obtain ⟨e, _, _, _, he⟩ := hs q hq
     exact checkArrowWith_sound he
   · obtain ⟨b, hb, hcb⟩ := hc a ha
+    have hb : b ∈ clausesOf G p.2 := by
+      rcases List.mem_append.mp hb with hb | hb
+      · exact ClauseSelection.mem_candidates G hb
+      · exact hb
     exact ⟨b, hb, checkClauseWith_sound hcb⟩
 
 /-- The variable discipline, decided. -/
@@ -586,6 +592,10 @@ assignment and reads no `env`. -/
 its size is unrestricted. -/
 structure SearchBudget where
   rounds : Nat := 4096
+  /-- Whether table growth and coverage read only the target clauses that can
+  cover a source clause (`ClauseSelection.candidates`, R1–R5 of
+  docs/UNION-SHAPES.md); a comparison this refuses is redone without. -/
+  select : Bool := true
   deriving Repr
 
 /-- An outcome of checked comparison search. Successful search returns its
@@ -872,6 +882,11 @@ serves every reassignment (`Parametricity`). -/
     rw [builtinsFree_reassign]
     exact images.builtinsOk_sound h r hr
 
+/-- The same check with candidate selection off: every target clause is read. -/
+@[nospecialize] def InstanceImageCheck.general [DecidableEq ι] {G : NormalGraph ι}
+    (images : InstanceImageCheck G) : InstanceImageCheck G :=
+  { images with budget := { images.budget with select := false } }
+
 /-! ### The fallback's search (RECURSIVE-EQUATIONS §4.2–4.3)
 
 The pairs reachable from a pair, grown on demand, and the uncovered ones
@@ -1038,8 +1053,10 @@ Dependency and arrow discovery read the same components as `MeetOpaque`. -/
 
 /-- The pairs a row's coverage compares: its clauses' against the target's,
 and a scheme's signatures against a target scheme's binding the same rows. -/
-@[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι) : List (List ι × List ι) :=
-  (clausesOf G X).flatMap (fun a => (clausesOf G Y).flatMap (clausePairs G known X a)) ++
+@[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
+    (select : Bool := false) : List (List ι × List ι) :=
+  (clausesOf G X).flatMap (fun a =>
+    (if select then ClauseSelection.candidates G a Y else clausesOf G Y).flatMap (clausePairs G known X a)) ++
   (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' => if s.binders = s'.binders then
         signaturePairs s.signatures s'.signatures ++ restPairs s.variadic s'.variadic else []
@@ -1171,7 +1188,8 @@ searched for its rows. The check decides (`compareUsing`). -/
     decide (OpaqueFamily G images.sub R known
       (ArrowsCheckedWith G R es) [] p.1 p.2) &&
     (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
-      (clausesOf G p.2).any fun b => checkClauseWith G images.sub R known es p.1 a b)
+      (if images.budget.select then ClauseSelection.candidates G a p.2 else clausesOf G p.2).any
+        fun b => checkClauseWith G images.sub R known es p.1 a b)
 
 /-- Grow the table from its frontier: each row adds the pairs its coverage
 compares (`demandPairs`, and quantified members after renaming), each read
@@ -1183,7 +1201,7 @@ the execution budget. -/
     : Nat → Fallback ι → Table ι → Fallback ι
   | 0, fb, _ => { fb with refused := some .exhausted }
   | fuel + 1, fb, frontier =>
-    let reached (p : List ι × List ι) := demandPairs G known p.1 p.2 ++ (match images.sub with
+    let reached (p : List ι × List ι) := demandPairs G known p.1 p.2 images.budget.select ++ (match images.sub with
         | some r => renamedPairs G r p.1 p.2
         | none => [])
     let cand := (frontier.flatMap fun p =>
@@ -1340,7 +1358,7 @@ theorem comparePrepared_sound [DecidableEq ι] {G : NormalGraph ι}
 
 /-- Structural comparison over equations. Identity and validated variance
 share the guarded dependency kernel used by quantified instantiation. -/
-@[nospecialize] def compareStructural [DecidableEq ι] (G : NormalGraph ι)
+@[nospecialize] def compareStructuralCore [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (S T : List ι) (known : Known ι := []) : ComparisonResult Unit :=
   let e := ParameterAssignment.empty .mixed
   let G' := PositiveRules.reassign G e
@@ -1348,6 +1366,27 @@ share the guarded dependency kernel used by quantified instantiation. -/
   if subsetUsing G' images' S T then .established () else
   comparePrepared G images S T known
     (growTable G' images' [] images.budget.rounds { table := [(S, T)] } [(S, T)])
+
+theorem compareStructuralCore_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : InstanceImageCheck G} {S T known}
+    (h : (compareStructuralCore G images S T known).accepted = true)
+    (hk : ∀ η : MixedAssignment ι, ∀ k ∈ known,
+      FamLe (mixedValues G η k.1) (mixedSem G η (.arrs k.2.1 k.2.2))) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  unfold compareStructuralCore at h
+  simp only at h
+  split at h
+  · exact subsetUsing_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed))
+      (by assumption)
+  · exact comparePrepared_sound h hk
+
+/-- Structural comparison reading candidates (`SearchBudget.select`), redone
+reading every target clause where that is not established: selection never
+loses a comparison the general search establishes. -/
+@[nospecialize] def compareStructural [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (S T : List ι) (known : Known ι := []) : ComparisonResult Unit :=
+  let r := compareStructuralCore G images S T known
+  if r.accepted || !images.budget.select then r else compareStructuralCore G images.general S T known
 
 theorem compareStructural_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {S T known}
@@ -1358,9 +1397,8 @@ theorem compareStructural_sound [DecidableEq ι] {G : NormalGraph ι}
   unfold compareStructural at h
   simp only at h
   split at h
-  · exact subsetUsing_sound (G := PositiveRules.reassign G (ParameterAssignment.empty .mixed))
-      (by assumption)
-  · exact comparePrepared_sound h hk
+  · exact compareStructuralCore_sound h hk
+  · exact compareStructuralCore_sound h hk
 
 /-- An instantiated binder's bound is a comparison supplied by the enclosing
 engine. The identity value represents a binder absent from this instance. -/
@@ -1609,7 +1647,7 @@ instance when its target is an arrow contract. The checker validates every use. 
 
 /-- One comparison step: select a checked instance or validate the shared
 structural dependencies. Its bound premises use the supplied comparison operation. -/
-@[nospecialize] def compareStepState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def compareStepStateCore [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (compare : List ι → List ι → σ → ComparisonResult (List (KnownInstance ι)) × σ)
     (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
     (members : Table ι → List (KnownInstance ι)) (state : σ) : ComparisonResult (SubtypeChoices ι) × σ :=
@@ -1633,14 +1671,14 @@ structural dependencies. Its bound premises use the supplied comparison operatio
       ((comparePrepared G images S T (knownOf ks) fb).map fun _ => { members := ks ++ dependencies }, last)
       fun current => (ComparisonResult.exhaustion (tested.map fun k => k.2.map fun _ => ()), current)
 
-theorem compareStepState_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+theorem compareStepStateCore_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {compare : List ι → List ι → σ → ComparisonResult (List (KnownInstance ι)) × σ}
     {S T instantiation members state}
     (hc : ∀ A B prior, (compare A B prior).1.accepted = true →
       ∀ η, FamLe (mixedMeaning G η A) (mixedMeaning G η B))
-    (h : (compareStepState G images compare S T instantiation members state).1.accepted = true) :
+    (h : (compareStepStateCore G images compare S T instantiation members state).1.accepted = true) :
     ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
-  unfold compareStepState at h
+  unfold compareStepStateCore at h
   split at h
   · exact subsetUsing_sound (by assumption)
   · rcases selection : compareInstancesState G images compare [] S T (instantiation S T) state with ⟨selected, next⟩
@@ -1673,6 +1711,29 @@ theorem compareStepState_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
       subst k
       rw [same]
       exact compareInstArrsState_sound hc checked' η
+
+/-- One comparison step reading candidates (`SearchBudget.select`), redone
+reading every target clause where that is not established. -/
+@[nospecialize] def compareStepState [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (compare : List ι → List ι → σ → ComparisonResult (List (KnownInstance ι)) × σ)
+    (S T : List ι) (instantiation : List ι → List ι → List (Instance ι))
+    (members : Table ι → List (KnownInstance ι)) (state : σ) : ComparisonResult (SubtypeChoices ι) × σ :=
+  let r := compareStepStateCore G images compare S T instantiation members state
+  if r.1.accepted || !images.budget.select then r
+  else compareStepStateCore G images.general compare S T instantiation members r.2
+
+theorem compareStepState_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {compare : List ι → List ι → σ → ComparisonResult (List (KnownInstance ι)) × σ}
+    {S T instantiation members state}
+    (hc : ∀ A B prior, (compare A B prior).1.accepted = true →
+      ∀ η, FamLe (mixedMeaning G η A) (mixedMeaning G η B))
+    (h : (compareStepState G images compare S T instantiation members state).1.accepted = true) :
+    ∀ η, FamLe (mixedMeaning G η S) (mixedMeaning G η T) := by
+  unfold compareStepState at h
+  simp only at h
+  split at h
+  · exact compareStepStateCore_sound hc h
+  · exact compareStepStateCore_sound hc h
 
 /-- A completed comparison carries the semantic judgment its choices establish.
 The proof quantifies over every assignment of the equation parameters. -/

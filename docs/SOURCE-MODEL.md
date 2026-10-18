@@ -317,10 +317,12 @@ check is needed for it:
 
 $`\mathsf{cell}(C)`$ is the private cell's invariant writable field at
 $`C`$. $`C_x`$ is one contract for the binding, stated once in the claims
-and the same in every unit: the annotation, or, without one, the producer's
-proposal, which the initialization unit checks against the initializer
-and every unit checks against each of its writes, `undefined` included for
-`let x;`; no unit narrows it. A unit's theorem assumes $`x`$ at
+and the same in every unit: its annotation. The module's units read the
+binding, so it is a unit boundary, whose type is written, as a module
+function's signature is; an unannotated module `let` is refused at the
+gate (`invalid-unannotated-module-let`). The initialization unit checks
+the initializer against $`C_x`$, and every unit each of its writes,
+`undefined` included for `let x: T;`; no unit narrows it. A unit's theorem assumes $`x`$ at
 $`\mathsf{cell}(C_x\cup U)`$, its contents any value there at the unit's
 entry and after each call; the facts a unit establishes of the contents
 follow the [current-content rules](PROGRAM-TYPING.md#current-content-rules-semantic-layer):
@@ -331,11 +333,16 @@ shared invariant of the heap every write preserves, is
 [module composition](../WORK.md#module-composition). A `var`, whose binding
 exists from the module's entry at `undefined` and may be redeclared, and an
 exported `let`, a live binding importers read, are outside the fragment. A
-module `let` stays a cell whatever writes it, its stated type as an early
-binding's; a certified module's run checks the initialization that
+module `let` stays a cell whatever writes it; a certified module's run checks the initialization that
 allocates and initializes its cells with the module's units
-(`module-cells`, `module-cell-before-initialization`, run under Node;
-`certified-module-cell-value-import`).
+(`module-cells`, `module-cell-before-initialization`,
+`module-cell-saved-value`, `invalid-module-cell-stale`, run under Node;
+`certified-module-cell-value-import`; a cycle of modules whose
+initialization reads a cell of a module not yet evaluated throws at the
+checked access, `certified-cell-cycle-value-import`, run under Node; the
+forged claims of `pipeline/test.mts`: a dropped or narrowed contract, a
+narrowed entry claim, a read after a writing call claimed at the earlier
+value).
 
 A module function is an immutable slot holding its code. A file without
 imports or exports may run as a script, whose top-level functions are
@@ -541,7 +548,13 @@ qualified callback types, including when the callback is returned or bound.
 owns neither `constructor` nor `then`, and the built-in `Array.prototype.constructor`,
 `Array[Symbol.species]` and relevant prototype links retain their standard
 behavior; `Array.prototype` and `Object.prototype` have no `then`. External code must preserve the same invariant for values it supplies
-and across calls. This is an explicit host assumption, like the restrictions on
+and across calls. Every array is also writable and extensible: no array is
+frozen, sealed or made non-extensible, so an element write at an array index
+succeeds, as the calculus's `setElem` does. The program's own code cannot
+change that, since `Object.freeze`, `Object.seal`, `Object.preventExtensions`
+and `Object.defineProperty` are outside the reviewed overlay of library
+globals (`tools/library-globals.mts`); external code must supply such arrays.
+This is an explicit host assumption, like the restrictions on
 proxies and accessors; it is not a theorem about arbitrary JavaScript.
 
 The own-key part is stated in the existing array contract and the built-ins' invariant:
@@ -768,10 +781,8 @@ importer again, and the import is read at its ordinary signature. The final chec
 `checkJson` call over the whole document. Dense `map` needs a callback
 footprint that keeps dense prefixes
 ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
-`record-render`'s `parseRecord` is proposed at `{value: any, store: any}`:
-`parseTrailers`, which it calls, writes a tuple's element, which no
-footprint below the one letting every location change bounds
-([footprints](../WORK.md#footprints)).
+`record-render`'s `parseRecord` is proposed and certified at
+`{value: any, store: grow}`, in that set.
 
 **What the theorem states.** `SourceClaimJson.checkJson_safe` states, for
 the importer's document, what it states today, and the same of each module

@@ -714,6 +714,10 @@ let join_footprint a b =
   {on_value=join_change a.on_value b.on_value;on_store=join_change a.on_store b.on_store}
 let join_bound a b = match a,b with Some a,Some b -> Some (join_footprint a b) | _ -> None
 let cell_write = Some {on_value=Any;on_store=Keep}
+(* An element write at a literal index writes the element's location or
+   lists a fresh one, keeping every dense prefix (Lean's element write rule,
+   FOOTPRINTS.md "Element writes"). *)
+let element_write = Some {on_value=Any;on_store=Grow}
 (* The footprint a `for...of` runs its iteration within, read off the
    iteration intrinsic's type: its call, which creates the iterator, then
    each call of the step the iterator is. *)
@@ -771,6 +775,11 @@ let rec footprint_expr ?(fresh=[]) ~callable ~iteration ~readable (e:expr) : foo
      holding a value (Lean's typed write rule). *)
   | Assign (_,v) -> join_bound cell_write (go v)
   | Update (_,{node=Id _;_},r,_) -> join_bound cell_write (all (Option.to_list r))
+  | NullishAssign (_,_,v) -> join_bound cell_write (go v)
+  | LogicalAssign (_,({node=Id _;_} as t),v) -> join_bound cell_write (all [t;v])
+  | IndexWrite (o,({node=Literal (LNumber _);_} as k),v) -> join_bound element_write (all [o;k;v])
+  | Update (_,{node=Index (o,({node=Literal (LNumber _);_} as k));_},r,_) ->
+    join_bound element_write (all (o :: k :: Option.to_list r))
   (* A spread argument reads its operand's store, as an array literal's
      spread part does. *)
   | Call (callee,receiver,args,_,_) ->
@@ -791,7 +800,7 @@ let rec footprint_expr ?(fresh=[]) ~callable ~iteration ~readable (e:expr) : foo
   | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~callable ~iteration ~readable:("?." :: readable) b)
   | BlockBody body -> footprint_stmts ~fresh ~callable ~iteration ~readable body
   | Unary _ | InstanceTest _ | Build _
-  | Write _ | Update _ | LogicalAssign _ | NullishAssign _
+  | Write _ | Update _ | LogicalAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
   | WithFields _ -> None

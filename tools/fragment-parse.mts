@@ -1141,6 +1141,10 @@ function lowerFile(file: string, carriesContext: boolean,
           gate.fail(s, "an exported `let` is a live binding importers read, outside the fragment");
         for (const d of list.declarations) {
           if (!ts.isIdentifier(d.name)) return gate.fail(d, "a module-level `let` pattern is outside the fragment");
+          // The module's units read it: a unit boundary, whose type is
+          // written.
+          if (!d.type)
+            gate.fail(d, "a module `let` is a binding the module's units read, a unit boundary: its type is written (an annotation)");
           if (exportedNames.has(d.name.text))
             gate.fail(d, "an exported `let` is a live binding importers read, outside the fragment");
           gate.earlyDecls.add(d);

@@ -142,6 +142,9 @@ locations below the heap the body started in; the runs compose by
   location holds no store, by its contract (`writeWithin`; proved:
   `write_within`, from `sourceField_sound`). A variable's cell is such a
   field;
+- an **element write** at a literal index, within `{value: any, store: grow}`,
+  or `{value: any, store: keep}` at a required position
+  ([element writes](#element-writes));
 - a **selected call or construction** whose signature's footprint is within
   $`\Phi`$, its operands values (`selectedWithinAt`; proved:
   `ExpressionEffects.selected_sound`, through `CallEffects.call_safe` and
@@ -232,30 +235,59 @@ and a fresh result forged onto code returning its parameter. A fresh array
 popped inside `try` is refused with every node a handler covers, though its
 result is dense (`map-fresh-handler-refused`, a gap).
 
-## Element writes (design)
+## Element writes
 
-`a[i] = v` is `setElem` on `a`'s store, then the write of the store it
-returns back to `a`'s store field. At an index the store lists, `setElem`
-writes `v` into the element's location, a location of `class(value)`, and
-returns the store unchanged; at a hole or past the end it allocates a fresh
-location, at or above the entry heap's length, and returns the store with it
-listed there. Either way every old present index stays present and the
-store lists no old element location it did not list, so an element write is
-within $`\{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{grow}\}`$,
-and within $`\{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{keep}\}`$
-where the index is proved present at the write, after its operands are
-evaluated: a required position of the store's tuple contract, or an index
-inside a dense prefix the write's facts prove. A length alone proves no
-presence, since a hole may lie below it. The rule, stated for the node
-checker as the typed field write is: the typed atomic element write runs
-within `{value: any, store: grow}`, and within `{value: any, store: keep}`
-with presence evidence; its operands' evaluation keeps its own footprint. Its proof obligation is a lemma of `setElem`'s step
-and of the store-field write, composed by `Closed.Holds.trans`. A store
-write through any other operation (`length` assignment, `delete` of an
-element) is outside the rule. `record-render`'s `parseTrailers`
-(`entries[entries.length - 1][1] += …`, a required position of a pair) is
-the motivating program: with the rule, `parseRecord` is within
-`{value: any, store: grow}`, the stable set.
+`a[b] = v`, at a literal index, lowers to one node whose operands are slots:
+`setElem` on the store the object in slot `a` holds at its store field, at
+the number `b`, of the value in slot `v`, then the write of the store it
+returns back to that field. The operands' own evaluation is earlier nodes,
+each checked within the footprint on its own. `setElem` steps only at an
+array index, a number `indexOfBits` reads as one: a finite integer from 0 to
+$`2^{32}-2`$, `-0` included as 0, as ECMAScript's array indices are. At an
+index the store lists, it writes `v` into the element's location, which
+holds a source value by the position's contract, a location of
+`class(value)`, and returns the store unchanged; at a hole or past the end
+it allocates a fresh location, at or above the entry heap's length, and
+returns the store with it listed there (`placeAt`). Either way every old
+dense prefix stays and the store lists no old element location it did not
+list (proved: `placeAt_dense`, `placeAt_mem`).
+
+Lean accepts the node (`elemWriteWithin`) where the object's slot type gives
+its store field a tuple contract whose position at the index holds source
+values:
+
+```math
+\frac{\Gamma(o).\mathtt{[]} = \mathsf{list}(T)\qquad T_{b}\ \text{source-valued}}
+     {o[b] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{grow}\}}\ \textsf{elem-write}
+\qquad
+\frac{\Gamma(o).\mathtt{[]} = \mathsf{list}(T)\qquad b < |T.\mathsf{required}|\qquad T_{b}\ \text{source-valued}}
+     {o[b] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{keep}\}}\ \textsf{elem-write-present}
+```
+
+The theorem (`elem_write_core`, through `elem_present_holds` and
+`elem_grow_holds`) assumes the node's ordinary safety, `Safe` of its term at
+the node's type from an environment meeting its slot types and a heap
+meeting its world, and concludes the footprint of every heap the node
+returns in, and, in the calculus, of every heap it raises in: once its first
+step has read the store, no step of the term raises. A required position is
+listed in every store its contract admits, so the write there takes the
+present case. A length alone proves no presence, since a hole may lie below
+it, and no other presence evidence is read. A store write through any other
+operation (`length` assignment, `delete` of an element) is outside the
+rule.
+
+**Writable arrays.** The calculus's `setElem` always succeeds at an array
+index, where JavaScript's assignment to a frozen, sealed or non-extensible
+array throws in strict code: the rule rests on the host assumption that
+every array the program writes is writable and extensible
+([ordinary array construction](SOURCE-MODEL.md#exact-contracts-and-native-effects)).
+
+The producer proposes `{value: any, store: grow}` for an element write at a
+literal index and for a compound or logical assignment of a variable
+`{value: any, store: keep}` (`footprint_expr`). `map-stable-element-write`
+is the case; controls in `pipeline/test.mts` certify `keep` claimed at a
+required position, through search and checking, and refuse it at an
+optional one.
 
 ## The rule users see
 
@@ -263,7 +295,7 @@ the motivating program: with the rule, `parseRecord` is within
 > everything it calls, uses only operations that keep every array's dense
 > prefixes: reads (optional chains included), tests, arithmetic, allocation
 > (array literals with spreads included), writes to variables and to fields
-> holding values, `push` and `unshift`, `for...of` and spreads over arrays,
+> holding values, writes of array elements at literal indices, `push` and `unshift`, `for...of` and spreads over arrays,
 > strings, sets, maps and regex matches, the readers and mutators of `Set`,
 > `Map`, `Date` and regex literals, the array members taking callbacks
 > (`map`, `filter`, `forEach`, `find`, ...) whose callbacks keep the same

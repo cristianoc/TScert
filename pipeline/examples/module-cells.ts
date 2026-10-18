@@ -22,3 +22,9 @@ let limit: number = 3;
 export function limited(): number {
   return later() + limit;
 }
+
+// A read after a call, which may write the cell: at the cell's contract.
+export function afterCall(): number {
+  bump();
+  return count;
+}

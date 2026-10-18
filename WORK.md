@@ -20,10 +20,11 @@ design, not its progress.
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
-| [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
+| [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
-| [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 29 s of evidence search, near the 30 s limit (2026-10-18); their time waits on shape-directed comparison of discriminated unions | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
+| [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 23.5 s of evidence search with candidate selection, 30.2 s without, half of the structural engine's remaining time in full reruns that establish nothing (user time, median of 3, 2026-10-18) | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
+| [Function declarations in bodies](docs/SOURCE-MODEL.md#lexical-bindings-before-initialization) | open | `function-declaration-in-body-refused` verifies: a function declared in a body is created at its block's entry, and a call of it before the block's bindings are initialized reaches their checked accesses |
 | [Optional-field truthiness over unions](#optional-field-truthiness) | open: an investigation, cause unknown | `optional-field-truthiness-union-refused` verifies |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
@@ -33,7 +34,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 94 of 332 verify in `tools/` (2026-10-18, at a 60 s step limit), 23 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 94 of 332 verify in `tools/` (2026-10-18, at a 60 s step limit), 24 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -108,9 +109,6 @@ Left open:
 - the other application forms (a variadic construction, a call of a
   callable object, a packed call) consume no footprint, so a bounded body
   refuses them;
-- an array element write has no bound; the fragment writes elements only at
-  proved index singletons; `group` in `dev/` needs one (below), and
-  [element writes](docs/FOOTPRINTS.md#element-writes-design) states the rule.
 
 **Footprint precision** is deferred
 ([FOOTPRINTS](docs/FOOTPRINTS.md#deferred-extra-precision)): separating one
@@ -158,8 +156,10 @@ pairs, each direction of the costliest about 0.25 s though each side is one
 clause. The time is in the structural comparison of the recursive `Term`
 and `Json` union arms beneath; absorbing `source & X` into `X` before the
 check takes it from 16.5 s to 16.2 s, `X` being source-valued in only 56 of
-the 172 checks (a probe, 2026-10-18). These functions wait on the theory
-track's shape-directed comparison of discriminated unions. `dev/lowering-dump.mts`
+the 172 checks (a probe, 2026-10-18). Candidate selection
+([structure-directed comparison](docs/UNION-SHAPES.md#9-the-implementation))
+takes the structural engine's demand pairs from 470,306 to 41,560; the rerun
+of each comparison it leaves unestablished costs 9.8 s and establishes none. `dev/lowering-dump.mts`
 decodes the verifier's output with `decodeUnits`, which calls `fields` and
 `nat` in `map` callbacks: imported functions, whose effect no certificate
 states ([module composition](#module-composition)).
@@ -332,19 +332,13 @@ The first blockers, by the number of slices each stops (2026-10-18):
 
 Thirty-one slices reach the producer and fail there, and 55 fail in
 search. Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
-24 of `dev/`, the record tools and the lowering dump, 23 (2026-10-18), each
-sliced with the same-file declarations it uses. The first blocker of the other in
-`dev/`:
-
-- `group` maps `readRecord`, which calls `parseRecord`, a certified import
-  whose footprint lets the heap change: `parseTrailers` writes a tuple's
-  element (`entries[entries.length - 1][1] += …`), and an array element
-  write has no bound ([footprints](#footprints)) (group: 1).
-
-`printGraph` and `decodeUnits` verify with their imports from
-`control-flow` and `calculus` certified, `printGraph` in 71 s of wall time
-for the whole pipeline, its search covering `decodeTerm`, which
-`decodeNode` reads; `control-flow.mts` verifies whole (2026-10-18).
+24 of `dev/`, the record tools and the lowering dump, all 24 (2026-10-18), each
+sliced with the same-file declarations it uses, their imports from
+`record-render`, `control-flow` and `calculus` certified. `printGraph`'s
+evidence search covers `decodeTerm`, which `decodeNode` reads, and takes
+48 s of wall time on a machine at load 27, near the 60 s step limit; four
+slices run at once exceed it (2026-10-18). `control-flow.mts` verifies
+whole.
 
 In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
 verify; the others stop at a namespace import, Node's `Buffer` type, `join`
