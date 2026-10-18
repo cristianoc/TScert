@@ -35,7 +35,7 @@ design, not its progress.
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 96 of 337 verify in `tools/` (2026-10-18, at a 60 s step limit), 24 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 97 of 337 verify in `tools/` (2026-10-18, at a 60 s step limit), 24 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -348,11 +348,9 @@ The first blockers, by the number of slices each stops (2026-10-18):
 - an object built with a `then` member (31);
 - a spread of a program's iterable where its iterator's code would run out
   of place (17);
-- an unannotated callback parameter at a host node type applied to an enum
-  member (`AbstractKeyword`, `ModifierToken<SyntaxKind.AbstractKeyword>`;
-  12), which waits on the [node invariant](docs/COMPILER-API.md#the-node-invariant).
-  A callback's parameter written without a type is read at its contextual
-  type, records and indexes included;
+- a callback's parameter written without a type is read at its contextual
+  type, records, indexes and aliases without parameters included; no slice
+  stops there;
 - library globals absent from the overlay or refused (12): the global
   function `parseInt` (3), `Reflect` ([refused](docs/SOURCE-FRAGMENT.md))
   (3), `Object.fromEntries` (2), `Array.from` (2), `Math.ceil`,

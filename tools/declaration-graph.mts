@@ -2135,8 +2135,11 @@ export function collectDeclarations(file: string, options: {
       const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
       const [node] = nodes;
       if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !libraryFile(node.getSourceFile())) {
-        const arguments_ = type.getAliasTypeArguments();
-        const actuals = arguments_.length ? arguments_ : isTypeReference(type) ? checker.getTypeArguments(type) : [];
+        // An alias's own arguments, none for an alias without parameters
+        // (`type AbstractKeyword = Token<SyntaxKind.AbstractKeyword>`); a
+        // reference's otherwise.
+        const actuals = type.getAliasSymbol() ? type.getAliasTypeArguments()
+          : isTypeReference(type) ? checker.getTypeArguments(type) : [];
         const args = actuals.map(argument => contextualTerm(argument, span));
         if (args.length !== (node.typeParameters?.length ?? 0))
           throw Error(`the contextual type ${text()} does not state every declaration argument`);

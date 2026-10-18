@@ -48,3 +48,14 @@ const both: readonly (Kind.A | Kind.B)[] = [Kind.A, Kind.B];
 export function isA(): boolean[] {
   return both.map((k) => k === Kind.A);
 }
+
+// An alias without parameters naming an interface's instance: the alias,
+// with no arguments of its own.
+interface Holder<T> {
+  readonly held: T;
+}
+type NumberHolder = Holder<number>;
+
+export function held(xs: readonly NumberHolder[]): number[] {
+  return xs.map((x) => x.held);
+}
