@@ -289,7 +289,8 @@ classification of the object it gives and changes none. The interpretation
 of a type that excludes host values ($`\mathrm{excludesHost}(A)`$ below)
 admits no host object: $`v\in⟦A⟧`$ additionally requires $`v`$ ordinary.
 Since a classification never changes, this membership survives world
-extension as every other does (`Adm.mono`). That no certified rule places a
+extension (`Adm.mono`) and truncation to a lower step index (`Adm.down`)
+as every other does. That no certified rule places a
 host object at such a type is the capability-preservation invariant,
 proved rule by rule, relative to the host entry contracts (T1, T3, T6) and
 to code outside the certified units (T8):
@@ -343,11 +344,18 @@ Records are open: a record type constrains the fields it names, and a value
 of it may own others. So the exclusion of a type says nothing of what an
 operation traversing every own key reaches, and such traversal is refused,
 with one exception: `JSON.stringify` takes `JsonValue`
-(`library-globals.mts`), whose only object arm is a dictionary of
-`JsonValue`. A dictionary constrains every own key its index admits
-($`\mathrm{dictViewT}`$), so every object a `JsonValue` reaches is an
-ordinary dictionary whose every value is again a `JsonValue`, and no host
-object is reachable from it, a lemma proved from the location clause.
+(`library-globals.mts`), whose only object arm is a string-indexed
+dictionary of `JsonValue`. The lemma: in a world satisfied by the heap, the
+string-key traversal of a `JsonValue` at step index $`k`$ reaches no host
+object. Each object it reaches meets the dictionary arm, whose objects have
+no model prototype ($`\mathrm{dictViewT}`$), which excludes host
+instances; each value under a string key meets $`\mathrm{dictViewT}`$'s
+index contract, a `JsonValue` at every lower index, so the argument
+descends by induction on the index, the heap's satisfaction of the world
+giving each location's value its contract. `toJSON` is a string key, so it
+holds a `JsonValue`, never a callable. Symbol-keyed fields, which the
+dictionary does not constrain and which may hold a host object, are
+ignored by serialisation.
 
 #### Operations and their obligations
 
@@ -953,11 +961,13 @@ the corpus runs are regression evidence, not proofs.
   library value (`Object.keys` under another name) at an ordinary function
   type. For the front end, the external entries are the package's modules
   (`typescript/unstable/ast`, `typescript/unstable/sync`, under T1, T3 and
-  T6), `node:fs`, `node:path`, `node:crypto` and `node:module`, whose
-  declarations the [library modules](SOURCE-CONTRACTS.md#library-modules)
-  audit, none giving or taking a host object or an obligated library value,
-  and the front end's own functions not yet verified, which call verified
-  ones; for each of these the clause is an assumption until it is verified.
+  T6); the members of `node:fs`, `node:path`, `node:crypto` and
+  `node:module` the front end imports, of which the
+  [library modules](SOURCE-CONTRACTS.md#library-modules) audit only the
+  listed overloads (`execFileSync`, `writeFileSync`), every other one an
+  assumption of this clause needing its own review; and the front end's own
+  functions not yet verified, which call verified ones, for each of which
+  the clause is an assumption until it is verified.
 
 ## Restrictions
 
