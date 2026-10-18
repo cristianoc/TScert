@@ -33,3 +33,8 @@ export function mixed(n: Shape, b: Shape): number {
   if (n.kind === 1 || b.kind === 2) return n.kind;
   return 0;
 }
+
+export function negated(n: Shape): number {
+  if (!(n.kind === 1 || n.kind === 2)) return n.y;
+  return 0;
+}
