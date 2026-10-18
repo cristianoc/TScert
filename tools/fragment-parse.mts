@@ -1269,6 +1269,10 @@ function lowerFile(file: string, carriesContext: boolean,
     const visit = (n: Node, created: number | null): boolean => {
       if (ts.isTypeNode(n)) return false;
       if (ts.isIdentifier(n)) {
+        const parent = n.parent;
+        if (parent && (((ts.isPropertyAccessExpression(parent) && parent.name === n) ||
+            ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
+              ts.isPropertySignatureDeclaration(parent)) && parent.name === n)))) return false;
         const d = declared.get(n.text);
         const at = created ?? n.getStart(source);
         if (!d || n === d.name || at >= d.end) return false;
@@ -1277,7 +1281,8 @@ function lowerFile(file: string, carriesContext: boolean,
         return !(literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal)) &&
           n.getStart(source) >= literal.getStart(source) && n.end <= literal.end);
       }
-      const inner = created ?? (ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n) ? n.getStart(source) : null);
+      const inner = created ?? (ts.isFunctionDeclaration(n) ? -1
+        : ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n) ? n.getStart(source) : null);
       return n.forEachChild((c) => visit(c, inner) || undefined) ?? false;
     };
     return block.statements.some((st) => visit(st, null));
@@ -1773,6 +1778,12 @@ function lowerFile(file: string, carriesContext: boolean,
   const init = initNodes.flatMap((s) => ts.isClassDeclaration(s) ? [gate.classStmt(s)]
     : ts.isEnumDeclaration(s) ? gate.enumStmt(s) : [gate.stmt(s)]);
   if (location === null && parsed.length === 0 && init.length === 0) gate.fail(null, "no functions in file");
+  // `%ThrowUninitialized%` was listed where a binding may be early, by
+  // spelling (`earlyCandidate`); the file keeps it only where the lowering
+  // marked one (`markEarly`), so the dependency is exact.
+  if (gate.earlyDecls.size === 0)
+    declarations = { ...declarations,
+      values: declarations.values.filter(v => v.binding.local !== throwUninitializedName) };
   const sourceSha256 = createHash("sha256").update(text).digest("hex");
   // A module identity is its path from the project's root, the directory of
   // its tsconfig: where a file names its project, its imports resolve from

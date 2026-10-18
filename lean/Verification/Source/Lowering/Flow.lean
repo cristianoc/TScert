@@ -95,10 +95,29 @@ set_option maxHeartbeats 1000000
           | throw s!"no claimed storage contract for the early binding '{b.name}' at {b.init.span.1}"
         let C ← (SourceClaims.resolve (← table) candidate).mapError fun msg =>
           s!"storage contract for '{b.name}' at {b.init.span.1}: {msg}"
-        if let some annotation := b.annot then
+        -- The stated type: the annotation, or the function literal's
+        -- parameter and result annotations, a defaulted parameter optional.
+        let reason := s!"the early binding '{b.name}' needs its type stated: an annotation, or a function literal's parameter and result annotations"
+        match b.annot, b.init with
+        | some annotation, _ =>
           let written ← lower (Fragment.translate annotation)
           requireSameMeaning (← table) b.init.span .bindingAnnotation C written
             s!"claimed storage contract differs from the source annotation for '{b.name}'"
+        | none, .lambda _ none [] params defaults false (some result) _ _ =>
+          let Ds ← params.zipIdx.mapM fun ((_, j), i) => do
+            let D ← lower (Fragment.translate j)
+            pure (if defaults.any (·.1 == i) then (D ++ [Labels.undef]).eraseDups else D)
+          let R ← lower (Fragment.translate result)
+          let G := SourceTypes.graph (← table)
+          let [.arrs [sig] []] := PositiveRules.expand G C
+            | throw (locatedRefusal (← table) b.init.span .bindingAnnotation reason)
+          if sig.arguments.length != Ds.length then
+            throw (locatedRefusal (← table) b.init.span .bindingAnnotation reason)
+          let differs := s!"claimed storage contract differs from the function literal's annotations for '{b.name}'"
+          for (A, D) in sig.arguments.zip Ds do
+            requireSameMeaning (← table) b.init.span .bindingAnnotation A D differs
+          requireSameMeaning (← table) b.init.span .bindingAnnotation sig.result R differs
+        | none, _ => throw (locatedRefusal (← table) b.init.span .bindingAnnotation reason)
         let stored := (C ++ U).eraseDups
         let reference ← lower (do return [← CellClaims.reference [(valueField, stored)]])
         pure (stored, reference)

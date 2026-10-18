@@ -50,3 +50,11 @@ export function kind(): boolean {
   const v: number = 1;
   return test();
 }
+
+// An early binding holding an object, read in closure term code: its
+// checked access may find either, and calls the intrinsic at its own type.
+export function boxed(): number {
+  const get = (): number => box.n;
+  const box: { n: number } = { n: 1 };
+  return get();
+}

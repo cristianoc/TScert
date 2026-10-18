@@ -297,9 +297,11 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-builtin-iterator-return-value-import: a done step's value is undefined, returned at string");
   assert.equal(runExample("invalid-loop-head-own-name", `(() => { try { total([1]); return "none"; } catch (e) { return e instanceof ReferenceError; } })()`),
     true, "invalid-loop-head-own-name: the head's read of its own binding throws a ReferenceError");
-  assert.equal(runExample("early-bindings", `JSON.stringify([count([5, 20, 30]), later(), perIteration([1, 2]),
+  assert.equal(runExample("early-bindings", `JSON.stringify([count([5, 20, 30]), later(), perIteration([1, 2]), boxed(),
     (() => { try { tooSoon(); return "none"; } catch (e) { return e instanceof ReferenceError; } })()])`),
-    "[2,2,3,true]", "early-bindings: the closures read the bindings once initialized, and a read before throws a ReferenceError");
+    "[2,2,3,1,true]", "early-bindings: the closures read the bindings once initialized, and a read before throws a ReferenceError");
+  assert.equal(runExample("function-declaration-in-body-refused", `(() => { try { early(); return "none"; } catch (e) { return e instanceof ReferenceError; } })()`),
+    true, "function-declaration-in-body-refused: the hoisted declaration's call reads the binding before its initialization");
   assert.equal(runExample("invalid-early-binding-stale", "stale()"), "s",
     "invalid-early-binding-stale: the closure's write reaches the read TypeScript narrowed to number");
   assert.equal(runImporting("invalid-node-path-join-callback",

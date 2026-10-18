@@ -541,7 +541,8 @@ export function markEarly(this: Gate, live: readonly Statement[]): void {
         gate.fail(n, `a binding of a pattern read where it may be uninitialized is outside the fragment: ${n.text}`);
       return;
     }
-    const inner = created ?? (functionLike(n) ? n.getStart(gate.file) : null);
+    // A function declaration is created when its scope is entered (hoisted).
+    const inner = created ?? (ts.isFunctionDeclaration(n) ? -1 : functionLike(n) ? n.getStart(gate.file) : null);
     n.forEachChild((c) => visit(c, inner));
   };
   for (const st of live) visit(st, null);

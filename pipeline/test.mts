@@ -306,7 +306,22 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const e = must(fn.expressions.find(x => x.pos[0] === read && x.pos[1] === read + 1), "the read of n");
     e.type = [rowOf(claims, { numLit: { bits: "4611686018427387904" } })];
   }, `at [${read},${read + 1})`);
-  process.stdout.write("forged early bindings: a dropped or narrowed contract and a narrowed checked access refused\n");
+  // An unannotated early binding's contract is its function literal's
+  // annotations: `wanted`'s claimed at a string is refused.
+  {
+    const claims = readClaims(good);
+    const fn = must(claims.functions.find(f => f.name === "count"), "count");
+    const c = must(fn.contracts.find(x => x.name === "wanted"), "wanted's contract");
+    c.type = [rowOf(claims, "str")];
+    const path = writeClaims(good, "early-literal-contract", claims);
+    refusedAt(good, path, "early-literal-contract", "the early binding 'wanted' needs its type stated");
+    invoke(path, join(good, "evidence.json"), good);
+  }
+  // A property spelled as a later constant is no mention: the file lists no
+  // `%ThrowUninitialized%`.
+  assert.ok(!readFileSync(join(run("early-property-spelling"), "fragment.json"), "utf8").includes("%ThrowUninitialized%"),
+    "early-property-spelling: the intrinsic listed without an early binding");
+  process.stdout.write("forged early bindings: a dropped or narrowed contract, a literal's contract unlike its annotations and a narrowed checked access refused; the intrinsic listed exactly\n");
 }
 {
   // Where `n.kind === 1 || b.kind === 2` holds, `n` may be of any arm: a

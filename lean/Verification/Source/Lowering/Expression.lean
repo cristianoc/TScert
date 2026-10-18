@@ -67,8 +67,15 @@ slots are introduced only after the operand supplying their type is checked. -/
       let K := stored :: Γ
       let F := K.set 0 (BranchRefinement.tagSlice G stored (.hasKey uninitializedKey) false)
       let no := DirectProof.var F 0 (F.headD [])
-      let raise ← closureExpr recursive fc (held ⟨"",some e.span⟩ :: scope) K
-        (.call e.span (.var e.span throwUninitializedName) [] [] [])
+      -- The intrinsic's call, at the intrinsic's own slot type.
+      let some (t, _) := resolve scope throwUninitializedName
+        | throw s!"internal extraction error: an early binding's access without {throwUninitializedName}"
+      let some Ti := K[t+1]? | throw "internal closure slot mismatch"
+      let [.arrs L _] := PositiveRules.expand G Ti
+        | throw s!"internal extraction error: {throwUninitializedName} is no arrow"
+      let ⟨Rt, Ds, R, effect⟩ ← selectSignature G L []
+      let raise := DirectProof.node K (.call (.var (t+1)) []) R (.app effect)
+        (DirectProof.var K (t+1) Ti :: plainReceiver K Rt :: omittedPremises K Ds 0)
       let checked ← selectPlan G K 0 A (.hasKey uninitializedKey) raise no
       pure (DirectProof.letE Γ read checked)
     | none => throw s!"unbound or uninitialized closure variable '{name}'"

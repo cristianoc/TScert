@@ -176,10 +176,9 @@ that may reach a constant not yet bound; it does not model the module's dead
 zone for them, a caught `ReferenceError` there or a module cycle. A
 module-level `let` is a [module cell](#module-cells).
 
-A binding is **early** when one of its mentions is in a closure or a
-function declaration of its scope, which may run at any time after its
-creation, a hoisted declaration from the scope's entry (in
-`f(); let x = 1; function f() { return x; }` the call throws), or when a
+A binding is **early** when one of its mentions is in a closure created
+before its initialization point, which may run at any time after its
+creation, or when a
 mention in the scope's own code is not dominated, within the same
 activation, by the binding's **initialization point**: the write after its
 initializer completed normally, which follows the initializer's own
@@ -187,11 +186,15 @@ evaluation (`let x = x` and `let a = b, b = 1` throw), one binding of a
 declaration list at a time. A function literal that is a constant's whole
 initializer is the exception: creating it runs nothing, so its reads of the
 constant are the [recursive constant](#recursive-constants)'s self entry,
-not checked accesses. Every other binding is lowered as before.
+not checked accesses. Every other binding is lowered as before. A function
+declaration in a body, which JavaScript creates when its block is entered
+(`f(); let x = 1; function f() { return x; }` throws), is outside the
+fragment (refused at the declaration); the parser's analysis takes its
+creation at the block's entry.
 
 **Representation.** An early binding $`x`$ of storage contract $`T`$ is a
 cell of the block's activation, allocated when the block is entered, before
-its statements and before its hoisted function declarations are created,
+its statements,
 holding the activation's **uninitialized marker** $`u`$: one fresh object per
 block entry, owning the key $`\kappa_u`$ (`[[uninitialized]]`), and the only
 objects that own it. This is a representation invariant, an obligation of
