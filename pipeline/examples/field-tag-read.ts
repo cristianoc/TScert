@@ -12,3 +12,16 @@ export function count(t: { mapping: unknown }): number {
   if (!Array.isArray(t.mapping)) throw Error("invalid slot mapping");
   return t.mapping.length;
 }
+// Past a write that may alias the field, or a call, the read is of the
+// field's type.
+type Box = { mapping: number[] | number };
+export function afterWrite(t: Box, u: Box): number[] | number {
+  if (!Array.isArray(t.mapping)) return [];
+  u.mapping = 5;
+  return t.mapping;
+}
+export function afterCall(t: Box, reset: () => void): number[] | number {
+  if (!Array.isArray(t.mapping)) return [];
+  reset();
+  return t.mapping;
+}

@@ -87,7 +87,7 @@ open S
         | Shape {elements=Some {rest=Some (Rigid _);readonly=false;_};_} -> true
         | _ -> false in
       let actual = try resolve env n with Json.Error _ -> Atoms [] in
-      if actual = Refinement.any_array && List.exists at_binder (flat_atoms declarations x) then
+      if actual = Refinement.any_array && List.exists at_binder (Option.value ~default:[] (flat_atoms declarations x)) then
         S.explain site ("a built-in array at a generic call's mutable array of a binder: " ^ builtin_array_reason)
     | None -> ()
   (* A record at an index signature, which TypeScript admits through an
@@ -96,7 +96,7 @@ open S
     match expected with
     | Some x ->
       let named = try resolve env n with Json.Error _ -> Atoms [] in
-      let actual = flat_atoms declarations named and wanted = flat_atoms declarations x in
+      let actual = Option.value ~default:[] (flat_atoms declarations named) and wanted = Option.value ~default:[] (flat_atoms declarations x) in
       let record = function Shape {elements=None;calls=[];indexes=[];_} -> true | _ -> false in
       let dictionary = function Shape {elements=None;calls=[];indexes=_::_;_} -> true | _ -> false in
       if actual <> [] && List.for_all record actual && List.exists dictionary wanted
@@ -105,7 +105,7 @@ open S
     | None -> ()
   (* A write at a key a dictionary may lack adds it. *)
   let dictionary_growth site t field =
-    match flat_atoms declarations t with
+    match Option.value ~default:[] (flat_atoms declarations t) with
     | [] -> ()
     | atoms -> if List.for_all (function
         | Shape {indexes=_::_;elements=None;calls=[];fields;_} ->

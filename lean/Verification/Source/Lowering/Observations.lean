@@ -173,10 +173,12 @@ not state. The atom is an assertion every edge into the point must establish;
 choosing it proves nothing. -/
 @[nospecialize] def answerAtoms (C A : Ty Tree) : Compiler (Option (List HeapFacts.Atom)) := do
   let T ← table
+  let G := SourceTypes.graph T
   for tag in [Tag.isArray, .isFun, .typeofObject, .isRef, .truthy] do
     for q in [true, false] do
+      let S := BranchRefinement.tagSlice G C tag q
       let R ← tagRefine C tag q
-      if R != C && within T R A then return some [.tag tag q]
+      if (S != C && within T S A) || (R != C && within T R A) then return some [.tag tag q]
   return none
 
 /-- The atoms a claim that a field holds `A` asserts, where the field's

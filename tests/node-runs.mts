@@ -86,6 +86,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "b,x,2", "field-contents-exclusion: each arm's value");
   assert.equal(runExample("invalid-field-contents-call", `wrong({ kind: "b" })`), undefined,
     "invalid-field-contents-call: the call rewrote kind, and the read finds no v");
+  assert.equal(runExample("invalid-field-alias-binder", `wrong({ value: 5 })`), undefined,
+    "invalid-field-alias-binder: the parameter is number, and the object has no n");
   assert.equal(runExample("field-tag-read", `[size({ mapping: [1, 2] }), size({ mapping: "abc" }), count({ mapping: [7] })].join()`),
     "2,3,1", "field-tag-read: each mapping's size");
   assert.equal(runExample("invalid-field-tag-alias", `(() => { const o = { mapping: [1] }; return wrong(o, o); })()`), 5,

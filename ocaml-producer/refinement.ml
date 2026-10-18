@@ -93,7 +93,9 @@ let array_slice declarations t =
   let rec plain = function
     | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
   if not (plain sliced) then sliced else
-  let atoms = flat_atoms declarations sliced in
+  match flat_atoms declarations sliced with
+  | None -> sliced
+  | Some atoms ->
   if not (List.mem Top atoms || List.exists open_record_atom atoms) then sliced
   else match typeof_slice "array" true (Atoms atoms) with
     | Atoms kept -> union (ground (List.filter (fun a -> a <> Top && not (open_record_atom a)) kept)) any_array
@@ -194,7 +196,7 @@ let refine_field ?(answer = false) bounds declarations env name field refine =
     let flat f =
       let rec plain = function
         | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
-      if plain f then (try (match flat_atoms declarations f with [] -> f | atoms -> Atoms (List.sort_uniq compare atoms))
+      if plain f then (try (match flat_atoms declarations f with None | Some [] -> f | Some atoms -> Atoms (List.sort_uniq compare atoms))
         with Json.Error _ -> f) else f in
     let current = match List.assoc_opt key env with
       | Some (Value c) -> Some c
@@ -212,7 +214,8 @@ let refine_field ?(answer = false) bounds declarations env name field refine =
             discriminate_fixed bounds declarations t (Name field) (fun f ->
               let rec plain = function
                 | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
-              let f = if plain f then (try Atoms (flat_atoms declarations f) with Json.Error _ -> f) else f in
+              let f = if plain f then (try (match flat_atoms declarations f with Some atoms -> Atoms atoms | None -> f)
+                with Json.Error _ -> f) else f in
               contents_meet f known))
         | _ -> env)
      | None -> env)
