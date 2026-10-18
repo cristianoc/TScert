@@ -1935,6 +1935,10 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   const kept = forge("setSecond", { value: "any", store: "keep" });
   const accepted = produceWith(artifacts, kept, "forged-element-write-kept");
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  const checked = spawnSync(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), kept,
+    join(artifacts, "source.ts"), join(artifacts, "forged-element-write-kept-evidence.json")],
+    { encoding: "utf8", timeout: 30_000 });
+  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
   for (const [name, footprint] of [["setThird", { value: "any", store: "keep" }],
       ["setSecond", emptyFootprint]] as const) {
     const input = forge(name, footprint);
@@ -1942,7 +1946,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     refusedAt(artifacts, input, `forged-element-write-${name}`, refusal);
     assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
   }
-  process.stdout.write("element writes: keep at a required position certified, keep at an optional one and the empty footprint refused in search and in checking\n");
+  process.stdout.write("element writes: keep at a required position certified in search and checking, keep at an optional one and the empty footprint refused in search and in checking\n");
 }
 
 {

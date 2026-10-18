@@ -237,18 +237,24 @@ result is dense (`map-fresh-handler-refused`, a gap).
 
 ## Element writes
 
-`a[b] = v`, at a literal index, lowers to one node: `setElem` on the store
-`a` holds at its store field, then the write of the store it returns back to
-that field. At an index the store lists, `setElem` writes `v` into the
-element's location, which holds a source value by the position's contract,
-a location of `class(value)`, and returns the store unchanged; at a hole or
-past the end it allocates a fresh location, at or above the entry heap's
-length, and returns the store with it listed there (`placeAt`). Either way
-every old dense prefix stays and the store lists no old element location it
-did not list (proved: `placeAt_dense`, `placeAt_mem`). Lean accepts the node
-(`elemWriteWithin`; proved: `elem_write_core`, through `elem_present_holds`
-and `elem_grow_holds`) where the object's slot type gives its store field a
-tuple contract whose position at the index holds source values:
+`a[b] = v`, at a literal index, lowers to one node whose operands are slots:
+`setElem` on the store the object in slot `a` holds at its store field, at
+the number `b`, of the value in slot `v`, then the write of the store it
+returns back to that field. The operands' own evaluation is earlier nodes,
+each checked within the footprint on its own. `setElem` steps only at an
+array index, a number `indexOfBits` reads as one: a finite integer from 0 to
+$`2^{32}-2`$, `-0` included as 0, as ECMAScript's array indices are. At an
+index the store lists, it writes `v` into the element's location, which
+holds a source value by the position's contract, a location of
+`class(value)`, and returns the store unchanged; at a hole or past the end
+it allocates a fresh location, at or above the entry heap's length, and
+returns the store with it listed there (`placeAt`). Either way every old
+dense prefix stays and the store lists no old element location it did not
+list (proved: `placeAt_dense`, `placeAt_mem`).
+
+Lean accepts the node (`elemWriteWithin`) where the object's slot type gives
+its store field a tuple contract whose position at the index holds source
+values:
 
 ```math
 \frac{\Gamma(o).\mathtt{[]} = \mathsf{list}(T)\qquad T_{b}\ \text{source-valued}}
@@ -258,17 +264,30 @@ tuple contract whose position at the index holds source values:
      {o[b] = v\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{keep}\}}\ \textsf{elem-write-present}
 ```
 
-A required position is listed in every store its contract admits, so the
-write there takes the present case. A length alone proves no presence,
-since a hole may lie below it, and no other presence evidence is read. The
-node raises nothing after its first step, so its footprint holds where it
-raises too. A store write through any other operation (`length` assignment,
-`delete` of an element) is outside the rule. The producer proposes
-`{value: any, store: grow}` for an element write at a literal index and for
-a compound or logical assignment of a variable `{value: any, store: keep}`
-(`footprint_expr`). `map-stable-element-write` is the case; controls in
-`pipeline/test.mts` certify `keep` claimed at a required position and refuse
-it at an optional one.
+The theorem (`elem_write_core`, through `elem_present_holds` and
+`elem_grow_holds`) assumes the node's ordinary safety, `Safe` of its term at
+the node's type from an environment meeting its slot types and a heap
+meeting its world, and concludes the footprint of every heap the node
+returns in, and, in the calculus, of every heap it raises in: once its first
+step has read the store, no step of the term raises. A required position is
+listed in every store its contract admits, so the write there takes the
+present case. A length alone proves no presence, since a hole may lie below
+it, and no other presence evidence is read. A store write through any other
+operation (`length` assignment, `delete` of an element) is outside the
+rule.
+
+**Writable arrays.** The calculus's `setElem` always succeeds at an array
+index, where JavaScript's assignment to a frozen, sealed or non-extensible
+array throws in strict code: the rule rests on the host assumption that
+every array the program writes is writable and extensible
+([ordinary array construction](SOURCE-MODEL.md#exact-contracts-and-native-effects)).
+
+The producer proposes `{value: any, store: grow}` for an element write at a
+literal index and for a compound or logical assignment of a variable
+`{value: any, store: keep}` (`footprint_expr`). `map-stable-element-write`
+is the case; controls in `pipeline/test.mts` certify `keep` claimed at a
+required position, through search and checking, and refuse it at an
+optional one.
 
 ## The rule users see
 
