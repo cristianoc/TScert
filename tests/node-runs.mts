@@ -94,6 +94,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-json-parse-inherited: Object.prototype's toString where parsed JSON is promised");
   assert.equal(runExample("json-parse-own-proto", `value('{"__proto__": 1, "a": 2}', "a")`), 2,
     "json-parse-own-proto: the own __proto__ member set no prototype");
+  assert.equal(runExample("invalid-guard-ternary-false-arm", `wrong("a")`), "a",
+    "invalid-guard-ternary-false-arm: \"a\" where \"b\" is promised");
   assert.equal(runExample("invalid-guard-footprint", `(() => { const a = ["x", "y", "z"]; return 2 in wrong(a, a); })()`), false,
     "invalid-guard-footprint: the popping guard leaves a hole in map's result");
   assert.equal(runExample("guard-footprint", `[presences(["dense", 1]).join(), texts(["a", 2], new Set()).join()].join(";")`), "true,false;true,false",

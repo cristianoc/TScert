@@ -717,10 +717,20 @@ prepared predicate without replaying an effectful source operand. -/
       let singles ← if correlated then conditionSingletons G scope' Δ origin else pure []
       let arm := fun (truth : Bool) (T : Ty Tree) (body : SourceExecution.Plan) => do
         let T := if correlated && truthOnly then (if truth then [Labels.tru] else [Labels.fls]) else T
-        let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) else
+        -- A promise's actual is the name its saved operand was read from.
+        let original := fun (n : String) => match previous.origins.lookup n with
+          | some (.var _ o) => o
+          | _ => n
+        let base := if correlated then conditionContext G scope' Δ origin truth arrays (singletonOf singles) original else
           match alias with
           | some i => Δ.set i T
           | none => Δ
+        -- Where a guard's call answered `true`, its actual is at the promise's
+        -- type, which the edge's yields establish (`promiseCall_sound`).
+        let base := if correlated || !truth then base else
+          match promiseNarrowing G scope' Δ false origin original with
+          | some (j, P) => base.set j P
+          | none => base
         let base ← executionArmContext fc scope' base body
         let types := base.set 0 T
         let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some T }
