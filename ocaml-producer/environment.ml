@@ -61,8 +61,10 @@ let assign env name t = List.map (fun (n,b) ->
    fact about the field. *)
 let field_key name field = name ^ "\000" ^ field
 let field_of n = let i = String.index n '\000' in String.sub n (i+1) (String.length n - i - 1)
-let fact env key contract t =
-  let current = observed_contents contract t in
+(* A test's answer that narrowed the field (`answer`) is itself a fact of
+   it: what it leaves is kept whole, an array slice say (Lean's tag atom). *)
+let fact ?(answer = false) env key contract t =
+  let current = if answer && not (knowable t) then t else observed_contents contract t in
   let rest = List.remove_assoc key env in
   if current <> Atoms [] && (knowable current || current <> contract)
   then rest @ [key,Value current] else rest

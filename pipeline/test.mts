@@ -1649,6 +1649,47 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A test's answer is a fact of the field only where an edge establishes
+  // it. Claimed where the field is untested, or past a write that may alias
+  // it or a call, the read at the test's slice is refused where evidence is
+  // produced and, for the claim before the test, where it is checked.
+  const artifacts = run("field-tag-read");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const size = must(claims.functions.find(f => f.name === "size"), "size's claims");
+  const tested = source.indexOf("return t.mapping.map", source.indexOf("function size"));
+  const after = must(size.entries.find(e => e.start === tested), "the entry past the test");
+  const first = must(size.entries.find(e => e.start === source.indexOf("if (!Array.isArray", source.indexOf("function size"))),
+    "the entry of the test");
+  must(first.bindings.find(b => b.name === "t"), "t at the test").current =
+    must(after.bindings.find(b => b.name === "t"), "t past the test").current;
+  const input = writeClaims(artifacts, "forged-field-tag-before", claims);
+  const produce = produceWith(artifacts, input, "forged-field-tag-before");
+  assert.ifError(produce.error);
+  assert.equal(produce.status, 1, produce.stdout + produce.stderr);
+  for (const detail of [produce.stdout + produce.stderr, invoke(input, join(artifacts, "evidence.json"), artifacts)])
+    assert.match(detail, /reject: source (incoming edge obligation|expression obligation|evidence does not justify)/);
+  for (const file of ["invalid-field-tag-alias", "invalid-field-tag-call"]) {
+    const artifacts = run(file);
+    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const claims = readClaims(artifacts);
+    const wrong = must(claims.functions.find(f => f.name === "wrong"), `${file}: wrong's claims`);
+    const ret = source.indexOf("return t.mapping;");
+    const between = must(wrong.entries.filter(e => e.start > source.indexOf("Array.isArray") && e.start < ret)
+      .find(e => e.bindings.some(b => b.name === "t" && b.current !== null)), `${file}: the entry holding the test's fact`);
+    const at = must(wrong.entries.find(e => e.start === ret), `${file}: the read's entry`);
+    must(at.bindings.find(b => b.name === "t"), `${file}: t at the read`).current =
+      must(between.bindings.find(b => b.name === "t"), `${file}: t past the test`).current;
+    const read = must(wrong.expressions.find(e => e.pos[0] === ret + "return ".length && e.pos[1] === ret + "return t.mapping".length),
+      `${file}: the read's claim`);
+    const fact = must(between.bindings.find(b => b.name === "t")?.current, `${file}: the test's fact`);
+    read.type = must(fact.find(([field]) => field === "mapping"), `${file}: the mapping's fact`)[1];
+    refusedAt(artifacts, writeClaims(artifacts, `forged-${file}`, claims), `forged-${file}`, "reject: source");
+  }
+  process.stdout.write("forged field tag facts: claimed before the test, past an aliasing write and past a call, refused\n");
+}
+
+{
   // A guard's promise is its annotation's: a guard declaration claimed
   // heap-preserving is refused at the declaration.
   const artifacts = run("type-guards");

@@ -21,10 +21,11 @@ inductive StepEvidence (ι : Type) where
   | created (proof : ProgramCertificates.Evidence ι)
   | typedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι)
   | observedRead (slot : Nat) (contents : List Atom)
-  /-- A read of a location whose contents exclude `tag`: the ordinary read
-  at the location's contract (`proof`), whose negative slice is
-  below the claim (`sub`). -/
-  | slicedRead (tag : Tag) (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.SubtypeChoices ι)
+  /-- A read of a location whose contents answer `tag` with `answer`: the
+  ordinary read at the location's contract (`proof`), whose slice by that
+  answer is below the claim (`sub`, or a slice no subtype proof is needed
+  for, `Array.isArray`'s). -/
+  | slicedRead (tag : Tag) (answer : Bool) (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.SubtypeChoices ι)
   | knownValue (slot : Nat) (contents : List Atom)
   /-- The fields, their slots and their contents are read off the term and the
   state, so this carries only the ordinary derivation it stands beside. -/
@@ -297,35 +298,37 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       exact ⟨flds,code,oidb,l,(HeapLinks.aliases_eq hk.2.2 hj).trans hl,hfd,hv⟩
     · exact hout.2.2 link hm
 
-/-- A completed read whose value answers a tag false belongs to the
-negative slice of its type, at every step count. -/
-theorem slice_value {G : NormalGraph ι} {C : Ty ι} {Q : Post} {n W h v tag}
-    (hs : SafePost (excOf G) (meaning G C) Q n W h v) (hv : isVal v = true) (hq : tagHolds tag v = false) :
-    SafePost (excOf G) (meaning G (BranchRefinement.tagSlice G C tag false)) Q n W h v := by
+/-- A completed read whose value meets an observation belongs to every type
+the observation refines its type to, at every step count. -/
+theorem slice_value {G : NormalGraph ι} {C B : Ty ι} {Q : Post} {n W h v o}
+    (hs : SafePost (excOf G) (meaning G C) Q n W h v) (hv : isVal v = true)
+    (hsub : BranchRefinement.ObservedSub G C B o) (hq : o.holds v) :
+    SafePost (excOf G) (meaning G B) Q n W h v := by
   cases n with
   | zero => trivial
   | succ n =>
     rcases hs with (⟨hv',ht,hpost⟩ | hth) | ⟨_,_,_,_,_,step,_,_⟩
-    · exact Or.inl (Or.inl ⟨hv',BranchRefinement.tagSlice_sound ht (Or.inl hq),hpost⟩)
+    · exact Or.inl (Or.inl ⟨hv',hsub _ _ _ ht hq,hpost⟩)
     · exact absurd hth (val_not_thrown hv)
     · exact False.elim (value_no_step hv step)
 
-/-- A read of a location whose contents exclude a tag, typed at its
-contract `C` by the ordinary rule: its result is of the negative slice of `C`.
-The fact is about the location the read finds, so the value it returns is
-one the fact describes. -/
-theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref C R ρ n W h tag}
+/-- A read of a location whose contents answer a tag, typed at its
+contract `C` by the ordinary rule: its result is of every type that answer
+refines `C` to. The fact is about the location the read finds, so the value
+it returns is one the fact describes. -/
+theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref C B R ρ n W h tag q}
     (ht : HasTyUsing G images Γ (.readAt fld (.var i)) C) (hi : Γ[i]? = some Ref)
     (hr : fieldOperand (expand G Ref) fld = true)
-    (hm : Fact.mk i R fld ∈ k.cells) (hR : R.all (·.excludes tag) = true)
+    (hm : Fact.mk i R fld ∈ k.cells) (hR : R.all (·.answers tag q) = true)
+    (hsub : BranchRefinement.ObservedSub G C B (.tag tag q))
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G (BranchRefinement.tagSlice G C tag false))
+    SafePost (excOf G) (meaning G B)
       (fun h' v => HeapKnowledge.Holds (readFrame k i fld) (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   have base := typedRead_sound ht hi hr he hk hw hh
   obtain ⟨flds,c,oid,v,hl,hrd,a,ha,hav⟩ := hk.1 _ hm
-  have hq := Atom.excludes_sound (List.all_eq_true.mp hR a ha) hav
+  have hq := Atom.answers_sound (List.all_eq_true.mp hR a ha) hav
   have hvv : isVal v = true := Atom.isValue hav
   have step : Step h (.readAt fld (ρ i)) h v := by rw [hl]; exact hrd.step
   cases n with
@@ -335,7 +338,7 @@ theorem slicedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
     · rw [hl] at hval; simp [isVal] at hval
     · exact absurd step hth.no_step
     · obtain ⟨rfl,rfl⟩ := Step_det step' step
-      exact Or.inr ⟨U,h',t',hx,hu,step',hh',slice_value hs' hvv hq⟩
+      exact Or.inr ⟨U,h',t',hx,hu,step',hh',slice_value hs' hvv hsub hq⟩
 
 /-- Whether every alternative is a plain record naming the field `fld`,
 required or optional: a read of it is then of a location of the object, or,
@@ -1057,15 +1060,15 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
         if i' = i ∧ i < j.context.length ∧ Fact.mk i R fld ∈ k.cells ∧ includes G j.type R = true
         then some (readOutput k i fld R) else none
       | none => none)
-  | .slicedRead tag i e p =>
+  | .slicedRead tag q i e p =>
     match readSlot j.term with
     | some (fld, i') =>
       (CheckResult.ofBool (decide ((claim e).context = j.context ∧ (claim e).term = j.term ∧ i' = i ∧
         (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld) ∧
-        (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (·.excludes tag))))).bind fun _ =>
+        (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (·.answers tag q))))).bind fun _ =>
       (checkTreeResult G images e codes).bind fun _ =>
-      (ProgramCertificates.checkSubtypeUsing G images
-        (BranchRefinement.tagSlice G (claim e).type tag false) j.type p).map fun _ => readFrame k i fld
+      (BranchRefinement.checkObservedSubResult G images (claim e).type j.type (.tag tag q) p).map
+        fun _ => readFrame k i fld
     | none => failure
   | .knownValue i R =>
     CheckResult.fromOption (if j.term = .var i ∧ i < j.context.length ∧
@@ -1146,14 +1149,13 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
           Fact.mk i R fld ∈ k.cells ∧ includes G j.type R = true
       then some (readOutput k i fld R) else none
     | none => none
-  | .slicedRead tag i e p =>
+  | .slicedRead tag q i e p =>
     match readSlot j.term with
     | some (fld, i') =>
       if (claim e).context = j.context ∧ (claim e).term = j.term ∧ checkTreeUsing G images e codes = true ∧ i' = i ∧
           (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld) ∧
-          (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (·.excludes tag)) ∧
-          PositiveCertificates.checkUsing G images (BranchRefinement.tagSlice G (claim e).type tag false)
-            j.type p = true
+          (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (·.answers tag q)) ∧
+          BranchRefinement.checkObservedSubUsing G images (claim e).type j.type (.tag tag q) p = true
       then some (readFrame k i fld) else none
     | none => none
   | .knownValue i R =>
@@ -1194,10 +1196,10 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     | simp_all only [guard_conjunction, option_choice, CheckResult.value_failure,
         checkedOutput_value, CheckResult.value_bind_const, CheckResult.value_map_const,
         CheckResult.value_orElse, CheckResult.accepted_ofBool,
-        ProgramCertificates.checkSubtypeUsing_accepted,
+        BranchRefinement.checkObservedSubResult_accepted,
         checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, and_assoc, and_left_comm, and_comm]
     | split
-  all_goals simp_all
+  all_goals (try simp_all) <;> congr
 
 theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {j k e out}
     {codes : CodeEntry ι → Bool} (hc : checkStepUsing G images j k e codes = some out)
@@ -1298,7 +1300,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         simpa [instantiate] using read_sound hm hi he hk hw hh
       · contradiction
     · contradiction
-  | slicedRead tag i e p =>
+  | slicedRead tag q i e p =>
     simp only [checkStepUsing_eq] at hc
     split at hc
     · rename_i fld i' hslot
@@ -1322,9 +1324,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
           rw [hj,term] at typed
           cases hc
           rw [term]
-          have hs := slicedRead_sound typed hi hrep hm hfc he hk hw hh
-          simpa [instantiate] using
-            consequence (PositiveCertificates.acceptedUsing hsub) (fun _ _ hq => hq) hs
+          have hs := slicedRead_sound typed hi hrep hm hfc (BranchRefinement.checkObservedSub_sound hsub) he hk hw hh
+          simpa [instantiate] using hs
       · contradiction
     · contradiction
   | knownValue i R =>

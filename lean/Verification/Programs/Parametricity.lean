@@ -222,7 +222,7 @@ decreasing_by
 theorem checkStep_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) :
     checkStepUsing (reassign G η) (images.reassign η) j k e codes = checkStepUsing G images j k e codes := by
-  cases e <;> simp only [checkStepUsing_eq, checkTree_reassign, check_fun_reassign] <;> rfl
+  cases e <;> simp only [checkStepUsing_eq, checkTree_reassign, checkObservedSub_reassign] <;> rfl
 
 theorem carries_reassign (Γ : List (List ι)) (facts : HeapKnowledge.Knowledge) (xs : List (PromiseCalls.Implication ι))
     (sources : List Nat) (t : Target) (c : NodeEvidence ι) :

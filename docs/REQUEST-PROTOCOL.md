@@ -372,9 +372,11 @@ yields, is within the promise.
 one of the checked `StepEvidence` constructors (`ordinary`, `pure`, `reading`,
 `typedRead`, `observedRead`, `slicedRead`, `knownValue`, `created`, `allocated`, `written`).
 `reading` carries an ordinary `proof` of a term built by field and element
-reads over variables and values, and keeps every fact. `slicedRead` carries `tag`, `slot`, `proof` and `sub`: its cell observation
-must exclude the tag, and `sub` proves that the negative slice of the ordinary
-read contract fits the requested type. Constructor payloads use
+reads over variables and values, and keeps every fact. `slicedRead` carries `tag`, `answer`, `slot`, `proof` and `sub`: every atom
+of one of the location's facts must answer the tag so (a nullish exclusion
+answers its test `false`; a tag atom is its answer), and `sub` proves that
+the ordinary read contract's slice by that answer fits the requested type,
+or the slice is `Array.isArray`'s, whose array the requested type holds. Constructor payloads use
 Lean's derived JSON encoding, with strict decode/re-encode checking.
 
 The effect checker binds to the root expression sequent and must establish exactly

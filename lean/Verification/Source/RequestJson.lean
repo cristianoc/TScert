@@ -347,7 +347,7 @@ decreasing_by
 @[nospecialize] def validEffect (ok : ι → Bool) : HeapExpressionRules.StepEvidence ι → Bool
   | .ordinary e | .pure e | .reading e | .created e | .allocated e | .typedRead _ e | .written _ _ _ e =>
     validEvidence ok e
-  | .slicedRead _ _ e p => validEvidence ok e && (subtypeChoiceTypes p).all (validTy ok)
+  | .slicedRead _ _ _ e p => validEvidence ok e && (subtypeChoiceTypes p).all (validTy ok)
   | .observedRead _ _ | .knownValue _ _ => true
 
 @[nospecialize] def validCertificate (ok : ι → Bool) (C : ControlFlow.Certificate ι) : Bool :=

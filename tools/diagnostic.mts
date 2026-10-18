@@ -34,7 +34,9 @@ interface Sequent {
  * object it holds; for a value, about the slot itself, where the field is not
  * consulted. */
 type HeapAtom = "nul" | "undef" | "tru" | "fls" | "num" | "str" | "defined" | "nonNull" | "nonNullish" |
-  Extract<Clause, {numLit: unknown} | {strLit: unknown}>;
+  Extract<Clause, {numLit: unknown} | {strLit: unknown}> |
+  /** A test's observed answer. */
+  {tag: {test: Tag; answer: boolean}};
 const HEAP_ATOMS: Record<Extract<HeapAtom, string>, true> = {
   nul: true, undef: true, tru: true, fls: true, num: true, str: true, defined: true, nonNull: true, nonNullish: true,
 };
@@ -44,6 +46,12 @@ function heapAtom(v: unknown): void {
   // Singleton payloads use the graph language's existing decoder.
   if (typeof v === "object" && v !== null && "strLit" in v) {
     decodeGraph([[{strLit: record(v,["strLit"]).strLit}]]);
+    return;
+  }
+  if (typeof v === "object" && v !== null && "tag" in v) {
+    const t = record(record(v,["tag"]).tag,["test","answer"]);
+    decodeTag(t.test);
+    if (typeof t.answer !== "boolean") throw Error("invalid tag atom answer");
     return;
   }
   const a = record(v,["numLit"]);

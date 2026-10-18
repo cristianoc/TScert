@@ -810,6 +810,10 @@ an algorithm for the tag case, not the meaning of refinement. -/
     (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) : Bool :=
   (checkObservedSubResult G images A B o p).accepted
 
+theorem checkObservedSubResult_accepted [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) :
+    (checkObservedSubResult G images A B o p).accepted = checkObservedSubUsing G images A B o p := rfl
+
 theorem checkObservedSubUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) :
     checkObservedSubUsing G images A B o p =

@@ -162,7 +162,7 @@ let contents_meet field known = match field,known with
       | StrLit _,Str | Str,StrLit _ | NumLit _,Num | Num,NumLit _ -> true | _ -> false) in
     Atoms (List.filter (fun f -> not (primitive f) || List.exists (meets f) ks) fs)
   | _ -> field
-let refine_field bounds declarations env name field refine =
+let refine_field ?(answer = false) bounds declarations env name field refine =
   (* A read of an optional key that gave something other than `undefined`
      found the key present: the object's record arms have it from then on
      (Lean's `promote`, through the read's optional link). *)
@@ -202,7 +202,7 @@ let refine_field bounds declarations env name field refine =
     (match current with
      | Some c ->
        let contents = refine c in
-       let env = fact env key (field_type bounds declarations [] t (Name field)) contents in
+       let env = fact ~answer:(answer && contents <> c) env key (field_type bounds declarations [] t (Name field)) contents in
        (* The object's arms whose field the contents rule out are dropped
           (Lean's `factSlice`): a primitive arm none of whose atoms meets one
           of the contents. Successive tests narrow the contents, so their
@@ -261,7 +261,7 @@ let promise_refine ?(claimed = fun _ -> None) resolve declarations env (cond:exp
      | [] -> env)
 let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) bounds declarations env cond truth =
   let branch = branch_with state ~modules ~claimed bounds declarations in
-  let refine_field = refine_field bounds declarations in
+  let refine_field ?answer = refine_field ?answer bounds declarations in
   match cond.node with
   | Not e -> branch env e (not truth)
   (* A name as a condition is tested for truthiness; a Boolean's slice is
@@ -276,7 +276,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
       | Some (Value t) when not (record_field declarations t field) ->
         refine_value env name (fun t -> discriminate_fixed bounds declarations t (Name field) (truthy_slice truth))
       | _ -> env in
-    refine_field env name field (truthy_slice truth)
+    refine_field ~answer:true env name field (truthy_slice truth)
   (* A true `&&` (a false `||`) established both operands so; the other
      answer came from either operand, the right one after the left answered
      the first way, and holds what either established. *)
@@ -309,7 +309,8 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
      | _ -> ());
     refine_value env name (key_slice key truth)
   | TypeofTest (shape,equal,{node=Read ({node=Id name;_},Name field);_}) ->
-    refine_field env name field (typeof_refine declarations shape (truth = equal))
+    refine_field ~answer:true env name field (if shape = "array" && truth = equal then array_slice declarations
+      else typeof_refine declarations shape (truth = equal))
   (* `x == null` holds of null and undefined alike. *)
   | Equality ((LooseEqual | LooseUnequal as op),{node=Id name;_},{node=Literal (LNull | LUndefined);_})
   | Equality ((LooseEqual | LooseUnequal as op),{node=Literal (LNull | LUndefined);_},{node=Id name;_}) ->

@@ -1099,20 +1099,29 @@ read/value rule may succeed when ordinary derivation search cannot. -/
   | .readAt fld (.var i) =>
     choices := (k.cells.filter fun f => f.slot == i && f.field == fld).map
       fun f => .observedRead i f.contents
-    -- Read at the fixed contract once, then try each justified exclusion.
+    -- Read at the fixed contract once, then try each answer the location's
+    -- facts give: a nullish exclusion's, and an observed tag's.
     if let some Ref := j.context[i]? then
-      let tags := [Tag.isUndef, .isNul, .isNullish].filter fun tag =>
-        k.cells.any (fun f => f.slot == i && f.field == fld && f.contents.all (·.excludes tag))
-      if HeapExpressionRules.fieldOperand (expand G Ref) fld && !tags.isEmpty then
+      let cells := k.cells.filter fun f => f.slot == i && f.field == fld
+      let observed := cells.flatMap fun f => f.contents.filterMap fun
+        | .tag t q => some (t, q)
+        | _ => none
+      let answers := (([Tag.isUndef, .isNul, .isNullish].map (·, false)) ++ observed).eraseDups.filter
+        fun (t, q) => cells.any fun f => f.contents.all (·.answers t q)
+      if HeapExpressionRules.fieldOperand (expand G Ref) fld && !answers.isEmpty then
         if let [.refs fs _ _ _ _ _] := expand G Ref then
           if let some C := fs.lookup fld then
             let searched := expressionWithUsing G images (C :: own) suggestions aliases fuel j.context j.term C
             incomplete := incomplete <|> searched.exhaustion
             if let some e := searched.value then
-              for tag in tags do
-                let compared := subtypeUsing G images (BranchRefinement.tagSlice G C tag false) j.type
+              for (tag, q) in answers do
+                let compared := subtypeUsing G images (BranchRefinement.tagSlice G C tag q) j.type
                 incomplete := incomplete <|> compared.exhaustion
-                if let some p := compared.value then choices := choices ++ [.slicedRead tag i e p]
+                match compared.value with
+                | some p => choices := choices ++ [.slicedRead tag q i e p]
+                | none =>
+                  if tag == .isArray && q && BranchRefinement.arraySlice G C j.type then
+                    choices := choices ++ [.slicedRead tag q i e {}]
   | _ => pure ()
   if let some e := ordinary.value then
     match j.term with

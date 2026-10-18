@@ -86,6 +86,12 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "b,x,2", "field-contents-exclusion: each arm's value");
   assert.equal(runExample("invalid-field-contents-call", `wrong({ kind: "b" })`), undefined,
     "invalid-field-contents-call: the call rewrote kind, and the read finds no v");
+  assert.equal(runExample("field-tag-read", `[size({ mapping: [1, 2] }), size({ mapping: "abc" }), count({ mapping: [7] })].join()`),
+    "2,3,1", "field-tag-read: each mapping's size");
+  assert.equal(runExample("invalid-field-tag-alias", `(() => { const o = { mapping: [1] }; return wrong(o, o); })()`), 5,
+    "invalid-field-tag-alias: the write through the alias leaves a number where an array is promised");
+  assert.equal(runExample("invalid-field-tag-call", `(() => { const o = { mapping: [1] }; return wrong(o, () => { o.mapping = 5; }); })()`), 5,
+    "invalid-field-tag-call: the call leaves a number where an array is promised");
   assert.equal(runExample("exceptional-footprint-handler",
     `JSON.stringify([orZero([1, -1]), halvesOrSelf([4, 3]), relayedOrOne([-2, 2]), largest(1, 2)])`),
     "[[1,0],[2,3],[1,2],2]", "exceptional-footprint-handler: each handler's value");

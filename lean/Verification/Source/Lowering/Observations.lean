@@ -143,6 +143,58 @@ uniformly; this is a located proof obligation, never a discarded assertion. -/
   if !RequestJson.validTy (StoreView.valid (← table)) R then throw "invalid current-content type label"
   obligation pos ⟨[A], .readAt fld (.var 0), R⟩ none "heap-observation" [held d]
 
+/-- Where `Array.isArray` holds, the labels `arraySlice` keeps of `A`, and the
+builtins's `readonly unknown[]`, `R`, for the records and `unknown` it does not:
+the refinement the edge's observation establishes. -/
+@[nospecialize] def arrayRefine (G : PositiveGraphs.NormalGraph ι) (A R : Ty ι) : Ty ι :=
+  let sliced := BranchRefinement.tagSlice G A .isArray true
+  let kept := sliced.filter fun a => !(G.plain a && (G a).all fun c =>
+    ProgramTyping.tagClause .isArray c == some false || c.carriesInvariant)
+  if kept.length == sliced.length then sliced else kept ++ R
+
+/-- The built-in `readonly unknown[]`: the array shape over a possibly sparse
+store of `unknown`. -/
+@[nospecialize] def builtinArrayTy : Compiler (Ty Tree) := do
+  let u ← lower (SourceTypes.use .source)
+  let store ← lower (SourceTypes.use (.list ⟨[], [], some [u], true, .sparse⟩ []))
+  return [← lower (SourceTypes.use (SourceTypes.arrayOf (← table) store true))]
+
+/-- What a tag test answering `q` keeps of `A`: `tagSlice`, and where
+`Array.isArray` holds, `arrayRefine`. -/
+@[nospecialize] def tagRefine (A : Ty Tree) (tag : Tag) (q : Bool) : Compiler (Ty Tree) := do
+  let G := SourceTypes.graph (← table)
+  if tag == .isArray && q then return arrayRefine G A (← builtinArrayTy)
+  else return BranchRefinement.tagSlice G A tag q
+
+/-- The atom of a test's answer whose refinement of a field's contract `C` is
+within the type `A` a claim states the field holds, of the tests whose answer
+depends on the value alone and whose refinements a primitive predicate does
+not state. The atom is an assertion every edge into the point must establish;
+choosing it proves nothing. -/
+@[nospecialize] def answerAtoms (C A : Ty Tree) : Compiler (Option (List HeapFacts.Atom)) := do
+  let T ← table
+  for tag in [Tag.isArray, .isFun, .typeofObject, .isRef, .truthy] do
+    for q in [true, false] do
+      let R ← tagRefine C tag q
+      if R != C && within T R A then return some [.tag tag q]
+  return none
+
+/-- The atoms a claim that a field holds `A` asserts, where the field's
+contract is `C` (when every record states it): a primitive predicate; else a
+test's answer, where no nullish exclusion of `C` is within `A`; else the
+nullish exclusions `A` implies. -/
+@[nospecialize] def fieldAtoms (C : Option (Ty Tree)) (A : Ty Tree) :
+    Compiler (Option (List HeapFacts.Atom)) := do
+  let T ← table
+  let G := SourceTypes.graph T
+  if let some atoms := HeapKnowledge.atoms G A then return some atoms
+  let answer ← match C with
+    | some C =>
+      if [Tag.isUndef, .isNul, .isNullish].any (fun tag => within T (BranchRefinement.tagSlice G C tag false) A)
+      then pure none else answerAtoms C A
+    | none => pure none
+  return answer.orElse fun _ => HeapExpressionRules.nullishAtoms G A
+
 /-- The declared result of a named record property, including absence for an
 optional key. This only selects a persistent proof obligation. -/
 private def declaredRead (c : PositiveNormalization.Clause (Ty Tree)) (fld : PropKey) : Option (Ty Tree) :=
@@ -206,12 +258,9 @@ must follow from the stable storage contract; no claim is silently dropped. -/
         | .value | .slot _ =>
           if (invariant fld).any (within T · A) then
             persistentObservation b.source (pos,pos+1) reference fld A
-          else match HeapKnowledge.atoms (SourceTypes.graph T) A with
+          else match ← fieldAtoms (invariant fld) A with
           | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
-          | none =>
-            match HeapExpressionRules.nullishAtoms (SourceTypes.graph T) A with
-            | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
-            | none => persistentObservation b.source (pos,pos+1) reference fld A
+          | none => persistentObservation b.source (pos,pos+1) reference fld A
       return facts) []
 
 /-- A dot cannot occur in a source binding identifier, so these names designate
