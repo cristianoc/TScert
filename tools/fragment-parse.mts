@@ -26,7 +26,7 @@ import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositio
 import type { Ast, Expr, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
-import { messageOf } from "./thrown.mts";
+import { messageOf, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
 import { childOf, isStatic, nameOf } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
@@ -142,89 +142,89 @@ export class Gate {
    * conflating an inner binder with an outer binder of the same spelling. */
   readonly typeParamScopes: Map<string, string>[] = [];
   readonly resolutionScopes: TypeParamAst[][] = [];
-  readonly resolutionAliases = new Map<string, TypeAliasDeclaration>();
-  standardAwaited = false;
+  readonly resolutionAliases: Map<string, TypeAliasDeclaration> = new Map();
+  standardAwaited: boolean = false;
   /** The file names the verifier's `Resolvable` (`resolvable.d.ts`). */
-  standardResolvable = false;
+  standardResolvable: boolean = false;
   /** The file names the verifier's `Awaitable` (`resolvable.d.ts`). */
-  standardAwaitable = false;
-  qualificationHeader = false;
+  standardAwaitable: boolean = false;
+  qualificationHeader: boolean = false;
   /** Local spelling to the arity and identity of its declaration root. A
    * reference names the declaration TypeScript resolved the spelling to. */
   /** The equations of the declared aliases that name an array, a tuple or
    * another alias, over their parameters: what a rest parameter typed by one
    * collects into (`restType`, `restTerm`). */
-  readonly aliasEquations = new Map<string, { total: number; declaration: DeclarationIdentity;
-    expression: TypeTerm }>();
-  readonly declaredTypes = new Map<string,
-    { required: number; total: number; declaration: DeclarationIdentity }>();
+  readonly aliasEquations: Map<string, { total: number; declaration: DeclarationIdentity;
+    expression: TypeTerm }> = new Map();
+  readonly declaredTypes: Map<string,
+    { required: number; total: number; declaration: DeclarationIdentity }> = new Map();
   /** Global spellings TypeScript binds to a standard library type read at
    * its meaning, `Array<T>` as `T[]` (`LibraryType`). */
-  readonly libraryTypes = new Map<string, LibraryType>();
+  readonly libraryTypes: Map<string, LibraryType> = new Map();
   /* Whether the code being read is strict, by a module or a "use strict"
    * directive (ECMAScript's, not TypeScript's `strict` option). An ordinary
    * function records it: its receiver rule is the strict one. */
-  strict = false;
+  strict: boolean = false;
   /** `e[k]` keys TypeScript binds to a `unique symbol` constant, by span:
    * the symbol, as the declaration document lists it. */
-  symbolKeys = new Map<string, number>();
+  symbolKeys: Map<string, number> = new Map();
   /** The symbols the declaration document lists, by index: which one a
    * computed class member's key names. */
   symbolIdentities: readonly { module: string; name: string }[] = [];
   /** Private names `#x`, by span: the symbol of the member each names, as
    * the declaration document lists it. */
-  readonly privateKeys = new Map<string, number>();
+  readonly privateKeys: Map<string, number> = new Map();
   /** The computed types of the file's annotations (`computedForm`), by span:
    * the term TypeScript's evaluation denotes, or the reason it has none
    * (`computed-types.mts`). */
-  readonly computedTypes = new Map<string, TypeTerm | { refused: string }>();
+  readonly computedTypes: Map<string, TypeTerm | { refused: string }> = new Map();
   /** The omitted arguments of the file's references to declarations, by
    * span: each the parameter's default at the arguments before it, or the
    * reason it has none. */
-  readonly completions = new Map<string, TypeTerm[] | { refused: string }>();
+  readonly completions: Map<string, TypeTerm[] | { refused: string }> = new Map();
   /** The computed keys of the file's annotations' type literals, by span of
    * the key expression: the `unique symbol` each names, as the declaration
    * document lists it, or the reason it names none. */
-  readonly symbolNames = new Map<string, number | { literal: string } | { refused: string }>();
+  readonly symbolNames: Map<string, number | { literal: string } | { refused: string }> = new Map();
   /** Mapped types' keys and library mapped types' arguments in the file's
    * annotations, by span: the union of literals and primitives TypeScript
    * computes for each, or null. */
-  readonly keyTypes = new Map<string, TypeTerm | null>();
+  readonly keyTypes: Map<string, TypeTerm | null> = new Map();
   /** `C.x` member names TypeScript binds to a static member of the file's
    * class `C`, by span: the class. */
-  staticReads = new Map<string, string>();
+  staticReads: Map<string, string> = new Map();
   /** `X.m` reads of a static member a base class of `X` declares
    * (`inheritedStatic`), by span. */
-  readonly inheritedStatics = new Set<string>();
+  readonly inheritedStatics: Set<string> = new Set();
   /** `instanceof` right operands TypeScript binds to a class declared at the
    * file's top level, by span: the class. */
-  readonly classTests = new Map<string, string>();
+  readonly classTests: Map<string, string> = new Map();
   /** `instanceof` right operands whose type TypeScript gives states
    * `[Symbol.hasInstance]`, by span. */
-  readonly hookTests = new Set<string>();
+  readonly hookTests: Set<string> = new Set();
   /** A `for...of` iterable's iteration intrinsic, where TypeScript's type of
    * it picks one other than `%Iterate%`, or, for a program's iterable,
    * `client`, `client-method` (its iterator's `return` a required method) or
    * `client-unclosable` (its iterator's type states no `return`), by the
    * iterable's span; likewise a spread's operand and an array pattern's
    * initializer. */
-  readonly iterations = new Map<string, string>();
+  readonly iterations: Map<string, string> = new Map();
   /** The keys of `k in o` tests the host answers (`%HasProperty%`). */
-  readonly hostIns = new Set<string>();
+  readonly hostIns: Set<string> = new Set();
   /** The member names of `o.m.call(…)`, `.apply` and `.bind` TypeScript
    * resolves to a method. */
-  readonly methodTargets = new Set<string>();
+  readonly methodTargets: Set<string> = new Set();
   /** The element reads `%ElementAt%` answers. */
-  readonly hostElements = new Set<string>();
+  readonly hostElements: Set<string> = new Set();
   /** Each regular expression literal's intrinsic, `%RegExp:Σ%`, by span. */
-  readonly regexps = new Map<string, string>();
+  readonly regexps: Map<string, string> = new Map();
   /** Each string method call dispatching to its object argument's
    * well-known-symbol method, by the call's span: `%Dispatch:m%`. */
-  readonly dispatches = new Map<string, string>();
+  readonly dispatches: Map<string, string> = new Map();
   /** The reads `for...in` bodies start with at their keys
    * (`forInEntryReads`), by span: the hidden name of the entry the loop's
    * step yields. */
-  readonly entryReads = new Map<string, string>();
+  readonly entryReads: Map<string, string> = new Map();
   /** The well-known `Symbol.iterator`'s index among the declaration
    * document's symbols, where a program iterable is iterated. */
   wellKnownIterator: number | null = null;
@@ -232,7 +232,7 @@ export class Gate {
    * object a literal or a class's prototype makes (`Symbol.toStringTag`,
    * `Symbol.toPrimitive`, …), by index: keys no literal or class of the
    * fragment writes (`writtenSymbol`). */
-  hostSymbols = new Set<number>();
+  hostSymbols: Set<number> = new Set();
   /** The statement being lowered, where it runs a program iterable's
    * protocol before its own code (`hoistTarget`): the spread collected, and
    * the claim sites the lowering takes from the statement. */
@@ -243,26 +243,26 @@ export class Gate {
   /** The names the file assigns anywhere (`assignedNames`). */
   assigned: Set<string> | null = null;
   /** The array pattern rest targets TypeScript types as a slice, by span. */
-  readonly slices = new Set<string>();
+  readonly slices: Set<string> = new Set();
   /** Identifiers in a class's own body TypeScript binds to that class, by
    * span: the class. */
-  readonly classReads = new Map<string, string>();
+  readonly classReads: Map<string, string> = new Map();
   /** Identities of the declarations collected in the source type graph. */
-  readonly typeIdentities = new Set<string>();
+  readonly typeIdentities: Set<string> = new Set();
   /** Closure parameters written without a type, by the span of their name:
    * the type TypeScript gives each from its context, or why none states it. */
-  readonly contextualParams = new Map<string, TypeTerm | { refused: string }>();
+  readonly contextualParams: Map<string, TypeTerm | { refused: string }> = new Map();
   /** The type TypeScript gives each static field written without an
    * annotation, by its name's span, or why none. */
-  readonly staticTypes = new Map<string, TypeTerm | { refused: string }>();
+  readonly staticTypes: Map<string, TypeTerm | { refused: string }> = new Map();
   /** The callable form's annotations TypeScript infers for an
    * `Object.assign(arrow, literal)` written without type arguments, by the
    * call's span, or why none. */
-  readonly assignTypes = new Map<string, { functionType: TypeTerm; bagType: TypeTerm } | { refused: string }>();
+  readonly assignTypes: Map<string, { functionType: TypeTerm; bagType: TypeTerm } | { refused: string }> = new Map();
   /** Local bindings that shadow a binding of an enclosing scope, and every
    * reference TypeScript resolves to one, by the span of the identifier: the
    * name the fragment gives the binding instead (`shadowName`). */
-  readonly renames = new Map<string, string>();
+  readonly renames: Map<string, string> = new Map();
   /** The fragment's name of a value binding or reference spelled by `id`:
    * its own text, unless it is or names a shadowing local (`renames`). */
   local(id: Identifier): string {
@@ -273,49 +273,49 @@ export class Gate {
   selfClass: { name: string; generic: boolean } | null = null;
   /** The classes lowered so far, by name: what a class extending one reads
    * (`classStmt`). */
-  readonly classRecords = new Map<string, ClassRecord>();
+  readonly classRecords: Map<string, ClassRecord> = new Map();
   /** The class a method being lowered inherits from: what `super.m(...)`
    * calls. */
   superClass: ClassRecord | null = null;
   /** Calls the reviewed overlay of library globals reads as a test of the
    * calculus, `Array.isArray(e)`, and `e instanceof Array`, by span. */
-  readonly globalTests = new Set<string>();
+  readonly globalTests: Set<string> = new Set();
   /** Calls the reviewed overlay reads as a call of an intrinsic,
    * `Promise.resolve(v)`, by span: the intrinsic's name. */
-  readonly globalIntrinsics = new Map<string, string>();
+  readonly globalIntrinsics: Map<string, string> = new Map();
   /** Calls the reviewed overlay reads as the global's construct, `Error(m)`,
    * by span. */
-  readonly globalConstructs = new Set<string>();
+  readonly globalConstructs: Set<string> = new Set();
   /** The file's enums by name (PROGRAM-TYPING.md, "Enums"), each member's value as
    * TypeScript computes it, once the declaration graph has been read. */
-  readonly enums = new Map<string, EnumInfo>();
+  readonly enums: Map<string, EnumInfo> = new Map();
   /** The enums the file imports, by local name, with their members as the
    * declaration graph read them. */
-  readonly importedEnums = new Map<string, readonly EnumMemberValue[]>();
+  readonly importedEnums: Map<string, readonly EnumMemberValue[]> = new Map();
   /** Reads of a `const enum` member TypeScript writes as the member's value,
    * by span: that value. */
-  readonly constEnumReads = new Map<string, string | number>();
+  readonly constEnumReads: Map<string, string | number> = new Map();
   /** Reads in an enum member's initializer of a member of the same enum,
    * bare or `E.M`, `E["M"]`, by span, with the member's span. */
-  readonly enumMemberReads = new Map<string, string>();
+  readonly enumMemberReads: Map<string, string> = new Map();
   // Mode of the ordinary function that bound `this`, or no binding. A strict
   // arrow captures its creator's already-converted receiver; it cannot rebind it.
   receiverMode: "strict" | "sloppy" | null = null;
   /* Whether the function whose body is being read is async: its returns
      settle the promise its call returned (`intrinsics.mts`). */
-  asyncBody = false;
+  asyncBody: boolean = false;
   /** Each occurrence of a namespace member (`namespace-members.mts`), a
    * member read or a qualified type name, by its span: the binding it reads. */
-  namespaceUses = new Map<string, { member: NamespaceMember; use: MemberUse }>();
+  namespaceUses: Map<string, { member: NamespaceMember; use: MemberUse }> = new Map();
   /** The names TypeScript binds to the standard library's declarations
    * alone, among those the gate lowers specially (`libraryNames`), by span. */
-  readonly libraryNames = new Set<string>();
+  readonly libraryNames: Set<string> = new Set();
   /** The identifiers spelled `undefined` that TypeScript binds to the global
    * `undefined`, by span: those alone read the value `undefined`. */
-  readonly globalUndefined = new Set<string>();
+  readonly globalUndefined: Set<string> = new Set();
   /** The global `Object`s of `Object.assign` calls, which no global value
    * stands for: each is the intrinsic or refused, by span. */
-  readonly assignObjects = new Set<string>();
+  readonly assignObjects: Set<string> = new Set();
 
   constructor(file: SourceFile) {
     this.file = file;
@@ -391,7 +391,7 @@ export class Gate {
   enterTypeParams(
     parameters: readonly TypeParameterDeclaration[] | undefined,
     rename?: (parameter: TypeParameterDeclaration, index: number) => string,
-    qualifiable = false,
+    qualifiable: boolean = false,
   ): TypeParamAst[] {
     const local = new Map<string, string>();
     const result: TypeParamAst[] = [];
@@ -440,29 +440,37 @@ export class Gate {
     finally { this.qualificationHeader = outer; }
   }
 
-  enumMembers = classes.enumMembers;
+  enumMembers: typeof classes.enumMembers = classes.enumMembers;
 
-  enumOpen = classes.enumOpen;
+  enumOpen: typeof classes.enumOpen = classes.enumOpen;
 
-  enumObjectTerm = classes.enumObjectTerm;
+  enumObjectTerm: typeof classes.enumObjectTerm = classes.enumObjectTerm;
 
-  enumTerm = classes.enumTerm;
+  enumTerm: typeof classes.enumTerm = classes.enumTerm;
 
-  enumEntries = classes.enumEntries;
+  enumEntries: typeof classes.enumEntries = classes.enumEntries;
 
-  enumStmt = classes.enumStmt;
+  enumStmt: typeof classes.enumStmt = classes.enumStmt;
 
   /** The enum member initializer being lowered, of an enum with a member
    * known only at run time (`enumStmt`): its enum, members and index. */
   enumInit: { name: string; members: EnumMember[]; index: number } | null = null;
 
-  enumRead = classes.enumRead;
+  enumRead: typeof classes.enumRead = classes.enumRead;
 
-  classStmt = classes.classStmt;
+  classStmt: typeof classes.classStmt = classes.classStmt;
 
-  classBody = classes.classBody;
+  classBody: typeof classes.classBody = classes.classBody;
 
-  registerDeclaredType = classes.registerDeclaredType;
+  registerDeclaredType: typeof classes.registerDeclaredType = classes.registerDeclaredType;
+
+  /** A failure of the compiler's API: reported as a tool failure, never
+   * as a gate refusal, so no verdict on the source follows. */
+  toolFailure(node: Node | null, failure: ToolFailure): never {
+    const start = node ? node.getStart(this.file) : 0;
+    const at = this.file.getLineAndCharacterOfPosition(start);
+    throw new Error(toolFailureText(failure, `(line ${at.line + 1}, col ${at.character + 1})`));
+  }
 
   fail(node: Node | null, message: string): never {
     const start = node ? node.getStart(this.file) : 0;
@@ -476,17 +484,17 @@ export class Gate {
     return [node.getStart(this.file), node.end];
   }
 
-  memberKey = classes.memberKey;
+  memberKey: typeof classes.memberKey = classes.memberKey;
 
-  staticPrivate = classes.staticPrivate;
+  staticPrivate: typeof classes.staticPrivate = classes.staticPrivate;
 
-  selfConstruction = classes.selfConstruction;
+  selfConstruction: typeof classes.selfConstruction = classes.selfConstruction;
 
-  readsClass = classes.readsClass;
+  readsClass: typeof classes.readsClass = classes.readsClass;
 
-  staticInitOf = classes.staticInitOf;
+  staticInitOf: typeof classes.staticInitOf = classes.staticInitOf;
 
-  ownClass = classes.ownClass;
+  ownClass: typeof classes.ownClass = classes.ownClass;
 
   /* ------------------------------------------------------ async, await -- */
   // `async` and `await` are trusted steps, written as calls of intrinsics
@@ -772,46 +780,46 @@ export class Gate {
 
   /* ------------------------------------------------------- expressions -- */
 
-  expr = expressions.expr;
+  expr: typeof expressions.expr = expressions.expr;
 
-  objectFields = expressions.objectFields;
+  objectFields: typeof expressions.objectFields = expressions.objectFields;
 
-  optionalChain = expressions.optionalChain;
+  optionalChain: typeof expressions.optionalChain = expressions.optionalChain;
 
-  chainLink = expressions.chainLink;
+  chainLink: typeof expressions.chainLink = expressions.chainLink;
 
-  refuseReceiverForm = expressions.refuseReceiverForm;
+  refuseReceiverForm: typeof expressions.refuseReceiverForm = expressions.refuseReceiverForm;
 
-  knownLocal = expressions.knownLocal;
+  knownLocal: typeof expressions.knownLocal = expressions.knownLocal;
 
   bindings?: Map<Node, Map<string, Node>>;
-  resolve = expressions.resolve;
+  resolve: typeof expressions.resolve = expressions.resolve;
 
-  confined = expressions.confined;
+  confined: typeof expressions.confined = expressions.confined;
 
-  localArrow = expressions.localArrow;
+  localArrow: typeof expressions.localArrow = expressions.localArrow;
 
-  memberOf = expressions.memberOf;
+  memberOf: typeof expressions.memberOf = expressions.memberOf;
 
-  moduleFunction = expressions.moduleFunction;
+  moduleFunction: typeof expressions.moduleFunction = expressions.moduleFunction;
 
-  memberMayBeWritten = expressions.memberMayBeWritten;
+  memberMayBeWritten: typeof expressions.memberMayBeWritten = expressions.memberMayBeWritten;
 
-  localValues = expressions.localValues;
+  localValues: typeof expressions.localValues = expressions.localValues;
 
-  letWrites = expressions.letWrites;
+  letWrites: typeof expressions.letWrites = expressions.letWrites;
 
-  update = expressions.update;
+  update: typeof expressions.update = expressions.update;
 
-  template = expressions.template;
+  template: typeof expressions.template = expressions.template;
 
-  hasInstanceClass = expressions.hasInstanceClass;
+  hasInstanceClass: typeof expressions.hasInstanceClass = expressions.hasInstanceClass;
 
-  hasInstanceAlong = expressions.hasInstanceAlong;
+  hasInstanceAlong: typeof expressions.hasInstanceAlong = expressions.hasInstanceAlong;
 
-  staticHasInstance = expressions.staticHasInstance;
+  staticHasInstance: typeof expressions.staticHasInstance = expressions.staticHasInstance;
 
-  binary = expressions.binary;
+  binary: typeof expressions.binary = expressions.binary;
 
   /* ----------------------------------------------------------- closures -- */
   // A closure body is an expression in the calculus. A block-bodied one is
@@ -819,32 +827,32 @@ export class Gate {
   // inside a closure become one: the parser owns that translation because it
   // owns what the source means.
 
-  lambda = expressions.lambda;
+  lambda: typeof expressions.lambda = expressions.lambda;
 
   /* -------------------------------------------------------- statements -- */
 
   /* `const pattern = init;`. One declarator; object and array patterns,
      nested, with identifier keys, defaults, holes and an array rest: what the
      lowering states. */
-  patternStmt = statements.patternStmt;
+  patternStmt: typeof statements.patternStmt = statements.patternStmt;
 
-  protocolPattern = statements.protocolPattern;
+  protocolPattern: typeof statements.protocolPattern = statements.protocolPattern;
 
-  collectStep = statements.collectStep;
+  collectStep: typeof statements.collectStep = statements.collectStep;
 
-  closeStatements = statements.closeStatements;
+  closeStatements: typeof statements.closeStatements = statements.closeStatements;
 
-  collect = statements.collect;
+  collect: typeof statements.collect = statements.collect;
 
-  hoistTarget = statements.hoistTarget;
+  hoistTarget: typeof statements.hoistTarget = statements.hoistTarget;
 
-  assignedNames = statements.assignedNames;
+  assignedNames: typeof statements.assignedNames = statements.assignedNames;
 
   /* Each default of a declaration's patterns, in binding order, reads none
      of the declaration's own names not yet initialized: JavaScript throws
      there (the temporal dead zone), where the lowering would read whatever
      outer binding has the name. */
-  initializedBefore = statements.initializedBefore;
+  initializedBefore: typeof statements.initializedBefore = statements.initializedBefore;
 
   /* Whether evaluating `e` runs no code but its own and writes nothing but a
      local: a literal, a name, a field read (the heap has data properties
@@ -853,10 +861,10 @@ export class Gate {
      assignment of a local, an array or object literal of such parts, a
      closure's creation. Anything else may call, convert an object or write a
      field. */
-  inert = statements.inert;
+  inert: typeof statements.inert = statements.inert;
 
   /* The defaults a binding pattern runs, at any depth. */
-  patternDefaults = statements.patternDefaults;
+  patternDefaults: typeof statements.patternDefaults = statements.patternDefaults;
 
   /* JavaScript steps an array pattern's source through the array's iterator,
      which stays finished once a step found the end; the lowering reads each
@@ -871,62 +879,62 @@ export class Gate {
      after its step (`after`: its default, a nested pattern's defaults, and a
      write at a field target's index or `length`, which may be the array's).
      A write at another named field changes no array's elements or length. */
-  steppedPattern = statements.steppedPattern;
+  steppedPattern: typeof statements.steppedPattern = statements.steppedPattern;
 
   /* An array assignment's elements, as `steppedPattern` reads them. */
-  assignedSteps = statements.assignedSteps;
+  assignedSteps: typeof statements.assignedSteps = statements.assignedSteps;
 
   /* What a binding name or pattern binds. An object pattern reads identifier
      keys; its rest binds a fresh object holding the source's other own
      enumerable properties. An array pattern's hole is a position no element
      names; `fresh` says its source is an array literal (`steppedPattern`). */
-  pattern = statements.pattern;
+  pattern: typeof statements.pattern = statements.pattern;
 
   /* A branch or loop body. TypeScript allows a single statement where a block
      could be written, and the two mean the same thing here: a lexical
      declaration cannot be an unbraced body, so no binding's scope depends on
      the braces. */
-  block = statements.block;
+  block: typeof statements.block = statements.block;
 
-  statements = statements.statements;
+  statements: typeof statements.statements = statements.statements;
 
-  hoisting = statements.hoisting;
+  hoisting: typeof statements.hoisting = statements.hoisting;
 
-  letPattern = statements.letPattern;
+  letPattern: typeof statements.letPattern = statements.letPattern;
 
-  token = statements.token;
+  token: typeof statements.token = statements.token;
 
-  forStmt = statements.forStmt;
+  forStmt: typeof statements.forStmt = statements.forStmt;
 
-  forInStmt = statements.forInStmt;
+  forInStmt: typeof statements.forInStmt = statements.forInStmt;
 
-  protocolForOf = statements.protocolForOf;
+  protocolForOf: typeof statements.protocolForOf = statements.protocolForOf;
 
-  sites = statements.sites;
+  sites: typeof statements.sites = statements.sites;
 
-  protocolStart = statements.protocolStart;
+  protocolStart: typeof statements.protocolStart = statements.protocolStart;
 
-  protocolStep = statements.protocolStep;
+  protocolStep: typeof statements.protocolStep = statements.protocolStep;
 
-  switchStmt = statements.switchStmt;
+  switchStmt: typeof statements.switchStmt = statements.switchStmt;
 
-  tryStmt = statements.tryStmt;
+  tryStmt: typeof statements.tryStmt = statements.tryStmt;
 
-  abrupt = statements.abrupt;
+  abrupt: typeof statements.abrupt = statements.abrupt;
 
-  stmt = statements.stmt;
+  stmt: typeof statements.stmt = statements.stmt;
 
-  declarations = statements.declarations;
+  declarations: typeof statements.declarations = statements.declarations;
 
-  neverAssigned = statements.neverAssigned;
+  neverAssigned: typeof statements.neverAssigned = statements.neverAssigned;
 
-  controlStmt = statements.controlStmt;
+  controlStmt: typeof statements.controlStmt = statements.controlStmt;
 
   /* --------------------------------------------------------- functions -- */
 
-  functionDecl = statements.functionDecl;
+  functionDecl: typeof statements.functionDecl = statements.functionDecl;
 
-  guardOf = guards.guardOf;
+  guardOf: typeof guards.guardOf = guards.guardOf;
 }
 
 /** A program module a lowered file imports a function from: its file, and
@@ -1570,7 +1578,12 @@ function lowerFile(file: string, carriesContext: boolean,
           while (declaration && ts.isBindingElement(declaration)) declaration = declaration.parent?.parent;
           const initializer = declaration && ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
           const inInitializer = !!initializer && start >= initializer.getStart(source) && end <= initializer.end;
-          if (read && (start < dStart || inInitializer)) early.push(read);
+          // A loop head's binding exists, uninitialized, while the head's
+          // own expression runs: `for (const xs of xs)` throws there.
+          const loop = declaration?.parent?.parent;
+          const iterated = loop && (ts.isForOfStatement(loop) || ts.isForInStatement(loop)) ? loop.expression : undefined;
+          const inHead = !!iterated && start >= iterated.getStart(source) && end <= iterated.end;
+          if (read && (start < dStart || inInitializer || inHead)) early.push(read);
           gate.renames.set(`${start}:${end}`, renamed);
         },
         staticTypes: staticTypeNodes.map(node => gate.span(node)),
@@ -1643,6 +1656,8 @@ function lowerFile(file: string, carriesContext: boolean,
             ...keyTypeNodes, ...bindingNodes, ...privateNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;
+      const failure = toolFailureOf(error);
+      if (failure) gate.toolFailure(at, failure);
       gate.fail(at, messageOf(error));
     }
     if (early[0])

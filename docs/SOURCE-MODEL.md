@@ -139,8 +139,127 @@ spells (`x@line:col`), so the lowering never meets two bindings of one name:
 consistent renaming of bound variables, for `const`, `let`, parameters, patterns, closure
 parameters, `for...of` and `catch` bindings in any body
 ([shadowing](SOURCE-ELABORATION.md#derived-source-forms)). A mention above the
-declaration, a closure's included, or in its own initializer is refused, as
-JavaScript's temporal dead zone throws there.
+declaration, a closure's included, or in its own initializer is the
+binding before it is initialized ([lexical bindings before
+initialization](#lexical-bindings-before-initialization)).
+
+<a id="lexical-bindings-before-initialization"></a>
+**Lexical bindings before initialization.** A `let`, `const` or class
+declaration's binding exists from the entry of its scope and is
+uninitialized until its declaration runs; reading, writing or `typeof` of it
+then throws a `ReferenceError` (the temporal dead zone). A closure holds the
+binding, never its value, so whether a read through a closure throws depends
+on when the closure runs, not on where it is written: in
+
+```ts
+const visit = (n: Node): void => { if (wanted(n)) found.push(n); };
+const wanted = (n: Node): boolean => n.kind === 79;
+```
+
+`visit` reads `wanted` successfully at every call made after the second
+line, and throws at a call made before it.
+
+**Scope.** The model covers a `let` or `const` that declares one name (no
+pattern), in a function body or a block statement, a loop's body included.
+Each entry of the block creates its bindings anew, so a closure created in
+one iteration keeps that iteration's. Refused at their location, as
+explicit restrictions, each the behaviour of reading a binding of an
+environment the model does not represent before its initialization: an
+early binding (below) declared by a pattern; one in a `switch`'s case block
+(one environment for every clause, entered after the discriminant, whose
+clauses may skip a declaration); a class declaration's binding; a
+generator's body; a parameter default that mentions its own parameter or a
+later one, a closure's mention included (`initializedBefore`); and a loop
+head's binding mentioned in its own head (`for (const xs of xs)`). A module's constants keep the initialization order check
+(`Sites.checkInitializationOrder`), which refuses an initialization step
+that may reach a constant not yet bound; it does not model the module's dead
+zone for them, a caught `ReferenceError` there or a module cycle. A
+module-level `let` is a [module cell](#module-cells).
+
+A binding is **early** when one of its mentions is in a closure or a
+function declaration of its scope, which may run at any time after its
+creation, a hoisted declaration from the scope's entry (in
+`f(); let x = 1; function f() { return x; }` the call throws), or when a
+mention in the scope's own code is not dominated, within the same
+activation, by the binding's **initialization point**: the write after its
+initializer completed normally, which follows the initializer's own
+evaluation (`let x = x` and `let a = b, b = 1` throw), one binding of a
+declaration list at a time. A function literal that is a constant's whole
+initializer is the exception: creating it runs nothing, so its reads of the
+constant are the [recursive constant](#recursive-constants)'s self entry,
+not checked accesses. Every other binding is lowered as before.
+
+**Representation.** An early binding $`x`$ of storage contract $`T`$ is a
+cell of the block's activation, allocated when the block is entered, before
+its statements and before its hoisted function declarations are created,
+holding the activation's **uninitialized marker** $`u`$: one fresh object per
+block entry, owning the key $`\kappa_u`$ (`[[uninitialized]]`), and the only
+objects that own it. This is a representation invariant, an obligation of
+the lowering: every string key a JavaScript object has is represented
+under $`\mathsf{esc}`$, whose image misses the model's reserved spellings
+(`reservedSpelling_escapeKey`, [keys](SEMANTICS.md)); the model's own
+reserved keys (`[[proto]]`, `[]`, `[[code]]`, `[[host]]`, a class's
+prototype key) are other spellings; and no allocation but the marker's,
+source, native or host, adds $`\kappa_u`$, so no source-visible value or
+object on its prototype chain owns it. `copiedKey` excludes $`\kappa_u`$,
+as it excludes `[[host]]`, though by confinement (below) no copy receives a
+marker. The cell's
+contract is $`T\cup U`$, with $`U`$ a label of its own whose one clause
+requires $`\kappa_u`$; closures and function declarations capture the cell
+itself, never its contents.
+
+**Checked access.** A read of $`x`$ reads the cell once, tests that value
+for $`\kappa_u`$ (the calculus's `hasKey`, which is false of a primitive;
+never JavaScript's `in`, which throws on one), throws on the true edge, and
+on the false edge proceeds with the same value, the test's slice removing
+$`U`$ (`tagSlice`), so at $`T`$:
+
+```math
+\frac{\Gamma\vdash x:\mathsf{cell}(T\cup U)}
+     {⟦x⟧=\mathsf{let}\ v=\mathsf{read}(x)\ \mathsf{in}\ \mathsf{if}\ \kappa_u\in v\ \mathsf{then}\ \mathsf{throw}\ \iota_{\mathsf{RE}}()\ \mathsf{else}\ v,
+      \qquad \Gamma\vdash ⟦x⟧:T\ \text{on its normal edge}}\ \textsf{early-read}
+```
+
+Only checked accesses read the cell, so the marker never reaches a value
+position: a return, an argument, a spread, a copy or a serialization. The
+operators keep ECMAScript's order: `x = e` evaluates `e`, then checks, then
+writes; `x += e`, an update and a logical assignment begin with a checked
+read; `typeof x` is a checked read followed by the test. Assigning a `const`
+is refused by TypeScript and is outside the fragment.
+
+**Initialization.** The declaration's evaluation, where the source has it,
+writes its initializer's value into the cell after the initializer
+completes normally, checked at $`T`$; `let x;` writes `undefined`. An
+initializer that throws leaves the marker, so a closure retained from that
+activation throws at every later read, as JavaScript's does.
+
+**The throw.** $`\iota_{\mathsf{RE}}`$, `%ThrowUninitialized%`, allocates a
+`ReferenceError` by the realm's intrinsic constructor, whatever a source
+binding of that name holds, and throws it: the read's exceptional edge,
+which reaches the enclosing handler as any throw does, with no fact of the
+normal edge. Its footprint is empty over storage that existed before it;
+effects already performed, by an assignment's right side for one, remain.
+
+**Precision.** A checked read always has its exceptional edge: where the
+cell's current contents are known at $`T`$, the test is still undecided for
+a $`T`$ that is an open record, a dictionary or `unknown`, and after a call
+the cell is again at $`T\cup U`$. Safety, a value, a step or a throw, holds
+either way; an exceptional guarantee that excludes the throw would need a
+durable initialization fact, which the model does not have.
+
+**Ownership.** The checker allocates the cells, includes them in the
+captures of every closure and function declaration before lowering the
+block's statements, and lowers every mention of an early binding as a
+checked access, from the source alone; the producer proposes $`T`$ and the
+claims at the checked accesses, and no claim can omit a check, replace a
+cell by a value capture, or make an initialization an unchecked write.
+Controls bypass the producer with exactly those forged claims, and with an
+initializer outside $`T`$ and a stale snapshot, against evidence production
+and consumption; end-to-end cases cover calls before and after the
+declaration, a hoisted call, shadowing, assignment order, `typeof`, a
+failed initializer, block re-entry, and values that are primitives, open
+records, dictionaries and host objects, each throwing case also run under
+Node.
 
 <a id="recursive-constants"></a>
 **Recursive constants.** A constant whose initializer is a function literal,
@@ -166,6 +285,44 @@ annotation completes; the checker derives each from the claimed type. Every
 other read of a binding in its own initializer is refused at its location
 (`recursive-const-before-initialization-refused`), and module initialization
 order is checked as before (`Sites`).
+
+<a id="module-cells"></a>
+**Module cells.** A module-level `let x` that the module does not export,
+in no form (no `export let`, no `export { x }` or alias of it), is an
+[early binding](#lexical-bindings-before-initialization) of the module's
+scope, whatever its mentions: a **module cell**. The initialization unit
+allocates it at its entry, before any statement and before the module's
+functions and classes exist, holding the module's uninitialized marker,
+and binds a module constant to it, so a closure or function created before
+the declaration captures the one cell, as `const get = () => x; let x = 1;
+get();` needs. The declaration writes the initializer's value after it
+completes normally; `let x;` writes `undefined`. Every mention of $`x`$, in
+the initialization unit, in every module function and in every closure, is
+a checked access, so a run that reaches $`x`$ before its initialization
+throws the `ReferenceError` JavaScript throws, and no initialization order
+check is needed for it:
+
+```math
+\frac{\mathtt{let}\ x\ \text{at the module's top level, not exported}\quad C_x\ \text{its one contract}}
+     {\Gamma_f(x)=\mathsf{cell}(C_x\cup U)\ \text{for every unit } f\ \text{of the module}}\ \textsf{module-cell}
+```
+
+$`\mathsf{cell}(C)`$ is the private cell's invariant writable field at
+$`C`$. $`C_x`$ is one contract for the binding, stated once in the claims
+and the same in every unit: the annotation, or, without one, the producer's
+proposal, which the initialization unit checks against the initializer
+and every unit checks against each of its writes, `undefined` included for
+`let x;`; no unit narrows it. A unit's theorem assumes $`x`$ at
+$`\mathsf{cell}(C_x\cup U)`$, its contents any value there at the unit's
+entry and after each call; the facts a unit establishes of the contents
+follow the [current-content rules](PROGRAM-TYPING.md#current-content-rules-semantic-layer):
+a write or a call ends them, a join keeps only what every edge proves, and
+a closure captures the cell's identity, never its contents. Composing the
+units' theorems for a module execution, with the cell's contract as a
+shared invariant of the heap every write preserves, is
+[module composition](../WORK.md#module-composition). A `var`, whose binding
+exists from the module's entry at `undefined` and may be redeclared, and an
+exported `let`, a live binding importers read, are outside the fragment.
 
 A module function is an immutable slot holding its code. A file without
 imports or exports may run as a script, whose top-level functions are

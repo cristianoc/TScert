@@ -145,6 +145,7 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     if (!project) throw Error("TypeScript did not load the probe program");
     return read(project.program, project.checker);
   };
+  let failed = false;
   try {
     const snapshot = api.updateSnapshot({ openFiles: [file],
       ...(tsconfigPath ? { openProjects: [tsconfigPath] } : {}) });
@@ -161,8 +162,14 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     if (broken) throw new DeclarationError([0, 0], `TypeScript reports an error in the project: ${broken.text}`);
     config = project.configFileName;
     return use(project.checker, client, dirname(project.configFileName), project.program, probe);
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    api.close();
+    // A failure closing the API after another error is not the report:
+    // the error that was in flight is.
+    if (!failed) api.close();
+    else try { api.close(); } catch { /* the error in flight is reported */ }
   }
 }
 
@@ -1078,6 +1085,7 @@ export function collectDeclarations(file: string, options: {
     // which a value reference does not denote.
     // A host value is the host's: its branded strings read where it produces
     // them (reading rule 5).
+    const skipParenthesized = (e: Node): Node => ts.isParenthesizedExpression(e) ? skipParenthesized(e.expression) : e;
     const valueOf = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
       const read = valueRead(declared, what);
       return declared.some(n => isHostFile(n.getSourceFile().fileName))
@@ -1150,6 +1158,18 @@ export function collectDeclarations(file: string, options: {
           return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
             typeParams: [], type: term };
         }
+        // A constant initialized by a function literal states its type by
+        // the literal's parameter and result annotations, as a function
+        // declaration does; the body is what is assumed.
+        const fn = node.initializer && skipParenthesized(node.initializer);
+        if (constant && !node.type && fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && fn.type &&
+            fn.parameters.every(p => !!p.type)) {
+          for (const part of [...(fn.typeParameters ?? []), ...fn.parameters, fn.type])
+            clean(part, `${idOf(source)}#${node.name.text}`);
+          const { names, typeParams } = bindersOf(fn.typeParameters, fn, what);
+          return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false, typeParams,
+            type: oneTerm(signature(valueScope(fn, what, names), fn.parameters, fn.type, fn, span, true), span) };
+        }
         if (!constant || !node.type)
           throw Error(`a declared value must be an annotated constant, function or class: ${what}`);
         clean(node, `${idOf(source)}#${node.name.text}`);
@@ -1195,8 +1215,13 @@ export function collectDeclarations(file: string, options: {
     // the entries' statements; the declarations' types are not read.
     const moduleValue = (declared: readonly Node[], entries: readonly ModuleEntry[], what: string):
         Omit<ValueRoot, "binding"> => {
-      const overloads = declared.filter((n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && !n.body);
-      if (!overloads.length || overloads.length !== declared.length ||
+      // A function's overloads, or the methods of the object a module
+      // exports whole (`export = path`, `path.PlatformPath`'s); a namespace
+      // merged into a function (`realpathSync.native`) is its other members.
+      const callable = declared.filter(n => !ts.isModuleDeclaration(n));
+      const overloads = callable.filter((n): n is ts.FunctionDeclaration | ts.MethodSignatureDeclaration =>
+        (ts.isFunctionDeclaration(n) && !n.body) || ts.isMethodSignatureDeclaration(n));
+      if (!overloads.length || overloads.length !== callable.length ||
           overloads.some(o => !idOf(o.getSourceFile()).includes("@types/node/")))
         throw Error(`${what} is not a function Node's declarations declare, as the reviewed overlay of library modules states it`);
       const forms = entries.map(entry => {
@@ -2395,7 +2420,16 @@ export function collectDeclarations(file: string, options: {
         }
       }
     };
+    const queuedValues = valueStarts.length;
     collectFrom(starts);
+    // A value a definition names through `typeof` is read while the graph
+    // is collected; the declarations its type names join the graph.
+    for (let from = queuedValues; from < valueStarts.length;) {
+      const to = valueStarts.length;
+      const at = starts[0]?.span ?? [0, 0];
+      collectFrom(valueStarts.slice(from, to).map(node => ({ node, span: at })));
+      from = to;
+    }
     // An array type reaching the unit only through a declaration (an
     // imported value's, a declared type's member, a library contract's) is
     // read at `Array.prototype`'s contract as one the client writes is; the
@@ -3095,6 +3129,10 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
 }
 
 /** Every declaration reachable from `start`, each once across roots. */
+/** The standard library's iterator interfaces ECMA-262 specifies, whose
+ * done value `BuiltinIteratorReturn` names. */
+const ecmaIterators = ["ArrayIterator", "MapIterator", "SetIterator", "StringIterator", "RegExpStringIterator"];
+
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
@@ -3168,6 +3206,20 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       if (known) return libraryTerm(known, libraryArguments(known, arguments_, read, context.keys), pos,
         message => { throw Error(`${message} in ${identity.module}#${identity.name}`); });
       const targetNode = lookup(identifier, what);
+      // `BuiltinIteratorReturn`, the standard library's `intrinsic` alias, is
+      // what an iterator of ECMA-262 returns when it is done: the iterators
+      // of arrays, maps, sets, strings and `matchAll` complete with
+      // CreateIterResultObject(undefined, true), so in their interfaces it
+      // is `undefined`, as `strictBuiltinIteratorReturn` reads it. Another
+      // interface naming it (Intl's, the DOM's) is another specification's
+      // iterator, which this reading does not attribute.
+      if (ts.isTypeAliasDeclaration(targetNode) && targetNode.name.text === "BuiltinIteratorReturn" &&
+          context.libraryFile(targetNode.getSourceFile())) {
+        const owner = ts.isInterfaceDeclaration(node) ? node.name.text : "";
+        if (context.libraryFile(source) && ecmaIterators.includes(owner))
+          return { k: "atom", name: "undefined", span: pos };
+        throw Error(`BuiltinIteratorReturn in ${identity.module}#${identity.name} is the done value of an iterator ECMA-262 does not specify; only ${ecmaIterators.join(", ")} are read`);
+      }
       // An alias TypeScript computes from its parameters is the type it
       // computes at this reference's arguments.
       if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
