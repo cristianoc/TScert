@@ -147,9 +147,12 @@ pairs:
   accept the same tables (`valid'_of_valid`); under two more, locality of a
   covering in its demand pairs and closure of the reachable set, a valid table
   restricted to the pairs reachable through candidates stays valid
-  (`valid'_within`). Closing the gap for the checker needs:
-  - selection for the hypothesis-dependent premise relation `Prem` that
-    coverage reads, rather than for table membership;
+  (`valid'_within`). For the checker, the first obligation is proved:
+  selection holds for the hypothesis-dependent premise relation `Prem` of a
+  valid closed entry, so every covering a completed certificate chooses is
+  by a candidate and the same table, read with candidates only, is a valid
+  certificate (`SelectionPreservation.valid_selected`, from
+  `prem_sound_closed`). Closing the gap further needs:
   - preservation of the dependencies through `TabRen`, `Inst` and `Var`, the
     opaque-row conditions and the arrow evidence;
   - proofs of the locality and reachability closure `valid'_within` assumes;
@@ -671,23 +674,51 @@ selection on, "reruns" those redone with it off):
   search timeouts gone (176 s and 153 s of wall time); the `dev/` census
   verifies 23 of 24 both times (65 s and 52 s).
 
-### 9.2 Next steps
+### 9.2 Measured since
+
+At 496dd97 (main with candidate selection), user time, median of 3, load
+averages 3 to 5:
+
+- **Candidates prepared once per table** for every round of the greatest
+  fixed point (a scratch patch, not committed): `termsOf` search 26.3 s →
+  26.0 s, `printGraph` 41.7 s → 41.6 s, `pageBody` 13.9 s → 15.4 s, `card`
+  12.4 s → 12.2 s, `statementsOnPath` 18.9 s → 17.3 s; `printGraph`'s check
+  7.6 s → 6.8 s, the other checks within 0.15 s. No consistent gain.
+- **Where `statementsOnPath`'s search goes** (macOS `sample`, 1 ms interval,
+  one run): of about 17,400 samples on the working thread, 5,866 are in
+  `EquationGraphs.arityOk` under `Label.ofTree?`, the scope check of a label
+  built from a tree, which looks a header up in the signature, a list, by
+  index. The structural engine's growth and validation were 1.23 s of the
+  run (§9.1). The cost is outside union comparison; R6 and R7 address
+  neither.
+
+### 9.3 Next steps
 
 The steps are for the owner to choose. In order:
 
-1. **The rerun.** On these units it costs about as much as selection saves
-   and establishes nothing. Removing it needs completeness of the restricted
-   table search (§2.2) or a narrower trigger, such as a rerun only where the
-   restricted table lost a row the general one keeps.
-2. **The index's cost.** Candidates computed once per table instead of once
-   per round of the greatest fixed point.
-3. **R7, R6 and evidence sharing for `statementsOnPath`.** The kind-set atom
-   and its string analogue, with the decomposition, measured at 347 literals
-   against the 4-literal cut (1.2 s, 0.3 s, 2.9 MB) with phase timings and
-   unique against repeated contexts and sets.
+1. **Discovery of the selected certificate.** `valid_selected` keeps a
+   completed certificate valid under selection. That the selected search
+   finds it needs, beyond it: the certificate restricted to the root and the
+   dependencies of its coverings, with every premise and every piece of
+   evidence kept; and a selected discovery whose universe contains that
+   restriction, with pruning monotone on it. The engine does not represent
+   those dependencies: `demandPairs` enumerates `clausesOf` where coverage
+   reads `sourceClauses ++ meetSources`; `TabRen` discharges a premise
+   through another row; `rowArrows` derives arrow evidence from every row,
+   and `compareStepStateCore` reads instance members from every row of the
+   table; growth detection (`grows`) depends on the rows already inserted.
+   The design change this needs is one dependency representation that
+   discovery produces and coverage, arrow evidence and member discovery
+   read: each covering naming the pairs and the evidence it uses. That
+   changes the engine's interface, and waits for the owner.
+2. **The rerun.** Removed exactly where the preservation theorem applies,
+   once it covers discovery; kept elsewhere.
+3. **The scope check of labels.** A signature indexed in constant time for
+   `Label.ofTree?`, measured on `statementsOnPath`.
 4. **Exact comparison identity, then reuse within a run.** Each profile line
-   carries its comparison's identity (§6.1) before memoization is ranked; the
-   profiling moves outside the checker's proof scope (§5.1).
+   carries its comparison's identity (§6.1) before memoization is ranked.
+5. **R7, R6 and evidence sharing for `statementsOnPath`**, after the scope
+   check, ranked by what remains.
 
 ## Lean
 
@@ -695,6 +726,7 @@ In the library (`Types/ClauseSelection.lean`): `excludes`, `candidates`,
 `mem_candidates`, `any_candidates`, `covers_shape` (Lemma 1), `covers_prim`
 (Lemma 2), `covers_litExcl` (Lemma 3), `covers_keyExcl` (Lemma 4),
 `covers_boundExcl` (Lemma 5), `covers_candidate`; in
+`Types/SelectionPreservation.lean`: `prem_sound_closed`, `valid_selected`; in
 `Types/PositiveCertificates.lean`: `SearchBudget.select`,
 `InstanceImageCheck.general`, `compareStructural`, `compareStepState`.
 
