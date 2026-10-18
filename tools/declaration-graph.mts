@@ -24,7 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
-import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile } from "./compiler-api.mts";
+import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -3375,8 +3375,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       const anyMembers = new Set(parts.flatMap(part => ts.isInterfaceDeclaration(part) || ts.isClassDeclaration(part)
         ? [...part.members] : []).flatMap(m => {
           const name = nameOf(m);
-          const type = ts.isPropertySignatureDeclaration(m) || ts.isPropertyDeclaration(m) ? m.type : undefined;
-          return name && ts.isIdentifier(name) && type?.kind === ts.SyntaxKind.AnyKeyword ? [name.text] : [];
+          return name && ts.isIdentifier(name) && readsAsOptionalUnknown(m) ? [name.text] : [];
         }));
       // The host produces each member: a branded string there is read as a
       // string, and one the client would produce refused (reading rule 5).

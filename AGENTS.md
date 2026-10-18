@@ -262,17 +262,20 @@ increasing trust silently.
   `tools/tsconfig.json` sets `isolatedDeclarations`: an export's type is
   determined by its own syntax, annotated wherever TypeScript would infer it
   from other code. A local `const` or `let`, and a function written as an
-  argument, are typed by inference. No value is typed `any`: a value the
-  checker types `any` (a written `any`, a library member typed `any`, an
-  array literal no annotation types) flows only into a place that reads it
-  as `unknown`; a place typed `any` is no such place. A value holding `any`
-  deeper is compared with its place position by position, along the forms
-  `tools/unchecked.mts` ([source](tools/unchecked.mts)) lists, which are
-  the rules as they are checked. `JSON.parse` of a text also flows into a
-  place typed `Json`, the parsed data the overlay of library globals states.
-  The command reports these over every file that configuration includes and
-  fails on one; no comment excuses one. `test-all.sh` runs it as a suite,
-  and runs it over `tests/unchecked-project/`, the counterexamples it must
+  argument, are typed by inference. No value is typed `any`: the sources
+  type-check over the external declarations read at reviewed contracts with
+  no `any` ([shadow contracts](tools/shadow-contracts.mts): a result or
+  property `unknown`, an input `unknown` where the overlay of library
+  globals or a review there states the member, refused elsewhere, the
+  compiler API's `any` members optional `unknown` by reading rule 2), and
+  no value of the sources is typed `any` (a written `any`, an array literal
+  no annotation types). `node tools/unchecked.mts`
+  ([source](tools/unchecked.mts)) reports both, with the boundaries and the
+  assertions, over every file that configuration includes, and fails on
+  one; no comment excuses one. Freedom from `any` does not establish that
+  a mutation, a callback's effect, a guard or a native contract keeps a
+  type; that is TScert's to verify. `test-all.sh` runs the command as a
+  suite, and over `tests/unchecked-project/`, the counterexamples it must
   report.
 - A decoder is the only place that asserts a shape. Everything else narrows:
   a type predicate, a `typeof` before a comparison, a case table keyed by the

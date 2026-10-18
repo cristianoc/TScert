@@ -1,61 +1,64 @@
-/* Values typed `any`: where each must be reported, and the places that read
- * one as `unknown`, which must not be. */
+/* Values typed `any`: the program is checked over its external declarations
+ * read at their contracts (tools/shadow-contracts.mts), and each error there
+ * is an `any flow`; a value still typed `any` is `typed any`. */
 import type { Json } from "../../tools/calculus.mts";
+import type { Expression } from "../../tools/node_modules/typescript/dist/ast/index.js";
+import { Factory, consume, foreign, invoke, invokeAll, keyed, type Box } from "./library/index.mjs";
 
 const text = '{"x":"oops"}';
 
-// A library's `any` into a place typed otherwise, at the top.
-export const parsed = JSON.parse(text); // expected: typed any
-export const asNumber: number = JSON.parse(text); // expected: typed any
-// A place typed `any` gives no guarantee: Object.assign stores the value
-// into `target`, whose `x` then holds a string.
-export function assigned(): number {
-  const target = { x: 0 };
-  Object.assign(target, JSON.parse(text)); // expected: typed any
-  return target.x;
-}
-export const shown: string = String(JSON.parse(text)); // expected: typed any
+// `JSON.parse` of a text is parsed data, not a number or a parser of numbers.
+export const parsed: Json = JSON.parse(text);
+export const asNumber: number = JSON.parse(text); // expected: any flow
+export const parseNumber: (s: string) => number = JSON.parse; // expected: any flow
+export const shown: string = String(JSON.parse(text));
+export const data: unknown = JSON.parse(text);
+export const kind: string = typeof JSON.parse(text);
 
-// `any` deeper: a signature's result, a property, a type argument five deep.
-export const parseNumber: (s: string) => number = JSON.parse; // expected: typed any
+// A library's results, properties, index signatures and callback parameters.
 export function rejected(settled: PromiseRejectedResult): { reason: number } {
-  return settled; // expected: typed any
+  return settled; // expected: any flow
 }
-export const nested: number[][][][][] = [[[[new Array(1)]]]]; // expected: typed any
+export const nested: number[][][][][] = [[[[new Array(1)]]]]; // expected: any flow
+export const box: Box<number> = new Factory(); // expected: any flow
+export const property: { x: number } = foreign; // expected: any flow
+export const dictionary: { [key: string]: number } = foreign; // expected: any flow
+export const numbered: { [key: number]: number } = keyed; // expected: any flow
+export const sink: (f: (x: number) => void) => void = invoke; // expected: any flow
+export const sinkAll: (f: (x: number) => void) => void = invokeAll; // expected: any flow
+// An input typed `any` with no reviewed contract.
+consume(1); // expected: any flow
 
-// A value holding `any` bound to a type parameter the call infers: the
-// callee copies the rejection's `reason` into `target`, which returns it.
-export function corrupt(r: PromiseRejectedResult): number {
-  const target = { reason: 0 };
-  Object.assign(target, r); // expected: typed any
-  return target.reason;
+// The compiler's brands read as optional `unknown` (reading rule 2).
+export function branded(e: Expression): { _expressionBrand: number } {
+  return e; // expected: any flow
 }
-// A property read through the place's index signature, and a parameter of a
-// parameter: the place's callback is called with the `any` the value gives.
-declare const foreign: { x: any }; // expected: any, typed any
-declare const invoke: (f: (x: any) => void) => void; // expected: any, typed any
-export const dictionary: { [key: string]: number } = foreign; // expected: typed any
-export const sink: (f: (x: number) => void) => void = invoke; // expected: typed any
 
-// A construction of something other than the library's Map or Set.
-interface Box<T> {
-  value: T;
-}
-declare const Factory: new () => Box<any>; // expected: any
-export const box: Box<number> = new Factory(); // expected: typed any
+// An empty map is a map at the place's types; the callback's parameter of
+// `map` over an `Array.isArray` narrowing is `unknown`.
 export const map: Map<string, number> = new Map();
-
-// The receiver of `map` holds `any` inside; the callback's parameter is `any`.
 export function lengths(v: unknown): number {
-  if (Array.isArray(v)) return v.map((e) => e).length; // expected: typed any
+  if (Array.isArray(v)) return v.map((e) => e).length;
   return v === null ? 0 : 1;
 }
 
-// Places reading `any` as `unknown`, and `JSON.parse` into parsed data.
-export const data: unknown = JSON.parse(text);
-export const json: Json = JSON.parse(text);
-export const kind: string = typeof JSON.parse(text);
-export function decoded(v: unknown): unknown[] {
-  const entries: unknown[] = Array.isArray(v) ? v : [];
-  return entries;
+// A value still typed `any`: a written one, and an array no annotation types.
+declare const written: any; // expected: any, typed any
+export const rewritten: number = written; // expected: typed any
+export function evolving(): number {
+  const xs = []; // expected: typed any
+  xs.push(1); // expected: typed any
+  return xs.length; // expected: typed any
+}
+
+// Outside the check: `Object.assign` overwrites `target.reason` with the
+// rejection's reason, a string, in a program with no `any` (mutation safety
+// is TScert's, not this check's).
+export function corrupt(r: PromiseRejectedResult): number {
+  const target = { reason: 0 };
+  Object.assign(target, r);
+  Object.assign<{ reason: number }, PromiseRejectedResult>(target, r);
+  Object.assign(target, (r));
+  Object.assign(target, JSON.parse(text));
+  return target.reason;
 }

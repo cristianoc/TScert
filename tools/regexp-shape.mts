@@ -41,8 +41,9 @@ class Decline extends Error {}
  * escapes included) and `\u{X…}` decoded, as the host keys `groups`. */
 function decodeName(raw: string): string {
   const decoded = raw.replace(/\\u\{([0-9A-Fa-f]+)\}|\\u([0-9A-Fa-f]{4})/g,
-    (_, point: string | undefined, unit: string | undefined) =>
-      point !== undefined ? String.fromCodePoint(parseInt(point, 16)) : String.fromCharCode(parseInt(unit ?? "", 16)));
+    (_: string, point: unknown, unit: unknown) =>
+      typeof point === "string" ? String.fromCodePoint(parseInt(point, 16))
+        : String.fromCharCode(parseInt(typeof unit === "string" ? unit : "", 16)));
   if (decoded.includes("\\")) throw new Decline("an escape in a group name");
   return decoded;
 }

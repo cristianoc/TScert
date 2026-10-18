@@ -639,8 +639,7 @@ function withinTypeDeclaration(node: Node): boolean {
 
 /** A declaration's or signature's own type parameters. */
 function childParameters(node: Node): ts.TypeParameterDeclaration[] {
-  const parameters = "typeParameters" in node ? node.typeParameters : undefined;
-  return Array.isArray(parameters) ? parameters.filter(ts.isTypeParameterDeclaration) : [];
+  return childrenOf(node, "typeParameters").filter(ts.isTypeParameterDeclaration);
 }
 
 /** The type parameters `infer` declares in `node`. */
