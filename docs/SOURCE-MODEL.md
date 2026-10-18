@@ -159,27 +159,45 @@ const wanted = (n: Node): boolean => n.kind === 79;
 `visit` reads `wanted` successfully at every call made after the second
 line, and throws at a call made before it.
 
-A function or block scope's binding is **early** when one of its mentions
-may run before its declaration: a mention written above the declaration in
-the scope, a closure's included, or one in its own initializer outside a
-function literal's body (a [recursive constant](#recursive-constants)'s read
-is its self entry, unchanged). Every other binding is lowered as before.
-The bindings of a module's top level keep the module initialization order
-(`Sites`).
+**Scope.** The model covers a `let` or `const` that declares one name (no
+pattern), in a function body or a block statement, a loop's body included.
+Each entry of the block creates its bindings anew, so a closure created in
+one iteration keeps that iteration's. Refused at their location, as
+explicit restrictions: an early binding (below) declared by a pattern, in a
+`switch`'s case block (one environment for every clause, entered after the
+discriminant, whose clauses may skip a declaration), a class declaration's
+binding, a parameter whose default reads a later parameter, and a
+generator's body. A module's top level keeps the initialization order
+check (`Sites.checkInitializationOrder`), which refuses an initialization
+step that may reach a constant not yet bound; it does not model the
+module's dead zone, a caught `ReferenceError` there or a module cycle.
 
-An early binding $`x`$ of storage contract $`T`$ is a cell of its scope's
-activation, allocated when the scope is entered, before any of its
-statements, holding the activation's **uninitialized marker** $`u`$: one
-fresh object per activation of the scope, owning the reserved key
-$`\kappa_u`$ (`[[uninitialized]]`), which no source spells, no host object
-owns and no other value of the program reaches. The cell's contract is
-$`T\cup U`$, with $`U`$ the record type of the marker; closures created in
-the scope capture the cell, as they capture a written `let`'s. The
-declaration's evaluation, at the point the source has it, writes the
-initializer's value, which its obligation checks at $`T`$, into the cell. A
-mention of $`x`$ is a **checked access**: the cell's contents $`v`$ are
-tested for $`\kappa_u`$; where $`\kappa_u\in v`$ the access throws, and
-otherwise it proceeds with $`v`$ at $`T`$, its test having removed $`U`$:
+A binding is **early** when one of its mentions is in a closure or a
+function declaration of its scope, which may run at any time after its
+creation, a hoisted declaration from the scope's entry (in
+`f(); let x = 1; function f() { return x; }` the call throws), or when a
+mention in the scope's own code is not dominated by the declaration on
+every path through the scope. Every other binding is lowered as before.
+
+**Representation.** An early binding $`x`$ of storage contract $`T`$ is a
+cell of the block's activation, allocated when the block is entered, before
+its statements and before its hoisted function declarations are created,
+holding the activation's **uninitialized marker** $`u`$: one fresh object per
+block entry, owning the key $`\kappa_u`$ (`[[uninitialized]]`). Every string
+key a JavaScript object has is represented under $`\mathsf{esc}`$, whose
+image misses the model's reserved spellings
+(`reservedSpelling_escapeKey`, [keys](SEMANTICS.md)), so no object the
+program reaches, a host object or a prototype among them, owns
+$`\kappa_u`$, and $`\kappa_u`$ is never copied (`copiedKey`). The cell's
+contract is $`T\cup U`$, with $`U`$ a label of its own whose one clause
+requires $`\kappa_u`$; closures and function declarations capture the cell
+itself, never its contents.
+
+**Checked access.** A read of $`x`$ reads the cell once, tests that value
+for $`\kappa_u`$ (the calculus's `hasKey`, which is false of a primitive;
+never JavaScript's `in`, which throws on one), throws on the true edge, and
+on the false edge proceeds with the same value, the test's slice removing
+$`U`$ (`tagSlice`), so at $`T`$:
 
 ```math
 \frac{\Gamma\vdash x:\mathsf{cell}(T\cup U)}
@@ -187,28 +205,46 @@ otherwise it proceeds with $`v`$ at $`T`$, its test having removed $`U`$:
       \qquad \Gamma\vdash ⟦x⟧:T\ \text{on its normal edge}}\ \textsf{early-read}
 ```
 
-A write of an early `let` is the same check followed by the write, and
-`typeof x` the check followed by the test. The throw is a call of the
-intrinsic $`\iota_{\mathsf{RE}}`$, `%ThrowUninitialized%`, which allocates a
-`ReferenceError` by the standard constructor and throws it, within the empty
-footprint on its throw; it is the read's exceptional edge, which reaches the
-enclosing handler as any throw does, with no fact of the normal edge.
-Where the declaration surely ran on every path to a mention in the same
-activation, outside any closure, the write's current-content fact gives the
-cell's contents at $`T`$, and the test's true edge is unreachable, so the
-check costs no completeness there.
+Only checked accesses read the cell, so the marker never reaches a value
+position: a return, an argument, a spread, a copy or a serialization. The
+operators keep ECMAScript's order: `x = e` evaluates `e`, then checks, then
+writes; `x += e`, an update and a logical assignment begin with a checked
+read; `typeof x` is a checked read followed by the test. Assigning a `const`
+is refused by TypeScript and is outside the fragment.
 
-Why this is sound and faithful: the marker's key is reserved, so a value of
-$`T`$ owns it only if $`T`$ admits the marker's record, and then the test is
-undecided for it and both edges keep the value, so the false edge's $`T`$
-is always correct. The marker is the cell's contents exactly while
-JavaScript's binding is uninitialized: the cell is allocated at scope entry,
-which is where JavaScript creates the binding, and written only by the
-declaration's evaluation and by the source's writes after it. Shadowing is
-by declaration: the parser's renaming gives each binding its own name, so a
-mention is of the binding TypeScript binds it to. A per-iteration binding of
-a `for` loop is outside the fragment (a closure capturing one is refused),
-so no loop re-creates an early binding.
+**Initialization.** The declaration's evaluation, where the source has it,
+writes its initializer's value into the cell after the initializer
+completes normally, checked at $`T`$; `let x;` writes `undefined`. An
+initializer that throws leaves the marker, so a closure retained from that
+activation throws at every later read, as JavaScript's does.
+
+**The throw.** $`\iota_{\mathsf{RE}}`$, `%ThrowUninitialized%`, allocates a
+`ReferenceError` by the realm's intrinsic constructor, whatever a source
+binding of that name holds, and throws it: the read's exceptional edge,
+which reaches the enclosing handler as any throw does, with no fact of the
+normal edge. Its footprint is empty over storage that existed before it;
+effects already performed, by an assignment's right side for one, remain.
+
+**Precision.** A checked read always has its exceptional edge: where the
+cell's current contents are known at $`T`$, the test is still undecided for
+a $`T`$ that is an open record, a dictionary or `unknown`, and after a call
+the cell is again at $`T\cup U`$. Safety, a value, a step or a throw, holds
+either way; an exceptional guarantee that excludes the throw would need a
+durable initialization fact, which the model does not have.
+
+**Ownership.** The checker allocates the cells, includes them in the
+captures of every closure and function declaration before lowering the
+block's statements, and lowers every mention of an early binding as a
+checked access, from the source alone; the producer proposes $`T`$ and the
+claims at the checked accesses, and no claim can omit a check, replace a
+cell by a value capture, or make an initialization an unchecked write.
+Controls bypass the producer with exactly those forged claims, and with an
+initializer outside $`T`$ and a stale snapshot, against evidence production
+and consumption; end-to-end cases cover calls before and after the
+declaration, a hoisted call, shadowing, assignment order, `typeof`, a
+failed initializer, block re-entry, and values that are primitives, open
+records, dictionaries and host objects, each throwing case also run under
+Node.
 
 <a id="recursive-constants"></a>
 **Recursive constants.** A constant whose initializer is a function literal,
