@@ -1039,7 +1039,18 @@ TypeScript gives it from its context, which the parser writes
 (`closureParamType`) as an annotation of it would read: primitives,
 literals, unions, intersections, arrays, type parameters, declarations by
 name, and tuples of required positions and a rest, readonly as TypeScript
-types them. A tuple with an optional position is refused, since TypeScript
+types them; an enum member's literal type at the value the enum's
+interpretation gives it; and an anonymous record as an object contract. A
+type literal written outside any generic declaration is read as written, by
+the annotation reader; any other record (an object literal's type, a mapped
+type's instance such as `Record<string, unknown>`, a type literal of a
+generic declaration at its instance) is read member by member: each property
+optional and readonly as declared, at its written type where that names no
+binder of its declaration and otherwise at TypeScript's instantiation, and
+each index signature by its key, string, number or symbol, with its
+capability. A method, an accessor, a symbol key, a call signature or an
+index of another key of such a record is refused at the parameter
+(`closure-contextual-records`, `closure-contextual-method-refused`). A tuple with an optional position is refused, since TypeScript
 gives that position's type with `undefined` whether or not an annotation
 wrote it (`invalid-contextual-optional-tuple`). It is a proposal like any claim, since the body is checked at
 $`A_j\sqsubseteq_G D_j`$ and the closure at $`\bigwedge L`$ wherever it goes, the

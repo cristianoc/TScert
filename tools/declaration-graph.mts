@@ -2005,9 +2005,96 @@ export function collectDeclarations(file: string, options: {
       validateAnnotation(term, (_span, message) => { throw Error(message); });
       return term;
     };
+    // An enum member's literal type, `E.M` (SyntaxKind.AbstractKeyword): its
+    // value as the enum's interpretation computes it (`enumMembersOf`), a
+    // host enum only where the compiler-API contract lists it.
+    const contextualEnumMember = (type: Type, span: Span): TypeTerm | null => {
+      if (!(type.flags & TypeFlags.EnumLiteral) || type.isUnionType()) return null;
+      const member = type.getSymbol()?.declarations[0]?.resolve();
+      const owner = member?.parent;
+      if (!member || !ts.isEnumMember(member) || !owner || !ts.isEnumDeclaration(owner))
+        throw Error(`the contextual enum literal ${checker.typeToString(type)} names no enum member`);
+      const name = owner.name.text;
+      if (isHostFile(owner.getSourceFile().fileName) && !hostEnums.some(h => h.name === name))
+        throw Error(`the host enum ${name} is not one the compiler-API contract reads (compiler-api.mts)`);
+      const value = enumMembersOf([owner], name)[owner.members.indexOf(member)]?.value;
+      if (value === undefined)
+        throw Error(`the enum member ${name}.${member.name.getText(owner.getSourceFile())} has no value TypeScript computes, so no literal type`);
+      return literalTerm(value, span);
+    };
+    // An anonymous record (an object literal's type, a type literal, a mapped
+    // type's instance such as `Record<string, unknown>`): the object contract
+    // its members state. A type literal written outside any generic
+    // declaration is read as written, by the annotation reader; any other is
+    // read member by member at the types TypeScript instantiates there: each
+    // property at its type, optional and readonly as declared, each index
+    // signature at its key's kind and capability. A member no object contract
+    // states (a method, an accessor, a symbol key, a call signature, an index
+    // of another key) is refused.
+    const recordsRead = new Set<Type>();
+    const contextualRecord = (type: Type, span: Span): TypeTerm | null => {
+      if (!(type.flags & TypeFlags.Object)) return null;
+      const declarations = (type.getSymbol()?.declarations ?? []).map(d => d.resolve());
+      if (!declarations.length || !declarations.every(d => !!d &&
+          (ts.isTypeLiteralNode(d) || ts.isObjectLiteralExpression(d) || ts.isMappedTypeNode(d)))) return null;
+      const text = checker.typeToString(type);
+      const [only] = declarations;
+      if (declarations.length === 1 && only && ts.isTypeLiteralNode(only) && !libraryFile(only.getSourceFile()) &&
+          enclosingBinders(only).length === 0)
+        return computedContext.annotation(only, only, []);
+      if (recordsRead.has(type)) throw Error(`the contextual record ${text} contains itself, which no annotation names`);
+      if (checker.getSignaturesOfType(type, SignatureKind.Call).length ||
+          checker.getSignaturesOfType(type, SignatureKind.Construct).length)
+        throw Error(`the contextual record ${text} is callable, which an annotation states`);
+      recordsRead.add(type);
+      try {
+        const fields = checker.getPropertiesOfType(type).map(p => {
+          const declaration = p.declarations[0]?.resolve();
+          if (p.name.startsWith("__@") || (declaration && (ts.isMethodSignatureDeclaration(declaration) ||
+              ts.isMethodDeclaration(declaration) || ts.isGetAccessorDeclaration(declaration) ||
+              ts.isSetAccessorDeclaration(declaration))))
+            throw Error(`the contextual record ${text} has a member ${p.name} no object contract states (a method, an accessor or a symbol key), which an annotation states`);
+          // A member written at a type that names none of its declaration's
+          // binders is that written type, as the annotation reader reads it
+          // (an optional member's without the `undefined` TypeScript adds
+          // where it is read); any other is TypeScript's instantiation.
+          const node = declaration && (ts.isPropertySignatureDeclaration(declaration) ||
+            ts.isPropertyDeclaration(declaration)) ? declaration.type : undefined;
+          const binders = declaration ? enclosingBinders(declaration) : [];
+          const mentions = (n: Node): boolean => (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) &&
+            binders.includes(n.typeName.text)) || (n.forEachChild(c => mentions(c) || undefined) ?? false);
+          const member = checker.getTypeOfSymbol(p);
+          if (!member) throw Error(`TypeScript gives the member ${p.name} of ${text} no type`);
+          const memberType = node && declaration && !libraryFile(declaration.getSourceFile()) && !mentions(node)
+            ? computedContext.annotation(node, declaration, binders) : contextualTerm(member, span);
+          const written = !!declaration && childrenOf(declaration, "modifiers").some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword);
+          // `checkFlags & 8`: a property a mapped type or a synthesis makes readonly.
+          const readonly = written || (p.checkFlags & 8) !== 0;
+          return { name: p.name, optional: (p.flags & SymbolFlags.Optional) !== 0, readonly,
+            type: memberType, span };
+        });
+        let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
+        let numberIndex: Extract<TypeTerm, { k: "object" }>["numberIndex"];
+        let symbolIndex: Extract<TypeTerm, { k: "object" }>["symbolIndex"];
+        for (const info of checker.getIndexInfosOfType(type)) {
+          const index = { readonly: info.isReadonly, value: contextualTerm(info.valueType, span), span };
+          const key = info.keyType.flags;
+          if (key & TypeFlags.String) stringIndex = index;
+          else if (key & TypeFlags.Number) numberIndex = index;
+          else if (key & TypeFlags.ESSymbol) symbolIndex = index;
+          else throw Error(`the contextual record ${text} has an index of key ${checker.typeToString(info.keyType)}, which an annotation states`);
+        }
+        return { k: "object", fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
+          ...(symbolIndex ? { symbolIndex } : {}), calls: [], span };
+      } finally {
+        recordsRead.delete(type);
+      }
+    };
     const readContextualTerm = (type: Type, span: Span): TypeTerm => {
       if (type.flags & TypeFlags.Any)
         throw Error("TypeScript types this unannotated closure parameter from its context as `any`, which states no contract");
+      const member = contextualEnumMember(type, span);
+      if (member) return member;
       const literals = literalUnion(type, span);
       if (literals) return literals;
       const text = () => checker.typeToString(type);
@@ -2058,6 +2145,8 @@ export function collectDeclarations(file: string, options: {
         return { k: "reference", reference: { name: node.name.text, span, arguments: args.map(() => span), target: identityOf(node) },
           args, span };
       }
+      const record = contextualRecord(type, span);
+      if (record) return record;
       // A library regex type (`RegExpExecArray` for a match's callback), as
       // `regexp.mts` reads it.
       const library = nodes.filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
