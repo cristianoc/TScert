@@ -47,7 +47,7 @@ def actionRoots : Action → List Expr
   | .declaration _ _ binding _ => [binding.init]
   | .statement statement _ | .branch statement _ _ | .returnValue statement
   | .saveReturn statement _ _ | .iteratorStart statement _ _ => statementRoots statement
-  | .finish | .jump _ | .returnHeld _ | .rethrow _ | .discardThrow _ _ | .iteratorStep .. => []
+  | .finish | .jump _ | .returnHeld _ | .rethrow _ | .discardThrow _ _ | .iteratorStep .. | .early .. => []
 
 /-- One occurrence per source span, retaining the outer expression where the
     parser gives a wrapper and its operand the same span. -/

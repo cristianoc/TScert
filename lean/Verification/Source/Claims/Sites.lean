@@ -122,7 +122,7 @@ private def actionSites : SourceFlow.Action → List Span
   | .iteratorStart (.forOf pos _ namePos _ iterable _) _ _ =>
       pos :: namePos :: (exprSitesCore false iterable).2.1
   | .iteratorStep (.forOf pos _ namePos _ _ _) _ _ _ _ => [pos,namePos]
-  | .finish | .jump _ | .returnHeld _ | .rethrow _ | .discardThrow _ _ => []
+  | .finish | .jump _ | .returnHeld _ | .rethrow _ | .discardThrow _ _ | .early .. => []
   | .branch _ _ _ | .iteratorStart _ _ _ | .iteratorStep _ _ _ _ _ => []
 
 /-- Expression-bodied closures run their parameter defaults in their entry
@@ -160,8 +160,10 @@ def checkPointSites (graphs : List SourceFlow.Graph)
       ((prologues.lookup g.owner).getD []).contains e.pos
     if !(actionSites node.action).contains e.pos && !prologue then
       throw s!"expression claim at {e.pos} is outside its execution point {e.point}"
+  -- A mutable declaration's, and an early binding's, of either kind.
   let declarations := nodes.flatMap fun (_,node) => match node.action with
     | .declaration _ true b _ => [(b.init.span,b.name)]
+    | .early bs _ => bs.map fun (_, _, b) => (b.init.span,b.name)
     | _ => []
   for c in contracts do
     if !declarations.contains (c.pos,c.name) then

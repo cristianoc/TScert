@@ -280,6 +280,35 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged operand entry: a parameter read claimed narrower than its test refused\n");
 }
 {
+  // An early binding's cell, its marker and its checked accesses are the
+  // lowering's, from the source: claims can neither drop the binding's
+  // contract, nor narrow it below its annotation, nor claim a checked
+  // access past the contract where nothing establishes the contents. Each
+  // forged claim is refused where evidence is produced and where it is
+  // checked.
+  const good = run("early-bindings");
+  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const forge = (name: string, edit: (fn: SourceClaims["functions"][number], claims: SourceClaims) => void,
+      at: string): void => {
+    const claims = readClaims(good);
+    edit(must(claims.functions.find(f => f.name === "later"), "later"), claims);
+    const forged = writeClaims(good, name, claims);
+    refusedAt(good, forged, name, at);
+    invoke(forged, join(good, "evidence.json"), good);
+  };
+  forge("early-no-contract", fn => { fn.contracts = fn.contracts.filter(c => c.name !== "n"); },
+    "no claimed storage contract for the early binding 'n'");
+  forge("early-narrow-contract", (fn, claims) => {
+    for (const c of fn.contracts) if (c.name === "n") c.type = [rowOf(claims, { numLit: { bits: "4607182418800017408" } })];
+  }, "claimed storage contract differs from the source annotation for 'n'");
+  const read = source.indexOf("=> n;", source.indexOf("function later")) + "=> ".length;
+  forge("early-narrow-read", (fn, claims) => {
+    const e = must(fn.expressions.find(x => x.pos[0] === read && x.pos[1] === read + 1), "the read of n");
+    e.type = [rowOf(claims, { numLit: { bits: "4611686018427387904" } })];
+  }, `at [${read},${read + 1})`);
+  process.stdout.write("forged early bindings: a dropped or narrowed contract and a narrowed checked access refused\n");
+}
+{
   // Where `n.kind === 1 || b.kind === 2` holds, `n` may be of any arm: a
   // read of `n` claimed at the first arm is refused where evidence is
   // produced and where it is checked.

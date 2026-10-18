@@ -73,6 +73,14 @@ one, and the field map is fixed at allocation: an object's classification
 never changes. The steps that copy an object's own keys are stuck on one. -/
 def hostKey : PropKey := "[[host]]"
 
+/-- The key an early binding's uninitialized marker owns (SOURCE-MODEL.md,
+"Lexical bindings before initialization"): a fresh object per entry of the
+binding's statement list, the cell's contents until the declaration writes
+it. No source property names it, no other allocation adds it and no step
+copies it (`copiedKey`), so a checked access that finds it finds the
+marker. -/
+def uninitializedKey : PropKey := "[[uninitialized]]"
+
 
 /-- The string keys `Object.prototype` holds (node's
 `Object.getOwnPropertyNames(Object.prototype)`): every ordinary object
@@ -1523,12 +1531,12 @@ theorem tagHolds_of_heap {h : List Tm} {t : Tag} {v : Tm} {q : Bool} (hq : tagHo
 
 /-- A key a spread copies: a string key the model does not keep for itself
 (the prototype, the array store, a function object's code field, the host
-classification). A
+classification, an early binding's uninitialized marker). A
 symbol-keyed field is never copied: the model's are the library's, whose
 enumerability it does not record, and
 no allocation of the fragment makes one. -/
 def copiedKey : PropKey → Bool
-  | .str s => s != "[[proto]]" && s != "[]" && s != "[[code]]" && s != "[[host]]"
+  | .str s => s != "[[proto]]" && s != "[]" && s != "[[code]]" && s != "[[host]]" && s != "[[uninitialized]]"
   | .sym _ => false
 
 /-- The first entry of each key, which is the one `List.lookup` finds. -/

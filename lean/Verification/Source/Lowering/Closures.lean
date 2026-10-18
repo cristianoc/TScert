@@ -81,7 +81,7 @@ state resume afterwards. -/
           let Γ := (bodyScope.zip inputs).zipIdx.map fun (entry : ((ScopeBinding Tree) × Ty Tree) × Nat) =>
             let ((binding,A),j) := entry
             if j < i then match binding.storage with
-              | .cell _ ref => if j == 0 || j > arity then A else ref | .value | .slot _ => A
+              | .cell _ ref | .early _ ref => if j == 0 || j > arity then A else ref | .value | .slot _ => A
             else A
           let mapping := (List.range layout.length).map fun j => if j == i then 0 else j+1
           first ← emitAt pos (.makeAt .absent [valueField] [.var i])

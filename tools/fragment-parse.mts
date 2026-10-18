@@ -35,7 +35,7 @@ import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, t
   type SeenDiagnostic }
   from "./declaration-graph.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
-  type EnumMemberValue } from "./intrinsics.mts";
+  throwUninitializedName, type EnumMemberValue } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writtenElement } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
@@ -274,6 +274,8 @@ export class Gate {
   /** The classes lowered so far, by name: what a class extending one reads
    * (`classStmt`). */
   readonly classRecords: Map<string, ClassRecord> = new Map();
+  /** The declarators of early bindings (`markEarly`). */
+  readonly earlyDecls: Set<Node> = new Set();
   /** The class a method being lowered inherits from: what `super.m(...)`
    * calls. */
   superClass: ClassRecord | null = null;
@@ -900,6 +902,8 @@ export class Gate {
 
   hoisting: typeof statements.hoisting = statements.hoisting;
 
+  markEarly: typeof statements.markEarly = statements.markEarly;
+
   letPattern: typeof statements.letPattern = statements.letPattern;
 
   token: typeof statements.token = statements.token;
@@ -1192,12 +1196,38 @@ export function parseFile(file: string, carriesContext = false,
   // them.
   let firstAsync: Node | undefined;
   const intrinsicNames = new Set<string>();
+  const earlyCandidate = (block: ts.Block): boolean => {
+    const declared = new Map<string, ts.VariableDeclaration>();
+    for (const st of block.statements)
+      if (ts.isVariableStatement(st) && st.declarationList.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const))
+        for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name)) declared.set(d.name.text, d);
+    if (!declared.size) return false;
+    const visit = (n: Node, created: number | null): boolean => {
+      if (ts.isTypeNode(n)) return false;
+      if (ts.isIdentifier(n)) {
+        const d = declared.get(n.text);
+        const at = created ?? n.getStart(source);
+        if (!d || n === d.name || at >= d.end) return false;
+        let literal: Node | undefined = d.initializer;
+        while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
+        return !(literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal)) &&
+          n.getStart(source) >= literal.getStart(source) && n.end <= literal.end);
+      }
+      const inner = created ?? (ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n) ? n.getStart(source) : null);
+      return n.forEachChild((c) => visit(c, inner) || undefined) ?? false;
+    };
+    return block.statements.some((st) => visit(st, null));
+  };
   const findAsync = (node: Node): void => {
     const add = (...names: string[]) => {
       firstAsync ??= node;
       names.forEach(name => intrinsicNames.add(name));
     };
     if (ts.isAwaitExpression(node)) add(awaitName);
+    // A block whose `let` or `const` may be mentioned before its
+    // initialization (`markEarly`, by spelling here) throws through
+    // `%ThrowUninitialized%` where a checked access finds it so.
+    if (ts.isBlock(node) && earlyCandidate(node)) add(throwUninitializedName);
     if (ts.isForOfStatement(node)) add(iterateName);
     if (ts.isForInStatement(node))
       add(...(forInEntryReads(node).length ? [iterateForInName] : [forInName, iterateName]));
@@ -1528,13 +1558,25 @@ export function parseFile(file: string, carriesContext = false,
           let declaration: Node | undefined = declared.parent;
           while (declaration && ts.isBindingElement(declaration)) declaration = declaration.parent?.parent;
           const initializer = declaration && ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
-          const inInitializer = !!initializer && start >= initializer.getStart(source) && end <= initializer.end;
+          // A function literal that is the whole initializer runs only after
+          // the binding holds it: its reads are the recursive constant's self
+          // entry (SOURCE-MODEL.md, "Recursive constants").
+          let literal: Node | undefined = initializer;
+          while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
+          const selfEntry = !!literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal));
+          const inInitializer = !selfEntry && !!initializer && start >= initializer.getStart(source) && end <= initializer.end;
           // A loop head's binding exists, uninitialized, while the head's
           // own expression runs: `for (const xs of xs)` throws there.
           const loop = declaration?.parent?.parent;
           const iterated = loop && (ts.isForOfStatement(loop) || ts.isForInStatement(loop)) ? loop.expression : undefined;
           const inHead = !!iterated && start >= iterated.getStart(source) && end <= iterated.end;
-          if (read && (start < dStart || inInitializer || inHead)) early.push(read);
+          // A one-name `let` or `const` of a block is an early binding
+          // there, every mention a checked access (`markEarly`); a mention
+          // above any other declaration is refused.
+          const statement = declaration?.parent?.parent;
+          const block = !!declaration && ts.isVariableDeclaration(declaration) && ts.isIdentifier(declaration.name) &&
+            !!statement && ts.isVariableStatement(statement) && !!statement.parent && ts.isBlock(statement.parent);
+          if (read && ((start < dStart && !block) || inInitializer || inHead)) early.push(read);
           gate.renames.set(`${start}:${end}`, renamed);
         },
         staticTypes: staticTypeNodes.map(node => gate.span(node)),

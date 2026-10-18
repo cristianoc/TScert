@@ -25,6 +25,11 @@ inductive Action where
   | jump (target : Nat)
   | statement (statement : Stmt) (next : Nat)
   | declaration (source : Span) (mutable : Bool) (binding : Binding) (next : Nat)
+  /-- The entry of a statement list declaring early bindings (SOURCE-MODEL.md,
+  "Lexical bindings before initialization"): each binding's cell, holding the
+  activation's uninitialized marker, is in scope from here, its declaration
+  then initializing it. The bindings with their declaring statements. -/
+  | early (bindings : List (Span × Bool × Binding)) (next : Nat)
   | branch (statement : Stmt) (yes no : Nat)
   | returnValue (statement : Stmt)
   | saveReturn (statement : Stmt) (binding : Descriptor) (next : Nat)
@@ -91,7 +96,7 @@ private partial def patternBindingsOrder (source : Span) : Pattern Expr → Scop
 
 private def bindingsAfter (scope : Scope) : Stmt → Scope
   | .constants pos bs | .mutables pos bs =>
-      (bs.map fun b => bind b.name pos).reverse ++ scope
+      ((bs.filter (!·.early)).map fun b => bind b.name pos).reverse ++ scope
   | .destructure pos target _ _ => (patternBindingsOrder pos target).reverse ++ scope
   | _ => scope
 
@@ -115,8 +120,28 @@ private partial def declarations (source : Span) (mutable : Bool) (scope : Scope
   match bindings with
   | [] => pure next
   | binding :: rest =>
-    let after ← declarations source mutable (bind binding.name source :: scope) rest next r
+    let inner := if binding.early then scope else bind binding.name source :: scope
+    let after ← declarations source mutable inner rest next r
     emit source scope r (.declaration source mutable binding after)
+
+/-- The early bindings a statement list declares, with their statements. -/
+private def earlyOf (ss : List Stmt) : List (Span × Bool × Binding) :=
+  ss.flatMap fun
+    | .constants pos bs => (bs.filter (·.early)).map (pos, false, ·)
+    | .mutables pos bs => (bs.filter (·.early)).map (pos, true, ·)
+    | _ => []
+
+mutual
+/-- A statement list as a scope is entered: its early bindings' cells first,
+    in scope through the whole list, then its statements. -/
+private partial def entered (owner : Span) (scope : Scope) (ss : List Stmt)
+    (next : Nat) (r : Routes) : Builder Nat := do
+  match earlyOf ss with
+  | [] => sequence owner scope ss next r
+  | early =>
+    let inner := (early.map fun (pos, _, b) => bind b.name pos).reverse ++ scope
+    let first ← sequence owner inner ss next r
+    emit (ss.head?.map Stmt.pos |>.getD owner) scope r (.early early first)
 
 /-- The builder copies finalizers at each distinct completion route. A copy
     has its own execution identities even when its source spans coincide. -/
@@ -143,7 +168,7 @@ private partial def sequence (owner : Span) (scope : Scope) (ss : List Stmt)
       let mut after := destination
       for i in (List.range passed.length).reverse do
         let some fin := passed[i]? | throw "internal flow error: finalizer index"
-        after ← sequence owner fin.scope fin.statements after (finalizerRoutes r i fin)
+        after ← entered owner fin.scope fin.statements after (finalizerRoutes r i fin)
       emit pos scope r (.jump after)
     | .ret pos e =>
       if !rest.isEmpty then throw "statements after return are outside the fragment"
@@ -156,7 +181,7 @@ private partial def sequence (owner : Span) (scope : Scope) (ss : List Stmt)
           (.returnHeld saved)
         for i in (List.range fins.length).reverse do
           let some fin := fins[i]? | throw "internal flow error: finalizer index"
-          after ← sequence owner (saved :: fin.scope) fin.statements after (finalizerRoutes r i fin)
+          after ← entered owner (saved :: fin.scope) fin.statements after (finalizerRoutes r i fin)
         emit pos scope r (.saveReturn s saved after)
     | .throw pos _ =>
       if !rest.isEmpty then throw "statements after throw are outside the fragment"
@@ -170,18 +195,18 @@ private partial def sequence (owner : Span) (scope : Scope) (ss : List Stmt)
       let routes := match label with
         | none => r
         | some name => { r with labels := ((name, after) :: r.labels), labelDepths := (name, r.finalizers.length) :: r.labelDepths }
-      sequence owner scope inner after routes
+      entered owner scope inner after routes
     | .ite pos _ yes no =>
       let after ← sequence owner scope rest next r
-      let yes ← sequence owner scope yes after r
-      let no ← sequence owner scope (no.getD []) after r
+      let yes ← entered owner scope yes after r
+      let no ← entered owner scope (no.getD []) after r
       emit pos scope r (.branch s yes no)
     | .loop pos _ inner update =>
       let after ← sequence owner scope rest next r
       let head ← emit pos scope r (.jump 0)
       let again ← sequence owner scope update head r
       let routes := { r with loop := some (again, after), loopDepth := r.finalizers.length }
-      let yes ← sequence owner scope inner again routes
+      let yes ← entered owner scope inner again routes
       patch head (.branch s yes after)
       return head
     | .forOf pos name namePos _ _ inner =>
@@ -191,7 +216,7 @@ private partial def sequence (owner : Span) (scope : Scope) (ss : List Stmt)
       let loopScope := stepper :: scope
       let head ← emit pos loopScope r (.jump 0)
       let routes := { r with loop := some (head, after), loopDepth := r.finalizers.length }
-      let yes ← sequence owner (element :: loopScope) inner head routes
+      let yes ← entered owner (element :: loopScope) inner head routes
       patch head (.iteratorStep s stepper element yes after)
       emit pos scope r (.iteratorStart s stepper head)
     | .tryStmt pos inner caught finalizer =>
@@ -200,14 +225,14 @@ private partial def sequence (owner : Span) (scope : Scope) (ss : List Stmt)
       let (completed, onThrow, finals) ← match finalizer with
         | none => pure (after, r.handler, r.finalizers)
         | some statements => do
-          let normal ← if completes then sequence owner scope statements after r
+          let normal ← if completes then entered owner scope statements after r
             else do
               let dead ← emit pos [] { r with handler := none } (.jump 0)
               patch dead (.jump dead)
               pure dead
           let thrown := bind s!"%thrown@{pos.1}%" pos
           let rethrow ← emit pos (thrown :: scope) r (.rethrow thrown)
-          let entry ← sequence owner (thrown :: scope) statements rethrow r
+          let entry ← entered owner (thrown :: scope) statements rethrow r
           let fin : Finalizer := ⟨statements, pos, scope, r.handler, r.loop, r.labels,
             r.loopDepth, r.labelDepths⟩
           pure (normal, some ⟨entry, scope, thrown⟩, fin :: r.finalizers)
@@ -218,35 +243,36 @@ private partial def sequence (owner : Span) (scope : Scope) (ss : List Stmt)
             | some (name, namePos) => bind name namePos
             | none => bind s!"%caught@{pos.1}%" pos
           let routes := { r with handler := onThrow, finalizers := finals }
-          let entry ← sequence owner (binding :: scope) statements completed routes
+          let entry ← entered owner (binding :: scope) statements completed routes
           pure (some ⟨entry, scope, binding⟩)
-      sequence owner scope inner completed { r with handler, finalizers := finals }
+      entered owner scope inner completed { r with handler, finalizers := finals }
     | .closing pos close inner =>
       let after ← sequence owner scope rest next r
       let some (again, exit) := r.loop
         | throw "internal flow error: an iterator's close outside its loop"
-      let closed ← sequence owner scope close exit r
+      let closed ← entered owner scope close exit r
       let thrown := bind s!"%thrown@{pos.1}%" pos
       let thrownScope := thrown :: scope
       let rethrow ← emit pos thrownScope r (.rethrow thrown)
       let dropped := bind s!"%dropped@{pos.1}%" pos
       let discard ← emit pos (dropped :: thrownScope) r (.discardThrow thrown rethrow)
       let quietRoutes := { r with handler := some ⟨discard, thrownScope, dropped⟩ }
-      let quiet ← sequence owner thrownScope close rethrow quietRoutes
+      let quiet ← entered owner thrownScope close rethrow quietRoutes
       let fin : Finalizer := ⟨close, pos, scope, r.handler, r.loop, r.labels,
         r.loopDepth, r.labelDepths⟩
       let routes := { r with handler := some ⟨quiet, scope, thrown⟩, finalizers := fin :: r.finalizers, loop := some (again, closed), loopDepth := r.finalizers.length+1 }
-      sequence owner scope inner after routes
+      entered owner scope inner after routes
     | _ =>
       let after ← sequence owner (bindingsAfter scope s) rest next r
       emit s.pos scope r (.statement s after)
+end
 
 /-- One graph for one executable body. Construction consults syntax and lexical
     bindings only; the same graph is consumed by typed elaboration. -/
 def build (owner : Span) (scope : Scope) (body : List Stmt) : Except String Graph := do
   let (entry, nodes) ← (do
     let finish ← emit owner scope {} .finish
-    sequence owner scope body finish {}).run #[]
+    entered owner scope body finish {}).run #[]
   return ⟨owner, body.map Stmt.pos, entry, nodes, []⟩
 
 end Verification.SourceFlow

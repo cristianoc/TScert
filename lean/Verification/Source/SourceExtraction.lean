@@ -108,7 +108,10 @@ did not mention grow it, and the request carries the result. -/
   -- The module functions this body mentions, outermost: a parameter or local
   -- of the same name shadows one, as in JavaScript.
   let mentioned := f.body.flatMap stmtNames
-  let siblings := module.filter fun g => mentioned.contains g.1 || SourceTypes.prototypeNames.contains g.1
+  -- The intrinsic a checked access of an early binding calls, wherever the
+  -- file has one: the parser lists it only then (`markEarly`).
+  let siblings := module.filter fun g => mentioned.contains g.1 || SourceTypes.prototypeNames.contains g.1 ||
+    g.1 == Fragment.throwUninitializedName
   if f.name == "undefined" || (names scope).contains "undefined" then
     throw "shadowing undefined is outside the fragment"
   if !distinct (names scope) then throw "duplicate source parameter name"
@@ -218,7 +221,7 @@ did not mention grow it, and the request carries the result. -/
         let Γ := (bodyScope.zip slotTypes).zipIdx.map fun (entry : ((ScopeBinding Tree) × Ty Tree) × Nat) =>
           let ((binding,A),j) := entry
           if j < i then match binding.storage with
-            | .cell _ ref => ref | .value | .slot _ => A
+            | .cell _ ref | .early _ ref => ref | .value | .slot _ => A
           else A
         let mapping := (List.range fullScope.length).map fun j => if j == i then 0 else j+1
         first ← emitAt f.namePos (.makeAt .absent [valueField] [.var i])

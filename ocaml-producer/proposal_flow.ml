@@ -38,6 +38,10 @@ type 'output callbacks = {
   entry: environment -> Json.t -> unit;
   iterator_start: Flow.node -> Source.stmt -> environment -> Flow.binding -> environment;
   iterator_step: Flow.node -> Source.stmt -> environment -> Flow.binding -> Flow.binding -> environment * environment;
+  (* An early binding where its statement list is entered (SOURCE-MODEL.md,
+     "Lexical bindings before initialization"): its cell, at its stated
+     type, from there on; the declaration later initializes it. *)
+  early: environment -> Source.stmt -> string -> environment;
   (* A loop's widening of a slot: what its contract admits, at its arms. *)
   widen_slot: ty -> ty;
 }
@@ -116,6 +120,9 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
         exact_allocs=combined l.exact_allocs r.exact_allocs;
         holders=common l.holders r.holders}} in
     let publications=Array.make (Array.length graph.nodes) callbacks.empty_output in
+    let early_bindings=Array.fold_left (fun acc (node:Flow.node) -> match node.action with
+      | Flow.Early (bs,_) -> List.map (fun (span,name,_,_) -> span,name) bs @ acc
+      | _ -> acc) [] graph.nodes in
     let transfer (node:Flow.node) state =
       let saved_metadata=capture env0 in
       let edges,output=callbacks.with_path_metadata saved_metadata.metadata state.metadata (fun () ->
@@ -132,6 +139,19 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
       let edges = match node.action with
         | Flow.End -> []
         | Flow.Jump id -> [next id env]
+        | Flow.Early (bindings,id) ->
+          [next id (List.fold_left (fun env (span,name,_,_) -> callbacks.early env (source span) name) env bindings)]
+        | Flow.Declaration (span,name,_,_,id) when List.mem (span,name) early_bindings ->
+          (* The declaration initializes the early binding's cell: its
+             initializer is typed and claimed as any declaration's, and the
+             binding stays the cell every mention reads through a check. *)
+          let s=source span in
+          let selected=match s.statement with
+            | Declare (mutable_,bindings) -> {s with statement=Declare (mutable_,
+                List.filter (fun (binding,_,_) -> binding=name) bindings)}
+            | _ -> Json.fail "flow declaration names another statement" in
+          let after=callbacks.statement (List.remove_assoc name env) selected in
+          [next id (List.map (fun (n,b) -> if n = name then n,lookup env name else n,b) after)]
         | Flow.Declaration (span,name,initial_source,mutable_,id) ->
           let s=source span in
           let selected=match s.statement with

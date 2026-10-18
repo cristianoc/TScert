@@ -327,6 +327,10 @@ structure Binding where
   namePos : Span
   annot : Option Json
   init : Expr
+  /-- An early binding (SOURCE-MODEL.md, "Lexical bindings before
+  initialization"): a cell allocated where its statement list is entered,
+  every mention a checked access. -/
+  early : Bool := false
 
 inductive Stmt where
   | ret (pos : Span) (e : Expr)
@@ -381,6 +385,12 @@ inductive Stmt where
   a throw out of `body` resumes. -/
   | closing (pos : Span) (close : List Stmt) (body : List Stmt)
 end
+
+/-- The intrinsic a checked access of an early binding calls where the
+binding is uninitialized (`intrinsics.mts`, SOURCE-MODEL.md, "Lexical
+bindings before initialization"): `() => never`, throwing a fresh
+`ReferenceError`. -/
+def throwUninitializedName : String := "%ThrowUninitialized%"
 
 /-- The intrinsic a `for...of` over an array steps (`intrinsics.mts`):
 `<T>(xs: readonly T[]) => () => { readonly value: T } | null`, trusted. -/
@@ -1071,10 +1081,13 @@ partial def decodeExpr (j : Json) : Except String Expr := do
 partial def decodeBindings (j : Json) : Except String (List Binding) := do
   fieldsExactly j ["k","pos","bindings"]
   let bindings ← (← jArr j "bindings").mapM fun b => do
-    fieldsExactly b ["name","namePos","annot","init"]
+    fieldsExactly b ["name","namePos","annot","init","early"]
     let a ← jField b "annot"
-    return (⟨← jStr (← jField b "name"), ← jSpan b "namePos",
-      if a == .null then none else some a, ← decodeExpr (← jField b "init")⟩ : Binding)
+    let name ← jStr (← jField b "name")
+    let namePos ← jSpan b "namePos"
+    let init ← decodeExpr (← jField b "init")
+    let early ← (← jField b "early").getBool?
+    return ({ name, namePos, annot := if a == .null then none else some a, init, early } : Binding)
   if bindings.isEmpty then throw "a declaration needs a binding"
   -- A class value whose code is that of a class value bound earlier in the
   -- declaration, by name: its static initializers construct the class
@@ -1083,7 +1096,7 @@ partial def decodeBindings (j : Json) : Except String (List Binding) := do
   bindings.mapM fun b => match b.init with
     | .ctor p (.var _ h) fs =>
       match bindings.find? (·.name == h) with
-      | some ⟨_, _, _, .ctor _ lam@(.lambda ..) []⟩ => pure { b with init := .ctor p lam fs }
+      | some ⟨_, _, _, .ctor _ lam@(.lambda ..) [], _⟩ => pure { b with init := .ctor p lam fs }
       | _ => throw s!"a class value's code names no class value '{h}' of its declaration"
     | _ => pure b
 

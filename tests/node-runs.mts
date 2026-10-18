@@ -285,6 +285,11 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-builtin-iterator-return-value-import: a done step's value is undefined, returned at string");
   assert.equal(runExample("invalid-loop-head-own-name", `(() => { try { total([1]); return "none"; } catch (e) { return e instanceof ReferenceError; } })()`),
     true, "invalid-loop-head-own-name: the head's read of its own binding throws a ReferenceError");
+  assert.equal(runExample("early-bindings", `JSON.stringify([count([5, 20, 30]), later(), perIteration([1, 2]),
+    (() => { try { tooSoon(); return "none"; } catch (e) { return e instanceof ReferenceError; } })()])`),
+    "[2,2,3,true]", "early-bindings: the closures read the bindings once initialized, and a read before throws a ReferenceError");
+  assert.equal(runExample("invalid-early-binding-stale", "stale()"), "s",
+    "invalid-early-binding-stale: the closure's write reaches the read TypeScript narrowed to number");
   assert.equal(runImporting("invalid-node-path-join-callback",
     `(() => { const xs = ["a", "b", "c"]; const path = process.getBuiltinModule("node:path"); const normalize = path.posix.normalize; path.posix.normalize = (p) => { xs.pop(); return normalize(p); }; try { return 2 in parents(xs); } finally { path.posix.normalize = normalize; } })()`),
     false, "invalid-node-path-join-callback: a replaced posix.normalize shrinks the array map visits, leaving a hole");

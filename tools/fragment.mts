@@ -328,6 +328,11 @@ export interface BindingAst {
   namePos: Span;
   annot: TypeTerm | null;
   init: Expr;
+  /** Whether the binding is early (SOURCE-MODEL.md, "Lexical bindings before
+   * initialization"): a mention of it may run before its initialization, so
+   * it is a cell allocated where its block is entered, every mention a
+   * checked access. */
+  early: boolean;
 }
 
 export type TypeParamAst = SourceTypeParameter<TypeTerm>;

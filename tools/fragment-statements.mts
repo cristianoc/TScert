@@ -83,14 +83,14 @@ export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, ini
     const e = site.entry();
     statements.push({ k: "let", pos: [e, e + 1], bindings: named.map(({ cell }) => {
       const at = site.span();
-      return { name: cell, namePos: at, annot: null, init: { k: "lit", pos: at, lit: { a: "undefined" } } };
+      return { early: false, name: cell, namePos: at, annot: null, init: { k: "lit", pos: at, lit: { a: "undefined" } } };
     }) });
   }
   const start = gate.protocolStart(gate.expr(init), site, tag, init);
   const e0 = site.entry();
   const restAt = site.span();
   const restBinding: BindingAst[] = restName
-    ? [{ name: restCell, namePos: restAt, annot: null, init: { k: "arrayLit", pos: restAt, elems: [] } }] : [];
+    ? [{ early: false, name: restCell, namePos: restAt, annot: null, init: { k: "arrayLit", pos: restAt, elems: [] } }] : [];
   statements.push({ k: "const", pos: [e0, e0 + 1], bindings: [...restBinding, ...start.bindings] });
   const leave = (): Stmt => {
     const e = site.entry();
@@ -117,10 +117,10 @@ export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, ini
   } else inner.push(...this.closeStatements(start.iteratorAt, tag, site, method));
   statements.push({ k: "block", pos: gate.span(node), label, body: inner });
   gate.hoisted.push(...statements);
-  const bindings: BindingAst[] = named.map(({ cell, name }) => ({ name: gate.local(name),
+  const bindings: BindingAst[] = named.map(({ cell, name }) => ({ early: false, name: gate.local(name),
     namePos: gate.span(name), annot: null, init: { k: "id", pos: gate.span(name), name: cell } }));
   if (restName && restName.name && ts.isIdentifier(restName.name))
-    bindings.push({ name: gate.local(restName.name), namePos: gate.span(restName.name), annot: null,
+    bindings.push({ early: false, name: gate.local(restName.name), namePos: gate.span(restName.name), annot: null,
       init: { k: "id", pos: gate.span(restName.name), name: restCell } });
   return { k: "const", pos: gate.span(node), bindings };
 }
@@ -151,10 +151,10 @@ export function closeStatements(this: Gate, iteratorAt: () => Expr, tag: string,
     const boundAt = site.span(), readAt = site.span(), callAt = site.span(), memberAt = site.span(),
       objectAt = site.span();
     return [
-      { k: "const", pos: [e1, e1 + 1], bindings: [{ name: member, namePos: boundAt, annot: null,
+      { k: "const", pos: [e1, e1 + 1], bindings: [{ early: false, name: member, namePos: boundAt, annot: null,
         init: { k: "bindWithReceiver", pos: boundAt, args: [],
           callee: { k: "read", pos: readAt, field: "return", e: iteratorAt() }, receiver: iteratorAt() } }] },
-      { k: "const", pos: [e2, e2 + 1], bindings: [{ name: closed, namePos: callAt,
+      { k: "const", pos: [e2, e2 + 1], bindings: [{ early: false, name: closed, namePos: callAt,
         annot: { k: "atom", name: "object", span: objectAt },
         init: { k: "apply", pos: callAt, callee: { k: "id", pos: memberAt, name: member }, args: [] } }] },
     ];
@@ -163,14 +163,14 @@ export function closeStatements(this: Gate, iteratorAt: () => Expr, tag: string,
   const readAt = site.span(), testAt = site.span(), narrowed = site.span(), callAt = site.span(),
     objectAt = site.span();
   return [
-    { k: "const", pos: [e1, e1 + 1], bindings: [{ name: member, namePos: readAt, annot: null,
+    { k: "const", pos: [e1, e1 + 1], bindings: [{ early: false, name: member, namePos: readAt, annot: null,
       init: { k: "read", pos: readAt, field: "return", e: iteratorAt() } }] },
     { k: "if", pos: [e2, e2 + 1],
       // The member's read and the name holding it are one value, at one
       // claim site.
       cond: { k: "typeofTest", pos: testAt, shape: "undefined", equal: false,
         e: { k: "id", pos: readAt, name: member } },
-      then: [{ k: "const", pos: [e3, e3 + 1], bindings: [{ name: closed, namePos: callAt,
+      then: [{ k: "const", pos: [e3, e3 + 1], bindings: [{ early: false, name: closed, namePos: callAt,
         annot: { k: "atom", name: "object", span: objectAt },
         init: { k: "callWithReceiver", pos: callAt, callee: { k: "id", pos: narrowed, name: member },
           receiver: iteratorAt(), args: [] } }] }],
@@ -199,7 +199,7 @@ export function collect(this: Gate, operand: Expression): Expr {
   };
   gate.hoisted.push(
     { k: "const", pos: [e0, e0 + 1], bindings: [
-      { name: items, namePos: itemsAt, annot: null, init: { k: "arrayLit", pos: itemsAt, elems: [] } },
+      { early: false, name: items, namePos: itemsAt, annot: null, init: { k: "arrayLit", pos: itemsAt, elems: [] } },
       ...start.bindings] },
     { k: "while", pos: [eLoop, eLoop + 1], update: [],
       cond: { k: "lit", pos: site.span(), lit: { a: "booleanlit", v: "true" } },
@@ -481,8 +481,70 @@ export function statements(this: Gate, list: readonly Statement[]): Stmt[] {
     const at = lexical.size ? refers(s) : undefined;
     if (at) gate.fail(at, "a name declared only in dead code is outside the fragment");
   }
+  gate.markEarly(live);
   // An empty statement, `;`, does nothing.
   return live.filter((s) => !ts.isEmptyStatement(s)).flatMap((s) => gate.hoisting(s));
+}
+
+/** The early bindings of a statement list (SOURCE-MODEL.md, "Lexical
+ * bindings before initialization"): a one-name `let` or `const` of the list
+ * one of whose mentions may run before the binding's initialization point,
+ * the end of its declarator: a mention written before it, or one in a
+ * closure created before it, which may run at any time after its creation.
+ * A closure created after the point runs after it, in the same activation.
+ * A function literal that is a constant's whole initializer runs only after
+ * the constant holds it, so its mentions of the constant are the closure's
+ * self entry. A pattern's binding so mentioned is refused. */
+export function markEarly(this: Gate, live: readonly Statement[]): void {
+  const gate: Gate = this;
+  const functionLike = (n: Node): boolean => ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n);
+  const declared = new Map<string, ts.VariableDeclaration>();
+  const patterns = new Map<string, ts.VariableDeclaration>();
+  for (const st of live) {
+    if (!ts.isVariableStatement(st)) continue;
+    const list = st.declarationList;
+    if (!(list.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const))) continue;
+    for (const d of list.declarations) {
+      if (ts.isIdentifier(d.name)) declared.set(gate.local(d.name), d);
+      else {
+        const names = (b: ts.BindingName): void => {
+          if (ts.isIdentifier(b)) patterns.set(gate.local(b), d);
+          else for (const e of b.elements) if (!ts.isOmittedExpression(e) && e.name) names(e.name);
+        };
+        names(d.name);
+      }
+    }
+  }
+  if (!declared.size && !patterns.size) return;
+  // `created` is where the outermost closure around a mention is created,
+  // null outside one: a closure created after a binding's initialization
+  // point runs after it, in the same activation.
+  const visit = (n: Node, created: number | null): void => {
+    if (ts.isTypeNode(n)) return;
+    if (ts.isIdentifier(n)) {
+      const parent = n.parent;
+      const key = !!parent && (((ts.isPropertyAccessExpression(parent) && parent.name === n) ||
+        ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
+          ts.isPropertySignatureDeclaration(parent)) && parent.name === n)));
+      const name = key ? undefined : gate.local(n);
+      const at = created ?? n.getStart(gate.file);
+      const d = name === undefined ? undefined : declared.get(name);
+      if (d && n !== d.name && at < d.end) {
+        let literal: Node | undefined = d.initializer;
+        while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
+        const self = !!literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal)) &&
+          n.getStart(gate.file) >= literal.getStart(gate.file) && n.end <= literal.end;
+        if (!self) gate.earlyDecls.add(d);
+      }
+      const p = name === undefined ? undefined : patterns.get(name);
+      if (p && at < p.end && !(n.getStart(gate.file) >= p.name.getStart(gate.file) && n.end <= p.name.end))
+        gate.fail(n, `a binding of a pattern read where it may be uninitialized is outside the fragment: ${n.text}`);
+      return;
+    }
+    const inner = created ?? (functionLike(n) ? n.getStart(gate.file) : null);
+    n.forEachChild((c) => visit(c, inner));
+  };
+  for (const st of live) visit(st, null);
 }
 
 /** A statement, preceded by the statements its lowering runs before it:
@@ -533,7 +595,7 @@ export function letPattern(this: Gate, s: ts.VariableStatement): Stmt[] | null {
     switch (t.k) {
       case "name": {
         const hidden = `%let-pattern ${t.name}`;
-        cells.push({ name: t.name, namePos: t.pos, annot: null, init: { k: "id", pos: t.pos, name: hidden } });
+        cells.push({ early: false, name: t.name, namePos: t.pos, annot: null, init: { k: "id", pos: t.pos, name: hidden } });
         return { ...t, name: hidden };
       }
       case "object": return { ...t, props: t.props.map((q) => ({ ...q, target: hide(q.target) })),
@@ -650,7 +712,7 @@ export function forInStmt(this: Gate, node: ts.ForInStatement): Stmt {
       iterate: iterateForInName,
       iterable: gate.expr(node.expression),
       body: [
-        { k: "const", pos: [start, start + 1], bindings: [{ name: gate.local(d.name), namePos: gate.span(d.name),
+        { k: "const", pos: [start, start + 1], bindings: [{ early: false, name: gate.local(d.name), namePos: gate.span(d.name),
           annot: null, init: { k: "index", pos: [keyword, keyword + "in".length],
             e: { k: "id", pos: [keyword, keyword + 1], name: entry },
             key: { k: "lit", pos: [keyword + 1, keyword + 2], lit: { a: "numberlit", v: "0" } } } }] },
@@ -725,19 +787,19 @@ export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.Vari
     span: () => spans.shift() ?? gate.fail(node, "internal: the close's sites"),
   }, method);
   const step: Stmt[] = [
-    { k: "const", pos: [c, c + "const".length], bindings: [{ name: result, namePos: [c, c + "const".length],
+    { k: "const", pos: [c, c + "const".length], bindings: [{ early: false, name: result, namePos: [c, c + "const".length],
       annot: null, init: { k: "apply", pos: [s, s + "for".length], callee: id([c, e1], next), args: [] } }] },
     { k: "if", pos: [c + 1, c + 2],
       cond: { k: "read", pos: [c, c + "const".length], field: "done", e: id([p, p + 1], result) },
       then: [{ k: "break", pos: [c + 2, c + 3], label: null }], else_: null },
-    { k: "const", pos: [n0, n1], bindings: [{ name: gate.local(name), namePos: [n0, n1], annot: null,
+    { k: "const", pos: [n0, n1], bindings: [{ early: false, name: gate.local(name), namePos: [n0, n1], annot: null,
       init: { k: "read", pos: [n0, n1], field: "value", e: id([c, n1], result) } }] },
     { k: "closing", pos: [s + 1, s + 2], close, body: gate.block(node.statement) },
   ];
   return { k: "block", pos: gate.span(node), label: null, body: [
     { k: "const", pos: [s, s + "for".length], bindings: [
-      { name: iterator, namePos: [s, s + "for".length], annot: null, init: getIterator },
-      { name: next, namePos: [p, p + 1], annot: null, init: bound }] },
+      { early: false, name: iterator, namePos: [s, s + "for".length], annot: null, init: getIterator },
+      { early: false, name: next, namePos: [p, p + 1], annot: null, init: bound }] },
     { k: "while", pos: [p, end], cond: { k: "lit", pos: [s, p + 1], lit: { a: "booleanlit", v: "true" } },
       body: step, update: [] },
   ] };
@@ -791,9 +853,9 @@ export function protocolStart(this: Gate, iterable: Expr, site: { entry(): numbe
   return {
     iterator, next, iteratorAt,
     bindings: [
-      { name: iterator, namePos: call, annot: null, init: { k: "invoke", pos: call, args: [],
+      { early: false, name: iterator, namePos: call, annot: null, init: { k: "invoke", pos: call, args: [],
         callee: { k: "read", pos: method, field: { symbol }, e: iterable } } },
-      { name: next, namePos: bound, annot: null, init: { k: "bindWithReceiver", pos: bound, args: [],
+      { early: false, name: next, namePos: bound, annot: null, init: { k: "bindWithReceiver", pos: bound, args: [],
         callee: { k: "read", pos: nextRead, field: "next", e: iteratorAt() }, receiver: iteratorAt() } },
     ],
   };
@@ -812,7 +874,7 @@ export function protocolStep(this: Gate, next: string, result: string, leave: ()
   const valueAt = site.span(), resultAt = site.span();
   return {
     stmts: [
-      { k: "const", pos: [e1, e1 + 1], bindings: [{ name: result, namePos: call.pos, annot: null, init: call }] },
+      { k: "const", pos: [e1, e1 + 1], bindings: [{ early: false, name: result, namePos: call.pos, annot: null, init: call }] },
       { k: "if", pos: [e2, e2 + 1], cond: doneRead, then: [leave()], else_: null },
     ],
     value: () => ({ k: "read", pos: valueAt, field: "value", e: { k: "id", pos: resultAt, name: result } }),
@@ -881,7 +943,7 @@ export function switchStmt(this: Gate, node: ts.SwitchStatement): Stmt {
   else {
     name = `%switch@${node.getStart(gate.file)}%`;
     const at = gate.span(node.expression);
-    bound.push({ k: "const", pos: at, bindings: [{ name, namePos: at, annot: null, init: gate.expr(node.expression) }] });
+    bound.push({ k: "const", pos: at, bindings: [{ early: false, name, namePos: at, annot: null, init: gate.expr(node.expression) }] });
   }
   const end = switchLabel(node, gate.file);
   const label = (c: ts.CaseOrDefaultClause): string => `%case@${c.getStart(gate.file)}%`;
@@ -1043,6 +1105,7 @@ export function declarations(this: Gate, list: ts.VariableDeclarationList, at: N
         namePos: gate.span(d.name),
         annot: gate.optionalTypeOf(d.type, d),
         init: { k: "lit", pos: gate.span(d), lit: { a: "undefined" } },
+        early: gate.earlyDecls.has(d),
       };
     }
     // For `let`, the storage contract is what every later assignment is
@@ -1078,6 +1141,7 @@ export function declarations(this: Gate, list: ts.VariableDeclarationList, at: N
       namePos: gate.span(d.name),
       annot: d.type ? gate.typeOf(d.type) : null,
       init: gate.expr(d.initializer),
+      early: gate.earlyDecls.has(d),
     };
   });
   if (mutable) return { k: "let", pos: gate.span(at), bindings };

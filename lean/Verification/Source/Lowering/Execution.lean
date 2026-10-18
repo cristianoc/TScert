@@ -364,7 +364,7 @@ one for an increment), and the slot of the old value. -/
     if let some g ← executionGrowth fc scope Γ original prepared then
       return g.holders.foldl (fun Γ (i, storage) => match storage with
         | .value | .slot _ => Γ.set i g.M
-        | .cell .. => Γ) Γ
+        | .cell .. | .early .. => Γ) Γ
     if (← ownedWrite) == some original.span then
       if let .objectAssign _ (.var _ name) _ := original then
         let some i := valueSlot scope name | throw "internal execution plan: missing owned Object.assign target"
@@ -380,7 +380,7 @@ one for an increment), and the slot of the old value. -/
   if let some g ← executionGrowth fc scope Γ original prepared then
     let values := g.holders.filterMap fun (i, storage) => match storage with
       | .value | .slot _ => some i
-      | .cell .. => none
+      | .cell .. | .early .. => none
     let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
       (fun j => if j == 0 then 0 else if values.contains (j-1) then 1 else j+2)
     let merged := held ⟨"",some original.span⟩ :: held ⟨"",some original.span⟩ :: scope
@@ -394,6 +394,8 @@ one for an increment), and the slot of the old value. -/
           (g.M::g.F::Γ) contract "storage-contract" (scope := merged)
       | .cell .. => emitAt original.span (.writeAt valueField (.var (i+2)) (.var 0)) (.effect next)
           (g.M::g.F::Γ) [Labels.nul] "storage-contract" (scope := merged)
+      | .early .. => throw (s!"unsupported source expression at [{original.span.1},{original.span.2}): " ++
+          "a key-adding write of an object an early binding holds is outside the fragment")
     let copy := if g.swapped then Tm.merge [] (.var 0) (.var (g.receiver+1))
       else .merge [] (.var (g.receiver+1)) (.var 0)
     let merge ← emitAt original.span copy (.bind stored)
