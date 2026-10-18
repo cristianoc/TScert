@@ -338,6 +338,26 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const npath = writeClaims(cells, "module-cell-narrow-contract", narrowed);
     refusedAt(cells, npath, "module-cell-narrow-contract", "claimed storage contract differs from the source annotation for 'count'");
     invoke(npath, join(cells, "evidence.json"), cells);
+    // A unit's entry knows nothing of a module cell's contents, and a call
+    // may write it: a narrower entry claim, or a read after the call claimed
+    // at the value written before it, is refused.
+    const entry = readClaims(cells);
+    const after = must(entry.functions.find(f => f.name === "afterCall"), "afterCall");
+    const first = must(after.entries.reduce<(typeof after.entries)[number] | undefined>(
+      (a, e) => (!a || e.start < a.start ? e : a), undefined), "afterCall's entry");
+    for (const b of first.bindings) if (b.name === "count") b.type = [rowOf(entry, { numLit: { bits: "0" } })];
+    const epath = writeClaims(cells, "module-cell-entry-fact", entry);
+    refusedAt(cells, epath, "module-cell-entry-fact", "count");
+    invoke(epath, join(cells, "evidence.json"), cells);
+    const stale = readClaims(cells);
+    const sfn = must(stale.functions.find(f => f.name === "afterCall"), "afterCall");
+    const src = readFileSync(join(cells, "source.ts"), "utf8");
+    const at = src.indexOf("return count;", src.indexOf("function afterCall")) + "return ".length;
+    const read = must(sfn.expressions.find(x => x.pos[0] === at && x.pos[1] === at + "count".length), "the read after the call");
+    read.type = [rowOf(stale, { numLit: { bits: "4607182418800017408" } })];
+    const spath = writeClaims(cells, "module-cell-stale-read", stale);
+    refusedAt(cells, spath, "module-cell-stale-read", `at [${at},${at + "count".length})`);
+    invoke(spath, join(cells, "evidence.json"), cells);
   }
   process.stdout.write("forged early bindings: a dropped or narrowed contract, a literal's contract unlike its annotations and a narrowed checked access refused; the intrinsic listed exactly\n");
 }
