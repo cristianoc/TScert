@@ -269,7 +269,16 @@ records with different members (`closure-contextual-literal-union`) is read
 at TypeScript's contextual records, `{ a: number; b?: undefined } |
 { a?: undefined; b: number }`; the producer claims it at the literals'
 records `{ a: number } | { b: number }`, which state no absence of the
-other's member and so are outside the parameter's records.
+other's member and so are outside the parameter's records. A closure parameter at a generic declaration's anonymous record at an
+instance with an optional member at a binder
+(`closure-contextual-anonymous-instance-refused`: `{ v?: T }` of
+`interface Opt<T> { readonly items: readonly { v?: T }[] }`, read through
+`const xs = o.items; xs.map((i) => i.v)` at `o: Opt<number>`) is refused:
+the compiler's synchronous API gives the instance's members but no
+instantiation of `T`, and `v`'s type carries the `undefined` optionality
+adds, so `v?: number` is not told from `v?: number | undefined`. Reading it
+needs the instantiation from the compiler (an API extension) or a checked
+elaboration of the contextual type.
 
 <a id="a-semantics-of-the-fragment"></a>
 **A semantics of the Fragment.** The parser's rewrites and extraction rest

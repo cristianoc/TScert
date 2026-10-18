@@ -18,7 +18,7 @@ import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, signature, signatures, substitute,
-  substituteBinders, typeTerm, validateAnnotation, type Mapped, type MappedMember, type TermScope } from "./type-term.mts";
+  typeTerm, validateAnnotation, type Mapped, type MappedMember, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
   splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
@@ -2036,57 +2036,23 @@ export function collectDeclarations(file: string, options: {
         throw Error(`the enum member ${name}.${member.name.getText(owner.getSourceFile())} has no value TypeScript computes, so no literal type`);
       return literalTerm(value, span);
     };
-    // The closure parameter whose contextual type is being read, which
-    // locates the instance a generic declaration's type literal is read at.
-    let contextualOrigin: ts.ParameterDeclaration | null = null;
-    // The arguments of the instance of `owner`, the generic declaration
-    // whose parameters are `literal`'s binders, that the closure's callee
-    // reads `literal` from: the nearest base of the callee's member reads
-    // whose type is a reference to `owner`, the member read off it declared
-    // in `owner` around `literal`. Null where no such read is found.
-    const instanceActuals = (literal: Node, binders: readonly string[]): readonly Type[] | null => {
-      let owner: Node | undefined = literal.parent;
-      while (owner && !childrenOf(owner, "typeParameters").length) owner = owner.parent;
-      const parameters = owner ? childrenOf(owner, "typeParameters") : [];
-      if (!owner || !isTypeDeclaration(owner) || parameters.length !== binders.length ||
-          parameters.some((p, i) => !ts.isTypeParameterDeclaration(p) || p.name.text !== binders[i]))
-        return null;
-      const closure = contextualOrigin?.parent;
-      const call = closure?.parent;
-      if (!closure || !call || !ts.isCallExpression(call) || !call.arguments.some(a => a === closure)) return null;
-      const within = (outer: Node, inner: Node) => outer.getSourceFile() === inner.getSourceFile() &&
-        outer.getStart(outer.getSourceFile()) <= inner.getStart(inner.getSourceFile()) && inner.end <= outer.end;
-      for (let read: Node = call.expression; ts.isPropertyAccessExpression(read); read = read.expression) {
-        const base = checker.getTypeAtLocation(read.expression);
-        if (!base) return null;
-        const declares = (symbol: CompilerSymbol | undefined) => !!symbol?.declarations.some(d => d.resolve() === owner);
-        const alias = declares(base.getAliasSymbol());
-        const reference = isTypeReference(base) && declares(base.getTarget().getSymbol()) ? base : null;
-        if (!alias && !reference) continue;
-        const member = checker.getSymbolAtLocation(read.name)?.declarations[0]?.resolve();
-        if (!member || !within(owner, member) || !within(member, literal)) return null;
-        const actuals = alias ? base.getAliasTypeArguments() : reference ? checker.getTypeArguments(reference) : [];
-        return actuals.length === binders.length ? actuals : null;
-      }
-      return null;
-    };
     // An anonymous record (an object literal's type, a type literal, a mapped
     // type's instance such as `Record<string, unknown>`): the object contract
     // its members state. A type literal or mapped type the program writes is
-    // read as written, by the annotation reader: outside any generic
-    // declaration, at its declaration's binders where TypeScript gives it
-    // uninstantiated, and at the instance the closure's callee reads it from
-    // with each binder substituted by that instance's argument. Any other
-    // (an object literal's type, a library mapped type's instance, a
-    // generic declaration's at an instance not so located) is read member by
-    // member: a member of
-    // its own type literal at its written modifiers, and at its written type
-    // where that names no binder; any other at the type TypeScript
-    // instantiates, readonly where the instantiation makes it so. An optional
-    // member at an instantiated type is refused, save an object literal's at
-    // `undefined`. Each index signature is read at its key's kind and
-    // capability. A member no object contract states (a method, an accessor,
-    // a symbol key, a call signature, an index of another key) is refused.
+    // read as written, by the annotation reader, where TypeScript gives it
+    // outside any generic declaration or at its declaration's own binders.
+    // Any other (an object literal's type, a library mapped type's instance,
+    // a generic declaration's record at an instance) is read member by
+    // member: a member of its own type literal at its written modifiers, and
+    // at its written type where that names no binder; any other at the type
+    // TypeScript instantiates, readonly where the instantiation makes it so.
+    // An optional member at an instantiated type is refused, save an object
+    // literal's at `undefined`: the compiler's API gives an anonymous record
+    // no instantiation of its declaration's binders, and the instantiated
+    // type carries the `undefined` optionality adds. Each index signature is
+    // read at its key's kind and capability. A member no object contract
+    // states (a method, an accessor, a symbol key, a call signature, an index
+    // of another key) is refused.
     const recordsRead = new Set<Type>();
     const contextualRecord = (type: Type, span: Span): TypeTerm | null => {
       if (!(type.flags & TypeFlags.Object)) return null;
@@ -2100,13 +2066,6 @@ export function collectDeclarations(file: string, options: {
         const binders = enclosingBinders(only);
         if (!binders.length || checker.getTypeFromTypeNode(only)?.id === type.id)
           return computedContext.annotation(only, only, binders);
-        const actuals = instanceActuals(only, binders);
-        if (actuals) return substituteBinders(computedContext.annotation(only, only, binders),
-          new Map(binders.map((b, i) => {
-            const actual = actuals[i];
-            if (!actual) throw Error(`the instance ${text} is read at states no argument for ${b}`);
-            return [b, contextualTerm(actual, span)];
-          })));
       }
       if (recordsRead.has(type)) throw Error(`the contextual record ${text} contains itself, which no annotation names`);
       if (checker.getSignaturesOfType(type, SignatureKind.Call).length ||
@@ -2147,7 +2106,7 @@ export function collectDeclarations(file: string, options: {
             ts.isShorthandPropertyAssignment(declaration));
           if (optional && !writtenType &&
               !(literalMember && member.flags & TypeFlags.Undefined && !member.isUnionType()))
-            throw Error(`the contextual record ${text} has an optional member ${p.name} at a type TypeScript instantiates, whose written optional contract the reader does not recover; an annotation states it`);
+            throw Error(`the contextual record ${text} is an instance of an anonymous record, whose instantiation the compiler's API does not give, and its optional member ${p.name} is at a type with the \`undefined\` optionality adds, from which its written contract is not recovered; an annotation states it`);
           const memberType = writtenType && node && declaration
             ? computedContext.annotation(node, declaration, binders) : contextualTerm(member, span);
           const readonly = own
@@ -2268,12 +2227,9 @@ export function collectDeclarations(file: string, options: {
       const type = checker.getTypeAtLocation(parameter.name);
       try {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this unannotated closure parameter no type");
-        contextualOrigin = parameter;
         options.contextualParam?.(span, contextualTerm(type, span));
       } catch (error) {
         options.contextualParam?.(span, { refused: error instanceof Error ? error.message : String(error) });
-      } finally {
-        contextualOrigin = null;
       }
     }
     // `Object.assign(arrow, literal)` without type arguments: the two

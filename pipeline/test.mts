@@ -288,7 +288,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // closure may take, and is refused where `map` is offered it at the
   // broader one. Each is refused where evidence is produced, and where it is
   // checked: outside the record at the closure as in search, within it at
-  // the closure, whose evidence establishes the original claim only. Each forged document is the claims with the closure's parameter at
+  // the closure, whose evidence establishes the original claim only. The
+  // check controls establish that evidence for the original claim does not
+  // check the forged one; they do not check `map`'s application of a
+  // narrower closure given valid evidence for it. Each forged document is the claims with the closure's parameter at
   // another record row the claims carry (the fixture's `forgedAt` states
   // them), so its rows and the evidence's labels are unchanged.
   const forge = (good: string, name: string, record: string, forged: string, at: string,
@@ -326,16 +329,26 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     pairRow(labels, `[["a",[${labels.num}]],["c",[${labels.num}]]]`, "optional"), offered, unestablished);
   forge(records, "contextual-record-optional-required", pair, pairRow(labels, `[["a",[${labels.num}]]]`, "view"), offered,
     unestablished);
-  // `absent`'s parameter, `{ v?: never }` at `Opt<never>`, claimed at
-  // `{ v?: undefined }`.
+  // `absent`'s parameter, `Box<never>` (`v` absent only), claimed at
+  // `Box<undefined>`: the arrow's parameter names the declaration at
+  // another argument, so the claims keep their rows.
   const instances = run("closure-contextual-optional-instances");
   const source = readFileSync(join(instances, "source.ts"), "utf8");
-  const absent = source.indexOf("(i) => i.v", source.indexOf("Opt<never>"));
-  const optionalV = (type: string) =>
-    `[{"refs":{"first":[],"rest":[],"views":[],"optional":[{"key":"v","readonly":false,"type":[${type}]}]}}]`;
-  forge(instances, "contextual-record-absent-present", optionalV(""),
-    optionalV(String(rowOf(readClaims(instances), "undef"))), `at [${absent},${absent + "(i) => i.v".length}): ${outside}`);
-  process.stdout.write("forged contextual records: a closure claimed outside its record (`v?: never` at `undefined` included) refused at the closure, within it refused where map takes it (search) or at its closure's evidence (check)\n");
+  const absent = source.indexOf("(b) => b.v", source.indexOf("Box<never>"));
+  const atAbsent = `at [${absent},${absent + "(b) => b.v".length}): ${outside}`;
+  {
+    const claims = readClaims(instances);
+    const text = JSON.stringify(claims);
+    const never = /"arguments":\[\[\{"decl":(\d+),"args":\[\[\]\]\}\],/.exec(text);
+    assert.ok(never, "the closure's parameter at Box<never>");
+    const path = join(instances, "contextual-record-absent-present.json");
+    writeFileSync(path, text.replace(never[0],
+      `"arguments":[[{"decl":${never[1]},"args":[[${rowOf(claims, "undef")}]]}],`));
+    refusedAt(instances, path, "contextual-record-absent-present", atAbsent);
+    const checked = invoke(path, join(instances, "evidence.json"), instances);
+    assert.ok(checked.includes(atAbsent), checked);
+  }
+  process.stdout.write("forged contextual records: a closure claimed outside its record (`Box<never>` at `Box<undefined>` included) refused at the closure, within it refused where map takes it (search) or at its closure's evidence (check)\n");
 }
 {
   // An early binding's cell, its marker and its checked accesses are the

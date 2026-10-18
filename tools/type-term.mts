@@ -603,36 +603,16 @@ export function expandMapped(m: Mapped, span: Span, fail: (message: string) => n
 /** `term` with each of its declaration's parameters replaced by the term at
  * that position of `args`. */
 export function substitute(term: TypeTerm, args: readonly TypeTerm[]): TypeTerm {
-  return replaceLeaves(term, t => {
-    if (t.k !== "parameter") return t;
-    const arg = args[t.index];
-    if (!arg) throw Error("declaration parameter index outside its application");
-    return arg;
-  });
-}
-
-/** `term` with each binder `actuals` names replaced by its term, save under
- * a scheme rebinding that name. Fields keep their modifiers. */
-export function substituteBinders(term: TypeTerm, actuals: ReadonlyMap<string, TypeTerm>): TypeTerm {
-  return replaceLeaves(term, t => t.k === "binder" ? actuals.get(t.name) ?? t : t,
-    binders => binders.some(b => actuals.has(b.name))
-      ? (inner: TypeTerm) => substituteBinders(inner, new Map([...actuals].filter(([name]) =>
-        !binders.some(b => b.name === name))))
-      : null);
-}
-
-/** `term` with each parameter and binder leaf replaced by `leaf`'s result,
- * every other part kept. Under a scheme, `under` may give the replacement
- * its binders call for. */
-function replaceLeaves(term: TypeTerm, leaf: (t: Extract<TypeTerm, { k: "parameter" | "binder" }>) => TypeTerm,
-    under: (binders: Extract<TypeTerm, { k: "scheme" }>["binders"]) => ((t: TypeTerm) => TypeTerm) | null = () => null):
-    TypeTerm {
-  const go = (t: TypeTerm): TypeTerm => replaceLeaves(t, leaf, under);
-  const fn = (f: FunctionTerm, g: (t: TypeTerm) => TypeTerm = go): FunctionTerm => ({ ...f,
-    receiver: f.receiver && g(f.receiver), params: f.params.map(g), rest: f.rest && g(f.rest), result: g(f.result) });
+  const go = (t: TypeTerm): TypeTerm => substitute(t, args);
+  const fn = (f: FunctionTerm): FunctionTerm => ({ ...f, receiver: f.receiver && go(f.receiver),
+    params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) });
   switch (term.k) {
-    case "parameter": case "binder": return leaf(term);
-    case "atom": case "literal": case "unique": case "self": case "callable": return term;
+    case "parameter": {
+      const arg = args[term.index];
+      if (!arg) throw Error("declaration parameter index outside its application");
+      return arg;
+    }
+    case "atom": case "literal": case "unique": case "self": case "binder": case "callable": return term;
     case "union": case "intersection": return { ...term, parts: term.parts.map(go) };
     case "array": return { ...term, element: go(term.element) };
     case "tuple": return { ...term, required: term.required.map(go), optional: term.optional.map(go),
@@ -642,17 +622,14 @@ function replaceLeaves(term: TypeTerm, leaf: (t: Extract<TypeTerm, { k: "paramet
       ...(term.numberIndex ? { numberIndex: { ...term.numberIndex, value: go(term.numberIndex.value) } } : {}),
       ...(term.symbolIndex ? { symbolIndex: { ...term.symbolIndex, value: go(term.symbolIndex.value) } } : {}),
       ...(term.prototype ? { prototype: go(term.prototype) } : {}),
-      calls: term.calls.map(f => fn(f)) };
+      calls: term.calls.map(fn) };
     case "function": return fn(term);
     case "constructor": return { ...term, params: term.params.map(go), rest: term.rest && go(term.rest),
       result: go(term.result) };
     case "pack": return { ...term, of: go(term.of) };
-    case "scheme": {
-      const g = under(term.binders) ?? go;
-      return { ...term, binders: term.binders.map(b => ({ ...b, bound: b.bound && g(b.bound),
-        default: b.default && g(b.default) })), signatures: term.signatures.map(f => f.k === "function" ? fn(f, g)
-          : { ...f, params: f.params.map(g), rest: f.rest && g(f.rest), result: g(f.result) }) };
-    }
+    case "scheme": return { ...term, binders: term.binders.map(b => ({ ...b, bound: b.bound && go(b.bound),
+      default: b.default && go(b.default) })), signatures: term.signatures.map(f => f.k === "function" ? fn(f)
+        : { ...f, params: f.params.map(go), rest: f.rest && go(f.rest), result: go(f.result) }) };
     case "reference": return { ...term, args: term.args.map(go) };
   }
 }
