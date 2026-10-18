@@ -699,11 +699,81 @@ averages 3 to 5:
   `termsOf` 23.5 s → 24.0 s and 3.3 s → 3.2 s. Evidence byte-identical on
   all of them.
 
-### 9.3 Next steps
+### 9.3 Where the search time goes
+
+Measured on 2026-10-18 at a071881, user time; step times are medians of 3
+runs, profiles one run each with the scratch profile (§5.1), whose request
+lines record each subtype request's identity: the graph it is asked in (its
+address in the process), and the hashes of its source and target.
+
+**Time by step.** The parser, the lowering and the producer take under a
+second of each unit; the time is search and check:
+
+| Unit | Search | Check | Lowering + producer |
+| --- | --- | --- | --- |
+| `termsOf` | 23.9 s | 3.2 s | 0.1 s |
+| `printGraph` | 38.8 s | 6.6 s | 0.02 s |
+| `pageBody` | 13.5 s | 4.5 s | 0.3 s |
+| `card` | 11.1 s | 4.1 s | 0.3 s |
+| `statementsOnPath` | 11.2 s | 6.3 s | 0.1 s |
+| ten verified slices of `regexp.mts` and `regexp-shape.mts` | 29.8 s together | 20.3 s together | 0.1 s |
+
+**Reruns.** Every rerun follows a restricted attempt that completed without
+establishing its comparison, none stopped by growth or the budget, and no
+rerun establishes its comparison: `termsOf` 9,143 reruns (12.1 s), `printGraph`
+41,383 (18.4 s), `pageBody` 9,970 (1.6 s), `card` 6,518 (1.3 s),
+`statementsOnPath` 430 (0.9 s). From 89% (`card`) to 99% of them read
+tables with ordinary premises only (no meet source, no renamed scheme pair, no instance member);
+the rest have rows whose target holds call signatures. Instance members and
+renamed pairs occur in none.
+
+**Repeated requests.** Within one search, most subtype requests are asked
+again with the same graph, source and target, and every repeated identity
+gave the same answer each time it was asked:
+
+| Unit, search | Outermost requests | Distinct | Time | Time in repeats | Repeats refused | Their time |
+| --- | --- | --- | --- | --- | --- | --- |
+| `termsOf` | 107,721 | 3,926 | 24.9 s | 14.7 s | 6,015 | 11.9 s |
+| `printGraph` | 230,522 | 12,129 | 41.7 s | 22.8 s | 31,973 | 19.8 s |
+| `pageBody` | 336,373 | 8,325 | 6.7 s | 3.4 s | 6,407 | 2.4 s |
+| `card` | 283,936 | 4,885 | 4.7 s | 2.8 s | 4,889 | 2.1 s |
+| `statementsOnPath` | 15,113 | 366 | 2.9 s | 1.6 s | 262 | 1.3 s |
+
+The reruns sit mostly inside repeated requests: on `termsOf`, 6,017 reruns
+(10.8 s) are inside repeats and 2,700 (1.3 s) inside first requests. In the
+checker the requests do not repeat (`termsOf`: 220 requests, 219 distinct).
+
+**What this says.** Removing the reruns (the dependency representation of
+§9.4, step 2) would remove at most their 12.1 s on `termsOf` and 18.4 s on
+`printGraph`. Answering a request already answered in the same graph would
+remove the repeats, 14.7 s and 22.8 s, which include most of the reruns'
+time: the same refused comparisons are asked again, and each time they run
+restricted and then in full. Reuse within one graph needs no transport
+across store growth; across the graph's growth (316 graph addresses in
+`termsOf`'s search) it does. That a refused answer stays refused is a
+fact about the search, not about the types, so reusing refusals concerns
+coverage only: an accepted result is still checked.
+
+**The `FieldTerm` experiment.** Naming the record of an object type term's
+field as an interface (`interface FieldTerm { name: PropertyKey; optional:
+boolean; readonly: boolean; type: TypeTerm; span: Span }`, in a copy of
+`tools/`) makes `execResult`'s pipeline run take 311 s of wall time (201 s of
+user time) and end in the source step, a tool failure of the compiler's API
+(`RemoteNode.forEachChild` from `declaration-graph.mts`), where it otherwise
+verifies in 2.7 s. A CPU profile of that run puts 305 of its 308 s under
+`computed-types.mts` (`computedType`, `indexedAccess`, `aliasApplication`,
+`distributed`), 165 s of it waiting on the compiler API's channel (`read`).
+The time is in the front end's evaluation of computed types, before any
+search: none of recursive structural comparison, union expansion, repeated
+requests or reruns.
+
+### 9.4 Next steps
 
 The steps are for the owner to choose. In order:
 
-1. **Discovery of the selected certificate.** `valid_selected` keeps a
+1. **Reuse of an answered request within one graph**, ranked first by the
+   measurements of §9.3.
+2. **Discovery of the selected certificate.** `valid_selected` keeps a
    completed certificate valid under selection. That the selected search
    finds it needs, beyond it: the certificate restricted to the root and the
    dependencies of its coverings, with every premise and every piece of
@@ -718,10 +788,8 @@ The steps are for the owner to choose. In order:
    discovery produces and coverage, arrow evidence and member discovery
    read: each covering naming the pairs and the evidence it uses. That
    changes the engine's interface, and waits for the owner.
-2. **The rerun.** Removed exactly where the preservation theorem applies,
+3. **The rerun.** Removed exactly where the preservation theorem applies,
    once it covers discovery; kept elsewhere.
-3. **Exact comparison identity, then reuse within a run.** Each profile line
-   carries its comparison's identity (§6.1) before memoization is ranked.
 4. **R7, R6 and evidence sharing for `statementsOnPath`**, ranked by what
    remains of its run after the scope check.
 

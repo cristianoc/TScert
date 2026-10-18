@@ -35,7 +35,7 @@ design, not its progress.
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 97 of 337 verify in `tools/` (2026-10-18, at a 60 s step limit), 24 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 97 of 337 functions verify in `tools/` (90 of the 313 still present of the 314 counted at 3864876; e2ec915), 24 of 24 in `dev/`, 4 of 13 in `tests/` and 1 of 35 in `pipeline/` (2026-10-18, a071881, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -160,7 +160,11 @@ check takes it from 16.5 s to 16.2 s, `X` being source-valued in only 56 of
 the 172 checks (a probe, 2026-10-18). Candidate selection
 ([structure-directed comparison](docs/UNION-SHAPES.md#9-the-implementation))
 takes the structural engine's demand pairs from 470,306 to 41,560; the rerun
-of each comparison it leaves unestablished costs 9.8 s and establishes none. `dev/lowering-dump.mts`
+of each comparison it leaves unestablished costs 9.8 s and establishes none.
+Within `termsOf`'s search, 107,721 subtype requests ask 3,926 distinct
+questions, and the repeats take 14.7 s of 24.9 s, the refused repeats 11.9 s
+([where the search time goes](docs/UNION-SHAPES.md#93-where-the-search-time-goes),
+2026-10-18). `dev/lowering-dump.mts`
 decodes the verifier's output with `decodeUnits`, which calls `fields` and
 `nat` in `map` callbacks: imported functions, whose effect no certificate
 states ([module composition](#module-composition)).
@@ -382,7 +386,9 @@ The first blockers, by the number of slices each stops (2026-10-18):
   `Checker.getTypeFromTypeNode` the client cannot decode), cause unknown.
 
 Thirty-four slices reach the producer and fail there, and 55 fail in
-search. Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
+search. Of the 35 functions of `pipeline/*.mts`, 9 stop at an import other than a
+named or namespace one and 7 at a module `let` without a written type
+(2026-10-18). Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
 24 of `dev/`, the record tools and the lowering dump, all 24 (2026-10-18), each
 sliced with the same-file declarations it uses, their imports from
 `record-render`, `control-flow` and `calculus` certified. `printGraph`'s
