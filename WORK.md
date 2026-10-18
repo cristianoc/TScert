@@ -34,6 +34,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
+| [The any check over external declarations](#the-any-check-over-external-declarations) | open: an investigation; 453 errors in the shadowed declarations (2026-10-18) | the shadow program's declarations check, or each use of one that does not is refused, and `tests/unchecked-project/gaps.mts` is refused |
 | [The front end's own functions](#the-front-ends-own-functions) | open: 93 of 336 verify in `tools/` (2026-10-18, at a 60 s step limit), 24 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
@@ -297,6 +298,42 @@ parameters, at an application, means what the checker computes for a probe
 declaration" ([trust surface](docs/DESIGN.md#trust-surface)); the checked
 form retires the computation's trust altogether, the relaxed one only the
 probe's correspondence to the application.
+
+<a id="the-any-check-over-external-declarations"></a>
+**The any check over external declarations.** `tools/unchecked.mts` checks
+the sources over external declarations whose every value-level `any` is one
+opaque type (`tools/shadow-contracts.mts`). A declaration may rely on `any`
+being at once a subtype and a supertype of every type, and the opaque type
+is neither. The shadowed declarations then do not check (453 errors with
+`skipLibCheck` off, 2026-10-18), by class:
+
+- an override or a heritage relation the base satisfies through `any` (367:
+  2416, 2430, 2417, 2420), mostly Node's event emitters, whose base
+  `listener: (...args: any[]) => void` an override narrows;
+- a type argument meeting a constraint through `any` (49: 2344);
+- a property meeting an index signature through `any` (25: 2411);
+- a rest parameter `...args: any` (3: 2370), a predicate `x is any[]` over
+  a parameter typed `any` (3: 2677);
+- a required type parameter after one whose deleted default was `any`
+  (6: 2706).
+
+An invalid declaration changes what TypeScript decides about the sources:
+`f(new D())` with overloads at `B` and `D` and `D extends B` broken selects
+the other overload. The same class holds the type computations the
+substitution changes: `any extends string ? string : number` becomes
+`number` (written: `string | number`), a type parameter's default `any`
+read as `unknown` accepts every input (`Sink<T = any>`), and `A["missing"]`
+over an opaque `A` is the error type inside a member. Each is a line of
+`tests/unchecked-project/gaps.mts`, accepted. Replacing `any` by `unknown`
+at a result and `never` at a parameter keeps the relations of a parameter
+and a result but not of a writable property or a type argument, whose
+variance the declaration's syntax does not show; no one substitution keeps
+every relation `any` satisfies.
+
+`JSON.stringify` of a function, or of an object whose `toJSON` returns
+`undefined`, is `undefined` under Node; typing every object overload
+`string | undefined` makes 47 sites of the sources an `any flow` (2026-10-18),
+none of which stringifies such a value.
 
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,

@@ -18,3 +18,6 @@ export const text: string = JSON.stringify(undefined); // expected: any flow
 export const listed: string = JSON.stringify({ a: 1 }, ["a"]);
 // @ts-expect-error -- a directive of its own // expected: suppressed
 export const silenced: number = JSON.parse("1");
+
+export const inline = 1; // @ts-ignore // expected: suppressed
+export const hidden: number = JSON.parse("1");

@@ -52,10 +52,14 @@
  * through a native contract its declaration misstates; a reviewed contract
  * states what its review says and no more (`JSON.stringify` of a function
  * gives `undefined`, typed `string`). TypeScript's own unsound rules (method
- * parameter bivariance among them) stay as they are, and so do the
- * incompatibilities the opaque type makes between an external declaration
- * and its bases, which are not reported. Those are what TScert verifies,
- * not this check.
+ * parameter bivariance among them) stay as they are. Those are what TScert
+ * verifies, not this check. The shadowed declarations do not all check: a
+ * declaration relying on `any` as at once a subtype and a supertype of every
+ * type (an override, a constraint, an index signature, a conditional type, a
+ * default) is invalid or computes another type there, and TypeScript's
+ * decisions about the sources may then differ from the written program's
+ * (WORK.md, "The any check over external declarations";
+ * tests/unchecked-project/gaps.mts holds the cases, accepted).
  *
  * A function without annotations leaves its boundary to inference.
  * `[unannotated]`: every function declaration; a class's methods, accessors
@@ -111,7 +115,25 @@ const KINDS: Kind[] = ["any", "any flow", "suppressed", "typed any", "unannotate
 
 /** A comment directive that silences the checker: `@ts-ignore`,
  * `@ts-expect-error`, `@ts-nocheck`. */
-const SUPPRESSION = /^\s*(\/\/|\/\*+|\*)\s*@ts-(ignore|expect-error|nocheck)\b/;
+const SUPPRESSION = /^\/(\/+|\*+)[\s*]*@ts-(ignore|expect-error|nocheck)\b/;
+
+/** Where each comment of a file starts: the scanner's leading and trailing
+ * comment ranges of every node and of the file's end. */
+function comments(source: SourceFile, text: string): number[] {
+  const starts = new Set<number>();
+  const collect = (ranges: readonly { pos: number }[] | undefined): void => {
+    for (const range of ranges ?? []) starts.add(range.pos);
+  };
+  const visit = (node: Node): void => {
+    collect(ts.getLeadingCommentRanges(text, node.pos));
+    collect(ts.getTrailingCommentRanges(text, node.end));
+    node.forEachChild(visit);
+  };
+  collect(ts.getLeadingCommentRanges(text, 0));
+  source.forEachChild(visit);
+  collect(ts.getLeadingCommentRanges(text, source.endOfFileToken.pos));
+  return [...starts].sort((a, b) => a - b);
+}
 
 /** The reports a written reason can carry. */
 const REASONED: Kind[] = ["as", "!"];
@@ -307,9 +329,8 @@ function findIn(file: string, source: SourceFile, program: Program, checker: Che
     ...program.getDeclarationDiagnostics(absolute)])
     atLine(diagnostic.pos, "any flow", `${diagnostic.text.split("\n")[0] ?? ""}: `);
   // A directive silencing the checker's errors hides an any flow as well.
-  lines.forEach((line, i) => {
-    if (SUPPRESSION.test(line)) atLine(source.getPositionOfLineAndCharacter(i, 0), "suppressed");
-  });
+  for (const start of comments(source, text))
+    if (SUPPRESSION.test(text.slice(start))) atLine(start, "suppressed");
   // Nodes in post-order, each with whether it holds a value to type.
   const order: Node[] = [];
   const walk = (node: Node, moduleLevel: boolean, typed: boolean): void => {
