@@ -993,7 +993,8 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
 
 /** Whether two index signatures state the same contract. */
 function sameIndex(a: { readonly: boolean; value: TypeTerm }, b: { readonly: boolean; value: TypeTerm }): boolean {
-  const spanless = (t: TypeTerm): string => JSON.stringify(t, (key, value: unknown) => key === "span" ? undefined : value);
+  // An object at the top, which the replacer keeps: always a text.
+  const spanless = (t: TypeTerm): string => JSON.stringify(t, (key, value: unknown) => key === "span" ? undefined : value) ?? "";
   return a.readonly === b.readonly && spanless(a.value) === spanless(b.value);
 }
 

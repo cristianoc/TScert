@@ -99,6 +99,17 @@ run_test "JSON field names agree (TS, Lean, OCaml)" node tests/json-field-names.
 run_test "Boundaries annotated, no any, assertions with reasons" node tools/unchecked.mts
 # tests/unchecked-project/ holds the counterexamples each of unchecked.mts's reports exists for.
 run_test "unchecked.mts reports its counterexamples" node tools/unchecked.mts --project tests/unchecked-project --expect
+# tests/unchecked-broken/ has an external declaration that does not check: the command refuses the project.
+refuses_broken_external() {
+  local out
+  if out="$(node tools/unchecked.mts --project tests/unchecked-broken --expect 2>&1)"; then
+    echo "unchecked.mts accepted a project whose external declaration does not check"
+    return 1
+  fi
+  grep -q "does not check: Cannot find name 'MissingType'" <<<"$out" || { echo "$out"; return 1; }
+  echo "an external declaration that does not check: refused"
+}
+run_test "unchecked.mts refuses a broken external declaration" refuses_broken_external
 # tests/docs.mts checks every document's links, anchors and math.
 run_test "Documents: links, math" node tests/docs.mts
 # tests/node-runs.mts runs examples and native-contract counterexamples under Node.

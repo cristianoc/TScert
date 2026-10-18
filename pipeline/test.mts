@@ -237,7 +237,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
       if (Array.isArray(value)) value.forEach(walk);
       else if (value && typeof value === "object") {
         if ("k" in value && value.k === "reference" && "args" in value && Array.isArray(value.args) &&
-            "reference" in value && JSON.stringify(value.reference).includes('"name":"Keys"')) found.push(value.args);
+            "reference" in value && (JSON.stringify(value.reference) ?? "").includes('"name":"Keys"')) found.push(value.args);
         Object.values(value).forEach(walk);
       }
     };
@@ -568,8 +568,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const param = must(claims.functions[0]?.params[0], "a parameter's claim");
   const forge = (name: string, type: unknown, row: unknown[] = []) => {
     const forged = join(recursiveJson, `forged-label-${name}.json`);
-    writeFileSync(forged, JSON.stringify({ ...claims, types: [...claims.types, ...row] },
-      (_key, value: unknown) => value === param.type ? type : value));
+    writeFileSync(forged, must(JSON.stringify({ ...claims, types: [...claims.types, ...row] },
+      (_key, value: unknown) => value === param.type ? type : value), "the forged claims' text"));
     return invoke(forged, join(recursiveJson, "evidence.json"), recursiveJson);
   };
   for (const [name, type, refusal] of [
@@ -907,7 +907,7 @@ for (const [artifacts, arity, refusal] of [
     const [typeArg] = must(calls[0], "the call's type arguments");
     must(typeArg, "the type argument").parts.push({ k: "atom", name: "string", span: typeArg.span });
     const forgedAst = join(artifacts, "forged-type-argument.json");
-    writeFileSync(forgedAst, JSON.stringify(ast));
+    writeFileSync(forgedAst, must(JSON.stringify(ast), "the forged fragment's text"));
     return forgedAst;
   };
   for (const [artifacts, kind] of [[run("closure-result-contract"), "invoke"], [run("explicit-type-arguments"), "apply"]] as const)
@@ -2058,14 +2058,14 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   const claims = readClaims(artifacts);
   const collect = must(claims.functions.find(f => f.name === "collect"), "collect's claims");
   const grown = join(artifacts, "forged-footprint-value-grow.json");
-  writeFileSync(grown, JSON.stringify(claims, (key, value: unknown) =>
-    key === "footprint" && value === collect.footprint ? { value: "grow", store: "keep" } : value));
+  writeFileSync(grown, must(JSON.stringify(claims, (key, value: unknown) =>
+    key === "footprint" && value === collect.footprint ? { value: "grow", store: "keep" } : value), "the forged claims' text"));
   assert.match(invoke(grown, evidence, artifacts), /invalid footprint change 'grow'/);
   const arrow = must(claims.types.flatMap(row => row.flatMap(clause =>
     typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []))[0], "a claimed arrow");
   const unpromised = join(artifacts, "forged-effect-without-promise.json");
-  writeFileSync(unpromised, JSON.stringify(claims, (key, value: unknown) =>
-    key === "effect" && value === arrow.effect ? { footprint: arrow.effect.footprint } : value));
+  writeFileSync(unpromised, must(JSON.stringify(claims, (key, value: unknown) =>
+    key === "effect" && value === arrow.effect ? { footprint: arrow.effect.footprint } : value), "the forged claims' text"));
   assert.match(invoke(unpromised, evidence, artifacts), /promise/);
   process.stdout.write("footprints and effects other than the one spelling: refused\n");
 }

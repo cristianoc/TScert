@@ -262,21 +262,23 @@ increasing trust silently.
   `tools/tsconfig.json` sets `isolatedDeclarations`: an export's type is
   determined by its own syntax, annotated wherever TypeScript would infer it
   from other code. A local `const` or `let`, and a function written as an
-  argument, are typed by inference. No value is typed `any`: the sources
-  type-check over the external declarations read at reviewed contracts with
-  no `any` ([shadow contracts](tools/shadow-contracts.mts): a result or
-  property `unknown`, an input `unknown` where the overlay of library
-  globals or a review there states the member, refused elsewhere, the
-  compiler API's `any` members optional `unknown` by reading rule 2), and
-  no value of the sources is typed `any` (a written `any`, an array literal
-  no annotation types). `node tools/unchecked.mts`
-  ([source](tools/unchecked.mts)) reports both, with the boundaries and the
-  assertions, over every file that configuration includes, and fails on
-  one; no comment excuses one. Freedom from `any` does not establish that
-  a mutation, a callback's effect, a guard or a native contract keeps a
-  type; that is TScert's to verify. `test-all.sh` runs the command as a
-  suite, and over `tests/unchecked-project/`, the counterexamples it must
-  report.
+  argument, are typed by inference. The sources type-check, with no
+  directive silencing the checker, over the external declarations read with
+  each `any` replaced ([shadow contracts](tools/shadow-contracts.mts)): by
+  one opaque type no value has, so TypeScript's own variance refuses every
+  use of it, by the top type in a type-level wildcard, or by the contract
+  the overlay of library globals or a review there states for the member,
+  the compiler API's `any` members an optional `unknown` by reading rule 2;
+  and no value of the sources is typed `any` (a written `any`, an array
+  literal no annotation types). `node tools/unchecked.mts`
+  ([source](tools/unchecked.mts)) reports these, with the boundaries and
+  the assertions, over every file that configuration includes, and fails on
+  one; its header states each rule and what it leaves out. Freedom from
+  `any` does not establish that a mutation, a callback's effect, a guard or
+  a native contract keeps a type; that is TScert's to verify. `test-all.sh`
+  runs the command as a suite, over `tests/unchecked-project/`, the
+  counterexamples it must report, and over `tests/unchecked-broken/`, which
+  it must refuse.
 - A decoder is the only place that asserts a shape. Everything else narrows:
   a type predicate, a `typeof` before a comparison, a case table keyed by the
   language's own union. `tools/unchecked.mts` reports every `as` and `!` in

@@ -1,77 +1,99 @@
 /**
- * The external declarations a program is checked against with no `any`:
- * each declaration file outside the program's own sources (the standard
- * library, Node's types, the compiler API's), with every `any` replaced by
- * the contract it stands for. TypeScript then checks the program over these
- * declarations itself — inference, contextual typing, overloads and
- * assignability — and each error it reports is a place the program relied
+ * The external declarations a program is checked against in place of their
+ * `any`: each declaration file outside the program's own sources (the
+ * standard library, Node's types, the compiler API's) read with every `any`
+ * replaced. TypeScript then checks the program over these declarations
+ * itself — inference, contextual typing, overloads, variance and
+ * assignability — and each error it reports is a place the program relies
  * on an `any` of a declaration.
  *
- * Each `any` of a declaration is read by its position:
- *
- * - a type-level wildcard, in a type parameter's constraint, a conditional
- *   type's check or extends clause, `infer`, `keyof` or `typeof`, is kept:
- *   it constrains types, and no value has it;
- * - a signature's type parameter's default `any` is removed: the parameter
- *   is inferred at each call, or is `unknown`; a type's is `unknown`, the
- *   value with no guarantee a reference leaving it out stands for;
- * - at a positive position (a result, a property, an index signature's
- *   value, a variable, a type argument there, a parameter of a function at a
- *   parameter) it is a value with no guarantee: `unknown`;
- * - at a negative position (a parameter, a callback's result) it is an input
- *   the declaration accepts. Where the reviewed overlay of library globals,
- *   of array and interface members or of library modules states the member
- *   (`library-globals.mts`, `array-prototype.mts`, `library-modules.mts`),
- *   the overlay's review holds of every value there: `unknown`. Where a
- *   reviewed contract below states it, that contract. Anywhere else it is
- *   `TScertUnreviewedAny`, which no value has: a use of the input is an
- *   error, refused until a contract is reviewed;
- * - a property of the compiler API's declarations declared `any` reads as
+ * - Every `any` a value may have is `TScertAny`, one opaque type: no value of
+ *   the program is assignable to it, and it is assignable only to `unknown`,
+ *   `{}` and `object`, which permit no use. TypeScript's own variance decides
+ *   what that means at each position: a result or a property read is a value
+ *   the program cannot use without narrowing; a parameter, a writable
+ *   property, an index signature or a generic argument fed back as an input
+ *   accepts no value of the program. Aliases, heritage, defaults and
+ *   conditional types carry it as written.
+ * - A type parameter's default `any`: a signature's is deleted, its
+ *   constraint kept, so the call infers the parameter; a type's is `unknown`,
+ *   the value with no guarantee a reference leaving the argument out stands
+ *   for (`Iterator<T>`'s `TReturn` and `TNext`).
+ * - An `any` in a type-level wildcard — a type parameter's constraint or a
+ *   conditional type's `extends` clause — is replaced by the top type there:
+ *   `unknown` at a positive position, `never` at a parameter of it; and
+ *   `keyof any` is `string | number | symbol`. These constrain types; no
+ *   value has them.
+ * - A member the reviewed overlay of library globals states
+ *   (library-globals.mts), of a standard library file, is read at the
+ *   overlay's own contract: its `stated` signature where it has one, and
+ *   otherwise its declaration with `any` read as `unknown`, as the front end
+ *   reads a declaration's `any` (type-term.mts). The overlays of array and
+ *   interface members state no `any` but a dropped `thisArg`, which stays
+ *   `TScertAny`: calls omit it.
+ * - A member a review below states is read at that contract.
+ * - A property of the compiler API's declarations declared `any` reads as
  *   an optional `unknown` (reading rule 2 of COMPILER-API.md), as the front
- *   end reads it;
- * - `JSON.parse` of a text returns `ParsedJson`, as the overlay states it.
+ *   end reads it.
+ *
+ * A stated contract the printer below cannot write as TypeScript leaves the
+ * member at `TScertAny`: refused at a use.
  */
 import path from "node:path";
 import * as ts from "typescript/unstable/ast";
 import type { Node, SourceFile } from "typescript/unstable/ast";
-import { globalsOverlay } from "./library-globals.mts";
-import { interfaceOverlay, overlay as arrayOverlay } from "./array-prototype.mts";
-import { modulesOverlay } from "./library-modules.mts";
+import { globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
+import type { TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { readsAsOptionalUnknown } from "./compiler-api.mts";
 import { childOf } from "./syntax.mts";
 
-/** The type of an unreviewed input: nothing is assignable to it. */
-export const UNREVIEWED = "TScertUnreviewedAny";
+/** The opaque type every value-level `any` of a declaration is read as. */
+export const OPAQUE = "TScertAny";
 
-/** Declarations the shadowed standard library adds, as a global script. */
-export const PRELUDE: string = `
-declare const tscertUnreviewed: unique symbol;
-/** An input a declaration types \`any\` that no review states a contract of. */
-interface ${UNREVIEWED} { readonly [tscertUnreviewed]: true }
-/** What \`JSON.parse\` returns without a reviver (library-globals.mts). */
-type TScertParsedJson = null | boolean | number | string | TScertParsedJson[] | { [key: string]: TScertParsedJson };
-`;
-
-/** A contract reviewed for the any check where no overlay states the member:
- * the declaration as written (whitespace collapsed), the declaration read
- * instead or, without one, every `any` input of it read as `unknown`, and
- * why that holds of the host. */
+/** A contract reviewed for the any check: the declaration file's name, the
+ * member as written (whitespace collapsed), the member read instead or,
+ * without one, the member with its `any` read as `unknown`, and why that
+ * holds of the host. */
 interface Reviewed {
-  /** The declaration file's name. */
   file: string;
   text: string;
   contract?: string;
   why: string;
 }
 
+const coercion = "converts any value: ToString or ToNumber of an object runs its own conversion, an effect " +
+  "outside this check (TScert admits primitives only), and may throw";
+const sending = "process.send serializes any value, throwing or failing on one it cannot";
+
 export const reviewed: readonly Reviewed[] = [
   { file: "lib.es2015.collection.d.ts", text: "new (): Map<any, any>;", contract: "new <K, V>(): Map<K, V>;",
     why: "an empty map holds no entry: it is a map at every key and value type, inferred from where it flows" },
   { file: "lib.es2015.iterable.d.ts", text: "new (): Map<any, any>;", contract: "new <K, V>(): Map<K, V>;",
     why: "an empty map holds no entry: it is a map at every key and value type, inferred from where it flows" },
-  { file: "lib.es5.d.ts", text: "parse(text: string, reviver?: (this: any, key: string, value: any) => any): any;",
-    contract: "parse(text: string): TScertParsedJson;",
-    why: "the overlay's JSON.parse: the text only, a fresh ParsedJson (library-globals.mts)" },
+  { file: "lib.es5.d.ts", text: "stringify(value: any, replacer?: (this: any, key: string, value: any) => any, space?: string | number): string;",
+    contract: "stringify(value: object, replacer?: null, space?: string | number): string; " +
+      "stringify(value: null | boolean | number | string, replacer?: null, space?: string | number): string; " +
+      "stringify(value: unknown, replacer?: ((this: unknown, key: string, value: unknown) => unknown) | null, space?: string | number): string | undefined;",
+    why: "JSON.stringify returns undefined for undefined, a symbol or a function, and where a replacer or a toJSON " +
+      "returns undefined: a string only of a value that is none of these at the top and without a replacer; " +
+      "a function or an object whose toJSON returns undefined is an object here, and still gives undefined" },
+  { file: "lib.es5.d.ts", text: "stringify(value: any, replacer?: (number | string)[] | null, space?: string | number): string;",
+    contract: "stringify(value: object, replacer?: (number | string)[] | null, space?: string | number): string; " +
+      "stringify(value: null | boolean | number | string, replacer?: (number | string)[] | null, space?: string | number): string;",
+    why: "as above: a list of keys selects members and returns no undefined of a value that is not undefined, a symbol or a function" },
+  { file: "lib.es5.d.ts", text: "(value?: any): string;", why: `String(v) ${coercion}` },
+  { file: "lib.es2020.promise.d.ts", text: "reason: any;",
+    why: "a promise is rejected with any value: the reason of a settled result is any value, read and written" },
+  ...[["lib.es5.d.ts", "forEach(callbackfn: (value: T, index: number, array: readonly T[]) => void, thisArg?: any): void;"],
+    ["lib.es5.d.ts", "map<U>(callbackfn: (value: T, index: number, array: readonly T[]) => U, thisArg?: any): U[];"],
+    ["lib.es5.d.ts", "every(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;"],
+    ["lib.es5.d.ts", "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;"],
+    ["lib.es5.d.ts", "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];"],
+    ["lib.es2015.core.d.ts", "find(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): T | undefined;"],
+    ["lib.es2015.core.d.ts", "findIndex(predicate: (value: T, index: number, obj: readonly T[]) => unknown, thisArg?: any): number;"]]
+    .map(([file, text]): Reviewed => ({ file: file ?? "", text: text ?? "",
+      why: "the callback's receiver is any value: the member calls it with thisArg as this (TScert's overlay drops it)" })),
+  { file: "lib.es5.d.ts", text: "(value?: any): number;", why: `Number(v) ${coercion}` },
   { file: "lib.es2015.symbol.wellknown.d.ts", text: "[Symbol.hasInstance](value: any): boolean;",
     why: "`instanceof` takes any left operand: OrdinaryHasInstance returns false for a non-object" },
   { file: "lib.es5.d.ts", text: "getPrototypeOf(o: any): any;",
@@ -79,133 +101,249 @@ export const reviewed: readonly Reviewed[] = [
   { file: "lib.es2015.reflect.d.ts", text: "function set(target: object, propertyKey: PropertyKey, value: any, receiver?: any): boolean;",
     why: "Reflect.set stores any value (what it then breaks is a mutation, not an any)" },
   { file: "console.d.ts", text: "log(message?: any, ...optionalParams: any[]): void;",
-    why: "Node's console.log formats any value (util.format), as the overlay's console.log states" },
-  { file: "process.d.ts", text: "send?( message: any, sendHandle?: SendHandle, options?: MessageOptions, callback?: (error: Error | null) => void, ): boolean;",
-    why: "process.send serializes any value, throwing or failing on one it cannot" },
-  { file: "process.d.ts", text: "send?( message: any, sendHandle: SendHandle, callback?: (error: Error | null) => void, ): boolean;",
-    why: "process.send serializes any value, throwing or failing on one it cannot" },
-  { file: "process.d.ts", text: "send?( message: any, callback: (error: Error | null) => void, ): boolean;",
-    why: "process.send serializes any value, throwing or failing on one it cannot" },
+    why: "Node's console.log formats any value (util.format)" },
+  { file: "process.d.ts", text: "send?( message: any, sendHandle?: SendHandle, options?: MessageOptions, callback?: (error: Error | null) => void, ): boolean;", why: sending },
+  { file: "process.d.ts", text: "send?( message: any, sendHandle: SendHandle, callback?: (error: Error | null) => void, ): boolean;", why: sending },
+  { file: "process.d.ts", text: "send?( message: any, callback: (error: Error | null) => void, ): boolean;", why: sending },
 ];
 
-/** The member signatures the overlays of the standard library state, and
- * those the overlay of library modules states, exactly as reviewed. */
-const libraryOverlaid: ReadonlySet<string> = new Set([
-  ...globalsOverlay.map((entry) => entry.signature),
-  ...arrayOverlay.map((entry) => entry.signature),
-  ...Object.values(interfaceOverlay).flatMap((entries) => entries.map((entry) => entry.signature)),
-]);
-const moduleOverlaid: ReadonlySet<string> = new Set(modulesOverlay.map((entry) => entry.signature));
+/* ------------------------------------------------- the overlay's contracts -- */
 
-/** Who states that the `any` inputs of member `text` of the declaration file
- * `file` accept every value: an overlay, a review above, or none. */
-function accepting(file: string, text: string): "the overlay's review" | "a review here" | undefined {
-  const name = path.basename(file);
-  if (name.startsWith("lib.") && libraryOverlaid.has(text)) return "the overlay's review";
-  if (file.includes(`${path.sep}@types${path.sep}node${path.sep}`) && moduleOverlaid.has(text)) return "the overlay's review";
-  return reviewed.some((entry) => entry.contract === undefined && entry.file === name && entry.text === text)
-    ? "a review here" : undefined;
+/** The definitions the overlay's contracts name, as global type aliases. */
+const definitions: ReadonlyMap<string, TypeDefinition> = new Map(globalsOverlay
+  .flatMap((entry) => entry.definitions ?? []).map((definition) => [definition.declaration.name, definition]));
+
+/** The TypeScript a type term writes, or `null` for a term TypeScript has no
+ * spelling of here. */
+function print(term: TypeTerm): string | null {
+  const all = (terms: readonly TypeTerm[], separator: string): string | null => {
+    const parts = terms.map(print);
+    return parts.every((part): part is string => part !== null) ? parts.map((p) => `(${p})`).join(separator) : null;
+  };
+  switch (term.k) {
+    case "atom": return term.name === "nonHost" ? "unknown" : term.name;
+    case "literal": return term.text;
+    case "union": return term.parts.length ? all(term.parts, " | ") : "never";
+    case "intersection": return term.parts.length ? all(term.parts, " & ") : "unknown";
+    case "array": {
+      const element = print(term.element);
+      return element === null ? null : `${term.readonly ? "readonly " : ""}(${element})[]`;
+    }
+    case "tuple": {
+      const required = term.required.map(print), optional = term.optional.map(print);
+      const rest = term.rest === null ? null : print(term.rest);
+      if (![...required, ...optional].every((p): p is string => p !== null) || (term.rest !== null && rest === null)) return null;
+      const positions = [...required, ...optional.map((p) => `(${p})?`), ...(rest === null ? [] : [`...(${rest})[]`])];
+      return `${term.readonly ? "readonly " : ""}[${positions.join(", ")}]`;
+    }
+    case "object": {
+      if (term.calls.length || term.numberIndex || term.symbolIndex || term.prototype) return null;
+      const fields: string[] = [];
+      for (const field of term.fields) {
+        const type = print(field.type);
+        if (type === null || typeof field.name !== "string") return null;
+        fields.push(`${field.readonly ? "readonly " : ""}${JSON.stringify(field.name)}${field.optional ? "?" : ""}: ${type};`);
+      }
+      if (term.stringIndex) {
+        const value = print(term.stringIndex.value);
+        if (value === null) return null;
+        fields.push(`${term.stringIndex.readonly ? "readonly " : ""}[key: string]: ${value};`);
+      }
+      return `{ ${fields.join(" ")} }`;
+    }
+    case "function": {
+      const signature = printSignature({ binders: [], params: term.params, result: term.result,
+        ...(term.rest === null ? {} : { rest: term.rest }) });
+      return signature === null ? null : signature.replace(/\): /, ") => ");
+    }
+    case "binder": return term.name;
+    case "reference": {
+      const args = term.args.map(print);
+      if (!args.every((a): a is string => a !== null)) return null;
+      const target = term.reference.target;
+      const name = target.module.startsWith("tscert/") ? `TScert${term.reference.name}` : term.reference.name;
+      return args.length ? `${name}<${args.join(", ")}>` : name;
+    }
+    default: return null;
+  }
 }
 
-/** An input of a declaration replaced by a contract, for the review list. */
+/** A stated signature as TypeScript writes one: `<B>(p0: A, p1?: B, ...rest: C[]): R`,
+ * a trailing parameter whose type admits `undefined` optional. */
+function printSignature(stated: Stated): string | null {
+  const params = stated.params.map(print);
+  const result = print(stated.result);
+  const rest = stated.rest === undefined ? undefined : print(stated.rest);
+  if (!params.every((p): p is string => p !== null) || result === null || rest === null) return null;
+  const admitsUndefined = (term: TypeTerm): boolean =>
+    (term.k === "atom" && term.name === "undefined") || (term.k === "union" && term.parts.some(admitsUndefined));
+  let required = stated.params.length;
+  while (required > 0 && stated.params[required - 1] && admitsUndefined(stated.params[required - 1] ?? stated.result)) required--;
+  const written = params.map((p, i) => `p${i}${i >= required ? "?" : ""}: ${p}`);
+  if (rest !== undefined) written.push(`...rest: (${rest})[]`);
+  const binders = stated.binders.length ? `<${stated.binders.join(", ")}>` : "";
+  return `${binders}(${written.join(", ")}): ${result}`;
+}
+
+/** The signatures an overlay entry states, as TypeScript writes them, or
+ * `null` where one has no spelling here; `undefined` where it states none. */
+function statedSignatures(entry: GlobalEntry): string[] | null | undefined {
+  if (entry.stated === undefined) return undefined;
+  const library = (name: string, args: TypeTerm[]): TypeTerm => ({ k: "reference", args, span: [0, 0],
+    reference: { name, span: [0, 0], arguments: args.map(() => [0, 0]), target: { module: "typescript/lib", name, span: [0, 0] } } });
+  const stated = typeof entry.stated === "function" ? entry.stated(library) : entry.stated;
+  const printed = (Array.isArray(stated) ? stated : [stated]).map(printSignature);
+  return printed.every((p): p is string => p !== null) ? printed : null;
+}
+
+/** The overlay's entries by their declarations' text. */
+const overlaid: ReadonlyMap<string, GlobalEntry[]> = globalsOverlay.reduce((map, entry) =>
+  map.set(entry.signature, [...(map.get(entry.signature) ?? []), entry]), new Map<string, GlobalEntry[]>());
+
+/** Declarations the shadowed standard library adds, as a global script:
+ * the opaque type, and the definitions the overlay's contracts name. */
+export function prelude(): string {
+  const aliases = [...definitions.values()].flatMap((definition) => {
+    const expression = definition.expression === null ? null : print(definition.expression);
+    const parameters = definition.parameters.map((p) => p.name);
+    return expression === null ? [] : [`type TScert${definition.declaration.name}${parameters.length ? `<${parameters.join(", ")}>` : ""} = ${expression};`];
+  });
+  return `
+declare const tscertAny: unique symbol;
+/** What a declaration types \`any\`: no value is assignable to it, and it is
+ * assignable only to \`unknown\`, \`{}\` and \`object\`. */
+interface ${OPAQUE} { readonly [tscertAny]: never }
+${aliases.join("\n")}
+`;
+}
+
+/* ---------------------------------------------------------- the rewrite -- */
+
+/** An input of a declaration read at a contract, for the review list. */
 export interface ReplacedInput {
   file: string;
   member: string;
   contract: string;
 }
 
-/** A position's reading: a type-level wildcard, or a value's polarity. */
-type Polarity = 1 | -1 | 0;
+/** A position under a type-level wildcard: its polarity there. */
+type Wildcard = 1 | -1 | null;
 
-/** The declaration file's text with each `any` replaced by its contract,
- * and the inputs a review replaced; `host` for the compiler API's files. */
+/** The declaration file's text with each `any` replaced, and the members
+ * read at a contract; `host` for the compiler API's files. */
 export function shadowText(source: SourceFile, text: string, host: boolean): { text: string; inputs: ReplacedInput[] } {
   const edits: { start: number; end: number; text: string }[] = [];
   const inputs: ReplacedInput[] = [];
+  const file = path.basename(source.fileName);
+  const library = file.startsWith("lib.") && file.endsWith(".d.ts");
   const memberText = (member: Node): string => member.getText(source).trim().replace(/\s+/g, " ");
-  const visit = (node: Node, polarity: Polarity, member: Node | null): void => {
-    if (node.kind === ts.SyntaxKind.AnyKeyword) {
-      if (polarity === 1) edits.push({ start: node.getStart(source), end: node.end, text: "unknown" });
-      if (polarity === -1) {
-        const stated = member === null ? undefined : accepting(source.fileName, memberText(member));
-        edits.push({ start: node.getStart(source), end: node.end, text: stated ? "unknown" : UNREVIEWED });
-        if (stated && member) inputs.push({ file: source.fileName, member: memberText(member), contract: `unknown, by ${stated}` });
+  const replace = (node: Node, replacement: string): void => {
+    edits.push({ start: node.getStart(source), end: node.end, text: replacement });
+  };
+  // Every `any` below `node` read as `unknown`, as the front end reads a
+  // reviewed declaration's.
+  const asUnknown = (node: Node): void => {
+    if (node.kind === ts.SyntaxKind.AnyKeyword) replace(node, "unknown");
+    else node.forEachChild(asUnknown);
+  };
+  const visit = (node: Node, wildcard: Wildcard): void => {
+    if (node.kind === ts.SyntaxKind.AnyKeyword)
+      return replace(node, wildcard === null ? OPAQUE : wildcard === 1 ? "unknown" : "never");
+    if (wildcard === null && isMember(node)) {
+      const written = memberText(node);
+      const review = reviewed.find((entry) => entry.file === file && entry.text === written);
+      if (review) {
+        if (review.contract !== undefined) replace(node, review.contract);
+        else asUnknown(node);
+        inputs.push({ file: source.fileName, member: written, contract: review.contract ?? "unknown, by a review here" });
+        return;
       }
-      return;
+      const entries = library && holdsAny(node) ? overlaid.get(written) : undefined;
+      if (entries) {
+        const signatures = entries.flatMap((entry) => statedSignatures(entry) ?? []);
+        const stated = entries.map(statedSignatures);
+        if (stated.every((s) => s === undefined)) {
+          asUnknown(node);
+          inputs.push({ file: source.fileName, member: written, contract: "unknown, by the overlay" });
+          return;
+        }
+        if (stated.every((s) => s !== null) && signatures.length && rewriteSignature(node, signatures, source, edits)) {
+          inputs.push({ file: source.fileName, member: written, contract: `the overlay's ${signatures.join("; ")}` });
+          return;
+        }
+      }
     }
-    // A member a reviewed contract states is read at that contract whole.
-    const contract = reviewedContract(node, path.basename(source.fileName), memberText);
-    if (contract) {
-      edits.push({ start: node.getStart(source), end: node.end, text: contract.contract });
-      inputs.push({ file: source.fileName, member: contract.text, contract: contract.contract });
-      return;
-    }
-    const within: Node | null = member ?? (isMember(node) ? node : null);
-    const each = (child: Node | undefined, p: Polarity): void => {
-      if (child) visit(child, p, within);
-    };
+    if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.KeyOfKeyword && node.type.kind === ts.SyntaxKind.AnyKeyword)
+      return replace(node, "(string | number | symbol)");
     if (ts.isTypeParameterDeclaration(node)) {
-      // A signature's parameter is inferred at each call; a type's stands
-      // where a reference leaves it out, as a value with no guarantee.
-      const owner = node.parent;
-      const inferred = owner !== undefined && (ts.isFunctionLikeDeclaration(owner) || ts.isMethodSignatureDeclaration(owner) ||
-        ts.isCallSignatureDeclaration(owner) || ts.isConstructSignatureDeclaration(owner) ||
-        ts.isFunctionTypeNode(owner) || ts.isConstructorTypeNode(owner));
+      if (node.constraint) visit(node.constraint, 1);
       const fallback = node.defaultType;
-      if (fallback?.kind === ts.SyntaxKind.AnyKeyword)
-        edits.push(inferred ? { start: node.name.end, end: fallback.end, text: "" }
+      if (fallback?.kind === ts.SyntaxKind.AnyKeyword) {
+        // A signature's parameter is inferred at each call: its default
+        // `any` is deleted, the constraint kept. A type's stands where a
+        // reference leaves it out, as a value with no guarantee.
+        const owner = node.parent;
+        const signature = owner !== undefined && (ts.isFunctionLikeDeclaration(owner) || ts.isMethodSignatureDeclaration(owner) ||
+          ts.isCallSignatureDeclaration(owner) || ts.isConstructSignatureDeclaration(owner) ||
+          ts.isFunctionTypeNode(owner) || ts.isConstructorTypeNode(owner));
+        edits.push(signature ? { start: (node.constraint ?? node.name).end, end: fallback.end, text: "" }
           : { start: fallback.getStart(source), end: fallback.end, text: "unknown" });
+      } else if (fallback) visit(fallback, wildcard);
       return;
     }
     if (ts.isConditionalTypeNode(node)) {
-      each(node.trueType, polarity);
-      each(node.falseType, polarity);
+      visit(node.checkType, wildcard);
+      visit(node.extendsType, wildcard ?? 1);
+      visit(node.trueType, wildcard);
+      visit(node.falseType, wildcard);
       return;
     }
-    if (ts.isInferTypeNode(node) || ts.isTypeQueryNode(node) ||
-      (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.KeyOfKeyword)) return;
-    if (ts.isMappedTypeNode(node)) {
-      each(node.type, polarity);
-      return;
-    }
-    if (ts.isParameterDeclaration(node)) {
-      each(node.type, polarity === 0 ? 0 : polarity === 1 ? -1 : 1);
-      return;
-    }
-    if (ts.isIndexSignatureDeclaration(node)) {
-      each(node.type, polarity);
+    if (wildcard !== null && ts.isParameterDeclaration(node)) {
+      if (node.type) visit(node.type, wildcard === 1 ? -1 : 1);
       return;
     }
     if (host && (ts.isPropertySignatureDeclaration(node) || ts.isPropertyDeclaration(node)) && readsAsOptionalUnknown(node)) {
       const type = node.type;
-      if (type) edits.push({ start: type.getStart(source), end: type.end, text: "unknown" });
+      if (type) replace(type, "unknown");
       if (!childOf(node, "postfixToken")) edits.push({ start: node.name.end, end: node.name.end, text: "?" });
       return;
     }
-    node.forEachChild((child) => {
-      // A function's parameters run against its polarity; its type
-      // parameters' constraints are type-level.
-      if (ts.isTypeParameterDeclaration(child) && child.parent === node) visit(child, 0, within);
-      else visit(child, polarity, within);
-    });
+    node.forEachChild((child) => visit(child, wildcard));
   };
-  source.forEachChild((child) => visit(child, 1, null));
+  source.forEachChild((child) => visit(child, null));
   let out = text;
   for (const edit of edits.sort((a, b) => b.start - a.start)) out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
   return { text: out, inputs };
 }
 
-/** A declaration a review states inputs of: a function, method, call or
- * construct signature, or a property. */
+/** Whether a declaration writes `any`: only such a member is read at the
+ * overlay's contract. */
+function holdsAny(node: Node): boolean {
+  let found = false;
+  const look = (child: Node): void => {
+    if (child.kind === ts.SyntaxKind.AnyKeyword) found = true;
+    else if (!found) child.forEachChild(look);
+  };
+  look(node);
+  return found;
+}
+
+/** A declaration a contract states: a function, method, call or construct
+ * signature, or a property. */
 function isMember(node: Node): boolean {
   return ts.isFunctionDeclaration(node) || ts.isMethodSignatureDeclaration(node) || ts.isMethodDeclaration(node) ||
     ts.isCallSignatureDeclaration(node) || ts.isConstructSignatureDeclaration(node) ||
     ts.isConstructorDeclaration(node) || ts.isPropertySignatureDeclaration(node);
 }
 
-function reviewedContract(node: Node, file: string, text: (member: Node) => string): (Reviewed & { contract: string }) | undefined {
-  if (!isMember(node)) return undefined;
-  const written = text(node);
-  const entry = reviewed.find((candidate) => candidate.file === file && candidate.text === written);
-  return entry?.contract === undefined ? undefined : { ...entry, contract: entry.contract };
+/** Replace a signature's binders, parameters and result by each printed
+ * signature in turn, as overloads; `false` for a member with no signature. */
+function rewriteSignature(node: Node, signatures: string[], source: SourceFile,
+    edits: { start: number; end: number; text: string }[]): boolean {
+  if (!(ts.isFunctionDeclaration(node) || ts.isMethodSignatureDeclaration(node) || ts.isMethodDeclaration(node) ||
+    ts.isCallSignatureDeclaration(node) || ts.isConstructSignatureDeclaration(node)) || !node.type) return false;
+  const head = source.text.slice(node.getStart(source), (node.typeParameters ?? node.parameters).pos - 1);
+  const end = node.type.end;
+  edits.push({ start: node.getStart(source), end, text: signatures.map((signature, i) => `${i ? "; " : ""}${head}${signature}`).join("") });
+  return true;
 }

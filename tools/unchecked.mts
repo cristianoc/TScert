@@ -26,27 +26,36 @@
  * an array literal no annotation types (`let xs = []`). The program is
  * checked a second time, as the shadow program: TypeScript reads each
  * external declaration file (the standard library, Node's types, the
- * compiler API's) at the contracts `shadow-contracts.mts` states, in which
- * no `any` is left, and checks the program's own sources over them. Each
- * error it reports there is an `[any flow]`: a place the program relies on
- * an external `any`. TypeScript's assignability, inference and overload
- * resolution decide every flow (calls, rest and spread arguments, written,
- * inferred and defaulted type arguments, returns, destructuring, member
- * reads, operators). A value of the program the shadow program still types
- * `any` (itself, a member of a union or an intersection, or a type argument,
- * at any depth) is a `[typed any]`: a written `any`, an array literal no
- * annotation types, or one the checker gives without a declaration (a
- * dynamic `import()`, a call of `Function`) unless it is bound straight to a
- * place typed `unknown`. A report is made where the `any` arises; what it
- * then flows into is not reported again. A node whose type the compiler's
- * API does not return is `[uninspected]`.
+ * compiler API's) as `shadow-contracts.mts` rewrites it, each of its `any`
+ * an opaque type no value of the program has, or a reviewed contract, and
+ * checks the program's own sources over them. Each syntactic, semantic or
+ * declaration error it reports in a source is an `[any flow]`: TypeScript's
+ * assignability, inference, overload resolution and variance decide every
+ * flow. A comment directive silencing the checker (`@ts-ignore`,
+ * `@ts-expect-error`, `@ts-nocheck`) is `[suppressed]`, whatever it would
+ * silence. A value of the program the shadow program types `any` (itself,
+ * a member of a union or an intersection, or a type argument, at any depth)
+ * is a `[typed any]`: a written `any`, an array literal no annotation types,
+ * or one the checker gives without a declaration (a dynamic `import()`, a
+ * call of `Function`) unless it is bound straight to a place typed
+ * `unknown`; a structure holding such a value holds it through an
+ * expression of the program, which is checked itself. A report is made
+ * where the `any` arises; what it then flows into is not reported again.
+ * A node whose type the compiler's API does not return, or returns as its
+ * error type, is `[uninspected]`; an external declaration that does not
+ * check as written (an unresolved name), or a shadow program that does not
+ * load, ends the command with an error.
  *
  * What lies outside: a program free of `any` may still break a type by
  * mutation (`Object.assign(target, r)` overwrites `target`'s fields), by a
  * callback's effects, by a guard or an assertion that does not hold, or
- * through a native contract its declaration misstates. TypeScript's own
- * unsound rules (method parameter bivariance among them) stay as they are.
- * Those are what TScert verifies, not this check.
+ * through a native contract its declaration misstates; a reviewed contract
+ * states what its review says and no more (`JSON.stringify` of a function
+ * gives `undefined`, typed `string`). TypeScript's own unsound rules (method
+ * parameter bivariance among them) stay as they are, and so do the
+ * incompatibilities the opaque type makes between an external declaration
+ * and its bases, which are not reported. Those are what TScert verifies,
+ * not this check.
  *
  * A function without annotations leaves its boundary to inference.
  * `[unannotated]`: every function declaration; a class's methods, accessors
@@ -85,10 +94,10 @@ import { API, TypeFlags, isTypeReference, type Checker, type Program, type Type 
 import * as ts from "typescript/unstable/ast";
 import type { Node, SourceFile } from "typescript/unstable/ast";
 import { isHostFile } from "./compiler-api.mts";
-import { PRELUDE, shadowText, type ReplacedInput } from "./shadow-contracts.mts";
+import { prelude, shadowText, type ReplacedInput } from "./shadow-contracts.mts";
 
 /** What was found, which report it is, and the reason written with it. */
-type Kind = "any" | "as" | "!" | "any flow" | "typed any" | "unannotated" | "uninspected";
+type Kind = "any" | "as" | "!" | "any flow" | "suppressed" | "typed any" | "unannotated" | "uninspected";
 interface Found {
   file: string;
   line: number;
@@ -98,7 +107,11 @@ interface Found {
   reason: string | null;
 }
 
-const KINDS: Kind[] = ["any", "any flow", "typed any", "unannotated", "uninspected", "as", "!"];
+const KINDS: Kind[] = ["any", "any flow", "suppressed", "typed any", "unannotated", "uninspected", "as", "!"];
+
+/** A comment directive that silences the checker: `@ts-ignore`,
+ * `@ts-expect-error`, `@ts-nocheck`. */
+const SUPPRESSION = /^\s*(\/\/|\/\*+|\*)\s*@ts-(ignore|expect-error|nocheck)\b/;
 
 /** The reports a written reason can carry. */
 const REASONED: Kind[] = ["as", "!"];
@@ -209,7 +222,7 @@ function boundary(checker: Checker, node: Node, moduleLevel: boolean): [Node, st
  * or an intersection, or a type argument, at any depth; `null` where the
  * compiler's API does not give a part of it. */
 function isAny(checker: Checker, type: Type, seen: Set<number> = new Set<number>()): boolean | null {
-  if (type.isErrorType()) return false;
+  if (type.isErrorType()) return null;
   if (type.flags & TypeFlags.Any) return true;
   if (seen.has(type.id)) return false;
   seen.add(type.id);
@@ -241,6 +254,10 @@ function valued(node: Node): boolean {
   const parent = node.parent;
   if (parent && (ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent)) && parent.name === node)
     return false;
+  // A binding element's property name, `{ name: local }`, names a member, and
+  // `import(…)`'s keyword is no value.
+  if (parent && ts.isBindingElement(parent) && parent.propertyName === node) return false;
+  if (node.kind === ts.SyntaxKind.ImportKeyword) return false;
   if (ts.isParenthesizedExpression(node) || ts.isConditionalExpression(node)) return false;
   if (ts.isBinaryExpression(node) && LOGICAL.includes(node.operatorToken.kind)) return false;
   if (ts.isArrayLiteralExpression(node) && node.elements.length === 0) return false;
@@ -285,22 +302,29 @@ function findIn(file: string, source: SourceFile, program: Program, checker: Che
     });
   };
   const at = (node: Node, kind: Kind, note: string = ""): void => atLine(node.getStart(source), kind, note);
-  for (const diagnostic of program.getSemanticDiagnostics(path.resolve(file)))
+  const absolute = path.resolve(file);
+  for (const diagnostic of [...program.getSyntacticDiagnostics(absolute), ...program.getSemanticDiagnostics(absolute),
+    ...program.getDeclarationDiagnostics(absolute)])
     atLine(diagnostic.pos, "any flow", `${diagnostic.text.split("\n")[0] ?? ""}: `);
+  // A directive silencing the checker's errors hides an any flow as well.
+  lines.forEach((line, i) => {
+    if (SUPPRESSION.test(line)) atLine(source.getPositionOfLineAndCharacter(i, 0), "suppressed");
+  });
   // Nodes in post-order, each with whether it holds a value to type.
   const order: Node[] = [];
-  const walk = (node: Node, moduleLevel: boolean): void => {
+  const walk = (node: Node, moduleLevel: boolean, typed: boolean): void => {
     const written = WRITTEN.find(([syntax]) => syntax === node.kind)?.[1];
     if (written !== undefined && !assertsNothing(node)) at(node, written);
     for (const [fn, missing] of boundary(checker, node, moduleLevel))
       if (missing.length) at(fn, "unannotated", `${missing.join(", ")}: `);
-    if (!typeOnly(node)) {
-      const inner = moduleLevel && (ts.isVariableStatement(node) || ts.isVariableDeclarationList(node));
-      node.forEachChild((child) => walk(child, inner));
-      if (valued(node)) order.push(node);
-    } else node.forEachChild((child) => walk(child, false));
+    // A type, an import or a type declaration holds no value: nothing below
+    // it is typed as one.
+    const inType = typed || typeOnly(node);
+    const inner = moduleLevel && (ts.isVariableStatement(node) || ts.isVariableDeclarationList(node));
+    node.forEachChild((child) => walk(child, inner, inType));
+    if (!inType && valued(node)) order.push(node);
   };
-  source.forEachChild((child) => walk(child, true));
+  source.forEachChild((child) => walk(child, true, false));
   const types = typesOf(checker, order);
   // A node whose `any` comes from one reported inside it is not reported again.
   const reported = new Set<Node>();
@@ -317,7 +341,7 @@ function findIn(file: string, source: SourceFile, program: Program, checker: Che
   order.forEach((node, index) => {
     const type = types[index];
     if (type === null) return at(node, "uninspected");
-    if (!type) return;
+    if (!type) return at(node, "uninspected");
     const value = isAny(checker, type);
     if (value === null) return at(node, "uninspected");
     if (!value || within(node)) return;
@@ -340,18 +364,23 @@ const EXPECTED = /\/\/ expected: ([\w !,]+)$/;
  * declarations, and as the shadow program, which reads each external
  * declaration file at its contracts (shadow-contracts.mts). */
 function check(config: string, part: number, parts: number, inputs: ReplacedInput[] = []): { files: string[]; found: Found[] } {
-  const written = new API({ cwd: path.dirname(config) });
+  // The written program checks the external declarations too.
+  const checkingLibraries = (name: string): string | undefined => name === config
+    ? fs.readFileSync(name, "utf8").replace(/"skipLibCheck":\s*true/, '"skipLibCheck": false') : undefined;
+  const written = new API({ cwd: path.dirname(config), fs: { readFile: checkingLibraries, fileExists: () => undefined } });
   const base = written.updateSnapshot({ openProjects: [config] }).getProject(config);
   if (!base) throw new Error(`the compiler did not open ${config}`);
   const roots = new Set(base.rootFiles);
+  const external: string[] = [];
   const shadow = new API({ cwd: path.dirname(config), fs: {
     readFile: (name) => {
       if (roots.has(name) || !/\.d\.[cm]?ts$/.test(name)) return undefined;
+      external.push(name);
       const declared = base.program.getSourceFile(name);
       if (!declared) throw new Error(`the shadow program reads ${name}, which the written one does not`);
       const { text: shadowed, inputs: replaced } = shadowText(declared, fs.readFileSync(name, "utf8"), isHostFile(name));
       inputs.push(...replaced);
-      return name.endsWith(`${path.sep}lib.es5.d.ts`) ? shadowed + PRELUDE : shadowed;
+      return name.endsWith(`${path.sep}lib.es5.d.ts`) ? shadowed + prelude() : shadowed;
     },
     fileExists: () => undefined,
   } });
@@ -359,6 +388,14 @@ function check(config: string, part: number, parts: number, inputs: ReplacedInpu
   if (!project) throw new Error(`the compiler did not open the shadow program of ${config}`);
   const broken = [...project.program.getGlobalDiagnostics(), ...project.program.getProgramDiagnostics()];
   if (broken.length) throw new Error(`the shadow program of ${config} does not load: ${broken[0]?.text ?? ""}`);
+  // An error in an external declaration as written (an unresolved type, an
+  // invalid one) would carry an error type through the shadow program: the
+  // first part of the check refuses on one.
+  if (part === 0)
+    for (const name of external) {
+      const [first] = [...base.program.getSyntacticDiagnostics(name), ...base.program.getSemanticDiagnostics(name)];
+      if (first) throw new Error(`the external declaration ${name} does not check: ${first.text}`);
+    }
   const files = [...roots].map((file) => path.relative(".", file)).sort();
   const found = files.filter((_, i) => i % parts === part).flatMap((file) => {
     const source = project.program.getSourceFile(path.resolve(file));
@@ -400,8 +437,8 @@ if (workerAt >= 0) {
   // One part of the files, in a process and a compiler of its own.
   const [part, parts] = (args[workerAt + 1] ?? "").split("/").map(Number);
   if (part === undefined || parts === undefined) throw new Error("--worker PART/PARTS");
-  process.stdout.write(JSON.stringify(check(config, part, parts)));
-  process.exit(0);
+  process.stdout.write(JSON.stringify(check(config, part, parts)), () => process.exit(0));
+  await new Promise<never>(() => undefined);
 }
 // The files are checked in parallel, each part by a compiler of its own.
 const parts = Math.max(1, Math.min(8, availableParallelism() - 1));

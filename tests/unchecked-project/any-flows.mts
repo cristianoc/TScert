@@ -3,7 +3,7 @@
  * is an `any flow`; a value still typed `any` is `typed any`. */
 import type { Json } from "../../tools/calculus.mts";
 import type { Expression } from "../../tools/node_modules/typescript/dist/ast/index.js";
-import { Factory, consume, foreign, invoke, invokeAll, keyed, type Box } from "./library/index.mjs";
+import { Factory, consume, foreign, invoke, invokeAll, keyed, nestedArray, type Box } from "./library/index.mjs";
 
 const text = '{"x":"oops"}';
 
@@ -19,7 +19,7 @@ export const kind: string = typeof JSON.parse(text);
 export function rejected(settled: PromiseRejectedResult): { reason: number } {
   return settled; // expected: any flow
 }
-export const nested: number[][][][][] = [[[[new Array(1)]]]]; // expected: any flow
+export const nested: number[][][][][] = [nestedArray()]; // expected: any flow
 export const box: Box<number> = new Factory(); // expected: any flow
 export const property: { x: number } = foreign; // expected: any flow
 export const dictionary: { [key: string]: number } = foreign; // expected: any flow
