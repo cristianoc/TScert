@@ -655,9 +655,10 @@ its binding, and the parser lists no module whose code it leaves unlowered
 writes one.
 
 **Two graphs.** The **qualified-dependency graph** has an edge from a unit to
-each unit it reads at a qualified signature. It has one level: a module's
-claims read no import qualified, and Lean refuses a module's claims that list
-one, so it has no cycle. The **runtime
+each unit it reads at a qualified signature; it is acyclic. The pipeline
+proposes a module after the modules it imports from, so a read that would
+close a cycle is read at its ordinary signature, and Lean refuses a cycle
+among the modules the planned reads name. The **runtime
 module graph** is the modules' import relation as the host evaluates it,
 ordinary imports and re-exports included; it may have cycles. Qualification
 reasons about the first; the second bears on initialisation and binding,
@@ -695,7 +696,9 @@ order, `Extraction.lean`), its own code at its claimed signature, the
 module's functions its code reads, and, recursively, every unit it reads
 at a qualified signature. So the certified set is the closure of the units
 the claims read qualified under the module functions they read, together with
-the module's initialisation; the module's other functions are not checked. Every other fact of its environment is an
+the module's initialisation, and, recursively, the same of every unit a
+module run's own claims read qualified; the module's other functions are not
+checked. Every other fact of its environment is an
 explicit assumption, the
 [import assumption](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)
 its module's own run also makes. An initialiser that is not checked never
@@ -746,10 +749,10 @@ importer again, and the import is read at its ordinary signature. The final chec
 `checkJson` call over the whole document. Dense `map` needs a callback
 footprint that keeps dense prefixes
 ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
-`record-render`'s `parseRecord` is proposed at `{value: any, store: grow}`
-or a narrower footprint in that set. The empty footprint would need the
-checker to know that the maps it mutates and the section `pushProse`
-receives are fresh, which it does not.
+`record-render`'s `parseRecord` is proposed at `{value: any, store: any}`:
+`parseTrailers`, which it calls, writes a tuple's element, which no
+footprint below the one letting every location change bounds
+([footprints](../WORK.md#footprints)).
 
 **What the theorem states.** `SourceClaimJson.checkJson_safe` states, for
 the importer's document, what it states today, and the same of each module

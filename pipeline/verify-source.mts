@@ -182,45 +182,25 @@ const spanOf = (value: unknown): [number, number] | null =>
   Array.isArray(value) && value.length === 2 && typeof value[0] === "number" && typeof value[1] === "number"
     ? [value[0], value[1]] : null;
 /** A read of an import the pipeline proposes qualified (certified imports):
- * the importer's name of it, its declaration identity, its module, and its
- * unit's claimed footprint and on-throw flag. */
+ * the reading document's name of it, its declaration identity, its module,
+ * and its unit's claimed footprint and on-throw flag. */
 type QualifiedRead = { local: string; declaration: unknown; module: string; name: string;
   footprint: unknown; onThrow: boolean };
-/**
- * The claims of each module of the fragment, each a run of its own: its
- * document, standalone, lowered and proposed as a file is. A module whose
- * lowering or proposal fails is left out. And the imports each certified
- * unit may stand for: a named function import whose declaration is a unit of
- * a module with claims, both readings eligible as Lean requires them
- * (`planImports`).
- */
-function moduleRuns(artifacts: string, fragment: unknown):
-    { claims: Map<string, { text: string; parsed: unknown }>; reads: QualifiedRead[] } {
-  const claims = new Map<string, { text: string; parsed: unknown }>();
-  const units = new Map<string, unknown[]>();
-  for (const [i, m] of list(field(fragment, "modules")).entries()) {
-    const location = field(m, "location");
-    if (typeof location !== "string") continue;
-    const doc = { file: location, sourceSha256: field(m, "sourceSha256"), declarations: field(m, "declarations"),
-      init: field(m, "init"), functions: field(m, "functions"), modules: [] };
-    const docPath = join(artifacts, `module-${i}.fragment.json`);
-    writeFileSync(docPath, JSON.stringify(doc));
-    const lowered = run(verifier, ["--lower-control-flow", docPath]);
-    if (lowered.code !== 0) continue;
-    const flowPath = join(artifacts, `module-${i}.flow.json`);
-    writeFileSync(flowPath, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
-    const proposed = run(producerExecutable, [docPath, flowPath]);
-    writeFileSync(join(artifacts, `module-${i}.proposal.log`), proposed.detail);
-    if (proposed.code !== 0) continue;
-    // The claims stay text: a bigint literal's digits pass through unrounded.
-    claims.set(location, { text: proposed.out, parsed: JSON.parse(proposed.out) });
-    units.set(location, list(field(m, "functions")));
-  }
-  const reads = list(field(field(fragment, "declarations"), "values")).flatMap((v): QualifiedRead[] => {
+/** A module's claims, kept as text: a bigint literal's digits pass through
+ * unrounded. */
+type ModuleClaims = { text: string; parsed: unknown };
+/** The reads of a document's imported values that may be qualified: a named
+ * function import whose declaration is a unit of a module with claims, both
+ * readings eligible as Lean requires them (`planImports`), and not
+ * withdrawn (`module#name`, or `module#*` for all of a module's). */
+function eligibleReads(declarations: unknown, units: Map<string, unknown[]>, claims: Map<string, ModuleClaims>,
+    withdrawn: Set<string>): QualifiedRead[] {
+  return list(field(declarations, "values")).flatMap((v): QualifiedRead[] => {
     const declaration = field(v, "declaration"), type = field(v, "type"), local = field(field(v, "binding"), "local");
     const module = field(declaration, "module"), name = field(declaration, "name");
     const span = spanOf(field(declaration, "span"));
     if (typeof module !== "string" || typeof name !== "string" || typeof local !== "string" || !span) return [];
+    if (withdrawn.has(`${module}#${name}`) || withdrawn.has(`${module}#*`)) return [];
     if (field(v, "construct") !== false || list(field(v, "typeParams")).length > 0 || field(type, "k") !== "function" ||
         field(type, "rest") !== null || field(type, "receiver") !== null ||
         field(field(type, "effect"), "promise") !== null) return [];
@@ -239,7 +219,84 @@ function moduleRuns(artifacts: string, fragment: unknown):
     if (!claimed || typeof onThrow !== "boolean") return [];
     return [{ local, declaration, module, name, footprint: field(claimed, "footprint"), onThrow }];
   });
-  return { claims, reads };
+}
+/** Propose a document's claims, its eligible reads qualified. */
+function propose(ast: string, flow: string, reads: QualifiedRead[], qualifiedPath: string): ReturnType<typeof run> {
+  writeFileSync(qualifiedPath, JSON.stringify(reads.map(({ local, declaration, footprint, onThrow }) =>
+    ({ local, declaration, footprint, onThrow }))));
+  return run(producerExecutable, reads.length ? [ast, flow, qualifiedPath] : [ast, flow]);
+}
+/**
+ * The modules of the fragment, each a run of its own: its document,
+ * standalone, lowered once and proposed as a file is, at its own eligible
+ * reads. A module is proposed after the modules it imports from, so a read
+ * may name only a module proposed before it: one closing a cycle of imports
+ * is read at its ordinary signature. A module whose lowering or proposal
+ * fails is left out.
+ */
+class ModuleRuns {
+  private readonly docs = new Map<string, { index: number; ast: string; flow: string; declarations: unknown;
+    imports: string[] }>();
+  private readonly units = new Map<string, unknown[]>();
+  private readonly proposed = new Map<string, ModuleClaims | null>();
+  private readonly artifacts: string;
+  constructor(artifacts: string, fragment: unknown) {
+    this.artifacts = artifacts;
+    const locations = list(field(fragment, "modules")).map((m) => field(m, "location"));
+    for (const [index, m] of list(field(fragment, "modules")).entries()) {
+      const location = field(m, "location");
+      if (typeof location !== "string") continue;
+      const doc = { file: location, sourceSha256: field(m, "sourceSha256"), declarations: field(m, "declarations"),
+        init: field(m, "init"), functions: field(m, "functions"), modules: [] };
+      const ast = join(artifacts, `module-${index}.fragment.json`);
+      writeFileSync(ast, JSON.stringify(doc));
+      const lowered = run(verifier, ["--lower-control-flow", ast]);
+      if (lowered.code !== 0) continue;
+      const flow = join(artifacts, `module-${index}.flow.json`);
+      writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
+      const imports = [...new Set(list(field(doc.declarations, "values")).map((v) => field(field(v, "declaration"), "module"))
+        .filter((l): l is string => typeof l === "string" && l !== location && locations.includes(l)))];
+      this.docs.set(location, { index, ast, flow, declarations: doc.declarations, imports });
+      this.units.set(location, list(field(m, "functions")));
+    }
+  }
+  /** Each module's claims, and the reads of each module's claims, at the
+   * reads not withdrawn; then the importer's eligible reads. */
+  claims(declarations: unknown, withdrawn: Set<string>): { claims: Map<string, ModuleClaims>;
+      readsOf: Map<string, QualifiedRead[]>; reads: QualifiedRead[] } {
+    const claims = new Map<string, ModuleClaims>();
+    const readsOf = new Map<string, QualifiedRead[]>();
+    const visiting = new Set<string>();
+    const visit = (location: string): void => {
+      const doc = this.docs.get(location);
+      if (!doc || visiting.has(location) || readsOf.has(location)) return;
+      visiting.add(location);
+      for (const l of doc.imports) visit(l);
+      visiting.delete(location);
+      const reads = eligibleReads(doc.declarations, this.units, claims, withdrawn);
+      readsOf.set(location, reads);
+      const key = `${location}\n${JSON.stringify(reads)}`;
+      if (!this.proposed.has(key)) {
+        const proposed = propose(doc.ast, doc.flow, reads, join(this.artifacts, `module-${doc.index}.qualified.json`));
+        writeFileSync(join(this.artifacts, `module-${doc.index}.proposal.log`), proposed.detail);
+        this.proposed.set(key, proposed.code === 0 ? { text: proposed.out, parsed: JSON.parse(proposed.out) } : null);
+      }
+      const proposed = this.proposed.get(key);
+      if (proposed) claims.set(location, proposed);
+    };
+    for (const location of this.docs.keys()) visit(location);
+    return { claims, readsOf, reads: eligibleReads(declarations, this.units, claims, withdrawn) };
+  }
+}
+/** The modules whose claims `reads` need, through the modules' own reads. */
+function readClosure(reads: QualifiedRead[], readsOf: Map<string, QualifiedRead[]>): string[] {
+  const seen: string[] = [];
+  for (let work = reads.map((r) => r.module), next = work.shift(); next !== undefined; next = work.shift()) {
+    if (seen.includes(next)) continue;
+    seen.push(next);
+    work.push(...(readsOf.get(next) ?? []).map((r) => r.module));
+  }
+  return seen;
 }
 /** The first certified import a failed search or check names, as Lean names
  * it: a qualified read (`certified import <module>#<name>: …`), or a module
@@ -330,32 +387,33 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
     phase = "proposal";
     // Certified imports: each module's claims, and the reads they may
     // qualify. A read the search or the check refuses, or a module run it
-    // refuses, is withdrawn, and the importer proposed again without it.
-    const runs = moduleRuns(artifacts, parsedData);
-    let reads = runs.reads;
+    // refuses, is withdrawn, and the documents proposed again without it.
+    const modules = new ModuleRuns(artifacts, parsedData);
+    const withdrawn = new Set<string>();
     const claims = join(artifacts, "claims.json"),
       evidence = join(artifacts, "evidence.json");
     const budget = subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)];
     let produced: ReturnType<typeof run>;
     for (;;) {
       phase = "proposal";
-      const qualifiedPath = join(artifacts, "qualified.json");
-      writeFileSync(qualifiedPath, JSON.stringify(reads.map(({ local, declaration, footprint, onThrow }) =>
-        ({ local, declaration, footprint, onThrow }))));
-      const proposed = run(producerExecutable, reads.length ? [ast, flow, qualifiedPath] : [ast, flow]);
+      const { claims: moduleClaims, readsOf, reads } = modules.claims(field(parsedData, "declarations"), withdrawn);
+      const proposed = propose(ast, flow, reads, join(artifacts, "qualified.json"));
       writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
       if (proposed.code !== 0)
         return proposed.detail.startsWith("unsupported:")
           ? { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposed.detail, refusedErrors) }
           : { status: "error", artifacts, phase, detail: proposed.detail };
       // The importer's claims, its `modules` the claims of each module a read
-      // qualifies, spliced as text: a bigint literal's digits pass through
-      // unrounded.
-      const used = [...new Set(reads.map((r) => r.module))];
+      // qualifies, directly or through a module's reads, spliced as text: a
+      // bigint literal's digits pass through unrounded.
       const marker = '"modules":[]';
       const at = proposed.out.lastIndexOf(marker);
       if (at < 0) throw Error("the producer's claims state no modules");
-      writeFileSync(claims, proposed.out.slice(0, at) + `"modules":[${used.map((m) => runs.claims.get(m)?.text ?? "").join(",")}]` +
+      const used = readClosure(reads, readsOf).flatMap((m) => {
+        const text = moduleClaims.get(m)?.text;
+        return text === undefined ? [] : [text];
+      });
+      writeFileSync(claims, proposed.out.slice(0, at) + `"modules":[${used.join(",")}]` +
         proposed.out.slice(at + marker.length));
       phase = "search";
       produced = run(verifier, [
@@ -369,9 +427,9 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
       ]);
       const failed = produced.code !== 0 ? failedImport(produced.detail) : null;
       if (!failed) break;
-      const before = reads.length;
-      reads = reads.filter((r) => r.module !== failed.module || (failed.name !== null && r.name !== failed.name));
-      if (reads.length === before) break;
+      const key = `${failed.module}#${failed.name ?? "*"}`;
+      if (withdrawn.has(key)) break;
+      withdrawn.add(key);
     }
     writeFileSync(join(artifacts, "search.log"), produced.detail);
     if (produced.code !== 0)

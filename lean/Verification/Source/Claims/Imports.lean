@@ -9,11 +9,13 @@ namespace Verification.SourceClaimJson
 open Lean
 
 /-- A module run the check certifies: its identity, its document restricted
-to its certified set, its claims restricted alike, and its evidence. -/
+to its certified set, its claims restricted alike, and its own qualified
+reads, each with its unit's footprint and on-throw flag. -/
 structure ModuleRun where
   location : String
   ast : Json
   claims : Json
+  qualified : List (String × Footprints.Closed × Bool)
 
 /-- What certified imports give the check: the importer's document and claims
 without modules, the importer's qualified reads by name, each with its unit's
@@ -170,15 +172,54 @@ private def qualifiedRead (importer : Reading) (values : List Json) (fragmentMod
   let onThrow ← (← jField uc "onThrow").getBool?
   return (localName, footprint, onThrow)
 
-/-- **The import plan.** Each read the importer's claims list qualified
-names an imported value of the importer's declarations and a unit of a
-module the fragment lists: a function of that module, its name the
-declaration's, its name within the declaration's span. The unit is eligible
-(no binders, no rest, no receiver, no promise), its claims are in the
-module's claims document, and the two readings of its signature agree
-(`sameReading`). Each module with a qualified unit runs restricted to the
-units' read closure, its top-level code kept. A module's own claims read no
-import qualified: the qualified-dependency graph has one level, and no cycle. -/
+/-- The qualified reads of one document: each read its claims list names an
+imported value of its declarations and an eligible unit whose two readings
+agree (`qualifiedRead`). Its importer's binding of each, with the unit's
+footprint and on-throw flag, and the units, by module and name. -/
+private def planReads (declarations claims : Json) (fragmentModules : List Fragment.ModuleAst)
+    (claimModules : List Json) :
+    Except String (List (String × Footprints.Closed × Bool) × List (String × String)) := do
+  let reads ← jArr claims "qualified"
+  if reads.eraseDups.length != reads.length then throw "a qualified read is listed twice"
+  let values ← jArr declarations "values"
+  let importer ← Reading.of declarations
+  let mut qualified : List (String × Footprints.Closed × Bool) := []
+  let mut units : List (String × String) := []
+  for q in reads do
+    fieldsExactly q ["module", "name", "span"]
+    let location ← jStr (← jField q "module")
+    let name ← jStr (← jField q "name")
+    let span : Span ← fromJson? (← jField q "span")
+    let read ← (qualifiedRead importer values fragmentModules claimModules q location name span).mapError
+      (s!"certified import {location}#{name}: " ++ ·)
+    qualified := qualified ++ [read]
+    units := units ++ [(location, name)]
+  let names := qualified.map (·.1)
+  if names.eraseDups.length != names.length then throw "two qualified reads bind one name"
+  return (qualified, units)
+
+/-- Whether a graph over `nodes` has a cycle: no node is left once each node
+whose edges all reach removed nodes is removed, repeatedly. -/
+private def cyclic (nodes : List String) (edges : List (String × String)) : Option String := Id.run do
+  let mut left := nodes
+  for _ in [0:nodes.length + 1] do
+    let sinks := left.filter fun n => edges.all fun (a, b) => a != n || !left.contains b
+    if sinks.isEmpty then return left.head?
+    left := left.filter (!sinks.contains ·)
+  return left.head?
+
+/-- **The import plan.** Each read a document's claims list qualified names
+an imported value of that document's declarations and a unit of a module the
+fragment lists: a function of that module, its name the declaration's, its
+name within the declaration's span. The unit is eligible (no binders, no
+rest, no receiver, no guard, no promise, a binding no code of its module
+writes), its claims are in that module's claims document, about the
+module's bytes, and the two readings of its signature agree (`sameReading`).
+The documents planned are the importer's and, recursively, each module's a
+planned read names; the qualified-dependency graph among the modules is
+acyclic. Each planned module runs restricted to the read closure of the
+units read qualified of it, its top-level code kept, at its own qualified
+reads. -/
 def planImports (ast claims : Json) : Except String ImportPlan := do
   let fragmentModules ← (← jArr ast "modules").mapM Fragment.decodeModule
   let locations := fragmentModules.map (·.location)
@@ -192,37 +233,35 @@ def planImports (ast claims : Json) : Except String ImportPlan := do
       | throw s!"claims for a module the fragment does not list: {file}"
     if (← jStr (← jField c "sourceSha256")) != m.sourceSha256 then
       throw s!"a module's claims are about other bytes: {file}"
-    if !(← jArr c "qualified").isEmpty then
-      throw s!"a module's claims read an import qualified: {file}"
-  let reads ← jArr claims "qualified"
-  if reads.eraseDups.length != reads.length then throw "a qualified read is listed twice"
-  let declarations ← jField ast "declarations"
-  let values ← jArr declarations "values"
-  let importer ← Reading.of declarations
-  let mut qualified : List (String × Footprints.Closed × Bool) := []
-  let mut units : List (String × String) := []
-  for q in reads do
-    fieldsExactly q ["module", "name", "span"]
-    let location ← jStr (← jField q "module")
-    let name ← jStr (← jField q "name")
-    let span : Span ← fromJson? (← jField q "span")
-    let (localName, footprint, onThrow) ← (qualifiedRead importer values fragmentModules claimModules q location name span).mapError
-      (s!"certified import {location}#{name}: " ++ ·)
-    qualified := qualified ++ [(localName, footprint, onThrow)]
-    units := units ++ [(location, name)]
-  let names := qualified.map (·.1)
-  if names.eraseDups.length != names.length then throw "two qualified reads bind one name"
+  let claimsOf (location : String) : Except String Json :=
+    match claimModules.find? fun c => (c.getObjValAs? String "file").toOption == some location with
+    | some c => pure c
+    | none => throw s!"a module without claims: {location}"
+  let (qualified, importerUnits) ← planReads (← jField ast "declarations") claims fragmentModules claimModules
+  -- The modules a planned read names, each planned once, its reads in turn.
+  let mut units := importerUnits
+  let mut planned : List (String × List (String × Footprints.Closed × Bool)) := []
+  let mut edges : List (String × String) := []
+  for _ in [0:fragmentModules.length + 1] do
+    let some location := (units.map (·.1)).find? fun l => !(planned.map (·.1)).contains l | break
+    let some m := fragmentModules.find? (·.location == location)
+      | throw s!"a qualified read names a module the fragment does not list: {location}"
+    let (reads, more) ← (planReads (← jField m.document "declarations") (← claimsOf location)
+      fragmentModules claimModules).mapError (s!"module {location}: " ++ ·)
+    planned := planned ++ [(location, reads)]
+    edges := edges ++ more.map fun (l, _) => (location, l)
+    units := units ++ more
+  if let some location := cyclic (planned.map (·.1)) edges then
+    throw s!"module {location}: a cycle of qualified reads through it"
   let modules ← fragmentModules.filterMapM fun m => do
+    let some (_, reads) := planned.find? (·.1 == m.location) | return none
     let start := (units.filter (·.1 == m.location)).map (·.2)
-    if start.isEmpty then return none
     let decoded ← (← jArr m.document "functions").mapM fun f => do return (← Fragment.decodeFn f).1
     let init ← Fragment.decodeInit m.document
     let keep := readClosure decoded init start
     let ast ← keepFunctions m.document fun n _ => keep.contains n
-    let some c := claimModules.find? fun c => (c.getObjValAs? String "file").toOption == some m.location
-      | throw s!"a module without claims: {m.location}"
-    let claims ← keepFunctions c fun n _ => keep.contains n
-    return some ⟨m.location, ast, claims⟩
+    let claims ← keepFunctions (← claimsOf m.location) fun n _ => keep.contains n
+    return some ⟨m.location, ast, claims, reads⟩
   return ⟨ast.setObjVal! "modules" (Json.arr #[]), claims.setObjVal! "modules" (Json.arr #[]), qualified, modules⟩
 
 end Verification.SourceClaimJson

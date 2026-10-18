@@ -279,6 +279,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     '[[2,4],["positive","other"],[1,2]]', "certified-value-import: the results are dense");
   assert.equal(runImporting("certified-mts-value-import", "JSON.stringify(doubled([1, 2]))"), "[2,4]",
     "certified-mts-value-import: the result is dense");
+  assert.equal(runImporting("certified-nested-value-import", "JSON.stringify([quadrupled([1, 2]), doubledRows([[1], [2, 3]])])"),
+    "[[4,8],[[2],[4,6]]]", "certified-nested-value-import: the results are dense");
+  assert.equal(runImporting("certified-cycle-value-import", "JSON.stringify([parity(3), parity(4)])"), "[1,0]",
+    "certified-cycle-value-import: the cycle runs");
   assert.equal(runImporting("invalid-certified-write-value-import", "((r) => Object.keys(r).length)(zeros([1, 2, 3]))"), 2,
     "invalid-certified-write-value-import: the result has three positions, two present");
   assert.equal(runExample("invalid-json-stringify-boxed-key",

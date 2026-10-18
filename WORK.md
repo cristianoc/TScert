@@ -22,9 +22,7 @@ design, not its progress.
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
-| [Module composition](#module-composition) | open: certified imports one level deep (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
-| [Certified imports across levels](#certified-imports-across-levels) | open | a module's claims read its own imports qualified, over an acyclic qualified-dependency graph, and `printGraph` verifies |
-| [Cell facts by tag, and label slices](#cell-fact-slices) | open: label slices and reads by a record field's or a dictionary entry's tag done (2026-10-18); `decodeTarget` passes an imported function as a callback | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
+| [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
 | [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 29 s of evidence search, near the 30 s limit (2026-10-18); their time waits on shape-directed comparison of discriminated unions | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
 | [Lexical bindings before initialization](docs/SOURCE-MODEL.md#lexical-bindings-before-initialization) | open: designed and approved (2026-10-18) | a closure reading a constant declared after it verifies, and a read before the declaration runs throws at its location |
 | [Module cells](docs/SOURCE-MODEL.md#module-cells) | open: designed (2026-10-18) | a module-level `let` read and written by module functions verifies, a read before its initialization throws |
@@ -37,7 +35,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 80 of 313 verify in `tools/` (2026-10-18, at a 60 s step limit), 21 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 80 of 313 verify in `tools/` (2026-10-18, at a 60 s step limit), 23 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -113,7 +111,7 @@ Left open:
   callable object, a packed call) consume no footprint, so a bounded body
   refuses them;
 - an array element write has no bound; the fragment writes elements only at
-  proved index singletons, and no measured program needs one.
+  proved index singletons; `group` in `dev/` needs one (below).
 
 **Footprint precision** is deferred
 ([FOOTPRINTS](docs/FOOTPRINTS.md#deferred-extra-precision)): separating one
@@ -142,25 +140,6 @@ signature. `checkJson_safe` keeps its statement.
 Combining a certified import's conclusion with the importer's is left to
 this theorem, plus the review obligation that the import binds the certified
 unit's closure ([the linking obligation](docs/SOURCE-MODEL.md#certified-imports)).
-
-<a id="certified-imports-across-levels"></a>
-**Certified imports across levels.** A module's claims read their own
-imports at ordinary signatures: Lean refuses a module's claims listing a
-read qualified, so the qualified-dependency graph has one level. `printGraph`
-passes `decodeNode`, imported from `control-flow`, to `map`, and
-`decodeNode` passes `nat`, imported from `calculus`, to `map`: its
-certificate needs a qualified read in a module run. Lifting the level needs
-each module run's own qualified reads, its module runs restricted alike, and
-Lean refusing a cycle among them.
-
-<a id="cell-fact-slices"></a>
-**Cell facts by tag, and label slices**
-([the design](docs/PROGRAM-TYPING.md#current-content-rules-semantic-layer)):
-a sliced read by any heap-independent tag, and the labels of an object a
-cell fact about its field excludes. A dictionary's entry takes facts as a
-record's field does (`dictionary-field-tag-read`). `decodeTarget` passes
-`nat`, imported from `calculus`, to `map`
-([module composition](#module-composition)).
 
 <a id="decoders-dictionary-reads"></a>
 **Decoders' dictionary reads.** The decoders of `calculus.mts`,
@@ -348,27 +327,22 @@ The first blockers, by the number of slices each stops (2026-10-18):
 
 Twenty-nine slices reach the producer and fail there, and 48 fail in search;
 `termsOf`, `decodeCode` and `decodeTerm` verify within the 60 s limit. Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
-24 of `dev/`, the record tools and the lowering dump, 21 (2026-10-18), each
-sliced with the same-file declarations it uses. The first blockers of the others in
-`dev/`, with the functions each stops directly and through callees:
+24 of `dev/`, the record tools and the lowering dump, 23 (2026-10-18), each
+sliced with the same-file declarations it uses. The first blocker of the other in
+`dev/`:
 
-- `group`'s range branch reads the second element of `arg.split("..")`,
-  which the model types `string | undefined`: the `arg.includes("..")` test
-  before it, which makes the element present, states no fact about the
-  split's length (group: 1);
-- in printGraph, `program.map(decodeNode)` passes an imported function as a
-  callback, which a signature binding more parameters may call with further
-  actuals; only a module function's own code is known to discard them
-  ([module composition](#module-composition)), and so is `showTerm`, which a callback calls. A certified import of
-  either needs its module's code to verify. In `control-flow` and
-  `calculus` (2026-10-18), 12 of 18 functions verify, `showTag`, `showTerm`
-  and `showCode` among them; `decodeTarget`, `decodeContinuation` and
-  `decodeNode` pass `nat`, imported from `calculus`, to `map`, and
-  `decodeTerm`, `decodeCode` and `termsOf` exceed the time limit
-  ([decoders' dictionary reads](#decoders-dictionary-reads)) (printGraph: 1);
-- `decodeUnits` calls `fields` and `nat`, imported from `calculus`, in
-  `map` callbacks, which an import's ordinary signature makes sparse
-  ([module composition](#module-composition)) (decodeUnits: 1).
+- `group` maps `readRecord`, which calls `parseRecord`, a certified import
+  whose footprint lets the heap change: `parseTrailers` writes a tuple's
+  element (`entries[entries.length - 1][1] += …`), and an array element
+  write has no bound ([footprints](#footprints)); its range branch also
+  reads the second element of `arg.split("..")`, which the model types
+  `string | undefined`: the `arg.includes("..")` test before it, which makes
+  the element present, states no fact about the split's length (group: 1).
+
+`printGraph` and `decodeUnits` verify with their imports from
+`control-flow` and `calculus` certified, `printGraph` in 71 s of wall time
+for the whole pipeline, its search covering `decodeTerm`, which
+`decodeNode` reads; `control-flow.mts` verifies whole (2026-10-18).
 
 In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
 verify; the others stop at a namespace import, Node's `Buffer` type, `join`

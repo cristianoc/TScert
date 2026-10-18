@@ -45,11 +45,12 @@ a [certified import](SOURCE-MODEL.md#certified-imports)'s signature, each by
 its declaration identity (`module`, `name`, `span`). `modules` holds claims
 documents of fragment modules, each over the module's own `types`, its
 `file` the module's `location` and its `sourceSha256` the module's, with
-`modules` and `qualified` empty: a module's claims read no import
-qualified. Evidence is
+`modules` empty and `qualified` the module's own reads at certified
+imports. Evidence is
 `{"main": e, "modules": [{"location": l, "evidence": e}, …]}`: the main
-document's evidence, then one entry per module a qualified read names, in
-the order of the fragment's `modules`. `file` identifies
+document's evidence, then one entry per module a planned qualified read
+names, the importer's or a module's, in the order of the fragment's
+`modules`. `file` identifies
 the source; `sourceSha256` is its lowercase SHA-256 digest. `types` is the
 producer's type table. Each ordinary row is a list of clauses, also interpreted
 as a union. Row operands contain label lists, so recursive rows can refer to

@@ -163,7 +163,8 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
   let p ← planImports ast claims
   let main ← produceDocument p.ast p.claims fileKey fuel budget p.qualified
   let modules ← p.modules.mapM fun m => do
-    let e ← (produceDocument m.ast m.claims m.location fuel budget).mapError (s!"module {m.location}: " ++ ·)
+    let e ← (produceDocument m.ast m.claims m.location fuel budget m.qualified).mapError
+      (s!"module {m.location}: " ++ ·)
     return Json.mkObj [("location", toJson m.location), ("evidence", e)]
   return Json.mkObj [("main", main), ("modules", Json.arr modules.toArray)]
 
@@ -171,18 +172,18 @@ def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
 def checkModules : List (ModuleRun × Json) → PositiveCertificates.SearchBudget → Except String Unit
   | [], _ => pure ()
   | (m, e) :: rest, budget => do
-    (checkDocument m.ast m.claims m.location e budget).mapError (s!"module {m.location}: " ++ ·)
+    (checkDocument m.ast m.claims m.location e budget m.qualified).mapError (s!"module {m.location}: " ++ ·)
     checkModules rest budget
 
 theorem checkModules_each {runs : List (ModuleRun × Json)} {budget : PositiveCertificates.SearchBudget}
     (h : checkModules runs budget = .ok ()) :
-    ∀ m e, (m, e) ∈ runs → checkDocument m.ast m.claims m.location e budget = .ok () := by
+    ∀ m e, (m, e) ∈ runs → checkDocument m.ast m.claims m.location e budget m.qualified = .ok () := by
   induction runs with
   | nil => intro m e hm; cases hm
   | cons x rest ih =>
     obtain ⟨m', e'⟩ := x
     unfold checkModules at h
-    cases hd : checkDocument m'.ast m'.claims m'.location e' budget with
+    cases hd : checkDocument m'.ast m'.claims m'.location e' budget m'.qualified with
     | error err => rw [hd] at h; contradiction
     | ok u =>
       rw [hd] at h
@@ -279,13 +280,14 @@ theorem checkDocument_safe {ast claims evidence : Json} {fileKey : String}
 /-- **The acceptance theorem.** A successful CLI check gives, for the
 importer, what a document's check gives (`DocumentSafe`), its qualified
 reads among its inputs, and the same for each module run certifying a
-qualified unit, each over its own store. -/
+qualified unit, its own qualified reads among its inputs, each over its own
+store. -/
 theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
     {budget : PositiveCertificates.SearchBudget}
     (h : checkJson ast claims fileKey evidence budget = .ok ()) :
     ∃ p parts, planImports ast claims = .ok p ∧ evidenceParts evidence p = .ok parts ∧
       DocumentSafe p.ast p.claims fileKey (evidence.getObjValD "main") budget p.qualified ∧
-      ∀ m e, (m, e) ∈ p.modules.zip parts → DocumentSafe m.ast m.claims m.location e budget [] := by
+      ∀ m e, (m, e) ∈ p.modules.zip parts → DocumentSafe m.ast m.claims m.location e budget m.qualified := by
   unfold checkJson at h
   cases hp : planImports ast claims with
   | error err => rw [hp] at h; contradiction

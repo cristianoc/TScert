@@ -1811,10 +1811,15 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   const stale = readClaims(imported);
   for (const m of stale.modules) m.sourceSha256 = "0".repeat(64);
   refuse(imported, "forged-certified-sha", stale, /a module's claims are about other bytes: \.\/certified\.ts/);
-  // A module's claims reading an import of their own qualified.
-  const nested = readClaims(imported);
-  for (const m of nested.modules) m.qualified = [...nested.qualified];
-  refuse(imported, "forged-certified-nested", nested, /a module's claims read an import qualified: \.\/certified\.ts/);
+  // A qualified read closing a cycle: `pong`'s claims read `ping`, whose
+  // claims read `pong`.
+  const cycle = run("certified-cycle-value-import");
+  const cyclic = readClaims(cycle);
+  const pong = must(cyclic.modules.find(m => m.file === "./pong.ts"), "pong's claims");
+  assert.deepEqual(pong.qualified, [], "pong reads ping at its ordinary signature");
+  pong.qualified = cyclic.qualified.filter(q => q.name === "ping");
+  assert.equal(pong.qualified.length, 1, "the importer reads ping qualified");
+  refuse(cycle, "forged-certified-cycle", cyclic, /module \.\/p[io]ng\.ts: a cycle of qualified reads through it/);
   // A module document whose unit `twice` takes a string: the two readings of
   // its signature differ.
   const fragment: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
@@ -1837,7 +1842,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   writeFileSync(rebound, JSON.stringify(rebinding));
   refuse(imported, "forged-certified-rebinding", readClaims(imported),
     /certified import \.\/certified\.ts#twice: a qualified read names a unit whose module writes its binding/, rebound);
-  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale and nested module claims, a differing module signature and a rebound unit refused in search and in checking\n");
+  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature and a rebound unit refused in search and in checking\n");
 }
 
 {
