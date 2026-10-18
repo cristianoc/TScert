@@ -23,7 +23,7 @@ const out = spawnSync("node", [join(here, "../pipeline/verify-source.mts"), reso
 const outcome = readOutcome(JSON.parse(out.slice(out.indexOf("{"))));
 const artifacts: string = outcome.artifacts;
 const claims = join(artifacts, "claims.json");
-const firstLine = (s: unknown): string | undefined => String(s).split("\n")[0];
+const firstLine = (s: unknown): string => String(s).split("\n")[0];
 console.log(`outcome: ${outcome.status}${outcome.status === "verified" ? "" : `: ${firstLine(outcome.detail)}`}`);
 if (!existsSync(claims)) process.exit(0);
 

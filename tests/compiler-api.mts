@@ -147,7 +147,8 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
       assert.equal(list.findIndex((_, i) => i === n - 1), n - 1, `${what}: findIndex`);
       if (n) assert.equal(list.indexOf(list[n - 1]!), n - 1, `${what}: indexOf`); // asserted: n > 0
       for (const fresh of [list.map(x => x), list.filter(() => true), list.flatMap(x => [x]), list.slice()]) {
-        assert.equal(Object.getPrototypeOf(fresh), Array.prototype, `${what}: a fresh ordinary array`);
+        const arrayPrototype: unknown = Array.prototype;
+        assert.equal(Object.getPrototypeOf(fresh), arrayPrototype, `${what}: a fresh ordinary array`);
         assert.deepEqual(fresh, elements, `${what}: a fresh array of the elements`);
       }
       assert.equal(list.at(0.5), undefined, `${what}: at of a non-integer, within T | undefined`);

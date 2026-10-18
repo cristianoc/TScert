@@ -2,7 +2,7 @@
   // Everything the node side runs, checked under one strict configuration:
   // the trusted front end, the suites and the development tools in dev/.
   // `isolatedDeclarations` (with `declaration`, emitting nothing under
-  // `noEmit`) requires every export to state its type.
+  // `noEmit`): an export's type is determined by its own syntax.
   "compilerOptions": {
     "target": "es2022",
     "module": "preserve",

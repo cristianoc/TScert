@@ -68,7 +68,7 @@ export function parseRecord(text: string, commit: { sha: string; author: string;
     sha: commit.sha, author: commit.author, subject: lines[0], sections, trailers,
     coauthors: commit.message.split("\n").filter(l => l.startsWith("Co-Authored-By:"))
       .map(l => l.replace("Co-Authored-By:", "with").replace(/<[^>]*>/, "").trim()),
-    stat: commit.stat, examples: commit.examples ?? new Map(),
+    stat: commit.stat, examples: commit.examples ?? new Map<string, Example>(),
   };
 }
 

@@ -72,6 +72,8 @@ export type OverlayEntry = {
 type Effect = CallEffect;
 /** A reviewed replacement signature of an overlay entry. */
 type StatedSignature = { receiver?: TypeTerm; params: TypeTerm[]; result: TypeTerm; effect?: Effect };
+/** A stated signature with its own effect. */
+type EffectSignature = { params: TypeTerm[]; result: TypeTerm; effect: Effect };
 
 const at: [number, number] = [0, 0];
 const atomOf = (name: "string" | "number" | "undefined" | "unknown" | "boolean" | "null" | "bigint" | "symbol"): TypeTerm => ({ k: "atom", name, span: at });
@@ -119,7 +121,7 @@ const stableForDensity = closedFootprints.filter((f) => f.store !== "any");
  * callback within `ε`, the member is within `ε`, since besides the callback
  * it reads the receiver and allocates only its result. */
 const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootprint) =>
-    { params: TypeTerm[]; result: TypeTerm }, fresh: boolean = false): StatedSignature[] =>
+    { params: TypeTerm[]; result: TypeTerm }, fresh: boolean = false): EffectSignature[] =>
   closedFootprints.map((footprint) => {
     const effect = footprintEffect(footprint);
     return { ...signature(effect, footprint), effect: { ...effect, fresh } };

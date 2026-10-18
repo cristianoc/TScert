@@ -471,7 +471,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       .map(b => ({ name: b.name, bound: bounds.get(b.name) ?? null, resolution: null })))
       .filter(level => level.length);
   };
-  const empty: Env = { names: new Map(), levels: [] };
+  const empty: Env = { names: new Map<Node, string>(), levels: [] };
   for (const root of roots) visit(root, empty, root.getSourceFile() === context.client);
   // The binder groups of the declarations enclosing `node`, outermost
   // first.

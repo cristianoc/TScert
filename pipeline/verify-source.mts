@@ -20,14 +20,14 @@ import { resolvableDeclaration } from "../tools/intrinsics.mts";
  * forges it. */
 export function readFragmentFile(file: string): Ast {
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-  return parsed as Ast; // asserted: the parser wrote the file from an Ast, and Lean's decoder checks the shape it reads
+  return parsed as Ast; // asserted: the parser wrote the file from an Ast; a TypeScript decoder of the Fragment would cost more than it guards a test's forgery, and Lean's decoder checks every document a test feeds back
 }
 
 /** A claims document this pipeline's producer wrote, read back by a test that
  * forges it. */
 export function readClaimsFile(file: string): SourceClaims {
   const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-  return parsed as SourceClaims; // asserted: the producer wrote the file against SourceClaims, and Lean's decoder checks the shape it reads
+  return parsed as SourceClaims; // asserted: the producer wrote the file against SourceClaims; a TypeScript decoder of the claims would cost more than it guards a test's forgery, and Lean's decoder checks every document a test feeds back
 }
 
 const here = import.meta.dirname;

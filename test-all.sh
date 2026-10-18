@@ -97,6 +97,8 @@ run_test "JSON field names agree (TS, Lean, OCaml)" node tests/json-field-names.
 # tools/unchecked.mts enforces the node side's typing conventions: every unit boundary annotated, no value typed `any`,
 # and every `as` and `!` carrying its reason.
 run_test "Boundaries annotated, no any, assertions with reasons" node tools/unchecked.mts
+# tests/unchecked-project/ holds the counterexamples each of unchecked.mts's reports exists for.
+run_test "unchecked.mts reports its counterexamples" node tools/unchecked.mts --project tests/unchecked-project --expect
 # tests/docs.mts checks every document's links, anchors and math.
 run_test "Documents: links, math" node tests/docs.mts
 # tests/node-runs.mts runs examples and native-contract counterexamples under Node.

@@ -297,7 +297,7 @@ function knowledge(v: Json | undefined): void {
 }
 /** A node record with its node decoded in place of its wire form, as the
  * term and tag below are. */
-function diagnosticNode(v: Json | undefined, size: number): { [key: string]: Json | ProgramNode | null } {
+function diagnosticNode(v: Json | undefined, size: number): { node: ProgramNode | null } {
   const n = record(v,["label","sourceMap","node","claim","requiredKnowledge"]);
   nat(n.label); sourceMap(n.sourceMap); knowledge(n.requiredKnowledge);
   if (n.claim !== null) {

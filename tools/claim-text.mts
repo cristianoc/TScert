@@ -465,20 +465,22 @@ function liftClause(types: Table, clause: unknown, depth: number): unknown {
   }
   const dict = body("dict");
   if (isObject(dict)) {
+    const indexes: unknown[] = Array.isArray(dict.indexes) ? dict.indexes : [];
+    const index: unknown = indexes[0];
     if (
       !Array.isArray(dict.rest) ||
       dict.rest.length ||
       !Array.isArray(dict.indexes) ||
-      dict.indexes.length !== 1 ||
-      !Array.isArray(dict.indexes[0]) ||
-      dict.indexes[0].length !== 2
+      indexes.length !== 1 ||
+      !Array.isArray(index) ||
+      index.length !== 2
     )
       return JSON.stringify(clause);
     const record = cell(types, dict.first, depth - 1, dict.views);
     return {
       ...record,
       indexSignature: {
-        read: liftType(types, dict.indexes[0][1], depth - 1),
+        read: liftType(types, index[1], depth - 1),
         write: { top: false, atoms: [] },
       },
     };

@@ -1,0 +1,17 @@
+{
+  // The counterexamples tools/unchecked.mts must report, each on a line
+  // ending in `// expected: KIND`, checked by `unchecked.mts --project
+  // tests/unchecked-project --expect`.
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["*.mts"]
+}
