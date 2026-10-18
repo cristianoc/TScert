@@ -1781,6 +1781,52 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   process.stdout.write("forged import footprints: an imported function's call refused each footprint narrower than everything\n");
 }
 
+/** Bypass the producer's refusal: propose claims and search evidence over a
+ * parser document weakened by `change`, then require both verifier entry
+ * points to refuse that claims document and its evidence against the honest
+ * document. */
+const bypassed = (artifacts: string, name: string, change: (fragment: Ast) => void): void => {
+  const ast: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  change(ast);
+  const weak = join(artifacts, `${name}-fragment.json`);
+  writeFileSync(weak, JSON.stringify(ast));
+  const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(lowered.status, 0, lowered.stderr);
+  const flow = join(artifacts, `${name}-flow.json`);
+  writeFileSync(flow, lowered.stdout);
+  const proposal = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(proposal.status, 0, proposal.stderr);
+  const claims = join(artifacts, `${name}-claims.json`);
+  writeFileSync(claims, proposal.stdout);
+  // The weakened document's evidence exists, so checking reaches the rule.
+  const made = produceWith(artifacts, claims, name, weak);
+  assert.equal(made.status, 0, made.stdout + made.stderr);
+  const searched = produceWith(artifacts, claims, `${name}-honest`);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  invoke(claims, join(artifacts, `${name}-evidence.json`), artifacts);
+};
+
+{
+  // The non-host parameter of `Object.values` (COMPILER-API.md, "Restricted
+  // values"): the interface's readonly field forged writable in the parser's
+  // document, so the producer and search take the call at the non-host
+  // values; against the honest readonly interface, which admits a host
+  // object, search and checking refuse the strengthened argument.
+  bypassed(run("object-values-readonly-refused"), "forged-non-host-argument", fragment => {
+    const definition = must(fragment.declarations?.definitions.find(d => d.declaration.name === "R"), "the interface R");
+    assert(definition.expression?.k === "object");
+    for (const f of definition.expression.fields) f.readonly = false;
+  });
+  // A merge's operand alike: the spread's readonly record forged writable.
+  bypassed(run("spread-readonly-record-refused"), "forged-non-host-spread", fragment => {
+    const fn = must(fragment.functions.find(f => f.name === "copy"), "copy");
+    const param = must(fn.params[0], "copy's parameter");
+    assert(param.type?.k === "object");
+    for (const f of param.type.fields) f.readonly = false;
+  });
+  process.stdout.write("forged non-host operands: a readonly record strengthened to the non-host values refused in search and in checking\n");
+}
+
 {
   // Reading rule 1 on a stand-in host package (`pipeline/host-fixture/`,
   // whose `Node` reaches no node list), installed as the host through the
@@ -1800,6 +1846,16 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
       assert.notEqual(outcome.status, "verified", `invalid-host-fixture-jsdoc-${form}: refused`);
       assert.ok("detail" in outcome && refusal.test(outcome.detail), `invalid-host-fixture-jsdoc-${form}: ${JSON.stringify(outcome)}`);
     }
+    // Recovering the omitted member: the parser's document given `jsDoc` back
+    // on the host `Node`, the claims and evidence so made refused against the
+    // honest document, whose shape omits it.
+    const dot = check(example("invalid-host-fixture-jsdoc-dot"), project);
+    bypassed(dot.artifacts, "forged-host-jsdoc", fragment => {
+      const definition = must(fragment.declarations?.definitions.find(d => d.declaration.name === "Node"), "the host Node");
+      assert(definition.expression?.k === "object");
+      const kind = must(definition.expression.fields.find(f => f.name === "kind"), "Node's kind");
+      definition.expression.fields.push({ ...kind, name: "jsDoc", optional: true, type: { k: "atom", name: "unknown", span: kind.span } });
+    });
     const kept = check(example("host-fixture-jsdoc-other-reads"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
     const lookalike = check(example("host-fixture-lookalike"), project);
@@ -1807,7 +1863,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   } finally {
     useHostInstallationForTests(null);
   }
-  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, other reads verified\n");
+  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified\n");
 }
 
 {

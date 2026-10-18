@@ -312,10 +312,11 @@ arrays and tuples, `unknown`. The families that grant a capability over an
 object's own keys admit ordinary objects only, and so does every family of
 a callable or a primitive:
 
-- a record with an invariant field (`recT` of a non-empty field list), and
+- a record with an invariant field (`refsT` of a non-empty field list), and
   a writable array or tuple, whose store is an invariant field;
-- a record whose own keys are bounded by a list without the prototype key
-  (`ownKeysT`), and a dictionary (`dictViewT`, `dictCellT`);
+- a record whose own-key bound does not admit `[[host]]` (`ownKeysT`, a
+  bound listing keys without it or excluding it), and a dictionary
+  (`dictViewT`, `dictCellT`);
 - a call or construct signature, whose objects carry code.
 
 The steps that copy, write or expose the values of an object's own keys
@@ -337,8 +338,8 @@ predicate on its clauses whose soundness, $`v\in⟦A⟧`$ giving $`v`$
 ordinary, is proved clause by clause from the families above. A clause
 excludes host values when it is a primitive or a singleton of one, a call or
 construct signature, a record with an invariant field, a record with an
-own-key bound without the prototype key, a dictionary, or a writable array
-or tuple. A union excludes host values when every arm does, and an
+own-key bound that does not admit `[[host]]`, a dictionary, or a writable
+array or tuple. A union excludes host values when every arm does, and an
 intersection when one conjunct does. A type parameter excludes them when
 its certified bound does, since an admissible instance's values lie in the
 bound's meaning; an occurrence of the parameter inside its own bound counts

@@ -1378,7 +1378,7 @@ export const cases: Case[] = [
   negative("invalid-native-promise-constructor-intersection", "The original source mutation through a writable constructor alias has an impossible native Promise input contract", /intersection is empty/),
   negative("invalid-native-promise-constructor-alias", "A structural alias cannot expose a writable own constructor on a native promise", /binding-annotation/),
   negative("invalid-native-promise-constructor-write", "A direct promise constructor write violates the native own-key exclusion", /No rule derives this writeAt/),
-  negative("invalid-native-promise-copy", "A spread of a promise, whose type excludes no host value, is refused (R8, COMPILER-API.md); the copy, with no native identity, would own no `then` either",
+  gap("invalid-native-promise-copy", "a spread of a promise stops at host exclusion (R8: a promise type excludes no host value) before the copy's native identity is tested; no source reaches that obligation, since a merge's result is a record clause (`MergeClause`)", "unverified", "search",
     /No rule derives this merge/),
   negative("invalid-native-promise-catch-record", "Native catch re-adopts a fulfilled record which may acquire a callable then"),
   gap("invalid-native-promise-catch-record-explicit", "The explicit rejection result's native payload obligation is blocked by method-instance recognition",
