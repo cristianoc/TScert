@@ -85,8 +85,8 @@ case**. Writing $`\gamma`$ for the values a cell set names,
 v\in⟦A⟧_n(W)\ \Longrightarrow\ v\in\gamma(C(A)),
 ```
 
-and on primitive shapes the converse holds for a type with no `top` or
-`source` clause: a literal clause holds its value at every level and world, a
+and on primitive shapes the converse holds for a plain type (every label a
+clause row) with no `top` or `source` clause: a literal clause holds its value at every level and world, a
 family every value of its shape. The string case of both directions is proved
 (`str_excluded`, `str_included`); the other primitive shapes follow by the
 same case analysis on the clause (sketched).
@@ -106,8 +106,13 @@ A **selection rule** is a decidable test $`\mathsf{excl}(a,b)`$ on a source
 clause and a target clause, read from their syntax, with a **selection
 lemma**: no sound table derives $`a\sqsubseteq b`$ when $`\mathsf{excl}(a,b)`$.
 A table is **sound** when each of its pairs is an inclusion,
-$`\Delta(A,B)\Rightarrow⟦A⟧_n(W)\subseteq⟦B⟧_n(W)`$ for every $`n,W`$; every
-table the checker accepts is sound (`family_sound`, `checkStructural_sound`).
+$`\Delta(A,B)\Rightarrow⟦A⟧_n(W)\subseteq⟦B⟧_n(W)`$ for every $`n,W`$. A table
+the checker accepts is sound under its entry's hypotheses: `family_sound`
+discharges the entry's variable, lookup and known-arrow obligations, and
+coverage reads its premises through the premise relation `Prem` (table rows,
+`Var`, `Inst`, `TabRen`), not through table membership alone. The selection
+lemmas below take a sound relation as a premise, so they apply to whatever
+relation coverage reads once that relation is shown sound.
 The rules of a catalogue combine by disjunction, and the **candidates** of a
 source clause are the target clauses no rule excludes:
 
@@ -133,20 +138,24 @@ pairs:
   abstract model of the table check; for the Lean checker it is the
   monotonicity of `List.any` over a sublist). A wrong exclusion costs
   coverage, never soundness.
-- **Completeness relative to the general rule: proved in the abstract model,
-  open for `checkEntries`.** In the model a table is a set of pairs, a pair
-  is covered when each source clause has a covering target clause whose
-  premises are read in the table, and a covering reads only its own demand
-  pairs. If every table the full check accepts is sound and each rule has its
-  selection lemma, the two checks accept the same tables (`valid'_of_valid`),
-  and a valid table restricted to the pairs reachable through candidates
-  stays valid (`valid'_within`). So a pair is in some table the full check
-  accepts exactly when it is in one the restricted check accepts. Open:
-  instantiating the model with `checkEntries` (its premise relation `Prem`,
-  the `Var` and `Inst` premises, the opaque-row conditions), and whether the
-  search's growth and fuel budgets can refuse under one and not the other:
-  the restricted search visits a subset of the pairs, but growth detection
-  depends on the order pairs are added.
+- **Completeness relative to the general rule: proved conditionally in an
+  abstract model, open for the checker.** In the model a table is a set of
+  pairs, a pair is covered when each source clause has a covering target
+  clause whose premises are read in the table, and a covering reads only its
+  own demand pairs. Under two hypotheses, that every table the full check
+  accepts is sound and that each rule has its selection lemma, the two checks
+  accept the same tables (`valid'_of_valid`); under two more, locality of a
+  covering in its demand pairs and closure of the reachable set, a valid table
+  restricted to the pairs reachable through candidates stays valid
+  (`valid'_within`). Closing the gap for the checker needs:
+  - selection for the hypothesis-dependent premise relation `Prem` that
+    coverage reads, rather than for table membership;
+  - preservation of the dependencies through `TabRen`, `Inst` and `Var`, the
+    opaque-row conditions and the arrow evidence;
+  - proofs of the locality and reachability closure `valid'_within` assumes;
+  - for budgeted search, a simulation of growth detection, insertion order
+    and fuel, or a narrower guarantee: the restricted search falls back to the
+    general one wherever it refuses.
 - **Fallback:** a clause no rule applies to keeps every target clause as a
   candidate, which is the general rule.
 
@@ -192,9 +201,9 @@ its status. The coverage columns are [measured](#5-measurement).
 
 - **Eligible:** a record source with an entry at a key the record target
   fixes at a plain type.
-- **Excludes** $`b`$ when $`b`$ fixes $`f`$ at $`B_f`$, the source has an
-  entry at $`f`$, and every source entry $`(f{:}A)`$ has a literal
-  $`\ell\in L(A)`$ with $`\ell\notin\gamma(C(B_f))`$.
+- **Excludes** $`b`$ when $`b`$ fixes $`f`$ at a plain $`B_f`$, the source has
+  an entry at $`f`$, and every source entry $`(f{:}A)`$ has its own literal
+  $`\ell_A\in L(A)`$ with $`\ell_A\notin\gamma(C(B_f))`$.
 - **Lemma 3 (proved, `refs_exclude`, `fields_exclude`, `views_exclude`):** let
   $`\Delta`$ be sound and the target fix $`f`$ at $`B`$ (in $`\varphi'`$, or
   in $`\psi'`$ with $`f\ne\mathtt{length}`$); if some $`n,W,v`$ has
@@ -205,22 +214,27 @@ its status. The coverage columns are [measured](#5-measurement).
   \Delta;S\nvdash\mathsf{Ref}(\Phi;\psi;\ldots)\sqsubseteq\mathsf{Ref}(\varphi';\psi';\ldots).
   ```
 
-  The literal instance is `refs_exclude_lit` (proved): every source entry at
-  $`f`$ holds $`\mathsf{strLit}\,s`$ and no clause of the plain type $`B`$
-  admits $`s`$. The lemma is about the field types, so it carries no level or
-  heap premise, unlike separation (Lemma 7). The same argument covers `dict`
-  and `callable` targets, which reach the same field and view conditions, and
-  number, boolean and bigint literals (sketched). A source whose entries fix
-  $`f`$ at two different literals excludes nothing, which is sound.
+  The literal form the exclusion uses is `refs_exclude_lits` (proved): each
+  source entry at $`f`$ holds some $`\mathsf{strLit}\,s_A`$ that no clause of
+  the plain type $`B`$ admits; whichever entry coverage selects supplies its
+  own counterexample. The lemma is about the field types, so it carries no
+  level or heap premise, unlike separation (Lemma 7). It is a coverage
+  exclusion, not a disjointness of meanings. For `dict` and `callable`
+  targets, which reach the same field and view conditions, and for number,
+  boolean and bigint literals, the argument is the same (sketched; each needs
+  its own proof). Entries at `"x"` and `"y"` exclude a target fixing `"z"`, and
+  exclude no target admitting `"x"` or `"y"`.
 
 ### R4. Required keys
 
 - **Eligible:** a record (or dictionary, or callable) source and target.
 - **Excludes** $`b`$ when $`b`$ fixes a key at which the source has no field
   and no view.
-- **Lemma 4 (proved, `refs_exclude_absent`):** a record target fixing $`f`$ is
-  covered only by a source holding a field or a view at $`f`$, whatever the
-  table. This is where a Term arm meets an array arm: an array holds no
+- **Lemma 4 (proved for records, `refs_exclude_absent`):** a record target
+  fixing $`f`$ is covered by a record source only if the source holds a field
+  or a view at $`f`$, whatever the table. The dictionary and callable cases
+  reach the same field and view conditions and need their own proofs
+  (sketched). This is where a Term arm meets an array arm: an array holds no
   `kind`, and a Term arm holds no store.
 
 ### R5. The dictionary bound
@@ -229,9 +243,10 @@ its status. The coverage columns are [measured](#5-measurement).
 - **Excludes** $`b`$ when the source has no own-key bound listing its keys
   ($`\mathsf{among}`$) without the prototype key.
 - **Lemma 5 (proved, `dict_needs_among`):** coverage of a dictionary by a
-  record needs such a bound (`CoversKeys`). An array's bound excludes keys
-  instead, so no dictionary covers an array, and `Json`'s object arm is no
-  candidate for an array.
+  record needs such a bound (`CoversKeys`), a necessary condition of the rule,
+  not a disjointness of meanings. An array clause's bound excludes keys, so a
+  dictionary covers no array clause without a further qualifying
+  $`\mathsf{among}`$ bound, and `Json`'s object arm is then no candidate.
 
 ### R6. Decomposition of a source spanning cells
 
@@ -388,9 +403,11 @@ and in checking alike. Each line records:
   of the comparison containing them (exclusive time);
 - the outer shapes and arm counts of the root source and target, with a mark
   for parameter, scheme or meet rows;
-- for the table: its rows, the source clauses, the clause pairs the general
-  rule considers, and the candidates under R1–R3, R1–R4 and R1–R5, by the
-  class of each row's target (one clause, record union, union of one
+- for the table: its rows, the source clauses, and the **clause pairs**: for
+  each row, its enumerated source clauses (`sourceClauses` and `meetSources`)
+  times its target clauses, the pairs the general coverage test may examine;
+  and the candidates among them under R1–R3, R1–R4 and R1–R5, by the class of
+  each row's target (one clause, record union, union of one
   primitive shape, mixed, universe, rows);
 - for each source clause keeping more than one candidate, its **fallback
   reason**: a universe target, several arms of one non-object shape, a record
@@ -398,10 +415,19 @@ and in checking alike. Each line records:
   candidates' kinds), a target arm not fixing the source's literal keys, or
   candidates sharing the source's literal.
 
-The candidates are computed beside the general rule, which still decides:
-the mode changes no result. Checked on 2026-10-18: all 1,518 pipeline cases
-keep their expected outcome with the mode on and off, and the decoders'
-evidence is byte-identical with and without it. The mode is a scratch patch
+The clause pairs are hypothetical: the coverage test stops at the first
+covering clause, `demandPairs` enumerates sources differently, and validation
+can regrow a table after discovering known members, so the counts are neither
+predicate executions nor generated dependencies. The candidates are computed
+beside the general rule, which still decides. Tested on 2026-10-18: all 1,518
+pipeline cases keep their expected outcome with the mode on and off, and the
+decoders' evidence is byte-identical with and without it. That is result and
+evidence preservation on these inputs, not operational neutrality: the mode
+adds time, which can change an outcome at the 30 s limit, and a failed write
+of a line reruns the computation it timed. The timed regions omit other
+comparison paths (the preliminary label-inclusion check, instance search,
+the premise judgment), and a nested line's logging cost stays inside its
+parent's time. The mode is a scratch patch
 of `Types/PositiveCertificates.lean` with a new `Types/ComparisonProfile.lean`,
 outside the repository: its writer is an `implemented_by` replacement of a
 pure function inside the checker, which makes the compiled checker run code
@@ -433,38 +459,42 @@ and every top-level function of `tools/` and `dev/` sliced into its own file
 | `tools/` slices | 168 runs | 233,077 | 118.4 s | 1,696,484 | 181,523 | 142,450 | 118,521 |
 | `dev/` slices | 44 runs | 224,546 | 9.2 s | 271,842 | 135,780 | 134,412 | 134,364 |
 
-"Run" is the command's wall time, and for the census the number of verifier
-processes. "Grow and validate" is exclusive time summed over both kinds of line;
-clause pairs and candidates are the table growth's, summed over its rows (the
-validation reads the same tables).
+"Run" is the command's wall time in a separate run of the instrumented
+verifier, and for the census the number of verifier processes. "Grow and validate" is exclusive time summed over both kinds of line;
+clause pairs and candidates are counted on growth lines only, summed over
+their tables' rows; every count below uses that basis.
 
 ### 5.3 What the data shows
 
-- **The decoders' time is in this engine, and the catalogue reaches all of
-  it.** In `termsOf`'s search, growth and validation take 25.7 s of a 32.9 s
-  run. R1–R5 leave 40,151 of 473,597 clause pairs (a factor 11.8), and no
-  source clause with more than one candidate. Rows whose target is a record
-  union hold 819,766 of the pairs, and keep 54,360.
-- **Each rule contributes there.** R1–R3 take the pairs to 85,828; with R1–R3
-  alone, the costliest fallback is an array source against `Json`'s array and
-  object arms (4,922 source clauses, 24.0 s of attributed time), which R4 and
-  R5 remove.
-- **`statementsOnPath`'s time is elsewhere.** Its structural comparisons take
-  1.05 s of 23.6 s of search and 0.11 s of 13.6 s of checking. Its largest
-  tables compare a union of 348 number literals with one of 33 (125,892 clause
-  pairs, 248 candidates under R2), which R7 makes one set inclusion. Its
-  evidence is 108 MB, of which 19.8 MB are 482,498 `numLit` atoms; the
-  serialized `context` fields sum to 82.5 MB (a field nested inside another
-  counted in both).
+- **The decoders' time is mostly in this engine, and the catalogue removes
+  most of its clause pairs.** In `termsOf`'s search, growth and validation
+  take 25.7 s of a 32.9 s run. R1–R5 leave 40,151 of 473,597 clause pairs (a
+  factor 11.8), and every enumerated source clause of the recorded tables
+  keeps at most one candidate; opaque premises and the work outside these
+  tables are not counted. Rows whose target is a record union hold 409,883
+  of the pairs and keep 27,180.
+- **Each rule contributes there.** R1–R3 take the pairs to 85,828 and R4 to
+  58,830. In a run with R1–R4 only, every source clause keeping more than one
+  candidate was an array source against `Json`'s array and object arms (4,922
+  over growth and validation lines), which R5 removes.
+- **`statementsOnPath`'s timed comparisons are a small part of its run.** They
+  take 1.05 s of 23.6 s of search and 0.11 s of 13.6 s of checking. Its largest
+  tables compare a union of 348 number literals with one of 33 (62,946 clause
+  pairs in unions of one primitive shape, 124 candidates under R2), which R7
+  would make one set inclusion. Its evidence is 108 MB, of which 19.8 MB are
+  482,498 `numLit` atoms; the serialized `context` fields sum to 82.5 MB (a
+  field nested inside another counted in both). Contexts contain literals, so
+  the two sizes overlap and savings in them do not add. The size of the
+  representation is measured; that it causes the remaining run time is not.
 - **The census slices follow the decoders.** Over the `tools/` slices the
-  catalogue leaves 118,521 of 1,696,484 pairs (a factor 14); unions of string
-  literals hold 1,051,858 pairs and keep 9,644. The remaining fallbacks cost
-  little: candidates sharing a literal (176 source clauses, 0.34 s) and target
-  arms not fixing the source's literal keys (20, 0.16 s).
+  catalogue leaves 118,521 of 1,696,484 pairs (a factor 14); unions of one
+  primitive shape, mostly string literals, hold 525,929 pairs and keep 4,822.
+  98 source clauses keep more than one candidate: 88 whose candidates share
+  their literal and 10 with a target arm not fixing their literal keys.
 - **The pipeline cases are small.** They spend 16.0 s over 1,811 runs and
-  their tables have little union structure (a factor 1.6). Their costliest
-  fallback is a record source whose literal keys a candidate arm does not fix
-  (4,038 source clauses, 4.2 s attributed).
+  their tables have little union structure (a factor 1.6). Of their 2,395
+  source clauses keeping more than one candidate, 2,019 meet a target arm not
+  fixing their literal keys.
 - **Comparisons repeat.** Lines with the same shape signature (kind,
   result, root shapes, row and pair counts) recur within a run: `termsOf`'s
   search has 23,790 lines and 377 signatures, the repeats taking 24.8 s of its
@@ -472,22 +502,26 @@ validation reads the same tables).
   A signature is a proxy: different types with equal counts share one, so
   these numbers bound the repetition from above.
 
-What the data does not show: the time the rules would save. A candidate
-removed is a pair the engine does not examine and whose demand pairs it does
-not grow, but the time per pair varies, and the restricted tables would have
-fewer rows than the tables measured here.
+What the data does not show: the time the rules would save. A factor 11.8 in
+candidates is no prediction of a factor 11.8 in time: the time per pair
+varies, the coverage test stops at its first success, building the index
+costs time, and the restricted tables would have other rows than those
+measured here. The profile ranks fallback reasons by count; the time of the
+comparisons containing a reason bounds what removing it could save, and is
+not time spent on those pairs.
 
 ## 6. Candidates the data names
 
-1. **Reuse of established comparisons across a run** (open, a new kind of
-   rule). The signature counts suggest that most of the decoders' comparison
-   time repeats comparisons already made. The engine's cache lives within one
-   comparison request. Reusing an established inclusion across requests is
-   sound wherever the result means the same inclusion: every structural
-   result holds at every parameter assignment (`compareUsing_sound`). The
-   proxy must first be replaced by a measurement of identity (each line
-   carrying its labels), and transport of a result across a growing equation
-   store needs its own lemma.
+1. **Reuse of established comparisons within a run** (open, a new kind of
+   rule). The signature counts suggest that much of the decoders' comparison
+   time repeats comparisons, but a signature is no identity. The engine's
+   cache lives within one comparison request. Reusing an established
+   inclusion across requests of one run is sound wherever the result means
+   the same inclusion: a structural result holds at every parameter
+   assignment (`compareUsing_sound`). First the identity of a comparison must
+   be measured, which needs the labels together with the graph, the
+   assignment and the checker context the result was read in; transport of a
+   result across a growing equation store needs its own lemma.
 2. **Compact cell sets, R7** (specified). The `statementsOnPath` evidence and
    its number-literal tables are what R7 represents as one atom.
 3. **Open target arms** (open). In the pipeline cases, a record source whose
@@ -512,10 +546,12 @@ The measured bulk is in the second part. In `statementsOnPath`'s 108 MB,
 the 7,016 `flsLit` and 7,004 `ifFalse` certificates are one per literal of a
 `kind` tested against a constant ([a measured slice](COMPILER-API.md#a-measured-slice)),
 and the `numLit` atoms are 19.8 MB (§5.3). The selection rules do not change
-these; R7 does, by making a test one node with two slices and a kind set one
-atom. A kind set or a context repeated across nodes is a candidate for
-sharing, a field of the one declared evidence type under the
-[wire conventions](../CLAUDE.md#conventions).
+these. R7, making a test one node with two slices and a kind set one atom,
+and sharing a kind set or context repeated across nodes, as a field of the
+one declared evidence type under the [wire conventions](../CLAUDE.md#conventions),
+are experiments: their effect on time is to be measured by phase (derivation
+construction, refinement, serialization, parsing, checking, allocation),
+with unique and repeated contexts and sets counted.
 
 ## 8. Prior work
 
@@ -553,40 +589,45 @@ sharing, a field of the one declared evidence type under the
   once per node. [Garrigue 1998](REFERENCES.md#garrigue-1998) gives polymorphic
   variants a structural subtyping that is tag-directed: a source tag is
   compared with the one target tag of its name, and tags are disjoint by
-  construction. R3 is that rule with the tag replaced by a record
-  discriminant, whose disjointness its lemma derives from the field contracts
-  instead of assuming it.
+  construction. R3 is that rule's selection with the tag replaced by a
+  record discriminant. What R3 proves is a coverage exclusion, from the field
+  types; disjointness of the arms' meanings holds only as Lemma 7 states it,
+  at a successor level under a heap satisfying the world.
 
 ## 9. A measured plan
 
-The steps are for the owner to choose; nothing here is built.
+The steps are for the owner to choose; nothing here is built. In order:
 
-1. **Identity in the instrumentation.** Each line carries its compared
-   labels, so repetition (§6.1) is measured exactly; the mode moves outside
-   the checker's proof scope (§5.1).
-2. **R1–R5 in the structural engine.** Lean only, no wire change, no new
-   clause: the lemmas of §3 move into `Types/`; one function computes
+1. **Measurement attribution and proof scopes** (this document).
+2. **R1–R5 as the decoder slice.** Lean only, no wire change, no new clause:
+   the lemmas of §3 move into `Types/`; one function computes
    $`\mathsf{cand}_B(a)`$ and serves `demandPairs`, `coveredIn`, the table
    growth's coverage test and `checkEntries`, so search and checking share the
-   reduced work. Soundness is the sublist monotonicity of §2.2; completeness is
-   tested by every pipeline case keeping its outcome. Measure, against the
-   same commit without the rules, on `termsOf`, the `tools/` slices and the
-   series of $`n`$ record arms narrowed by `kind` (1.2 s at 20 arms, 9.4 s at
-   50, over 30 s at 100; [arms per unit](COMPILER-API.md#arms-per-unit)): the
-   instrumentation's counts, search and check time, and the fallback ranking.
-3. **R7 and R6.** The kind-set atom and its string analogue, with the
-   decomposition. Measure `statementsOnPath` at 347 literals against the
-   4-literal cut (1.2 s, 0.3 s, 2.9 MB), with evidence bytes by component.
+   reduced work. Soundness is the sublist monotonicity of §2.2. Every pipeline
+   case keeping its outcome is regression evidence; completeness for the
+   checker is the open bridge of §2.2, and where the restricted search
+   refuses, the general search runs. Benchmark against the same commit
+   without the rules on `termsOf`, the `tools/` slices and the series of
+   $`n`$ record arms narrowed by `kind` (1.2 s at 20 arms, 9.4 s at 50, over
+   30 s at 100; [arms per unit](COMPILER-API.md#arms-per-unit)), including the
+   index construction and the dependencies actually not generated.
+3. **R7, R6 and evidence sharing for `statementsOnPath`.** The kind-set atom
+   and its string analogue, with the decomposition, measured at 347 literals
+   against the 4-literal cut (1.2 s, 0.3 s, 2.9 MB) with phase timings and
+   unique against repeated contexts and sets.
+4. **Exact comparison identity, then reuse within a run.** Each profile line
+   carries its comparison's identity (§6.1) before memoization is ranked; the
+   profiling moves outside the checker's proof scope (§5.1).
 
 ## Lean
 
 Proved outside the repository against the library at commit 84b326a, each
 depending on no axiom beyond `propext`, `Classical.choice` and `Quot.sound`:
 `covers_shape` (Lemma 1), `str_excluded` and `str_included` (§1.3),
-`views_exclude`, `fields_exclude`, `refs_exclude`, `refs_exclude_lit`
-(Lemma 3), `refs_exclude_absent` (Lemma 4), `dict_needs_among` (Lemma 5),
+`views_exclude`, `fields_exclude`, `refs_exclude`, `refs_exclude_lit`,
+`refs_exclude_lits` (Lemma 3), `refs_exclude_absent` (Lemma 4), `dict_needs_among` (Lemma 5),
 `separation` (Lemma 7), `numSlice_sound` and `numSlice_exact` (R7), and
-`valid_of_valid'`, `valid'_of_valid` and `valid'_within` (§2.2, an abstract
-model). The library's own: `semWithArgs_shape`, `meet_sound`,
+`valid_of_valid'`, `valid'_of_valid` and `valid'_within` (§2.2, conditional
+lemmas about an abstract model). The library's own: `semWithArgs_shape`, `meet_sound`,
 `sourceClause_sound`, `field_value`, `fieldSlice_sound`, `tagSlice_sound`,
 `checkStructural_sound`, `family_sound`, `compareUsing_sound`.

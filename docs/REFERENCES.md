@@ -310,8 +310,9 @@ of Standard ML (Revised).* MIT Press, 1997.
 
 **Used for** tagged sums: a datatype's constructors are generative, so values
 of different constructors are disjoint by construction, and case analysis
-selects a branch by constructor. A record discriminant's disjointness is
-derived from field contracts instead.
+selects a branch by constructor. A record discriminant gives a coverage
+exclusion from its field types, and disjointness of meanings only at a
+successor level under a heap satisfying the world.
 **Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
 
 ### Maranget 2008
@@ -331,8 +332,8 @@ Workshop on ML, 1998.
 
 **Used for** tag-directed structural subtyping of variant types: a source tag
 is compared with the one target tag of its name, tags disjoint by
-construction. The literal-discriminant rule is that rule with the tag a
-record field whose disjointness its lemma proves.
+construction. The literal-discriminant rule is that rule's selection with the
+tag a record field; its lemma proves a coverage exclusion, not disjointness.
 **Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
 
 ## JavaScript and ECMAScript
