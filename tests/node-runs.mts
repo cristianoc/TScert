@@ -277,6 +277,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   // popping the array `map` reads leaves a hole below the result's length.
   assert.equal(runImporting("certified-value-import", `JSON.stringify([doubled([1, 2]), labels([1, -1]), tallies([5, 6], [])])`),
     '[[2,4],["positive","other"],[1,2]]', "certified-value-import: the results are dense");
+  assert.equal(runImporting("certified-mts-value-import", "JSON.stringify(doubled([1, 2]))"), "[2,4]",
+    "certified-mts-value-import: the result is dense");
   assert.equal(runImporting("invalid-certified-write-value-import", "((r) => Object.keys(r).length)(zeros([1, 2, 3]))"), 2,
     "invalid-certified-write-value-import: the result has three positions, two present");
   assert.equal(runImporting("invalid-node-exec-stdout-ignored", `run(["-e", ""])`), null,

@@ -108,6 +108,8 @@ export const cases: Case[] = [
     /source expression obligation at \[473,504\): evidence search failed: no derivation of its return-contract claim/),
   { ...positive("certified-value-import", "imported functions of a module the gate admits are read at the footprints their own units' certificates state, one calling a function of its module: the `map` callbacks calling them are preserving and the results are dense"),
     project: "pipeline/imports-project" },
+  { ...positive("certified-mts-value-import", "an imported function of a `.mts` module is a certified import: the `map` callback calling it is preserving and the result is dense"),
+    project: "pipeline/imports-project" },
   { ...negative("invalid-certified-write-value-import", "an imported function popping its array is certified with the footprint letting the heap change: the `map` callback calling it on the mapped array is not preserving and the result is sparse",
     /source expression obligation at \[360,395\): evidence search failed: no derivation of its return-contract claim/),
     project: "pipeline/imports-project" },

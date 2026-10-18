@@ -1737,7 +1737,7 @@ function importedModules(importNodes: ImportDeclaration[], checker: Checker,
     if (location.startsWith("typescript/lib/") || location.startsWith("tscert/")) return [];
     if (root !== null) {
       const absolute = resolve(root, location);
-      return absolute.endsWith(".ts") && !absolute.endsWith(".d.ts") && !absolute.split("/").includes("node_modules")
+      return /\.[cm]?ts$/.test(absolute) && !/\.d\.[cm]?ts$/.test(absolute) && !absolute.split("/").includes("node_modules")
         ? [{ absolute, location }] : [];
     }
     const symbol = symbols[i];

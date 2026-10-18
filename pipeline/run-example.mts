@@ -2,7 +2,7 @@
 // checks, for the controls that compare a case's outcome with its execution.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
@@ -20,8 +20,10 @@ export const runImporting = (file: string, expression: string): unknown => {
   const out = mkdtempSync(join(tmpdir(), "imports-"));
   const project = join(here, "imports-project");
   const relink = (text: string): string => stripTypes(text).replace(/from "@fixture\/([\w-]+)"/g, 'from "./$1.mjs"');
-  for (const name of ["lib", "relay", "certified"])
-    writeFileSync(join(out, `${name}.mjs`), relink(readFileSync(join(project, `${name}.ts`), "utf8")));
+  for (const name of ["lib", "relay", "certified", "scaled"]) {
+    const ts = join(project, `${name}.ts`);
+    writeFileSync(join(out, `${name}.mjs`), relink(readFileSync(existsSync(ts) ? ts : join(project, `${name}.mts`), "utf8")));
+  }
   writeFileSync(join(out, "main.mjs"), `${relink(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))}
 console.log(JSON.stringify(${expression}));
 `);

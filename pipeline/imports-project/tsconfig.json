@@ -11,6 +11,7 @@
     "paths": {
       "@fixture/lib": ["./lib.ts"],
       "@fixture/certified": ["./certified.ts"],
+      "@fixture/scaled": ["./scaled.mts"],
       "@fixture/relay": ["./relay.ts"],
       "@fixture/whole": ["./whole.ts", "./defaulted.ts"],
       "@fixture/defaulted": ["./defaulted.ts"],
@@ -21,6 +22,7 @@
     "../examples/*value-import*.ts",
     "./lib.ts",
     "./certified.ts",
+    "./scaled.mts",
     "./relay.ts",
     "./whole.ts",
     "./defaulted.ts",
