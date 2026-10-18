@@ -145,7 +145,8 @@ graph request proves the enclosing execution safe at every assignment admitted
 by its source signature, including its descriptor contract when qualified. A
 unit whose declaration claims a footprint other than the one letting every
 location change, run as the code its graph describes, also returns with a heap
-its footprint relates to its entry heap.
+its footprint relates to its entry heap, and a value meeting its goal (a
+guard's or an assertion function's promise included).
 The graph is `Equations.graph` of the equations the extracted store presents,
 validated by `Equations.ofRaw` (`freezePlans`). -/
 theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
@@ -169,7 +170,7 @@ theorem checkJson_safe {ast claims evidence : Json} {fileKey : String}
           EnvOk (reassign F.equations.graph η) r.inputs (envOf L d) n W →
           WorldAdm W → HeapOk n W heap → (∀ v ∈ L, isVal v = true) → isVal d = true →
           HeapObservations.SafePostExc (excOf (reassign F.equations.graph η))
-            (meaning (reassign F.equations.graph η) r.result)
+            (ControlFlow.GoalHolds (reassign F.equations.graph η) r.goal (r.goal.argument (envOf L d)))
             (fun h' _ => r.footprint.Holds heap h') (fun h' => r.onThrow = true → r.footprint.Holds heap h')
             n W heap
             (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))

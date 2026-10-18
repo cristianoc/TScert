@@ -2754,6 +2754,15 @@ $`T`$:
      {\Gamma\vdash_R\ f(\vec a);\ S}\ \textsf{assert-call}
 ```
 
+A conditional expression narrows its first arm the same way, a closure the
+arm creates reading the actual at $`T`$ (`guard-ternary-closure`):
+
+```math
+\frac{\Gamma\vdash g : (\vec A)\to T\,[\mathsf{guards}\ p]\quad \Gamma\vdash \vec a : \vec A\quad
+      \Gamma[a_p : T]\vdash e_1 : B\quad \Gamma\vdash e_2 : B}
+     {\Gamma\vdash g(\vec a)\ ?\ e_1 : e_2 : B}\ \textsf{cond-guard}
+```
+
 A `false` outcome narrows nothing: the promise states nothing of it
 (`invalid-type-guard-false-branch`). Passing a guard where a plain predicate
 is expected forgets its promise signature, as an intersection's operand.

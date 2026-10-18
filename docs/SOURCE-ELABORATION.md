@@ -1342,16 +1342,20 @@ footprint $`\Phi`$ proposed for its signature (`footprint` in the
 [claims](SOURCE-CLAIMS.md)). The unit of a declaration claiming a footprint
 other than `all: any` is checked as a code entry's graph is: its nodes pure,
 or each node within $`\Phi`$ on normal return (`effectResult`, alongside
-ordinary safety), for a plain result under the ordinary checker. A node is
+ordinary safety), under the ordinary checker, at the unit's goal: a plain
+result, a guard's promise or an assertion function's. A node is
 within $`\Phi`$ as an inspection, which preserves the heap; as a write of a
 field every alternative of the object's type gives a type of source values,
 within `{value: any, store: keep}` since the location holds a value
 (`ExpressionEffects.write_within`); or as a fixed call at a selected signature
 whose footprint is within $`\Phi`$. Runs within a closed footprint compose
-(`Closed.Holds.trans`), so the graph is (`GraphCode.goto_bounded`). A guard,
-an assertion function and a unit qualified by a resolution descriptor are
-refused such a claim. A code entry's signature follows the same rule
-(`GraphCode.effectCheckedResult`). With $`P`$ the unit's graph, $`\Gamma`$ its
+(`Closed.Holds.trans`), so the graph is (`GraphCode.goto_bounded`), its
+return meeting the goal. A guard's or an assertion function's promise
+signature states its footprint beside the promise (`moduleArrow`;
+`guard-footprint`, `invalid-guard-footprint`). A unit qualified by a
+resolution descriptor is refused such a claim. A code entry's signature
+follows the same rule (`GraphCode.effectCheckedResult`), a guard closure
+claiming no footprint. With $`P`$ the unit's graph, $`\Gamma`$ its
 inputs and $`B`$ its result,
 
 ```math
@@ -1361,7 +1365,8 @@ inputs and $`B`$ its result,
 
 and `SourceClaimJson.checkJson_safe` states, for each such unit, that its
 graph run as code from inputs it admits returns with a heap its claimed
-footprint relates to its entry heap (`SourceExtraction.checkRequests_footprint_at`).
+footprint relates to its entry heap, and a value meeting its goal
+(`SourceExtraction.checkRequests_footprint_at`).
 Every other unit reads the declaration at its annotation's signature stating
 that effect, its variadic extension included (`moduleArrow`), as it reads the
 declaration's ordinary signature: that each declaration meets the signature

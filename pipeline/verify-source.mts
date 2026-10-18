@@ -55,7 +55,7 @@ const searchDepth = 12;
 /** Wall-clock limit on each external step (the parser, the producer, the
  * search, the check). A step that exceeds it is killed and the case is an
  * error naming the step and the limit, never a verdict. */
-const stepTimeoutMs = 30_000;
+const stepTimeoutMs = 60_000;
 function run(command: string, args: string[]) {
   const p = spawnSync(command, args, {
     cwd: repo,

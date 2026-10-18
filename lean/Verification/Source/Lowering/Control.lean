@@ -126,17 +126,17 @@ singleton `single` names (`conditionSingletons`) leaves its operand that value
 alone, which `tagMember` checks on the edge. -/
 @[nospecialize] def conditionContext (G : PositiveGraphs.NormalGraph ι) (scope : List (ScopeBinding ι)) (Γ : List (Ty ι))
     (cond : Fragment.Expr) (answer : Bool) (arrays : Option (Ty ι) := none)
-    (single : Tag → Option ι := fun _ => none) : List (Ty ι) :=
+    (single : Tag → Option ι := fun _ => none) (original : String → String := id) : List (Ty ι) :=
   match cond with
-  | .not _ e => conditionContext G scope Γ e (!answer) arrays single
+  | .not _ e => conditionContext G scope Γ e (!answer) arrays single original
   | .logical _ andOp left right =>
     if answer == andOp then
-      conditionContext G scope (conditionContext G scope Γ left answer arrays single) right answer arrays single
+      conditionContext G scope (conditionContext G scope Γ left answer arrays single original) right answer arrays single original
     else
-      joinContexts Γ (conditionContext G scope Γ left answer arrays single)
-        (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single) right answer arrays single)
+      joinContexts Γ (conditionContext G scope Γ left answer arrays single original)
+        (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single original) right answer arrays single original)
   | _ =>
-    if let (true, some (j, T)) := (answer, promiseNarrowing G scope Γ false cond) then Γ.set j T
+    if let (true, some (j, T)) := (answer, promiseNarrowing G scope Γ false cond original) then Γ.set j T
     else if let some (i, tag, equal) := conditionTag G scope Γ cond then
       match tag, answer == equal, arrays with
       | .isArray, true, some R => Γ.set i (arrayRefine G (Γ[i]?.getD []) R)

@@ -2850,7 +2850,10 @@ The supported answers are the nullish exclusions and the tag atoms. A cell
 fact's atoms are alternatives: the value meets one of them. An observation
 that the value answers $`\tau`$ with $`q`$ is a conjunct, so it is a separate
 fact $`x.f\mapsto[\mathsf{tag}\,\tau\,q]`$, never an atom appended to a
-list: two failed tests are two facts, both of which hold. A dispatch on a
+list: two failed tests are two facts, both of which hold. A string
+equality's `true` answer leaves the one string, whatever else the value's
+type holds: its fact is $`x.f\mapsto[\mathsf{strLit}\,s]`$ (`observedAtoms`;
+`field-equality-union`, `invalid-field-equality-call`). A dispatch on a
 value read from $`x.f`$ whose slice no primitive predicate states records it
 through the read's link (`observeTyped`), beside `nonNullish` where the slice
 is of objects. A claim that $`x.f`$ holds a type $`A`$ at a point asserts
