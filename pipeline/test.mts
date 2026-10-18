@@ -1919,6 +1919,33 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // An element write is within `{value: any, store: keep}` at a required
+  // position of its store's tuple contract, and within
+  // `{value: any, store: grow}` elsewhere: `setSecond` writes a pair's second
+  // position, `setThird` a triple's optional one. Claimed `keep` at the
+  // required position, the claims are certified; claimed `keep` at the
+  // optional one, or the empty footprint at the required one, refused where
+  // evidence is produced and where the honest evidence is checked.
+  const artifacts = run("map-stable-element-write");
+  const forge = (name: string, footprint: ClosedFootprint): string => {
+    const claims = readClaims(artifacts);
+    must(claims.functions.find(f => f.name === name), `${name}'s claims`).footprint = footprint;
+    return writeClaims(artifacts, `forged-element-write-${name}-${footprint.value}-${footprint.store}`, claims);
+  };
+  const kept = forge("setSecond", { value: "any", store: "keep" });
+  const accepted = produceWith(artifacts, kept, "forged-element-write-kept");
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  for (const [name, footprint] of [["setThird", { value: "any", store: "keep" }],
+      ["setSecond", emptyFootprint]] as const) {
+    const input = forge(name, footprint);
+    const refusal = `the footprint claimed for '${name}' is not established by its body`;
+    refusedAt(artifacts, input, `forged-element-write-${name}`, refusal);
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  }
+  process.stdout.write("element writes: keep at a required position certified, keep at an optional one and the empty footprint refused in search and in checking\n");
+}
+
+{
   // A footprint check that runs out of subtype rounds is inconclusive, not a
   // refusal: `marks` claims the empty footprint, and with one round the
   // checks of its graph exhaust. Search and checking report exhaustion, never

@@ -755,10 +755,8 @@ importer again, and the import is read at its ordinary signature. The final chec
 `checkJson` call over the whole document. Dense `map` needs a callback
 footprint that keeps dense prefixes
 ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
-`record-render`'s `parseRecord` is proposed at `{value: any, store: any}`:
-`parseTrailers`, which it calls, writes a tuple's element, which no
-footprint below the one letting every location change bounds
-([footprints](../WORK.md#footprints)).
+`record-render`'s `parseRecord` is proposed and certified at
+`{value: any, store: grow}`, in that set.
 
 **What the theorem states.** `SourceClaimJson.checkJson_safe` states, for
 the importer's document, what it states today, and the same of each module

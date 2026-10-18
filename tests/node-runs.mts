@@ -30,6 +30,12 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   for (const [file, call, expected] of [
     ["map-stable-local-counter", `lengths(["ab", "c"])`, "[2,1]"],
     ["map-stable-push", "twice([1, 2])", "[[1,1],[2,2]]"],
+    ["map-stable-element-write", `relabel(["a", "b"], ["p", "q"])`, '["p","p"]'],
+    ["map-stable-element-write", "extend([1, 2], [5, 6])", "[6,7]"],
+    ["map-stable-element-write", `firsts(["a", "b"])`, '["a","b"]'],
+    ["map-stable-element-write", `appendAll([["k", ""]], ["a", "b"])`, "[1,1]"],
+    ["map-stable-element-write", `seconds(["a", "b"], ["p", "q"])`, "[0,0]"],
+    ["map-stable-element-write", "thirds([1, 2], [5, 6])", "[0,0]"],
     ["map-stable-helper", `counts(["ab", "c"])`, "[2,1]"],
     ["map-stable-outer-cell", "runningTotals([1, 2, 3])", "[1,3,6]"],
     ["map-stable-for-of", "doubled([[1, 2], [3]])", "[[2,4],[6]]"],

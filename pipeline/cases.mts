@@ -421,6 +421,7 @@ export const cases: Case[] = [
   { file: "invalid-function-fields-inferred", area: "row a fresh callable given a field `name`: a function owns `name` unwritable, so JavaScript's copy throws; refused whether the type arguments are written or inferred",
     kind: "negative", status: "unsupported", phase: "source", diagnostic: /special function properties are outside callable initialization/ },
   positive("map-stable-local-counter", "a `map` callback counting in a loop over its own local slots: every node is within `{value: any, store: keep}`, so the result is dense"),
+  positive("map-stable-element-write", "`map` callbacks and declarations writing an array's element at a literal index (a pair's, a tuple's optional position, the mapped array's first, a nested pair's by compound assignment): within `{value: any, store: grow}`, which keeps every dense prefix, so the results are dense"),
   positive("map-stable-push", "a `map` callback pushing onto an array: `push` grows a store, within `{value: any, store: grow}`, which keeps every dense prefix, so the result is dense"),
   positive("map-stable-helper", "a `map` callback calling a declaration whose body counts in a loop: the declaration's checked footprint is consumed at the call"),
   positive("map-stable-outer-cell", "a `map` callback writing a counter of the enclosing function: a write of a cell holding a number is within `{value: any, store: keep}`"),

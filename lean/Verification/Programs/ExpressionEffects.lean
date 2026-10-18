@@ -167,7 +167,7 @@ theorem sourceField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
 
 /-- A write of a field of the object in a slot whose type gives it a type of
 source values: it changes one location, which holds a value, not a store. -/
-def writeWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
+def fieldWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
   match HeapExpressionRules.writeSlots t with
   | some (f, i, k) => Footprints.Closed.le ⟨.any, .keep⟩ Φ && decide (k < Γ.length) && match Γ[i]? with
     | some Ref => sourceField G (expand G Ref) f
@@ -175,11 +175,11 @@ def writeWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed
   | none => false
 
 /-- **A typed field write is within `{value: any, store: keep}`.** -/
-theorem write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
-    (hc : writeWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : fieldWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
     SafePost Ξ T (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
-  unfold writeWithin at hc
+  unfold fieldWriteWithin at hc
   split at hc
   case h_2 => contradiction
   rename_i f i k hw
@@ -1008,12 +1008,12 @@ theorem sound_exc {G : NormalGraph ι} {Γ t A ρ n W h}
 
 /-- A typed write raises, where it does, before it writes: at its entry
 heap. -/
-theorem write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
-    (hc : writeWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+theorem field_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : fieldWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
     SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
-  have hpost := write_within hc he hh hs
-  unfold writeWithin at hc
+  have hpost := field_write_within hc he hh hs
+  unfold fieldWriteWithin at hc
   split at hc
   case h_2 => contradiction
   rename_i f i k hw
@@ -1041,6 +1041,386 @@ theorem write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W
           · exact absurd hr (val_not_thrown rfl)
           · exact False.elim (value_no_step rfl step')
   · contradiction
+
+/-! ### Element writes
+
+`o[b] = v` lowers to one node: the store `o` holds at its store field, the
+value written at index `b` (`setElem`), and the store it yields put back.
+At a listed index the element's location takes the value and the store is
+unchanged; at a hole or past the end a fresh location is listed. Either way
+every old dense prefix stays and no old location is newly listed: within
+`{value: any, store: grow}`, and `{value: any, store: keep}` where the
+index is a required position of the store's tuple contract
+(FOOTPRINTS.md, "Element writes"). -/
+
+/-- The slots of an element write: the object's, its store field, the index
+and the written value's. -/
+def elemWriteSlots : Tm → Option (PropKey × Nat × UInt64 × Nat)
+  | .writeAt f (.var i) (.setElem (.readAt f' (.var i')) (.num b) (.var k)) =>
+    if f' = f ∧ i' = i then some (f, i, b, k) else none
+  | _ => none
+
+theorem elemWriteSlots_eq {t f i b k} (h : elemWriteSlots t = some (f, i, b, k)) :
+    t = .writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k)) := by
+  unfold elemWriteSlots at h
+  split at h
+  · rename_i f₀ i₀ f' i' b₀ k₀
+    split at h
+    · rename_i hc
+      obtain ⟨rfl, rfl⟩ := hc
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl, rfl, rfl⟩ := h
+      rfl
+    · contradiction
+  · contradiction
+
+/-- A store type whose position `idx` holds source values, a required one
+where `present` asks for it. -/
+def storeTy (G : NormalGraph ι) (L : Ty ι) (idx : Nat) (present : Bool) : Bool :=
+  match expand G L with
+  | [.list T []] =>
+    (match positionTy T idx with
+     | some A => sourceTy G A
+     | none => false) && (!present || decide (idx < T.required.length))
+  | _ => false
+
+/-- Every alternative is a record whose first invariant operand has the field
+`fld`, at a store type `storeTy` accepts in each. -/
+def storeField (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey)
+    (idx : Nat) (present : Bool) : Bool :=
+  !cs.isEmpty && cs.all fun c => match HeapExpressionRules.clauseBagOperand c with
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeTy G p.2 idx present)
+    | none => false
+
+theorem storeField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld idx present n W v}
+    (hr : storeField G (expand G Ref) fld idx present = true) (hv : meaning G Ref n W v) :
+    ∃ B L, (fld, L) ∈ B ∧ storeTy G L idx present = true ∧
+      bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
+  simp only [storeField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at hr
+  have hp : G.plainTy Ref = true := by
+    obtain ⟨c, hc⟩ := List.exists_mem_of_ne_nil _ hr.1
+    exact plain_of_mem_expand (c := c) hc
+  obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
+  have hb := hr.2 c hm
+  cases c <;> simp only [HeapExpressionRules.clauseBagOperand] at hb
+  all_goals try contradiction
+  all_goals
+    simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
+      decide_eq_false_iff_not] at hb
+    obtain ⟨hany, hall⟩ := hb
+    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
+    simp only [decide_eq_true_eq] at hg
+    subst hg
+    have hsrc : storeTy G El idx present = true := (hall _ hmem).resolve_left (by simp)
+  · exact ⟨_, El, hmem, hsrc, recT_bag hc.1.1⟩
+  · exact ⟨_, El, hmem, hsrc, hc.1.1.1⟩
+
+/-- A listed position of a store under a tuple contract has a location whose
+contract implies the position's family. -/
+theorem listT_slot {T : TupleF} {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i l : Nat} {A : Fam}
+    (h : listT T k W (.arr ls)) (hl : ls[i]? = some (some l)) (hA : positionFam T i = some A) :
+    ∃ c : Ctr k, lookup W l = some c ∧ ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val),
+      c j hj W' u → A j W' u := by
+  obtain ⟨ls', heq, -, -, -, hreq, hopt, hrest⟩ := h
+  cases heq
+  unfold positionFam at hA
+  split at hA
+  · rename_i A' hreq'
+    cases hA
+    obtain ⟨l', c, hl', hw, hag⟩ := hreq i _ hreq'
+    rw [hl] at hl'
+    cases hl'
+    exact ⟨c, hw, fun j hj W' u hu => (hag j hj W' u).1 hu⟩
+  · rename_i hnone
+    have hge : T.required.length ≤ i := List.getElem?_eq_none_iff.mp hnone
+    split at hA
+    · rename_i A' hopt'
+      cases hA
+      have hk : T.required.length + (i - T.required.length) = i := by omega
+      obtain ⟨c, hw, hag⟩ := hopt (i - T.required.length) _ l hopt' (by rw [hk]; exact hl)
+      exact ⟨c, hw, fun j hj W' u hu => (hag j hj W' u).1 hu⟩
+    · split at hA
+      · rename_i hle
+        obtain ⟨E, c, hE, hw, hag⟩ := hrest i l hle hl
+        rw [hE] at hA
+        cases hA
+        exact ⟨c, hw, fun j hj W' u hu => (hag j hj W' u).1 hu⟩
+      · contradiction
+
+/-- A padded write keeps every dense prefix. -/
+theorem placeAt_dense {ls : List (Option Nat)} {k l n : Nat} (h : Footprints.DensePrefix n ls) :
+    Footprints.DensePrefix n (placeAt ls k l) := by
+  obtain ⟨hlen, hp⟩ := h
+  refine ⟨?_, fun i hi => ?_⟩
+  · simp only [placeAt, List.length_set, List.length_append, List.length_replicate]; omega
+  · simp only [placeAt]
+    by_cases hik : k = i
+    · subst hik
+      rw [List.getElem?_set_self (by simp; omega)]
+      simp
+    · rw [List.getElem?_set_ne hik, List.getElem?_append_left (by omega)]
+      exact hp i hi
+
+/-- A padded write lists, beside the old locations, only the one it writes. -/
+theorem placeAt_mem {ls : List (Option Nat)} {k l x : Nat} (hm : some x ∈ placeAt ls k l) :
+    some x ∈ ls ∨ x = l := by
+  simp only [placeAt] at hm
+  rcases List.mem_or_eq_of_mem_set hm with hm | hm
+  · rcases List.mem_append.mp hm with hm | hm
+    · exact .inl hm
+    · simp [List.mem_replicate] at hm
+  · exact .inr (Option.some.inj hm)
+
+/-- The heap after a write at a listed location of the store at `fl`, that
+store put back. -/
+theorem elem_present_holds {h : Heap} {l fl : Nat} {v u : Val} {ls : List (Option Nat)}
+    (hfl : h[fl]? = some (.arr ls)) (hl : h[l]? = some u) (hu : Footprints.isArr u = false) :
+    Footprints.Closed.Holds ⟨.any, .keep⟩ h ((h.set l v).set fl (.arr ls)) := by
+  rw [Footprints.Closed.holds_iff]
+  refine ⟨by simp, fun l' w hw => ?_⟩
+  by_cases hf : l' = fl
+  · subst hf
+    rw [hfl] at hw; cases hw
+    refine ⟨.arr ls, ?_, ?_⟩
+    · rw [List.getElem?_set_self]; simp only [List.length_set]
+      exact (List.getElem?_eq_some_iff.mp hfl).1
+    · simp [Footprints.Closed.at, Footprints.isArr, Footprints.Change.Holds]
+  · by_cases hll : l' = l
+    · subst hll
+      rw [hl] at hw; cases hw
+      refine ⟨v, ?_, ?_⟩
+      · rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_set_self (List.getElem?_eq_some_iff.mp hl).1]
+      · simp [Footprints.Closed.at, hu, Footprints.Change.Holds]
+    · refine ⟨w, ?_, Footprints.Change.Holds.refl _ _ _⟩
+      rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_set_ne (Ne.symm hll), hw]
+
+/-- The heap after a write taking a fresh location, the store recording it
+put back. -/
+theorem elem_grow_holds {h : Heap} {fl k : Nat} {v : Val} {ls : List (Option Nat)}
+    (hfl : h[fl]? = some (.arr ls)) :
+    Footprints.Closed.Holds ⟨.any, .grow⟩ h ((h ++ [v]).set fl (.arr (placeAt ls k h.length))) := by
+  rw [Footprints.Closed.holds_iff]
+  have hflt := (List.getElem?_eq_some_iff.mp hfl).1
+  refine ⟨by simp, fun l' w hw => ?_⟩
+  have hlt := (List.getElem?_eq_some_iff.mp hw).1
+  by_cases hf : l' = fl
+  · subst hf
+    rw [hfl] at hw; cases hw
+    refine ⟨.arr (placeAt ls k h.length), ?_, ?_⟩
+    · rw [List.getElem?_set_self (by simp; omega)]
+    · simp only [Footprints.Closed.at, Footprints.isArr, if_true]
+      exact .inr ⟨ls, _, rfl, rfl, fun n hd => placeAt_dense hd,
+        fun x hx => (placeAt_mem hx).imp id (fun e => by omega)⟩
+  · refine ⟨w, ?_, Footprints.Change.Holds.refl _ _ _⟩
+    rw [List.getElem?_set_ne (Ne.symm hf), List.getElem?_append_left hlt, hw]
+
+
+theorem elem_read_inv {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCode} {oid : Nat} {b : UInt64}
+    {v : Tm} {h h' : Heap} {t : Tm} {fl : Nat} (hf : flds.lookup f = some fl)
+    (hs : Step h (.writeAt f (.objAt flds c oid) (.setElem (.readAt f (.objAt flds c oid)) (.num b) v)) h' t) :
+    ∃ u, h[fl]? = some u ∧ h = h' ∧ t = .writeAt f (.objAt flds c oid) (.setElem u (.num b) v) := by
+  cases hs with
+  | writeC1 s => exact False.elim (value_no_step rfl s)
+  | writeC2 _ s =>
+    cases s with
+    | setC1 s =>
+      cases s with
+      | readC s => exact False.elim (value_no_step rfl s)
+      | readField hf' hu => rw [hf] at hf'; cases hf'; exact ⟨_, hu, rfl, rfl⟩
+      | readProto hn _ _ => rw [hf] at hn; cases hn
+      | readMissing hn _ => rw [hf] at hn; cases hn
+    | setC2 hval _ => simp [isVal] at hval
+    | setC3 hval _ _ => simp [isVal] at hval
+  | writeField hval _ _ => simp [isVal] at hval
+
+theorem elem_set_inv {f : PropKey} {o u v : Tm} {b : UInt64} {h h' : Heap} {t : Tm}
+    (ho : isVal o = true) (hu : isVal u = true) (hv : isVal v = true)
+    (hs : Step h (.writeAt f o (.setElem u (.num b) v)) h' t) :
+    ∃ ls, u = .arr ls ∧
+      ((∃ l, elemLoc ls b = some l ∧ h' = h.set l v ∧ t = .writeAt f o (.arr ls)) ∨
+       (∃ k, indexOfBits b = some k ∧ elemLoc ls b = none ∧ h' = h ++ [v] ∧
+          t = .writeAt f o (.arr (placeAt ls k h.length)))) := by
+  cases hs with
+  | writeC1 s => exact False.elim (value_no_step ho s)
+  | writeC2 _ s =>
+    cases s with
+    | setC1 s => exact False.elim (value_no_step hu s)
+    | setC2 _ s => exact False.elim (value_no_step rfl s)
+    | setC3 _ _ s => exact False.elim (value_no_step hv s)
+    | setPresent _ hl _ => exact ⟨_, rfl, .inl ⟨_, hl, rfl, rfl⟩⟩
+    | setGrow _ hk hn => exact ⟨_, rfl, .inr ⟨_, hk, hn, rfl, rfl⟩⟩
+  | writeField hval _ _ => simp [isVal] at hval
+
+/-- A term writing a value into a field of a value raises nothing. -/
+theorem write_values_not_thrown {f : PropKey} {o u : Tm} {k W} (ho : isVal o = true) (hu : isVal u = true) :
+    ¬ Thrown Ξ k W (.writeAt f o u) := by
+  rintro ⟨_, hr, _⟩
+  cases hr with
+  | writeC1 r => rw [raises_not_val r] at ho; contradiction
+  | writeC2 _ r => rw [raises_not_val r] at hu; contradiction
+
+/-- The last step of an element write puts the store back; the heap it
+ends in is the one `P` holds of. -/
+theorem write_back_post {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCode} {oid fl : Nat}
+    {ls' : List (Option Nat)} {P : Heap → Prop} {T : Fam} {n U h2}
+    (hfd : flds.lookup f = some fl) (hq : P (h2.set fl (.arr ls')))
+    (hs : Safe Ξ T n U h2 (.writeAt f (.objAt flds c oid) (.arr ls'))) :
+    SafePostExc Ξ T (fun h' _ => P h') (fun h' => P h') n U h2 (.writeAt f (.objAt flds c oid) (.arr ls')) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rcases hs with (⟨hbad, _⟩ | hr) | ⟨U3, h3, t3, hx, hu, st, hh3, hs3⟩
+    · simp [isVal] at hbad
+    · exact absurd hr (write_values_not_thrown rfl rfl)
+    obtain ⟨flds', c', oid', l3, ho, hl3, -, rfl, rfl⟩ := HeapExpressionRules.write_inv rfl rfl st
+    cases ho
+    rw [hfd] at hl3; cases hl3
+    refine .inr ⟨U3, _, _, hx, hu, st, hh3, ?_⟩
+    cases n with
+    | zero => trivial
+    | succ m =>
+      rcases hs3 with (⟨hv, ht⟩ | hr) | ⟨_, _, _, _, _, st', _, _⟩
+      · exact .inl (.inl ⟨hv, ht, hq⟩)
+      · exact absurd hr (val_not_thrown rfl)
+      · exact False.elim (value_no_step rfl st')
+
+/-- **An element write is within its store's change**, `keep` at a required
+position and `grow` otherwise, on its normal return and where it raises. -/
+theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey} {i k : Nat}
+    {b : UInt64} {idx : Nat} {Ref : Ty ι} {present : Bool} {T : Fam} {ρ n W h}
+    (hk : k < Γ.length) (hi : Γ[i]? = some Ref) (hidx : indexOfBits b = some idx)
+    (hst : storeField G (expand G Ref) f idx present = true)
+    (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k))))) :
+    SafePostExc Ξ T (fun h' _ => Footprints.Closed.Holds ⟨.any, if present then .keep else .grow⟩ h h')
+      (fun h' => Footprints.Closed.Holds ⟨.any, if present then .keep else .grow⟩ h h') n W h
+      (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k)))) := by
+  have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
+  obtain ⟨B, L, hmem, hstore, hbag⟩ := storeField_sound hst (he.2 i Ref hi)
+  obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
+  obtain ⟨flds1, fl, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
+    recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
+  cases hproj
+  simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
+  rw [hl0] at hs ⊢
+  generalize hvk : ρ k = v at hs hvv ⊢
+  cases n with
+  | zero => trivial
+  | succ n1 =>
+  rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
+  · simp [isVal] at hbad
+  · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl _ _⟩)
+  obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfd step1
+  refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
+  cases n1 with
+  | zero => trivial
+  | succ n2 =>
+  -- The store field's contents meet its store type.
+  obtain ⟨u0, hu0, hcu⟩ := hh.2 fl cfl hlookup
+  rw [hfu] at hu0; cases hu0
+  have hmL : meaning G L 1 (trunc 1 (by omega) W) u := (hagree 1 (by omega) _ u).mp (hcu 1 (by omega))
+  have huv := (meaning_value hmL).1
+  rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
+  · simp [isVal] at hbad
+  · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl _ _⟩)
+  obtain ⟨ls, rfl, hcase⟩ := elem_set_inv rfl huv hvv step2
+  unfold storeTy at hstore
+  split at hstore
+  case h_2 => contradiction
+  rename_i Tup hexp
+  have hlist := (represents_raw (show Represents G L (.list Tup []) from hexp) 1 _ _ hmL).1
+  simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hstore
+  obtain ⟨hpos, hpresent⟩ := hstore
+  rcases hcase with ⟨l, hl, rfl, rfl⟩ | ⟨k', hk', hn, rfl, rfl⟩
+  · -- A listed position: its location held a source value, which is no store.
+    have hlk : ls[idx]? = some (some l) := by
+      simp only [elemLoc, hidx, Option.bind_some] at hl
+      cases hls : ls[idx]? with
+      | none => simp [hls] at hl
+      | some o => cases o with
+        | none => simp [hls] at hl
+        | some l' => simp [hls] at hl; subst hl; rfl
+    split at hpos
+    case h_2 => contradiction
+    rename_i A hA
+    obtain ⟨c', hc', himp⟩ := listT_slot hlist hlk
+      (by rw [ProgramTyping.positionFam_tupleFams, hA]; rfl)
+    obtain ⟨c, hc, rfl⟩ := lookup_trunc_inv _ W l c' hc'
+    obtain ⟨w, hw, hcw⟩ := hh.2 l c hc
+    have hmA : meaning G A 0 (trunc 0 (by omega) W) w := himp 0 (by omega) _ w (hcw 0 (by omega))
+    have hnarr : Footprints.isArr w = false := by
+      have := sourceTy_sound hpos hmA
+      cases w <;> simp_all [isSourceVal, Footprints.isArr]
+    refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
+    exact Footprints.Closed.Holds.mono (by cases present <;> rfl) (elem_present_holds hfu hw hnarr)
+  · -- A fresh location: a required position is listed, so the index is not one.
+    cases present with
+    | true =>
+      have hp : idx < Tup.required.length := by simpa using hpresent
+      obtain ⟨ls', heq, -, -, -, hreq, -, -⟩ := hlist
+      cases heq
+      obtain ⟨l, -, hl, -, -⟩ := hreq idx _ (by
+        simp only [PositiveNormalization.tupleFams, List.getElem?_map]
+        rw [List.getElem?_eq_getElem hp]; rfl)
+      simp [elemLoc, hidx, hl] at hn
+    | false =>
+      refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2, write_back_post hfd ?_ hs2⟩
+      exact elem_grow_holds hfu
+
+
+/-- An element write within `Φ`: at a store type whose position holds source
+values, `{value: any, store: keep}` at a required position, else
+`{value: any, store: grow}`. -/
+def elemWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
+  match elemWriteSlots t with
+  | some (f, i, b, k) => decide (k < Γ.length) && match Γ[i]?, indexOfBits b with
+    | some Ref, some idx =>
+      (storeField G (expand G Ref) f idx true && Footprints.Closed.le ⟨.any, .keep⟩ Φ) ||
+      (storeField G (expand G Ref) f idx false && Footprints.Closed.le ⟨.any, .grow⟩ Φ)
+    | _, _ => false
+  | none => false
+
+theorem elem_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : elemWriteWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
+  unfold elemWriteWithin at hc
+  split at hc
+  case h_2 => contradiction
+  rename_i f i b k hw
+  rw [elemWriteSlots_eq hw] at hs ⊢
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+  obtain ⟨hk, hsel⟩ := hc
+  split at hsel
+  · rename_i Ref idx hi hidx
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at hsel
+    rcases hsel with ⟨hst, hle⟩ | ⟨hst, hle⟩
+    · exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle hq)
+        (fun _ hq => Footprints.Closed.Holds.mono hle hq) (elem_write_core hk hi hidx hst he hh hs)
+    · exact SafePostExc.weaken (fun _ _ hq => Footprints.Closed.Holds.mono hle hq)
+        (fun _ hq => Footprints.Closed.Holds.mono hle hq) (elem_write_core hk hi hidx hst he hh hs)
+  · contradiction
+
+/-- A typed write within `Φ`: of a field holding a value, or of an element. -/
+def writeWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
+  fieldWriteWithin G Γ Φ t || elemWriteWithin G Γ Φ t
+
+/-- **A typed write is within its footprint**, where it raises too. -/
+theorem write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : writeWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
+  simp only [writeWithin, Bool.or_eq_true] at hc
+  rcases hc with hc | hc
+  · exact field_write_within_exc hc he hh hs
+  · exact elem_write_within_exc hc he hh hs
+
+theorem write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n W h}
+    (hc : writeWithin G Γ Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t) :=
+  SafePostExc.post (write_within_exc hc he hh hs)
 
 /-- The selected forms a throw postcondition is concluded for: an invocation
 or a construction at a fixed signature, through subsumption. -/
