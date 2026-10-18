@@ -11,6 +11,10 @@ open Semantic
 type binding = Value of ty | Storage of ty * ty | Local of ty * ty
 let binding_type = function Value t | Storage (_,t) | Local (_,t) -> t
 let cell contract = Storage (contract,contract)
+(* The module's cells (SOURCE-MODEL.md, "Module cells"), each at the contract
+   the initialization unit claims: a module function reads and writes one as
+   the cell it captures. *)
+let module_cells : (string * ty) list ref = ref []
 let lookup env name = match List.assoc_opt name env with
   | Some b -> b | None -> Json.fail ("unbound name " ^ name)
 let is_field n = String.contains n '\000'

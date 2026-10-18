@@ -330,7 +330,12 @@ units' theorems for a module execution, with the cell's contract as a
 shared invariant of the heap every write preserves, is
 [module composition](../WORK.md#module-composition). A `var`, whose binding
 exists from the module's entry at `undefined` and may be redeclared, and an
-exported `let`, a live binding importers read, are outside the fragment.
+exported `let`, a live binding importers read, are outside the fragment. A
+module `let` stays a cell whatever writes it, its stated type as an early
+binding's; a certified module's run checks the initialization that
+allocates and initializes its cells with the module's units
+(`module-cells`, `module-cell-before-initialization`, run under Node;
+`certified-module-cell-value-import`).
 
 A module function is an immutable slot holding its code. A file without
 imports or exports may run as a script, whose top-level functions are

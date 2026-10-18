@@ -83,7 +83,7 @@ private def pureOperand : Fragment.Expr → Bool
     let _ ← resolve scope name
     readSnapshot name fld
   | .var _ name => match resolve scope name with
-    | some (_, .cell ..) => some (localSnapshotName name)
+    | some (_, .cell ..) | some (_, .early ..) => some (localSnapshotName name)
     | _ => none
   | _ => none
 

@@ -1037,6 +1037,10 @@ function lowerFile(file: string, carriesContext: boolean,
   // Top-level code other than declarations: the module's initialization, run
   // once, in order, after its function declarations are instantiated.
   const initNodes: Statement[] = [];
+  // The names an export list exports (`export { x }`, `export { x as y }`).
+  const exportedNames = new Set<string>(source.statements.flatMap(st =>
+    ts.isExportDeclaration(st) && !st.moduleSpecifier && st.exportClause && ts.isNamedExports(st.exportClause)
+      ? st.exportClause.elements.map(e => (e.propertyName ?? e.name).text) : []));
   // The names ambient declarations bind, `declare function f`: values the
   // declaration graph reads at their declared types.
   const ambientNames: Identifier[] = [];
@@ -1124,10 +1128,24 @@ function lowerFile(file: string, carriesContext: boolean,
       }
     }
     else if (ts.isVariableStatement(s)) {
-      // A module constant is read by functions at its annotation. Module
-      // storage that functions could write is not yet in the fragment.
-      if (!(s.declarationList.flags & ts.NodeFlags.Const))
-        gate.fail(s, "a module-level `let` or `var` is outside the fragment");
+      // A module constant is read by functions at its annotation. A module
+      // `let` the module does not export is a module cell (SOURCE-MODEL.md,
+      // "Module cells"): an early binding of the module's scope, whatever
+      // its mentions. A `var`, and an exported `let`, a live binding an
+      // importer reads, are outside the fragment.
+      const list = s.declarationList;
+      if (!(list.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let)))
+        gate.fail(s, "a module-level `var` is outside the fragment");
+      if (list.flags & ts.NodeFlags.Let) {
+        if (s.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword))
+          gate.fail(s, "an exported `let` is a live binding importers read, outside the fragment");
+        for (const d of list.declarations) {
+          if (!ts.isIdentifier(d.name)) return gate.fail(d, "a module-level `let` pattern is outside the fragment");
+          if (exportedNames.has(d.name.text))
+            gate.fail(d, "an exported `let` is a live binding importers read, outside the fragment");
+          gate.earlyDecls.add(d);
+        }
+      }
       initNodes.push(s);
     }
     else
@@ -1297,6 +1315,9 @@ function lowerFile(file: string, carriesContext: boolean,
     // initialization (`markEarly`, by spelling here) throws through
     // `%ThrowUninitialized%` where a checked access finds it so.
     if (ts.isBlock(node) && earlyCandidate(node)) add(throwUninitializedName);
+    // A module `let` is a module cell, every mention a checked access.
+    if (ts.isVariableStatement(node) && node.parent && ts.isSourceFile(node.parent) &&
+        node.declarationList.flags & ts.NodeFlags.Let) add(throwUninitializedName);
     if (ts.isForOfStatement(node)) add(iterateName);
     if (ts.isForInStatement(node))
       add(...(forInEntryReads(node).length ? [iterateForInName] : [forInName, iterateName]));

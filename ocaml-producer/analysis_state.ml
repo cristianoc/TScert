@@ -83,6 +83,13 @@ let create diagnostics flows offered declarations module_functions arities bound
   let env0 = List.map (fun (n,t) ->
     n,if List.exists (assigns n) f.body then (if in_cell n then cell t else Local (t,arms declarations t))
       else Value (arms declarations t)) f.params in
+  (* A module function holds each module cell its body mentions. *)
+  let rec mentions n (e:Source.expr) = (match e.node with
+    | Id m | Assign (m,_) | NullishAssign (m,_,_) -> m = n
+    | _ -> false) || List.exists (mentions n) (Source.children e) in
+  let env0 = if f.name = "" then env0 else env0 @ List.filter_map (fun (n,t) ->
+    if List.exists (fun s -> List.exists (mentions n) (Source.statement_children s)) f.body
+    then Some (n,cell t) else None) !module_cells in
   { diagnostics; flows; offered; declarations; module_functions; arities; assumed; env0;
     executions; expression_hints; rigid_bounds=ref bounds;
     resolution_parameters = !resolution_parameters; writes=ref []; uses=ref [];

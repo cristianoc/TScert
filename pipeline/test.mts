@@ -321,6 +321,24 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // `%ThrowUninitialized%`.
   assert.ok(!readFileSync(join(run("early-property-spelling"), "fragment.json"), "utf8").includes("%ThrowUninitialized%"),
     "early-property-spelling: the intrinsic listed without an early binding");
+  // A module cell's one contract is the initialization unit's: dropped, the
+  // initialization and every unit reading the cell are refused; narrowed
+  // below the annotation, refused.
+  {
+    const cells = run("module-cells");
+    const claims = readClaims(cells);
+    const init = must(claims.init, "module-cells' initialization claims");
+    init.contracts = init.contracts.filter(c => c.name !== "count");
+    const path = writeClaims(cells, "module-cell-no-contract", claims);
+    refusedAt(cells, path, "module-cell-no-contract", "count");
+    invoke(path, join(cells, "evidence.json"), cells);
+    const narrowed = readClaims(cells);
+    const ninit = must(narrowed.init, "module-cells' initialization claims");
+    for (const c of ninit.contracts) if (c.name === "count") c.type = [rowOf(narrowed, { numLit: { bits: "0" } })];
+    const npath = writeClaims(cells, "module-cell-narrow-contract", narrowed);
+    refusedAt(cells, npath, "module-cell-narrow-contract", "claimed storage contract differs from the source annotation for 'count'");
+    invoke(npath, join(cells, "evidence.json"), cells);
+  }
   process.stdout.write("forged early bindings: a dropped or narrowed contract, a literal's contract unlike its annotations and a narrowed checked access refused; the intrinsic listed exactly\n");
 }
 {

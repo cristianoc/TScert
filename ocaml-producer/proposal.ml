@@ -210,5 +210,14 @@ and infer_assuming ?(thrown=[]) ~state flows program assumed =
         | None -> Proposal_diagnostics.unsupported ("module constant " ^ n ^ " has no claimed initializer")))
       bindings
     | _ -> []) program.Source.init in
+  (* The module's cells, at the contracts the initialization unit claims. *)
+  Environment.module_cells := List.concat_map (fun (s:Source.stmt) -> match s.statement with
+    | Declare (true,bindings) -> List.filter_map (fun (n,_,(e:expr)) ->
+        if not (Hashtbl.mem Source.early_bindings (n,e.pos)) then None else
+        match Option.bind init (fun (c:function_claim) ->
+          List.find_opt (fun (x:contract) -> x.pos = e.pos && x.name = n) c.contracts) with
+        | Some x -> Some (n,x.type_)
+        | None -> Proposal_diagnostics.unsupported ("module cell " ^ n ^ " has no claimed contract")) bindings
+    | _ -> []) program.Source.init;
   {program;init;functions=List.map (infer_with (module_functions @ module_constants))
     program.Source.functions}

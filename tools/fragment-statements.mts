@@ -1074,7 +1074,9 @@ export function declarations(this: Gate, list: ts.VariableDeclarationList, at: N
   // A `let` statement whose bindings are all initialized and nothing
   // assigns is a `const`: each binding holds its initial value throughout,
   // so reading it reads that value, as a `const`'s read does.
-  const mutable = !(list.flags & ts.NodeFlags.Const) && !(ts.isVariableStatement(at) && gate.neverAssigned(list));
+  // A module `let` stays one, a module cell, whatever writes it.
+  const moduleLet = !(list.flags & ts.NodeFlags.Const) && ts.isVariableStatement(at) && !!at.parent && ts.isSourceFile(at.parent);
+  const mutable = moduleLet || (!(list.flags & ts.NodeFlags.Const) && !(ts.isVariableStatement(at) && gate.neverAssigned(list)));
   const kindWord = mutable ? "let" : "const";
   if (
     list.declarations.some(

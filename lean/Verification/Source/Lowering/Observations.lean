@@ -237,20 +237,31 @@ must follow from the stable storage contract; no claim is silently dropped. -/
   let vars := (fc.envs.lookup pos).getD []
   scope.zipIdx.foldlM (fun facts (b,i) => do
     let mut facts := facts
-    if let .cell contract reference := b.storage then
+    let cellOf : Option (Ty Tree × Ty Tree) ← match b.storage with
+      | .cell contract reference => pure (some (contract, reference))
+      -- An early binding's claim describes its contents once initialized:
+      -- a claim narrower than the contract is a fact, which excludes the
+      -- marker, and every incoming edge proves it.
+      | .early stored reference => pure (some (← initializedContract stored, reference))
+      | _ => pure none
+    if let some (contract, reference) := cellOf then
       let some candidate := vars.lookup b.source.name
         | throw s!"missing claimed binding '{b.source.name}' at {pos}"
       let A ← SourceClaims.resolve (← table) candidate
       let G := SourceTypes.graph (← table)
+      let early := match b.storage with | .early .. => true | _ => false
       if contract.all A.contains then
-        persistentObservation b.source (pos,pos+1) reference valueField A
+        -- An early cell's contents may still be the marker: no observation.
+        if !early then persistentObservation b.source (pos,pos+1) reference valueField A
       else
         match HeapKnowledge.atoms G A with
         | some atoms => facts := facts ++ [⟨i,atoms,valueField⟩]
         | none =>
           match HeapExpressionRules.nullishAtoms G A with
           | some atoms => facts := facts ++ [⟨i,atoms,valueField⟩]
-          | none => persistentObservation b.source (pos,pos+1) reference valueField A
+          | none =>
+            if early then throw s!"the claim for the early binding '{b.source.name}' at {pos} is no primitive fact of its contents"
+            persistentObservation b.source (pos,pos+1) reference valueField A
     match cs.lookup b.source.name with
     | none => return facts
     | some asserted =>
