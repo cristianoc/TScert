@@ -37,6 +37,11 @@ composition, including its output heap knowledge. -/
 structure Checker [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) where
   run : Sequent ι → Knowledge → StepEvidence ι →
     (CodeEntry ι → Bool) → CheckResult ι Knowledge
+  /-- Search's choice of a step for a derivation search built itself: `run`,
+  or a variant taking that derivation as given. Untrusted: the final check
+  runs `run`. -/
+  select : Sequent ι → Knowledge → StepEvidence ι →
+    (CodeEntry ι → Bool) → CheckResult ι Knowledge := run
   sound : ∀ {j k e out codes}, (run j k e codes).value = some out →
     CodesSound G codes → ∀ {ρ n W h},
     EnvOk G j.context ρ n W → HeapKnowledge.Holds k ρ h →
@@ -1048,37 +1053,50 @@ theorem writeSlots_eq {t f i v} (h : writeSlots t = some (f, i, v)) :
   unfold writeSlots at h
   split at h <;> simp_all
 
+/-- An expression's derivation checked, or, where `tree` is false, taken as
+given: search selects a step for a derivation it built itself, which the
+final check validates. -/
+@[nospecialize] def treeChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (e : ProgramCertificates.Evidence ι) (codes : CodeEntry ι → Bool) (tree : Bool) :
+    ProgramCertificates.CheckResult ι Unit :=
+  if tree then checkTreeResult G images e codes else pure ()
+
+@[simp] theorem treeChecked_true [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (e : ProgramCertificates.Evidence ι) (codes : CodeEntry ι → Bool) :
+    treeChecked G images e codes true = checkTreeResult G images e codes := rfl
+
 /-- A typed expression establishes an output only when its metadata checks pass. -/
 @[nospecialize] def checkedOutput [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (e : ProgramCertificates.Evidence ι) (metadata : Bool) (out : Knowledge)
-    (codes : CodeEntry ι → Bool := fun _ => false) : ProgramCertificates.CheckResult ι Knowledge :=
-  (CheckResult.ofBool metadata).bind fun _ => (checkTreeResult G images e codes).map fun _ => out
+    (codes : CodeEntry ι → Bool := fun _ => false) (tree : Bool := true) : ProgramCertificates.CheckResult ι Knowledge :=
+  (CheckResult.ofBool metadata).bind fun _ => (treeChecked G images e codes tree).map fun _ => out
 
 theorem checkedOutput_value [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (e : ProgramCertificates.Evidence ι) (metadata : Bool) (out : Knowledge) (codes : CodeEntry ι → Bool) :
     (checkedOutput G images e metadata out codes).value =
       if metadata && checkTreeUsing G images e codes then some out else none := by
-  rw [checkedOutput, CheckResult.value_bind_const, CheckResult.accepted_ofBool, CheckResult.value_map_const]
+  rw [checkedOutput, treeChecked_true, CheckResult.value_bind_const, CheckResult.accepted_ofBool,
+    CheckResult.value_map_const]
   cases metadata <;> simp [checkTreeUsing]
 
 /-- The successful result is the guaranteed postcondition in the result-pushed
 frame. Subtype comparisons retain unfinished work through the step validation. -/
 @[nospecialize] def checkStepResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
     (k : Knowledge) (step : StepEvidence ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) : ProgramCertificates.CheckResult ι Knowledge :=
+    (codes : CodeEntry ι → Bool := fun _ => false) (tree : Bool := true) : ProgramCertificates.CheckResult ι Knowledge :=
   match step with
   | .ordinary e =>
     checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true))
-      (ordinaryOutput k) codes
+      (ordinaryOutput k) codes tree
   | .pure e =>
     checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
-      pureTerm j.term = true)) (pureOutput G j.context k j.term) codes
+      pureTerm j.term = true)) (pureOutput G j.context k j.term) codes tree
   | .reading e =>
     checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
-      readTerm j.term = true)) (HeapKnowledge.shift k) codes
+      readTerm j.term = true)) (HeapKnowledge.shift k) codes tree
   | .created e =>
     (CheckResult.ofBool (decide (claim e = j ∧ checkScope j.context.length j.term = true))).bind fun _ =>
-    (checkTreeResult G images e codes).bind fun _ =>
+    (treeChecked G images e codes tree).bind fun _ =>
       CheckResult.fromOption (match j.term with
         | .makeFn (.graph _ _ _ _ _ _ _) .nul => some (HeapKnowledge.shift k)
         | _ => none)
@@ -1086,9 +1104,9 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     match readSlot j.term with
     | some (fld, i') =>
       (checkedOutput G images e (decide (claim e = j ∧ i' = i ∧
-        (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld))) (readFrame k i fld) codes).orElse fun _ =>
+        (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld))) (readFrame k i fld) codes tree).orElse fun _ =>
         checkedOutput G images e (decide (claim e = j ∧ i' = i ∧
-          (j.context[i]?).any (fun Ref => optionalOperand (expand G Ref) fld))) (readFrame k i fld true)
+          (j.context[i]?).any (fun Ref => optionalOperand (expand G Ref) fld))) (readFrame k i fld true) (fun _ => false) tree
     | none => failure
   | .observedRead i R =>
     CheckResult.fromOption (match readSlot j.term with
@@ -1102,7 +1120,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
       (CheckResult.ofBool (decide ((claim e).context = j.context ∧ (claim e).term = j.term ∧ i' = i ∧
         (j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld || optionalOperand (expand G Ref) fld) ∧
         (k.cells.any fun f => f.slot == i && f.field == fld && f.contents.all (·.answers tag q))))).bind fun _ =>
-      (checkTreeResult G images e codes).bind fun _ =>
+      (treeChecked G images e codes tree).bind fun _ =>
       (BranchRefinement.checkObservedSubResult G images (claim e).type j.type (.tag tag q) p).map
         fun _ => readFrame k i fld (!(j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld))
     | none => failure
@@ -1115,23 +1133,23 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     | some slots =>
       checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
         (slots.map Prod.fst).Nodup ∧ ∀ p ∈ slots, p.2 < j.context.length))
-        (allocOutput k (allocationFacts G j.context k slots) (contractFields G j.context) (slots.map Prod.fst)) codes
+        (allocOutput k (allocationFacts G j.context k slots) (contractFields G j.context) (slots.map Prod.fst)) codes tree
     | none =>
       match mergeSlots j.term with
       | some (_, a, b) =>
         checkedOutput G images e (decide (claim e = j ∧ a < j.context.length ∧ b < j.context.length))
-          (allocOutput k [] (contractFields G j.context) (namedKeys G j.type)) codes
+          (allocOutput k [] (contractFields G j.context) (namedKeys G j.type)) codes tree
       | none =>
         match storeSlots j.term with
         | some slots =>
           checkedOutput G images e (decide (claim e = j ∧ ∀ i ∈ slots, i < j.context.length))
-            (HeapKnowledge.shift k) codes
+            (HeapKnowledge.shift k) codes tree
         | none => failure
   | .written i v R e =>
     match writeSlots j.term with
     | some (fld, i', v') =>
       checkedOutput G images e (decide (claim e = j ∧ i' = i ∧ v' = v ∧ i < j.context.length ∧
-        v < j.context.length ∧ valuesAt G j.context k v = R)) (writeOutput k i fld R) codes
+        v < j.context.length ∧ valuesAt G j.context k v = R)) (writeOutput k i fld R) codes tree
     | none => failure
 
 @[nospecialize] def checkStepUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
@@ -1458,6 +1476,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
 @[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) : Checker G images where
   run := fun j k e codes => checkStepResult G images j k e codes
+  select := fun j k e codes => checkStepResult G images j k e codes (tree := false)
   sound := by
     intro j k e out codes hc hcodes ρ n W h he hk hw hh
     exact checkStep_sound hc hcodes he hk hw hh

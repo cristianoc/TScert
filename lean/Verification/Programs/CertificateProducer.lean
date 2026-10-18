@@ -473,6 +473,12 @@ only a body check that admits those aliases accepts. -/
         (ProgramCertificates.renameTy aliases A)
   return .node ⟨(claim e).context, (claim e).term, A⟩ (.sub p) [e]
 
+/-- A subsumption step to `A` by a comparison already made: `p` compares
+`e`'s type to `A`, as `coerce` would compare them again. -/
+def coerceBy [DecidableEq ι] (p : PositiveCertificates.SubtypeChoices ι) (e : ProgramCertificates.Evidence ι) (A : Ty ι) :
+    ProgramCertificates.Evidence ι :=
+  if (claim e).type = A then e else .node ⟨(claim e).context, (claim e).term, A⟩ (.sub p) [e]
+
 instance [DecidableEq ι] (G : NormalGraph ι) (B : Ty ι) (tag : Tag) (q : Bool) :
     Decidable (Answers G B tag q) := by unfold Answers; infer_instance
 
@@ -598,17 +604,17 @@ came from a different context. No execution budget is inspected. -/
         candidates.findCheck? fun c => match c with
         | .inl p => do
           if args.length > p.arguments.length || !p.effect.plain then none else do
-          let _ ← subtypeUsing G images p.result A
+          let sub ← subtypeUsing G images p.result A
           let ef ← recur Γ f F
           let eas ← (args.zip p.arguments).mapM fun (a,D) => recur Γ a D
           let eus ← (p.arguments.drop args.length).mapM fun D => recur Γ .undef D
-          coerce G images aliases (.node ⟨Γ,t,p.result⟩ (.construct p.effect) (ef :: eas ++ eus)) A
+          pure (coerceBy sub (.node ⟨Γ,t,p.result⟩ (.construct p.effect) (ef :: eas ++ eus)) A)
         -- A variadic construct signature: the fixed actuals at its
         -- parameters, then the further parts as a variadic call's.
         | .inr ⟨(), (Ps, P), B, effect⟩ => do
           let k := Ps.length
           if args.length < k || (flags.take k).any id || !effect.plain then none else do
-          let _ ← subtypeUsing G images B A
+          let sub ← subtypeUsing G images B A
           let ef ← recur Γ f F
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
           let parts := args.drop k
@@ -623,7 +629,7 @@ came from a different context. No execution budget is inspected. -/
               let [.pack T []] := expand G P | none
               parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩ (.constructRest k partFlags P) (ef :: eas ++ eps)
-          (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
+          (checkTreeResult G images e).map fun _ => coerceBy sub e A
     -- `.bind`'s forwarding descriptor: a leaf whose checker reads the saved
     -- slots from the context; the claimed type, or a pool type, is its result.
     | .makeAt (.bound (.var _) (.var _) _) [] [] =>
@@ -671,7 +677,7 @@ came from a different context. No execution budget is inspected. -/
           let omitted := Ps.drop k
           let parts := args.drop k
           if !omitted.isEmpty && !parts.isEmpty then none else do
-          let _ ← subtypeUsing G images B A
+          let sub ← subtypeUsing G images B A
           let ef ← recur Γ f F
           let er ← recur Γ recv Rt
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
@@ -685,7 +691,7 @@ came from a different context. No execution budget is inspected. -/
               let ea ← ((Γ ++ pool).filter fun C => decide (PackedBy G C q)).findCheck? fun C => recur Γ a C
               let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
                 (.callPacked effect k q P) (ef :: er :: eas ++ [ea])
-              return ← (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
+              return ← (checkTreeResult G images e).map fun _ => coerceBy sub e A
           let eps ← if flags.any id then do
               let E ← restElem G P
               parts.mapM fun a => match a with
@@ -697,7 +703,7 @@ came from a different context. No execution budget is inspected. -/
               parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩
             (.callRest effect k omitted.length flags P) (ef :: er :: eas ++ eus ++ eps)
-          (checkTreeResult G images e).bind fun _ => coerce G images aliases e A
+          (checkTreeResult G images e).map fun _ => coerceBy sub e A
       let direct := fun (candidates : List (Ty ι)) => candidates.findCheck? fun F => do
         let (L,r) ← match expand G F with
           | [.arrs L _] => some (L,Rule.app)
@@ -709,12 +715,12 @@ came from a different context. No execution budget is inspected. -/
           -- remaining contract admits `undefined`, the value bound there.
           if args.length > p.arguments.length then none else do
             let omitted := p.arguments.drop args.length
-            let _ ← subtypeUsing G images p.result A
+            let sub ← subtypeUsing G images p.result A
             let ef ← recur Γ f F
             let er ← recur Γ recv p.receiver
             let eas ← (args.zip p.arguments).mapM fun (a,D) => recur Γ a D
             let eus ← omitted.mapM fun D => recur Γ .undef D
-            coerce G images aliases (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A
+            pure (coerceBy sub (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A)
       if let some e := variadic own <|> direct own <|> variadic pool <|> direct pool then return some e
       -- A callee or, for a method dispatched on its object, the receiver.
       return splitReceiver f <|> splitReceiver recv
@@ -751,10 +757,10 @@ came from a different context. No execution budget is inspected. -/
             (A :: pool).findCheck? fun U => do
               if expand G U != [.undef] then none else do
               let B := E ++ U
-              let _ ← subtypeUsing G images B A
+              let sub ← subtypeUsing G images B A
               let ea ← recur Γ a R
               let ek ← recur Γ key K
-              coerce G images aliases (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A
+              pure (coerceBy sub (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A)
     | .readAt f a =>
       let direct := pool.findCheck? fun R => do
         -- An invariant field reads at its contract; a view field at its bound;
@@ -784,9 +790,9 @@ came from a different context. No execution budget is inspected. -/
               pool.findSome? fun U =>
                 if expand G U == [.undef] then some (B ++ U, Rule.readDict K B U) else none
           | _ => none )
-        let _ ← subtypeUsing G images B A
+        let sub ← subtypeUsing G images B A
         let ea ← recur Γ a R
-        coerce G images aliases (.node ⟨Γ,t,B⟩ r [ea]) A
+        pure (coerceBy sub (.node ⟨Γ,t,B⟩ r [ea]) A)
       return direct.orElse fun _ => splitReceiver a
     | .writeAt f a b =>
       let direct := pool.findCheck? fun R => do
@@ -1153,7 +1159,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     | _ => pure ()
     choices := choices ++ [.created e,.pure e,.reading e,.ordinary e]
   for effect in choices do
-    let checked := checker.run j k effect codes
+    let checked := checker.select j k effect codes
     incomplete := incomplete <|> checked.exhaustion
     if let some out := checked.value then
       -- Effect evidence validates this header itself; an ordinary derivation
