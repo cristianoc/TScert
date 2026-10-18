@@ -344,7 +344,7 @@ Language Specification* as of this writing). Sections relied on by name:
   and [unsigned right shift](https://tc39.es/ecma262/#sec-unsigned-right-shift-operator)
   operators, [ToInt32](https://tc39.es/ecma262/#sec-toint32) and
   [ToUint32](https://tc39.es/ecma262/#sec-touint32); the array operations a
-  foreign array meets:
+  node list meets, and the own-key operations restricted on host values:
   [IsConcatSpreadable](https://tc39.es/ecma262/#sec-isconcatspreadable),
   [FlattenIntoArray](https://tc39.es/ecma262/#sec-flattenintoarray) and
   [EnumerateObjectProperties](https://tc39.es/ecma262/#sec-enumerate-object-properties);

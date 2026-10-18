@@ -257,22 +257,74 @@ objects have those prototypes, and it is preserved:
 - by the reading of stable members below, every type a host value can be
   given keeps its stable members unwritable.
 
-**Open: the own keys of host objects.** The model holds a record type's
-members as the object's own fields. A node's stable members are getters on
-its prototype, and its own enumerable keys are the class's data fields
-(`parent`, `view`, `index`, `_byteIndex`). So every operation that reads own
-keys answers otherwise for a host object than the model does: under Node,
-`{ ...node }` has `parent` and no `kind` (`tests/compiler-api.mts`). A
-stand-in host `Node` (`pipeline/host-fixture/`) shows the consequence: with
-`const { ...rest } = n`, `rest.kind` verifies at `number` and is `undefined`
-under Node. The forms are an object spread or rest of a host value,
-`Object.keys`, `Object.values`, `Object.entries` and `for…in` over one,
-`Object.assign` from one, `Object.hasOwn` and `hasOwnProperty`. Each must be
-refused where its operand's type may hold a host value, or read with the
-host value's own keys stated, and where a host value may be held at
-`unknown` or a record type the refusal reaches those types as well. The
-choice is the design's; the foreign-array question below is the same one
-for node lists.
+### Restricted values
+
+A **restricted value** is a value of a host type: a host object (a node, a
+type, a symbol, a checker, …) or a node list. The model reads a host object
+as a record whose stated members are readonly views
+([below](#stable-members-as-readonly-views)), and a node list as a dense
+readonly array of its elements ([node lists](#node-lists)), each interpreted
+by the existing record and array semantics. The runtime objects are not
+those: a node's stable members are getters on its prototype, a node list's
+indices are getters, and the own enumerable keys of both are the class's
+data fields (`parent`, `view`, `index`, `_byteIndex`; for a list `parent`,
+`view`, `sourceFile`, `_cursorIndex`, …). Under Node, `{ ...node }` has
+`parent` and no `kind` (`tests/compiler-api.mts`). The reading is faithful
+for a closed list of **admitted operations**, and for those alone.
+
+*Admitted operations.* On a host object: a read of a member its type
+states, by every read form (`o.m`, `o?.m`, `o["m"]`, a pattern's named
+key); a call of a member method its view or declaration states; `===`,
+`!==` and `typeof`; `"k" in o`, which the model answers by
+`%HasProperty%`, a Boolean that narrows nothing
+([guards](SOURCE-CONTRACTS.md#guards)); and passing it as a value (an
+argument, a result, an element, a field, a thrown value). On a node list,
+the operations of [its table](#node-lists), `Array.isArray`, `===` and
+`!==`, and passing it as a value. C4 runs every admitted operation on real
+host objects and node lists.
+
+*Restricted operations.* Every other operation whose answer depends on own
+keys, descriptors, prototypes or a node list's class: an object spread or
+rest of the value; `Object.keys`, `Object.values` and `Object.entries` of
+it; `for…in` over it; `Object.assign` from it or onto it; `Object.hasOwn`
+and `hasOwnProperty`; `Object.getOwnPropertyDescriptor` and its relatives;
+freezing, sealing and `Object.preventExtensions`; `structuredClone` and
+`JSON.stringify` of it; prototype reflection; a write or `delete` of a
+member; a node list's `at`; `concat` and `flat` with a node list as an
+operand or an element; and any operation the audit of the fragment
+classifies so. A restricted operation is refused wherever its operand may
+be a restricted value.
+
+*May be a restricted value.* Decided on the operand's type $`A`$ at the
+operation by a predicate the checker evaluates in Lean,
+$`\mathrm{excludesHost}(A)`$: every clause of $`A`$ is a primitive or a
+singleton of one, a function or construct signature, a record with an
+invariant field, a writable array or tuple, or a dictionary. A host type
+states no invariant field, no writable store and no index, and a host value
+meets none of these in a host-admissible world (T1). `unknown`, a type
+parameter, a readonly array or tuple, a record of readonly or optional
+fields only, and a union with such an arm may hold a restricted value. A type
+parameter is judged at its bound, since an instance lies within it. Because
+the predicate reads the operand's type where the operation is, it covers
+every path a restricted value takes to the operand: widening into `unknown`
+or a readonly record, the `Array.isArray` refinement (`readonly unknown[]`
+excludes nothing), generic substitution, a container's element or field, a
+callback's parameter, a caught value (`unknown`), and a separately verified
+function's parameter.
+
+*Lean.* The restricted operations are identified on the program graph by
+their term forms (an object's merge, `%Iterate:ForIn%`, the
+`Object.assign` forms) and by the declaration identities of the standard
+library values they call (`Object.keys`, `Object.values`,
+`Object.entries`, …). The checker requires $`\mathrm{excludesHost}`$ of the
+operand's claimed type at each, and a theorem states that every accepted
+program's restricted operations have such operands. The semantics is
+unchanged: every certified operation uses the existing array and record
+rules, and its agreement with the runtime objects is T4.
+
+Where the policy refuses an ordinary program (a spread of a readonly record
+that holds no host value, a `for…in` over a readonly array), the refusal is
+a coverage loss, recorded as such.
 
 ### Stable members as readonly views
 
@@ -489,7 +541,7 @@ declaration text it was reviewed against, and its reading as optional:
 `SourceFile`. A correction makes a field optional; it adds no field and
 narrows no type.
 
-## Node lists: a foreign-array interpretation
+## Node lists
 
 A source model array owns its store under `Array.prototype`
 ([arrays](SOURCE-MODEL.md#arrays)). A node list has its indices as getters
@@ -533,86 +585,34 @@ returning the memoized node; `ArraySpeciesCreate` reads `constructor`
 (`RemoteNodeList`) and its `Symbol.species` (`Array`); a callback can
 neither write the list (getters without setters) nor change $`n`$, so the
 algorithm visits the indices it read at entry; a callback's exception
-propagates out of the method; writes throw. Every other operation on a node
-list (`at`, `in`, `for…in`, `Object.keys`, an object spread and every other
-`Array.prototype` member) is refused at its use.
+propagates out of the method; writes throw. `"k" in l` is admitted as for
+any object: the model answers it by `%HasProperty%`, a Boolean that narrows
+nothing. Every other operation on a node list (`at`, `for…in`,
+`Object.keys`, an object spread and every other `Array.prototype` member) is
+a [restricted operation](#restricted-values).
 
-### One domain for ordinary and foreign arrays
+### Node lists in the model
 
-A node list reaches every position a value can: a separately verified
-function's `unknown` parameter, a type argument
-(`[a.statements, b.statements]`), a thrown value, a callback's result.
-Operations on ordinary values test for arrays: under Node,
-`[0].flatMap(() => list)` flattens the list into its nodes. So the
-interpretation extends the source model's meaning of arrays beyond the
-static type $`\mathsf{NodeList}`$:
+`NodeArray<T>` is read as `readonly T[]` with dense presence: a node list
+has $`n`$ elements and no hole. The model's value is an ordinary dense
+readonly array of the $`v_i`$, under `Array.prototype`'s contract, so the
+operations of the table are the existing readonly-array rules, and
+`Array.isArray` gives `true` as it does at run time. A node list is a
+restricted value ([restricted values](#restricted-values)): every operation
+on which it differs from such an array is a restricted operation, refused
+wherever an operand may be one, `unknown`, readonly arrays and readonly
+records included. The node list's own members (`pos`, `end`,
+`hasTrailingComma`, `transformFlags`) are not read.
 
-- *Domain.* An **array value** is an object for which `IsArray` holds. It
-  is an ordinary array (owning the store key, under `Array.prototype`) or a
-  **foreign array**: an object of a host list class with a length $`n`$ and
-  elements $`v_0,\ldots,v_{n-1}`$, both immutable (T4), whose element reads
-  are the table above and whose own keys are the class's fields.
-- *The array invariant* of `unknown` and of every record and dictionary
-  type ([the array invariant](SEMANTICS.md#the-array-invariant)) is: an
-  object for which `IsArray` holds is an ordinary array or a foreign array
-  of a listed host class.
-- *The array test.* `Array.isArray` refines `unknown` and record arms to
-  `readonly unknown[]`. A readonly array type `readonly T[]` admits foreign
-  arrays whose elements are in $`T`$, for the operations of the table:
-  length, index reads, iteration and the reading `Array.prototype` members.
-  A writable `T[]` admits ordinary arrays only.
-- *Operations consuming arbitrary values* that test `IsArray` or spread
-  (`flat`, `flatMap`, `concat` through `IsConcatSpreadable`,
-  `JSON.stringify`, `Array.from` and spread through the iterator) state
-  their result for a foreign array as for a dense array of its elements,
-  which is what the runtime gives for `flatMap`; `concat`, `flat` and
-  `JSON.stringify` are measured by the audit. Their contracts treat every
-  value of an array type as spread, and with this domain they treat a
-  foreign array the same way.
-- *Key enumeration* (`for…in`, `Object.keys`, `Object.entries`, an object
-  spread) of a value whose type admits arrays yields, for a foreign array,
-  the class's fields: on such a value the enumeration types keys as
-  `string` and values as `unknown`, or is refused, decided per operation
-  against the existing rules.
-
-Then $`\mathsf{NodeList}(T)\le\mathtt{readonly}\ T[\,]`$, and the operation
-table is the readonly-array contract restricted to what a foreign array is
-audited for; `at`, whose override gives `undefined` at a non-integer index,
-stays outside that contract until audited. The Lean obligations are the
-array invariant over the extended domain, the `isArray` refinement, and the
-readonly-array rules' soundness for foreign arrays.
-
-**Open: how the model represents a foreign array.** The text above fixes
-what a node list does, and leaves how the calculus states it. Two readings
-meet it, and they differ in where the evidence lies.
-
-- *A value form of its own.* The calculus gains foreign array objects: a
-  value form beside the ordinary array, step rules for its length, index
-  reads, iteration and each listed `Array.prototype` member, and those
-  members' overlay contracts restated for it. The Lean obligations above are
-  then theorems about that form, and the array invariant of `unknown` and of
-  every record type is restated over both forms. Every rule that reads an
-  array (element reads, `%Iterate%`, `%Spread:K%`, array patterns, the
-  conversion contract, `isArray`) needs its case for the new form.
-- *An ordinary readonly array in the model.* A node list is modeled as a
-  dense readonly array of its elements, as its admitted operations observe
-  it: length, index reads, iteration, the reading `Array.prototype`
-  members, `IsArray`, species. Each operation on which a node list differs
-  from such an array is refused wherever its operand's type admits a
-  readonly array or is `unknown`: own-key enumeration that types values by
-  the element type, `in` with an index key past the length. The model's
-  agreement with node lists is then T4, bound by a C4 run of every admitted
-  operation on real node lists; there is no new Lean obligation. The
-  difference in `at`'s answer at a non-integer index is within its
-  result type, `T | undefined`, either way.
-
-The second needs an audit of what the fragment admits today on readonly
-arrays and `unknown`. Probes (2026-10-17): an object spread of a
-`readonly number[]` is admitted, `{ ...xs }` with `o[0]` read at
-`number | undefined` verifies; on a node list the spread gives the class's
-fields (`parent`, `view`, …) and no index, which that read's type admits, but
-a spread read at another key would not be. The audit lists each such form,
-its typing, and whether a node list meets it.
+Each row of the table holds of a node list for the reasons above, which T4
+states and C4 runs: lengths around 16 (where index getters move from the
+prototype to the instance), reentrant callbacks and callbacks that throw,
+repeated and interleaved iterators, and every listed `Array.prototype`
+member. An indexed read writes the list's hidden cursor (`_cursorIndex`,
+`_cursorNodeIndex`) and materializes nodes into `sourceFile.nodes`; the
+model's read promises no effect, which holds of every admitted observation,
+since only restricted operations reach those fields. `at`, whose override
+gives `undefined` at a non-integer index, stays restricted until audited.
 
 ## Node methods and callbacks
 
@@ -782,8 +782,9 @@ the corpus runs are regression evidence, not proofs.
   $`\kappa_{\mathit{RemoteNode}}`$ has a `kind` in $`\mathcal K`$; for that
   kind $`k`$ it has every member $`S_k`$ states, holding a value of the
   member's type; its stable members return the same value on every read,
-  and nothing the package does after construction changes them. This
-  defines the host-admissible worlds.
+  and nothing the package does after construction changes them. A host
+  value meets no record type with an invariant field, no dictionary and no
+  writable array or tuple. This defines the host-admissible worlds.
 - **T2 (guards).** The guard bodies the guard check reads are the functions
   Node runs for the package's exports; the check itself is a trusted part of
   the front end.
@@ -792,9 +793,13 @@ the corpus runs are regression evidence, not proofs.
   only with children of the receiver, in a fixed order, and propagate a
   visitor's exception; they change no stable member; they return values of
   their declared types or throw.
-- **T4 (node lists).** Node lists are the only foreign arrays the package
-  hands out; each operation of the operation table on a node list gives the
-  result the table states, and its length and elements never change.
+- **T4 (restricted values).** Under the admitted operations, a host object
+  behaves as the record of its stated members and a node list as the dense
+  readonly array of its elements: each admitted operation gives the result
+  the model gives, runs only the client code the model runs, and its hidden
+  effects (a node list's cursor fields, `sourceFile.nodes`) are observed by
+  no admitted operation. Node lists are the only array-like host values;
+  their length and elements never change.
 - **T5 (enum objects).** The enum objects Node loads for the package's
   `#enums/*` imports that the contract reads hold exactly the member values
   their declarations state. (`CharacterCodes` does not: `ogham`; the
@@ -823,6 +828,7 @@ Behaviours excluded because soundness needs it:
 | R5  | Bitwise operators take `number` operands only, but `^`, which also takes two bigint operands, and `~`, which also takes one | `obj & 1` (runs `valueOf`), `1n & x`                                                                                                                  |
 | R6  | An abstract node type is the union of the shapes below it, with brands optional   | Using a brand member as evidence (`"_expressionBrand" in n`)                                                                                                                     |
 | R7  | Every admitted `API` instance runs the executable the package selects             | `new API({ tsserverPath })`, `pipe` options, `API.fromLSPConnection`                                                                                                             |
+| R8  | A restricted operation needs an operand whose type excludes host values           | `{ ...node }`, `Object.keys(list)`, `for…in` over a node, `Object.assign({}, node)`, `structuredClone(node)`, through `unknown`, readonly records, `Array.isArray`, type parameters and callbacks |
 
 Limits of the mechanism, each a scoped refusal of behaviour that is safe in
 JavaScript and could be admitted with more machinery:
@@ -884,11 +890,23 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
   passed to `getTypeAtLocation`; a node widened to `unknown`, refined by
   `typeof` and `in`, and written;
 - node lists, positive: a list passed where `readonly Node[]` is expected
-  and read; `[0].flatMap(() => list)` at its contract, with the result's
-  elements nodes, under Node too; a list returned through an `unknown`
-  parameter of a separately verified function and refined by
-  `Array.isArray`; negative: `for…in` over a list (under Node, yielding
-  `parent`, `view`, …), `list.at(0.5)`;
+  and read by each row of its table; `[0].flatMap(() => list)` at its
+  contract, with the result's elements nodes, under Node too; a list
+  returned through an `unknown` parameter of a separately verified function
+  and refined by `Array.isArray`, then iterated;
+- restricted operations, each refused, on a node and on a node list, and
+  each again after the value is widened into `unknown`, a readonly record,
+  a readonly array, refined by `Array.isArray`, held by a type parameter,
+  stored in a container, passed to a callback, thrown and caught, and taken
+  by a separately verified function: an object spread and rest,
+  `Object.keys`, `Object.values`, `Object.entries`, `for…in`,
+  `Object.assign` from and onto it, `hasOwnProperty`, a list's `at`, and
+  `concat` and `flat` with a list; under Node each answers otherwise than
+  the model (`{ ...node }` has `parent` and no `kind`, `for…in` over a list
+  yields `parent`, `view`, …); the same operations on values whose types
+  exclude host values, verified; forged claims, bypassing the producer, of
+  each restricted operation at an operand type that does not exclude host
+  values, refused by the checker;
 - stable members as readonly views: a node passed where `{ flags: number }`
   is expected, to a generic function bounded by `{ parent: Node }`, and to a
   separately verified function taking `{ kind: number }` that writes it, each
@@ -938,9 +956,11 @@ The pieces, by file:
 
 The implementation needs, beside these:
 
-- **Foreign arrays** in the calculus: the array domain, the array invariant
-  over it, the `isArray` refinement, the readonly-array rules for foreign
-  arrays, and the audit of the operations consuming arbitrary values.
+- **The restricted-value policy** in Lean: $`\mathrm{excludesHost}`$ on a
+  type, the restricted operations identified on the program graph, the
+  checker's premise at each and the theorem that accepted programs meet it;
+  and the audit of what the fragment admits on readonly records, readonly
+  arrays and `unknown`, each form classified as admitted or restricted.
 - **A compact representation of kind sets** in claims and evidence, and a
   benchmark of the complete generated contract (member-complete shapes,
   inherited methods, exact literal unions) on a slice larger than the one
@@ -954,8 +974,8 @@ The implementation needs, beside these:
 
 Host enums, bitwise operators, namespace imports and arrays from imported
 declarations are independent of each other and of guard signatures;
-foreign arrays and the union-receiver and generic-method calls precede the
-node invariant.
+the restricted-value policy and the union-receiver and generic-method calls
+precede the node invariant.
 
 The reading rules split along the same dependencies:
 
@@ -973,8 +993,7 @@ The reading rules split along the same dependencies:
   node (`getTypeAtLocation(node: Node)`, `NodeHandle.resolve()`).
 
 So the pieces land in this order: rule 1 with the allocating-member
-refusal; foreign arrays and
-$`\mathsf{NodeList}`$; then rules 2, 4 and 5, the contract file (views,
+refusal; the restricted-value policy, then $`\mathsf{NodeList}`$; then rules 2, 4 and 5, the contract file (views,
 branded types, the corrections table, every reviewed declaration text) and
 the node invariant, each tested on the host types the front end reads,
 nodes among them.

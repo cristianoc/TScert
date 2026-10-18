@@ -360,7 +360,7 @@ against the fragment (2026-10-16) gives the work, each item its own design:
   through `typescript/unstable/ast` and its checker through
   `typescript/unstable/sync`; [the compiler API](docs/COMPILER-API.md)
   specifies the contract they are verified under. Its implementation waits
-  on foreign arrays in the calculus, a compact
+  on the restricted-value policy for node lists and host objects, a compact
   representation of kind sets in claims and evidence, and guard signatures
   for the sync API's type guards.
 - **Guard signatures.** A guard's promise is part of its function type,
