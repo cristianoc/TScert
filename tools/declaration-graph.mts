@@ -1078,6 +1078,7 @@ export function collectDeclarations(file: string, options: {
     // which a value reference does not denote.
     // A host value is the host's: its branded strings read where it produces
     // them (reading rule 5).
+    const skipParenthesized = (e: Node): Node => ts.isParenthesizedExpression(e) ? skipParenthesized(e.expression) : e;
     const valueOf = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
       const read = valueRead(declared, what);
       return declared.some(n => isHostFile(n.getSourceFile().fileName))
@@ -1149,6 +1150,18 @@ export function collectDeclarations(file: string, options: {
           clean(node, `${idOf(source)}#${node.name.text}`);
           return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
             typeParams: [], type: term };
+        }
+        // A constant initialized by a function literal states its type by
+        // the literal's parameter and result annotations, as a function
+        // declaration does; the body is what is assumed.
+        const fn = node.initializer && skipParenthesized(node.initializer);
+        if (constant && !node.type && fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && fn.type &&
+            fn.parameters.every(p => !!p.type)) {
+          for (const part of [...(fn.typeParameters ?? []), ...fn.parameters, fn.type])
+            clean(part, `${idOf(source)}#${node.name.text}`);
+          const { names, typeParams } = bindersOf(fn.typeParameters, fn, what);
+          return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false, typeParams,
+            type: oneTerm(signature(valueScope(fn, what, names), fn.parameters, fn.type, fn, span, true), span) };
         }
         if (!constant || !node.type)
           throw Error(`a declared value must be an annotated constant, function or class: ${what}`);

@@ -322,3 +322,11 @@ export function call(n: number): number {
 export const greeting = "hello";
 export const origin = { x: 0, y: -1, label: "o" };
 export const offsets = [1, 2];
+// Constants holding function literals, each stating its type by the
+// literal's parameter and result annotations; one states no result.
+export const halve = (x: number): number => x / 2;
+export const head = <T>(xs: readonly T[]): T | undefined => xs[0];
+export const named = function (s: string): string {
+  return s;
+};
+export const unstated = (x: number) => x + 1;

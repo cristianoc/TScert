@@ -102,7 +102,7 @@ nothing itself.
 | Declaration | Determined by |
 | --- | --- |
 | Interface, type alias | Its whole syntax |
-| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too |
+| Variable, binding element, parameter | Its own annotation, or its enclosing pattern's; a `const` initialized by a literal naming nothing (a string, number, bigint, Boolean or `null`, signed or parenthesized, an object or array literal of these, `as const` or not), each destructuring default on the way a literal too; a `const` initialized by a function literal, its parameter and result annotations |
 | Property declaration or signature | Its annotation |
 | Property assignment, default export | Its value's: a literal naming nothing; a function's parameter and result annotations; a nested object literal's properties, each by its kind; an assertion's type (`as` or angle-bracket) |
 | Function, method, signature | The symbol's overload signatures if it has any, else its parameter and result annotations |

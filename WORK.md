@@ -35,7 +35,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 57 of 313 verify in `tools/` (2026-10-18), 21 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 59 of 313 verify in `tools/` (2026-10-18), 21 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -322,29 +322,20 @@ of ordinary TypeScript the pipeline can be asked about: 313 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-18):
 
-- a value imported from the front end's own modules that the declaration
-  reader does not read (76), listed below as the source annotations to add;
-- the parser's `Gate` class (30);
-- a missing annotation, or a value TypeScript types `any` (31);
+- the parser's `Gate` class (68), whose fields have no annotation;
+- a missing annotation, or a value TypeScript types `any` (34);
+- library globals absent from the overlay or refused (30): `JSON.stringify`
+  with an indent (17), the global function `parseInt` (3), `Reflect`
+  ([refused](docs/SOURCE-FRAGMENT.md)) (3), `Array.from`,
+  `Object.fromEntries`, `new RegExp`, `instanceof Error`;
 - the standard library's `BuiltinIteratorReturn`, an intrinsic type a
-  node list's or an array's iterator reaches (9); library globals absent
-  from the overlay or refused (10):
-  the global function `parseInt`, `Reflect`
-  ([refused](docs/SOURCE-FRAGMENT.md)), `Array.from`, `Object.fromEntries`,
-  `new RegExp`, `JSON.stringify` with an indent; Node's modules, `path` and
-  `fs` (8); module-level `let` and `var` (8); a default import (3).
+  node list's or an array's iterator reaches (14);
+- members of `Type` outside its named view (11);
+- Node's modules, `path` and `fs` (7); module-level `let` and `var` (8); a
+  default import (3).
 
-The source annotations to add, apart from the compiler API (2026-10-17, by
-the slices each stops): the module constants holding arrows without an
-annotation of their own, `nameOf` (20), `skipParentheses` (17),
-`promiseEffect` (16), `footprintEffect` (7), `isStatic` (6),
-`numberOfBits` (5), `enumIntrinsicName`, `enumMemberName`, `freshName`,
-`parameterName` and `selfName` (1 each),
-each needing its function type written on the constant or the arrow written
-as a function declaration.
-
-Ten slices reach the producer and fail there, and twenty-two fail in
-search. Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
+Nineteen slices reach the producer and fail there, 49 fail in search, and two
+exceed its 30 s limit. Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
 24 of `dev/`, the record tools and the lowering dump, 21 (2026-10-18), each
 sliced with the same-file declarations it uses. The first blockers of the others in
 `dev/`, with the functions each stops directly and through callees:
