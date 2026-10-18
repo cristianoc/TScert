@@ -174,12 +174,9 @@ decodes the verifier's output with `decodeUnits`, which calls `fields` and
 `nat` in `map` callbacks: imported functions, whose effect no certificate
 states ([module composition](#module-composition)).
 
-Two forms of `calculus.mts` are written for a verifier limit, each to be
-reverted when its limit lifts: the record test is `recordOf`, returning the
-object or `undefined`, since a type guard's declaration claims no
-footprint and so makes a `map` calling it sparse; and the code kind is
-read into a constant before its equality tests
-([field equality facts](#field-equality-facts)).
+One form of `calculus.mts` is written for a verifier limit, to be reverted
+when the limit lifts: the code kind is read into a constant before its
+equality tests ([field equality facts](#field-equality-facts)).
 
 <a id="field-equality-facts"></a>
 **Field equality facts over objects**, an investigation: after

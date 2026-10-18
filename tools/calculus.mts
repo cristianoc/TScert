@@ -113,16 +113,18 @@ export type Json = null | boolean | number | string | Json[] | { [key: string]: 
 /* JSON shape checks, shared with the program graph in control-flow.mts. They
  * belong to neither language, so they name neither: a malformed target is not
  * a malformed term. */
-/** A parsed object, or `undefined` for any other value. */
-function recordOf(v: Json | undefined): { [key: string]: Json } | undefined {
-  if (typeof v !== "object" || v === null || Array.isArray(v)) return undefined;
-  return v;
+function isRecord(v: Json | undefined): v is { [key: string]: Json } {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  return true;
 }
 export function fields(v: Json | undefined, keys: string[]): { [key: string]: Json } {
-  const o = recordOf(v);
-  if (o === undefined || Object.keys(o).length !== keys.length || keys.some((k) => !(k in o)))
+  if (
+    !isRecord(v) ||
+    Object.keys(v).length !== keys.length ||
+    keys.some((k) => !(k in v))
+  )
     throw Error("unexpected or missing field");
-  return o;
+  return v;
 }
 /** A non-negative integer. */
 export function nat(v: Json | undefined): number {
@@ -132,9 +134,8 @@ export function nat(v: Json | undefined): number {
 }
 /** The one key of a constructor written as an object, and what it holds. */
 export function constructorOf(v: Json | undefined): { key: string; value: Json } {
-  const o = recordOf(v);
-  if (o === undefined) throw Error("invalid constructor");
-  const entries = Object.entries(o);
+  if (!isRecord(v)) throw Error("invalid constructor");
+  const entries = Object.entries(v);
   const entry = entries[0];
   if (entries.length !== 1 || entry === undefined) throw Error("unexpected or missing field");
   const [key, value] = entry;
@@ -167,7 +168,10 @@ export function decodeTag(v: Json | undefined): Tag {
   const { key, value } = constructorOf(v);
   switch (key) {
     case "hasKey": {
-      return { kind: "hasKey", key: keyOf(fields(value, ["key"]).key) };
+      const k = fields(value, ["key"]).key;
+      if (typeof k !== "string" && !(isRecord(k) && Object.keys(k).length === 1 && typeof k.symbol === "number"))
+        throw Error("unknown tag");
+      return { kind: "hasKey", key: keyOf(k) };
     }
     case "numEq": {
       const b = fields(value, ["bits"]).bits;
@@ -213,8 +217,7 @@ function decodeCode(v: Json | undefined): CallCode {
       return { kind: "bound", target, receiver, pre: c.pre.map(decodeTerm) };
     }
     case "graph": {
-      const o = recordOf(value);
-      const optional = o === undefined ? [] : ["kind", "rest"].filter((k) => k in o);
+      const optional = isRecord(value) ? ["kind", "rest"].filter((k) => k in value) : [];
       const c = fields(value, ["arity", "exprs", "conts", "start", "caps", ...optional]);
       let mode: "construct" | "sloppy" | null = null;
       if ("kind" in c) {
@@ -336,7 +339,9 @@ export function decodeTerm(v: Json | undefined): Term {
     case "merge": {
       const o = fields(value, ["drop", "a", "b"]);
       const drop = o.drop;
-      if (!Array.isArray(drop)) throw Error("invalid dropped keys");
+      if (!Array.isArray(drop) || drop.some((key: Json) => typeof key !== "string" &&
+          !(isRecord(key) && Object.keys(key).length === 1 && typeof key.symbol === "number")))
+        throw Error("invalid dropped keys");
       return { kind: "merge", drop: drop.map(keyOf), a: decodeTerm(o.a), b: decodeTerm(o.b) };
     }
     case "makeKey": {
