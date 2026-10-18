@@ -170,10 +170,11 @@ early binding (below) declared by a pattern; one in a `switch`'s case block
 clauses may skip a declaration); a class declaration's binding; a
 generator's body; a parameter default that mentions its own parameter or a
 later one, a closure's mention included (`initializedBefore`); and a loop
-head's binding mentioned in its own head (`for (const xs of xs)`). A module's top level keeps the initialization order
-check (`Sites.checkInitializationOrder`), which refuses an initialization
-step that may reach a constant not yet bound; it does not model the
-module's dead zone, a caught `ReferenceError` there or a module cycle.
+head's binding mentioned in its own head (`for (const xs of xs)`). A module's constants keep the initialization order check
+(`Sites.checkInitializationOrder`), which refuses an initialization step
+that may reach a constant not yet bound; it does not model the module's dead
+zone for them, a caught `ReferenceError` there or a module cycle. A
+module-level `let` is a [module cell](#module-cells).
 
 A binding is **early** when one of its mentions is in a closure or a
 function declaration of its scope, which may run at any time after its
@@ -286,34 +287,42 @@ other read of a binding in its own initializer is refused at its location
 order is checked as before (`Sites`).
 
 <a id="module-cells"></a>
-**Module cells.** A module-level `let x: T = e`, not exported, is a
-**module cell**: a module constant of the initialization unit whose value is
-a private cell, the object $`\{\mathtt{value}{:}T\}`$ a captured `let` is
-([slot or cell](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)).
-The initialization unit allocates it where the declaration runs, with the
-initializer's value checked at $`T`$, and binds the constant to it; every
-function of the module, and every closure, reads $`x`$ by reading the cell
-at its contract $`T`$ and writes it by a write checked at $`T`$:
+**Module cells.** A module-level `let x` that the module does not export,
+in no form (no `export let`, no `export { x }` or alias of it), is an
+[early binding](#lexical-bindings-before-initialization) of the module's
+scope, whatever its mentions: a **module cell**. The initialization unit
+allocates it at its entry, before any statement and before the module's
+functions and classes exist, holding the module's uninitialized marker,
+and binds a module constant to it, so a closure or function created before
+the declaration captures the one cell, as `const get = () => x; let x = 1;
+get();` needs. The declaration writes the initializer's value after it
+completes normally; `let x;` writes `undefined`. Every mention of $`x`$, in
+the initialization unit, in every module function and in every closure, is
+a checked access, so a run that reaches $`x`$ before its initialization
+throws the `ReferenceError` JavaScript throws, and no initialization order
+check is needed for it:
 
 ```math
-\frac{\mathtt{let}\ x{:}T=e\ \text{at the module's top level}\quad \Gamma_I\vdash e:T}
-     {\Gamma_f(x)=\mathsf{cell}(T)\ \text{for every unit } f\ \text{of the module}}\ \textsf{module-cell}
+\frac{\mathtt{let}\ x\ \text{at the module's top level, not exported}\quad C_x\ \text{its one contract}}
+     {\Gamma_f(x)=\mathsf{cell}(C_x\cup U)\ \text{for every unit } f\ \text{of the module}}\ \textsf{module-cell}
 ```
 
-The constant never changes: it holds the one cell from its binding on, so
-a unit assuming it at $`\mathsf{cell}(T)`$ assumes what the initialization
-unit establishes, as for a constant ([modules](DESIGN.md#modules-and-code-units)).
-The cell's contents are any value of $`T`$ at a unit's entry and after each
-call, since any unit may write it; a read in a unit has the facts the unit
-itself established since its last call, as a captured `let`'s. The
-contract is the annotation, or the producer's proposal checked against the
-initializer and every write, as a local `let`'s; a `let x;` is
-$`T\cup\mathsf{Undefined}`$ initialized to `undefined`. A read or write that
-initialization may run before the cell is bound is refused by the
-initialization order check (`Sites`), as a constant's read is. An exported
-`let` is a live binding an importer reads at its current contents, outside
-the fragment, and so is a `var`, whose binding exists from the module's
-entry at `undefined`.
+$`\mathsf{cell}(C)`$ is the private cell's invariant writable field at
+$`C`$. $`C_x`$ is one contract for the binding, stated once in the claims
+and the same in every unit: the annotation, or, without one, the producer's
+proposal, which the initialization unit checks against the initializer
+and every unit checks against each of its writes, `undefined` included for
+`let x;`; no unit narrows it. A unit's theorem assumes $`x`$ at
+$`\mathsf{cell}(C_x\cup U)`$, its contents any value there at the unit's
+entry and after each call; the facts a unit establishes of the contents
+follow the [current-content rules](PROGRAM-TYPING.md#current-content-rules-semantic-layer):
+a write or a call ends them, a join keeps only what every edge proves, and
+a closure captures the cell's identity, never its contents. Composing the
+units' theorems for a module execution, with the cell's contract as a
+shared invariant of the heap every write preserves, is
+[module composition](../WORK.md#module-composition). A `var`, whose binding
+exists from the module's entry at `undefined` and may be redeclared, and an
+exported `let`, a live binding importers read, are outside the fragment.
 
 A module function is an immutable slot holding its code. A file without
 imports or exports may run as a script, whose top-level functions are
