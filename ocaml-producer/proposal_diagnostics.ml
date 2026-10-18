@@ -115,7 +115,7 @@ let method_member declarations t key =
         (match List.find_opt (fun (f:Semantic.field) -> f.name = key) fields with
          | Some f -> f.host
          | None -> List.exists (fun (f:Semantic.field) -> f.name = Name proto_key && go (depth+1) f.read) fields)
-      | _ -> false) (try flat_atoms declarations t with Json.Error _ -> []) in
+      | _ -> false) (try Option.value ~default:[] (flat_atoms declarations t) with Json.Error _ -> []) in
   go 0 t
 let builtin_array_reason =
   "`Array.isArray` finds a `readonly unknown[]` in `unknown` or a record, which may be a tuple: its \

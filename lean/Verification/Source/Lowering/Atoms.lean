@@ -37,7 +37,11 @@ new observation of their source expression. -/
       let (uniform, pointwise) := asserted.partition fun (fld, R) =>
         (invariant fld).any (within T · R)
       for (fld, R) in uniform do persistentObservation ⟨"",some source⟩ source A fld R
-      let facts ← pointwise.mapM fun (fld, R) => do return (⟨0,← contents R,fld⟩ : HeapFacts.Fact)
+      let facts ← pointwise.mapM fun (fld, R) => do
+        let answer ← match HeapKnowledge.atoms (SourceTypes.graph T) R, invariant fld with
+          | none, some C => answerAtoms C R
+          | _, _ => pure none
+        return (⟨0,← answer.getDM (contents R),fld⟩ : HeapFacts.Fact)
       checkpoint source (A::Γ) facts next (scope := held ⟨"",some source⟩ :: scope)
 
 /-- JavaScript throws a `TypeError` at a member access of `null` or

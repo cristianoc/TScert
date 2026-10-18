@@ -71,8 +71,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
        | Some x when n = Name "length"
            && List.exists (function
                | Shape {elements=Some {rest=None;readonly=false;_};_} -> true
-               | _ -> false) (flat_atoms declarations receiver)
-           && (match flat_atoms declarations x with
+               | _ -> false) (Option.value ~default:[] (flat_atoms declarations receiver))
+           && (match Option.value ~default:[] (flat_atoms declarations x) with
                | [] -> false
                | wanted -> List.for_all (function NumLit _ -> true | _ -> false) wanted) ->
          S.explain site ("the `length` of a mutable tuple read at its arity: " ^ mutable_tuple_length_reason)

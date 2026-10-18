@@ -93,7 +93,9 @@ let array_slice declarations t =
   let rec plain = function
     | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
   if not (plain sliced) then sliced else
-  let atoms = flat_atoms declarations sliced in
+  match flat_atoms declarations sliced with
+  | None -> sliced
+  | Some atoms ->
   if not (List.mem Top atoms || List.exists open_record_atom atoms) then sliced
   else match typeof_slice "array" true (Atoms atoms) with
     | Atoms kept -> union (ground (List.filter (fun a -> a <> Top && not (open_record_atom a)) kept)) any_array
@@ -150,7 +152,19 @@ let record_field ?(allow_optional=false) declarations t field =
   has [] t
 (* A guard on a field of an immutable binding's object: what the field holds
    is known until a step may write it. *)
-let refine_field bounds declarations env name field refine =
+(* The atoms of a field's type some of the known contents may be: a
+   primitive atom meets a content atom equal to it, a singleton meets its
+   family; any other atom, or contents not all primitive, is kept. *)
+let contents_meet field known = match field,known with
+  | Atoms fs,Atoms ks ->
+    let primitive = function
+      | Nul | Undef | True | False | Str | StrLit _ | Num | NumLit _ -> true | _ -> false in
+    if not (List.for_all primitive ks) then field else
+    let meets f k = f = k || (match f,k with
+      | StrLit _,Str | Str,StrLit _ | NumLit _,Num | Num,NumLit _ -> true | _ -> false) in
+    Atoms (List.filter (fun f -> not (primitive f) || List.exists (meets f) ks) fs)
+  | _ -> field
+let refine_field ?(answer = false) bounds declarations env name field refine =
   (* A read of an optional key that gave something other than `undefined`
      found the key present: the object's record arms have it from then on
      (Lean's `promote`, through the read's optional link). *)
@@ -177,11 +191,33 @@ let refine_field bounds declarations env name field refine =
   match List.assoc_opt name env with
   | Some (Value t) when record_field ~allow_optional:true declarations t field ->
     let key = field_key name field in
+    (* A field declared at a named union of primitives holds one of its
+       atoms: the definition's, so that a test slices them. *)
+    let flat f =
+      let rec plain = function
+        | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
+      if plain f then (try (match flat_atoms declarations f with None | Some [] -> f | Some atoms -> Atoms (List.sort_uniq compare atoms))
+        with Json.Error _ -> f) else f in
     let current = match List.assoc_opt key env with
       | Some (Value c) -> Some c
-      | _ -> (try Some (field_type bounds declarations [] t (Name field)) with Json.Error _ -> None) in
+      | _ -> (try Some (flat (field_type bounds declarations [] t (Name field))) with Json.Error _ -> None) in
     (match current with
-     | Some c -> fact env key (field_type bounds declarations [] t (Name field)) (refine c)
+     | Some c ->
+       let contents = refine c in
+       let env = fact ~answer:(answer && contents <> c) env key (field_type bounds declarations [] t (Name field)) contents in
+       (* The object's arms whose field the contents rule out are dropped
+          (Lean's `factSlice`): a primitive arm none of whose atoms meets one
+          of the contents. Successive tests narrow the contents, so their
+          exclusions combine. *)
+       (match List.assoc_opt key env with
+        | Some (Value known) -> refine_value env name (fun t ->
+            discriminate_fixed bounds declarations t (Name field) (fun f ->
+              let rec plain = function
+                | Atoms _ -> true | Union ts -> List.for_all plain ts | Rigid _ | Meet _ -> false in
+              let f = if plain f then (try (match flat_atoms declarations f with Some atoms -> Atoms atoms | None -> f)
+                with Json.Error _ -> f) else f in
+              contents_meet f known))
+        | _ -> env)
      | None -> env)
   | _ -> env
 (* What a call of a guard promises of its actual, a name: where a type guard
@@ -228,7 +264,7 @@ let promise_refine ?(claimed = fun _ -> None) resolve declarations env (cond:exp
      | [] -> env)
 let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) bounds declarations env cond truth =
   let branch = branch_with state ~modules ~claimed bounds declarations in
-  let refine_field = refine_field bounds declarations in
+  let refine_field ?answer = refine_field ?answer bounds declarations in
   match cond.node with
   | Not e -> branch env e (not truth)
   (* A name as a condition is tested for truthiness; a Boolean's slice is
@@ -243,7 +279,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
       | Some (Value t) when not (record_field declarations t field) ->
         refine_value env name (fun t -> discriminate_fixed bounds declarations t (Name field) (truthy_slice truth))
       | _ -> env in
-    refine_field env name field (truthy_slice truth)
+    refine_field ~answer:true env name field (truthy_slice truth)
   (* A true `&&` (a false `||`) established both operands so; the other
      answer came from either operand, the right one after the left answered
      the first way, and holds what either established. *)
@@ -276,7 +312,8 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
      | _ -> ());
     refine_value env name (key_slice key truth)
   | TypeofTest (shape,equal,{node=Read ({node=Id name;_},Name field);_}) ->
-    refine_field env name field (typeof_refine declarations shape (truth = equal))
+    refine_field ~answer:true env name field (if shape = "array" && truth = equal then array_slice declarations
+      else typeof_refine declarations shape (truth = equal))
   (* `x == null` holds of null and undefined alike. *)
   | Equality ((LooseEqual | LooseUnequal as op),{node=Id name;_},{node=Literal (LNull | LUndefined);_})
   | Equality ((LooseEqual | LooseUnequal as op),{node=Literal (LNull | LUndefined);_},{node=Id name;_}) ->

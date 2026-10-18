@@ -70,7 +70,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
     | Build parts ->
       List.iter (fun (name,(e:expr)) -> if name = None then
         match (match quietly (fun () -> expr env e) with
-               | Some t -> (try flat_atoms declarations t with Json.Error _ -> [])
+               | Some t -> (try Option.value ~default:[] (flat_atoms declarations t) with Json.Error _ -> [])
                | None -> []) with
         | atoms when List.exists (function Shape {indexes=_::_;_} -> true | _ -> false) atoms ->
           S.explain site ("a spread of a dictionary: " ^ dictionary_spread_reason)

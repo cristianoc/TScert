@@ -2779,7 +2779,7 @@ It computes a guaranteed output, not an assumed postcondition:
 | Read (`reading`)                     | Field and element reads over values (`readAt`, `elemAt`, `readTerm`): check ordinary evidence and scope, and preserve every fact and link, shifted past the result slot. A read changes no location, and a heap meeting an admissible world holds values, so a read's result is a value. |
 | Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; through a key a record may lack, optional links. No prior current-content fact is needed. Its result has the supplied type. |
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
-| Sliced read (`slicedRead`)           | A read whose cell fact excludes a nullish tag: ordinary read evidence at the location's contract $`C`$, whose negative slice by that tag is below the requested type by a checked subtype proof. As an ordinary typed read otherwise. |
+| Sliced read (`slicedRead`)           | A read of a location one of whose facts answers a tag $`\tau`$ with $`q`$ (a nullish exclusion answers its test `false`, a tag atom is its answer): ordinary read evidence at the location's contract $`C`$, whose refinement by that answer is within the requested type (`ObservedSub`, as a branch edge checks a refinement). As an ordinary typed read otherwise. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
 | Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, the fields its result type names distinct. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`). |
 | Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
@@ -2801,45 +2801,71 @@ read is
 
 ```math
 \frac{\Gamma\vdash_G \mathsf{readAt}\,f\,x : C\quad x.f\mapsto R\in\Sigma\quad
-      \forall v\in R.\;\tau(v)=\mathsf{false}\quad T_{\mathsf{false}}^{\tau}(C)\le A}
+      \forall v\in R.\;\tau(v)=q\quad \forall v\in C.\;\tau(v)=q\Rightarrow v\in A}
      {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathsf{readAt}\,f\,x : A\dashv\Pi;\Sigma}\ \textsf{read-sliced}
 ```
 
-where the supported tags are tests for null, undefined and either nullish value.
+where $`\tau(v)=q`$ also holds of a value whose answer to a key test reads a
+prototype (`Observation.holds`), and the last premise is the refinement a
+branch edge checks (`checkObservedSub_sound`): the slice $`T_q^{\tau}(C)`$
+below $`A`$ by a subtype proof, or, for `Array.isArray`, the built-ins' array
+slice.
 
-The rule extends to every tag whose answer depends on the value alone, so
-not on the heap: the primitive families, `isArray`, `typeofObject`, `isFun`,
-truthiness and the singletons. A cell fact's atoms are alternatives: the
-value meets one of them. An observation that the value answers
-$`\tau`$ with $`q`$ is a conjunct, so it is a separate fact
-$`x.f\mapsto\mathsf{tag}\,\tau\,q`$, never an atom appended to a list:
-two failed tests are two facts, both of which hold. A dispatch on a value
-read from $`x.f`$ records it, as `observeTyped` records `nonNullish` from a
-slice of objects. A later read of $`x.f`$ is then typed at the slice of the
-location's contract by every such fact, which for `isArray` is the
-built-ins' array slice that `Array.isArray` gives a value. Observed contents
-follow the existing invalidation rules: a write that may alias the location
-discards them, a write a distinct link separates from it keeps them, and a
-call discards them. So `Array.isArray(t.mapping)` followed by
-`t.mapping.map(nat)` reads an array.
+The supported answers are the nullish exclusions and the tag atoms. A cell
+fact's atoms are alternatives: the value meets one of them. An observation
+that the value answers $`\tau`$ with $`q`$ is a conjunct, so it is a separate
+fact $`x.f\mapsto[\mathsf{tag}\,\tau\,q]`$, never an atom appended to a
+list: two failed tests are two facts, both of which hold. A dispatch on a
+value read from $`x.f`$ whose slice no primitive predicate states records it
+through the read's link (`observeTyped`), beside `nonNullish` where the slice
+is of objects. A claim that $`x.f`$ holds a type $`A`$ at a point asserts
+the answer whose refinement of the field's contract is within $`A`$
+(`answerAtoms`, among `isArray`, `isFun`, `typeofObject`, `isRef` and
+truthiness), where no nullish exclusion of the contract is, and every edge
+into the point establishes it. Observed contents follow the existing
+invalidation rules: a write that may alias the location discards them, a
+write a distinct link separates from it keeps them, and a call discards them.
+So after `Array.isArray(t.mapping)` a read of `t.mapping` is of an array
+(`field-tag-read`); past a write through a parameter that may be `t`, or a
+call, it is of the field's type (`invalid-field-tag-alias`,
+`invalid-field-tag-call`, run under Node), and the fact claimed before the
+test, or past the write or the call, is refused (the forged field tag facts
+in `pipeline/test.mts`).
 
 The facts also exclude semantic type labels of the object they are about.
-Where the facts about $`x.f`$ hold, a label of $`\Gamma(x)`$ is dropped when
-every clause of its expansion fixes $`f`$, as an invariant field or a
-readonly view, at a type no value meeting the facts meets. The proof is one
-step index down, as for the edge's field slice: the field's location holds
-a value of the field's type one level down (`field_value`), and that value
-meets the facts. A clause whose field type cannot be decided against the
-facts (one not plain, an unresolved reference) keeps its label, and a special
-field keeps its own exclusions, as `fieldAnswers` keeps an array's `length`
-out. The exclusion is a fact about the value's type, so it survives later
-writes and calls, as the edge's field slice does; the observed contents it
-came from do not. Unlike that slice, it combines successive tests: after
-`k.kind` fails `"isNul"` and `"isBool"`, the label
-`{ kind: "isNul" | "isBool" }` is dropped. Controls: a write through an
-alias between the test and the read, an intervening call, successive
-singleton exclusions, and forged observations, each where evidence is
-produced and where it is checked.
+A fact $`x.f\mapsto R`$ is a disjunction of atoms; each atom of a primitive
+family or singleton is a tag's passing answer (`atomTag`: `strLit s` is
+`strEq s`, `str` is `isStr`, and so on). A label of $`\Gamma(x)`$ is dropped
+(`factSlice`) when, for every atom of $`R`$, every clause of its expansion
+fixes $`f`$, as an invariant field or a readonly view, at a type answering
+that atom's tag `false`:
+
+```math
+F^{f}_{R}(A)=\{a\in A\mid \lnot(\mathsf{plain}(a)\wedge R\neq[\,]\wedge
+  \forall r\in R.\ \exists t.\ \mathsf{tag}(r)=t\wedge
+  \forall c\in\mathsf{expand}([a]).\ \mathsf{fieldAnswers}(c,f,t,\mathsf{false}))\}
+```
+
+The proof is one step index down, as for the edge's field slice
+(`factSlice_sound`, through `fieldSlice_sound` at the atom the field's value
+meets, and `fieldSlice_absent` where the object lacks the key): the field's
+location holds a value of the field's type one level down (`field_value`),
+and that value meets one of the atoms. A clause whose field type cannot be
+decided against the atoms (one not plain, an unresolved reference) keeps its
+label, and a special field keeps its own exclusions, as `fieldAnswers`
+keeps an array's `length` out. A branch edge applies it to the facts its
+observation leaves (`observeTyped`), beside the field slice
+(`ObservedCovers`, `cellRefinements`). The exclusion is a fact about the
+value's type, so it survives later writes and calls, as the edge's field
+slice does; the observed contents it came from do not, as a call discards
+them. Successive tests leave contents that only shrink, so the exclusion
+combines them: after `k.kind` fails `"a"` and `"b"`, the label
+`{ kind: "a" | "b" }` is dropped (`field-contents-exclusion`); after a call
+between the tests it is not (`invalid-field-contents-call`, run under
+Node), and an arm claimed excluded before every failed test rules it out is
+refused where evidence is produced and where it is checked (the forged field
+contents in `pipeline/test.mts`). A tag atom keeps every label, as an atom
+no primitive test answers does.
 The write rule takes no premise about the cell's old contents. These are operation rules within a
 local segment: at the next statement entry, only the supplied interface
 survives.

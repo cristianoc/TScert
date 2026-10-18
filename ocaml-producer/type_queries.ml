@@ -361,16 +361,22 @@ let slice_element declarations start t =
     | _ -> unsupported "an array pattern over a value that may not be an array: it would step that value's own \
         iterator, which is not modeled; only an array's positions are read") (arms [] t))
 (* A type's atoms through the declarations and unions that name them. *)
+(* The atoms a type's arms are, through the declarations that state them:
+   `None` where some arm, at any depth of the definitions, is a type
+   parameter or an intersection, whose values no atom list states. A caller
+   cannot read such a type as the atoms of its other arms. *)
 let flat_atoms declarations t =
   let rec go seen t = match t with
-    | Union ts -> List.concat_map (go seen) ts
-    | Atoms atoms -> List.concat_map (function
+    | Union ts -> all (List.map (go seen) ts)
+    | Atoms atoms -> all (List.map (function
         | Named (id,args) when not (List.mem id seen) ->
           (match definition declarations id args with
            | body -> go (id::seen) body
-           | exception Json.Error _ -> [Named (id,args)])
-        | a -> [a]) atoms
-    | Rigid _ | Meet _ -> [] in
+           | exception Json.Error _ -> Some [Named (id,args)])
+        | a -> Some [a]) atoms)
+    | Rigid _ | Meet _ -> None
+  and all parts = List.fold_right (fun p acc -> match p,acc with
+    | Some xs,Some ys -> Some (xs @ ys) | _ -> None) parts (Some []) in
   go [] t
 (* A union naming a declaration beside atoms of that declaration's
    definition is the declaration's: the atoms add no value. `T | { kind:
@@ -378,7 +384,7 @@ let flat_atoms declarations t =
 let absorb declarations = function
   | Atoms xs as t when List.exists (function Named _ -> true | _ -> false) xs ->
     let covered = List.concat_map (function
-      | Named _ as a -> (try flat_atoms declarations (Atoms [a]) with Json.Error _ -> [])
+      | Named _ as a -> (try Option.value ~default:[] (flat_atoms declarations (Atoms [a])) with Json.Error _ -> [])
       | _ -> []) xs in
     let kept = List.filter (fun a -> (match a with Named _ -> true | _ -> false) || not (List.mem a covered)) xs in
     if List.length kept = List.length xs then t else Atoms kept
@@ -386,7 +392,7 @@ let absorb declarations = function
 (* A key whose type names string or number singletons, through the
    declarations and unions that state them, is read as those singletons. *)
 let literal_key declarations key =
-  match (try flat_atoms declarations key with Json.Error _ -> []) with
+  match (try Option.value ~default:[] (flat_atoms declarations key) with Json.Error _ -> []) with
   | _::_ as ks when List.for_all (function StrLit _ | NumLit _ -> true | _ -> false) ks -> Atoms ks
   | _ -> key
 (* A key of several string or number singletons (NaN, which no equality
@@ -662,14 +668,14 @@ let slot_holds declarations contract t (init:expr option) =
   else
     let declared = arms declarations contract in
     let declared = match init with Some e -> assigned_arms declarations declared e | None -> declared in
-    match (try Some (flat_atoms declarations t) with Json.Error _ -> None) with
+    match (try flat_atoms declarations t with Json.Error _ -> None) with
     | Some (_::_ as atoms) -> Environment.observed_contents declared (Atoms atoms)
     | _ -> declared
 (* The keys a key's type names, each a singleton: a string, a number's
    `ToString` or a symbol. Empty where it names a family (every string, every
    number, every symbol) or anything else. *)
 let literal_keys declarations t =
-  let atoms = try flat_atoms declarations t with Json.Error _ -> [] in
+  let atoms = try Option.value ~default:[] (flat_atoms declarations t) with Json.Error _ -> [] in
   let key = function
     | StrLit k -> Some (Name k)
     | NumLit bits -> Option.map (fun k -> Name k) (number_key bits)

@@ -34,7 +34,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
   let rec calls t = match t with
     | Meet (t,ts) -> List.concat_map calls (t::ts)
     | t -> List.concat_map (function Shape s -> s.calls | _ -> [])
-             (flat_atoms declarations t) in
+             (Option.value ~default:[] (flat_atoms declarations t)) in
   (* Whether `x` states a signature binding more parameters than `own`. *)
   let longer (own:Semantic.signature) x = List.exists (fun (c:Semantic.signature) ->
     List.length c.params > List.length own.params
@@ -80,7 +80,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
          let mutable_rest = function
            | Shape {elements=Some {required=[];optional_elements=[];rest=Some r;readonly=false;presence=_};_} -> Some r
            | _ -> None in
-         let actual = flat_atoms declarations (resolve env n) and wanted = flat_atoms declarations x in
+         let actual = Option.value ~default:[] (flat_atoms declarations (resolve env n)) and wanted = Option.value ~default:[] (flat_atoms declarations x) in
          let rests = List.filter_map mutable_rest actual and wanted_rests = List.filter_map mutable_rest wanted in
          if rests <> [] && List.length rests = List.length actual && wanted_rests <> []
             && List.for_all (fun r -> not (List.mem r wanted_rests)
@@ -111,7 +111,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
       (match expected, List.assoc_opt n env with
        | Some x, Some (Storage (contract,current)) when current = contract
            && not (plausible_subtype contract x) ->
-         let atoms = flat_atoms declarations contract in
+         let atoms = Option.value ~default:[] (flat_atoms declarations contract) in
          if List.mem Undef atoms && List.exists (function
              | Shape _ | Exact _ | Named _ | Callable | Ctors _ -> true | _ -> false) atoms
             && plausible_subtype (Semantic.without_nullish contract) x

@@ -1,4 +1,5 @@
 import Verification.Programs.PointClaims
+import Verification.Semantics.HeapFacts
 
 /-! Refinement of immutable environment slots under observed Boolean or tag outcomes.
 Heap contents are not refined: the witness concerns the tested value,
@@ -180,6 +181,96 @@ theorem fieldSlice_absent {G : NormalGraph ι} {A : Ty ι} {f tag q n W v flds c
         rw [hf] at hl'
         cases hl'
     | _ => simp [fieldAnswers] at hans
+
+/-! ### Exclusion by a field's observed contents
+
+A cell fact states that an object's field holds a value meeting one of its
+atoms. Each atom of a primitive family or a singleton is a tag's passing
+answer; a label every clause of which fixes the field at a type answering
+each such tag `false` is no label of the object. The exclusion concerns the
+object's type label, which its contract fixes: it is no claim about what the
+field holds later. Successive tests leave successive facts, all of which
+hold, so one of them suffices. -/
+
+/-- The test a value meeting an atom passes. -/
+def atomTag : HeapFacts.Atom → Option Tag
+  | .nul => some .isNul
+  | .undef => some .isUndef
+  | .tru => some (.boolEq true)
+  | .fls => some (.boolEq false)
+  | .str => some .isStr
+  | .strLit s => some (.strEq s)
+  | .num => some .isNum
+  | _ => none
+
+theorem atomTag_sound {a : HeapFacts.Atom} {t : Tag} {v : Tm} (ht : atomTag a = some t)
+    (hv : a.holds v) : tagHolds t v = true := by
+  cases a <;> simp only [atomTag, Option.some.injEq, reduceCtorEq] at ht <;> subst ht <;>
+    simp only [HeapFacts.Atom.holds] at hv
+  all_goals first
+    | (subst hv; simp [tagHolds])
+    | (obtain ⟨_, rfl⟩ := hv; simp [tagHolds])
+
+/-- The labels of `A` an object may have whose field `f` holds a value
+meeting one of the atoms `R`: a label is dropped where, for every atom, every
+clause of it fixes `f` at a type answering that atom's test `false`. -/
+def factSlice (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (R : List HeapFacts.Atom) : Ty ι :=
+  A.filter fun a => !(G.plain a && !R.isEmpty && R.all fun atom => match atomTag atom with
+    | some t => (expand G [a]).all fun c => fieldAnswers G c f t false
+    | none => false)
+
+private theorem factSlice_keeps {G : NormalGraph ι} {A : Ty ι} {f : PropKey} {R : List HeapFacts.Atom}
+    {atom : HeapFacts.Atom} {t : Tag} (hm : atom ∈ R) (ht : atomTag atom = some t) {a : ι}
+    (ha : a ∈ fieldSlice G A f t true) : a ∈ factSlice G A f R := by
+  obtain ⟨haA, hkeep⟩ := List.mem_filter.mp ha
+  change (!(G.plain a && (expand G [a]).all fun c => fieldAnswers G c f t false)) = true at hkeep
+  refine List.mem_filter.mpr ⟨haA, ?_⟩
+  have key : (R.all fun atom => match atomTag atom with
+      | some t => (expand G [a]).all fun c => fieldAnswers G c f t false
+      | none => false) = true → ((expand G [a]).all fun c => fieldAnswers G c f t false) = true := by
+    intro hall
+    have := List.all_eq_true.mp hall atom hm
+    simpa [ht] using this
+  revert hkeep key
+  generalize (R.all fun atom => match atomTag atom with
+      | some t => (expand G [a]).all fun c => fieldAnswers G c f t false
+      | none => false) = X
+  generalize ((expand G [a]).all fun c => fieldAnswers G c f t false) = Y
+  cases G.plain a <;> cases X <;> cases Y <;> cases R.isEmpty <;> simp
+
+/-- The fact slice is sound one level up, as the field slice is: the field's
+location holds a value of the field's type one level down, which meets one
+of the atoms. -/
+theorem factSlice_sound {G : NormalGraph ι} {A : Ty ι} {f R n W h v flds code u}
+    (hv : meaning G A (n+1) W v) (hh : HeapOk (n+1) W h)
+    (hl : v = .objAt flds code oid) (hr : HeapFacts.ReadGave flds f h u)
+    (hR : ∃ atom ∈ R, atom.holds u) : meaning G (factSlice G A f R) (n+1) W v := by
+  obtain ⟨atom, hm, hatom⟩ := hR
+  cases ht : atomTag atom with
+  | none =>
+    obtain ⟨a, ha, hva⟩ := hv
+    refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hva⟩
+    cases hp : G.plain a
+    · simp
+    · cases hR : R.isEmpty
+      · have : (R.all fun atom => match atomTag atom with
+            | some t => (expand G [a]).all fun c => fieldAnswers G c f t false
+            | none => false) = false := by
+          apply List.all_eq_false.mpr
+          exact ⟨atom, hm, by simp [ht]⟩
+        simp [this]
+      · simp [List.isEmpty_iff.mp hR] at hm
+  | some t =>
+    have hq : tagHolds t u = true ∨ protoFree t u = false := .inl (atomTag_sound ht hatom)
+    unfold HeapFacts.ReadGave at hr
+    cases hfl : flds.lookup f with
+    | some l =>
+      rw [hfl] at hr
+      obtain ⟨a, ha, hva⟩ := fieldSlice_sound (tag := t) (q := true) hv hh hl hfl hr hq
+      exact ⟨a, factSlice_keeps hm ht ha, hva⟩
+    | none =>
+      obtain ⟨a, ha, hva⟩ := fieldSlice_absent (tag := t) (q := true) hv hl hfl
+      exact ⟨a, factSlice_keeps hm ht ha, hva⟩
 
 /-! ### Presence of an optional key
 
@@ -719,6 +810,10 @@ an algorithm for the tag case, not the meaning of refinement. -/
     (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) : Bool :=
   (checkObservedSubResult G images A B o p).accepted
 
+theorem checkObservedSubResult_accepted [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) :
+    (checkObservedSubResult G images A B o p).accepted = checkObservedSubUsing G images A B o p := rfl
+
 theorem checkObservedSubUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) :
     checkObservedSubUsing G images A B o p =
@@ -780,6 +875,27 @@ theorem fieldRefinements_eq [DecidableEq ι] (o : Observation) (fields : List (N
     CheckResult.accepted_bind, CheckResult.accepted_ofBool, ProgramCertificates.checkSubtypeUsing_accepted]
   rfl
 
+/-- An object a cell fact is about keeps the labels its field's observed
+contents admit (`factSlice`). -/
+@[nospecialize] def cellRefinementsResult [DecidableEq ι] (cells : HeapFacts.Facts) (A B : Ty ι) (j : Nat)
+    (G : NormalGraph ι) (images : InstanceImageCheck G) (p : PositiveCertificates.SubtypeChoices ι) :
+    CheckResult ι Unit :=
+  CheckResult.any cells fun fct =>
+    (CheckResult.ofBool (fct.slot == j)).bind fun _ =>
+      ProgramCertificates.checkSubtypeUsing G images (factSlice G A fct.field fct.contents) B p
+
+@[nospecialize] def cellRefinements [DecidableEq ι] (cells : HeapFacts.Facts) (A B : Ty ι) (j : Nat)
+    (G : NormalGraph ι) (images : InstanceImageCheck G) (p : PositiveCertificates.SubtypeChoices ι) : Bool :=
+  (cellRefinementsResult cells A B j G images p).accepted
+
+theorem cellRefinements_eq [DecidableEq ι] (cells : HeapFacts.Facts) (A B : Ty ι) (j : Nat)
+    (G : NormalGraph ι) (images : InstanceImageCheck G) (p : PositiveCertificates.SubtypeChoices ι) :
+    cellRefinements cells A B j G images p =
+      cells.any fun fct => fct.slot == j &&
+        PositiveCertificates.checkUsing G images (factSlice G A fct.field fct.contents) B p := by
+  simp only [cellRefinements, cellRefinementsResult, CheckResult.accepted_any,
+    CheckResult.accepted_bind, CheckResult.accepted_ofBool, ProgramCertificates.checkSubtypeUsing_accepted]
+
 /-- Whether an observation rules out `undefined`: a Boolean is not it, and a
 tag answers it one way. -/
 def excludesUndef : Observation → Bool
@@ -834,25 +950,29 @@ theorem impossible_sound [DecidableEq ι] {G : NormalGraph ι} {A o n W v}
 /-- One observed edge slot, with alternatives justified by its source facts. -/
 @[nospecialize] def checkObservedSlotResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (source target : Option (Ty ι)) (evidence : Option (PositiveCertificates.SubtypeChoices ι))
-    (sourceSlot tested : Nat) (o : Observation) (fields optionals : List (Nat × PropKey)) : CheckResult ι Unit :=
+    (sourceSlot tested : Nat) (o : Observation) (fields optionals : List (Nat × PropKey))
+    (cells : HeapFacts.Facts := []) : CheckResult ι Unit :=
   match source, target, evidence with
   | some A, some B, some p =>
       if sourceSlot == tested then checkObservedSubResult G images A B o p
-      else ((ProgramCertificates.checkSubtypeUsing G images A B p).orElse fun _ =>
+      else (((ProgramCertificates.checkSubtypeUsing G images A B p).orElse fun _ =>
         fieldRefinementsResult o (fields ++ optionals) A B sourceSlot G images p).orElse fun _ =>
-        CheckResult.ofBool (optionalRefinements o optionals A B sourceSlot G)
+        CheckResult.ofBool (optionalRefinements o optionals A B sourceSlot G)).orElse fun _ =>
+        cellRefinementsResult cells A B sourceSlot G images p
   | _, _, _ => failure
 
 theorem checkObservedSlotResult_accepted [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (source target : Option (Ty ι)) (evidence : Option (PositiveCertificates.SubtypeChoices ι))
-    (sourceSlot tested : Nat) (o : Observation) (fields optionals : List (Nat × PropKey)) :
-    (checkObservedSlotResult G images source target evidence sourceSlot tested o fields optionals).accepted =
+    (sourceSlot tested : Nat) (o : Observation) (fields optionals : List (Nat × PropKey))
+    (cells : HeapFacts.Facts) :
+    (checkObservedSlotResult G images source target evidence sourceSlot tested o fields optionals cells).accepted =
       match source, target, evidence with
       | some A, some B, some p =>
           if sourceSlot == tested then checkObservedSubUsing G images A B o p
           else PositiveCertificates.checkUsing G images A B p ||
             fieldRefinements o (fields ++ optionals) A B sourceSlot G images p ||
-            optionalRefinements o optionals A B sourceSlot G
+            optionalRefinements o optionals A B sourceSlot G ||
+            cellRefinements cells A B sourceSlot G images p
       | _, _, _ => false := by
   cases source <;> cases target <;> cases evidence <;>
     simp only [checkObservedSlotResult]
@@ -867,23 +987,25 @@ ordinary subtype evidence, or, for an object the tested value was read from
 exist, even if forgotten. -/
 @[nospecialize] def checkObservedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (Γ Δ : List (Ty ι)) (tested : Nat) (o : Observation) (mapping : Mapping) (ps : EdgeEvidence ι)
-    (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := []) : CheckResult ι Unit :=
+    (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := [])
+    (cells : HeapFacts.Facts := []) : CheckResult ι Unit :=
   (CheckResult.ofBool Γ[tested]?.isSome).bind fun _ =>
   (CheckResult.ofBool ((Γ[tested]?).any (impossible G · o))).orElse fun _ =>
   (CheckResult.ofBool ((match mapping with | none => true | some slots => slots.length == Δ.length) &&
     ps.length == Δ.length)).bind fun _ =>
   CheckResult.all (List.range Δ.length) fun j =>
-    checkObservedSlotResult G images Γ[slot mapping j]? Δ[j]? ps[j]? (slot mapping j) tested o fields optionals
+    checkObservedSlotResult G images Γ[slot mapping j]? Δ[j]? ps[j]? (slot mapping j) tested o fields optionals cells
 
 @[nospecialize] def checkObservedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (Γ Δ : List (Ty ι)) (tested : Nat) (o : Observation) (mapping : Mapping) (ps : EdgeEvidence ι)
-    (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := []) : Bool :=
-  (checkObservedResult G images Γ Δ tested o mapping ps fields optionals).accepted
+    (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := [])
+    (cells : HeapFacts.Facts := []) : Bool :=
+  (checkObservedResult G images Γ Δ tested o mapping ps fields optionals cells).accepted
 
 theorem checkObservedUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (Γ Δ : List (Ty ι)) (tested : Nat) (o : Observation) (mapping : Mapping) (ps : EdgeEvidence ι)
-    (fields optionals : List (Nat × PropKey)) :
-    checkObservedUsing G images Γ Δ tested o mapping ps fields optionals =
+    (fields optionals : List (Nat × PropKey)) (cells : HeapFacts.Facts) :
+    checkObservedUsing G images Γ Δ tested o mapping ps fields optionals cells =
   (Γ[tested]?.isSome &&
   ((Γ[tested]?).any (impossible G · o) ||
   (match mapping with | none => true | some slots => slots.length == Δ.length) &&
@@ -893,7 +1015,8 @@ theorem checkObservedUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : In
       if slot mapping j == tested then checkObservedSubUsing G images A B o p
       else PositiveCertificates.checkUsing G images A B p ||
         fieldRefinements o (fields ++ optionals) A B (slot mapping j) G images p ||
-        optionalRefinements o optionals A B (slot mapping j) G
+        optionalRefinements o optionals A B (slot mapping j) G ||
+        cellRefinements cells A B (slot mapping j) G images p
     | _, _, _ => false))) := by
   simp only [checkObservedUsing, checkObservedResult, CheckResult.accepted_bind,
     CheckResult.accepted_orElse, CheckResult.accepted_ofBool, CheckResult.accepted_all,
@@ -901,19 +1024,21 @@ theorem checkObservedUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : In
 
 def ObservedCovers [DecidableEq ι] (G : NormalGraph ι) (Γ Δ : List (Ty ι))
     (tested : Nat) (o : Observation) (mapping : Mapping) (fields : List (Nat × PropKey) := [])
-    (optionals : List (Nat × PropKey) := []) : Prop :=
+    (optionals : List (Nat × PropKey) := []) (cells : HeapFacts.Facts := []) : Prop :=
   (∃ A, Γ[tested]? = some A ∧ ∀ n W v, meaning G A n W v → o.holds v → False) ∨
   ∀ j B, Δ[j]? = some B → ∃ A, Γ[slot mapping j]? = some A ∧
     (if slot mapping j = tested then ObservedSub G A B o
      else FamLe (meaning G A) (meaning G B) ∨
        (∃ t q f, o = .tag t q ∧ (slot mapping j, f) ∈ fields ++ optionals ∧
          FamLe (meaning G (fieldSlice G A f t q)) (meaning G B)) ∨
-       ∃ f, (slot mapping j, f) ∈ optionals ∧ excludesUndef o = true ∧ promotes G A B f = true)
+       (∃ f, (slot mapping j, f) ∈ optionals ∧ excludesUndef o = true ∧ promotes G A B f = true) ∨
+       ∃ fct ∈ cells, fct.slot = slot mapping j ∧
+         FamLe (meaning G (factSlice G A fct.field fct.contents)) (meaning G B))
 
 theorem checkObserved_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {Γ Δ i o mapping ps fields optionals}
-    (h : checkObservedUsing G images Γ Δ i o mapping ps fields optionals = true) :
-    ObservedCovers G Γ Δ i o mapping fields optionals := by
+    {Γ Δ i o mapping ps fields optionals cells}
+    (h : checkObservedUsing G images Γ Δ i o mapping ps fields optionals cells = true) :
+    ObservedCovers G Γ Δ i o mapping fields optionals cells := by
   simp only [checkObservedUsing_eq, Bool.and_eq_true, Bool.or_eq_true, List.all_eq_true] at h
   rcases h.2 with hdead | h
   · left
@@ -940,7 +1065,7 @@ theorem checkObserved_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         exact checkObservedSub_sound hc
       · simp only [beq_iff_eq,he,↓reduceIte,Bool.or_eq_true] at hc
         simp only [he,↓reduceIte]
-        rcases hc with (hc | hc) | hc
+        rcases hc with ((hc | hc) | hc) | hc
         · exact .inl (PositiveCertificates.acceptedUsing hc)
         · right; left
           cases o with
@@ -949,21 +1074,26 @@ theorem checkObserved_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
             simp only [fieldRefinements_eq, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hc
             obtain ⟨⟨k, f⟩, hk, rfl, hck⟩ := hc
             exact ⟨t, q, f, rfl, hk, PositiveCertificates.acceptedUsing hck⟩
-        · right; right
+        · right; right; left
           simp only [optionalRefinements, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hc
           obtain ⟨hx, ⟨k, f⟩, hk, rfl, hp⟩ := hc
           exact ⟨f, hk, hx, hp⟩
+        · right; right; right
+          simp only [cellRefinements_eq, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at hc
+          obtain ⟨fct, hm, hslot, hck⟩ := hc
+          exact ⟨fct, hm, hslot, PositiveCertificates.acceptedUsing hck⟩
 
 /-- A branch edge's environment, one level above the one it is used at: a
 field slice needs the heap's contents at the field, which the world types one
 level down. -/
-theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapping fields optionals ρ n W h}
-    (hc : ObservedCovers G Γ Δ i o mapping fields optionals) (he : EnvOk G Γ ρ (n+1) W)
+theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapping fields optionals cells ρ n W h}
+    (hc : ObservedCovers G Γ Δ i o mapping fields optionals cells) (he : EnvOk G Γ ρ (n+1) W)
     (ho : o.holds (ρ i)) (hh : HeapOk (n+1) W h)
     (hl : ∀ k f, (k, f) ∈ fields → ∃ flds c oid l, ρ k = .objAt flds c oid ∧ flds.lookup f = some l ∧
       h[l]? = some (ρ i))
     (hopt : ∀ k f, (k, f) ∈ optionals → ∃ flds c oid, ρ k = .objAt flds c oid ∧
-      (flds.lookup f = none → ρ i = .undef) ∧ (∀ l, flds.lookup f = some l → h[l]? = some (ρ i))) :
+      (flds.lookup f = none → ρ i = .undef) ∧ (∀ l, flds.lookup f = some l → h[l]? = some (ρ i)))
+    (hcells : HeapFacts.Holds cells ρ h) :
     EnvOk G Δ (mapEnv mapping ρ) (n+1) W := by
   rcases hc with ⟨A, ha, himp⟩ | hc
   · exact (himp _ _ _ (he.2 _ A ha) ho).elim
@@ -976,7 +1106,7 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
     rw [hij]
     exact h (n+1) W _ (by simpa [hij] using he.2 _ A ha) ho
   · simp only [hij,↓reduceIte] at h
-    rcases h with h | ⟨t, q, f, rfl, hf, hs⟩ | ⟨f, hf, hx, hp⟩
+    rcases h with h | ⟨t, q, f, rfl, hf, hs⟩ | ⟨f, hf, hx, hp⟩ | ⟨fct, hm, hslot, hs⟩
     · exact h (n+1) W _ (he.2 _ A ha)
     · rcases List.mem_append.mp hf with hf | hf
       · obtain ⟨flds, c, oid, l, hv, hfl, hu⟩ := hl _ f hf
@@ -998,5 +1128,8 @@ theorem ObservedCovers.env [DecidableEq ι] {G : NormalGraph ι} {Γ Δ i o mapp
         cases he''
         rw [hfl] at hn
         cases hn
+    · obtain ⟨flds, c, oid, u, hv, hr, hatom⟩ := hcells fct hm
+      rw [hslot] at hv
+      exact hs (n+1) W _ (factSlice_sound (he.2 _ A ha) hh hv hr hatom)
 
 end Verification.BranchRefinement

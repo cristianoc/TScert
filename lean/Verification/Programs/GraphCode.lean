@@ -570,15 +570,15 @@ write, or a selected invocation or construction within the bound whose
 signature states its footprint on a throw. -/
 def throwsWithin [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (Φ : Footprints.Closed) (F : List Nat) (c : NodeEvidence ι) (t : Tm) : Bool :=
-  -- A node no environment reaches: a slot of its entry has no value.
-  (entry c).any (fun A => G.plainTy A && (expand G A).isEmpty) ||
   (ExpressionEffects.check G (entry c) t || ExpressionEffects.writeWithin G (entry c) Φ t) ||
     (decide ((ProgramCertificates.claim c.expression).term = t) &&
       ProgramCertificates.checkTreeUsing G images c.expression &&
       selectedWithinAt Φ F c.expression && ExpressionEffects.selectedThrows c.expression &&
-      match ExpressionEffects.selectedEffect c.expression with
+      (match ExpressionEffects.selectedEffect c.expression with
       | some eff => eff.onThrow
-      | none => false)
+      | none => false)) ||
+  -- A node no environment reaches: a slot of its entry has no value.
+  (entry c).any (fun A => G.plainTy A && (expand G A).isEmpty)
 
 theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {Φ : Footprints.Closed} {c : NodeEvidence ι} {t : Tm} {F : List Nat}
@@ -594,7 +594,8 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   have hsafe := HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
     (hterm j V h' ρ henv himp hknowledge hworld hheap))
   simp only [throwsWithin, Bool.or_eq_true] at hthrows
-  rcases hthrows with (hempty | (hexpr | hwrite)) | hcall
+  rcases hthrows with ((hexpr | hwrite) | hcall) | hempty
+  rotate_right
   · obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hempty
     simp only [Bool.and_eq_true, List.isEmpty_iff] at hnil
     obtain ⟨i, hi⟩ := List.getElem?_of_mem hA
@@ -708,7 +709,9 @@ the independent operational rule, which also covers their handlers. -/
 @[nospecialize] def nodeChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (Φ : Footprints.Closed) (facts : List (List Nat)) (ret exc : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) : Bool :=
   let F := factsAt facts l
-  unreachableEntry G c || (match node.handler with | none => true | some t => handlerFresh facts F t) &&
+  -- The unreachability test, which expands every type of the node's entry,
+  -- runs only where the node is not otherwise within the bound.
+  ((match node.handler with | none => true | some t => handlerFresh facts F t) &&
     (!(node.handler.isSome || exc) || throwsWithin G images Φ F c node.expression) &&
     ProgramCertificates.checkScope (entry c).length node.expression &&
     edgesFresh facts F (varFresh F node.expression || callFresh G images c node.expression) ret node.continuation &&
@@ -716,14 +719,13 @@ the independent operational rule, which also covers their handlers. -/
       ExpressionEffects.writeWithin G (entry c) Φ node.expression) ||
       (decide ((ProgramCertificates.claim c.expression).term = node.expression) &&
         ProgramCertificates.checkTreeUsing G images c.expression &&
-        selectedWithinAt Φ F c.expression))
+        selectedWithinAt Φ F c.expression))) || unreachableEntry G c
 
 @[nospecialize] def nodeCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (Φ : Footprints.Closed) (facts : List (List Nat)) (ret exc : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) :
     ProgramCertificates.CheckResult ι Unit :=
   let F := factsAt facts l
-  (ProgramCertificates.CheckResult.ofBool (unreachableEntry G c)).orElse fun _ =>
-  (ProgramCertificates.CheckResult.ofBool ((match node.handler with | none => true | some t => handlerFresh facts F t) &&
+  ((ProgramCertificates.CheckResult.ofBool ((match node.handler with | none => true | some t => handlerFresh facts F t) &&
       (!(node.handler.isSome || exc) || throwsWithin G images Φ F c node.expression) &&
       ProgramCertificates.checkScope (entry c).length node.expression &&
       edgesFresh facts F (varFresh F node.expression || callFresh G images c node.expression) ret node.continuation)).bind fun _ =>
@@ -731,7 +733,8 @@ the independent operational rule, which also covers their handlers. -/
       ExpressionEffects.writeWithin G (entry c) Φ node.expression)).orElse fun _ =>
     (ProgramCertificates.CheckResult.ofBool (decide ((ProgramCertificates.claim c.expression).term = node.expression))).bind fun _ =>
     (ProgramCertificates.checkTreeResult G images c.expression).bind fun _ =>
-    ProgramCertificates.CheckResult.ofBool (selectedWithinAt Φ F c.expression)
+    ProgramCertificates.CheckResult.ofBool (selectedWithinAt Φ F c.expression)).orElse fun _ =>
+  ProgramCertificates.CheckResult.ofBool (unreachableEntry G c)
 
 theorem nodeCheckedResult_accepted [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (Φ : Footprints.Closed) (facts : List (List Nat)) (ret exc : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) :
@@ -791,7 +794,8 @@ theorem nodes_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
   have hmem : ((node, c), l) ∈ (P.zip C).zipIdx := List.mem_zipIdx_iff_getElem?.mpr hzip
   have hp := List.all_eq_true.mp hall _ hmem
   simp only [nodeChecked, Bool.or_eq_true, Bool.and_eq_true] at hp
-  rcases hp with hu | ⟨⟨⟨⟨hx, hthr⟩, hscope⟩, hedge⟩, hcases⟩
+  rcases hp with ⟨⟨⟨⟨hx, hthr⟩, hscope⟩, hedge⟩, hcases⟩ | hu
+  rotate_right
   · exact .inl hu
   obtain ⟨actual, hactual, hterm, -⟩ := graph_node hgraph hcodes hc
   cases hn.symm.trans hactual
@@ -805,10 +809,10 @@ theorem nodes_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
 /-- Definition effects supplement, rather than replace, ordinary safety. A
 footprint letting everything change, without a fresh result or a footprint on
 a throw, holds of every run (`Closed.top_safe`); any other bound is
-established node by node (`compositionalChecked`), or, without a fresh result
-or a footprint on a throw, by a graph of pure nodes, which preserves the heap,
-for code returning a plain result. A fresh result, and a footprint on a
-throw, are established node by node whatever the footprint. -/
+established node by node (`compositionalChecked`), or, without a fresh result,
+by a graph of pure nodes, which keeps the heap a prefix at every step, a raise
+included, for code returning a plain result. A fresh result is established
+node by node whatever the footprint. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
   if c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false then pure () else

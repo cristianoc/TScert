@@ -461,7 +461,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                  | Shape {elements=Some {rest=None;required;optional_elements;_};fields=[];calls=[];indexes=[]} ->
                    List.length required <= length
                    && length <= List.length required + List.length optional_elements
-                 | _ -> false) (flat_atoms declarations t) with
+                 | _ -> false) (Option.value ~default:[] (flat_atoms declarations t)) with
                | [arm] -> Some (Atoms [arm])
                | _ -> None)
             | _ -> None)

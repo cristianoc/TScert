@@ -203,6 +203,7 @@ one number or string and holds of a value of its family, that value, a
 singleton (equality with a zero holds of both zeros, which stay the family);
 the predicate otherwise. -/
 def observeAtom (tag : Tag) (q : Bool) (a : Atom) : List Atom :=
+  if a.isTag then [a] else
   if a == .defined || a == .nonNull || a == .nonNullish then observeBroad tag q a else
   if tagClause tag (a.clause (α := Ty Nat)) == some (!q) then [] else
   match tag, q, a with
@@ -212,36 +213,38 @@ def observeAtom (tag : Tag) (q : Bool) (a : Atom) : List Atom :=
 
 /-- A primitive reads no prototype. -/
 theorem atom_protoFree {a : Atom} {v : Tm} (h : a.holds v)
-    (hd : a ≠ .defined) (hn : a ≠ .nonNull) (hb : a ≠ .nonNullish) (t : Tag) :
+    (hd : a ≠ .defined) (hn : a ≠ .nonNull) (hb : a ≠ .nonNullish) (ht : a.isTag = false) (t : Tag) :
     protoFree t v = true := by
   cases v with
   | objAt fs c =>
     cases a <;> simp [Atom.holds] at h
-    all_goals first | exact absurd rfl hd | exact absurd rfl hn | exact absurd rfl hb
+    all_goals first | exact absurd rfl hd | exact absurd rfl hn | exact absurd rfl hb | simp [Atom.isTag] at ht
   | _ => cases t <;> rfl
 
 theorem observeAtom_holds {tag : Tag} {q : Bool} {a : Atom} {v : Tm}
     (hv : a.holds v) (hq0 : tagHolds tag v = q ∨ protoFree tag v = false) :
     ∃ a' ∈ observeAtom tag q a, a'.holds v := by
+  cases htag : a.isTag
+  case true => exact ⟨a, by simp [observeAtom, htag], hv⟩
   by_cases hbroad : a = .defined ∨ a = .nonNull ∨ a = .nonNullish
   · have htest : (a == .defined || a == .nonNull || a == .nonNullish) = true := by
       simpa only [Bool.or_eq_true, beq_iff_eq, or_assoc] using hbroad
-    simp only [observeAtom, htest, ↓reduceIte]
+    simp only [observeAtom, htag, htest, ↓reduceIte, Bool.false_eq_true]
     exact observeBroad_holds hbroad hv hq0
   have hd : a ≠ .defined := fun h => hbroad (Or.inl h)
   have hn : a ≠ .nonNull := fun h => hbroad (Or.inr (Or.inl h))
   have hb : a ≠ .nonNullish := fun h => hbroad (Or.inr (Or.inr h))
-  have hq : tagHolds tag v = q := hq0.resolve_right (by rw [atom_protoFree hv hd hn hb tag]; simp)
+  have hq : tagHolds tag v = q := hq0.resolve_right (by rw [atom_protoFree hv hd hn hb htag tag]; simp)
   have hnd : (a == .defined) = false := by simpa using hd
   have hnn : (a == .nonNull) = false := by simpa using hn
   have hnb : (a == .nonNullish) = false := by simpa using hb
   unfold observeAtom
-  rw [hnd, hnn, hnb]
+  rw [htag, hnd, hnn, hnb]
   simp only [Bool.false_or, Bool.false_eq_true, ↓reduceIte]
   split
   · rename_i hbad
     have hanswer := tagClause_sound (Ξ := topF) (S := fun (_ : Ty Nat) => nulT) (P := fun _ _ _ _ => False)
-      (n := 0) (W := ofList []) (beq_iff_eq.mp hbad) ((Atom.sem hd hn hb).mpr hv)
+      (n := 0) (W := ofList []) (beq_iff_eq.mp hbad) ((Atom.sem hd hn hb htag).mpr hv)
     rw [hq] at hanswer
     cases q <;> contradiction
   · split
@@ -376,9 +379,12 @@ undefined, whose broad saved nullish predicate alone is insufficient. -/
   | .tag tag q, some A =>
     match atoms G (BranchRefinement.tagSlice G A tag q) with
     | some R => ⟨linkFacts k slot R ++ out.cells, ⟨slot,R,valueField⟩ :: out.values, out.links⟩
-    -- A slice of objects a test leaves, `x` truthy where `x` is an object or
-    -- undefined: its values are neither null nor undefined.
+    -- Otherwise the answer itself is a fact of every cell the value was
+    -- read from (a separate fact: all of a cell's facts hold). A slice of
+    -- objects a test leaves, `x` truthy where `x` is an object or undefined,
+    -- also has values neither null nor undefined.
     | none =>
+      let out : Knowledge := ⟨linkFacts k slot [.tag tag q] ++ out.cells, out.values, out.links⟩
       if G.plainTy (BranchRefinement.tagSlice G A tag q) && (expand G (BranchRefinement.tagSlice G A tag q)).all
           (fun c => tagClause .isNullish c == some false) then
         ⟨linkFacts k slot [.nonNullish] ++ out.cells, ⟨slot,[.nonNullish],valueField⟩ :: out.values, out.links⟩
@@ -405,7 +411,17 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
         rcases List.mem_cons.mp hf with rfl | hf
         · exact hv
         · exact hout.2.1 f hf
-    · by_cases hn : (G.plainTy (BranchRefinement.tagSlice G A tag q) && (expand G (BranchRefinement.tagSlice G A tag q)).all
+    · have htag : ∃ a ∈ [Atom.tag tag q], a.holds (ρ slot) :=
+        ⟨.tag tag q, by simp, (meaning_value (he.2 slot A hi)).1, ho⟩
+      have hout : Holds ⟨linkFacts k slot [.tag tag q] ++ (observe k slot (.tag tag q)).cells,
+          (observe k slot (.tag tag q)).values, (observe k slot (.tag tag q)).links⟩ ρ h := by
+        refine ⟨?_, hout.2.1, hout.2.2⟩
+        intro f hf
+        rcases List.mem_append.mp hf with hf | hf
+        · exact linkFacts_holds hk htag f hf
+        · exact hout.1 f hf
+      dsimp only
+      by_cases hn : (G.plainTy (BranchRefinement.tagSlice G A tag q) && (expand G (BranchRefinement.tagSlice G A tag q)).all
           (fun c => tagClause .isNullish c == some false)) = true
       · rw [if_pos hn]
         have hm := BranchRefinement.tagSlice_sound (he.2 slot A hi) ho

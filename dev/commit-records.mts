@@ -59,8 +59,8 @@ function readRecord(rev: string): CommitRecord {
 }
 
 function group(arg: string): Group {
-  if (!arg.includes("..")) return { name: arg, records: [readRecord(arg)], files: [] };
   const [base, tip] = arg.split("..");
+  if (tip === undefined) return { name: arg, records: [readRecord(arg)], files: [] };
   const revs = git(["rev-list", "--reverse", "--no-merges", arg]).split("\n").filter(Boolean);
   return {
     name: tip, range: arg, records: revs.map(readRecord),

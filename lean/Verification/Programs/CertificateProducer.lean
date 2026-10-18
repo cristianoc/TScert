@@ -1023,7 +1023,8 @@ observation comes from graph dispatch, never from supplied point annotations. -/
 @[nospecialize] def edgeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (claims : List (PointClaim ι)) (Γ : List (Ty ι)) (target : Target)
     (observed : Option (Nat × BranchRefinement.Observation) := none)
-    (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := []) :
+    (fields : List (Nat × PropKey) := []) (optionals : List (Nat × PropKey) := [])
+    (cells : HeapFacts.Facts := []) :
     CheckResult ι (EdgeEvidence ι) := do
   let c ← claims[target.label]?
   if let some (tested, o) := observed then
@@ -1053,7 +1054,7 @@ observation comes from graph dispatch, never from supplied point annotations. -/
             -- A type parameter's value: its meet with what the test admits.
             else if BranchRefinement.meetSlice G A B t q then some {}
             else none
-      else (subtypeUsing G images A B).orElse (fun _ => match o with
+      else ((subtypeUsing G images A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose
         -- field admits the observation.
         | .tag t q => (fields ++ optionals).findCheck? fun (k, f) =>
@@ -1064,7 +1065,13 @@ observation comes from graph dispatch, never from supplied point annotations. -/
         -- the `undefined` an absent key reads: the key is present.
         if BranchRefinement.excludesUndef o && optionals.any (fun (k, f) =>
             k == slot target.mapping i && BranchRefinement.promotes G A B f)
-        then some {} else none
+        then some {} else none) |>.orElse fun _ =>
+        -- An object a cell fact is about keeps the labels its field's
+        -- observed contents admit.
+        cells.findCheck? fun fct =>
+          if fct.slot == slot target.mapping i then
+            subtypeUsing G images (BranchRefinement.factSlice G A fct.field fct.contents) B
+          else none
     | none => subtypeUsing G images A B
 
 
@@ -1092,20 +1099,29 @@ read/value rule may succeed when ordinary derivation search cannot. -/
   | .readAt fld (.var i) =>
     choices := (k.cells.filter fun f => f.slot == i && f.field == fld).map
       fun f => .observedRead i f.contents
-    -- Read at the fixed contract once, then try each justified exclusion.
+    -- Read at the fixed contract once, then try each answer the location's
+    -- facts give: a nullish exclusion's, and an observed tag's.
     if let some Ref := j.context[i]? then
-      let tags := [Tag.isUndef, .isNul, .isNullish].filter fun tag =>
-        k.cells.any (fun f => f.slot == i && f.field == fld && f.contents.all (·.excludes tag))
-      if HeapExpressionRules.fieldOperand (expand G Ref) fld && !tags.isEmpty then
+      let cells := k.cells.filter fun f => f.slot == i && f.field == fld
+      let observed := cells.flatMap fun f => f.contents.filterMap fun
+        | .tag t q => some (t, q)
+        | _ => none
+      let answers := (([Tag.isUndef, .isNul, .isNullish].map (·, false)) ++ observed).eraseDups.filter
+        fun (t, q) => cells.any fun f => f.contents.all (·.answers t q)
+      if HeapExpressionRules.fieldOperand (expand G Ref) fld && !answers.isEmpty then
         if let [.refs fs _ _ _ _ _] := expand G Ref then
           if let some C := fs.lookup fld then
             let searched := expressionWithUsing G images (C :: own) suggestions aliases fuel j.context j.term C
             incomplete := incomplete <|> searched.exhaustion
             if let some e := searched.value then
-              for tag in tags do
-                let compared := subtypeUsing G images (BranchRefinement.tagSlice G C tag false) j.type
+              for (tag, q) in answers do
+                let compared := subtypeUsing G images (BranchRefinement.tagSlice G C tag q) j.type
                 incomplete := incomplete <|> compared.exhaustion
-                if let some p := compared.value then choices := choices ++ [.slicedRead tag i e p]
+                match compared.value with
+                | some p => choices := choices ++ [.slicedRead tag q i e p]
+                | none =>
+                  if tag == .isArray && q && BranchRefinement.arraySlice G C j.type then
+                    choices := choices ++ [.slicedRead tag q i e {}]
   | _ => pure ()
   if let some e := ordinary.value then
     match j.term with
@@ -1241,6 +1257,7 @@ promise's evidence. -/
       | none => Failure.edge l t.label index)
   let branchTarget := fun Γ o t index =>
     let searched := edgeUsing G images claims Γ t (some (0, o)) (readFields out 0) (optionalFields out 0)
+      (HeapKnowledge.observeTyped G Γ out 0 o).cells
     match searched.value with
     | some p => Except.ok p
     | none => Except.error (match searched.exhaustion with
@@ -1357,29 +1374,34 @@ mapping reads one holding it, those every predecessor carries. Untrusted: the
 checker follows each edge again. -/
 @[nospecialize] def argumentSlots (P : Program) (claims : List (PointClaim ι)) (start : Nat)
     (slot : Option Nat) : List (List Nat) := Id.run do
-  -- `none`: not reached yet.
-  let mut table : List (Option (List Nat)) := List.replicate P.length none
-  table := table.set start (some slot.toList)
+  -- `none`: not reached yet. Arrays: nodes are visited by label.
+  let widths := (claims.map (·.context.length)).toArray
+  let mut table : Array (Option (List Nat)) := Array.replicate P.length none
+  table := table.set! start (some slot.toList)
   for _ in List.range (2 * P.length + 2) do
     let mut changed := false
     for (node, l) in P.zipIdx do
-      let some here := (table[l]?).getD none | continue
+      let some here := table.getD l none | continue
       let edges := (successors node.continuation).zipIdx.map (fun (t, _) =>
           (t, match node.continuation with | .effect _ | .branch _ _ => false | _ => true)) ++
         node.handler.toList.map (fun t => (t, true))
       for (t, pushed) in edges do
         let sources := if pushed then ControlFlow.pushedSources here (ControlFlow.aliasedRead here node.expression)
           else here
-        let width := ((claims[t.label]?).map (·.context.length)).getD 0
-        let carried := (List.range width).filter fun i => sources.contains (PointClaims.slot t.mapping i)
-        let merged := match (table[t.label]?).getD none with
+        let width := widths.getD t.label 0
+        let carried := match t.mapping with
+          | none => (List.range width).filter sources.contains
+          | some slots => ((List.range width).zip (slots ++ List.replicate (width - slots.length) 0)).filterMap
+              fun (i, s) => if sources.contains s then some i else none
+        let current := table.getD t.label none
+        let merged := match current with
           | none => some carried
           | some old => some (old.filter carried.contains)
-        if merged != (table[t.label]?).getD none then
-          table := table.set t.label merged
+        if merged != current then
+          table := table.set! t.label merged
           changed := true
     if !changed then break
-  return table.map fun x => x.getD []
+  return table.toList.map fun x => x.getD []
 
 /-- Propagate established postconditions along single-predecessor paths. Entry
 starts empty; source cuts use exactly their supplied requirements, even when
@@ -1395,13 +1417,16 @@ Every edge is still checked by the independent consumer. -/
     (goal : ControlFlow.Goal ι := .plain []) :
     Except (Failure ι) (ControlFlow.Certificate ι) := do
   if P.length != claims.length then throw .claimCount
-  let arguments := argumentSlots P claims start goal.slot
+  -- Arrays: every pass visits nodes and their predecessors by label.
+  let arguments := (argumentSlots P claims start goal.slot).toArray
+  let nodes := P.toArray
+  let claimed := claims.toArray
   let handlerTargets := P.filterMap fun node => node.handler.map (·.label)
-  let incoming := (List.range P.length).map fun target =>
-    P.zipIdx.flatMap fun (node,l) =>
-      (successors node.continuation).zipIdx.filterMap fun (t,index) =>
-        if t.label == target then some (l,index,t) else none
-  let mut table : List (Option (NodeEvidence ι)) := List.replicate P.length none
+  let incoming : Array (List (Nat × Nat × Target)) := P.zipIdx.foldl (fun acc (node,l) =>
+      (successors node.continuation).zipIdx.foldl (fun acc (t,index) =>
+        if t.label < acc.size then acc.modify t.label (· ++ [(l,index,t)]) else acc) acc)
+    (Array.replicate P.length [])
+  let mut table : Array (Option (NodeEvidence ι)) := Array.replicate P.length none
   -- A merge waits for its predecessors while some pass still makes progress;
   -- once none does, the merges still waiting (a cycle through no cut) take
   -- their stated requirements alone, as every merge did before.
@@ -1409,19 +1434,19 @@ Every edge is still checked by the independent consumer. -/
   for _ in List.range (2 * P.length + 2) do
     let mut progress := false
     for l in List.range P.length do
-      if ((table[l]?).getD none).isSome then continue
-      let some node := P[l]? | throw .claimCount
-      let some c := claims[l]? | throw .claimCount
+      if (table.getD l none).isSome then continue
+      let some node := nodes[l]? | throw .claimCount
+      let some c := claimed[l]? | throw .claimCount
       let required := (requirements.lookup l).getD ⟨[],[],[]⟩
       let mut k := required
       let mut implies : List (PromiseCalls.Implication ι) := []
       -- At the entry and at cuts, the argument slots every edge carries.
-      let mut held := (arguments[l]?).getD []
+      let mut held := arguments.getD l []
       if l != start && !cuts.contains l then
         match incoming[l]? with
         | some [(pred,index,target)] =>
-          let some previous := (table[pred]?).getD none | continue
-          let some source := P[pred]? | throw .claimCount
+          let some previous := table.getD pred none | continue
+          let some source := nodes[pred]? | throw .claimCount
           k := HeapKnowledge.project (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) previous.output source.continuation index)
             target.mapping c.context.length
           implies := projectImplications (edgeImplicationsOf previous source.continuation) target.mapping
@@ -1436,7 +1461,7 @@ Every edge is still checked by the independent consumer. -/
           let mut holding : List (List Nat) := []
           let mut ready := true
           for (pred,index,target) in preds do
-            match (table[pred]?).getD none, P[pred]? with
+            match table.getD pred none, nodes[pred]? with
             | some previous, some source =>
               projections := projections ++ [HeapKnowledge.project
                 (edgeKnowledge G ((claim previous.expression).type :: (claim previous.expression).context) previous.output source.continuation index) target.mapping c.context.length]
@@ -1459,15 +1484,15 @@ Every edge is still checked by the independent consumer. -/
       -- implication, and the argument slots the throwing nodes carry.
       if handlerTargets.contains l then
         implies := []
-        held := held.filter ((arguments[l]?).getD []).contains
+        held := held.filter (arguments.getD l []).contains
       let evidence ← produceNode G images pool fuel l node claims k suggestions known codes aliases checker
         implies held goal
-      table := table.set l (some evidence)
+      table := table.set! l (some evidence)
       progress := true
     if !progress then
       if force then break else force := true
     else force := false
-  table.mapM fun c => match c with
+  table.toList.mapM fun c => match c with
     | some e => pure e
     | none => throw .rejected
 
