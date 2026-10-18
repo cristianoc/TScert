@@ -51,6 +51,38 @@ private def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name 
           sourceMapRegion sourceMap
         some (refuse s!"a closure in '{name}'" ((place.map (·.pos)).getD namePos))
 
+/-- Where evidence fails a node's check: the first node of the unit's graph,
+or of a closure's code, whose certificate the node-by-node check refuses, at
+its source position. A diagnostic only: acceptance is `checkRequestsResult`. -/
+private def nodeRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (c : Response ι) :
+    Option String :=
+  let G := RequestJson.graph r.toRequest
+  let images := StoreView.images r.types
+  let firstBad (Φ : Footprints.Closed) (exc : Bool) (start : Nat) (P : Program) (C : Certificate ι)
+      (sourceMap : SourceMap) : Option SourceMapEntry :=
+    let facts := GraphCode.inferFresh G images P C start
+    ((P.zip C).zipIdx.find? fun ((node, point), l) =>
+      !GraphCode.nodeChecked G images Φ facts false exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
+  let refuse (pos : Span) :=
+    s!"source evidence refusal at [{pos.1},{pos.2}): the evidence does not establish this node's claim"
+  ((firstBad r.footprint r.onThrow r.start r.program c.certificate r.sourceMap).map (refuse ·.pos)) <|>
+    (r.toRequest.codes.zip c.codes).zipIdx.findSome? fun ((q, C), i) =>
+      let sourceMap := ((r.codeSources[i]?).map (·.sourceMap)).getD []
+      (firstBad q.entry.row.effect.footprint q.entry.row.effect.onThrow q.entry.start
+        (GraphCode.program q.entry.exprs q.entry.conts) C sourceMap).map (refuse ·.pos)
+
+/-- Where evidence fails an expression obligation: the first whose evidence
+the check refuses, at its source position. A diagnostic only. -/
+private def obligationRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (c : Response ι)
+    (es : List (ProgramCertificates.Evidence ι)) : Option String :=
+  let G := RequestJson.graph r.toRequest
+  let codes := match codeTable r.toRequest c with
+    | some table => GraphCode.admits table
+    | none => fun _ => false
+  ((r.obligations.zip es).find? fun (q, e) =>
+    !(ExpressionClaims.checkResult G (StoreView.images r.types) (StoreView.valid r.types) q.sequent e codes).accepted).map
+    fun (q, _) => s!"source evidence refusal at [{q.pos.1},{q.pos.2}): the evidence does not establish this obligation's claim"
+
 def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
     (budget : PositiveCertificates.SearchBudget := {}) : Except String Unit := do
   let (T, plans) ← extractPlans ast claims fileKey budget
@@ -61,11 +93,14 @@ def checkJson (ast claims : Json) (fileKey : String) (evidence : Json)
   let checked := checkRequestsResult rs b
   if checked.accepted then return ()
   -- An exhausted search is reported as such; a footprint the graph does not
-  -- establish is located; any other failure is the generic refusal.
+  -- establish is located, then a node or an obligation whose evidence the
+  -- check refuses; any other failure is the generic refusal.
   let fallback := validationFailure rs checked "source evidence does not justify the extracted program and exact claims"
   throw (if checked.exhaustion.isSome then fallback else
-    ((certified.zip b.functions).findSome? fun (plan, c) => match plan with
-      | .graph name namePos r => footprintRefusal name namePos r c).getD fallback)
+    (((certified.zip b.functions).findSome? fun (plan, c) => match plan with
+      | .graph name namePos r => footprintRefusal name namePos r c) <|>
+     (((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
+      | .graph _ _ r => nodeRefusal r c <|> obligationRefusal r c es)).getD fallback)
 
 def produceJson (ast claims : Json) (fileKey : String) (fuel : Nat)
     (budget : PositiveCertificates.SearchBudget := {}) : Except String Json := do

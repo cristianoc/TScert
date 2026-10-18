@@ -746,7 +746,10 @@ when it has none.
 ### Node lists in the model
 
 `NodeArray<T>` is read as `readonly T[]` with dense presence: a node list
-has $`n`$ elements and no hole. The model's value is an ordinary dense
+has $`n`$ elements and no hole. A node list of the package enters the model as
+an object of the external heap whose host classification T4 states, fixed
+when it enters: the classification is an assumption about the package's
+values, not a fact the pipeline establishes. The model's value is an ordinary dense
 readonly array of the $`v_i`$, under `Array.prototype`'s contract, so the
 operations of the table are the existing readonly-array rules, and
 `Array.isArray` gives `true` as it does at run time. A node list is a

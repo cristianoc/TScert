@@ -114,7 +114,7 @@ export function checkOverloads(verifier: string, artifacts: string): void {
         p.stdout + p.stderr,
         name === "foreign expression"
           ? /expression claim names a foreign or missing execution point/
-          : /invalid source claims|per-arrow claim|per-arrow interior claims|evidence search failed|source evidence does not justify/,
+          : /invalid source claims|per-arrow claim|per-arrow interior claims|evidence search failed|source evidence does not justify|source evidence refusal at/,
       );
     }
   }

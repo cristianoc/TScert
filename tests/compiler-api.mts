@@ -116,11 +116,25 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
       const seen: unknown[] = [];
       for (const x of list) seen.push(x);
       assert.deepEqual(seen, elements, `${what}: for…of`);
-      const calls: unknown[][] = [];
-      list.forEach((x, i, l) => calls.push([x, i, l]));
-      assert.deepEqual(calls, elements.map((e, i) => [e, i, list]), `${what}: forEach's arguments`);
-      assert.equal(list.some(() => false), false, `${what}: some`);
-      assert.equal(list.every(() => true), true, `${what}: every`);
+      // Every callback member: its arguments and `this`, in order, for each
+      // element, the callback answering so that no member stops early.
+      const marker = { marker: true };
+      const expected = elements.map((e, i) => [marker, e, i, list]);
+      const traced = (member: string, run: (f: (this: unknown, x: unknown, i: number, l: unknown) => boolean) => unknown,
+          answer: boolean): unknown => {
+        const trace: unknown[][] = [];
+        const result = run(function (this: unknown, x, i, l) { trace.push([this, x, i, l]); return answer; });
+        assert.deepEqual(trace, expected, `${what}: ${member}'s this and arguments in order`);
+        return result;
+      };
+      traced("forEach", f => list.forEach(f, marker), false);
+      assert.equal(traced("some", f => list.some(f, marker), false), false, `${what}: some`);
+      assert.equal(traced("every", f => list.every(f, marker), true), true, `${what}: every`);
+      assert.equal(traced("find", f => list.find(f, marker), false), undefined, `${what}: find`);
+      assert.equal(traced("findIndex", f => list.findIndex(f, marker), false), -1, `${what}: findIndex`);
+      assert.deepEqual(traced("map", f => list.map(f, marker), true), elements.map(() => true), `${what}: map`);
+      assert.deepEqual(traced("filter", f => list.filter(f, marker), true), elements, `${what}: filter`);
+      assert.deepEqual(traced("flatMap", f => list.flatMap(f, marker), true), elements.map(() => true), `${what}: flatMap`);
       assert.equal(list.find((_, i) => i === n - 1), elements[n - 1], `${what}: find`);
       assert.equal(list.findIndex((_, i) => i === n - 1), n - 1, `${what}: findIndex`);
       if (n) assert.equal(list.indexOf(list[n - 1]!), n - 1, `${what}: indexOf`); // asserted: n > 0
@@ -132,24 +146,46 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
       if (n) assert.equal(list.at(0), elements[0], `${what}: at`);
       assert.deepEqual([...new Set(list)], elements, `${what}: new Set`);
       const collect = (...xs: unknown[]): unknown[] => xs;
-      assert.deepEqual(collect.apply(null, [...list]), elements, `${what}: apply`);
+      assert.deepEqual(collect.apply(null, list), elements, `${what}: apply of the list itself`);
       assert.deepEqual(collect(...list), elements, `${what}: argument spread`);
       const [first, ...rest] = list;
       assert.deepEqual([first, ...rest].slice(0, n), elements, `${what}: destructuring with a rest`);
       if (!n) assert.equal(list.join(), "", `${what}: join of an empty list`);
     };
     rows();
-    // A callback throwing at each index, of forEach and of map.
+    // After each interruption, indexed reads and a fresh iteration at once,
+    // before anything else could repair the list's state.
+    const intact = (after: string): void => {
+      elements.forEach((e, i) => assert.equal(list[i], e, `${what}: index ${i} after ${after}`));
+      assert.deepEqual([...list], elements, `${what}: a fresh iteration after ${after}`);
+    };
+    // A callback throwing at each index, of every callback member.
     for (let at = 0; at < n; at++) {
-      assert.throws(() => list.forEach((_, i) => { if (i === at) throw Error("stop"); }), /stop/);
-      assert.throws(() => list.map((_, i) => { if (i === at) throw Error("stop"); return i; }), /stop/);
+      const stop = (_: unknown, i: number): boolean => { if (i === at) throw Error("stop"); return false; };
+      for (const [member, run] of [["forEach", () => list.forEach(stop)], ["some", () => list.some(stop)],
+          ["every", () => list.every((x, i) => !stop(x, i))], ["find", () => list.find(stop)],
+          ["findIndex", () => list.findIndex(stop)], ["map", () => list.map(stop)],
+          ["filter", () => list.filter(stop)], ["flatMap", () => list.flatMap(stop)]] as const) {
+        assert.throws(run, /stop/, `${what}: ${member} propagates the callback's exception`);
+        intact(`${member} thrown at ${at}`);
+      }
     }
     // Iterations left early: by break, by return, by a shorter destructuring.
     for (const _ of list) break;
+    intact("a break");
     (() => { for (const _ of list) return; })();
+    intact("a return");
     const [_a, _b] = list;
-    // Re-entrancy: each row run inside a callback on the same list.
-    list.forEach(() => rows());
+    intact("a shorter destructuring");
+    // Re-entrancy: each row run inside callbacks and an iteration of the same
+    // list, the outer traversal's results checked too.
+    const outer: unknown[] = [];
+    list.forEach(x => { rows(); outer.push(x); });
+    assert.deepEqual(outer, elements, `${what}: forEach around re-entrant rows`);
+    assert.deepEqual(list.map(x => { rows(); return x; }), elements, `${what}: map around re-entrant rows`);
+    const iterated: unknown[] = [];
+    for (const x of list) { rows(); iterated.push(x); }
+    assert.deepEqual(iterated, elements, `${what}: for…of around re-entrant rows`);
     // Two iterators advanced alternately, with reads between their steps.
     const one = list[Symbol.iterator](), two = list[Symbol.iterator]();
     for (let i = 0; i < n; i++) {

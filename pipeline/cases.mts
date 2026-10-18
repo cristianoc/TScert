@@ -1474,6 +1474,8 @@ export const cases: Case[] = [
   positive("object-literal-keys", "numeric keys in literals and types (a number's property is its ToString), a numeric key read on a record, a spread of an object literal"),
   negative("invalid-object-shorthand", "a shorthand field `{ x }` holds the named value at its own type"),
   positive("object-symbol-key", "a computed key naming a `unique symbol` constant is that symbol's key of the literal"),
+  gap("recursive-const-arrow-refused", "a constant whose arrow calls itself: the lowering binds the name after its initializer, so the read is refused at its location", "unsupported", "source",
+    /a binding read in its own initializer is outside the fragment/),
   positive("host-exclusion-merges", "the merges a spread, an object rest and `Object.assign` lower to, of operands whose types exclude host values: an invariant field, a closed literal, a dictionary, a primitive, a union of such, a writable array"),
   gap("spread-readonly-record-refused", "a spread of a record of readonly fields alone, which admits a host object (R8)", "unverified", "search",
     /No rule derives this merge/),

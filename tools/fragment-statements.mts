@@ -1049,6 +1049,25 @@ export function declarations(this: Gate, list: ts.VariableDeclarationList, at: N
     // checked against. Written, it is the annotation; unwritten, the
     // producer states one for the binding and the adapter checks that,
     // rather than this taking the initializer's type for the contract.
+    // A binding its own initializer reads, as a function calling the
+    // constant it initializes does (`const visit = (n) => … visit(…)`): the
+    // lowering binds the name after its initializer, so the read would name
+    // another binding or none.
+    const self = gate.local(d.name);
+    const reads = (n: Node): Node | undefined => {
+      if (ts.isTypeNode(n)) return undefined;
+      if (ts.isIdentifier(n) && gate.local(n) === self) {
+        const parent = n.parent;
+        const key = (ts.isPropertyAccessExpression(parent) && parent.name === n) ||
+          ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertySignatureDeclaration(parent)) &&
+            parent.name === n);
+        if (!key) return n;
+      }
+      return n.forEachChild(reads);
+    };
+    const read = reads(d.initializer);
+    if (read)
+      gate.fail(read, `a binding read in its own initializer is outside the fragment: ${self} is bound after its initializer runs`);
     return {
       name: gate.local(d.name),
       namePos: gate.span(d.name),

@@ -294,7 +294,8 @@ The first blockers, by the number of slices each stops (2026-10-18):
 - a value imported from the front end's own modules that the declaration
   reader does not read (76), listed below as the source annotations to add;
 - a constant whose arrow calls itself (`const visit = (n) => … visit(…)`),
-  an internal error of the producer ("unbound name", 10);
+  refused at the read until recursive bindings are supported
+  (`recursive-const-arrow-refused`, 10);
 - the parser's `Gate` class (30);
 - a missing annotation, or a value TypeScript types `any` (31);
 - the compiler API's host classes read member-complete, `Checker` and
