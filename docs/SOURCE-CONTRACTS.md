@@ -1949,7 +1949,7 @@ The declaration's types are not read, and neither are the types they name
 (`Buffer`, `URL`, streams). Each statement is an assumption a result is
 relative to, as an import's declared type is, and each says what the host
 does at its parameters, where the declaration may say otherwise. A call is
-unrestricted in its effect. The entries:
+unrestricted in its effect unless its entry states one. The entries:
 
 - `execFileSync(file, args, options)` runs `file` and returns its standard
   output when it exits with status 0; a failure to run, a nonzero status, a
@@ -2023,6 +2023,22 @@ unrestricted in its effect. The entries:
 - `writeFileSync(file, data)` with a path and a string writes the string to
   the file as UTF-8 and returns `undefined`; a path it cannot write throws:
   $`(\mathtt{string},\ \mathtt{string})\Rightarrow\mathtt{undefined}`$.
+- `realpathSync(path)` with a string returns the canonical path, its
+  symbolic links followed, and throws where the path does not exist:
+  $`(\mathtt{string})\Rightarrow\mathtt{string}`$; an encoding option, which
+  may select a `Buffer`, is outside the stated call
+  (`invalid-node-realpath-options`).
+- `node:path`'s `join` of any number of strings, `dirname` and `basename`
+  with an optional suffix compute a string from their strings alone, within
+  the empty footprint on their throw too (Node 25.2.1's `lib/path.js`; `join`
+  pushes onto an array of its own, whose standard `push` the model assumes).
+  `resolve` of any number and `relative` of two compute one too, but read
+  `process.cwd()` for a relative path, a writable property of the global
+  `process` other code may replace, so they are unrestricted in their
+  effect, as `realpathSync` is, which resolves its path the same way
+  (`node-path-strings`; `invalid-node-path-resolve-callback`, run under
+  Node). The module exports one object (`export = path`), whose methods
+  are the overloads an entry names.
 
 ## Regular expressions
 

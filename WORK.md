@@ -35,7 +35,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 76 of 313 verify in `tools/` (2026-10-18, at a 60 s step limit), 21 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 80 of 313 verify in `tools/` (2026-10-18, at a 60 s step limit), 21 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -326,16 +326,16 @@ The first blockers, by the number of slices each stops (2026-10-18):
   (`localValues`, `letWrites`);
 - an object built with a `then` member (12);
 - members of `Type` outside its named view (11);
-- module-level `let` and `var` (8); Node's modules, `path` and `fs` (7);
-  a default import (3);
+- module-level `let` and `var` (8); `node:path`'s `sep`, a constant of the
+  object the module exports (2); a default import (3);
 - the compiler's synchronous API failing on a query (3), reported as tool
   failures: `TypeObject.getTypes` panics converting a type reference to a
   tuple (`forInEntryReads`), and `Checker.getTypeAtLocation` and
   `Checker.getTypeFromTypeNode` return a reply the client cannot decode
   (`readDiagnostic`, `diagnosticNode`), cause unknown.
 
-Twenty-nine slices reach the producer and fail there, 47 fail in search, and
-three exceed the 60 s search limit (`termsOf`, `decodeCode`, `decodeTerm`). Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
+Twenty-nine slices reach the producer and fail there, and 48 fail in search;
+`termsOf`, `decodeCode` and `decodeTerm` verify within the 60 s limit. Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
 24 of `dev/`, the record tools and the lowering dump, 21 (2026-10-18), each
 sliced with the same-file declarations it uses. The first blockers of the others in
 `dev/`, with the functions each stops directly and through callees:

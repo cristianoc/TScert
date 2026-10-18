@@ -1215,8 +1215,13 @@ export function collectDeclarations(file: string, options: {
     // the entries' statements; the declarations' types are not read.
     const moduleValue = (declared: readonly Node[], entries: readonly ModuleEntry[], what: string):
         Omit<ValueRoot, "binding"> => {
-      const overloads = declared.filter((n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && !n.body);
-      if (!overloads.length || overloads.length !== declared.length ||
+      // A function's overloads, or the methods of the object a module
+      // exports whole (`export = path`, `path.PlatformPath`'s); a namespace
+      // merged into a function (`realpathSync.native`) is its other members.
+      const callable = declared.filter(n => !ts.isModuleDeclaration(n));
+      const overloads = callable.filter((n): n is ts.FunctionDeclaration | ts.MethodSignatureDeclaration =>
+        (ts.isFunctionDeclaration(n) && !n.body) || ts.isMethodSignatureDeclaration(n));
+      if (!overloads.length || overloads.length !== callable.length ||
           overloads.some(o => !idOf(o.getSourceFile()).includes("@types/node/")))
         throw Error(`${what} is not a function Node's declarations declare, as the reviewed overlay of library modules states it`);
       const forms = entries.map(entry => {

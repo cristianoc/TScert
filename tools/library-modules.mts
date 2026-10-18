@@ -35,6 +35,10 @@ const no = (): TypeTerm => ({ k: "literal", name: "false", text: "false", span: 
 const field = (name: string, type: TypeTerm, optional: boolean) =>
   ({ name, optional, readonly: true, type, span: at });
 
+/** A function that computes a string and allocates only it, also when it
+ * throws. */
+const pathEffect: CallEffect = { ...emptyEffect, onThrow: true };
+
 /** The standard streams of a child: standard output piped, the others piped,
  * ignored or inherited. */
 const stdio: TypeTerm = { k: "tuple", presence: "dense", readonly: true, optional: [], rest: null, span: at,
@@ -112,6 +116,33 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "fs", name: "writeFileSync",
     signature: "export function writeFileSync(file: PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView, options?: WriteFileOptions): void;",
     stated: { binders: [], params: [atom("string"), atom("string")], result: atom("undefined") } },
+  // `realpathSync(path)` with a string resolves it on the file system, its
+  // symbolic links followed, and returns the canonical path as a string; a
+  // path that does not exist throws. A relative path is resolved against
+  // `process.cwd()`, a writable property of the global `process`, which
+  // other code may replace: the call is unrestricted in its effect.
+  { module: "fs", name: "realpathSync",
+    signature: "export function realpathSync(path: PathLike, options?: EncodingOption): string;",
+    stated: { binders: [], params: [atom("string")], result: atom("string") } },
+  // `node:path`'s string functions compute a path from strings. `join` of
+  // any number, `dirname`, and `basename` with an optional suffix validate
+  // their strings and compute from them alone (Node 25.2.1's lib/path.js;
+  // `join` pushes onto an array of its own, whose standard `push` the model
+  // assumes): they run no code of the client's, write nothing and allocate
+  // the string they return. `resolve`, and `relative` through it, read
+  // `process.cwd()` for a relative path, which other code may replace: they
+  // are unrestricted in their effect.
+  { module: "path", name: "join", signature: "join(...paths: string[]): string;",
+    stated: { binders: [], params: [], rest: atom("string"), result: atom("string") }, effect: pathEffect },
+  { module: "path", name: "resolve", signature: "resolve(...paths: string[]): string;",
+    stated: { binders: [], params: [], rest: atom("string"), result: atom("string") } },
+  { module: "path", name: "dirname", signature: "dirname(path: string): string;",
+    stated: { binders: [], params: [atom("string")], result: atom("string") }, effect: pathEffect },
+  { module: "path", name: "basename", signature: "basename(path: string, suffix?: string): string;",
+    stated: { binders: [], params: [atom("string"), union(atom("string"), atom("undefined"))], result: atom("string") },
+    effect: pathEffect },
+  { module: "path", name: "relative", signature: "relative(from: string, to: string): string;",
+    stated: { binders: [], params: [atom("string"), atom("string")], result: atom("string") } },
 ];
 
 /** A declaration's text as an entry spells it: white space collapsed, none
