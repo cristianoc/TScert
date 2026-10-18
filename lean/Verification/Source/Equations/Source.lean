@@ -196,7 +196,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
   let ds := (← get).doc
   let excluded ← match ds[0]? with
     | some d =>
-      if d.identity == arrayProtoIdentity then
+      if ImplicitDependency.arrayProto.selects d.identity then
         let names ← (← arr d.expression "fields").mapM fun f => do PropKey.decode (← field f "name")
         pure (RequestJson.arrayExcludedKeys names.toList)
       else pure (RequestJson.arrayExcludedKeys [])
@@ -327,8 +327,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
   -- The stable non-thenable family resolution descriptors are relative to:
   -- the intrinsic module's `%Stable%`, by its declaration identity.
   for d in ds do
-    if (d.identity.getObjValAs? String "module").toOption == some "tscert/intrinsics" &&
-        (d.identity.getObjValAs? String "name").toOption == some "%Stable%" then
+    if ImplicitDependency.stable.selects d.identity then
       if !d.parameters.isEmpty || !d.bases.isEmpty then
         throw "the stable-value intrinsic takes no parameters"
       let stable ← lowerType { site := "/declarations/definitions/%Stable%" } d.expression

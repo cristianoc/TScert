@@ -35,6 +35,30 @@ def definitions (document : Json) : Except String (Array Definition) := do
 def arrayProtoIdentity : Json :=
   Json.mkObj [("module", "tscert/array-prototype"), ("name", "ArrayProto"), ("span", toJson [0, 0])]
 
+/-- The declarations lowering reads by identity, where no reference in the
+term being lowered names them: the array prototype every array and tuple
+term's store reaches, and the stable non-thenable family and the native
+`Promise` a resolution-qualified scheme's domain is relative to. Lowering
+selects each only through `selects`. -/
+inductive ImplicitDependency where
+  | arrayProto
+  | stable
+  | promise
+  deriving DecidableEq, Repr
+
+/-- Whether a declaration identity is the one lowering reads for `d`. -/
+def ImplicitDependency.selects : ImplicitDependency → Json → Bool
+  | .arrayProto, id => id == arrayProtoIdentity
+  | .stable, id => (id.getObjValAs? String "module").toOption == some "tscert/intrinsics" &&
+      (id.getObjValAs? String "name").toOption == some "%Stable%"
+  | .promise, id => (id.getObjValAs? String "name").toOption == some "Promise" &&
+      ((id.getObjValAs? String "module").toOption.getD "").startsWith "typescript/lib/"
+
+def ImplicitDependency.all : List ImplicitDependency := [.arrayProto, .stable, .promise]
+
+theorem ImplicitDependency.mem_all (d : ImplicitDependency) : d ∈ ImplicitDependency.all := by
+  cases d <;> simp [ImplicitDependency.all]
+
 /-- An object term's index signatures, by the keys each constrains. -/
 def indexSignatures (term : Json) : List (String × IndexKeys × Json) :=
   [("stringIndex", IndexKeys.strings, term.getObjVal? "stringIndex"),

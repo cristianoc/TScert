@@ -11,14 +11,31 @@ open EquationGraphs (Tree)
 section
 variable {ι : Type} [Labels ι]
 
+/-- An import a certified unit stands for, read as the unit's module reads
+the unit (`moduleArrow`): its declared signature, `U`'s one call signature,
+with the unit's footprint and on-throw flag, and its extension discarding
+further actuals, which the unit's code does. -/
+def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footprints.Closed) (onThrow : Bool) :
+    Except String Json := do
+  match PositiveRules.expand (SourceTypes.graph T) U with
+  | [.arrs [a] []] =>
+    if a.effect.promise.isSome then throw "a certified import's signature states no promise"
+    let params : List Fragment.Param := a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
+    moduleArrow ⟨"", (0, 0), params, graphClaim a.result, [], false, none⟩ footprint onThrow
+  | _ => throw "a certified import needs one fixed call signature"
+
+/-- The plans of a source's units. A qualified import, by its name, is read
+at its certified unit's footprint and on-throw flag (`importedArrow`); every
+other at its declared type. -/
 def extractPlans (ast claims : Json) (fileKey : String)
-    (budget : PositiveCertificates.SearchBudget := {}) : Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) := do
+    (budget : PositiveCertificates.SearchBudget := {})
+    (qualified : List (String × Footprints.Closed × Bool) := []) :
+    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) := do
   -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
   let arrays := match (ast.getObjVal? "declarations").toOption.bind
       (fun doc => (doc.getObjVal? "definitions").toOption) with
     | some (.arr ds) => ds.any fun d =>
-        ((d.getObjVal? "declaration").toOption.bind fun i => (i.getObjVal? "module").toOption) ==
-          some (Json.str "tscert/array-prototype")
+        EquationLowering.ImplicitDependency.arrayProto.selects (d.getObjValD "declaration")
     | _ => false
   let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey budget
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
@@ -42,7 +59,9 @@ def extractPlans (ast claims : Json) (fileKey : String)
   let moduleFunctions : List (SourceExtraction.ModuleValue Tree) :=
     (all.filterMap fun (g, tps) => if tps.isEmpty then
       some (g.name, g.namePos, (moduleArrow g (footprintOf g) (onThrowOf g)).map .written) else none) ++
-    (imported.map fun (name, span, ty) => (name, span, .ok (.written ty))) ++
+    (imported.map fun (name, span, U) => (name, span, match qualified.lookup name with
+      | some (footprint, onThrow) => (importedArrow d.types U footprint onThrow).map .written
+      | none => .ok (.written (graphClaim U)))) ++
     (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
       Except.ok (.written (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
         [("a", toJson "graph"), ("label", toJson (StoreView.arrayProto d.types))]])])))] else [])

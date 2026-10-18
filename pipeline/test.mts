@@ -1772,6 +1772,153 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // Certified imports: an import is read at its unit's footprint only where
+  // the importer's claims list the read qualified, the module's claims are
+  // about the module's bytes, the two readings of the unit's signature agree
+  // and the module's own run is certified. Each forgery bypasses the producer
+  // and is refused where evidence is produced and where the honest evidence
+  // is checked.
+  const imported = run("certified-value-import");
+  const writing = run("invalid-certified-write-value-import");
+  const refuse = (artifacts: string, name: string, claims: SourceClaims, refusal: RegExp,
+      ast = join(artifacts, "fragment.json"), checked = refusal): void => {
+    const input = writeClaims(artifacts, name, claims);
+    const searched = produceWith(artifacts, input, name, ast);
+    assert.ifError(searched.error);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.match(searched.stdout + searched.stderr, refusal);
+    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts, ast), checked);
+  };
+  // A unit claimed within the empty footprint whose body pushes onto its
+  // array: its module's run refuses it.
+  const narrowed = readClaims(imported);
+  const tally = must(narrowed.modules.flatMap(m => m.functions).find(f => f.name === "tally"), "tally's claims");
+  assert.notDeepEqual(tally.footprint, emptyFootprint, "tally: its honest footprint");
+  tally.footprint = emptyFootprint;
+  refuse(imported, "forged-certified-footprint", narrowed,
+    /module \.\/certified\.ts: .*the footprint claimed for 'tally' is not established by its body/s);
+  assert.deepEqual(readClaims(writing).qualified.map(q => q.name), ["drop"], "drop is read qualified");
+  // The importer's claims without their qualified reads: the imports are
+  // read at their declared types, and the dense results are refused.
+  const unqualified = readClaims(imported);
+  assert.equal(unqualified.qualified.length, 5, "twice, label, tally, unwrap and unwrapped are read qualified");
+  unqualified.qualified = [];
+  // The honest evidence states its typings at the qualified signatures, which
+  // the importer's document no longer has.
+  refuse(imported, "forged-certified-unqualified", unqualified, /reject: source expression obligation/,
+    join(imported, "fragment.json"), /reject: .*application of unknown head/);
+  // A module's claims about other bytes.
+  const stale = readClaims(imported);
+  for (const m of stale.modules) m.sourceSha256 = "0".repeat(64);
+  refuse(imported, "forged-certified-sha", stale, /a module's claims are about other bytes: \.\/certified\.ts/);
+  // A qualified read closing a cycle: `pong`'s claims read `ping`, whose
+  // claims read `pong`.
+  const cycle = run("certified-cycle-value-import");
+  const cyclic = readClaims(cycle);
+  const pong = must(cyclic.modules.find(m => m.file === "./pong.ts"), "pong's claims");
+  assert.deepEqual(pong.qualified, [], "pong reads ping at its ordinary signature");
+  pong.qualified = cyclic.qualified.filter(q => q.name === "ping");
+  assert.equal(pong.qualified.length, 1, "the importer reads ping qualified");
+  refuse(cycle, "forged-certified-cycle", cyclic, /module \.\/p[io]ng\.ts: a cycle of qualified reads through it/);
+  // A module document whose unit `twice` takes a string: the two readings of
+  // its signature differ.
+  const fragment: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const twice = must(fragment.modules.flatMap(m => m.functions).find(f => f.name === "twice"), "the module's twice");
+  const param = must(twice.params[0], "twice's parameter");
+  assert.ok(param.type.k === "atom" && param.type.name === "number", "twice takes a number");
+  param.type = { ...param.type, name: "string" };
+  const tampered = join(imported, "forged-certified-module.fragment.json");
+  writeFileSync(tampered, JSON.stringify(fragment));
+  refuse(imported, "forged-certified-module", readClaims(imported),
+    /certified import \.\/certified\.ts#twice: the importer's and the module's readings of an imported signature differ/,
+    tampered);
+  // A module document in which `label` writes the binding of `twice`: the
+  // binding is not stable, and the read of `twice` is refused.
+  const rebinding: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const label = must(rebinding.modules.flatMap(m => m.functions).find(f => f.name === "label"), "the module's label");
+  const pos = label.namePos;
+  label.body.unshift({ k: "effect", pos, e: { k: "assign", pos, name: "twice", namePos: pos, rhs: { k: "id", pos, name: "label" } } });
+  const rebound = join(imported, "forged-certified-rebinding.fragment.json");
+  writeFileSync(rebound, JSON.stringify(rebinding));
+  refuse(imported, "forged-certified-rebinding", readClaims(imported),
+    /certified import \.\/certified\.ts#twice: a qualified read names a unit whose module writes its binding/, rebound);
+  // A module document whose `ArrayProto` lacks a member the importer's has:
+  // `tally`'s array parameter reads it implicitly, and the readings differ.
+  const prototype: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const proto = must(must(prototype.modules.find(m => m.location === "./certified.ts"), "the module").declarations
+    .definitions.find(d => d.declaration.name === "ArrayProto"), "the module's ArrayProto");
+  const members = proto.expression?.k === "object" ? proto.expression.fields : [];
+  assert.ok(members.length > 0, "ArrayProto's members");
+  members.pop();
+  const shortened = join(imported, "forged-certified-prototype.fragment.json");
+  writeFileSync(shortened, JSON.stringify(prototype));
+  refuse(imported, "forged-certified-prototype", readClaims(imported),
+    /certified import \.\/certified\.ts#tally: the importer's and the module's readings of a declaration differ: .*ArrayProto/,
+    shortened);
+  // A module document whose written application in `unwrap`'s signature
+  // states another bound: the readings of the application differ.
+  const bounded: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const application = must(must(bounded.modules.find(m => m.location === "./certified.ts"), "the module").declarations
+    .applications.find(a => a.site === "./certified.ts#unwrap"), "unwrap's written application");
+  const bound = must(application.bounds[0], "Bounded's bound");
+  assert.ok(bound.k === "atom" && bound.name === "number", "Bounded's bound is number");
+  application.bounds = [{ ...bound, name: "unknown" }];
+  const rebounded = join(imported, "forged-certified-application.fragment.json");
+  writeFileSync(rebounded, JSON.stringify(bounded));
+  refuse(imported, "forged-certified-application", readClaims(imported),
+    /certified import \.\/certified\.ts#unwrap: the importer's and the module's readings of the written applications in \.\/certified\.ts#unwrap differ/,
+    rebounded);
+  // Readings of `twice` whose parameter is a scheme with a
+  // resolution-qualified binder, alike in both, whose domain lowering takes
+  // relative to `%Stable%` and native `Promise` (no reference in the term
+  // names either). Refused where the module's document lacks `%Stable%` the
+  // importer's states, and where both state `%Stable%` or `Promise` under
+  // one identity and the definitions differ.
+  const resolvable: Ast = JSON.parse(readFileSync(join(run("generic-promise-resolvable"), "fragment.json"), "utf8"));
+  const intrinsic = (name: string): TypeDefinition =>
+    must(resolvable.declarations.definitions.find(d => d.declaration.name === name), `${name}'s definition`);
+  const qualifiedScheme = (): Ast => {
+    const doc: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+    const value = must(doc.declarations.values.find(v => v.declaration.name === "twice"), "twice's value");
+    const unit = must(doc.modules.flatMap(m => m.functions).find(f => f.name === "twice"), "the unit twice");
+    if (value.type.k !== "function") assert.fail("twice's value is a function");
+    const signature = structuredClone(value.type);
+    const scheme = (): TypeTerm => ({ k: "scheme", span: [0, 0], signatures: [structuredClone(signature)],
+      binders: [{ name: "X", bound: null, resolution: { observation: "X#observed", result: "X#result" },
+        default: null, span: [0, 0] }] });
+    must(value.type.params[0], "twice's parameter");
+    value.type.params[0] = scheme();
+    must(unit.params[0], "the unit's parameter").type = scheme();
+    return doc;
+  };
+  const moduleOf = (doc: Ast) => must(doc.modules.find(m => m.location === "./certified.ts"), "the module").declarations;
+  const resolutionControls: [string, (doc: Ast) => void, RegExp][] = [
+    ["lacking", (doc) => { moduleOf(doc).definitions.push(intrinsic("%Stable%")); },
+      /a declaration one reading of an imported signature reads implicitly and the other lacks: .*stable/],
+    ["stable", (doc) => {
+      doc.declarations.definitions.push(intrinsic("%Stable%"));
+      moduleOf(doc).definitions.push({ ...intrinsic("%Stable%"), expression: { k: "atom", name: "unknown", span: [0, 0] } });
+    }, /the importer's and the module's readings of a declaration differ: .*%Stable%/],
+    ["promise", (doc) => {
+      doc.declarations.definitions.push(intrinsic("Promise"));
+      const promise = structuredClone(intrinsic("Promise"));
+      if (promise.expression?.k === "object") promise.expression.fields.pop();
+      else assert.fail("Promise's definition is an object type");
+      moduleOf(doc).definitions.push(promise);
+    }, /the importer's and the module's readings of a declaration differ: .*"Promise"/],
+  ];
+  for (const [name, forge, refusal] of resolutionControls) {
+    const doc = qualifiedScheme();
+    forge(doc);
+    const path = join(imported, `forged-certified-resolution-${name}.fragment.json`);
+    writeFileSync(path, JSON.stringify(doc));
+    refuse(imported, `forged-certified-resolution-${name}`, readClaims(imported),
+      new RegExp(`certified import \\./certified\\.ts#twice: ${refusal.source}`), path);
+  }
+  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature, a module prototype lacking a member, under a nested resolution-qualified binder a `%Stable%` one reading lacks, a differing `%Stable%` and a differing native `Promise`, a differing written application and a rebound unit refused in search and in checking\n");
+}
+
+{
   // A footprint check that runs out of subtype rounds is inconclusive, not a
   // refusal: `marks` claims the empty footprint, and with one round the
   // checks of its graph exhaust. Search and checking report exhaustion, never

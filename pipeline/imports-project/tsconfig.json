@@ -10,6 +10,11 @@
     "noEmit": true,
     "paths": {
       "@fixture/lib": ["./lib.ts"],
+      "@fixture/certified": ["./certified.ts"],
+      "@fixture/scaled": ["./scaled.mts"],
+      "@fixture/outer": ["./outer.ts"],
+      "@fixture/ping": ["./ping.ts"],
+      "@fixture/pong": ["./pong.ts"],
       "@fixture/relay": ["./relay.ts"],
       "@fixture/whole": ["./whole.ts", "./defaulted.ts"],
       "@fixture/defaulted": ["./defaulted.ts"],
@@ -19,6 +24,11 @@
   "include": [
     "../examples/*value-import*.ts",
     "./lib.ts",
+    "./certified.ts",
+    "./scaled.mts",
+    "./outer.ts",
+    "./ping.ts",
+    "./pong.ts",
     "./relay.ts",
     "./whole.ts",
     "./defaulted.ts",
