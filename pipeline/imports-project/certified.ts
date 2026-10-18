@@ -16,6 +16,12 @@ export interface Bounded<T extends number> {
 export function unwrap(b: Bounded<number>): number {
   return b.value;
 }
+export interface Wrapped<T extends number> {
+  inner: Bounded<T>;
+}
+export function unwrapped(w: Wrapped<number>): number {
+  return w.inner.value;
+}
 export function tally(seen: number[], x: number): number {
   seen.push(x);
   return seen.length;

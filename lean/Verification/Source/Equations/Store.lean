@@ -752,9 +752,7 @@ with the same display name does not select a native constructor. -/
 def nativePromise (s : State) (E : Equations) : Except String (Option (NativePromise E)) := do
   let candidates := (List.range s.heads.size).filter fun h =>
     match (s.heads[h]?).map Draft.kind with
-    | some (.declaration i) => s.doc[i]?.any fun d =>
-        d.name == "Promise" &&
-        ((d.identity.getObjValAs? String "module").toOption.getD "").startsWith "typescript/lib/"
+    | some (.declaration i) => s.doc[i]?.any fun d => ImplicitDependency.promise.selects d.identity
     | _ => false
   match candidates with
   | [] => return none

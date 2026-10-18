@@ -1801,7 +1801,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // The importer's claims without their qualified reads: the imports are
   // read at their declared types, and the dense results are refused.
   const unqualified = readClaims(imported);
-  assert.equal(unqualified.qualified.length, 4, "twice, label, tally and unwrap are read qualified");
+  assert.equal(unqualified.qualified.length, 5, "twice, label, tally, unwrap and unwrapped are read qualified");
   unqualified.qualified = [];
   // The honest evidence states its typings at the qualified signatures, which
   // the importer's document no longer has.
@@ -1868,7 +1868,27 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   refuse(imported, "forged-certified-application", readClaims(imported),
     /certified import \.\/certified\.ts#unwrap: the importer's and the module's readings of the written applications in \.\/certified\.ts#unwrap differ/,
     rebounded);
-  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature, a module prototype lacking a member, a differing written application and a rebound unit refused in search and in checking\n");
+  // Readings of `twice` holding a resolution-qualified binder alike, whose
+  // scheme domain lowering takes relative to `%Stable%` and native
+  // `Promise`, and a module document stating a `%Stable%` the importer's
+  // does not: the implicit dependencies differ.
+  const qualifiedBinder: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const resolution = { observation: "O", result: "R" };
+  const value = must(qualifiedBinder.declarations.values.find(v => v.declaration.name === "twice"), "twice's value");
+  const unitTwice = must(qualifiedBinder.modules.flatMap(m => m.functions).find(f => f.name === "twice"), "the unit twice");
+  // A field no source term has, written into both readings' result alike.
+  if (value.type.k !== "function") assert.fail("twice's value is a function");
+  Object.assign(value.type.result, { resolution });
+  Object.assign(unitTwice.retType, { resolution });
+  must(qualifiedBinder.modules.find(m => m.location === "./certified.ts"), "the module").declarations.definitions.push({
+    declaration: { module: "tscert/intrinsics", name: "%Stable%", span: [0, 0] },
+    parameters: [], bases: [], expression: { k: "atom", name: "unknown", span: [0, 0] } });
+  const resolved = join(imported, "forged-certified-resolution.fragment.json");
+  writeFileSync(resolved, JSON.stringify(qualifiedBinder));
+  refuse(imported, "forged-certified-resolution", readClaims(imported),
+    /certified import \.\/certified\.ts#twice: a declaration one reading of an imported signature reads implicitly and the other lacks: .*stable/,
+    resolved);
+  process.stdout.write("forged certified imports: a narrowed unit, dropped qualified reads, stale module claims, a cycle of qualified reads, a differing module signature, a module prototype lacking a member, a differing implicit resolution dependency, a differing written application and a rebound unit refused in search and in checking\n");
 }
 
 {

@@ -974,19 +974,23 @@ export function parseFile(file: string, carriesContext = false,
  * module, and the program modules it imports functions from. */
 type Lowered = { ast: Ast; module: ModuleAst | null; imported: ImportedModule[] };
 
-/** The same value with each `module` field naming `from` naming `to`, and
- * each written application's `site` in `from` sited in `to`: an imported
- * module's own declarations, which its lowering names by its path, named by
- * its identity in the importer's documents. */
+/** The same value with each `module` field naming `from` naming `to`, each
+ * written application's `site` in `from` sited in `to`, and, in its
+ * declaration document, each binder name a declaration of `from` gives
+ * (`T@from:offset`) given by `to`: an imported module's own declarations,
+ * which its lowering names by its path, named by its identity in the
+ * importer's documents. Its code's string literals are kept. */
 function renamedModule<T>(value: T, from: string, to: string): T {
-  const rename = (v: unknown): unknown => Array.isArray(v) ? v.map(rename)
+  const binder = `@${from}:`;
+  const rename = (v: unknown, binders: boolean): unknown => Array.isArray(v) ? v.map((x) => rename(x, binders))
+    : typeof v === "string" ? (binders ? v.split(binder).join(`@${to}:`) : v)
     : v && typeof v === "object"
       ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "module" && x === from ? to
         : k === "site" && typeof x === "string" && x.startsWith(`${from}#`) ? `${to}${x.slice(from.length)}`
-        : rename(x)]))
+        : rename(x, binders || k === "declarations")]))
       : v;
   // asserted: a structural copy of the value, its shape unchanged
-  return rename(value) as T;
+  return rename(value, false) as T;
 }
 
 function lowerFile(file: string, carriesContext: boolean,

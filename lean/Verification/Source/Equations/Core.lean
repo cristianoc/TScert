@@ -70,7 +70,7 @@ partial def lowerRest (ctx : Ctx) (term : Json) : M Union := do
 /-- The built-in array prototype. -/
 partial def protoLabel : M Tree := do
   let ds := (← get).doc
-  if ds[0]?.any (·.identity == arrayProtoIdentity) then
+  if ds[0]?.any (ImplicitDependency.arrayProto.selects ·.identity) then
     return mkApp (← declHead 0) []
   let d : Draft := { name := "ArrayProto", kind := .proto, kinds := [] }
   let h ← alloc "proto" { d with body := some (.clauses [.refs [] [] []]) } fun _ => none
@@ -79,7 +79,7 @@ partial def protoLabel : M Tree := do
 /-- A declaration's head, its row lowered later. -/
 partial def declHead (i : Nat) : M Nat := do
   let d := (← get).doc[i]!
-  let kind := if d.identity == arrayProtoIdentity then HeadKind.proto else .declaration i
+  let kind := if ImplicitDependency.arrayProto.selects d.identity then HeadKind.proto else .declaration i
   alloc s!"decl|{i}" { name := d.name, kind, kinds := List.replicate d.parameters.size .value }
     fun h => some (.declaration h i)
 

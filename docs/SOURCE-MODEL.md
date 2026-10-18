@@ -718,9 +718,12 @@ module's own annotation, are compared structurally, a mismatch refused:
 the parameter and result terms, and recursively every declaration either
 reaches, under the identity mapping of declaration identities: its equation,
 parameters and heritage, and the written applications listed in it, in the
-unit's own declaration alike, with their scopes, arguments and bounds. An
-array or tuple term reaches `ArrayProto`, which its lowering reads, as a
-reference reaches its target. Symbol keys compare by the identity of their
+unit's own declaration alike, with their scopes, arguments and bounds. A
+declaration lowering reads by identity rather than through a reference
+(`ImplicitDependency`, the one list lowering selects them through) is
+reached as a reference's target is where a term reached needs it:
+`ArrayProto` for an array or tuple term, `%Stable%` and native `Promise` for
+a resolution-qualified binder. Symbol keys compare by the identity of their
 symbol's declaration rather than a document's index, and a visited set
 closes recursive definitions. Every field of a term takes part, array presence and host
 classification among them. Each of the following is refused, named by the

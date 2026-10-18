@@ -60,6 +60,20 @@ partial def mentionsArray : Json → Bool
       kvs.toArray.any fun (_, v) => mentionsArray v
   | _ => false
 
+/-- Whether a term or definition holds a resolution-qualified binder, whose
+scheme's domain lowering takes relative to `%Stable%` and native `Promise`. -/
+partial def mentionsResolution : Json → Bool
+  | .arr xs => xs.any mentionsResolution
+  | j@(.obj kvs) =>
+    (match j.getObjVal? "resolution" with | .ok .null | .error _ => false | .ok _ => true) ||
+      kvs.toArray.any fun (_, v) => mentionsResolution v
+  | _ => false
+
+/-- Whether lowering a term or definition reads the implicit dependency `d`. -/
+def triggers : EquationLowering.ImplicitDependency → Json → Bool
+  | .arrayProto, j => mentionsArray j
+  | .stable, j | .promise, j => mentionsResolution j
+
 /-- A declaration document's parts the comparison reads: its definitions,
 its symbols and its written applications. -/
 structure Reading where
@@ -73,6 +87,10 @@ def Reading.of (declarations : Json) : Except String Reading := do
 
 def Reading.definition (r : Reading) (id : Json) : Option Json :=
   r.definitions.find? fun d => (d.getObjVal? "declaration").toOption == some id
+
+/-- The identities of a reading's definitions lowering reads implicitly as `d`. -/
+def Reading.implicit (r : Reading) (d : EquationLowering.ImplicitDependency) : List Json :=
+  (r.definitions.map (·.getObjValD "declaration")).filter d.selects
 
 /-- The written applications a reading lists in the declaration `site`
 names (`module#name`), each with its symbol keys by identity and without its
@@ -90,20 +108,24 @@ module's) are equal once their symbol keys name declarations, and so,
 recursively, is every declaration either reaches: its definition in each
 reading, both present and equal, or both absent (a declaration neither
 document defines, the standard library's, which both read alike). The
-declarations an array or tuple term reaches implicitly, `ArrayProto`, are
-reached as an explicit reference is. In each declaration reached, and in the
+declarations lowering reads implicitly (`ImplicitDependency`) where a term
+reached triggers them, `ArrayProto` for an array or tuple term, `%Stable%`
+and native `Promise` for a resolution-qualified binder, are reached as an
+explicit reference is, the same identities in both readings. In each declaration reached, and in the
 `sites` given, both readings list the same written applications, whose
 arguments and bounds reach declarations in turn. A visited set closes
 recursive definitions; a mismatch is refused, never proved equivalent. -/
 partial def sameReading (ra rb : Reading) (sites : List String) (pairs : List (Json × Json)) :
     Except String Unit := do
   let mut work : List Json := []
-  let mut arrays := false
+  let mut triggered : List EquationLowering.ImplicitDependency := []
+  let trigger (ts : List EquationLowering.ImplicitDependency) (j : Json) :=
+    ts ++ EquationLowering.ImplicitDependency.all.filter fun d => !ts.contains d && triggers d j
   for (a, b) in pairs do
     if canonical ra.symbols a != canonical rb.symbols b then
       throw "the importer's and the module's readings of an imported signature differ"
     work := work ++ referenced a ++ referenced b
-    arrays := arrays || mentionsArray a || mentionsArray b
+    triggered := trigger (trigger triggered a) b
   let mut seen : List Json := []
   let mut siteWork := sites
   let mut seenSites : List String := []
@@ -118,13 +140,21 @@ partial def sameReading (ra rb : Reading) (sites : List String) (pairs : List (J
         throw s!"the importer's and the module's readings of the written applications in {site} differ"
       for x in as do
         work := work ++ referenced x
-        arrays := arrays || mentionsArray x
+        triggered := trigger triggered x
       continue
     match work with
     | [] =>
-      if arrays && !seen.contains EquationLowering.arrayProtoIdentity then
-        work := [EquationLowering.arrayProtoIdentity]
-      else return ()
+      -- The implicit dependencies the terms reached trigger, by identity in
+      -- each reading: the same declarations in both, reached in turn.
+      let mut more : List Json := []
+      for d in triggered do
+        let ia := ra.implicit d
+        let ib := rb.implicit d
+        if ia.length != ib.length || !ia.all ib.contains then
+          throw s!"a declaration one reading of an imported signature reads implicitly and the other lacks: {repr d}"
+        more := more ++ ia.filter (!seen.contains ·)
+      if more.isEmpty then return ()
+      work := more
     | id :: rest =>
       work := rest
       if seen.contains id then continue
@@ -136,7 +166,7 @@ partial def sameReading (ra rb : Reading) (sites : List String) (pairs : List (J
         if canonical ra.symbols da != canonical rb.symbols db then
           throw s!"the importer's and the module's readings of a declaration differ: {id.compress}"
         work := work ++ referenced da
-        arrays := arrays || mentionsArray da
+        triggered := trigger triggered da
       | _, _ => throw s!"a declaration one reading of an imported signature reaches and the other lacks: {id.compress}"
   throw "the readings of an imported signature reach too many declarations"
 

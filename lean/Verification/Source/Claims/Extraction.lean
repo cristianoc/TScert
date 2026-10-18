@@ -35,8 +35,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
   let arrays := match (ast.getObjVal? "declarations").toOption.bind
       (fun doc => (doc.getObjVal? "definitions").toOption) with
     | some (.arr ds) => ds.any fun d =>
-        ((d.getObjVal? "declaration").toOption.bind fun i => (i.getObjVal? "module").toOption) ==
-          some (Json.str "tscert/array-prototype")
+        EquationLowering.ImplicitDependency.arrayProto.selects (d.getObjValD "declaration")
     | _ => false
   let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey budget
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
