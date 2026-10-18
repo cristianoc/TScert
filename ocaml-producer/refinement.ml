@@ -15,7 +15,9 @@ let rec typeof_slice shape holds = function
       (* `Array.isArray`: an array owns its store; an open record may be an
          array carrying other keys, and stays on both arms. *)
       | Shape s when shape="array" ->
-        if s.elements<>None then Some true else if s.calls<>[] then Some false else None
+        (* An indexed dictionary owns no prototype, which an array owns
+           (Lean's `not_array_of_indexed`). *)
+        if s.elements<>None then Some true else if s.calls<>[] || s.indexes<>[] then Some false else None
       | Top | Named _ when shape="array" -> None
       | _ when shape="array" -> Some false
       (* `"object"`: null, or an object without call code. *)

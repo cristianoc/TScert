@@ -126,6 +126,29 @@ const jsonValueDefinition: TypeDefinition = { declaration: jsonValueIdentity, pa
 
 
 
+/** What `JSON.parse` returns without a reviver: `null`, a Boolean, a number,
+ * a string, an array of such values, or an object of them,
+ *
+ *     type ParsedJson = null | boolean | number | string | ParsedJson[] | { [k: string]: ParsedJson };
+ *
+ * ECMA-262's `JSON.parse` evaluates the text as a JSON value: each array it
+ * builds is a fresh array (ArrayCreate) with one element at every index below
+ * its length, each object a fresh ordinary object (OrdinaryObjectCreate of
+ * `%Object.prototype%`) whose members it defines as own data properties
+ * (CreateDataProperty, a `"__proto__"` member included, which becomes an own
+ * key and sets no prototype); without a reviver, InternalizeJSONProperty
+ * never runs. The array is `T[]` at writable elements, the object a writable
+ * dictionary, as a client may go on writing what is fresh. Unlike
+ * `JsonValue`, which `JSON.stringify` takes, it admits arrays: nothing here
+ * calls a member. */
+const parsedJsonIdentity: DeclarationIdentity = { module: "tscert/json", name: "ParsedJson", span: at };
+const parsedJson: TypeTerm = { k: "reference", args: [], span: at,
+  reference: { name: parsedJsonIdentity.name, span: at, arguments: [], target: parsedJsonIdentity } };
+const parsedJsonDefinition: TypeDefinition = { declaration: parsedJsonIdentity, parameters: [], bases: [],
+  expression: { k: "union", span: at, parts: [atom("null"), atom("boolean"), atom("number"), atom("string"),
+    { k: "array", presence: "readable", readonly: false, element: parsedJson, span: at },
+    { k: "object", fields: [], stringIndex: { readonly: false, value: parsedJson, span: at }, calls: [], span: at }] } };
+
 export const globalsOverlay: readonly GlobalEntry[] = [
   // Output, which the model does not observe. The host formats each argument
   // without running client code the fragment can write (no getters, no
@@ -340,13 +363,15 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     signature: "new (year: number, monthIndex: number, date?: number, hours?: number, minutes?: number, seconds?: number, ms?: number): Date;" },
   // The current time, a number.
   { global: "Date", member: "now", signature: "now(): number;" },
-  // `JSON.parse(text)` is a fresh value built from the text, or a
-  // SyntaxError: nothing is stated of it, `any` read as `unknown`. A
-  // reviver is client code the host would call on every member, and whose
+  // `JSON.parse(text)` is a fresh `ParsedJson` built from the text, or a
+  // SyntaxError. It runs no code of the client's and writes only what it
+  // allocates, also before it throws: the empty footprint, on a throw too.
+  // A reviver is client code the host would call on every member, and whose
   // results replace them: the call is read with the text only.
   { global: "JSON", member: "parse",
     signature: "parse(text: string, reviver?: (this: any, key: string, value: any) => any): any;",
-    stated: { binders: [], params: [atom("string")], result: atom("unknown") } },
+    stated: { binders: [], params: [atom("string")], result: parsedJson }, definitions: [parsedJsonDefinition],
+    effect: { ...emptyEffect, onThrow: true } },
   // `JSON.stringify(v)` returns `undefined` for `undefined`, a symbol or a
   // function, calls a `toJSON` it finds, and throws on a bigint or a cycle;
   // at a `JsonValue` it does none of the first two and returns a string. A

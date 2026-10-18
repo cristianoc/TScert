@@ -283,6 +283,8 @@ Language Specification* as of this writing). Sections relied on by name:
   [filter](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.filter)
   and [slice](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.slice)
   to consult the receiver's constructor and its `Symbol.species`;
+- [JSON.parse](https://tc39.es/ecma262/multipage/structured-data.html#sec-json.parse)
+  and [InternalizeJSONProperty](https://tc39.es/ecma262/multipage/structured-data.html#sec-internalizejsonproperty);
 - [Number::equal](https://tc39.es/ecma262/multipage/ecmascript-data-types-and-values.html#sec-numeric-types-number-equal),
   `IsStrictlyEqual`, [IsLooselyEqual](https://tc39.es/ecma262/multipage/abstract-operations.html#sec-islooselyequal),
   `StringToNumber`, `StringToBigInt`, `ToString`/`Number::toString`, `ToPropertyKey`,

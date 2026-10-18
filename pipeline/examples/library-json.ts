@@ -1,4 +1,4 @@
-// `JSON.parse` is a value of which nothing is known, or a SyntaxError;
+// `JSON.parse` is parsed data, read here as `unknown`, or a SyntaxError;
 // `JSON.stringify` of a `JsonValue`, a primitive or a dictionary of them,
 // is a string: such a value owns nothing the host would call, `toJSON`
 // included.

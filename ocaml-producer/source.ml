@@ -68,7 +68,9 @@ let identity declaration =
   let span = list (field "span" declaration) in
   match span with
   | [Number first;Number last] ->
-    str (field "module" declaration) ^ "#" ^ first ^ ":" ^ last
+    (* A declaration is its module, name and span: two the overlay adds share
+       a module and an empty span. *)
+    str (field "module" declaration) ^ "#" ^ str (field "name" declaration) ^ "#" ^ first ^ ":" ^ last
   | _ -> fail "invalid declaration identity"
 (* The source type terms function annotations and declaration bodies share.
    This is a candidate-only view: Lean independently derives the authoritative

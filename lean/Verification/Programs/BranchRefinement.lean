@@ -770,28 +770,77 @@ theorem builtinArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
       · exact (builtinInvariant_carriesInvariant hc rfl).mp hinv
     · cases hrow
 
+/-- A dictionary clause with an index: each of its members owns no
+`[[proto]]` (`dictViewT`, `dictCellT`). -/
+def indexedDict : Clause α → Bool
+  | .dict _ _ _ ds _ _ _ cs => !ds.isEmpty || !cs.isEmpty
+  | _ => false
+
+/-- **No array is a dictionary.** Where the graph states the built-ins, a
+member of a clause owning the store key owns the prototype key
+(`arrayInvariant`), which a member of an indexed dictionary clause does not. -/
+theorem not_array_of_indexed {G : NormalGraph ι} {c : Clause (Ty ι)} (hb : G.builtins.isSome = true)
+    (hi : indexedDict c = true) {Ξ : Fam} {X : Ty ι → Fam} {P : Ty ι → ArgFam} {n W v}
+    (hcv : semWithArgs Ξ X P c n W v) (hinv : builtinInvariant G (builtinValues G) c n W v)
+    (ha : tagHolds .isArray v = true) : False := by
+  cases c with
+  | dict a bs vs ds os ms ks cs =>
+    obtain ⟨-, -, ⟨hds, hcs⟩, -⟩ := hcv
+    obtain ⟨flds, oid, hv, hst⟩ : ∃ flds oid, v = .objAt flds .absent oid ∧
+        (flds.lookup CallArguments.arrayStoreField).isSome = true := by
+      cases v with
+      | objAt fs code oid =>
+        cases code <;> simp [tagHolds] at ha
+        exact ⟨fs, oid, rfl, by simpa [CallArguments.arrayStoreField] using ha⟩
+      | _ => simp [tagHolds] at ha
+    have hnone : flds.lookup CallArguments.protoField = none := by
+      simp only [indexedDict, Bool.or_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff] at hi
+      rcases hi with hd | hd
+      · obtain ⟨d, hd⟩ := List.exists_mem_of_ne_nil _ hd
+        obtain ⟨flds', oid', hv', hp, -⟩ := hds d hd
+        rw [hv] at hv'; cases hv'; exact hp
+      · obtain ⟨d, hd⟩ := List.exists_mem_of_ne_nil _ hd
+        obtain ⟨flds', oid', hv', hp, -⟩ := hcs d hd
+        rw [hv] at hv'; cases hv'; exact hp
+    unfold builtinInvariant at hinv
+    cases hr : G.builtins with
+    | none => rw [hr] at hb; cases hb
+    | some r =>
+      rw [hr] at hinv
+      simp only [Clause.carriesInvariant] at hinv
+      obtain ⟨hview, -, -⟩ := hinv flds oid hv hst
+      obtain ⟨flds', l, -, oid', hv', hl, -⟩ := hview CallArguments.protoField (builtinValues G r.proto) (by simp)
+      rw [hv] at hv'; cases hv'
+      rw [hnone] at hl; cases hl
+  | _ => simp [indexedDict] at hi
+
 /-- Where `Array.isArray` holds, every label of the tested type is kept in
-`B`, or is a clause row each clause of which is of no array or a record's,
+`B`, or is a clause row each clause of which is of no array, an indexed
+dictionary's (no array, where the graph states the built-ins), or a record's,
 whose members that are arrays `B`'s builtins array label holds. -/
 def arraySlice [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) : Bool :=
-  B.any (builtinArrayLabel G) &&
-    (tagSlice G A .isArray true).all fun a =>
-      B.contains a || (G.plain a && (G a).all fun c => tagClause .isArray c == some false || c.carriesInvariant)
+  (tagSlice G A .isArray true).all fun a =>
+    B.contains a || (G.plain a && (G a).all fun c => tagClause .isArray c == some false ||
+      (G.builtins.isSome && indexedDict c) || (c.carriesInvariant && B.any (builtinArrayLabel G)))
 
 theorem arraySlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι}
     (h : arraySlice G A B = true) {n W v} (hv : meaning G A n W v)
     (ha : tagHolds .isArray v = true) : meaning G B n W v := by
-  simp only [arraySlice, Bool.and_eq_true, List.any_eq_true, List.all_eq_true] at h
-  obtain ⟨⟨L, hLB, hL⟩, hall⟩ := h
+  simp only [arraySlice, List.all_eq_true] at h
   obtain ⟨a, haS, hva⟩ := tagSlice_sound (tag := .isArray) (q := true) hv (Or.inl ha)
-  rcases Bool.or_eq_true_iff.mp (hall a haS) with hB | hrow
+  rcases Bool.or_eq_true_iff.mp (h a haS) with hB | hrow
   · exact ⟨a, List.contains_iff_mem.mp hB, hva⟩
   · simp only [Bool.and_eq_true, List.all_eq_true] at hrow
     obtain ⟨c, hc, hcv, hinv⟩ := (unfold_plain hrow.1 n W v).mp hva
     rcases Bool.or_eq_true_iff.mp (hrow.2 c hc) with hno | hrec
-    · have := tagClause_sound (beq_iff_eq.mp hno) hcv
-      rw [ha] at this; cases this
-    · obtain ⟨l, hl, hvl⟩ := builtinArray_of_record hL hrec hinv ha
+    · rcases Bool.or_eq_true_iff.mp hno with hno | hdict
+      · have := tagClause_sound (beq_iff_eq.mp hno) hcv
+        rw [ha] at this; cases this
+      · simp only [Bool.and_eq_true] at hdict
+        exact (not_array_of_indexed hdict.1 hdict.2 hcv hinv ha).elim
+    · simp only [Bool.and_eq_true, List.any_eq_true] at hrec
+      obtain ⟨hrec, L, hLB, hL⟩ := hrec
+      obtain ⟨l, hl, hvl⟩ := builtinArray_of_record hL hrec hinv ha
       cases List.mem_singleton.mp hl
       exact ⟨L, hLB, hvl⟩
 

@@ -141,15 +141,15 @@ let first_part read parts =
 (* `ArrayProto`, the declaration of `Array.prototype`'s members, by identity. *)
 (* The key an object keeps its prototype under: no source property spells it. *)
 let proto_key = "[[proto]]"
-let array_prototype = "tscert/array-prototype#0:0"
+let array_prototype = "tscert/array-prototype#ArrayProto#0:0"
 let key_text = function Name n -> n | Key i -> "[symbol " ^ string_of_int i ^ "]"
 (* The contract of the prototype a primitive's members are read through:
    `StringProto` for a string, and so on. *)
 let primitive_prototype = function
-  | Str | StrLit _ -> Some "tscert/string-prototype#0:0"
-  | Num | NumLit _ -> Some "tscert/number-prototype#0:0"
-  | Bigint | BigintLit _ -> Some "tscert/bigint-prototype#0:0"
-  | True | False -> Some "tscert/boolean-prototype#0:0"
+  | Str | StrLit _ -> Some "tscert/string-prototype#StringProto#0:0"
+  | Num | NumLit _ -> Some "tscert/number-prototype#NumberProto#0:0"
+  | Bigint | BigintLit _ -> Some "tscert/bigint-prototype#BigIntProto#0:0"
+  | True | False -> Some "tscert/boolean-prototype#BooleanProto#0:0"
   | _ -> None
 (* The property key a number spells (`ToString`), for integers below 1e21
    and decimals `%g` writes as JavaScript does; none otherwise. *)

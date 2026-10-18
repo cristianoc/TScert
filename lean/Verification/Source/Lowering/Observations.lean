@@ -147,7 +147,11 @@ uniformly; this is a located proof obligation, never a discarded assertion. -/
 builtins's `readonly unknown[]`, `R`, for the records and `unknown` it does not:
 the refinement the edge's observation establishes. -/
 @[nospecialize] def arrayRefine (G : PositiveGraphs.NormalGraph ι) (A R : Ty ι) : Ty ι :=
-  let sliced := BranchRefinement.tagSlice G A .isArray true
+  -- A label of no array or of indexed dictionaries is dropped: where the
+  -- graph states the built-ins, an array owns the prototype key a dictionary
+  -- does not (`BranchRefinement.not_array_of_indexed`).
+  let sliced := (BranchRefinement.tagSlice G A .isArray true).filter fun a => !(G.plain a && G.builtins.isSome &&
+    (G a).all fun c => ProgramTyping.tagClause .isArray c == some false || BranchRefinement.indexedDict c)
   let kept := sliced.filter fun a => !(G.plain a && (G a).all fun c =>
     ProgramTyping.tagClause .isArray c == some false || c.carriesInvariant)
   if kept.length == sliced.length then sliced else kept ++ R

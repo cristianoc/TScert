@@ -2214,16 +2214,21 @@ Four implementations discharge the tested-slot obligation:
   row $`L`$ holding the array shape over a store of `unknown`,
   $`P_{\mathcal B}`$ and $`N_{\mathcal B}`$, the built-ins' `unknown` row holding
   `source` only (`builtinArrayLabel`, `exactUnknown`, `builtinArray_of_record`).
-  Each label the tag slice keeps is kept in the destination, or is a clause
-  row each clause of which answers `false` or is one the invariant applies
-  to; and the destination holds $`L`$ (`arraySlice`, `arraySlice_sound`, with
-  the marker `subset`). A label with `top`, and a parameter row, is none of
-  these: `top` and a type parameter are not narrowed so:
+  An indexed dictionary's members own no prototype key, which an array
+  owns under the invariant, so none of them is an array
+  (`not_array_of_indexed`). Each label the tag slice keeps is kept in the
+  destination, or is a clause row each clause of which answers `false`, is
+  an indexed dictionary's (where the graph states the built-ins), or is one
+  the invariant applies to with $`L`$ in the destination (`arraySlice`,
+  `arraySlice_sound`, with the marker `subset`). A label with `top`, and a
+  parameter row, is none of these: `top` and a type parameter are not
+  narrowed so:
 
 ```math
 \frac{\forall a\in T_{\mathsf{isArray}}(A).\;a\in B\ \lor\ \forall c\in G(a).\;
-         \mathsf{tag}(\mathsf{isArray},c)=\mathsf{false}\lor c\ \text{a record's, a dictionary's or}\ \mathsf{source}
-       \qquad L\in B\qquad G(L)=[\mathsf{Ref}(;\sigma{:}S,\mathsf{proto}{:}P_{\mathcal B};\langle\mathsf{outside}\,N_{\mathcal B}\rangle)]}
+         \mathsf{tag}(\mathsf{isArray},c)=\mathsf{false}\lor c\ \text{an indexed dictionary's}\lor
+         (c\ \text{a record's, a dictionary's or}\ \mathsf{source}\land L\in B)
+       \qquad G(L)=[\mathsf{Ref}(;\sigma{:}S,\mathsf{proto}{:}P_{\mathcal B};\langle\mathsf{outside}\,N_{\mathcal B}\rangle)]}
       {A\preceq_{\mathsf{isArray}=\mathsf{true}}B}\ \textsf{tag-array}
 ```
 

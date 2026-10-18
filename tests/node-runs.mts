@@ -86,6 +86,14 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "b,x,2", "field-contents-exclusion: each arm's value");
   assert.equal(runExample("invalid-field-contents-call", `wrong({ kind: "b" })`), undefined,
     "invalid-field-contents-call: the call rewrote kind, and the read finds no v");
+  assert.equal(runExample("json-parse-data", `[numbers('[1, "x", 2]').join(), count(JSON.parse('{"a": 1, "b": [2]}'))].join(";")`),
+    "1,0,2;2", "json-parse-data: the numbers, and the keys counted");
+  assert.equal(runExample("invalid-json-parse-class", `typeof wrong()`), "function",
+    "invalid-json-parse-class: the class's prototype method where parsed JSON is promised");
+  assert.equal(runExample("invalid-json-parse-inherited", `typeof wrong("{}")`), "function",
+    "invalid-json-parse-inherited: Object.prototype's toString where parsed JSON is promised");
+  assert.equal(runExample("json-parse-own-proto", `value('{"__proto__": 1, "a": 2}', "a")`), 2,
+    "json-parse-own-proto: the own __proto__ member set no prototype");
   assert.equal(runExample("invalid-field-alias-binder", `wrong({ value: 5 })`), undefined,
     "invalid-field-alias-binder: the parameter is number, and the object has no n");
   assert.equal(runExample("field-tag-read", `[size({ mapping: [1, 2] }), size({ mapping: "abc" }), count({ mapping: [7] })].join()`),
