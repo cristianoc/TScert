@@ -34,6 +34,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
+| [Recursive constants](#recursive-constants) | open: designed, approved by astra (2026-10-18) | `recursive-const-arrow-refused` verifies, with forged self types and effects refused in search and checking |
 | [The front end's own functions](#the-front-ends-own-functions) | open: 47 of 311 verify in `tools/` (2026-10-18), 21 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
@@ -304,6 +305,17 @@ declaration" ([trust surface](docs/DESIGN.md#trust-surface)); the checked
 form retires the computation's trust altogether, the relaxed one only the
 probe's correspondence to the application.
 
+<a id="recursive-constants"></a>
+**Recursive constants.** A constant whose function literal calls itself
+([design](docs/SOURCE-MODEL.md#recursive-constants)): the self entry of graph
+code, the closure rule proved by step-index induction, the code contexts and
+certificates extended, the lowering binding self at invocation. The constants
+of `tools/` it admits: four local `visit` closures of `declaration-graph.mts`,
+`visit` in `fragment-support.mts`'s `freeOffsets`, `visit` in `type-probe.mts`'s
+`identifiers` and `nodeAt`, `collect` in `namespace-members.mts`, `walk` in
+`compiler-api.mts`, `literals` and `visit` in `array-prototype.mts`, and the
+module-level `skipParentheses` and `holdsThis` (2026-10-18, astra's count).
+
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
@@ -314,8 +326,9 @@ The first blockers, by the number of slices each stops (2026-10-18):
 - a value imported from the front end's own modules that the declaration
   reader does not read (76), listed below as the source annotations to add;
 - a constant whose arrow calls itself (`const visit = (n) => … visit(…)`),
-  refused at the read until recursive bindings are supported
-  (`recursive-const-arrow-refused`, 10);
+  refused at the read until [recursive constants](#recursive-constants)
+  are supported (`recursive-const-arrow-refused`, the first blocker of 10
+  slices);
 - the parser's `Gate` class (30);
 - a missing annotation, or a value TypeScript types `any` (31);
 - the compiler API's host classes read member-complete, `Checker` and

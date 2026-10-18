@@ -142,6 +142,29 @@ parameters, `for...of` and `catch` bindings in any body
 declaration, a closure's included, or in its own initializer is refused, as
 JavaScript's temporal dead zone throws there.
 
+<a id="recursive-constants"></a>
+**Recursive constants** (a design, which the pipeline does not implement;
+[WORK](../WORK.md#recursive-constants) tracks it). A constant whose
+initializer is a function literal, an arrow or a function expression with
+nothing else evaluated, may read its own name inside the literal's body and
+parameter defaults: `const visit = (n: Node): R => … visit(child) …`.
+Creating the literal runs neither, so every such read runs during an
+invocation, after the binding holds the closure. The read is the code's
+**self entry**: every invocation of graph code enters it with the callee
+object, the exact $`\mathsf{obj}(\mathit{fs},\mathsf{graph}(\ldots))`$ the
+call step matched, in one more slot after the captures (`callGraph`,
+`constructGraph`); a bound function forwards to its target first, so self is
+the original closure, never the wrapper. A nested closure captures the self
+entry as any other slot. The literal's code is checked from the frame with
+self at the constant's annotation, which must be a complete function type,
+and the closure rule proves the closure meets that whole type, its effects
+and exceptional guarantee included, by induction on the step index: at budget
+$`n`$ every invocation runs at a lower index, where the induction hypothesis
+gives self its type. The annotation alone establishes neither the type nor
+the effect. Every other read of a binding in its own initializer stays
+refused at its location, and module initialization order is checked as
+before (`Sites`).
+
 A module function is an immutable slot holding its code. A file without
 imports or exports may run as a script, whose top-level functions are
 properties of the global object other scripts can write; the slot rests on
