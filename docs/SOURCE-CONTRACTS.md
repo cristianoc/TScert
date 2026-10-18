@@ -1854,11 +1854,14 @@ so it states the empty footprint, on a throw too (a cycle); so does `Error`
 at a string message, which it stores without conversion code
 ([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints);
 `map-stable-json-error`,
-`json-stringify-recursive`). Each is read with its one argument: a
-`toJSON` hook, a replacer and `Error`'s options run code of the client's,
-which may write what a footprint excludes
+`json-stringify-recursive`). `JSON.stringify` is read with a replacer that
+is `null`, absent or a list of keys (primitive numbers and strings, read by
+length and index), and an indent that is a primitive number or string:
+none runs code (`json-stringify-space`). `Error` is read with its one
+argument. A `toJSON` hook, a replacer function and `Error`'s options run
+code of the client's, which may write what a footprint excludes
 (`invalid-json-stringify-tojson`, `invalid-json-stringify-replacer`,
-`invalid-error-options`, each run under Node; `invalid-json-stringify-space`). An entry may
+`invalid-error-options`, each run under Node). An entry may
 read a member as a test of the
 calculus (`test`), and the variable's declaration as the right operand of
 `instanceof`:
