@@ -365,11 +365,11 @@ def NodesWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed) (
     ∃ out, NodeWithin G Φ c node.expression (factsAt facts l) out (node.handler.isSome || exc) ∧
       edgesFresh facts (factsAt facts l) out ret node.continuation = true)
 
-theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed} {Rty : Ty ι} {P : Program}
+theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed} {Rty : Goal ι} {v0 : Tm} {P : Program}
     {C : Certificate ι} {facts : List (List Nat)} {ret exc : Bool}
     (hnodes : NodesWithin G Φ P C facts ret exc)
     {initial n W h s h' s'} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
-    (hs : StateOk G Rty C .undef (n+1) W h s) (hp : BoundState Φ facts ret exc initial (n+1) h s)
+    (hs : StateOk G Rty C v0 (n+1) W h s) (hp : BoundState Φ facts ret exc initial (n+1) h s)
     (st : Transition P h s h' s') : BoundState Φ facts ret exc initial n h' s' := by
   cases st with
   | @enter l node _ ρ hn =>
@@ -431,14 +431,14 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
 
 /-- The effect proof reuses ordinary graph progress and its point assertions.
 There is one control-flow checker, including for cycles and branch refinements. -/
-theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Φ : Footprints.Closed} {Rty : Ty ι} {E : List Tm} {K : List (Continuation × Option Target)}
+theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Φ : Footprints.Closed} {Rty : Goal ι} {v0 : Tm} {E : List Tm} {K : List (Continuation × Option Target)}
     {C : Certificate ι} {facts : List (List Nat)} {ret exc : Bool}
     {codes : CodeEntry ι → Bool} (hg : checkGraphUsing G images Rty (program E K) C codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes)
-    (hnodes : NodesWithin G Φ (program E K) C facts ret exc) :
+    (hnodes : NodesWithin G Φ (program E K) C facts ret exc) (hv0 : isVal v0 = true) :
     ∀ n W h ts s initial, Sim E K ts s → WorldAdm W → HeapOk n W h →
-      StateOk G Rty C .undef n W h s → BoundState Φ facts ret exc initial n h s →
-      HeapObservations.SafePostExc (excOf G) (meaning G Rty)
+      StateOk G Rty C v0 n W h s → BoundState Φ facts ret exc initial n h s →
+      HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty v0)
         (fun h' v => Φ.Holds initial h' ∧ (ret = true → FreshAt initial.length v))
         (fun h' => exc = true → Φ.Holds initial h') n W h ts := by
   intro n
@@ -446,7 +446,7 @@ theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
   | zero => intros; trivial
   | succ n ih =>
     intro W h ts s initial sim hw hh hs hp
-    rcases state_progress hg hcodes rfl hw hh hs with
+    rcases state_progress hg hcodes hv0 hw hh hs with
       (⟨v, rfl, hv, ht⟩ | ⟨v, rfl, hsc⟩) | ⟨U, h', s', hx, hu, st, hok, hs'⟩
     · cases sim; exact .inl (.inl ⟨hv, ht, hp⟩)
     · cases sim with
@@ -456,7 +456,7 @@ theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         ih U h' ts' s' initial sim' hu hok hs'
           (bounded_step hnodes hw hh hs hp st)⟩
 
-theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Φ : Footprints.Closed} {Rty : Ty ι} {E : List Tm} {K : List (Continuation × Option Target)}
+theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Φ : Footprints.Closed} {Rty : Goal ι} {E : List Tm} {K : List (Continuation × Option Target)}
     {C : Certificate ι} {start inputs} {facts : List (List Nat)} {ret exc : Bool}
     {codes : CodeEntry ι → Bool}
     (hc : checkEntryUsing G images Rty (program E K) C start inputs codes = true)
@@ -465,7 +465,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (hstart : factsAt facts start = [])
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h) :
-    HeapObservations.SafePostExc (excOf G) (meaning G Rty)
+    HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (ret = true → FreshAt h.length v))
       (fun h' => exc = true → Φ.Holds h h') n W h (.goto E K start L d) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
@@ -473,12 +473,29 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
   split at hx
   · rename_i c hstart'
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hx
-    obtain ⟨⟨hin, hk, himp, harg⟩, -⟩ := hx
-    apply bounded_safe_of_sim hc.1 hcodes hnodes n W h _ _ h .goto hw hh
+    obtain ⟨⟨hin, hk, himp, harg⟩, hslot⟩ := hx
+    -- The promised argument, where the goal states one, is an input's value.
+    have hv0 : isVal (Rty.argument (envOf L d)) = true := by
+      unfold Goal.argument
+      cases hs : Rty.slot with
+      | none => rfl
+      | some s =>
+        rw [hs] at hslot
+        have hlt : s < inputs.length := by simpa using hslot
+        exact (meaning_value (he.2 s inputs[s] (List.getElem?_eq_getElem hlt))).1
+    apply bounded_safe_of_sim hc.1 hcodes hnodes hv0 n W h _ _ h .goto hw hh
     · refine ⟨c, hstart', ?_, ?_, ?_, ?_⟩
       · simpa only [hin] using he
       · rw [himp]; exact PromiseCalls.ImpliesOk.nil G _ n W
-      · rw [harg]; intro p hp; cases hp
+      · intro p hp
+        rw [harg] at hp
+        unfold Goal.argument
+        cases hs : Rty.slot with
+        | none => rw [hs] at hp; cases hp
+        | some s =>
+          rw [hs] at hp
+          cases List.mem_singleton.mp hp
+          rfl
       · rw [hk]; exact HeapKnowledge.empty _ h
     · refine ⟨Footprints.Closed.Holds.refl Φ h, ?_⟩
       rw [hstart]; intro i hi; cases hi

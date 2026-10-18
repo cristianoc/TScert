@@ -1730,18 +1730,22 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
-  // A guard's promise is its annotation's: a guard declaration claimed
-  // heap-preserving is refused at the declaration.
-  const artifacts = run("type-guards");
-  const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  const guard = must(claims.functions.find(f => f.name === "isPresence"), "isPresence's claims");
-  assert.ok(source.slice(guard.namePos[1]).startsWith("(value: unknown): value is Presence"));
-  guard.footprint = emptyFootprint;
-  const input = writeClaims(artifacts, "forged-guard-effect", claims);
-  refusedAt(artifacts, input, "forged-guard-effect",
-    `source effect refusal at [${guard.namePos[0]},${guard.namePos[1]}): the footprint claimed for '${guard.name}'`);
-  process.stdout.write("forged guard effect: refused at the guard declaration\n");
+  // A guard declaration claims the footprint its body stays within, as a
+  // plain declaration does: claimed narrower, it is refused at the
+  // declaration, where evidence is produced and where the honest evidence is
+  // checked against the forged claim.
+  for (const [file, name, consumed] of [["guard-footprint", "isText", true]] as const) {
+    const artifacts = run(file);
+    const claims = readClaims(artifacts);
+    const guard = must(claims.functions.find(f => f.name === name), `${name}'s claims`);
+    assert.notDeepEqual(guard.footprint, emptyFootprint, `${name}: its honest footprint`);
+    guard.footprint = emptyFootprint;
+    const input = writeClaims(artifacts, `forged-guard-effect-${name}`, claims);
+    const refusal = `the footprint claimed for '${guard.name}' is not established by its body`;
+    refusedAt(artifacts, input, `forged-guard-effect-${name}`, refusal);
+    if (consumed) assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  }
+  process.stdout.write("forged guard effects: a guard claimed within the empty footprint refused at the declaration, in search and in checking\n");
 }
 
 {

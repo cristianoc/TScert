@@ -65,9 +65,10 @@ let with_footprint ?(on_throw=false) footprint t = match t with
    an elimination of a scheme, and no packed rest. *)
 let applicable (s:signature) = s.quantified = [] && s.rest_pack = None
 
-(* The declarations whose signatures may state the empty footprint: plain
-   ones, without a guard, a rest or binders of their own. *)
-let effect_candidate (g:Source.fn) = g.guard = None && not g.rest && g.quantified = []
+(* The declarations whose signatures may state the empty footprint: those
+   without a rest or binders of their own. A guard's or an assertion
+   function's promise signature states its footprint too. *)
+let effect_candidate (g:Source.fn) = not g.rest && g.quantified = []
 
 (* The footprint a declaration's body proposes for its signature, read off its
    claims as a closure's is (`Expression_closures`), else the one letting

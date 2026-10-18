@@ -89,8 +89,10 @@ claim: a footprint other than `{"value":"any","store":"any"}` is an
 obligation on the function's own graph, which must establish it
 ([effect certification](SOURCE-ELABORATION.md#certifying-inferred-call-effects)),
 and the other units then read the function at its annotation's signature
-stating that footprint. A guard's or an assertion function's claim states
-`{"value":"any","store":"any"}`; its promise is its annotation's.
+stating that footprint. A guard's or an assertion function's footprint
+is claimed and established the same way, and its promise signature states it
+beside the promise, which is its annotation's (`guard-footprint`,
+`invalid-guard-footprint`).
 
 A source containing top-level executable code has an `init` object with
 `contracts`, `entries`, `expressions`, and optional `arrows`. It has no

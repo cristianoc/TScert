@@ -282,7 +282,8 @@ its member's footprint, and an exhausted check reported as exhausted.
 condition) and its conclusion (safety of every accepted function), and states
 that each unit whose declaration claims a footprint other than
 `{value: any, store: any}`, run as its graph, returns with a heap its
-footprint relates to its entry heap (proved:
+footprint relates to its entry heap and a value meeting its goal, a guard's
+promise included (proved:
 `SourceExtraction.checkRequests_footprint_at`). Footprints reach it through
 certified code entries (`ProgramCertificates.CodesSound`, `codeChecked_sound`)
 and through trusted native contracts (audited).

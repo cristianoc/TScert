@@ -132,14 +132,14 @@ which preserves the heap, for a unit returning a plain result under the
 ordinary checker. -/
 @[nospecialize] def effectResult (r : SourceRequest σ ι) (c : Response ι) : ProgramCertificates.CheckResult ι Unit :=
   if r.footprint = .top ∧ r.onThrow = false then pure () else
-    (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.promise.isNone && r.footprint != .top)).bind fun _ =>
+    (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && r.footprint != .top)).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
     GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) r.footprint
       false r.onThrow r.start r.program c.certificate
 
 theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
     (h : (effectResult r c).accepted = true) (he : r.footprint ≠ .top ∨ r.onThrow = true) :
-    r.qualification = none ∧ r.promise = none ∧ r.footprint ≠ .top ∧
+    r.qualification = none ∧ r.footprint ≠ .top ∧
       (r.program.all (fun n => Purity.pureTerm n.expression) = true ∨
         GraphCode.compositionalChecked (RequestJson.graph r.toRequest) (StoreView.images r.types) r.footprint
           false r.onThrow r.start r.program c.certificate = true) := by
@@ -151,7 +151,7 @@ theorem effectResult_preserving {r : SourceRequest σ ι} {c : Response ι}
   simp only [effectResult, hn, if_false, ProgramCertificates.CheckResult.accepted_bind,
     ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_orElse,
     Bool.and_eq_true, Option.isNone_iff_eq_none, Bool.or_eq_true, bne_iff_ne, ne_eq] at h
-  exact ⟨h.1.1.1, h.1.1.2, h.1.2, h.2⟩
+  exact ⟨h.1.1, h.1.2, h.2⟩
 
 /-- Validate one unit, sharing its checked code table with supplemental obligations. -/
 @[nospecialize] def checkRequestResult (r : SourceRequest σ ι) (c : Response ι)
@@ -272,13 +272,13 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
     (he : EnvOk (reassign (RequestJson.graph r.toRequest) η) r.inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W heap) (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true) :
     HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
-      (meaning (reassign (RequestJson.graph r.toRequest) η) r.result)
+      (ControlFlow.GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
       (fun h' _ => r.footprint.Holds heap h') (fun h' => r.onThrow = true → r.footprint.Holds heap h') n W heap
       (.goto (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))
         r.start L d) := by
   obtain ⟨es, _, hunit⟩ := checkRequests_pair h hm
   obtain ⟨checked, -, heff, -⟩ := (checkRequestResult_accepted_iff _ _ _).mp hunit
-  obtain ⟨hq, hpromise, -, hp⟩ := effectResult_preserving heff heffect
+  obtain ⟨hq, -, hp⟩ := effectResult_preserving heff heffect
   simp only [SourceRequest.checker, hq] at checked
   rw [verify_eq] at checked
   simp only [Bool.and_eq_true] at checked
@@ -292,10 +292,9 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
     have hacc := (Parametricity.accept_reassign G η images r.goal r.program r.claims c.certificate
       r.start r.inputs (GraphCode.admits table)).trans hx
     simp only [CertificateProducer.acceptUsing_eq, Bool.and_eq_true] at hacc
-    have hgoal : r.goal = .plain r.result := by simp [Request.goal, hpromise]
     have hP := program_nodes r.program
     have hc := hacc.2
-    rw [hgoal, ← hP] at hc
+    rw [← hP] at hc
     have hs := GraphCode.goto_safe hc hcodes n W heap L d he hw hh
     rcases hp with hp | hp
     · -- A pure graph keeps the heap a prefix at every step, a raise included.
@@ -311,7 +310,7 @@ theorem checkRequests_footprint_at {rs : List (SourceRequest σ ι)} {b : Bundle
     · rw [← hP] at hp
       erw [← GraphCode.compositionalChecked_reassign G images η, GraphCode.compositionalChecked_eq] at hp
       simp only [Bool.and_eq_true, List.isEmpty_iff] at hp
-      have hgraph : checkGraphUsing (reassign G η) (images.reassign η) (Goal.plain r.result)
+      have hgraph : checkGraphUsing (reassign G η) (images.reassign η) r.goal
           (GraphCode.program (r.program.map (·.expression)) (r.program.map fun n => (n.continuation, n.handler))) c.certificate (GraphCode.admits table) = true := by
         have hchecked := hc
         simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
