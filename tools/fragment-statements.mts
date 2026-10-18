@@ -377,7 +377,7 @@ export function assignedSteps(this: Gate, left: ts.ArrayLiteralExpression):
   });
 }
 
-export function pattern(this: Gate, node: ts.BindingName, names: Set<string>, fresh = false): PatternAst {
+export function pattern(this: Gate, node: ts.BindingName, names: Set<string>, fresh: boolean = false): PatternAst {
   const gate: Gate = this;
   if (ts.isIdentifier(node)) {
     if (node.text === "undefined")
@@ -1089,7 +1089,7 @@ export function declarations(this: Gate, list: ts.VariableDeclarationList, at: N
  * logical assignment, update or destructuring assignment names one. A
  * write is found by the name the fragment gives the binding (`local`), so
  * a same-named binding elsewhere in that scope keeps the list a `let`. */
-export function neverAssigned(this: Gate, list: ts.VariableDeclarationList, loopHead = false): boolean {
+export function neverAssigned(this: Gate, list: ts.VariableDeclarationList, loopHead: boolean = false): boolean {
   const gate: Gate = this;
   const [first] = list.declarations;
   // A loop head's binding is bound by each iteration, not by an initializer.
