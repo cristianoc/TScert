@@ -202,6 +202,27 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   console.log("C4: node lists of lengths 0, 1, 15, 16, 17 and 32 answer every transparent row as dense readonly arrays");
 }
 
+// Reading rule 2 under Node: the members declared `any` are the abstract
+// bases' brands, and no node of a parsed file owns or inherits one, so each
+// reads `undefined`, as its optional reading admits.
+{
+  const declarations = readFileSync(join(root, "dist", "ast", "ast.d.ts"), "utf8") +
+    readFileSync(join(root, "dist", "ast", "ast.generated.d.ts"), "utf8");
+  const brands = [...new Set([...declarations.matchAll(/^\s+(?:readonly )?(\w+): any;$/gm)].map(m => m[1]))];
+  assert.ok(brands.length > 0 && brands.every(b => /^_\w+Brand$/.test(b) || b === "type"), `the any members: ${brands}`);
+  const file = resolve(import.meta.dirname, "compiler-api.mts");
+  const tree = openText(file, readFileSync(file, "utf8"));
+  let nodes = 0;
+  type AstNode = Parameters<Parameters<typeof tree.forEachChild>[0]>[0];
+  const visit = (node: AstNode | typeof tree): void => {
+    nodes++;
+    for (const brand of brands.filter(b => b !== "type")) assert.ok(!(brand in node), `a node owns ${brand}`);
+    node.forEachChild(visit);
+  };
+  visit(tree);
+  console.log(`rule 2: ${brands.length} members declared any; none of ${nodes} nodes holds a brand`);
+}
+
 // C4 for the allocating members: each is declared as reviewed, and under Node
 // two reads of a documented node's `jsDoc` give different arrays, while a
 // stable member gives one value.

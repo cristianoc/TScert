@@ -3251,9 +3251,18 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         if (declared.length !== 1 || declared.some(m => m.getText(m.getSourceFile()).trim() !== entry.text))
           throw Error(`${entry.owner}.${entry.name} is not declared as reviewed: ${entry.text}`);
       }
+      // A member declared `any` states nothing (reading rule 2): an optional
+      // member of type `unknown`, as the brands (`_expressionBrand: any`),
+      // which no runtime node owns, are read.
+      const anyMembers = new Set(parts.flatMap(part => ts.isInterfaceDeclaration(part) || ts.isClassDeclaration(part)
+        ? [...part.members] : []).flatMap(m => {
+          const name = nameOf(m);
+          const type = ts.isPropertySignatureDeclaration(m) || ts.isPropertyDeclaration(m) ? m.type : undefined;
+          return name && ts.isIdentifier(name) && type?.kind === ts.SyntaxKind.AnyKeyword ? [name.text] : [];
+        }));
       expression = { ...expression, fields: expression.fields
         .filter(f => !omitted.some(m => m.name === f.name))
-        .map(f => ({ ...f, readonly: true })) };
+        .map(f => ({ ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)) })) };
     }
     // Native promise observation uses PromiseResolve's constructor equality
     // fast path. Its standard constructor and methods are inherited, and a

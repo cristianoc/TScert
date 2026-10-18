@@ -23,3 +23,8 @@ export interface SourceFile extends Node {
   readonly path: Path;
 }
 export declare function fileAt(path: Path): SourceFile | undefined;
+// An abstract base with its brand, declared `any` as the package declares it:
+// an optional member of type `unknown`.
+export interface Expression extends Node {
+  _expressionBrand: any;
+}

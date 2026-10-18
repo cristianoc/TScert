@@ -1883,6 +1883,12 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const passed = check(example("invalid-host-fixture-branded-parameter"), project);
     assert.ok(passed.status === "unsupported" && /branded string type is refused/.test(passed.detail),
       JSON.stringify(passed));
+    // A member declared `any`: optional, of type `unknown` (reading rule 2).
+    const brand = check(example("host-fixture-brand-optional"), project);
+    assert.equal(brand.status, "verified", JSON.stringify(brand));
+    const required = check(example("invalid-host-fixture-brand-required"), project);
+    assert.ok(required.status === "unverified" && /No rule derives this invoke/.test(required.detail),
+      JSON.stringify(required));
     const kept = check(example("host-fixture-jsdoc-other-reads"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
     const lookalike = check(example("host-fixture-lookalike"), project);
@@ -1890,7 +1896,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   } finally {
     useHostInstallationForTests(null);
   }
-  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, its members unread; a branded string read as a string, refused as a host parameter\n");
+  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, its members unread; a branded string read as a string, refused as a host parameter; a member declared any optional\n");
 }
 
 {

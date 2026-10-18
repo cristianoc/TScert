@@ -21,8 +21,9 @@ the non-host parameter of `Object.values`, `Object.entries` and
 `Object.getOwnPropertyDescriptor`, the primitive arguments of `console.log`,
 the refusal of `Object.assign` read as a value, the `JsonValue`
 traversal lemma, `NodeArray<T>` read as a dense readonly array of `T`
-(`hostNodeList`; C4 runs its rows under Node), and reading rule 5 with L5
-(`brandedTypes`);
+(`hostNodeList`; C4 runs its rows under Node), reading rule 5 with L5
+(`brandedTypes`), and reading rule 2 (a member of a host type declared `any`
+optional, checked under Node: no node of a parsed file holds a brand);
 the other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
