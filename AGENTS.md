@@ -254,12 +254,39 @@ increasing trust silently.
   pipe through node's own `_handle`, which bun does not expose
   (`undefined is not an object (evaluating 'stdout._handle.fd')`). Every tool
   that opens the compiler is affected, so this is not a per-suite choice.
+- A unit's boundary is written and what lies inside a unit is inferred.
+  Every function declaration and class member, every function a module
+  binding, a class field or `export default` holds, and every method and
+  function-valued property of an object literal no type gives its context,
+  states the type of each parameter and of its result.
+  `tools/tsconfig.json` sets `isolatedDeclarations`: an export's type is
+  determined by its own syntax, annotated wherever TypeScript would infer it
+  from other code. A local `const` or `let`, and a function written as an
+  argument, are typed by inference. The sources type-check, with no
+  directive silencing the checker, over the external declarations read with
+  each `any` replaced ([shadow contracts](tools/shadow-contracts.mts)): by
+  one opaque type no value has, so TypeScript's own variance refuses every
+  use of it, by the top type in a type-level wildcard, or by the contract
+  the overlay of library globals or a review there states for the member,
+  the compiler API's `any` members an optional `unknown` by reading rule 2;
+  and no value of the sources is typed `any` (a written `any`, an array
+  literal no annotation types). `node tools/unchecked.mts`
+  ([source](tools/unchecked.mts)) reports these, with the boundaries and
+  the assertions, over every file that configuration includes, and fails on
+  one; its header states each rule and what it leaves out, among them a
+  stated limit: the relations that `any` satisfied in an outside
+  declaration are not re-established. Freedom from
+  `any` does not establish that a mutation, a callback's effect, a guard or
+  a native contract keeps a type; that is TScert's to verify. `test-all.sh`
+  runs the command as a suite, over `tests/unchecked-project/`, the
+  counterexamples it must report, and over `tests/unchecked-broken/`, which
+  it must refuse.
 - A decoder is the only place that asserts a shape. Everything else narrows:
   a type predicate, a `typeof` before a comparison, a case table keyed by the
-  language's own union. `node tools/unchecked.mts` ([source](tools/unchecked.mts)) reports every written `any`, `as`
-  and `!` in the node side, and fails on one without a reason, a comment
-  `// asserted: REASON` at the end of its line or alone on the line above; `test-all.sh`
-  runs it as a suite. The assertion that has its reason is an `as` at the last
+  language's own union. `tools/unchecked.mts` reports every `as` and `!` in
+  the node side, and fails on one without a reason, a comment
+  `// asserted: REASON` at the end of its line or alone on the line above.
+  The assertion that has its reason is an `as` at the last
   line of a decoder, where the checks it just ran become the type it returns.
   An assertion anywhere else is standing in for a check that is missing; where
   that check would cost more than it guards, the reason says so.

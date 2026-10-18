@@ -12,17 +12,38 @@ import { presentObligation } from "../tools/diagnostic-view.mts";
 import { fieldOf, messageOf } from "../tools/thrown.mts";
 import { keepRunDirectories, runDirectory, runRoot } from "./run-directory.mts";
 import type { Ast } from "../tools/fragment.mts";
+import type { SourceClaims } from "../tools/source-claims.mts";
 // ../tools/source-flow.mts checks the shared execution graph wire before proposal.
 import { decodeFlowDocument } from "../tools/source-flow.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
+
+/** A Fragment document this pipeline's parser wrote, read back by a test that
+ * forges it. The tests (18 reads) edit fields deep in the document through
+ * its type; checking those fields at each test, in place of this assertion,
+ * would rewrite each of them, and no TypeScript decoder of the Fragment
+ * exists. The assertion stands for the parser's output; it is not checked
+ * before the test reads it. */
+export function readFragmentFile(file: string): Ast {
+  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+  return parsed as Ast; // asserted: the parser wrote the file from an Ast; a check of every field the tests read would cost more than it guards a test's forgery
+}
+
+/** A claims document this pipeline's producer wrote, read back by a test that
+ * forges it. The tests (83 reads) edit fields deep in the document through
+ * its type, and no TypeScript decoder of the claims exists; the assertion
+ * stands for the producer's output, unchecked before the test reads it. */
+export function readClaimsFile(file: string): SourceClaims {
+  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+  return parsed as SourceClaims; // asserted: the producer wrote the file against SourceClaims; a check of every field the tests read would cost more than it guards a test's forgery
+}
 
 const here = import.meta.dirname;
 // The producer runs from `_build/default/producer.exe` below `../ocaml-producer`.
 // Its dune file, `../ocaml-producer/dune`, declares that executable and the library it links;
 // `../ocaml-producer/dune-project` makes that directory the root `dune build --root` builds into `_build/`.
-export const producerExecutable = resolve(here, "../ocaml-producer/_build/default/producer.exe");
+export const producerExecutable: string = resolve(here, "../ocaml-producer/_build/default/producer.exe");
 const repo = resolve(here, "..");
-export const verifier =
+export const verifier: string =
   process.env.VERIFIER ??
   resolve(repo, "lean/.lake/build/bin/verifier");
 function refusalStatus(detail: string): "exhausted" | "unverified" {
@@ -57,7 +78,9 @@ const searchDepth = 12;
  * search, the check). A step that exceeds it is killed and the case is an
  * error naming the step and the limit, never a verdict. */
 const stepTimeoutMs = 60_000;
-function run(command: string, args: string[]) {
+/** A step run: its exit code, its output, and what it reports on failure. */
+type Ran = { code: number; out: string; detail: string };
+function run(command: string, args: string[]): Ran {
   const p = spawnSync(command, args, {
     cwd: repo,
     encoding: "utf8",
@@ -166,7 +189,7 @@ function typeScriptErrors(file: string, tsconfigPath?: string): SeenDiagnostic[]
 }
 /** The parser run in this process: its Fragment as text, or its refusal,
  * with the TypeScript errors its gate read written to `diagnostics`. */
-function parsedHere(diagnostics: string, parse: (seen: (d: SeenDiagnostic) => void) => Ast) {
+function parsedHere(diagnostics: string, parse: (seen: (d: SeenDiagnostic) => void) => Ast): Ran {
   const seen: SeenDiagnostic[] = [];
   try {
     return { code: 0, out: JSON.stringify(parse((d) => seen.push(d))), detail: "" };
@@ -311,7 +334,7 @@ function failedImport(detail: string): { module: string; name: string | null } |
 
 /** Acceptance is deliberately private to this module. A proposal alone cannot
  * construct the public verified outcome: both Lean phases must succeed. */
-export function check(source: string, tsconfigPath?: string, typescriptErrors = false,
+export function check(source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
     subtypeRounds?: number): Outcome {
   const artifacts = runDirectory("pipeline-");
   let phase: Phase = "source";
@@ -467,16 +490,16 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors = 
 const phases: readonly Phase[] = ["source", "proposal", "search", "check"];
 const isPhase = (value: unknown): value is Phase => phases.some((p) => p === value);
 const isSpan = (value: unknown): value is [number, number] =>
-  Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === "number");
+  Array.isArray(value) && value.length === 2 && value.every((n: unknown) => typeof n === "number");
 /** The outcome a run in a process of its own printed, read field by field;
  * anything else is refused. */
-function readOutcome(value: unknown): Outcome {
+export function readOutcome(value: unknown): Outcome {
   if (!value || typeof value !== "object" || !("status" in value) || !("artifacts" in value) ||
       !("phase" in value) || typeof value.artifacts !== "string" || !isPhase(value.phase))
     throw Error("not an outcome");
   const { status, artifacts, phase } = value;
   if (status === "verified" && phase === "check" && "functions" in value && Array.isArray(value.functions) &&
-      value.functions.every((f) => typeof f === "string") && "initialization" in value &&
+      value.functions.every((f: unknown) => typeof f === "string") && "initialization" in value &&
       Array.isArray(value.initialization) && value.initialization.every(isSpan))
     return { status, artifacts, phase, functions: value.functions, initialization: value.initialization };
   if ((status === "unsupported" || status === "unverified" || status === "exhausted" || status === "error") &&
@@ -525,7 +548,7 @@ function startWorker(): ChildProcess {
   const worker = fork(import.meta.filename, ["--serve"], { cwd: repo, stdio: ["ignore", "ignore", "pipe", "ipc"] });
   // What the worker writes to standard error is shown only with a failure.
   worker.stderr?.setEncoding("utf8");
-  worker.stderr?.on("data", (text: string) => { logs.set(worker, (logs.get(worker) ?? "") + text); });
+  worker.stderr?.on("data", (text: unknown) => { logs.set(worker, (logs.get(worker) ?? "") + String(text)); });
   if (worker.stderr instanceof Socket) worker.stderr.unref();
   worker.on("exit", () => {
     workers--;
@@ -571,7 +594,7 @@ function give(worker: ChildProcess, job: Job): void {
  * or runs several at once. `project` is what `--project` takes;
  * `typescriptErrors`, whether a failed search is named by TypeScript's errors
  * (`--typescript-errors`). */
-export function checkApart(source: string, project?: string, typescriptErrors = false,
+export function checkApart(source: string, project?: string, typescriptErrors: boolean = false,
     subtypeRounds?: number): Promise<Outcome> {
   return new Promise((done, fail) => {
     queue.push({ request: { source, project, typescriptErrors, subtypeRounds }, done, fail });

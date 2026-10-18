@@ -13,7 +13,7 @@ const isNode = (value: unknown): value is Node =>
 
 /** The children a node's kinds may carry, by the field that holds them. */
 type Child = "name" | "propertyName" | "label" | "type" | "questionToken" | "postfixToken";
-type Children = "modifiers" | "typeParameters";
+type Children = "modifiers" | "typeParameters" | "parameters";
 
 /** One child of `node`, where its kind carries it and it is present. */
 export function childOf(node: Node, key: Child): Node | undefined {

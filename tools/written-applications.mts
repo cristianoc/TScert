@@ -236,7 +236,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     return { inferred: d };
   };
   const signature = (d: Node): Determined => {
-    const parameters = "parameters" in d && Array.isArray(d.parameters) ? d.parameters : [];
+    const parameters = childrenOf(d, "parameters");
     const typed = ts.isConstructorDeclaration(d) || ("type" in d && !!d.type);
     if (!typed || !parameters.every(p => ts.isParameterDeclaration(p) && !!p.type)) return { inferred: d };
     return { nodes: [d] };
@@ -471,7 +471,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       .map(b => ({ name: b.name, bound: bounds.get(b.name) ?? null, resolution: null })))
       .filter(level => level.length);
   };
-  const empty: Env = { names: new Map(), levels: [] };
+  const empty: Env = { names: new Map<Node, string>(), levels: [] };
   for (const root of roots) visit(root, empty, root.getSourceFile() === context.client);
   // The binder groups of the declarations enclosing `node`, outermost
   // first.
@@ -639,8 +639,7 @@ function withinTypeDeclaration(node: Node): boolean {
 
 /** A declaration's or signature's own type parameters. */
 function childParameters(node: Node): ts.TypeParameterDeclaration[] {
-  const parameters = "typeParameters" in node ? node.typeParameters : undefined;
-  return Array.isArray(parameters) ? parameters.filter(ts.isTypeParameterDeclaration) : [];
+  return childrenOf(node, "typeParameters").filter(ts.isTypeParameterDeclaration);
 }
 
 /** The type parameters `infer` declares in `node`. */

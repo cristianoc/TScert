@@ -29,7 +29,10 @@ const strip: (source: string) => string = (() => {
   )?.value;
   if (typeof strip !== "function")
     throw Error("this runtime cannot erase type annotations");
-  return (source: string) => String(strip(source));
+  return (source: string): string => {
+    const stripped: unknown = strip(source);
+    return String(stripped);
+  };
 })();
 
 /** The source with its type annotations erased, ready to evaluate. */

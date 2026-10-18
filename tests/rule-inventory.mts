@@ -155,7 +155,7 @@ const lookup = (type: string): Constructor[] => {
 };
 
 const findings: string[] = [];
-const report = (text: string) => {
+const report = (text: string): void => {
   findings.push(text);
   console.log("  ✗ " + text);
 };

@@ -25,8 +25,8 @@ export function runCase(test: Case): Promise<Outcome> {
  * count finished so far is shown on standard error: on one rewritten line in a
  * terminal, otherwise every tenth of the way. */
 export async function pooled<T, R>(items: readonly T[], work: (item: T) => Promise<R>,
-    width = availableParallelism()): Promise<PromiseSettledResult<R>[]> {
-  const results: PromiseSettledResult<R>[] = new Array(items.length);
+    width: number = availableParallelism()): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array<PromiseSettledResult<R>>(items.length);
   let next = 0, finished = 0;
   const step = Math.max(1, Math.ceil(items.length / 10));
   const shown = () => {
@@ -47,7 +47,7 @@ export async function pooled<T, R>(items: readonly T[], work: (item: T) => Promi
       shown();
     }
   };
-  await Promise.all(Array.from({ length: Math.min(width, items.length) }, worker));
+  await Promise.all<Promise<void>[]>(Array.from({ length: Math.min(width, items.length) }, worker));
   return results;
 }
 

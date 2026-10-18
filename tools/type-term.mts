@@ -146,14 +146,14 @@ const REST_CONTRACT =
  * types something else. The array a call collects is fresh: it holds the
  * actuals and has none of `T`'s other members, so it is no value of `T` (at
  * `T = string[] & { tag: string }` it has no `tag`). */
-export const REST_PACK_VALUE =
+export const REST_PACK_VALUE: string =
   `${REST_CONTRACT}: a type parameter typing a rest parameter and anything else would make the array a call ` +
   "collects a value of it, which it is not: the array is fresh, with the actuals and none of the " +
   "parameter's other members (at `string[] & { tag: string }` it has no `tag`)";
 
 /** A module function's rest typed by its own type parameter whose bound is
  * no array or tuple of required positions written as one. */
-export const REST_PACK_BOUND =
+export const REST_PACK_BOUND: string =
   `${REST_CONTRACT}: one typed by a type parameter collects the array its bound states, which must be ` +
   "written as an array or a tuple of required positions";
 
@@ -668,7 +668,7 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
     result: TypeNode | undefined, at: Node, span: Span,
     // A declared function's defaulted parameter may be omitted: `undefined`
     // is what a short call binds there. Function types have no defaults.
-    declared = false): FunctionTerm[] {
+    declared: boolean = false): FunctionTerm[] {
   const forms = signatures(scope, parameters, result, at, span, declared);
   // A guard's promise is a second form beside the plain one; any other second
   // form is a rest over several tuples.
@@ -680,7 +680,8 @@ export function signature(scope: TermScope, parameters: readonly ts.ParameterDec
 /** A generic signature's binders and forms: its own type parameters are
  * binders, named by spelling, which shadow the enclosing ones. */
 function quantified(scope: TermScope, typeParameters: readonly ts.TypeParameterDeclaration[],
-    parameters: readonly ts.ParameterDeclaration[], result: TypeNode, at: Node, span: Span) {
+    parameters: readonly ts.ParameterDeclaration[], result: TypeNode, at: Node, span: Span):
+    { binders: Extract<TypeTerm, { k: "scheme" }>["binders"]; forms: FunctionTerm[] } {
   const own = typeParameters.map(p => p.name.text);
   const binders: Extract<TypeTerm, { k: "scheme" }>["binders"] = typeParameters.map(p => ({
     name: p.name.text, bound: null, resolution: null, default: null,
@@ -725,7 +726,7 @@ function quantified(scope: TermScope, typeParameters: readonly ts.TypeParameterD
  * body, so the pattern binds nothing the fragment reads. Any other signature
  * is exactly one. */
 export function signatures(scope: TermScope, parameters: readonly ts.ParameterDeclaration[],
-    result: TypeNode | undefined, at: Node, span: Span, declared = false,
+    result: TypeNode | undefined, at: Node, span: Span, declared: boolean = false,
     // A result the caller states instead of reading `result`, such as the
     // receiver a library overlay puts for a `this` result.
     given?: TypeTerm): FunctionTerm[] {
@@ -992,7 +993,8 @@ export function members(scope: TermScope, list: readonly TypeElement[], at: Node
 
 /** Whether two index signatures state the same contract. */
 function sameIndex(a: { readonly: boolean; value: TypeTerm }, b: { readonly: boolean; value: TypeTerm }): boolean {
-  const spanless = (t: TypeTerm): string => JSON.stringify(t, (key, value: unknown) => key === "span" ? undefined : value);
+  // An object at the top, which the replacer keeps: always a text.
+  const spanless = (t: TypeTerm): string => JSON.stringify(t, (key, value: unknown) => key === "span" ? undefined : value) ?? "";
   return a.readonly === b.readonly && spanless(a.value) === spanless(b.value);
 }
 

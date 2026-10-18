@@ -6,16 +6,13 @@ import vm from "node:vm";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { stripTypes } from "../tools/strip-types.mts";
+import { readFragmentFile, readClaimsFile } from "./verify-source.mts";
 
 /** Universal collection, substitution and source binding are independent
  * obligations; neither fresh search nor reused evidence may bypass them. */
 export function checkGenericRest(verifier: string, artifacts: string): void {
-  const claims: SourceClaims = JSON.parse(
-    readFileSync(join(artifacts, "claims.json"), "utf8"),
-  );
-  const ast: Ast = JSON.parse(
-    readFileSync(join(artifacts, "fragment.json"), "utf8"),
-  );
+  const claims: SourceClaims = readClaimsFile(join(artifacts, "claims.json"));
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const reject = (
     name: string,
     changed: SourceClaims,

@@ -15,7 +15,7 @@
  * are in fragment-support.mts. All five are this one trusted program. The fragment it accepts is stated in
  * ../AGENTS.md and, as a grammar, in the pull request description.
  */
-import { API, SymbolFlags, type Checker } from "typescript/unstable/sync";
+import { API, SymbolFlags, type Checker, type Project } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
@@ -65,7 +65,7 @@ const opened = new Set<string>();
  * or an inferred one. Exported because a checker-side consumer of this parse
  * needs the same project (and the same compiler process) the gate used.
  */
-function projectFor(absolute: string) {
+function projectFor(absolute: string): Project {
   compiler ??= new API({
     cwd: dirname(absolute),
     fs: {
@@ -952,8 +952,8 @@ type ImportedModule = { absolute: string; location: string };
  * declarations or top-level code the gate refuses is left out: its imports
  * stay at their declared types.
  */
-export function parseFile(file: string, carriesContext = false,
-  tsconfigPath?: string, resolutionFile = file,
+export function parseFile(file: string, carriesContext: boolean = false,
+  tsconfigPath?: string, resolutionFile: string = file,
   seen?: (diagnostic: SeenDiagnostic) => void): Ast {
   const main = lowerFile(file, carriesContext, tsconfigPath, resolutionFile, seen, null);
   const modules: ModuleAst[] = [];
@@ -993,12 +993,12 @@ function renamedModule<T>(value: T, from: string, to: string): T {
     if (!v || typeof v !== "object") return v;
     const binderTerm = "k" in v && v.k === "binder";
     const binderDeclaration = "name" in v && "bound" in v && "resolution" in v;
-    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k,
+    return Object.fromEntries(Object.entries(v).map(([k, x]: [string, unknown]) => [k,
       k === "module" && x === from ? to
       : k === "site" && typeof x === "string" && x.startsWith(`${from}#`) ? `${to}${x.slice(from.length)}`
       : k === "name" && (binderTerm || binderDeclaration) ? binderName(x)
       : k === "resolution" && binderDeclaration && x && typeof x === "object"
-        ? Object.fromEntries(Object.entries(x).map(([s, n]) => [s, binderName(n)]))
+        ? Object.fromEntries(Object.entries(x).map(([s, n]: [string, unknown]) => [s, binderName(n)]))
       : rename(x)]));
   };
   // asserted: a structural copy of the value, its shape unchanged

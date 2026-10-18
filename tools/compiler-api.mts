@@ -12,6 +12,19 @@ import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, sep } from "node:path";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
+import * as ts from "typescript/unstable/ast";
+import type { Node } from "typescript/unstable/ast";
+import { nameOf } from "./syntax.mts";
+
+/** Reading rule 2: a property of a host declaration declared `any` states
+ * nothing, and is read as an optional member of type `unknown`, as the
+ * syntax tree's brands (`_expressionBrand: any`), which no runtime node
+ * owns, are. Whether `member` is such a property. */
+export function readsAsOptionalUnknown(member: Node): boolean {
+  const name = nameOf(member);
+  const type = ts.isPropertySignatureDeclaration(member) || ts.isPropertyDeclaration(member) ? member.type : undefined;
+  return !!name && ts.isIdentifier(name) && type?.kind === ts.SyntaxKind.AnyKeyword;
+}
 
 /** The host package: its name and the version the contract was reviewed
  * against (`tools/package-lock.json`). */

@@ -60,7 +60,7 @@ function atomText(atom: unknown, state: PrintState): string {
   const metadata: Record<string, unknown> = {};
   for (const key of ["call", "construct", "array"])
     if (key in atom && atom[key] !== "unknown") metadata[key] = atom[key];
-  if (atom.indexes && Object.values(atom.indexes).some((v) => v !== "absent"))
+  if (atom.indexes && Object.values(atom.indexes).some((v: unknown) => v !== "absent"))
     metadata.indexes = atom.indexes;
   if (atom.and !== undefined) metadata.and = atom.and;
   return Object.keys(metadata).length
@@ -84,8 +84,8 @@ function bareAtomText(atom: unknown, state: PrintState): string {
     Array.isArray(atom.required) &&
     Array.isArray(atom.optional)
   ) {
-    const required = atom.required.map((t) => typeText(t, state));
-    const optional = atom.optional.map((t) => typeText(t, state) + "?");
+    const required = atom.required.map((t: unknown) => typeText(t, state));
+    const optional = atom.optional.map((t: unknown) => typeText(t, state) + "?");
     const rest = atom.rest === null ? null : typeText(atom.rest, state);
     const text = (isArrayPresence(atom.presence) ? presencePrefix(atom.presence) : "(invalid presence) ") + (
       required.length === 0 && optional.length === 0 && rest !== null
@@ -166,7 +166,7 @@ function bareAtomText(atom: unknown, state: PrintState): string {
   if (atom.a === "constructor" && Array.isArray(atom.params))
     return (
       "new (" +
-      atom.params.map((p, i) => "arg" + i + ": " + typeText(p, state)).join(", ") +
+      atom.params.map((p: unknown, i: number) => "arg" + i + ": " + typeText(p, state)).join(", ") +
       ") => " +
       typeText(atom.result, state)
     );
@@ -224,7 +224,13 @@ function typeText(type: unknown, state: PrintState): string {
     .join(" | ");
 }
 
-function printType(type: unknown) {
+/** A type's text, and whether it is the claim language's. */
+interface Printed {
+  text: string;
+  printable: boolean;
+}
+
+function printType(type: unknown): Printed {
   const state: PrintState = { printable: true };
   try {
     decodeClaimType(type);
@@ -250,6 +256,25 @@ interface Shown {
   atoms: unknown[];
 }
 
+/** A record field as a report shows it. */
+interface ShownField {
+  name: string;
+  optional: boolean;
+  read: Shown;
+  write: Shown;
+}
+
+/** A record atom as a report shows it: its fields, and no index, call,
+ * construct or array part. */
+interface ShownRecord {
+  a: "record";
+  indexes: { string: "absent"; number: "absent"; symbol: "absent" };
+  call: "unknown";
+  construct: "unknown";
+  array: "unknown";
+  fields: ShownField[];
+}
+
 /** A record contract's fields, as the claim language writes them: each field
  * reads and writes at its own invariant. */
 const cell = (
@@ -257,7 +282,7 @@ const cell = (
   contract: unknown,
   depth: number,
   views: unknown = [],
-) => {
+): ShownRecord => {
   const entries: unknown[] = Array.isArray(contract) ? contract : [];
   // A view field reads at its bound and accepts no write.
   const viewed: unknown[] = Array.isArray(views) ? views : [];
@@ -295,7 +320,7 @@ const cell = (
 
 // An intersection of contracts has no surface form; it is shown as text and
 // stays on the JSON path, like anything else the surface cannot name.
-const shown = (atoms: unknown[]) =>
+const shown = (atoms: unknown[]): string =>
   atoms
     .map((atom) => printType({ top: false, atoms: [atom] }).text)
     .join(" & ");
@@ -402,8 +427,8 @@ function liftClause(types: Table, clause: unknown, depth: number): unknown {
       return JSON.stringify(clause);
     return {
       a: "store",
-      required: t.required.map((a) => liftType(types, a, depth - 1)),
-      optional: t.optional.map((a) => liftType(types, a, depth - 1)),
+      required: t.required.map((a: unknown) => liftType(types, a, depth - 1)),
+      optional: t.optional.map((a: unknown) => liftType(types, a, depth - 1)),
       rest: t.rest === null ? null : liftType(types, t.rest, depth - 1),
       readonly: t.readonly,
       presence: t.presence,
@@ -440,20 +465,22 @@ function liftClause(types: Table, clause: unknown, depth: number): unknown {
   }
   const dict = body("dict");
   if (isObject(dict)) {
+    const indexes: unknown[] = Array.isArray(dict.indexes) ? dict.indexes : [];
+    const index: unknown = indexes[0];
     if (
       !Array.isArray(dict.rest) ||
       dict.rest.length ||
       !Array.isArray(dict.indexes) ||
-      dict.indexes.length !== 1 ||
-      !Array.isArray(dict.indexes[0]) ||
-      dict.indexes[0].length !== 2
+      indexes.length !== 1 ||
+      !Array.isArray(index) ||
+      index.length !== 2
     )
       return JSON.stringify(clause);
     const record = cell(types, dict.first, depth - 1, dict.views);
     return {
       ...record,
       indexSignature: {
-        read: liftType(types, dict.indexes[0][1], depth - 1),
+        read: liftType(types, index[1], depth - 1),
         write: { top: false, atoms: [] },
       },
     };
@@ -462,8 +489,9 @@ function liftClause(types: Table, clause: unknown, depth: number): unknown {
   if (callable) {
     const c: Record<string, unknown> = isObject(callable) ? callable : {};
     const rest: unknown[] = Array.isArray(c.rest) ? c.rest : [];
-    if ([...(Array.isArray(c.arrows) ? c.arrows : []),
-      ...(Array.isArray(c.variadic) ? c.variadic : [])].some(
+    const fixed: unknown[] = Array.isArray(c.arrows) ? c.arrows : [];
+    const variadic: unknown[] = Array.isArray(c.variadic) ? c.variadic : [];
+    if ([...fixed, ...variadic].some(
         (s: unknown) => !isObject(s) || !isOrdinary(s.effect))) return JSON.stringify(clause);
     const signatures = liftSignatures(types, c.arrows, c.variadic, depth);
     if (rest.length || signatures.length !== 1) return JSON.stringify(clause);
@@ -475,8 +503,9 @@ function liftClause(types: Table, clause: unknown, depth: number): unknown {
   }
   const arrs = body("arrs");
   if (isObject(arrs)) {
-    if ([...(Array.isArray(arrs.arrows) ? arrs.arrows : []),
-      ...(Array.isArray(arrs.variadic) ? arrs.variadic : [])].some(
+    const fixed: unknown[] = Array.isArray(arrs.arrows) ? arrs.arrows : [];
+    const variadic: unknown[] = Array.isArray(arrs.variadic) ? arrs.variadic : [];
+    if ([...fixed, ...variadic].some(
         (s: unknown) => !isObject(s) || !isOrdinary(s.effect))) return JSON.stringify(clause);
     const arrows = liftSignatures(types, arrs.arrows, arrs.variadic, depth);
     if (arrows.length) return arrows.length === 1 ? arrows[0] : shown(arrows);
@@ -535,7 +564,7 @@ any number of actuals at it. Any other rest type is shown as itself. */
 function restElement(types: Table, rest: unknown): unknown {
   if (!Array.isArray(rest) || rest.length !== 1) return rest;
   const row = rowAt(types, rest[0]);
-  const clause = Array.isArray(row) && row.length === 1 ? row[0] : undefined;
+  const clause: unknown = Array.isArray(row) && row.length === 1 ? row[0] : undefined;
   const pack = isObject(clause) ? clause.pack : undefined;
   if (!isObject(pack) || !Array.isArray(pack.rest) || pack.rest.length) return rest;
   const t = pack.first;
@@ -556,7 +585,7 @@ function liftType(types: Table, labels: unknown, depth: number): Shown {
   if (!Array.isArray(labels))
     return { top: false, atoms: ["(no type recorded)"] };
   if (
-    labels.some((label) => {
+    labels.some((label: unknown) => {
       const row = rowAt(types, label);
       return Array.isArray(row) && row.includes("source");
     })
@@ -567,7 +596,7 @@ function liftType(types: Table, labels: unknown, depth: number): Shown {
   const literalLabel = (value: boolean): unknown =>
     labels.find((label: unknown) => {
       const row = rowAt(types, label);
-      const clause =
+      const clause: unknown =
         Array.isArray(row) && row.length === 1 ? row[0] : undefined;
       const boolLit = isObject(clause) ? clause.boolLit : undefined;
       return isObject(boolLit) && boolLit.value === value;
@@ -602,7 +631,7 @@ function treeAtom(types: Table, label: Record<string, unknown>, depth: number): 
   if (typeof label.decl === "number")
     return `declaration ${label.decl}` +
       (Array.isArray(label.args) ? `<${label.args.map(text).join(", ")}>` : "");
-  if (Array.isArray(label.meet)) return label.meet.map((part) => `(${text(part)})`).join(" & ");
+  if (Array.isArray(label.meet)) return label.meet.map((part: unknown) => `(${text(part)})`).join(" & ");
   return "type " + JSON.stringify(label);
 }
 
@@ -611,16 +640,16 @@ function treeAtom(types: Table, label: Record<string, unknown>, depth: number): 
 function lift(
   rows: unknown,
   labels: unknown,
-  depth = 3,
+  depth: number = 3,
   names: readonly (readonly [number, string])[] = [],
 ): Shown {
   return liftType({ rows, names: new Map(names) }, labels, depth);
 }
 
-const same = (a: unknown, b: unknown) =>
+const same = (a: unknown, b: unknown): boolean =>
   JSON.stringify(a) === JSON.stringify(b);
 
-const surfaceTypes = {
+const surfaceTypes: { printType: typeof printType; lift: typeof lift } = {
   printType,
   lift,
 };

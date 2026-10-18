@@ -380,7 +380,7 @@ function underConstAssertion(node: Node): boolean {
  * the index signatures a spread copied into it. Null for anything else: a
  * method, a symbol-keyed or `const`-asserted property, a property a spread
  * copied from a declared type, an array, a function. */
-export function inferredTerm(checker: Checker, type: Type, span: Span, depth = 0): TypeTerm | null {
+export function inferredTerm(checker: Checker, type: Type, span: Span, depth: number = 0): TypeTerm | null {
   const literals = literalUnion(type, span);
   if (literals) return literals;
   if (depth > 8 || !(type.flags & TypeFlags.Object) ||

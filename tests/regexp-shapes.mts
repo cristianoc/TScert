@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { regexpShape } from "../tools/regexp-shape.mts";
 
-const always = (pattern: string, flags = ""): boolean[] | null => regexpShape(pattern, flags)?.always ?? null;
+const always = (pattern: string, flags: string = ""): boolean[] | null => regexpShape(pattern, flags)?.always ?? null;
 
 // Known shapes.
 const table: [string, string, boolean[] | null][] = [

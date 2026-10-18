@@ -76,7 +76,7 @@ function listEnd(list: Node): number | null {
 /** The type arguments written at an application. */
 function argumentsOf(use: Node): readonly TypeNode[] {
   const value: unknown = Reflect.get(use, "typeArguments");
-  return Array.isArray(value) ? value.filter((n): n is TypeNode => !!n && typeof n === "object" && "kind" in n) : [];
+  return Array.isArray(value) ? value.filter((n: unknown): n is TypeNode => !!n && typeof n === "object" && "kind" in n) : [];
 }
 
 /** Every identifier under `node`, `node` included. */

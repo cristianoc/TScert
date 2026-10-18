@@ -34,7 +34,8 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 83 of 317 verify in `tools/` (2026-10-18, at a 60 s step limit), 24 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 94 of 337 verify in `tools/` (2026-10-18, at a 60 s step limit), 24 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -298,31 +299,78 @@ declaration" ([trust surface](docs/DESIGN.md#trust-surface)); the checked
 form retires the computation's trust altogether, the relaxed one only the
 probe's correspondence to the application.
 
+<a id="the-any-check-over-external-declarations"></a>
+**The any check over external declarations.** `tools/unchecked.mts` checks
+the sources over external declarations whose every value-level `any` is one
+opaque type (`tools/shadow-contracts.mts`). A declaration may rely on `any`
+being at once a subtype and a supertype of every type, and the opaque type
+is neither: the relations that `any` satisfied in an outside declaration are
+not re-established, a limit the check states. The shadowed declarations do
+not check (447 errors with `skipLibCheck` off, 2026-10-18), by class:
+
+- an override or a heritage relation the base satisfies through `any` (367:
+  2416, 2430, 2417, 2420), mostly Node's event emitters, whose base
+  `listener: (...args: any[]) => void` an override narrows;
+- a type argument meeting a constraint through `any` (49: 2344);
+- a property meeting an index signature through `any` (25: 2411);
+- a rest parameter `...args: any` (3: 2370), a predicate `x is any[]` over
+  a parameter typed `any` (3: 2677).
+
+An invalid declaration changes what TypeScript decides about the sources:
+`f(new D())` with overloads at `B` and `D` and `D extends B` broken selects
+the other overload. The same class holds the type computations the
+substitution changes: `any extends string ? string : number` becomes
+`number` (written: `string | number`), a type parameter's default `any`
+read as `unknown` accepts every input (`Sink<T = any>`), and `A["missing"]`
+over an opaque `A` is the error type inside a member. Each is a line of
+`tests/unchecked-project/gaps.mts`, accepted under the stated limit. Replacing `any` by `unknown`
+at a result and `never` at a parameter keeps the relations of a parameter
+and a result but not of a writable property or a type argument, whose
+variance the declaration's syntax does not show; no one substitution keeps
+every relation `any` satisfies.
+
+`JSON.stringify` of a function, or of an object whose `toJSON` returns
+`undefined`, is `undefined` under Node, and the check types it `string`
+(`gaps.mts`). The overlay's contract, a `JsonValue` (primitives and
+readonly string-indexed records of them, library-globals.mts), states no
+array, and TypeScript assigns no interface to an index signature: read at
+it, 84 calls of the sources stringify a value that is no `JsonValue`
+(2026-10-18), the Fragment and claims documents, arrays and spans among
+them.
+
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
 sliced into its own file with the same-file declarations it uses, is a piece
-of ordinary TypeScript the pipeline can be asked about: 313 of them. A slice
+of ordinary TypeScript the pipeline can be asked about: 337 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-18):
 
-- a missing annotation, or a value TypeScript types `any` or an
-  anonymous record (95);
-- library globals absent from the overlay or refused (10): the global
+- an unannotated callback parameter whose contextual type the gate does
+  not state (74): an anonymous record (53, of which `{ name: PropertyKey;
+  optional; readonly; type; span }`, an object type term's field, 19, and
+  `{ cell: string; name: Identifier }` 19), an enum member
+  (`SyntaxKind.AbstractKeyword`, 12) and `Record<string, unknown>` (9). A
+  function written as an argument is inside its unit, typed by its context,
+  and `tools/unchecked.mts` requires no annotation of it; no slice stops at a
+  missing annotation the check requires or at a value typed `any`;
+- library globals absent from the overlay or refused (12): the global
   function `parseInt` (3), `Reflect` ([refused](docs/SOURCE-FRAGMENT.md))
-  (3), `Array.from`, `Object.fromEntries`, `new RegExp`, `instanceof Error`;
+  (3), `Object.fromEntries` (2), `Array.from` (2), `Math.ceil`,
+  `new RegExp`, `instanceof Error`;
 - an object built with a `then` member (12);
-- members of `Type` outside its named view (11);
-- the sync API's `API` class, whose type parameter has a default (5);
-  `createRequire`, whose type names a qualified one (2); `node:path`'s
+- members of `Type` and `Checker` outside their named views (14);
+- the sync API's `API` class, whose type parameter has a default (8);
+  `createRequire`, whose type names a qualified one (1); `node:path`'s
   `sep`, a constant of the object the module exports (2); a default import
-  (3);
-- the compiler's synchronous API failing on a query (3), reported as tool
-  failures: `TypeObject.getTypes` panics converting a type reference to a
-  tuple (`forInEntryReads`), and `Checker.getTypeAtLocation` and
-  `Checker.getTypeFromTypeNode` return a reply the client cannot decode
-  (`readDiagnostic`, `diagnosticNode`), cause unknown.
+  (5);
+- the compiler's synchronous API failing on a query (1), reported as a tool
+  failure: `TypeObject.getTypes` panics converting a type reference to a
+  tuple (`forInEntryReads`);
+- the parser exceeding the call stack (2: `readDiagnostic`, and
+  `diagnosticNode`, which another run reports as a reply of
+  `Checker.getTypeFromTypeNode` the client cannot decode), cause unknown.
 
-Twenty-eight slices reach the producer and fail there, and 47 fail in
+Thirty-four slices reach the producer and fail there, and 55 fail in
 search. Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
 24 of `dev/`, the record tools and the lowering dump, all 24 (2026-10-18), each
 sliced with the same-file declarations it uses, their imports from

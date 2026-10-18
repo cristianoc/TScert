@@ -82,7 +82,7 @@ const bindingsOf = (map: { context?: unknown } | null, source: string): string[]
 const requiresKnowledge = (knowledge: HeapKnowledge | null): boolean =>
   !!knowledge && knowledge.cells.length + knowledge.values.length + knowledge.links.length > 0;
 
-const sameType = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const sameType = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 /** Uniform report contract: the source-named summary of a failed obligation and
  * how its search ended, as strings a report shows without decoding the
@@ -157,13 +157,15 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
       const op = term.kind === "arith" ? ` ${term.op}` : "";
       const slots = new Set<number>();
       const visitFields = (v: object, depth: number): void => {
-        const named = Object.entries(v).filter(([k]) => k !== "kind").sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+        const entries: [string, unknown][] = Object.entries(v);
+        const named = entries.filter(([k]) => k !== "kind").sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
         for (const [, x] of named) visit(x, depth);
       };
       const visit = (v: unknown, depth: number): void => {
         if (typeof v !== "object" || v === null || depth > 3) return;
         if (Array.isArray(v)) {
-          for (const x of v) visit(x, depth + 1);
+          const elements: unknown[] = v;
+          for (const x of elements) visit(x, depth + 1);
           return;
         }
         if ("kind" in v) {
@@ -174,7 +176,8 @@ export function presentObligation(ob: ObligationDiagnostic, source: string): Obl
           if (depth + 1 <= 3) visitFields(v, depth + 2);
           return;
         }
-        for (const x of Object.values(v)) visit(x, depth + 1);
+        const values: unknown[] = Object.values(v);
+        for (const x of values) visit(x, depth + 1);
       };
       visitFields(term, 1);
       const operands = [...slots].flatMap((s) =>

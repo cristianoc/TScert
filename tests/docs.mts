@@ -86,7 +86,7 @@ function anchorsOf(file: string): Map<string, string> {
   return found;
 }
 
-const sectionNumber = (s: string) => s.split(".").map(Number);
+const sectionNumber = (s: string): number[] => s.split(".").map(Number);
 function compare(a: number[], b: number[]): number {
   for (let i = 0; i < Math.max(a.length, b.length); i++) {
     const d = (a[i] ?? 0) - (b[i] ?? 0);
@@ -121,7 +121,7 @@ for (const link of links) {
   if (!target || !files.includes(target))
     problems.push(`${relative(root, link)}: symbolic link to a document this check does not cover`);
 }
-const fail = (file: string, message: string) => problems.push(`${relative(root, file)}: ${message}`);
+const fail = (file: string, message: string): number => problems.push(`${relative(root, file)}: ${message}`);
 
 for (const file of files) {
   const raw = readFileSync(file, "utf8");

@@ -6,7 +6,7 @@
  * cannot state; a refusal never drops a declaration. */
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { API, DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Type } from "typescript/unstable/sync";
+import { API, DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 // declaration-types.mts declares the declaration document this module writes, which the Fragment carries and Lean's EquationLowering reads.
@@ -24,7 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
-import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile } from "./compiler-api.mts";
+import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -213,7 +213,7 @@ function moduleIds(clientFile: string, root: string, program: Program):
 }
 
 /** What TypeScript binds `identifier` to, following import and export aliases. */
-function targetOf(checker: Checker, identifier: Identifier) {
+function targetOf(checker: Checker, identifier: Identifier): CompilerSymbol | null {
   const symbol = checker.getSymbolAtLocation(identifier);
   if (!symbol) return null;
   // getAliasedSymbol requires an alias: calling it on a symbol that already
@@ -2627,7 +2627,13 @@ function boundedArguments(call: ts.CallExpression, stated: Stated, what: string)
  * binding the longest list, and its bound and default with the declaration
  * stating them, in whose scope they are read. TypeScript requires the
  * declarations stating a position's bound, or its default, to agree. */
-function mergedParameters(parts: readonly TypeDeclaration[]) {
+/** A declaration stating a position's type parameter, and the parameter there. */
+type StatedParameter = { part: TypeDeclaration; at: ts.TypeParameterDeclaration };
+/** A type parameter position of merged declarations: the longest list's
+ * parameter there, and the first declaration stating its bound, its default. */
+type MergedPosition = { parameter: ts.TypeParameterDeclaration; bound: StatedParameter | undefined;
+  default: StatedParameter | undefined };
+function mergedParameters(parts: readonly TypeDeclaration[]): MergedPosition[] {
   const longest = parts.reduce<readonly ts.TypeParameterDeclaration[]>((list, part) =>
     (part.typeParameters?.length ?? 0) > list.length ? part.typeParameters ?? [] : list, []);
   return longest.map((parameter, index) => {
@@ -3369,8 +3375,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       const anyMembers = new Set(parts.flatMap(part => ts.isInterfaceDeclaration(part) || ts.isClassDeclaration(part)
         ? [...part.members] : []).flatMap(m => {
           const name = nameOf(m);
-          const type = ts.isPropertySignatureDeclaration(m) || ts.isPropertyDeclaration(m) ? m.type : undefined;
-          return name && ts.isIdentifier(name) && type?.kind === ts.SyntaxKind.AnyKeyword ? [name.text] : [];
+          return name && ts.isIdentifier(name) && readsAsOptionalUnknown(m) ? [name.text] : [];
         }));
       // The host produces each member: a branded string there is read as a
       // string, and one the client would produce refused (reading rule 5).
