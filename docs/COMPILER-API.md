@@ -234,7 +234,9 @@ are ordinary types.
    reading one gives a string, and a host parameter of such a type admits a
    value the package produced at that type, so a round trip is admitted and
    an arbitrary string is not. The calculus has no opaque primitive type, so
-   a host parameter of a branded type is refused. The branded parameters are
+   every position where the client would produce a branded value is
+   refused, a host parameter among them, and a host-produced one is read as
+   a string. The branded parameters are
    those of `getSourceFileMetadataByPath`, the internal registry's
    `getProject` and `unescapeLeadingUnderscores`.
 
@@ -1223,10 +1225,17 @@ The reading rules split along the same dependencies:
   (`NoSubstitutionTemplateLiteral.rawText` and `.templateFlags` from
   `TemplateLiteralLikeNodeBase`, `parent` of `SourceFile` from `Node`), which
   only a member-complete shape states per kind.
-- Reading rule 5 reads a branded string at a host declaration as `string`
-  and refuses a host signature's parameter that mentions one; within the
-  audited host files the names `Path` and `__String` are the branded
-  aliases, each checked against its reviewed text.
+- Reading rule 5 keeps a branded string's identity until the direction of
+  its use is known (`hostBrands`). In a value or a member of a host type,
+  each occurrence where the host produces the string (a result, a readonly
+  member, a callback's parameter) is read as `string`; one where the client
+  would produce it (a host function's parameter, a callback's result) or
+  where the direction is unknown (a writable member, a type argument, a
+  binder's bound) is refused. Every other occurrence, a client annotation or
+  an alias naming the brand, keeps its declared definition, which no value
+  meets, and is refused where it is used. The branded aliases are `Path`
+  and `__String` of the audited host files, each checked against its
+  reviewed text.
 
 So the pieces land in this order: rule 1 with the allocating-member
 refusal; the restricted-value policy, then $`\mathsf{NodeList}`$; then rules 2, 4 and 5, the contract file (views,

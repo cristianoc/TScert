@@ -8,7 +8,6 @@ import type { Span } from "./span.mts";
 import { childrenOf } from "./syntax.mts";
 import type { PropertyKey, ResolutionSlots, TypeTerm } from "./declaration-types.mts";
 import { ordinaryEffect, promiseEffect, sameEffect } from "./type-graph.mts";
-import { brandedTypes, isHostFile } from "./compiler-api.mts";
 import type { CallEffect } from "./type-graph.mts";
 
 /** The projections a qualified parameter owns: an awaitable one its
@@ -738,18 +737,6 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
   const ordinary = stated ? parameters.slice(1) : [...parameters];
   const optional = (p: ts.ParameterDeclaration) => !!p.questionToken || (declared && !!p.initializer);
   const firstOptional = ordinary.findIndex(optional);
-  // A host signature's parameter mentioning a branded string (reading rule
-  // 5, L5): the client would produce a value only the package may. Inside
-  // the audited host files, the names are the branded aliases'.
-  if (isHostFile(scope.source.fileName))
-    for (const p of ordinary) {
-      const branded = (node: Node): boolean =>
-        (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) &&
-          brandedTypes.some(b => ts.isIdentifier(node.typeName) && b.name === node.typeName.text)) ||
-        (node.forEachChild(child => branded(child) || undefined) ?? false);
-      if (p.type && branded(p.type))
-        scope.fail(p, "a host parameter of a branded string type is refused: only the package produces its values (COMPILER-API.md, L5)");
-    }
   const params: TypeTerm[] = [];
   let rest: TypeTerm | null = null;
   let alternatives: TypeTerm[][] | null = null;

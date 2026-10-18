@@ -28,3 +28,11 @@ export declare function fileAt(path: Path): SourceFile | undefined;
 export interface Expression extends Node {
   _expressionBrand: any;
 }
+// Branded strings at each direction of use.
+export declare function withPath(produce: () => Path): void;
+export declare function taker(): (path: Path) => void;
+export declare function eachPath(visit: (path: Path) => void): void;
+export interface Holder<T> {
+  readonly value: T;
+}
+export declare function holder(): Holder<Path>;

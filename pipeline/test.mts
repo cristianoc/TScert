@@ -1880,9 +1880,20 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     // parameter (L5).
     const branded = check(example("host-fixture-branded-read"), project);
     assert.equal(branded.status, "verified", JSON.stringify(branded));
-    const passed = check(example("invalid-host-fixture-branded-parameter"), project);
-    assert.ok(passed.status === "unsupported" && /branded string type is refused/.test(passed.detail),
-      JSON.stringify(passed));
+    for (const [file, refusal] of [
+      ["invalid-host-fixture-branded-parameter", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-callback-result", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-held", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-argument", /branded string Path where the client would produce one/],
+      ["invalid-host-fixture-branded-return", /the intersection is empty/],
+      ["invalid-host-fixture-branded-alias", /the intersection is empty/],
+    ] as const) {
+      const refused = check(example(file), project);
+      assert.ok(refused.status !== "verified" && "detail" in refused && refusal.test(refused.detail),
+        `${file}: ${JSON.stringify(refused)}`);
+    }
+    const supplied = check(example("host-fixture-branded-callback"), project);
+    assert.equal(supplied.status, "verified", JSON.stringify(supplied));
     // A member declared `any`: optional, of type `unknown` (reading rule 2).
     const brand = check(example("host-fixture-brand-optional"), project);
     assert.equal(brand.status, "verified", JSON.stringify(brand));
@@ -1896,7 +1907,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   } finally {
     useHostInstallationForTests(null);
   }
-  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, its members unread; a branded string read as a string, refused as a host parameter; a member declared any optional\n");
+  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, its members unread; a branded string read as a string where the host produces it, refused where the client would; a member declared any optional\n");
 }
 
 {

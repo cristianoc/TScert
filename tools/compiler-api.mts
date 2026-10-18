@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, sep } from "node:path";
+import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 
 /** The host package: its name and the version the contract was reviewed
  * against (`tools/package-lock.json`). */
@@ -59,6 +60,65 @@ export const brandedTypes: readonly { name: string; text: string }[] = [
   { name: "Path", text: "export type Path = string & {\n    __pathBrand: any;\n};" },
   { name: "__String", text: "export type __String = (string & {\n    __escapedIdentifier: void;\n}) | InternalSymbolName;" },
 ];
+
+/** A host-produced type with each branded string where the host produces it
+ * (`out`) read as `string` (reading rule 5): a primitive result, a readonly
+ * member, a callback's parameter. Where the client produces one (`out`
+ * false: a parameter of a host function, a callback's result) or both
+ * (`null`: a writable member, a type argument, a binder's bound), the brand
+ * is an introduction obligation only a value the package produced meets,
+ * which the calculus cannot state: refused (L5). A brand left unread here, as
+ * a client annotation naming it or an alias of it, keeps its declared
+ * definition, `string & { … }`, which no value meets and which is refused
+ * where it is used. */
+export function hostBrands(t: TypeTerm, out: boolean | null, brand: (id: DeclarationIdentity) => boolean,
+    fail: (message: string) => never): TypeTerm {
+  const go = (u: TypeTerm, o: boolean | null): TypeTerm => hostBrands(u, o, brand, fail);
+  switch (t.k) {
+    case "reference":
+      if (brand(t.reference.target)) {
+        if (out === true) return { k: "atom", name: "string", span: t.span };
+        return fail(`the host's branded string ${t.reference.name} where the client would produce one: only the package produces its values (COMPILER-API.md, L5)`);
+      }
+      return { ...t, args: t.args.map(a => go(a, null)) };
+    case "union": case "intersection": return { ...t, parts: t.parts.map(p => go(p, out)) };
+    case "array": return { ...t, element: go(t.element, t.readonly ? out : null) };
+    case "tuple": {
+      const o = t.readonly ? out : null;
+      return { ...t, required: t.required.map(e => go(e, o)), optional: t.optional.map(e => go(e, o)),
+        rest: t.rest && go(t.rest, o) };
+    }
+    case "object":
+      return { ...t, fields: t.fields.map(f => ({ ...f, type: go(f.type, f.readonly ? out : null) })),
+        stringIndex: t.stringIndex && { ...t.stringIndex, value: go(t.stringIndex.value, t.stringIndex.readonly ? out : null) },
+        ...(t.numberIndex ? { numberIndex: { ...t.numberIndex, value: go(t.numberIndex.value, t.numberIndex.readonly ? out : null) } } : {}),
+        ...(t.symbolIndex ? { symbolIndex: { ...t.symbolIndex, value: go(t.symbolIndex.value, t.symbolIndex.readonly ? out : null) } } : {}),
+        calls: t.calls.map(c => hostBrandsFunction(c, out, brand, fail)),
+        ...(t.prototype ? { prototype: go(t.prototype, out) } : {}) };
+    case "function": return hostBrandsFunction(t, out, brand, fail);
+    case "constructor": return hostBrandsConstructor(t, out, brand, fail);
+    case "pack": return { ...t, of: go(t.of, out) };
+    case "scheme":
+      return { ...t, binders: t.binders.map(b => ({ ...b, bound: b.bound && go(b.bound, null), default: b.default && go(b.default, null) })),
+        signatures: t.signatures.map(s => s.k === "function" ? hostBrandsFunction(s, out, brand, fail)
+          : hostBrandsConstructor(s, out, brand, fail)) };
+    default: return t;
+  }
+}
+function hostBrandsConstructor(t: Extract<TypeTerm, { k: "constructor" }>, out: boolean | null,
+    brand: (id: DeclarationIdentity) => boolean, fail: (message: string) => never): Extract<TypeTerm, { k: "constructor" }> {
+  const flip = out === null ? null : !out;
+  const go = (u: TypeTerm, o: boolean | null): TypeTerm => hostBrands(u, o, brand, fail);
+  return { ...t, params: t.params.map(p => go(p, flip)), rest: t.rest && go(t.rest, flip), result: go(t.result, out),
+    ...(t.statics ? { statics: t.statics.map(s => ({ ...s, type: go(s.type, s.readonly ? out : null) })) } : {}) };
+}
+function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolean | null,
+    brand: (id: DeclarationIdentity) => boolean, fail: (message: string) => never): Extract<TypeTerm, { k: "function" }> {
+  const flip = out === null ? null : !out;
+  const go = (u: TypeTerm, o: boolean | null): TypeTerm => hostBrands(u, o, brand, fail);
+  return { ...t, receiver: t.receiver && go(t.receiver, flip), params: t.params.map(p => go(p, flip)),
+    rest: t.rest && go(t.rest, flip), result: go(t.result, out) };
+}
 
 /** The host package's node list interface, read as a dense readonly array of
  * its elements (COMPILER-API.md, "Node lists in the model"), never through

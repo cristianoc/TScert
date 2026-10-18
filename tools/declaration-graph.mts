@@ -24,7 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
-import { allocatingMembers, brandedTypes, hostEnums, hostNodeList, hostTypeRoots, isHostFile } from "./compiler-api.mts";
+import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, isHostFile } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -590,13 +590,25 @@ export function collectDeclarations(file: string, options: {
       const error = found.find(d => d.pos < node.end && d.end > start);
       if (error) throw Error(`TypeScript reports an error in ${what}: ${error.text}`);
     };
+    // The host's branded strings met (reading rule 5), by identity.
+    const brands = new Set<string>();
+    const brandKey = (id: DeclarationIdentity): string => `${id.module}#${id.name}#${id.span.join(":")}`;
     const identityOf = (node: TypeDeclaration): DeclarationIdentity => {
       const source = node.getSourceFile();
       // An anonymous class is refused where it is reached, so every
       // declaration here has a name.
-      return { module: idOf(source), name: node.name?.text ?? "",
+      const identity: DeclarationIdentity = { module: idOf(source), name: node.name?.text ?? "",
         span: [node.getStart(source), node.end] };
+      const brand = ts.isTypeAliasDeclaration(node) && isHostFile(source.fileName)
+        ? brandedTypes.find(b => b.name === node.name.text) : undefined;
+      if (brand) {
+        if (node.getText(source).trim() !== brand.text)
+          throw Error(`the branded string ${brand.name} is not declared as reviewed: ${brand.text}`);
+        brands.add(brandKey(identity));
+      }
+      return identity;
     };
+    const isBrand = (id: DeclarationIdentity): boolean => brands.has(brandKey(id));
     // The one declaration TypeScript binds a name to, with no error on it or
     // on the path to it.
     const resolveDeclarations = (identifier: Identifier, what: string): Node[] => {
@@ -1043,7 +1055,15 @@ export function collectDeclarations(file: string, options: {
     // type is their intersection. A generic function has one signature. An
     // interface or type alias of the same name is the name's other meaning,
     // which a value reference does not denote.
+    // A host value is the host's: its branded strings read where it produces
+    // them (reading rule 5).
     const valueOf = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
+      const read = valueRead(declared, what);
+      return declared.some(n => isHostFile(n.getSourceFile().fileName))
+        ? { ...read, type: hostBrands(read.type, true, isBrand, message => { throw Error(`${message} in ${what}`); }) }
+        : read;
+    };
+    const valueRead = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
       const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !ts.isTypeAliasDeclaration(n));
       valueDeclarations.push(...nodes);
       const [node] = nodes;
@@ -2339,7 +2359,7 @@ export function collectDeclarations(file: string, options: {
       for (const { node: start, span } of list) {
         try {
           collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
-            enumType: enumTypeAt, enumerated, memberName, identityOf, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
+            enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
             libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
             keys: keyTypeOf, alias: aliasOf, awaited });
         } catch (error) {
@@ -3050,6 +3070,8 @@ function overlaidInterface(node: InterfaceDeclaration, parts: readonly Interface
 function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDefinition[], context: {
   lookup: (identifier: Identifier, what: string) => TypeDeclaration;
   identityOf: (node: TypeDeclaration) => DeclarationIdentity;
+  /** Whether an identity is a branded string of the host (reading rule 5). */
+  isBrand: (id: DeclarationIdentity) => boolean;
   /** Whether a file is the standard library's (`moduleIds`). */
   libraryFile: (file: SourceFile) => boolean;
   /** Whether a declaration is a host type, whose members are readonly views. */
@@ -3214,14 +3236,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         }) });
       continue;
     }
-    // A branded string of the host package is a string (reading rule 5).
-    const brand = ts.isTypeAliasDeclaration(node) && isHostFile(source.fileName)
-      ? brandedTypes.find(b => b.name === node.name.text) : undefined;
-    if (brand && node.getText(source).trim() !== brand.text)
-      throw Error(`the branded string ${brand.name} is not declared as reviewed: ${brand.text}`);
-    let expression = brand
-      ? { k: "atom", name: "string", span: [node.getStart(source), node.end] } satisfies TypeTerm
-      : ts.isTypeAliasDeclaration(node)
+    let expression = ts.isTypeAliasDeclaration(node)
       ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
         ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end]), parts.flatMap(part => {
@@ -3260,9 +3275,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           const type = ts.isPropertySignatureDeclaration(m) || ts.isPropertyDeclaration(m) ? m.type : undefined;
           return name && ts.isIdentifier(name) && type?.kind === ts.SyntaxKind.AnyKeyword ? [name.text] : [];
         }));
+      // The host produces each member: a branded string there is read as a
+      // string, and one the client would produce refused (reading rule 5).
       expression = { ...expression, fields: expression.fields
         .filter(f => !omitted.some(m => m.name === f.name))
-        .map(f => ({ ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)) })) };
+        .map(f => ({ ...f, readonly: true, optional: f.optional || (typeof f.name === "string" && anyMembers.has(f.name)),
+          type: hostBrands(f.type, true, context.isBrand,
+            message => { throw Error(`${message} in ${identity.module}#${identity.name}.${String(f.name)}`); }) })) };
     }
     // Native promise observation uses PromiseResolve's constructor equality
     // fast path. Its standard constructor and methods are inherited, and a
