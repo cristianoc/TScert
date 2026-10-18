@@ -35,7 +35,7 @@ import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, t
   type SeenDiagnostic }
   from "./declaration-graph.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
-  type EnumMemberValue } from "./intrinsics.mts";
+  throwUninitializedName, type EnumMemberValue } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
@@ -274,6 +274,8 @@ export class Gate {
   /** The classes lowered so far, by name: what a class extending one reads
    * (`classStmt`). */
   readonly classRecords: Map<string, ClassRecord> = new Map();
+  /** The declarators of early bindings (`markEarly`). */
+  readonly earlyDecls: Set<Node> = new Set();
   /** The class a method being lowered inherits from: what `super.m(...)`
    * calls. */
   superClass: ClassRecord | null = null;
@@ -900,6 +902,8 @@ export class Gate {
 
   hoisting: typeof statements.hoisting = statements.hoisting;
 
+  markEarly: typeof statements.markEarly = statements.markEarly;
+
   letPattern: typeof statements.letPattern = statements.letPattern;
 
   token: typeof statements.token = statements.token;
@@ -1033,6 +1037,10 @@ function lowerFile(file: string, carriesContext: boolean,
   // Top-level code other than declarations: the module's initialization, run
   // once, in order, after its function declarations are instantiated.
   const initNodes: Statement[] = [];
+  // The names an export list exports (`export { x }`, `export { x as y }`).
+  const exportedNames = new Set<string>(source.statements.flatMap(st =>
+    ts.isExportDeclaration(st) && !st.moduleSpecifier && st.exportClause && ts.isNamedExports(st.exportClause)
+      ? st.exportClause.elements.map(e => (e.propertyName ?? e.name).text) : []));
   // The names ambient declarations bind, `declare function f`: values the
   // declaration graph reads at their declared types.
   const ambientNames: Identifier[] = [];
@@ -1120,10 +1128,28 @@ function lowerFile(file: string, carriesContext: boolean,
       }
     }
     else if (ts.isVariableStatement(s)) {
-      // A module constant is read by functions at its annotation. Module
-      // storage that functions could write is not yet in the fragment.
-      if (!(s.declarationList.flags & ts.NodeFlags.Const))
-        gate.fail(s, "a module-level `let` or `var` is outside the fragment");
+      // A module constant is read by functions at its annotation. A module
+      // `let` the module does not export is a module cell (SOURCE-MODEL.md,
+      // "Module cells"): an early binding of the module's scope, whatever
+      // its mentions. A `var`, and an exported `let`, a live binding an
+      // importer reads, are outside the fragment.
+      const list = s.declarationList;
+      if (!(list.flags & (ts.NodeFlags.Const | ts.NodeFlags.Let)))
+        gate.fail(s, "a module-level `var` is outside the fragment");
+      if (list.flags & ts.NodeFlags.Let) {
+        if (s.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword))
+          gate.fail(s, "an exported `let` is a live binding importers read, outside the fragment");
+        for (const d of list.declarations) {
+          if (!ts.isIdentifier(d.name)) return gate.fail(d, "a module-level `let` pattern is outside the fragment");
+          // The module's units read it: a unit boundary, whose type is
+          // written.
+          if (!d.type)
+            gate.fail(d, "a module `let` is a binding the module's units read, a unit boundary: its type is written (an annotation)");
+          if (exportedNames.has(d.name.text))
+            gate.fail(d, "an exported `let` is a live binding importers read, outside the fragment");
+          gate.earlyDecls.add(d);
+        }
+      }
       initNodes.push(s);
     }
     else
@@ -1256,12 +1282,46 @@ function lowerFile(file: string, carriesContext: boolean,
   // them.
   let firstAsync: Node | undefined;
   const intrinsicNames = new Set<string>();
+  const earlyCandidate = (block: ts.Block): boolean => {
+    const declared = new Map<string, ts.VariableDeclaration>();
+    for (const st of block.statements)
+      if (ts.isVariableStatement(st) && st.declarationList.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const))
+        for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name)) declared.set(d.name.text, d);
+    if (!declared.size) return false;
+    const visit = (n: Node, created: number | null): boolean => {
+      if (ts.isTypeNode(n)) return false;
+      if (ts.isIdentifier(n)) {
+        const parent = n.parent;
+        if (parent && (((ts.isPropertyAccessExpression(parent) && parent.name === n) ||
+            ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) ||
+              ts.isPropertySignatureDeclaration(parent)) && parent.name === n)))) return false;
+        const d = declared.get(n.text);
+        const at = created ?? n.getStart(source);
+        if (!d || n === d.name || at >= d.end) return false;
+        let literal: Node | undefined = d.initializer;
+        while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
+        return !(literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal)) &&
+          n.getStart(source) >= literal.getStart(source) && n.end <= literal.end);
+      }
+      const inner = created ?? (ts.isFunctionDeclaration(n) ? -1
+        : ts.isFunctionLikeDeclaration(n) || ts.isClassLikeDeclaration(n) ? n.getStart(source) : null);
+      return n.forEachChild((c) => visit(c, inner) || undefined) ?? false;
+    };
+    return block.statements.some((st) => visit(st, null));
+  };
   const findAsync = (node: Node): void => {
     const add = (...names: string[]) => {
       firstAsync ??= node;
       names.forEach(name => intrinsicNames.add(name));
     };
     if (ts.isAwaitExpression(node)) add(awaitName);
+    // A block whose `let` or `const` may be mentioned before its
+    // initialization (`markEarly`, by spelling here) throws through
+    // `%ThrowUninitialized%` where a checked access finds it so.
+    if (ts.isBlock(node) && earlyCandidate(node)) add(throwUninitializedName);
+    // A module `let` is a module cell, every mention a checked access.
+    if (ts.isVariableStatement(node) && node.parent && ts.isSourceFile(node.parent) &&
+        node.declarationList.flags & ts.NodeFlags.Let) add(throwUninitializedName);
     if (ts.isForOfStatement(node)) add(iterateName);
     if (ts.isForInStatement(node))
       add(...(forInEntryReads(node).length ? [iterateForInName] : [forInName, iterateName]));
@@ -1592,13 +1652,25 @@ function lowerFile(file: string, carriesContext: boolean,
           let declaration: Node | undefined = declared.parent;
           while (declaration && ts.isBindingElement(declaration)) declaration = declaration.parent?.parent;
           const initializer = declaration && ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
-          const inInitializer = !!initializer && start >= initializer.getStart(source) && end <= initializer.end;
+          // A function literal that is the whole initializer runs only after
+          // the binding holds it: its reads are the recursive constant's self
+          // entry (SOURCE-MODEL.md, "Recursive constants").
+          let literal: Node | undefined = initializer;
+          while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
+          const selfEntry = !!literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal));
+          const inInitializer = !selfEntry && !!initializer && start >= initializer.getStart(source) && end <= initializer.end;
           // A loop head's binding exists, uninitialized, while the head's
           // own expression runs: `for (const xs of xs)` throws there.
           const loop = declaration?.parent?.parent;
           const iterated = loop && (ts.isForOfStatement(loop) || ts.isForInStatement(loop)) ? loop.expression : undefined;
           const inHead = !!iterated && start >= iterated.getStart(source) && end <= iterated.end;
-          if (read && (start < dStart || inInitializer || inHead)) early.push(read);
+          // A one-name `let` or `const` of a block is an early binding
+          // there, every mention a checked access (`markEarly`); a mention
+          // above any other declaration is refused.
+          const statement = declaration?.parent?.parent;
+          const block = !!declaration && ts.isVariableDeclaration(declaration) && ts.isIdentifier(declaration.name) &&
+            !!statement && ts.isVariableStatement(statement) && !!statement.parent && ts.isBlock(statement.parent);
+          if (read && ((start < dStart && !block) || inInitializer || inHead)) early.push(read);
           gate.renames.set(`${start}:${end}`, renamed);
         },
         staticTypes: staticTypeNodes.map(node => gate.span(node)),
@@ -1731,6 +1803,12 @@ function lowerFile(file: string, carriesContext: boolean,
   const init = initNodes.flatMap((s) => ts.isClassDeclaration(s) ? [gate.classStmt(s)]
     : ts.isEnumDeclaration(s) ? gate.enumStmt(s) : [gate.stmt(s)]);
   if (location === null && parsed.length === 0 && init.length === 0) gate.fail(null, "no functions in file");
+  // `%ThrowUninitialized%` was listed where a binding may be early, by
+  // spelling (`earlyCandidate`); the file keeps it only where the lowering
+  // marked one (`markEarly`), so the dependency is exact.
+  if (gate.earlyDecls.size === 0)
+    declarations = { ...declarations,
+      values: declarations.values.filter(v => v.binding.local !== throwUninitializedName) };
   const sourceSha256 = createHash("sha256").update(text).digest("hex");
   // A module identity is its path from the project's root, the directory of
   // its tsconfig: where a file names its project, its imports resolve from

@@ -282,9 +282,15 @@ scheme row's variadic signatures. -/
   -- snapshot is an observation of this point, not a binding the body reads:
   -- no source read names one.
   let reads := lam.freeNames
+  -- A checked access of an early binding the lambda reads calls the
+  -- intrinsic that throws where the binding is uninitialized.
+  let early := scope.any fun b => reads.contains b.source.name && match b.storage with
+    | .early .. => true
+    | _ => false
   let caps := scope.zipIdx.filter fun (b, _) =>
     b.source.name != "" &&
-      (reads.contains b.source.name || SourceTypes.prototypeNames.contains b.source.name)
+      (reads.contains b.source.name || SourceTypes.prototypeNames.contains b.source.name ||
+        (early && b.source.name == Fragment.throwUninitializedName))
   let Cs ← caps.mapM fun (_, i) => match Γ[i]? with
     | some C => pure C
     | none => throw "internal closure slot mismatch"

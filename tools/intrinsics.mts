@@ -108,6 +108,11 @@ export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
 export const symbolForName = "%SymbolFor%";
 export const symbolKeyForName = "%SymbolKeyFor%";
+/** A checked access of an early binding that finds it uninitialized
+ * (SOURCE-MODEL.md, "Lexical bindings before initialization"): allocates a
+ * `ReferenceError` by the realm's intrinsic constructor, whatever a source
+ * binding of that name holds, and throws it. */
+export const throwUninitializedName = "%ThrowUninitialized%";
 
 type Signature = Extract<TypeTerm, { k: "function" }>;
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -326,6 +331,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     [hasPropertyName]: () => ({ typeParams: [],
       type: { ...fn([either(atom("string"), atom("number"), atom("symbol")), atom("object")], atom("boolean")),
         effect: emptyEffect } }),
+    // It returns nothing and allocates the error it throws: within the
+    // empty footprint over storage that existed before it, on its throw.
+    [throwUninitializedName]: () => ({ typeParams: [],
+      type: { ...fn([], atom("never")), effect: { ...emptyEffect, onThrow: true } } }),
     [symbolForName]: () => ({ typeParams: [], type: fn([atom("string")], atom("symbol")) }),
     [symbolKeyForName]: () => ({ typeParams: [], type: fn([atom("symbol")], either(atom("string"), atom("undefined"))) }),
     // The read runs no code and writes nothing: an own numeric key of an

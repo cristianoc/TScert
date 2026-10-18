@@ -303,6 +303,23 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-builtin-iterator-return-value-import: a done step's value is undefined, returned at string");
   assert.equal(runExample("invalid-loop-head-own-name", `(() => { try { total([1]); return "none"; } catch (e) { return e instanceof ReferenceError; } })()`),
     true, "invalid-loop-head-own-name: the head's read of its own binding throws a ReferenceError");
+  assert.equal(runExample("early-bindings", `JSON.stringify([count([5, 20, 30]), later(), perIteration([1, 2]), boxed(),
+    (() => { try { tooSoon(); return "none"; } catch (e) { return e instanceof ReferenceError; } })()])`),
+    "[2,2,3,1,true]", "early-bindings: the closures read the bindings once initialized, and a read before throws a ReferenceError");
+  assert.equal(runExample("function-declaration-in-body-refused", `(() => { try { early(); return "none"; } catch (e) { return e instanceof ReferenceError; } })()`),
+    true, "function-declaration-in-body-refused: the hoisted declaration's call reads the binding before its initialization");
+  assert.equal(runExample("module-cells", "JSON.stringify([bump(), bump(), cached(), limited(), afterCall()])"), "[1,2,\"computed\",6,3]",
+    "module-cells: the functions read and write the module's cells");
+  assert.throws(() => runExample("module-cell-before-initialization", "sum()"), /ReferenceError|before initialization/,
+    "module-cell-before-initialization: the initialization's call reads the cell before its declaration");
+  assert.equal(runExample("invalid-module-cell-stale", "stale()"), "s",
+    "invalid-module-cell-stale: the call's write reaches the read TypeScript narrowed to number");
+  assert.equal(runExample("module-cell-saved-value", "saved()"), 0,
+    "module-cell-saved-value: the constant keeps the value read before the write");
+  assert.throws(() => runImporting("certified-cell-cycle-value-import", "total()"), /ReferenceError|before initialization/,
+    "certified-cell-cycle-value-import: `left` runs before `right`'s cell is initialized");
+  assert.equal(runExample("invalid-early-binding-stale", "stale()"), "s",
+    "invalid-early-binding-stale: the closure's write reaches the read TypeScript narrowed to number");
   assert.equal(runImporting("invalid-node-path-join-callback",
     `(() => { const xs = ["a", "b", "c"]; const path = process.getBuiltinModule("node:path"); const normalize = path.posix.normalize; path.posix.normalize = (p) => { xs.pop(); return normalize(p); }; try { return 2 in parents(xs); } finally { path.posix.normalize = normalize; } })()`),
     false, "invalid-node-path-join-callback: a replaced posix.normalize shrinks the array map visits, leaving a hole");

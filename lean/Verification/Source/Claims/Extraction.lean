@@ -76,6 +76,12 @@ def extractPlans (ast claims : Json) (fileKey : String)
       (b.name, b.namePos, match (d.init.map (·.expressions)).getD [] |>.find? (·.pos == b.init.span) with
         | some e => .ok (.claimed e.type.ground b.annot)
         | none => .error s!"module constant '{b.name}' has no claimed initializer")
+    -- A module cell, at the contract the initialization unit claims for it
+    -- (SOURCE-MODEL.md, "Module cells").
+    | .mutables _ bs => (bs.filter (·.early)).map fun b =>
+      (b.name, b.namePos, match ((d.init.map (·.contracts)).getD []).find? (fun c => c.pos == b.init.span && c.name == b.name) with
+        | some c => .ok (.cell c.type.ground)
+        | none => .error s!"module cell '{b.name}' has no claimed storage contract")
     | _ => []
   -- A class's instance members are closures created before the class value
   -- is bound, and run only once it is: they read it as its own binding

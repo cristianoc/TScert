@@ -337,7 +337,25 @@ let transfer (expr:Analysis_state.expression_infer) =
 let statements (expr:Analysis_state.expression_infer) execute_bindings owner_span env ss =
   let transfer_statement = transfer expr in
   let after e env = effects env e in
+  (* An early binding's type: its annotation, or a function literal's
+     parameter and result annotations, a defaulted parameter optional. The
+     contract Lean checks the initializer and every mention against. *)
+  let early env (s:Source.stmt) name = match s.statement with
+    | Declare (_,bindings) ->
+      (match List.find_opt (fun (n,_,_) -> n = name) bindings with
+       | Some (_,written,(init:Source.expr)) ->
+         let contract = match written,init.node with
+           | Some t,_ -> t
+           | None,Lambda (_,[],ps,defaults,false,Some r,_,_) -> arrow (List.mapi (fun i (_,t) ->
+               if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps) r
+           | _ -> Proposal_diagnostics.unsupported
+               ("the binding " ^ name ^ " may be read before its initialization, which needs its type stated: an annotation, or a function literal's parameter and result annotations") in
+         publish_contract { pos = init.pos; name; type_ = contract };
+         extend env name (cell contract)
+       | None -> Json.fail "an early binding names no binding of its statement")
+    | _ -> Json.fail "an early binding names another statement" in
   let flow_callbacks = {
+    early;
     widen_slot=arms declarations;
     Proposal_flow.snapshot_metadata=path_facts;
     with_path_metadata;

@@ -84,7 +84,7 @@ from its location. -/
       else msg
     match b.storage with
     | .value | .slot _ => return A
-    | .cell _ reference => return reference
+    | .cell _ reference | .early _ reference => return reference
 
 @[nospecialize] def env (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
     Compiler (List (Ty Tree)) := do

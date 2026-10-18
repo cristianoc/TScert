@@ -58,6 +58,26 @@ slots are introduced only after the operand supplying their type is checked. -/
         pure (DirectProof.var Γ saved R)
       else
         pure (DirectProof.node Γ (.readAt valueField (.var i)) contract .read [DirectProof.var Γ i reference])
+    | some (i, .early stored reference) =>
+      -- A checked access (SOURCE-MODEL.md, "Lexical bindings before
+      -- initialization"): the contents, read once, tested for the marker's
+      -- key; where it is owned, the throw, and otherwise the contents.
+      let G := SourceTypes.graph (← table)
+      let read := DirectProof.node Γ (.readAt valueField (.var i)) stored .read [DirectProof.var Γ i reference]
+      let K := stored :: Γ
+      let F := K.set 0 (BranchRefinement.tagSlice G stored (.hasKey uninitializedKey) false)
+      let no := DirectProof.var F 0 (F.headD [])
+      -- The intrinsic's call, at the intrinsic's own slot type.
+      let some (t, _) := resolve scope throwUninitializedName
+        | throw s!"internal extraction error: an early binding's access without {throwUninitializedName}"
+      let some Ti := K[t+1]? | throw "internal closure slot mismatch"
+      let [.arrs L _] := PositiveRules.expand G Ti
+        | throw s!"internal extraction error: {throwUninitializedName} is no arrow"
+      let ⟨Rt, Ds, R, effect⟩ ← selectSignature G L []
+      let raise := DirectProof.node K (.call (.var (t+1)) []) R (.app effect)
+        (DirectProof.var K (t+1) Ti :: plainReceiver K Rt :: omittedPremises K Ds 0)
+      let checked ← selectPlan G K 0 A (.hasKey uninitializedKey) raise no
+      pure (DirectProof.letE Γ read checked)
     | none => throw s!"unbound or uninitialized closure variable '{name}'"
   | .nullishAssign pos name namePos rhs =>
     -- The administrative assignment shares the source result claim: either

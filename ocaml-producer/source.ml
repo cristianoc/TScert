@@ -704,6 +704,10 @@ let rec assigns name s = match s.statement with
    checks every node of the body against the proposed footprint, and each
    call at the signature it selects.
    Every constructor is listed so extensions require a decision here. *)
+(* The early bindings of the file (SOURCE-MODEL.md, "Lexical bindings before
+   initialization"), by name and initializer: each is a cell its declaration
+   writes. *)
+let early_bindings : (string * Json.t, unit) Hashtbl.t = Hashtbl.create 16
 let join_change a b = match a,b with
   | Any,_ | _,Any -> Any | Grow,_ | _,Grow -> Grow | Keep,Keep -> Keep
 let join_footprint a b =
@@ -813,7 +817,9 @@ and footprint_stmts ?(fresh=[]) ~callable ~iteration ~readable = function
         | (name,_,init)::more ->
           let fresh = if not mutable_ && fresh_expr ~callable ~fresh init then name :: fresh
             else List.filter ((<>) name) fresh in
-          add fresh (name::readable) (join_bound acc (footprint_expr ~fresh ~callable ~iteration ~readable init)) more in
+          let written = if Hashtbl.mem early_bindings (name,init.pos) then cell_write else Some empty_footprint in
+          add fresh (name::readable) (join_bound written
+            (join_bound acc (footprint_expr ~fresh ~callable ~iteration ~readable init))) more in
       add fresh readable (Some empty_footprint) bindings
     | Return e | Effect e | Throw e -> join_bound (go e) (tail ())
     | If (c,a,b) -> join_bound (go c) (join_bound (block readable a) (join_bound (block readable b) (tail ())))
@@ -1047,7 +1053,9 @@ and stmt binders j =
       (match field "default_" j with Null -> None | d -> Some (expr binders d)),
       expr binders (field "init" j))
   | "const" | "let" -> Declare (text "k" j="let",List.map (fun b ->
-      text "name" b,optional_type binders (field "annot" b),expr binders (field "init" b)) (items "bindings" j))
+      let init = expr binders (field "init" b) in
+      if Json.boolean (field "early" b) then Hashtbl.replace early_bindings (text "name" b,init.pos) ();
+      text "name" b,optional_type binders (field "annot" b),init) (items "bindings" j))
   | "return" -> Return (expr binders (field "e" j)) | "effect" -> Effect (expr binders (field "e" j))
   | "while" -> While (expr binders (field "cond" j),List.map (stmt binders) (items "body" j),
       List.map (stmt binders) (items "update" j))

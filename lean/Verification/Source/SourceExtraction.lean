@@ -93,6 +93,9 @@ The initialization unit checks both contracts where the constant is bound. -/
 inductive ModuleType (ι : Type) where
   | written (ty : Json)
   | claimed (A : SourceClaims.Candidate ι) (annotation : Option Json := none)
+  /-- A module cell (SOURCE-MODEL.md, "Module cells"): the initialization
+  unit's early binding, its cell at the contract the unit's claims state. -/
+  | cell (contract : SourceClaims.Candidate ι)
 
 /-- A value of the module a code unit reaches: its name, its declaration's
 position, and its type, or why it has none. -/
@@ -108,7 +111,10 @@ did not mention grow it, and the request carries the result. -/
   -- The module functions this body mentions, outermost: a parameter or local
   -- of the same name shadows one, as in JavaScript.
   let mentioned := f.body.flatMap stmtNames
-  let siblings := module.filter fun g => mentioned.contains g.1 || SourceTypes.prototypeNames.contains g.1
+  -- The intrinsic a checked access of an early binding calls, wherever the
+  -- file has one: the parser lists it only then (`markEarly`).
+  let siblings := module.filter fun g => mentioned.contains g.1 || SourceTypes.prototypeNames.contains g.1 ||
+    g.1 == Fragment.throwUninitializedName
   if f.name == "undefined" || (names scope).contains "undefined" then
     throw "shadowing undefined is outside the fragment"
   if !distinct (names scope) then throw "duplicate source parameter name"
@@ -130,9 +136,20 @@ did not mention grow it, and the request carries the result. -/
       if p.name == "this" && f.convertsReceiver && (f.body.flatMap stmtNames).contains "this" &&
           !ProgramTyping.kindOffers (SourceTypes.graph (← table)) .sloppy R then
         throw (locatedRefusal (← table) f.namePos .bindingAnnotation Fragment.sloppyReceiverReason)
-    let siblingTypes ← siblings.mapM fun (value : ModuleValue Tree) => do
+    let siblingStorage ← siblings.mapM fun (value : ModuleValue Tree) => do
+      match value.2.2 with
+        | Except.ok (.cell C) => do
+          let contract ← (SourceClaims.resolve (← table) C).mapError fun msg =>
+            s!"module cell '{value.1}': {msg}"
+          let stored := (contract ++ (← uninitializedTy)).eraseDups
+          let reference ← lower (do return [← CellClaims.reference [(valueField, stored)]])
+          pure (some (Storage.early stored reference, reference))
+        | _ => pure none
+    let siblingTypes ← (siblings.zip siblingStorage).mapM fun (value, storage) => do
       let (_, pos, ty) := value
+      if let some (_, reference) := storage then return reference
       match ty with
+        | Except.ok (.cell _) => throw "internal extraction error: a module cell's storage"
         | Except.ok (.written ty) => lower (Fragment.translate ty)
         | Except.ok (.claimed A annotation) => do
           let inferred ← (SourceClaims.resolve (← table) A).mapError fun msg =>
@@ -145,8 +162,10 @@ did not mention grow it, and the request carries the result. -/
             catch reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
         | Except.error reason => throw (locatedRefusal (← table) pos .bindingAnnotation reason)
     let siblingScope : List (ScopeBinding Tree) :=
-      (siblings.zip siblingTypes).map fun (pair : ModuleValue Tree × Ty Tree) =>
-        { source := ⟨pair.1.1, some pair.1.2.1⟩, fixed := some pair.2 }
+      ((siblings.zip siblingTypes).zip siblingStorage).map fun ((value, A), storage) =>
+        match storage with
+        | some (s, _) => { source := ⟨value.1, some value.2.1⟩, fixed := some A, storage := s, captured := true }
+        | none => { source := ⟨value.1, some value.2.1⟩, fixed := some A }
     if f.params.dropLast.any (fun (p : Fragment.Param) => p.rest) then
       throw "a rest parameter must be the last one"
     -- A mutable `T[]` rest is an ordinary input: the body is checked for every
@@ -218,7 +237,7 @@ did not mention grow it, and the request carries the result. -/
         let Γ := (bodyScope.zip slotTypes).zipIdx.map fun (entry : ((ScopeBinding Tree) × Ty Tree) × Nat) =>
           let ((binding,A),j) := entry
           if j < i then match binding.storage with
-            | .cell _ ref => ref | .value | .slot _ => A
+            | .cell _ ref | .early _ ref => ref | .value | .slot _ => A
           else A
         let mapping := (List.range fullScope.length).map fun j => if j == i then 0 else j+1
         first ← emitAt f.namePos (.makeAt .absent [valueField] [.var i])

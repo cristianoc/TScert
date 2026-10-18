@@ -395,6 +395,27 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- A source read of a mutable local returns the cell's contents; the
     -- identity in the slot is never the value of a source expression.
     | some (i, .cell ..) => emitAt e.span (.readAt valueField (.var i)) (.bind next) Γ A (scope := scope)
+    -- A checked access (SOURCE-MODEL.md, "Lexical bindings before
+    -- initialization"): the contents, read once, then a dispatch on the
+    -- marker's key: owned, the throw; otherwise the contents, without the
+    -- marker's label, continue.
+    | some (i, .early _ _) =>
+      let G := SourceTypes.graph (← table)
+      let some (t, _) := resolve scope throwUninitializedName
+        | throw s!"internal extraction error: an early binding's access without {throwUninitializedName}"
+      -- The contents are what the read is claimed at, or the marker: the
+      -- contract, or less where the cell's current contents are known.
+      let stored := (A ++ (← uninitializedTy)).eraseDups
+      let found := BranchRefinement.tagSlice G stored (.hasKey uninitializedKey) true
+      let tested := held ⟨"",some e.span⟩
+      let raise ← emitAt e.span (Tm.call (.var (t+2)) []) .ret (found :: stored :: Γ) []
+        "uninitialized-binding" (scope := tested :: tested :: scope)
+      let width := Γ.length
+      let toNext : Target := ⟨next.label, some ((next.mapping.getD (List.range (width+1))).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+      let dispatch ← emitAt e.span (.var 0) (.tagBind (.hasKey uninitializedKey) raise toNext) (stored :: Γ) stored
+        "tag-dispatch" (scope := tested :: scope)
+      emitAt e.span (.readAt valueField (.var i)) (.bind dispatch) Γ stored (scope := scope)
     | none => throw s!"unbound or uninitialized source variable '{name}'"
   | .assign _ name _ rhs =>
     if let some (_, .slot contract) := resolve scope name then
@@ -407,6 +428,33 @@ Mappings discard only the temporaries introduced by this expression. -/
       let checked ← emitAt e.span (.var 0) (.effect next) (C::Γ) contract "storage-contract"
         (scope := held ⟨"",some rhs.span⟩ :: scope)
       return ← compileAtom recursive fc scope Γ rhs checked
+    if let some (i, .early stored _) := resolve scope name then
+      -- An early `let`'s assignment: the right side, then the checked access
+      -- JavaScript's binding write makes (a throw where it is uninitialized),
+      -- then the value, checked at the contract, written; the value is the
+      -- assignment's.
+      let G := SourceTypes.graph (← table)
+      let some (t, _) := resolve scope throwUninitializedName
+        | throw s!"internal extraction error: an early binding's access without {throwUninitializedName}"
+      let C ← exprType fc rhs
+      let contract ← initializedContract stored
+      let effects := held ⟨"",some rhs.span⟩ :: scope
+      let tested := held ⟨"",some e.span⟩
+      let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+        (fun j => if j == 0 then 0 else j+1))⟩
+      let result ← emitAt e.span (.var 0) (.bind drop) (C::Γ) A (scope := effects)
+      let write ← emitAt e.span (.writeAt valueField (.var (i+1)) (.var 0)) (.effect result) (C::Γ) [Labels.nul]
+        "binding-storage" (scope := effects)
+      let checked ← emitAt e.span (.var 0) (.effect write) (C::Γ) contract "storage-contract" (scope := effects)
+      let found := BranchRefinement.tagSlice G stored (.hasKey uninitializedKey) true
+      let raise ← emitAt e.span (Tm.call (.var (t+3)) []) .ret (found :: stored :: C :: Γ) []
+        "uninitialized-binding" (scope := tested :: tested :: effects)
+      let toChecked : Target := ⟨checked.label, some ((List.range (Γ.length+1)).map (·+2))⟩
+      let dispatch ← emitAt e.span (.var 0) (.tagBind (.hasKey uninitializedKey) raise toChecked)
+        (stored :: C :: Γ) stored "tag-dispatch" (scope := tested :: effects)
+      let read ← emitAt e.span (.readAt valueField (.var (i+1))) (.bind dispatch) (C::Γ) stored
+        (scope := effects)
+      return ← compileAtom recursive fc scope Γ rhs read
     let some (i, .cell ..) := resolve scope name
       | throw s!"assignment to '{name}', which is not a mutable local"
     let C ← exprType fc rhs

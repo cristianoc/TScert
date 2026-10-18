@@ -144,7 +144,7 @@ export function enumStmt(this: Gate, node: ts.EnumDeclaration): Stmt[] {
       if (!init) return gate.fail(m.node, "an enum member known only at run time needs an initializer");
       gate.enumInit = { name, members, index };
       try {
-        stmts.push({ k: "const", pos: m.span, bindings: [{ name: enumMemberName(name, m.name), namePos: m.nameSpan,
+        stmts.push({ k: "const", pos: m.span, bindings: [{ early: false, name: enumMemberName(name, m.name), namePos: m.nameSpan,
           annot: { k: "atom", name: "number", span: m.nameSpan }, init: gate.expr(init) }] });
       } finally {
         gate.enumInit = null;
@@ -155,7 +155,7 @@ export function enumStmt(this: Gate, node: ts.EnumDeclaration): Stmt[] {
     // member, or, holding its value, at its initializer.
     const at: Span = [node.name.getStart(gate.file), node.end];
     const brace: Span = [gate.file.text.indexOf("{", node.name.end), node.end];
-    stmts.push({ k: "const", pos: gate.span(node), bindings: [{ name, namePos: gate.span(node.name),
+    stmts.push({ k: "const", pos: gate.span(node), bindings: [{ early: false, name, namePos: gate.span(node.name),
       annot: gate.enumObjectTerm(name, gate.span(node.name)),
       init: gate.intrinsic(enumIntrinsicName(name), at, gate.span(node.name), [{ k: "alloc", pos: brace,
         fields: members.map((m) => ({ name: m.name,
@@ -170,7 +170,7 @@ export function enumStmt(this: Gate, node: ts.EnumDeclaration): Stmt[] {
   return [{
     k: "const",
     pos: gate.span(node),
-    bindings: [{
+    bindings: [{ early: false,
       name,
       namePos: gate.span(node.name),
       annot: gate.enumObjectTerm(name, gate.span(node.name)),
@@ -412,7 +412,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
         const block: Expr = { k: "lambda", pos: gate.span(member.body), typeParams: [], receiver: null,
           params: [], result: { k: "atom", name: "undefined", span: keyword }, guard: null,
           body: { k: "blockBody", pos: gate.span(member.body), body } };
-        statics.push({ name: staticName(name.text, `[[block@${start}]]`), namePos: keyword, annot: null,
+        statics.push({ early: false, name: staticName(name.text, `[[block@${start}]]`), namePos: keyword, annot: null,
           init: { k: "apply", pos: gate.span(member), callee: block, args: [] } });
         continue;
       }
@@ -447,7 +447,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
           const annot = member.type && !member.typeParameters?.length
             ? oneTerm(signature(gate.scope, member.parameters, member.type, member, gate.span(member), true), gate.span(member))
             : null;
-          staticMethods.push({ name: binding, namePos: gate.span(member.name), annot, init: gate.lambda(member) });
+          staticMethods.push({ early: false, name: binding, namePos: gate.span(member.name), annot, init: gate.lambda(member) });
           // A static method keyed by a symbol is also an own property of
           // the class value, at its signature, which no copy takes, as no
           // copy takes a symbol key (or, in JavaScript, a method).
@@ -467,7 +467,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
           gate.fail(member, "a static initializer that reads `this` is outside the fragment");
         if (member.initializer && readsSuper(member.initializer)) gate.fail(member, STATIC_SUPER);
         const annot = member.type ? gate.typeOf(member.type, member) : null;
-        statics.push({ name: binding, namePos: gate.span(member.name), annot,
+        statics.push({ early: false, name: binding, namePos: gate.span(member.name), annot,
           init: member.initializer ? gate.expr(member.initializer)
             : { k: "lit", pos: gate.span(member.name), lit: { a: "undefined" } } });
         // A static field named by a property name is an own enumerable
@@ -505,7 +505,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
           if (member.asteriskToken)
             gate.fail(member, GENERATOR);
           const binding = `${name.text}.[symbol ${symbol}]`;
-          methods.push({ name: binding, namePos: gate.span(member.name), annot: null,
+          methods.push({ early: false, name: binding, namePos: gate.span(member.name), annot: null,
             init: method(member, { symbol }) });
           prototype.push({ name: { symbol }, e: { k: "id", pos: gate.span(member.name), name: binding } });
           continue;
@@ -515,7 +515,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
         // reaches none, so it is no base method.
         if (!ts.isIdentifier(member.name) && !ts.isPrivateIdentifier(member.name))
           gate.fail(member, unnamedMember(member, false));
-        methods.push({ name: `${name.text}.${member.name.text}`, namePos: gate.span(member.name),
+        methods.push({ early: false, name: `${name.text}.${member.name.text}`, namePos: gate.span(member.name),
           annot: null, init: method(member, gate.memberKey(member.name)) });
         if (ts.isIdentifier(member.name))
           methodBindings.set(member.name.text, `${name.text}.${member.name.text}`);
@@ -545,7 +545,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
     if (prototype.length || tested) {
       const at: Span = [name.getStart(gate.file), node.end];
       protoBinding = prototypeName(name.text);
-      prototypeBinding.push({ name: prototypeName(name.text), namePos: at, annot: null,
+      prototypeBinding.push({ early: false, name: prototypeName(name.text), namePos: at, annot: null,
         init: { k: "alloc", pos: at, fields: prototype, ...(baseProto ? { proto: baseProto } : {}),
           ...(tested ? { brand: { key: classKey(name.text), pos: [name.end, node.end] } } : {}) } });
     }
@@ -589,7 +589,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
           if (!f.bind || f.e.k === "lit") continue;
           const hidden = `this.${f.text}`;
           statements.push({ k: "const", pos: f.bind.pos,
-            bindings: [{ name: hidden, namePos: f.bind.pos, annot: f.bind.type, init: f.e }] });
+            bindings: [{ early: false, name: hidden, namePos: f.bind.pos, annot: f.bind.type, init: f.e }] });
           f.e = { k: "id", pos: f.bind.pos, name: hidden };
           f.bind = null;
         }
@@ -687,7 +687,7 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
         body = body.slice(index + 1);
       }
       const slot = baseName(name.text);
-      prelude.push({ k: "const", pos: at, bindings: [{ name: slot, namePos: at, annot: null,
+      prelude.push({ k: "const", pos: at, bindings: [{ early: false, name: slot, namePos: at, annot: null,
         init: { k: "new", pos: at, callee: { k: "id", pos: calleeAt, name: base.fresh }, args: actuals } }] });
       derivedBase = { k: "id", pos: [heritage.getStart(gate.file), heritage.getStart(gate.file) + "extends".length], name: slot };
     }
@@ -735,13 +735,13 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
     // value is that binding, or, holding static fields, its constructor
     // allocated again with them (`decodeBindings`).
     let freshBinding: BindingAst[] = [];
-    let classBindings: BindingAst[] = [{ name: name.text, namePos: gate.span(name), annot: type, init: lambda }];
+    let classBindings: BindingAst[] = [{ early: false, name: name.text, namePos: gate.span(name), annot: type, init: lambda }];
     if (extended || constructs) {
       const brace = gate.file.text.indexOf("{", heritage ? heritage.end : name.end);
-      freshBinding = [{ name: freshName(name.text), namePos: [node.getStart(gate.file), name.end], annot: null,
+      freshBinding = [{ early: false, name: freshName(name.text), namePos: [node.getStart(gate.file), name.end], annot: null,
         init: { k: "ctor", pos: [node.getStart(gate.file), name.end], ...(typeParams.length ? { typeParams } : {}),
           lambda: constructorLambda } }];
-      classBindings = [{ name: name.text, namePos: gate.span(name), annot: type,
+      classBindings = [{ early: false, name: name.text, namePos: gate.span(name), annot: type,
         init: staticFields.length ? lambda : { k: "id", pos: [brace, brace + 1], name: freshName(name.text) } }];
     }
     gate.classRecords.set(name.text, { params: params.map((p) => ({ name: p.name, type: p.type })),

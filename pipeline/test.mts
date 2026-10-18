@@ -280,6 +280,88 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged operand entry: a parameter read claimed narrower than its test refused\n");
 }
 {
+  // An early binding's cell, its marker and its checked accesses are the
+  // lowering's, from the source: claims can neither drop the binding's
+  // contract, nor narrow it below its annotation, nor claim a checked
+  // access past the contract where nothing establishes the contents. Each
+  // forged claim is refused where evidence is produced and where it is
+  // checked.
+  const good = run("early-bindings");
+  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const forge = (name: string, edit: (fn: SourceClaims["functions"][number], claims: SourceClaims) => void,
+      at: string): void => {
+    const claims = readClaims(good);
+    edit(must(claims.functions.find(f => f.name === "later"), "later"), claims);
+    const forged = writeClaims(good, name, claims);
+    refusedAt(good, forged, name, at);
+    invoke(forged, join(good, "evidence.json"), good);
+  };
+  forge("early-no-contract", fn => { fn.contracts = fn.contracts.filter(c => c.name !== "n"); },
+    "no claimed storage contract for the early binding 'n'");
+  forge("early-narrow-contract", (fn, claims) => {
+    for (const c of fn.contracts) if (c.name === "n") c.type = [rowOf(claims, { numLit: { bits: "4607182418800017408" } })];
+  }, "claimed storage contract differs from the source annotation for 'n'");
+  const read = source.indexOf("=> n;", source.indexOf("function later")) + "=> ".length;
+  forge("early-narrow-read", (fn, claims) => {
+    const e = must(fn.expressions.find(x => x.pos[0] === read && x.pos[1] === read + 1), "the read of n");
+    e.type = [rowOf(claims, { numLit: { bits: "4611686018427387904" } })];
+  }, `at [${read},${read + 1})`);
+  // An unannotated early binding's contract is its function literal's
+  // annotations: `wanted`'s claimed at a string is refused.
+  {
+    const claims = readClaims(good);
+    const fn = must(claims.functions.find(f => f.name === "count"), "count");
+    const c = must(fn.contracts.find(x => x.name === "wanted"), "wanted's contract");
+    c.type = [rowOf(claims, "str")];
+    const path = writeClaims(good, "early-literal-contract", claims);
+    refusedAt(good, path, "early-literal-contract", "the early binding 'wanted' needs its type stated");
+    invoke(path, join(good, "evidence.json"), good);
+  }
+  // A property spelled as a later constant is no mention: the file lists no
+  // `%ThrowUninitialized%`.
+  assert.ok(!readFileSync(join(run("early-property-spelling"), "fragment.json"), "utf8").includes("%ThrowUninitialized%"),
+    "early-property-spelling: the intrinsic listed without an early binding");
+  // A module cell's one contract is the initialization unit's: dropped, the
+  // initialization and every unit reading the cell are refused; narrowed
+  // below the annotation, refused.
+  {
+    const cells = run("module-cells");
+    const claims = readClaims(cells);
+    const init = must(claims.init, "module-cells' initialization claims");
+    init.contracts = init.contracts.filter(c => c.name !== "count");
+    const path = writeClaims(cells, "module-cell-no-contract", claims);
+    refusedAt(cells, path, "module-cell-no-contract", "count");
+    invoke(path, join(cells, "evidence.json"), cells);
+    const narrowed = readClaims(cells);
+    const ninit = must(narrowed.init, "module-cells' initialization claims");
+    for (const c of ninit.contracts) if (c.name === "count") c.type = [rowOf(narrowed, { numLit: { bits: "0" } })];
+    const npath = writeClaims(cells, "module-cell-narrow-contract", narrowed);
+    refusedAt(cells, npath, "module-cell-narrow-contract", "claimed storage contract differs from the source annotation for 'count'");
+    invoke(npath, join(cells, "evidence.json"), cells);
+    // A unit's entry knows nothing of a module cell's contents, and a call
+    // may write it: a narrower entry claim, or a read after the call claimed
+    // at the value written before it, is refused.
+    const entry = readClaims(cells);
+    const after = must(entry.functions.find(f => f.name === "afterCall"), "afterCall");
+    const first = must(after.entries.reduce<(typeof after.entries)[number] | undefined>(
+      (a, e) => (!a || e.start < a.start ? e : a), undefined), "afterCall's entry");
+    for (const b of first.bindings) if (b.name === "count") b.type = [rowOf(entry, { numLit: { bits: "0" } })];
+    const epath = writeClaims(cells, "module-cell-entry-fact", entry);
+    refusedAt(cells, epath, "module-cell-entry-fact", "count");
+    invoke(epath, join(cells, "evidence.json"), cells);
+    const stale = readClaims(cells);
+    const sfn = must(stale.functions.find(f => f.name === "afterCall"), "afterCall");
+    const src = readFileSync(join(cells, "source.ts"), "utf8");
+    const at = src.indexOf("return count;", src.indexOf("function afterCall")) + "return ".length;
+    const read = must(sfn.expressions.find(x => x.pos[0] === at && x.pos[1] === at + "count".length), "the read after the call");
+    read.type = [rowOf(stale, { numLit: { bits: "4607182418800017408" } })];
+    const spath = writeClaims(cells, "module-cell-stale-read", stale);
+    refusedAt(cells, spath, "module-cell-stale-read", `at [${at},${at + "count".length})`);
+    invoke(spath, join(cells, "evidence.json"), cells);
+  }
+  process.stdout.write("forged early bindings: a dropped or narrowed contract, a literal's contract unlike its annotations and a narrowed checked access refused; the intrinsic listed exactly\n");
+}
+{
   // Where `n.kind === 1 || b.kind === 2` holds, `n` may be of any arm: a
   // read of `n` claimed at the first arm is refused where evidence is
   // produced and where it is checked.

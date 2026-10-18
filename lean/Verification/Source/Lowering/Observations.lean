@@ -80,14 +80,14 @@ object. -/
     (Γ : List (Ty ι)) : HeapLinks.Links :=
   scope.zipIdx.flatMap fun (b,i) =>
     match b.storage with
-    | .cell .. =>
+    | .cell .. | .early .. =>
       -- A captured cell was allocated before the closure's entry, which
       -- knows nothing of that allocation.
       if b.captured then [] else
       Γ.zipIdx.flatMap fun (A,j) =>
         if i == j then [] else
         let other := scope[j]?
-        let isCell := other.any fun o => match o.storage with | .cell .. => true | .value | .slot _ => false
+        let isCell := other.any fun o => match o.storage with | .cell .. | .early .. => true | .value | .slot _ => false
         let fields :=
           if j > i || (b.param && other.any (·.param)) then
             -- Older than the cell: the fields its record named when the cell
@@ -237,20 +237,31 @@ must follow from the stable storage contract; no claim is silently dropped. -/
   let vars := (fc.envs.lookup pos).getD []
   scope.zipIdx.foldlM (fun facts (b,i) => do
     let mut facts := facts
-    if let .cell contract reference := b.storage then
+    let cellOf : Option (Ty Tree × Ty Tree) ← match b.storage with
+      | .cell contract reference => pure (some (contract, reference))
+      -- An early binding's claim describes its contents once initialized:
+      -- a claim narrower than the contract is a fact, which excludes the
+      -- marker, and every incoming edge proves it.
+      | .early stored reference => pure (some (← initializedContract stored, reference))
+      | _ => pure none
+    if let some (contract, reference) := cellOf then
       let some candidate := vars.lookup b.source.name
         | throw s!"missing claimed binding '{b.source.name}' at {pos}"
       let A ← SourceClaims.resolve (← table) candidate
       let G := SourceTypes.graph (← table)
+      let early := match b.storage with | .early .. => true | _ => false
       if contract.all A.contains then
-        persistentObservation b.source (pos,pos+1) reference valueField A
+        -- An early cell's contents may still be the marker: no observation.
+        if !early then persistentObservation b.source (pos,pos+1) reference valueField A
       else
         match HeapKnowledge.atoms G A with
         | some atoms => facts := facts ++ [⟨i,atoms,valueField⟩]
         | none =>
           match HeapExpressionRules.nullishAtoms G A with
           | some atoms => facts := facts ++ [⟨i,atoms,valueField⟩]
-          | none => persistentObservation b.source (pos,pos+1) reference valueField A
+          | none =>
+            if early then throw s!"the claim for the early binding '{b.source.name}' at {pos} is no primitive fact of its contents"
+            persistentObservation b.source (pos,pos+1) reference valueField A
     match cs.lookup b.source.name with
     | none => return facts
     | some asserted =>
@@ -263,7 +274,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
           let some candidate := vars.lookup b.source.name
             | throw s!"missing claimed binding '{b.source.name}' at {pos}"
           SourceClaims.resolve T candidate
-        | .cell contract _ => pure contract
+        | .cell contract _ | .early contract _ => pure contract
       -- What every record the binding may hold stores at `fld`: an
       -- observation within it follows from the contract alone, as at a
       -- closure's entry, which knows nothing of the heap.
@@ -275,7 +286,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
       for (fld, A) in asserted do
         if !RequestJson.validTy (StoreView.valid T) A then throw "invalid current-content type label"
         match b.storage with
-        | .cell .. =>
+        | .cell .. | .early .. =>
           -- Slot i is the private holder, not the object inside it. A field
           -- observation cannot be attached to the holder's own value field.
           persistentObservation b.source (pos,pos+1) reference fld A

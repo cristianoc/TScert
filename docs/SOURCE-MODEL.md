@@ -176,10 +176,9 @@ that may reach a constant not yet bound; it does not model the module's dead
 zone for them, a caught `ReferenceError` there or a module cycle. A
 module-level `let` is a [module cell](#module-cells).
 
-A binding is **early** when one of its mentions is in a closure or a
-function declaration of its scope, which may run at any time after its
-creation, a hoisted declaration from the scope's entry (in
-`f(); let x = 1; function f() { return x; }` the call throws), or when a
+A binding is **early** when one of its mentions is in a closure created
+before its initialization point, which may run at any time after its
+creation, or when a
 mention in the scope's own code is not dominated, within the same
 activation, by the binding's **initialization point**: the write after its
 initializer completed normally, which follows the initializer's own
@@ -187,11 +186,15 @@ evaluation (`let x = x` and `let a = b, b = 1` throw), one binding of a
 declaration list at a time. A function literal that is a constant's whole
 initializer is the exception: creating it runs nothing, so its reads of the
 constant are the [recursive constant](#recursive-constants)'s self entry,
-not checked accesses. Every other binding is lowered as before.
+not checked accesses. Every other binding is lowered as before. A function
+declaration in a body, which JavaScript creates when its block is entered
+(`f(); let x = 1; function f() { return x; }` throws), is outside the
+fragment (refused at the declaration); the parser's analysis takes its
+creation at the block's entry.
 
 **Representation.** An early binding $`x`$ of storage contract $`T`$ is a
 cell of the block's activation, allocated when the block is entered, before
-its statements and before its hoisted function declarations are created,
+its statements,
 holding the activation's **uninitialized marker** $`u`$: one fresh object per
 block entry, owning the key $`\kappa_u`$ (`[[uninitialized]]`), and the only
 objects that own it. This is a representation invariant, an obligation of
@@ -247,19 +250,24 @@ the cell is again at $`T\cup U`$. Safety, a value, a step or a throw, holds
 either way; an exceptional guarantee that excludes the throw would need a
 durable initialization fact, which the model does not have.
 
-**Ownership.** The checker allocates the cells, includes them in the
-captures of every closure and function declaration before lowering the
-block's statements, and lowers every mention of an early binding as a
-checked access, from the source alone; the producer proposes $`T`$ and the
-claims at the checked accesses, and no claim can omit a check, replace a
-cell by a value capture, or make an initialization an unchecked write.
-Controls bypass the producer with exactly those forged claims, and with an
-initializer outside $`T`$ and a stale snapshot, against evidence production
-and consumption; end-to-end cases cover calls before and after the
-declaration, a hoisted call, shadowing, assignment order, `typeof`, a
-failed initializer, block re-entry, and values that are primitives, open
-records, dictionaries and host objects, each throwing case also run under
-Node.
+**Ownership.** The parser marks each early binding in the Fragment
+(`markEarly`) and lists `%ThrowUninitialized%` where a file has one; Lean
+lowers a marked binding as above, allocating the cells at the list's entry
+(an `early` node of the flow graph), capturing the cell and the intrinsic in
+every closure that mentions the binding, and lowering every mention as a
+checked access, in graph code and in closure term code. A mention of an
+unmarked binding before its initialization has no binding in scope there and
+is refused by the lowering. The producer proposes $`T`$ and the claims at
+the checked accesses; no claim can omit a check, replace the cell by a
+value, or make an initialization an unchecked write
+(`early-bindings`, `invalid-early-binding-stale`, run under Node; the forged
+claims of `pipeline/test.mts`: a dropped contract, a contract narrower than
+the annotation, a checked access claimed past the contract). The stated
+type $`T`$ is the annotation, or a function literal's parameter and result
+annotations; an early binding with neither is refused, and so are the
+compound assignment, update and logical assignment of an early `let`, an
+assignment to one in closure term code, a key-adding write of an object one
+holds, and an initializer that reads its own binding.
 
 <a id="recursive-constants"></a>
 **Recursive constants.** A constant whose initializer is a function literal,
@@ -309,10 +317,12 @@ check is needed for it:
 
 $`\mathsf{cell}(C)`$ is the private cell's invariant writable field at
 $`C`$. $`C_x`$ is one contract for the binding, stated once in the claims
-and the same in every unit: the annotation, or, without one, the producer's
-proposal, which the initialization unit checks against the initializer
-and every unit checks against each of its writes, `undefined` included for
-`let x;`; no unit narrows it. A unit's theorem assumes $`x`$ at
+and the same in every unit: its annotation. The module's units read the
+binding, so it is a unit boundary, whose type is written, as a module
+function's signature is; an unannotated module `let` is refused at the
+gate (`invalid-unannotated-module-let`). The initialization unit checks
+the initializer against $`C_x`$, and every unit each of its writes,
+`undefined` included for `let x: T;`; no unit narrows it. A unit's theorem assumes $`x`$ at
 $`\mathsf{cell}(C_x\cup U)`$, its contents any value there at the unit's
 entry and after each call; the facts a unit establishes of the contents
 follow the [current-content rules](PROGRAM-TYPING.md#current-content-rules-semantic-layer):
@@ -322,7 +332,17 @@ units' theorems for a module execution, with the cell's contract as a
 shared invariant of the heap every write preserves, is
 [module composition](../WORK.md#module-composition). A `var`, whose binding
 exists from the module's entry at `undefined` and may be redeclared, and an
-exported `let`, a live binding importers read, are outside the fragment.
+exported `let`, a live binding importers read, are outside the fragment. A
+module `let` stays a cell whatever writes it; a certified module's run checks the initialization that
+allocates and initializes its cells with the module's units
+(`module-cells`, `module-cell-before-initialization`,
+`module-cell-saved-value`, `invalid-module-cell-stale`, run under Node;
+`certified-module-cell-value-import`; a cycle of modules whose
+initialization reads a cell of a module not yet evaluated throws at the
+checked access, `certified-cell-cycle-value-import`, run under Node; the
+forged claims of `pipeline/test.mts`: a dropped or narrowed contract, a
+narrowed entry claim, a read after a writing call claimed at the earlier
+value).
 
 A module function is an immutable slot holding its code. A file without
 imports or exports may run as a script, whose top-level functions are

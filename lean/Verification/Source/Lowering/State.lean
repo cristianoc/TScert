@@ -1,3 +1,4 @@
+import Verification.Programs.CellClaims
 import Verification.Source.SourceRequests
 import Verification.Source.SourceClaims
 import Verification.Source.Fragment
@@ -32,6 +33,14 @@ inductive Storage (ι : Type) where
   producer says `x` is at a point is this slot's type there. -/
   | slot (contract : Ty ι)
   | cell (contract : Ty ι) (reference : Ty ι)
+  /-- An early binding (SOURCE-MODEL.md, "Lexical bindings before
+  initialization"): a cell allocated where its statement list is entered,
+  holding the activation's uninitialized marker until the declaration
+  writes it, at the contract `contract ∪ U`; `reference` is the cell's own
+  type. Every mention is a checked access: the contents are tested for the
+  marker's key, a throw where it is held, the contents at `contract`
+  otherwise. -/
+  | early (contract : Ty ι) (reference : Ty ι)
   deriving Repr, Inhabited
 
 /-- A scope slot: how the source names it, and what it holds. `Descriptor` is
@@ -80,7 +89,7 @@ value was saved (a write clears the saved aliases, `executePlanTail`). -/
 @[nospecialize] def valueSlot (scope : List (ScopeBinding ι)) (name : String) : Option Nat := do
   match ← resolve scope name with
   | (i, .value) | (i, .slot _) => return i
-  | (_, .cell ..) => none
+  | (_, .cell ..) | (_, .early ..) => none
 
 /-- State local to one compiled graph. A closure begins with an empty frame
 and restores its enclosing frame as a whole. -/
@@ -195,6 +204,18 @@ def withFreshGraph (action : Compiler α) : Compiler α :=
 @[nospecialize] def lower (m : SourceTypes.Lowering α) : Compiler α := ⟨fun s => do
   let (a,T) ← m.run s.types
   return (a,{ s with types := T })⟩
+
+/-- The type of an early binding's uninitialized marker, `U` (SOURCE-MODEL.md,
+"Lexical bindings before initialization"): the object owning the marker's
+key, at `undefined`. -/
+@[nospecialize] def uninitializedTy : Compiler (Ty Tree) :=
+  lower (do return [← CellClaims.reference [(uninitializedKey, [Labels.undef])]])
+
+/-- An early binding's contract without the marker: what a checked access
+yields and what a write is checked at. -/
+@[nospecialize] def initializedContract (stored : Ty Tree) : Compiler (Ty Tree) := do
+  let U ← uninitializedTy
+  return stored.filter (!U.contains ·)
 
 /-- Saved values and their predicate aliases at one execution-plan continuation. -/
 structure ExecutionBindings where

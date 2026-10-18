@@ -85,8 +85,83 @@ set_option maxHeartbeats 1000000
       let raise ← emitAt e.span (.throw (.var 0)) .ret (A::Γ) [] "throw" (some pos.1)
         (scope := held ⟨"",some e.span⟩ :: scope)
       LoweringExecution.compileExpr recursive fc scope Γ e raise
-    | .declaration pos mutable binding next =>
-      if mutable then LoweringBindings.mutableBinding recursive fc pos (successor next) scope Γ binding
+    | .early bindings next =>
+      -- The list's early bindings (SOURCE-MODEL.md, "Lexical bindings before
+      -- initialization"): the activation's marker, then each binding's cell
+      -- holding it, at the binding's contract with the marker's type.
+      let U ← uninitializedTy
+      let contracts ← bindings.mapM fun (_, _, b) => do
+        let some candidate := fc.contracts.lookup (b.init.span, b.name)
+          | throw s!"no claimed storage contract for the early binding '{b.name}' at {b.init.span.1}"
+        let C ← (SourceClaims.resolve (← table) candidate).mapError fun msg =>
+          s!"storage contract for '{b.name}' at {b.init.span.1}: {msg}"
+        -- The stated type: the annotation, or the function literal's
+        -- parameter and result annotations, a defaulted parameter optional.
+        let reason := s!"the early binding '{b.name}' needs its type stated: an annotation, or a function literal's parameter and result annotations"
+        match b.annot, b.init with
+        | some annotation, _ =>
+          let written ← lower (Fragment.translate annotation)
+          requireSameMeaning (← table) b.init.span .bindingAnnotation C written
+            s!"claimed storage contract differs from the source annotation for '{b.name}'"
+        | none, .lambda _ none [] params defaults false (some result) _ _ =>
+          let Ds ← params.zipIdx.mapM fun ((_, j), i) => do
+            let D ← lower (Fragment.translate j)
+            pure (if defaults.any (·.1 == i) then (D ++ [Labels.undef]).eraseDups else D)
+          let R ← lower (Fragment.translate result)
+          let G := SourceTypes.graph (← table)
+          let [.arrs [sig] []] := PositiveRules.expand G C
+            | throw (locatedRefusal (← table) b.init.span .bindingAnnotation reason)
+          if sig.arguments.length != Ds.length then
+            throw (locatedRefusal (← table) b.init.span .bindingAnnotation reason)
+          let differs := s!"claimed storage contract differs from the function literal's annotations for '{b.name}'"
+          for (A, D) in sig.arguments.zip Ds do
+            requireSameMeaning (← table) b.init.span .bindingAnnotation A D differs
+          requireSameMeaning (← table) b.init.span .bindingAnnotation sig.result R differs
+        | none, _ => throw (locatedRefusal (← table) b.init.span .bindingAnnotation reason)
+        let stored := (C ++ U).eraseDups
+        let reference ← lower (do return [← CellClaims.reference [(valueField, stored)]])
+        pure (stored, reference)
+      let n := bindings.length
+      let cells : List (ScopeBinding Tree) := (bindings.zip contracts).zipIdx.map
+        fun (((pos, _, b), (stored, reference)), idx) =>
+          { source := ⟨b.name, some pos⟩, storage := .early stored reference,
+            apart := some ((contracts.take idx).reverse.map (·.2) ++ Γ) }
+      let inner := cells.reverse ++ scope
+      let target ← successor next inner
+      -- The cells, last first, then the marker, then the scope: each target
+      -- slot below `n` is a cell, every later one a slot past the marker.
+      let toTarget : Target := ⟨target.label, some ((target.mapping.getD (List.range inner.length)).map
+        fun j => if j < n then j else j+1)⟩
+      let mut k := toTarget
+      for idx in (List.range n).reverse do
+        let some (_, reference) := contracts[idx]? | throw "internal flow error: early binding contracts"
+        let ctx := (contracts.take idx).reverse.map (·.2) ++ [U] ++ Γ
+        let marker := held ⟨"",some node.source⟩
+        k ← emitAt node.source (.makeAt .absent [valueField] [.var idx]) (.bind k) ctx reference
+          "binding-storage" (scope := (cells.take idx).reverse ++ marker :: scope)
+      emitAt node.source (.makeAt .absent [uninitializedKey] [.undef]) (.bind k) Γ U
+        "uninitialized-marker" (scope := scope)
+    | .declaration pos _ binding next =>
+      if binding.early then
+        -- The declaration initializes its cell: the initializer's value,
+        -- checked at the contract, written in place of the marker.
+        let some (i, .early stored _) := resolve scope binding.name
+          | throw s!"internal flow error: the early binding '{binding.name}' has no cell"
+        if binding.init.freeNames.contains binding.name then
+          throw (locatedRefusal (← table) binding.init.span .bindingAnnotation
+            "an early binding whose initializer reads it is outside the fragment")
+        let C ← initializedContract stored
+        let continued ← successor next scope
+        let A ← exprType fc binding.init
+        let value := held ⟨"",some binding.init.span⟩ :: scope
+        let written ← emitAt binding.init.span (.writeAt valueField (.var (i+1)) (.var 0))
+          (.effect ⟨continued.label, some ((continued.mapping.getD (List.range Γ.length)).map (·+1))⟩)
+          (A::Γ) [Labels.nul] "binding-storage" (some pos.1) (scope := value)
+        let checked ← emitAt binding.init.span (.var 0) (.effect written) (A::Γ) C "storage-contract"
+          (some pos.1) (scope := value)
+        LoweringExecution.compileExpr recursive fc scope Γ binding.init checked
+      else if let .declaration _ true _ _ := action then
+        LoweringBindings.mutableBinding recursive fc pos (successor next) scope Γ binding
       else LoweringBindings.constant recursive fc pos (successor next) scope Γ binding
     | action@(.statement (.destructure ..) next) =>
       let some plan := SourceExecution.bindingAction action

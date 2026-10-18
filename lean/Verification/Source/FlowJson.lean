@@ -90,7 +90,11 @@ private def actionJson : Action → Json
   | .jump target => Json.mkObj [("kind",toJson "jump"),("target",toJson target)]
   | .declaration source mutable binding next => Json.mkObj [("kind",toJson "declaration"),
       ("statement",toJson source),("name",toJson binding.name),("initializer",toJson binding.init.span),
-      ("mutable",toJson mutable),("next",toJson next)]
+      ("mutable",toJson mutable),("early",toJson binding.early),("next",toJson next)]
+  | .early bindings next => Json.mkObj [("kind",toJson "early"),
+      ("bindings",toJson (bindings.map fun (source, mutable, binding) => Json.mkObj [
+        ("statement",toJson source),("name",toJson binding.name),("initializer",toJson binding.init.span),
+        ("mutable",toJson mutable)])),("next",toJson next)]
   | .statement st next => Json.mkObj [("kind",toJson "stmt"),("statement",toJson st.pos),("next",toJson next)]
   | .branch st yes no => Json.mkObj [("kind",toJson "branch"),("statement",toJson st.pos),
       ("yes",toJson yes),("no",toJson no)]

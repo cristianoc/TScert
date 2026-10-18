@@ -7,6 +7,11 @@ type action =
   | Jump of int
   | Statement of Json.t * int
   | Declaration of Json.t * string * Json.t * bool * int
+  (* The entry of a statement list declaring early bindings (SOURCE-MODEL.md,
+     "Lexical bindings before initialization"): each binding, by its
+     statement, name, initializer and storage mode, is a cell from here on;
+     its declaration initializes it. *)
+  | Early of (Json.t * string * Json.t * bool) list * int
   | Branch of Json.t * int * int
   | Return of Json.t
   | ReturnSave of Json.t * binding * int
@@ -36,6 +41,8 @@ let decode_action j =
   | "jump" -> Jump (point "target")
   | "stmt" -> Statement (get "statement",point "next")
   | "declaration" -> Declaration (get "statement",Json.str (get "name"),get "initializer",Json.boolean (get "mutable"),point "next")
+  | "early" -> Early (List.map (fun b -> Json.field "statement" b,Json.str (Json.field "name" b),
+      Json.field "initializer" b,Json.boolean (Json.field "mutable" b)) (Json.list (get "bindings")),point "next")
   | "branch" -> Branch (get "statement",point "yes",point "no")
   | "return" -> Return (get "statement")
   | "returnSave" -> ReturnSave (get "statement",bind "binding",point "next")
@@ -58,7 +65,7 @@ let decode_node j =
 let successors node =
   let normal = match node.action with
     | End | Return _ | ReturnHeld _ -> []
-    | Jump next | Statement (_,next) | Declaration (_,_,_,_,next) | ReturnSave (_,_,next)
+    | Jump next | Statement (_,next) | Declaration (_,_,_,_,next) | Early (_,next) | ReturnSave (_,_,next)
     | DiscardThrow (_,next) | IteratorStart (_,_,next) -> [next]
     | Branch (_,yes,no) | IteratorStep (_,_,_,yes,no) -> [yes;no]
     | Rethrow _ -> [] in
