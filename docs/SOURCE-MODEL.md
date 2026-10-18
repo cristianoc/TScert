@@ -464,15 +464,30 @@ requires; the import's TypeScript declaration still supplies none. Module
 graphs whose certified imports form a cycle are left to a later stage: an
 import on such a cycle is read at its ordinary signature.
 
-**The exported unit.** For each import the claims read at a qualified
-signature, the document holds the exported declaration as a unit of its own,
-lowered from its module's source like a declaration of the checked file. The
-unit carries its origin: the module's file, that file's `sha256` (the
-snapshot the parser lowers, as `sourceSha256` is for the checked file), and
-the declaration's span and exported name. The parser resolves the import to
-the declaration TypeScript binds it to. The unit is checked in its own
-module's environment: the declarations of its file at their signatures, and
-its own imports.
+**The exported unit.** The parser lowers its documents before any claim
+exists, so it cannot select the imports the claims will read at a qualified
+signature. The fragment document therefore holds, beside the checked file,
+every program module the checked file imports a function from, transitively,
+where the module graph is acyclic: each as its own lowered program (`modules`,
+one entry per file), with its file, the `sha256` of the snapshot the parser
+lowers (as `sourceSha256` is for the checked file), its top-level code, its
+functions and its own declaration document (the roots and values its own
+imports bind). A function of such a module is a **unit**, named by its
+origin: the module's file and hash, and the declaration's span and exported
+name, as the parser resolves the import to the declaration TypeScript binds
+it to. A function the parser cannot lower is absent from its module, with
+the parser's reason; an import of it is read at its ordinary signature. The
+pipeline copies each module's snapshot beside the checked file's.
+
+**One run per module, one equation environment.** A unit is checked in its
+module's run: that module's top-level constants, its functions at their
+claimed signatures, and its own imports, exactly as a run of that file alone
+checks it. The claims document holds the claims of every module of the
+document (`modules`, one entry per file) over one type table shared with the
+checked file's claims, so the importer's qualified signature and the unit's
+are labels of one store, and comparing them by meaning is one subtype check
+each way in it. Only units some read of the claims names are checked; the
+others are lowered and not concluded.
 
 **Binding.** An origin comes from the parser's resolution of the import
 and from the snapshot it lowers: the trusted front end states it, and no
@@ -506,11 +521,13 @@ other input is read at its declared type, the ordinary
 the module's own run also makes. Recursion within one module is inferred as
 the module's functions are, at the greatest fixpoint.
 
-**Inference.** OCaml proposes the dependency's effects as it proposes its
-module's own (the greatest fixpoint over that module), then the importer's
-claims at them. No effect follows from a comment, a name or a module's
-role. A proposal its check refutes is withdrawn, and the import is then
-read at its ordinary signature. Dense `map` needs a callback footprint that
+**Inference.** OCaml proposes each module's effects as it proposes a
+file's own (the greatest fixpoint over that module), in the order of the
+module graph, then the importer's claims at them. No effect follows from a
+comment, a name or a module's role. The pipeline searches evidence for the
+units first; an effect its search refutes is withdrawn, and the import is
+then read at its ordinary signature. The final check is one `checkJson` call
+over the whole document. Dense `map` needs a callback footprint that
 keeps dense prefixes ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
 `record-render`'s `parseRecord` is proposed at `{value: any, store: grow}`
 or a narrower footprint in that set. The empty footprint would need the

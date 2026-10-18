@@ -22,7 +22,7 @@ design, not its progress.
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form and array element writes have a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
-| [Module composition](#module-composition) | open: certified imports designed (2026-10-17) | a Lean theorem composes units certified against each other's signatures |
+| [Module composition](#module-composition) | open: certified imports designed (2026-10-17), the document shape revised for review (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
 | [Cell facts by tag, and label slices](#cell-fact-slices) | open: label slices and reads by a record field's tag done; `decodeTarget` reads its field from a `Record<string, unknown>`, whose entries take no facts | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
 | [Decoders' dictionary reads](#decoders-dictionary-reads) | investigation, waiting for the owner | a route is chosen for reading `unknown` JSON by key |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
