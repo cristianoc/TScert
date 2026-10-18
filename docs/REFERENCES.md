@@ -263,6 +263,79 @@ counts are equal and the bounds identical, a decidable check.
 [POSITIVE-TYPES: covered pairs](POSITIVE-TYPES.md#covered-pairs),
 `lean/Verification/Types/PositiveRules.lean`.
 
+### Pierce 2002
+
+Benjamin C. Pierce. *Types and Programming Languages.* MIT Press, 2002.
+
+**Used for** the form of the completeness argument for structure-directed
+comparison: algorithmic subtyping as syntax-directed rules proved sound and
+complete for a declarative system (chapter 16, records with width and depth
+subtyping), and subtyping of recursive types as a greatest fixed point decided
+by a terminating algorithm (chapter 21). The results concern those calculi;
+the selection lemmas here are inversion lemmas of the same kind.
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+
+### Castagna and Frisch 2005
+
+Giuseppe Castagna and Alain Frisch. *A gentle introduction to semantic
+subtyping.* Invited joint paper of PPDP 2005 and ICALP 2005.
+[cduce.org/papers/gentle.pdf](https://www.cduce.org/papers/gentle.pdf).
+
+**Used for** the decomposition of a type by constructor kind before deciding
+inclusion as emptiness of a difference, complete for the set-theoretic model
+it describes. The outer shapes play the role of the kinds; the completeness
+result does not transfer to a model without negation whose record fields are
+lifetime contracts of heap locations.
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+
+### TypeScript 30779
+
+Ron Buckton. *Relate source types covered by a target discriminated union.*
+microsoft/TypeScript pull request #30779, merged 2019-04-29, released in
+TypeScript 3.5 ([release notes](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-5.html#smarter-union-type-checking)).
+[github.com/microsoft/TypeScript/pull/30779](https://github.com/microsoft/TypeScript/pull/30779).
+
+**Used as** the precedent and the contrast for discriminant-directed
+comparison: TypeScript decomposes a source object type along its
+discriminants' literal types, up to a fixed limit of 25 combinations, and
+compares each part with the target union. Selecting target arms by
+discriminant carries over; decomposing through a property does not, since
+here a property's type constrains every later write.
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+
+### Milner et al. 1997
+
+Robin Milner, Mads Tofte, Robert Harper and David MacQueen. *The Definition
+of Standard ML (Revised).* MIT Press, 1997.
+
+**Used for** tagged sums: a datatype's constructors are generative, so values
+of different constructors are disjoint by construction, and case analysis
+selects a branch by constructor. A record discriminant gives a coverage
+exclusion from its field types, and disjointness of meanings only at a
+successor level under a heap satisfying the world.
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+
+### Maranget 2008
+
+Luc Maranget. *Compiling pattern matching to good decision trees.* ACM
+SIGPLAN Workshop on ML, 2008.
+
+**Used for** constructor-directed case analysis: matches compiled to decision
+trees that test a value's constructor once per node, the cost model indexing
+by cell aims at.
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+
+### Garrigue 1998
+
+Jacques Garrigue. *Programming with polymorphic variants.* ACM SIGPLAN
+Workshop on ML, 1998.
+
+**Used for** tag-directed structural subtyping of variant types: a source tag
+is compared with the one target tag of its name, tags disjoint by
+construction. The literal-discriminant rule is that rule's selection with the
+tag a record field; its lemma proves a coverage exclusion, not disjointness.
+**Discussed in** [UNION-SHAPES: prior work](UNION-SHAPES.md#8-prior-work).
+
 ## JavaScript and ECMAScript
 
 ### ECMA-262

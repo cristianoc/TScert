@@ -1579,6 +1579,8 @@ Lean: `Types/PositiveGraphs.lean` (`schemeSemWithArgs`).
 - Subtyping is sound; the rules are not complete for the model. For example, incompatible invariant contracts are
   never recognized as empty.
 - `compatible` is a shape test, not a test of joint inhabitation.
+- Coverage tries every target clause for each source clause; a design for
+  selecting them by shape and discriminant is in [UNION-SHAPES](UNION-SHAPES.md).
 - Normalization has no growth control and no Lean implementation, and no
   verified compiler from textual type syntax to graphs exists.
 - Generic methods are still receiver-quantified signatures, not host-relative
