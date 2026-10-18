@@ -265,6 +265,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-own-property-descriptor-value: the descriptor's value is a string returned at number");
   assert.equal(runExample("invalid-record-index-named-key", "classOf([], 0)"), undefined,
     "invalid-record-index-named-key: the element past the end is undefined, whose member is undefined at string");
+  assert.equal(runImporting("invalid-builtin-iterator-return-value-import", "first(new Map()) === undefined"), true,
+    "invalid-builtin-iterator-return-value-import: a done step's value is undefined, returned at string");
   assert.equal(runImporting("invalid-node-exec-stdout-ignored", `run(["-e", ""])`), null,
     "invalid-node-exec-stdout-ignored: standard output not piped, the result is null at string");
   assert.equal(runExample("invalid-array-flat-map-value", "first()"), 1,

@@ -2408,7 +2408,16 @@ export function collectDeclarations(file: string, options: {
         }
       }
     };
+    const queuedValues = valueStarts.length;
     collectFrom(starts);
+    // A value a definition names through `typeof` is read while the graph
+    // is collected; the declarations its type names join the graph.
+    for (let from = queuedValues; from < valueStarts.length;) {
+      const to = valueStarts.length;
+      const at = starts[0]?.span ?? [0, 0];
+      collectFrom(valueStarts.slice(from, to).map(node => ({ node, span: at })));
+      from = to;
+    }
     // An array type reaching the unit only through a declaration (an
     // imported value's, a declared type's member, a library contract's) is
     // read at `Array.prototype`'s contract as one the client writes is; the
@@ -3294,8 +3303,16 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // installation merges into it, and it inherits nothing.
     if ((view || context.hostType(node)) && parts.some(part => !isHostFile(part.getSourceFile().fileName)))
       throw Error(`a declaration merged into the host type ${node.name?.text} outside the audited installation is refused: the installation's declarations are its whole shape (COMPILER-API.md, reading rules 1 and 4)`);
+    // `BuiltinIteratorReturn`, the standard library's `intrinsic` alias, is
+    // what a built-in iterator returns when it is done: ECMAScript's
+    // iterators of arrays, maps, sets and strings complete with
+    // `CreateIterResultObject(undefined, true)`, so it is `undefined`, as
+    // `strictBuiltinIteratorReturn` (which `strict` sets) reads it.
+    const builtinReturn = ts.isTypeAliasDeclaration(node) && node.name.text === "BuiltinIteratorReturn" &&
+      node.type.kind === ts.SyntaxKind.IntrinsicKeyword && context.libraryFile(source);
     let expression = ts.isTypeAliasDeclaration(node)
-      ? typeTerm(scope, node.type)
+      ? builtinReturn ? ({ k: "atom", name: "undefined", span: [node.type.getStart(source), node.type.end] } satisfies TypeTerm)
+      : typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
         ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end], admitted), parts.flatMap(part => {
             if (part === node || !ts.isInterfaceDeclaration(part)) return [];

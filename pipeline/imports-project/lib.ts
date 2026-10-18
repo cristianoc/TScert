@@ -330,3 +330,28 @@ export const named = function (s: string): string {
   return s;
 };
 export const unstated = (x: number) => x + 1;
+// A class whose method defaults a parameter, and one whose field is the type
+// of a function declared elsewhere, whose parameter names a library type.
+export class Scaler {
+  readonly by: number = 2;
+  scale(x: number, offset: number = 0): number {
+    return x * this.by + offset;
+  }
+}
+export function seenIn(
+  this: Seen,
+  x: number,
+  seen: Set<number> = new Set(),
+): boolean {
+  return seen.has(x) || this.n > x;
+}
+export class Seen {
+  readonly n: number = 1;
+  check: typeof seenIn = seenIn;
+}
+export class Counts {
+  readonly counts: Map<string, number> = new Map();
+}
+export function keysOf(m: Map<string, number>): MapIterator<string> {
+  return m.keys();
+}

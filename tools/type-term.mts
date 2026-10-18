@@ -1104,14 +1104,15 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
           default: p.defaultType ? typeTerm(inner, p.defaultType, p) : null,
           span: spanOf(scope, p),
         }));
-        const forms = signature(inner, member.parameters, member.type, member, memberSpan);
+        // A defaulted parameter may be omitted, as a declared function's.
+        const forms = signature(inner, member.parameters, member.type, member, memberSpan, true);
         if (forms.some((f) => f.receiver)) scope.fail(member, GENERIC_METHOD_RECEIVER);
         fields.push({ name, optional: false, readonly: true,
           type: { k: "scheme", binders, signatures: forms.map((f) => ({ ...f, receiver: { k: "self", span: memberSpan } })),
             span: memberSpan }, span: memberSpan });
         continue;
       }
-      const forms = signature(scope, member.parameters, member.type, member, memberSpan);
+      const forms = signature(scope, member.parameters, member.type, member, memberSpan, true);
       fields.push({ name, optional: false, readonly: true,
         type: oneTerm(forms.map((f) => ({ ...f, receiver: hostReceiver(f, memberSpan) })), memberSpan), span: memberSpan });
     } else if (ts.isConstructorDeclaration(member)) {
