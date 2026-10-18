@@ -139,8 +139,76 @@ spells (`x@line:col`), so the lowering never meets two bindings of one name:
 consistent renaming of bound variables, for `const`, `let`, parameters, patterns, closure
 parameters, `for...of` and `catch` bindings in any body
 ([shadowing](SOURCE-ELABORATION.md#derived-source-forms)). A mention above the
-declaration, a closure's included, or in its own initializer is refused, as
-JavaScript's temporal dead zone throws there.
+declaration, a closure's included, or in its own initializer is the
+binding before it is initialized ([lexical bindings before
+initialization](#lexical-bindings-before-initialization)).
+
+<a id="lexical-bindings-before-initialization"></a>
+**Lexical bindings before initialization.** A `let`, `const` or class
+declaration's binding exists from the entry of its scope and is
+uninitialized until its declaration runs; reading, writing or `typeof` of it
+then throws a `ReferenceError` (the temporal dead zone). A closure holds the
+binding, never its value, so whether a read through a closure throws depends
+on when the closure runs, not on where it is written: in
+
+```ts
+const visit = (n: Node): void => { if (wanted(n)) found.push(n); };
+const wanted = (n: Node): boolean => n.kind === 79;
+```
+
+`visit` reads `wanted` successfully at every call made after the second
+line, and throws at a call made before it.
+
+A function or block scope's binding is **early** when one of its mentions
+may run before its declaration: a mention written above the declaration in
+the scope, a closure's included, or one in its own initializer outside a
+function literal's body (a [recursive constant](#recursive-constants)'s read
+is its self entry, unchanged). Every other binding is lowered as before.
+The bindings of a module's top level keep the module initialization order
+(`Sites`).
+
+An early binding $`x`$ of storage contract $`T`$ is a cell of its scope's
+activation, allocated when the scope is entered, before any of its
+statements, holding the activation's **uninitialized marker** $`u`$: one
+fresh object per activation of the scope, owning the reserved key
+$`\kappa_u`$ (`[[uninitialized]]`), which no source spells, no host object
+owns and no other value of the program reaches. The cell's contract is
+$`T\cup U`$, with $`U`$ the record type of the marker; closures created in
+the scope capture the cell, as they capture a written `let`'s. The
+declaration's evaluation, at the point the source has it, writes the
+initializer's value, which its obligation checks at $`T`$, into the cell. A
+mention of $`x`$ is a **checked access**: the cell's contents $`v`$ are
+tested for $`\kappa_u`$; where $`\kappa_u\in v`$ the access throws, and
+otherwise it proceeds with $`v`$ at $`T`$, its test having removed $`U`$:
+
+```math
+\frac{\Gamma\vdash x:\mathsf{cell}(T\cup U)}
+     {⟦x⟧=\mathsf{let}\ v=\mathsf{read}(x)\ \mathsf{in}\ \mathsf{if}\ \kappa_u\in v\ \mathsf{then}\ \mathsf{throw}\ \iota_{\mathsf{RE}}()\ \mathsf{else}\ v,
+      \qquad \Gamma\vdash ⟦x⟧:T\ \text{on its normal edge}}\ \textsf{early-read}
+```
+
+A write of an early `let` is the same check followed by the write, and
+`typeof x` the check followed by the test. The throw is a call of the
+intrinsic $`\iota_{\mathsf{RE}}`$, `%ThrowUninitialized%`, which allocates a
+`ReferenceError` by the standard constructor and throws it, within the empty
+footprint on its throw; it is the read's exceptional edge, which reaches the
+enclosing handler as any throw does, with no fact of the normal edge.
+Where the declaration surely ran on every path to a mention in the same
+activation, outside any closure, the write's current-content fact gives the
+cell's contents at $`T`$, and the test's true edge is unreachable, so the
+check costs no completeness there.
+
+Why this is sound and faithful: the marker's key is reserved, so a value of
+$`T`$ owns it only if $`T`$ admits the marker's record, and then the test is
+undecided for it and both edges keep the value, so the false edge's $`T`$
+is always correct. The marker is the cell's contents exactly while
+JavaScript's binding is uninitialized: the cell is allocated at scope entry,
+which is where JavaScript creates the binding, and written only by the
+declaration's evaluation and by the source's writes after it. Shadowing is
+by declaration: the parser's renaming gives each binding its own name, so a
+mention is of the binding TypeScript binds it to. A per-iteration binding of
+a `for` loop is outside the fragment (a closure capturing one is refused),
+so no loop re-creates an early binding.
 
 <a id="recursive-constants"></a>
 **Recursive constants.** A constant whose initializer is a function literal,
