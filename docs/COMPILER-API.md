@@ -14,9 +14,10 @@ The pipeline implements namespace imports
 enums (reading rule 3, [enums](SOURCE-CONTRACTS.md#enums)), the check C1,
 the bitwise operators, reading rule 1 (the host types' members as readonly
 views, `jsDoc` omitted from its shape, checked by C4 under Node), C0's
-binding of the host package to the audited installation's declarations, and
+binding of the host package to the audited installation's declarations,
 the host classification with R8 for the steps that merge objects (an object
-spread, an object pattern's rest, `Object.assign` and a key-adding write);
+spread, an object pattern's rest, `Object.assign` and a key-adding write),
+and the `JsonValue` traversal lemma;
 the other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
@@ -349,8 +350,15 @@ of it may own others. So no operation traversing every own key is admitted,
 with one exception: `JSON.stringify` takes `JsonValue`
 (`library-globals.mts`), whose only object arm is a string-indexed
 dictionary of `JsonValue`. The lemma: in a world satisfied by the heap, the
-string-key traversal of a `JsonValue` at step index $`k`$ reaches no host
-object. Each object it reaches meets the dictionary arm, whose objects are
+string-key traversal of a `JsonValue` within step index $`k`$ reaches no host
+object. It is proved for every family whose members are non-objects or
+dictionaries of string keys at the family itself
+(`JsonTraversal.reach_noHost`), and a type is such a family when each of its
+clauses is a primitive one or a dictionary indexed by every string key at the
+type (`shaped_of_clauses`); `JsonValue`'s declared arms are, by the reviewed
+declaration in `library-globals.mts`. The statement is safety within the
+index, not termination: a cyclic heap is traversed as deep as the index
+allows. Each object it reaches meets the dictionary arm, whose objects are
 ordinary and have no model prototype ($`\mathrm{dictViewT}`$); each value
 under a string key meets $`\mathrm{dictViewT}`$'s index contract, a
 `JsonValue` at every lower index, so the argument descends by induction on
