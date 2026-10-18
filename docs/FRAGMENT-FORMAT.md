@@ -24,6 +24,7 @@ The file object has these fields:
 | `declarations` | Resolved source type declarations and their dependencies, in the declaration-document format. |
 | `init` | Module-initialization statements, in source order. |
 | `functions` | Function definitions to check. |
+| `modules` | The program modules [certified imports](SOURCE-MODEL.md#certified-imports) may read, each once: `location`, the module identity its declarations carry, and `sourceSha256`, the digest of the bytes lowered (its artifact), with its `declarations`, `init` and `functions` as a file's, and `absent`, each function it could not lower as `name`, `namePos` and the parser's `reason`. The verifier reads none yet and refuses a document listing one. |
 
 Each function contains `name`, `namePos`, `typeParams`, `params`, `retType`
 and `body`. A type parameter has `name`, `bound` and `resolution`, with `null`

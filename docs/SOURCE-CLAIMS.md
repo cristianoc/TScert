@@ -38,8 +38,11 @@ is a separate boundary, specified below.
 
 ## Encoding
 
-The top-level object has required fields `file`, `sourceSha256`, `types` and
-`functions`, and optional `init`. Unknown fields are rejected. `file` identifies
+The top-level object has required fields `file`, `sourceSha256`, `types`,
+`functions` and `modules`, and optional `init`. Unknown fields are rejected.
+`modules` holds one claims document per fragment module, in its order, each
+over the module's own `types`, without `modules` of its own; the verifier
+reads none yet and refuses a document listing one. `file` identifies
 the source; `sourceSha256` is its lowercase SHA-256 digest. `types` is the
 producer's type table. Each ordinary row is a list of clauses, also interpreted
 as a union. Row operands contain label lists, so recursive rows can refer to
@@ -118,6 +121,7 @@ executable input; its identity and point associations must match a Fragment:
   "sourceSha256": "REPLACE_WITH_EXACT_SOURCE_DIGEST",
   "types": [["nul"], [{"boolLit":{"value":true}}],
             [{"boolLit":{"value":false}}], ["undef"]],
+  "modules": [],
   "functions": [{
     "name": "identity", "namePos": [9,17],
     "params": [{"name":"flag","type":[1,2],"current":null}],

@@ -571,5 +571,6 @@ let encode (proposal : Proposal_types.t) =
   let init = match proposal.init with
     | None -> []
     | Some f -> ["init",Object (interior f)] in
+  (* No module's claims yet: certified imports read none. *)
   Object (["file",proposal.program.file; "sourceSha256",proposal.program.digest;
-    "types",Array !rows; "functions",Array functions] @ init)
+    "types",Array !rows; "functions",Array functions] @ init @ ["modules",Array []])

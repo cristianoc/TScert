@@ -143,4 +143,7 @@ export interface SourceClaims<L = Label> {
   /** The module initialization unit, present exactly when the source has
    * top-level code: its entries and expressions, with no parameters. */
   init?: Pick<FunctionClaims<L>, "contracts" | "entries" | "expressions" | "arrows">;
+  /** One claims document per fragment module, in its order, over the
+   * module's own rows. */
+  modules: Omit<SourceClaims<L>, "modules">[];
 }

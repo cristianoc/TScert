@@ -357,6 +357,19 @@ export interface FunctionAst {
   strict: boolean;
 }
 
+/** A program module the checked file imports a function from, directly or
+ * through another such module, lowered as a run of that file alone lowers it:
+ * its artifact (`location`, the module identity its declarations carry, and
+ * the sha256 of the exact bytes lowered), its declarations, top-level code
+ * and functions, and each function it could not lower, with the reason. */
+export interface ModuleAst {
+  location: string;
+  sourceSha256: string;
+  declarations: DeclarationDocument;
+  init: Stmt[];
+  functions: FunctionAst[];
+  absent: { name: string; namePos: Span; reason: string }[];
+}
 export interface Ast {
   file: string;
   sourceSha256: string;
@@ -367,4 +380,6 @@ export interface Ast {
      expression statements, run once after the function declarations exist. */
   init: Stmt[];
   functions: FunctionAst[];
+  /** The program modules certified imports may read, each once. */
+  modules: ModuleAst[];
 }

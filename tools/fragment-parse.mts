@@ -1639,6 +1639,7 @@ export function parseFile(file: string, carriesContext = false,
     declarations,
     functions: parsed,
     init,
+    modules: [],
   };
 }
 
