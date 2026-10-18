@@ -24,7 +24,7 @@ design, not its progress.
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open: certified imports designed (2026-10-17), the design revised and approved (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
 | [Cell facts by tag, and label slices](#cell-fact-slices) | open: label slices and reads by a record field's or a dictionary entry's tag done (2026-10-18); `decodeTarget` passes an imported function as a callback | `decodeTarget` and `showTag` in `calculus`/`control-flow` verify in their modules |
-| [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 43 s of evidence search, past the 30 s limit (2026-10-18) | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
+| [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 29 s of evidence search, near the 30 s limit (2026-10-18); their time waits on shape-directed comparison of discriminated unions | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
 | [Field equality facts over objects](#field-equality-facts) | open: an investigation, cause unknown | `c.kind === "a"` of a field whose type holds objects is a fact a later read of `c.kind` uses, as it is of a `string` field |
 | [Optional-field truthiness over unions](#optional-field-truthiness) | open: an investigation, cause unknown | `optional-field-truthiness-union-refused` verifies |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
@@ -159,10 +159,17 @@ is a dictionary of parsed data, read by key as the index's value or
 `undefined`, and a key it may inherit from `Object.prototype` is refused
 (`invalid-json-parse-inherited`). A constructor object's one key and its
 value are `Object.entries`' pair, so no read at a key known only at run
-time is needed. In `calculus`, `decodeTerm`'s unit, a switch over the term
-constructors, has an evidence search of 43 s and a check of 5 s, its
-evidence 9.5 MB, measured on its slice (2026-10-18); profiling shows the
-time in subtype comparisons of the `Term` union. `dev/lowering-dump.mts`
+time is needed. In `calculus`, the slice of `termsOf`, holding
+`decodeTerm` and `decodeCode`, takes 29 s of evidence search and 5 s of
+checking (user time, 2026-10-18). Of 29.6 s, 16.5 s are image-equivalence
+checks: an instance of the array prototype's scheme, its result an array of
+`source & X`, against the claim's `Term[]` row, 172 checks of 24 distinct
+pairs, each direction of the costliest about 0.25 s though each side is one
+clause. The time is in the structural comparison of the recursive `Term`
+and `Json` union arms beneath; absorbing `source & X` into `X` before the
+check takes it from 16.5 s to 16.2 s, `X` being source-valued in only 56 of
+the 172 checks (a probe, 2026-10-18). These functions wait on the theory
+track's shape-directed comparison of discriminated unions. `dev/lowering-dump.mts`
 decodes the verifier's output with `decodeUnits`, which calls `fields` and
 `nat` in `map` callbacks: imported functions, whose effect no certificate
 states ([module composition](#module-composition)).
