@@ -1350,6 +1350,7 @@ export const cases: Case[] = [
   positive("library-preserving-callback", "`map` callbacks calling `Number` and `String` of a primitive and `Object.is`, each stating heap preservation: the result is dense"),
   positive("library-preserving-tests", "`map` callbacks calling `Number.isFinite`, `isInteger` and `isSafeInteger`, each stating heap preservation: the result is dense"),
   positive("library-preserving-reflection", "`map` callbacks calling `Object.keys`, `Object.values` and `Object.entries` of a dictionary, `in` with a `string` key (`%HasProperty%`) and `BigInt` of a string, each stating heap preservation: the result is dense"),
+  positive("in-test-preserving", "a `map` callback testing a literal key with `in`, directly and through a declaration, writes nothing: the result is dense"),
   positive("object-entries-sparse", "`Object.entries` of an interface's object, the overload stating no preservation: a `map` calling it is read at its unrestricted signature, whose result admits holes"),
   negative("invalid-object-entries-preserving", "`Object.entries` of an interface's object may run an external getter: a `map` calling it may leave holes, which `number[]` does not hold"),
   positive("library-number-call","`Number` called on a string, Boolean, bigint, null, undefined or symbol, none of which runs client code; the symbol's TypeError an outcome"),

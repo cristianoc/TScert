@@ -750,6 +750,9 @@ let rec footprint_expr ?(fresh=[]) ~callable ~iteration ~readable (e:expr) : foo
      field or an element, ordinary safety supplying that it does not stick. *)
   | Read (a,_) -> go a
   | Index (a,b) | Equality (_,a,b) -> all [a;b]
+  (* `"k" in o` tests the object's keys, which changes no location: Lean's
+     lowering is a key test of each singleton the key names. *)
+  | HasKey (a,b) -> all [a;b]
   | Alloc fields -> all (List.map snd fields)
   (* A spread part reads its operand's store, an array; the parser writes a
      spread of any other iterable as its spread intrinsic's call, whose
@@ -779,7 +782,7 @@ let rec footprint_expr ?(fresh=[]) ~callable ~iteration ~readable (e:expr) : foo
      the receiver as `?.`, where the receiver is present. *)
   | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~callable ~iteration ~readable:("?." :: readable) b)
   | BlockBody body -> footprint_stmts ~fresh ~callable ~iteration ~readable body
-  | Unary _ | HasKey _ | InstanceTest _ | Build _
+  | Unary _ | InstanceTest _ | Build _
   | Write _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
@@ -835,7 +838,8 @@ and throws_expr ~callable (e:expr) : bool =
   match e.node with
   | Id _ | Literal _ | Lambda _ -> true
   | Not a | TypeofTest (_,_,a) | Cast (_,_,a) | Read (a,_) -> go a
-  | Arith (_,a,b) | Comma (a,b) | Logical (_,a,b) | Coalesce (a,b) | Index (a,b) | Equality (_,a,b) ->
+  | Arith (_,a,b) | Comma (a,b) | Logical (_,a,b) | Coalesce (a,b) | Index (a,b) | Equality (_,a,b)
+  | HasKey (a,b) ->
     go a && go b
   | Conditional (c,a,b) -> go c && go a && go b
   | Alloc fields -> List.for_all (fun (_,v) -> go v) fields
@@ -848,7 +852,7 @@ and throws_expr ~callable (e:expr) : bool =
   | New (callee,_,args,spreads) -> spreads = [] && List.for_all go (callee :: args) && calls callee
   | Optional (r,b) -> go r && go b
   | BlockBody body -> throws_stmts ~callable body
-  | Unary _ | HasKey _ | InstanceTest _ | Build _
+  | Unary _ | InstanceTest _ | Build _
   | Write _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
