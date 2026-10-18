@@ -1857,7 +1857,9 @@ at a string message, which it stores without conversion code
 `json-stringify-recursive`). `JSON.stringify` is read with a replacer that
 is `null`, absent or a list of keys (primitive numbers and strings, read by
 length and index), and an indent that is a primitive number or string:
-none runs code (`json-stringify-space`). `Error` is read with its one
+none runs code (`json-stringify-space`). A boxed key or indent would run
+its `toString` or `valueOf` (`invalid-json-stringify-boxed-key`,
+`invalid-json-stringify-boxed-space`, run under Node). `Error` is read with its one
 argument. A `toJSON` hook, a replacer function and `Error`'s options run
 code of the client's, which may write what a footprint excludes
 (`invalid-json-stringify-tojson`, `invalid-json-stringify-replacer`,

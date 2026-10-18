@@ -355,3 +355,6 @@ export class Counts {
 export function keysOf(m: Map<string, number>): MapIterator<string> {
   return m.keys();
 }
+// A constant arrow that writes its argument, and a reassignable one.
+export const shrink = (xs: number[]): number => xs.pop() ?? 0;
+export let swapped = (x: number): number => x;

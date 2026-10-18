@@ -265,6 +265,14 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "invalid-own-property-descriptor-value: the descriptor's value is a string returned at number");
   assert.equal(runExample("invalid-record-index-named-key", "classOf([], 0)"), undefined,
     "invalid-record-index-named-key: the element past the end is undefined, whose member is undefined at string");
+  assert.equal(runExample("invalid-json-stringify-boxed-key",
+    `(() => { let ran = false; const k = new String("a"); k.toString = () => { ran = true; return "a"; }; keyed({ a: 1 }, k); return ran; })()`),
+    true, "invalid-json-stringify-boxed-key: a String object's toString runs inside JSON.stringify");
+  assert.equal(runExample("invalid-json-stringify-boxed-space",
+    `(() => { let ran = false; const n = new Number(2); n.valueOf = () => { ran = true; return 2; }; spaced(1, n); return ran; })()`),
+    true, "invalid-json-stringify-boxed-space: a Number object's valueOf runs inside JSON.stringify");
+  assert.equal(runImporting("invalid-preserving-arrow-value-import", "2 in shrunk([1, 2, 3])"), false,
+    "invalid-preserving-arrow-value-import: the last index is a hole in map's result, its element popped before map reached it");
   assert.equal(runImporting("invalid-builtin-iterator-return-value-import", "first(new Map()) === undefined"), true,
     "invalid-builtin-iterator-return-value-import: a done step's value is undefined, returned at string");
   assert.equal(runImporting("invalid-node-exec-stdout-ignored", `run(["-e", ""])`), null,
