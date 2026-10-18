@@ -332,13 +332,13 @@ instance : Labels (CheckedLabel E p) where
   toFromJson := ⟨fun j => do
     let t ← Tree.fromJson j
     if hasPlaceholder t then throw "a label names a binder no unit or closure reads"
-    let l : Label E.signature ← Label.ofTree E.signature t
+    let l : Label E.signature ← Label.ofTreeIn E.signature E.headers E.headers_eq t
     return l⟩
   toRepr := ⟨fun l n => reprPrec l.tree n⟩
   -- Two applications of different heads are compared through the
   -- equations' unfolding of each.
   toInstantiates := ⟨fun s L M => (proposeLabels (sig := E.signature)
-    (fun t => (Label.ofTree? (sig := E.signature) t).map fun l =>
+    (fun t => (Label.ofTreeIn? (sig := E.signature) E.headers E.headers_eq t).map fun l =>
       (E.graph l).map (Clause.map (List.map (·.1)))) s L M)⟩
   decEq := inferInstanceAs (DecidableEq (Label E.signature))
   nul := (⟨.app 0 .nil, p.nul⟩ : Label E.signature)

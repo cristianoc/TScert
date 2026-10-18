@@ -691,6 +691,13 @@ averages 3 to 5:
   index. The structural engine's growth and validation were 1.23 s of the
   run (§9.1). The cost is outside union comparison; R6 and R7 address
   neither.
+- **The scope check over the signature as an array** (`Tree.scopedIn`,
+  `Equations.headers`), against the build without it, the same session, load
+  averages 2 to 6: `statementsOnPath` search 16.8 s → 10.9 s and check
+  12.3 s → 5.8 s; `printGraph` 38.0 s → 37.2 s and 6.8 s → 6.3 s; `pageBody`
+  13.8 s → 13.4 s and 4.8 s → 4.5 s; `card` 11.1 s → 10.8 s and 4.1 s → 3.8 s;
+  `termsOf` 23.5 s → 24.0 s and 3.3 s → 3.2 s. Evidence byte-identical on
+  all of them.
 
 ### 9.3 Next steps
 
@@ -713,12 +720,10 @@ The steps are for the owner to choose. In order:
    changes the engine's interface, and waits for the owner.
 2. **The rerun.** Removed exactly where the preservation theorem applies,
    once it covers discovery; kept elsewhere.
-3. **The scope check of labels.** A signature indexed in constant time for
-   `Label.ofTree?`, measured on `statementsOnPath`.
-4. **Exact comparison identity, then reuse within a run.** Each profile line
+3. **Exact comparison identity, then reuse within a run.** Each profile line
    carries its comparison's identity (§6.1) before memoization is ranked.
-5. **R7, R6 and evidence sharing for `statementsOnPath`**, after the scope
-   check, ranked by what remains.
+4. **R7, R6 and evidence sharing for `statementsOnPath`**, ranked by what
+   remains of its run after the scope check.
 
 ## Lean
 

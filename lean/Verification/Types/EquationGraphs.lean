@@ -176,6 +176,58 @@ def Args.scoped (sig : Signature) (parameters locals : Nat) : Args → Bool
   | .cons t ts => t.scoped sig parameters locals && ts.scoped sig parameters locals
 end
 
+/- The same scope check over the signature as an array, whose lookup by head
+takes constant time; `scopedIn_toArray` states it is `scoped`. -/
+private def arityOkIn (sig : Array Header) (head : Nat) (args : Args) : Bool :=
+  sig[head]?.any fun h => args.toList.length == h.parameters
+
+private def binderOkIn (sig : Array Header) (head slot : Nat) : Bool :=
+  sig[head]?.any fun h => slot < h.binders.length
+
+mutual
+def Tree.scopedIn (sig : Array Header) (parameters locals : Nat) : Tree → Bool
+  | .app h args => arityOkIn sig h args && args.scopedIn sig parameters locals
+  | .bound h args i => arityOkIn sig h args && binderOkIn sig h i && args.scopedIn sig parameters locals
+  | .argument i => i < parameters
+  | .local i => i < locals
+  | .var .. => true
+  | .meet ps => ps.scopedIn sig parameters locals && ps.toList.all fun t => !t.isMeet
+def Types.scopedIn (sig : Array Header) (parameters locals : Nat) : Types → Bool
+  | .nil => true
+  | .cons t ts => t.scopedIn sig parameters locals && ts.scopedIn sig parameters locals
+def Args.scopedIn (sig : Array Header) (parameters locals : Nat) : Args → Bool
+  | .nil => true
+  | .cons t ts => t.scopedIn sig parameters locals && ts.scopedIn sig parameters locals
+end
+
+mutual
+theorem Tree.scopedIn_toArray (sig : Signature) (parameters locals : Nat) :
+    ∀ t : Tree, t.scopedIn sig.toArray parameters locals = t.scoped sig parameters locals
+  | .app h args => by
+    simp only [Tree.scopedIn, Tree.scoped, arityOkIn, arityOk, List.getElem?_toArray,
+      Args.scopedIn_toArray sig parameters locals args]
+  | .bound h args i => by
+    simp only [Tree.scopedIn, Tree.scoped, arityOkIn, arityOk, binderOkIn, binderOk,
+      List.getElem?_toArray, Args.scopedIn_toArray sig parameters locals args]
+  | .argument _ => by simp only [Tree.scopedIn, Tree.scoped]
+  | .local _ => by simp only [Tree.scopedIn, Tree.scoped]
+  | .var .. => by simp only [Tree.scopedIn, Tree.scoped]
+  | .meet ps => by
+    simp only [Tree.scopedIn, Tree.scoped, Types.scopedIn_toArray sig parameters locals ps]
+theorem Types.scopedIn_toArray (sig : Signature) (parameters locals : Nat) :
+    ∀ ts : Types, ts.scopedIn sig.toArray parameters locals = ts.scoped sig parameters locals
+  | .nil => by simp only [Types.scopedIn, Types.scoped]
+  | .cons t ts => by
+    simp only [Types.scopedIn, Types.scoped, Tree.scopedIn_toArray sig parameters locals t,
+      Types.scopedIn_toArray sig parameters locals ts]
+theorem Args.scopedIn_toArray (sig : Signature) (parameters locals : Nat) :
+    ∀ as : Args, as.scopedIn sig.toArray parameters locals = as.scoped sig parameters locals
+  | .nil => by simp only [Args.scopedIn, Args.scoped]
+  | .cons t ts => by
+    simp only [Args.scopedIn, Args.scoped, Types.scopedIn_toArray sig parameters locals t,
+      Args.scopedIn_toArray sig parameters locals ts]
+end
+
 /- Templates capture parameter references through their argument environment.
 They cannot manufacture a parameter belonging to some other application. -/
 mutual
@@ -731,6 +783,10 @@ def rowFrom (sig : Signature) (body : (head : Fin sig.length) → Template sig h
 There is no depth, colour or unfolding budget in the graph definition. -/
 structure Equations where
   signature : Signature
+  /-- The signature as an array, for scope checks in constant time per head
+  (`Tree.scopedIn`). -/
+  headers : Array Header := signature.toArray
+  headers_eq : headers = signature.toArray := by rfl
   body : (head : Fin signature.length) → Template signature head
   builtins : Option (ArrayBuiltins (Label signature)) := none
   domain : SchemeDomain (Label signature) .mixed := .ordinary
