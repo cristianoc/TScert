@@ -50,6 +50,11 @@ export const allocatingMembers: readonly { owner: string; name: string; text: st
  * Every class the package declares is a host type too. */
 export const hostTypeRoots: readonly string[] = ["Node", "NodeArray", "Type"];
 
+/** The host package's node list interface, read as a dense readonly array of
+ * its elements (COMPILER-API.md, "Node lists in the model"), never through
+ * its declaration. */
+export const hostNodeList = "NodeArray";
+
 /** The reviewed host declarations' digest (C0): the SHA-256 of every
  * `.d.ts` file under the audited installation's `dist/`, each its path from
  * the package root, a NUL, its bytes and a NUL, in path order, after the

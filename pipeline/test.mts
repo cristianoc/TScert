@@ -1856,6 +1856,12 @@ const bypassed = (artifacts: string, name: string, change: (fragment: Ast) => vo
       const kind = must(definition.expression.fields.find(f => f.name === "kind"), "Node's kind");
       definition.expression.fields.push({ ...kind, name: "jsDoc", optional: true, type: { k: "atom", name: "unknown", span: kind.span } });
     });
+    // Node lists: read as dense readonly arrays; their own members unread.
+    const rows = check(example("host-fixture-node-list"), project);
+    assert.equal(rows.status, "verified", JSON.stringify(rows));
+    const written = check(example("invalid-host-fixture-node-list-write"), project);
+    assert.ok(written.status !== "verified" && "detail" in written && /transformFlags/.test(written.detail),
+      JSON.stringify(written));
     const kept = check(example("host-fixture-jsdoc-other-reads"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
     const lookalike = check(example("host-fixture-lookalike"), project);
@@ -1863,7 +1869,7 @@ const bypassed = (artifacts: string, name: string, change: (fragment: Ast) => vo
   } finally {
     useHostInstallationForTests(null);
   }
-  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified\n");
+  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, its members unread\n");
 }
 
 {

@@ -12,6 +12,10 @@
 // exactly the members and their reverse mappings, and the entry points that
 // export the enum export that object.
 //
+// C4, node lists: every transparent row of a node list answers as a dense
+// readonly array's, through throwing and re-entrant callbacks and iterators
+// left early or interleaved.
+//
 // C4, allocating members: each member the contract refuses as allocating is
 // declared as reviewed, and under Node two reads of it give different values
 // where a stable member gives one.
@@ -85,6 +89,82 @@ for (const { name, file } of hostEnums) {
   members += declared.length;
 }
 console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the runtime value`);
+
+// C4 for node lists (COMPILER-API.md, "Node lists"; T4): on lists of lengths
+// around 16, where index getters move from the prototype to the instance,
+// each transparent row gives the dense readonly array's answer, with
+// callbacks recording their arguments, throwing, re-entering and iterators
+// interleaved or left early; afterwards every row answers as at the start.
+{
+  const dir = mkdtempSync(join(tmpdir(), "tscert-nodelist-"));
+  for (const n of [0, 1, 15, 16, 17, 32]) {
+    const source = Array.from({ length: n }, (_, i) => `export const v${i} = ${i};\n`).join("");
+    const file = join(dir, `list${n}.ts`);
+    writeFileSync(file, source);
+    const list = openText(file, source).statements;
+    const what = `a node list of length ${n}`;
+    // The elements as indexed reads give them, before anything else runs.
+    const elements: unknown[] = [];
+    for (let i = 0; i < list.length; i++) elements.push(list[i]);
+    const rows = (): void => {
+      assert.equal(list.length, n, `${what}: length`);
+      assert.ok(Array.isArray(list) && typeof list === "object", `${what}: an array object`);
+      elements.forEach((e, i) => assert.equal(list[i], e, `${what}: index ${i}`));
+      assert.equal(list[n], undefined, `${what}: past the end`);
+      assert.equal(Reflect.get(list, "0.5"), undefined, `${what}: a non-integer index`);
+      assert.deepEqual([...list], elements, `${what}: spread`);
+      const seen: unknown[] = [];
+      for (const x of list) seen.push(x);
+      assert.deepEqual(seen, elements, `${what}: for…of`);
+      const calls: unknown[][] = [];
+      list.forEach((x, i, l) => calls.push([x, i, l]));
+      assert.deepEqual(calls, elements.map((e, i) => [e, i, list]), `${what}: forEach's arguments`);
+      assert.equal(list.some(() => false), false, `${what}: some`);
+      assert.equal(list.every(() => true), true, `${what}: every`);
+      assert.equal(list.find((_, i) => i === n - 1), elements[n - 1], `${what}: find`);
+      assert.equal(list.findIndex((_, i) => i === n - 1), n - 1, `${what}: findIndex`);
+      if (n) assert.equal(list.indexOf(list[n - 1]!), n - 1, `${what}: indexOf`); // asserted: n > 0
+      for (const fresh of [list.map(x => x), list.filter(() => true), list.flatMap(x => [x]), list.slice()]) {
+        assert.equal(Object.getPrototypeOf(fresh), Array.prototype, `${what}: a fresh ordinary array`);
+        assert.deepEqual(fresh, elements, `${what}: a fresh array of the elements`);
+      }
+      assert.equal(list.at(0.5), undefined, `${what}: at of a non-integer, within T | undefined`);
+      if (n) assert.equal(list.at(0), elements[0], `${what}: at`);
+      assert.deepEqual([...new Set(list)], elements, `${what}: new Set`);
+      const collect = (...xs: unknown[]): unknown[] => xs;
+      assert.deepEqual(collect.apply(null, [...list]), elements, `${what}: apply`);
+      assert.deepEqual(collect(...list), elements, `${what}: argument spread`);
+      const [first, ...rest] = list;
+      assert.deepEqual([first, ...rest].slice(0, n), elements, `${what}: destructuring with a rest`);
+      if (!n) assert.equal(list.join(), "", `${what}: join of an empty list`);
+    };
+    rows();
+    // A callback throwing at each index, of forEach and of map.
+    for (let at = 0; at < n; at++) {
+      assert.throws(() => list.forEach((_, i) => { if (i === at) throw Error("stop"); }), /stop/);
+      assert.throws(() => list.map((_, i) => { if (i === at) throw Error("stop"); return i; }), /stop/);
+    }
+    // Iterations left early: by break, by return, by a shorter destructuring.
+    for (const _ of list) break;
+    (() => { for (const _ of list) return; })();
+    const [_a, _b] = list;
+    // Re-entrancy: each row run inside a callback on the same list.
+    list.forEach(() => rows());
+    // Two iterators advanced alternately, with reads between their steps.
+    const one = list[Symbol.iterator](), two = list[Symbol.iterator]();
+    for (let i = 0; i < n; i++) {
+      assert.equal(one.next().value, elements[i]);
+      assert.equal(list.length, n);
+      assert.equal(two.next().value, elements[i]);
+      assert.equal(list[n - 1 - i], elements[n - 1 - i]);
+    }
+    // Writes are refused: an index has a getter and no setter.
+    assert.equal(Reflect.set(list, 0, null), false, `${what}: an index write is refused`);
+    assert.equal(list[0], elements[0], `${what}: the index unchanged`);
+    rows();
+  }
+  console.log("C4: node lists of lengths 0, 1, 15, 16, 17 and 32 answer every transparent row as dense readonly arrays");
+}
 
 // C4 for the allocating members: each is declared as reviewed, and under Node
 // two reads of a documented node's `jsDoc` give different arrays, while a

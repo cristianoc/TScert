@@ -24,7 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
-import { allocatingMembers, hostEnums, hostTypeRoots, isHostFile } from "./compiler-api.mts";
+import { allocatingMembers, hostEnums, hostNodeList, hostTypeRoots, isHostFile } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -70,7 +70,8 @@ export interface SeenDiagnostic {
  * mapped type, such as `Record<K, V>`, is that mapped type at the
  * reference's arguments. */
 export type LibraryType =
-  | { k: "array"; readonly: boolean }
+  /** `dense`: the host package's node list, which has no hole. */
+  | { k: "array"; readonly: boolean; dense?: true }
   | { k: "mapped"; parameters: number; template: Mapped };
 
 /** A reference to `library` at `args`, located at `span`. */
@@ -79,7 +80,7 @@ export function libraryTerm(library: LibraryType, args: readonly TypeTerm[], spa
   if (library.k === "array") {
     const [element] = args;
     if (!element || args.length !== 1) return fail("an array type takes one type argument");
-    return { k: "array", presence: "readable", readonly: library.readonly, element, span };
+    return { k: "array", presence: library.dense ? "dense" : "readable", readonly: library.readonly, element, span };
   }
   if (args.length !== library.parameters) return fail("a mapped library type needs all its type arguments");
   const t = library.template;
@@ -784,6 +785,12 @@ export function collectDeclarations(file: string, options: {
     // read as any other interface.
     const library = (identifier: Identifier, what: string): LibraryType | null => {
       const nodes = (targetOf(checker, identifier)?.declarations ?? []).map(d => d.resolve());
+      // The host package's `NodeArray<T>` (COMPILER-API.md, "Node lists"): a
+      // host type of its own, a node list read as a dense readonly array of
+      // its elements. Its heritage and members are not read.
+      if (nodes.length && nodes.every(n => !!n && ts.isInterfaceDeclaration(n) && n.name.text === hostNodeList &&
+          isHostFile(n.getSourceFile().fileName)))
+        return { k: "array", readonly: true, dense: true };
       const types: TypeDeclaration[] = [];
       for (const node of nodes) {
         if (!node || !libraryFile(node.getSourceFile())) return null;
