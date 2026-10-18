@@ -259,72 +259,161 @@ objects have those prototypes, and it is preserved:
 
 ### Restricted values
 
-A **restricted value** is a value of a host type: a host object (a node, a
-type, a symbol, a checker, …) or a node list. The model reads a host object
-as a record whose stated members are readonly views
-([below](#stable-members-as-readonly-views)), and a node list as a dense
-readonly array of its elements ([node lists](#node-lists)), each interpreted
-by the existing record and array semantics. The runtime objects are not
-those: a node's stable members are getters on its prototype, a node list's
-indices are getters, and the own enumerable keys of both are the class's
-data fields (`parent`, `view`, `index`, `_byteIndex`; for a list `parent`,
-`view`, `sourceFile`, `_cursorIndex`, …). Under Node, `{ ...node }` has
-`parent` and no `kind` (`tests/compiler-api.mts`). The reading is faithful
-for a closed list of **admitted operations**, and for those alone.
+A **restricted value** is a host value: an object the package creates whose
+prototype chain carries the prototype of a package class (a node, a type, a
+symbol, a checker, an `API`), or a node list. Neither is callable. The
+package's classes, as constructors, are admitted only as the callee of `new`
+and as the receiver of a direct call of a static member; its exported
+functions are ordinary function objects (T4) of their declared function
+types. The model reads a host object as a record whose stated members are
+readonly views ([below](#stable-members-as-readonly-views)), and a node
+list as a dense readonly array of its elements ([node lists](#node-lists)),
+each interpreted by the existing record and array semantics. The runtime
+objects are not those: a node's stable members are getters on its
+prototype, a node list's indices are getters, and the own enumerable keys
+of both are the class's data fields (`parent`, `view`, `index`,
+`_byteIndex`; for a list `parent`, `view`, `sourceFile`, `_cursorIndex`,
+…). Under Node, `{ ...node }` has `parent` and no `kind`
+(`tests/compiler-api.mts`). The reading is faithful for the operations T4
+states, and every other operation that may observe a restricted value
+carries an obligation excluding one.
 
-*Admitted operations.* On a host object: a read of a member its type
-states, by every read form (`o.m`, `o?.m`, `o["m"]`, a pattern's named
-key); a call of a member method its view or declaration states; `===`,
-`!==` and `typeof`; `"k" in o`, which the model answers by
-`%HasProperty%`, a Boolean that narrows nothing
-([guards](SOURCE-CONTRACTS.md#guards)); and passing it as a value (an
-argument, a result, an element, a field, a thrown value). On a node list,
-the operations of [its table](#node-lists), `Array.isArray`, `===` and
-`!==`, and passing it as a value. C4 runs every admitted operation on real
-host objects and node lists.
+#### The host mark
 
-*Restricted operations.* Every other operation whose answer depends on own
-keys, descriptors, prototypes or a node list's class: an object spread or
-rest of the value; `Object.keys`, `Object.values` and `Object.entries` of
-it; `for…in` over it; `Object.assign` from it or onto it; `Object.hasOwn`
-and `hasOwnProperty`; `Object.getOwnPropertyDescriptor` and its relatives;
-freezing, sealing and `Object.preventExtensions`; `structuredClone` and
-`JSON.stringify` of it; prototype reflection; a write or `delete` of a
-member; a node list's `at`; `concat` and `flat` with a node list as an
-operand or an element; and any operation the audit of the fragment
-classifies so. A restricted operation is refused wherever its operand may
-be a restricted value.
+The model marks restricted values: the world records the identities of the
+objects a host entry gives (a result of a package function or of a host
+view member, an argument the package passes to a callback, a member read of
+a marked value), a set that only grows. The interpretation of a type that
+excludes host values ($`\mathrm{excludesHost}(A)`$ below) admits no marked
+value: $`v\in⟦A⟧`$ additionally requires $`v`$ unmarked. That no certified
+rule places a marked value at such a type is an invariant proved rule by
+rule, relative to the host entry contracts (T1, T3, T6) and to code outside
+the certified units (T8):
 
-*May be a restricted value.* Decided on the operand's type $`A`$ at the
-operation by a predicate the checker evaluates in Lean,
-$`\mathrm{excludesHost}(A)`$: every clause of $`A`$ is a primitive or a
-singleton of one, a function or construct signature, a record with an
-invariant field, a writable array or tuple, or a dictionary. A host type
-states no invariant field, no writable store and no index, and a host value
-meets none of these in a host-admissible world (T1). `unknown`, a type
-parameter, a readonly array or tuple, a record of readonly or optional
-fields only, and a union with such an arm may hold a restricted value. A type
-parameter is judged at its bound, since an instance lies within it. Because
-the predicate reads the operand's type where the operation is, it covers
-every path a restricted value takes to the operand: widening into `unknown`
-or a readonly record, the `Array.isArray` refinement (`readonly unknown[]`
-excludes nothing), generic substitution, a container's element or field, a
-callback's parameter, a caught value (`unknown`), and a separately verified
-function's parameter.
+- subtyping: $`\mathrm{excludesHost}`$ is closed downward, $`A\le B`$ and
+  $`\mathrm{excludesHost}(B)`$ give $`\mathrm{excludesHost}(A)`$, by cases
+  of the subtyping rules;
+- generic substitution: a type parameter is judged at its certified bound,
+  and an admissible instance lies below the bound, so the judgment holds of
+  every instance by downward closure;
+- refinement: a test whose positive branch excludes host values (a `typeof`
+  other than `"object"`, an equality with a primitive) fails on every
+  non-callable object, so a marked value never takes that branch;
+  `Array.isArray` refines to `readonly unknown[]`, and `in` refines nothing
+  ([guards](SOURCE-CONTRACTS.md#guards));
+- entries: a host entry gives a marked value at its declared type, and a
+  host type that excludes host values is refused when its declaration is
+  read (the reading rules give none);
+- locations: a field, element or index location holds values of its
+  contract, so a container at a type excluding host values at some depth
+  holds no marked value at that depth.
 
-*Lean.* The restricted operations are identified on the program graph by
-their term forms (an object's merge, `%Iterate:ForIn%`, the
-`Object.assign` forms) and by the declaration identities of the standard
-library values they call (`Object.keys`, `Object.values`,
-`Object.entries`, …). The checker requires $`\mathrm{excludesHost}`$ of the
-operand's claimed type at each, and a theorem states that every accepted
-program's restricted operations have such operands. The semantics is
-unchanged: every certified operation uses the existing array and record
-rules, and its agreement with the runtime objects is T4.
+#### Excluding host values
 
-Where the policy refuses an ordinary program (a spread of a readonly record
-that holds no host value, a `for…in` over a readonly array), the refusal is
-a coverage loss, recorded as such.
+$`\mathrm{excludesHost}`$ is decided on the clauses of a type. A clause
+excludes host values when it is
+
+- a primitive or a singleton of one;
+- a call signature: no host value is callable;
+- a construct signature: a package class reaches no position where a value
+  is held;
+- a record with an invariant field: a host type states readonly views only,
+  and a record without invariant fields meets no record with one;
+- a record whose own keys are bounded by a list without the prototype key,
+  or a dictionary: a record meets either only through such a bound
+  (`CoversKeys`, [records](POSITIVE-TYPES.md#records)), and a host type
+  states none, since its objects have a prototype
+  ($`\mathrm{dictViewT}`$ requires its objects to have none);
+- a writable array or tuple: a host type states no writable store.
+
+A union excludes host values when every arm does, and an intersection when
+one conjunct does. A type parameter excludes them when its certified bound
+does; an occurrence of the parameter inside its own bound counts as not
+excluding, so a recursive bound is decided in one pass, conservatively. A
+type reference is decided by its definition, a reference met again on the
+same path counting as not excluding. `unknown`, `object`, a readonly array
+or tuple, and a record of readonly or optional fields alone exclude
+nothing, and nor does a union with such an arm.
+
+**Deep exclusion**, $`\mathrm{excludesHost}^{*}(A)`$, holds when every type
+reachable from $`A`$ through arms, fields, views, elements and index values
+excludes host values. The reachable types of a type form a finite graph,
+each decided once. By the location clause of the invariant, a value of
+such a type holds no marked value at any depth. `JsonValue`
+(`library-globals.mts`) has deep exclusion: its arms are primitives and a
+dictionary of `JsonValue`.
+
+#### Operations and their obligations
+
+Each source form the fragment admits and each entry of the reviewed library
+overlays (`library-globals.mts`, `array-prototype.mts`) has one
+classification: **transparent**, observing a restricted value only through
+operations T4 states; **obligated**, with premises on the types of the
+values it observes (its receiver, its arguments, their elements, a
+callback's results, or every value reachable from an input it traverses);
+or refused. An unclassified form or entry is refused; the audit classifying
+them is the first part of the implementation. Passing a value on is
+transparent only to client code: an argument of a certified function or
+closure, a result, a field or element of a client container, a thrown
+value. A library call is an operation with its own row.
+
+| Operation                                                                                                                                                  | Observes                                                                     | Classification                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| a member read in every form (`o.m`, `o?.m`, `o["m"]`, a pattern's key); a call of a stated method                                                          | the member                                                                   | transparent                                                                                        |
+| `===`, `!==`, `typeof`, `Array.isArray`, `"k" in o`                                                                                                        | identity, type tag, class, `%HasProperty%`                                   | transparent; `in` narrows nothing                                                                  |
+| `for…of`, `[...x]`, `f(...x)`, `const [a, ...r] = x`                                                                                                       | the iterator protocol, an early exit included                                | transparent (a node list's table)                                                                  |
+| `f.apply(t, x)`                                                                                                                                            | `x`'s `length` and indices                                                   | transparent                                                                                        |
+| `new Set(x)`, `new Map(x)`                                                                                                                                 | `x` by iteration; a `Map` entry's `0` and `1`                                | transparent                                                                                        |
+| `Array.from(x)`, `Array.from(x, f)`, the realm's `Array` as receiver                                                                                       | `x`'s `Symbol.iterator`, then iteration; `f` called with $`(v_i, i)`$        | transparent; a `thisArg` refused                                                                   |
+| `Promise.all(x)`                                                                                                                                           | `x` by iteration; each element's `then`                                      | $`\mathrm{excludesHost}`$ of the element type                                                      |
+| `String(x)`, a template, `+` with a string, `join`, `toString`                                                                                             | conversion hooks, recursively through arrays                                 | the [conversion contract](SOURCE-CONTRACTS.md#prototype-contracts), and $`\mathrm{excludesHost}`$ of every array type it reaches |
+| `JSON.stringify(x)`                                                                                                                                        | every reachable own key                                                      | `x` at `JsonValue`                                                                                 |
+| `structuredClone(x)`, a `console` method                                                                                                                   | every reachable own key and getter                                           | $`\mathrm{excludesHost}^{*}`$ of each argument                                                     |
+| an object spread or rest; `Object.keys`, `values`, `entries`; `for…in`; `Object.hasOwn`, `hasOwnProperty`; own-name, own-descriptor and prototype reflection; freezing, sealing, `preventExtensions` and their tests | the operand's own keys, descriptors or prototype                             | $`\mathrm{excludesHost}`$ of the operand                                                           |
+| `Object.assign(t, s…)`                                                                                                                                     | `t` written; each `s`'s own keys                                             | $`\mathrm{excludesHost}`$ of `t` and of each `s`                                                   |
+| a member write or `delete`                                                                                                                                 | the receiver written                                                         | $`\mathrm{excludesHost}`$ of the receiver (R1)                                                     |
+| a node list's `at`; `concat`; `flat`                                                                                                                       | `at`'s override; `IsConcatSpreadable` and indices                            | until audited, $`\mathrm{excludesHost}`$ of `at`'s receiver, of `concat`'s receiver and arguments, and of `flat`'s element types within its depth |
+| `sort`, `reverse`, `fill`, `copyWithin`, `splice`, `push`, `pop`, `shift`, `unshift`                                                                       | the receiver written                                                         | absent from readonly array types                                                                   |
+| an `Array.prototype` member called with another receiver (`Array.prototype.sort.call(l)`, `Reflect.apply`)                                                  | its receiver                                                                 | refused                                                                                            |
+
+A node list's `flatMap` reads each callback result's `length` and indices,
+rows of its table, and is transparent.
+
+**First-class library values.** A receiver-sensitive or obligated library
+value (`Array.from`, `Promise.all`, `JSON.stringify`, `structuredClone`,
+`Object.keys` and every `Object` member above, an `Array.prototype` member)
+is admitted only as the callee of a direct call, and its owner (`Object`,
+`JSON`, `Array`, `Promise`, `Reflect`) only as that callee's receiver.
+Every other use is refused: an alias (`const keys = Object.keys`), an
+extraction (`const { entries } = Object`, `const O = Object`), an argument
+(`consume(Object.entries)`), and `call`, `apply` or `bind` of one. So an
+obligated operation occurs only at a call whose callee's declaration
+identity the program graph states, and no alias is followed.
+
+#### Lean
+
+Obligations are premises of the typing rules of the operations they guard:
+the rule of each obligated term form (an object's merge, `%Iterate:ForIn%`,
+the `Object.assign` forms) and the application rule of each obligated
+library entry, keyed by its declaration identity, require them of the
+claimed types; the graph check refuses a load of a first-class library value
+outside a direct callee position. An operation without a certified rule
+fails its plan's certification, so no recognizer's completeness is assumed.
+The headline theorem stays `SourceClaimJson.checkJson_safe`, its premise
+exactly `checkJson ast claims fileKey evidence budget = .ok ()`; its
+conclusion, stated over the marked interpretation, gives every certified
+function and closure, at every admissible instantiation of its type
+parameters, safety, the mark invariant, and the obligation of every
+operation it runs, including those a native entry runs on its behalf (a
+callback's argument, an iteration's elements, a traversal's reachable
+values). The semantics is otherwise unchanged: certified operations use the
+existing array and record rules, and their agreement with the runtime
+objects is T4.
+
+The policy refuses some ordinary programs: a spread of a readonly record
+that holds no host value, a `for…in` over a readonly array, `Promise.all` of
+nodes, `console.log` of an `unknown`, `xs.filter(Array.isArray)`. Each
+refusal is a coverage loss, recorded as such.
 
 ### Stable members as readonly views
 
@@ -587,9 +676,9 @@ neither write the list (getters without setters) nor change $`n`$, so the
 algorithm visits the indices it read at entry; a callback's exception
 propagates out of the method; writes throw. `"k" in l` is admitted as for
 any object: the model answers it by `%HasProperty%`, a Boolean that narrows
-nothing. Every other operation on a node list (`at`, `for…in`,
-`Object.keys`, an object spread and every other `Array.prototype` member) is
-a [restricted operation](#restricted-values).
+nothing. Every other operation on a node list has the classification of
+[the operation table](#operations-and-their-obligations), and is refused
+when it has none.
 
 ### Node lists in the model
 
@@ -599,9 +688,9 @@ readonly array of the $`v_i`$, under `Array.prototype`'s contract, so the
 operations of the table are the existing readonly-array rules, and
 `Array.isArray` gives `true` as it does at run time. A node list is a
 restricted value ([restricted values](#restricted-values)): every operation
-on which it differs from such an array is a restricted operation, refused
-wherever an operand may be one, `unknown`, readonly arrays and readonly
-records included. The node list's own members (`pos`, `end`,
+on which it differs from such an array carries an obligation excluding host
+values, which no type a node list can be held at meets, `unknown`, readonly
+arrays and readonly records included. The node list's own members (`pos`, `end`,
 `hasTrailingComma`, `transformFlags`) are not read.
 
 Each row of the table holds of a node list for the reasons above, which T4
@@ -610,9 +699,10 @@ prototype to the instance), reentrant callbacks and callbacks that throw,
 repeated and interleaved iterators, and every listed `Array.prototype`
 member. An indexed read writes the list's hidden cursor (`_cursorIndex`,
 `_cursorNodeIndex`) and materializes nodes into `sourceFile.nodes`; the
-model's read promises no effect, which holds of every admitted observation,
-since only restricted operations reach those fields. `at`, whose override
-gives `undefined` at a non-integer index, stays restricted until audited.
+model's read promises no effect, which holds of every transparent
+operation, since only obligated operations reach those fields. `at`, whose
+override gives `undefined` at a non-integer index, keeps its obligation
+until audited.
 
 ## Node methods and callbacks
 
@@ -759,11 +849,28 @@ as regression evidence.
   declared kinds, and the absent required members are exactly the
   corrections. Each kind has one shape by the rule of
   [the node invariant](#the-node-invariant).
-- **C4, members and lists (regression evidence).** On the corpus, every
-  member of every node is read twice: the stable members give the same
-  value, and the allocating ones are exactly the contract's list. Every node
-  list meets each row of the operation table, with callbacks that record
-  their arguments and with a callback that throws.
+- **C4, members, lists and operations (regression evidence).** On the
+  corpus, every member of every node is read twice: the stable members give
+  the same value, and the allocating ones are exactly the contract's list.
+  For node lists of lengths 0, 1, 15, 16, 17 and 32, each transparent
+  operation of the operation table runs, with callbacks that record their
+  arguments and their `this`:
+  - each row of the node-list table, and `Set`, `Map`, `Array.from` with
+    and without a mapping callback, `f.apply`, argument spread, and array
+    destructuring with and without a rest;
+  - a callback throwing at each index, and an iteration left by `break`, by
+    `return` and by a destructuring with fewer targets than elements, each
+    followed by a fresh iteration;
+  - reentrancy: a callback running every row on the same list (an indexed
+    read, a nested `map`, a nested iteration);
+  - interleaving: two iterators of one list advanced alternately, with
+    indexed reads and `length` between their steps;
+  - hidden state: after each sequence, every row gives the answers it gives
+    on a fresh list of the same nodes, and the nodes are the same objects.
+
+  For every exported function of the package, its own keys and their
+  descriptors are those T4 states, and `typeof` of every host object and
+  node list met is `"object"`.
 - **C5, sync API (regression evidence).** During `make suite`, the front
   end's calls into the sync API run through a checking wrapper that compares
   each result with its declared type and, after each stated type guard
@@ -782,9 +889,8 @@ the corpus runs are regression evidence, not proofs.
   $`\kappa_{\mathit{RemoteNode}}`$ has a `kind` in $`\mathcal K`$; for that
   kind $`k`$ it has every member $`S_k`$ states, holding a value of the
   member's type; its stable members return the same value on every read,
-  and nothing the package does after construction changes them. A host
-  value meets no record type with an invariant field, no dictionary and no
-  writable array or tuple. This defines the host-admissible worlds.
+  and nothing the package does after construction changes them. This
+  defines the host-admissible worlds.
 - **T2 (guards).** The guard bodies the guard check reads are the functions
   Node runs for the package's exports; the check itself is a trusted part of
   the front end.
@@ -793,13 +899,24 @@ the corpus runs are regression evidence, not proofs.
   only with children of the receiver, in a fixed order, and propagate a
   visitor's exception; they change no stable member; they return values of
   their declared types or throw.
-- **T4 (restricted values).** Under the admitted operations, a host object
-  behaves as the record of its stated members and a node list as the dense
-  readonly array of its elements: each admitted operation gives the result
-  the model gives, runs only the client code the model runs, and its hidden
-  effects (a node list's cursor fields, `sourceFile.nodes`) are observed by
-  no admitted operation. Node lists are the only array-like host values;
-  their length and elements never change.
+- **T4 (restricted values).** A host object behaves as the record of its
+  stated members and a node list as the dense readonly array of its
+  elements under every transparent operation of
+  [the operation table](#operations-and-their-obligations), and this
+  relation is preserved by every sequence of them, interleaved with client
+  code, through any number of aliases, inside callbacks the operations run
+  (reentrant ones included) and across an exceptional exit from a callback
+  or an iteration: each operation gives the result the model gives, runs
+  only the client code the model runs, with the same arguments in the same
+  order, and propagates the same exception; its hidden effects (a node
+  list's cursor fields, `sourceFile.nodes`, a memoized node) are observed
+  by no transparent operation. Host values are objects, not callable,
+  `typeof` gives `"object"` for them, and `Array.isArray` gives `true`
+  exactly for node lists. Node lists are the only array-like host values;
+  their length and elements never change, and their iterator has no
+  `return`. The package's exported functions are ordinary function objects,
+  with own keys `length`, `name` and, for a function declaration,
+  `prototype`, none enumerable.
 - **T5 (enum objects).** The enum objects Node loads for the package's
   `#enums/*` imports that the contract reads hold exactly the member values
   their declarations state. (`CharacterCodes` does not: `ogham`; the
@@ -814,6 +931,10 @@ the corpus runs are regression evidence, not proofs.
 - **T7 (stated type guards).** For each stated guard $`g`$ promising $`X`$:
   when $`g`$ returns `true` on a value of a host type, the members $`X`$
   adds over `Type` return values of their declared types.
+- **T8 (external code).** Code outside the certified units passes a host
+  value to a certified function or closure only at a parameter whose type
+  does not exclude host values, and stores one only at a location whose
+  contract does not.
 
 ## Restrictions
 
@@ -828,7 +949,7 @@ Behaviours excluded because soundness needs it:
 | R5  | Bitwise operators take `number` operands only, but `^`, which also takes two bigint operands, and `~`, which also takes one | `obj & 1` (runs `valueOf`), `1n & x`                                                                                                                  |
 | R6  | An abstract node type is the union of the shapes below it, with brands optional   | Using a brand member as evidence (`"_expressionBrand" in n`)                                                                                                                     |
 | R7  | Every admitted `API` instance runs the executable the package selects             | `new API({ tsserverPath })`, `pipe` options, `API.fromLSPConnection`                                                                                                             |
-| R8  | A restricted operation needs an operand whose type excludes host values           | `{ ...node }`, `Object.keys(list)`, `for…in` over a node, `Object.assign({}, node)`, `structuredClone(node)`, through `unknown`, readonly records, `Array.isArray`, type parameters and callbacks |
+| R8  | An obligated operation needs the types of the values it observes to exclude host values; an obligated library value is used only as a direct callee | `{ ...node }`, `Object.keys(list)`, `for…in` over a node, `Object.assign({}, node)`, `JSON.stringify` and `structuredClone` of a container holding a node, `Promise.all` of nodes, through `unknown`, readonly records, `Array.isArray`, type parameters and callbacks; `const keys = Object.keys`, `const { entries } = Object`, `consume(Object.entries)`, `Array.prototype.sort.call(list)` |
 
 Limits of the mechanism, each a scoped refusal of behaviour that is safe in
 JavaScript and could be admitted with more machinery:
@@ -894,19 +1015,35 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
   contract, with the result's elements nodes, under Node too; a list
   returned through an `unknown` parameter of a separately verified function
   and refined by `Array.isArray`, then iterated;
-- restricted operations, each refused, on a node and on a node list, and
+- obligated operations, each refused, on a node and on a node list, and
   each again after the value is widened into `unknown`, a readonly record,
-  a readonly array, refined by `Array.isArray`, held by a type parameter,
-  stored in a container, passed to a callback, thrown and caught, and taken
-  by a separately verified function: an object spread and rest,
-  `Object.keys`, `Object.values`, `Object.entries`, `for…in`,
-  `Object.assign` from and onto it, `hasOwnProperty`, a list's `at`, and
-  `concat` and `flat` with a list; under Node each answers otherwise than
-  the model (`{ ...node }` has `parent` and no `kind`, `for…in` over a list
-  yields `parent`, `view`, …); the same operations on values whose types
-  exclude host values, verified; forged claims, bypassing the producer, of
-  each restricted operation at an operand type that does not exclude host
-  values, refused by the checker;
+  a readonly array, refined by `Array.isArray`, held by a type parameter
+  (with a bound that excludes nothing, and with a recursive bound), stored
+  in a container, passed to a callback, thrown and caught, and taken by a
+  separately verified function: each row of the operation table with an
+  obligation; under Node each answers otherwise than the model
+  (`{ ...node }` has `parent` and no `kind`, `for…in` over a list yields
+  `parent`, `view`, …); the same operations on values whose types exclude
+  host values, verified;
+- deep obligations: `JSON.stringify` and `structuredClone` of a writable
+  array holding a node list and of a record holding a node, `flat` of a
+  writable array of node lists, `String` of a readonly array holding a node
+  list, each refused; `JSON.stringify` of a `JsonValue` built from node
+  members, verified;
+- transparent consumers on a node list, verified and run under Node: `Set`,
+  `Map`, `Array.from` with a mapping callback, `f.apply`, argument spread,
+  array destructuring with a rest; `Array.from(list, f, thisArg)` and
+  `Array.prototype.sort.call(list)`, refused;
+- first-class library values, refused: `const keys = Object.keys`,
+  `const { entries } = Object`, `const O = Object`, `consume(Object.entries)`
+  and `Object.keys.call(undefined, node)`;
+- forged claims, bypassing the producer, refused by the checker: each
+  obligated operation at an operand type that does not exclude host values;
+  a type parameter's bound claimed excluding; a host entry's result claimed
+  at an excluding type; and each first-class form above with the library
+  value's identity claimed at a parameter of an ordinary function type;
+- the audit's completeness, a fast check: every form the parser admits and
+  every entry of the library overlays has a classification;
 - stable members as readonly views: a node passed where `{ flags: number }`
   is expected, to a generic function bounded by `{ parent: Node }`, and to a
   separately verified function taking `{ kind: number }` that writes it, each
@@ -956,11 +1093,13 @@ The pieces, by file:
 
 The implementation needs, beside these:
 
-- **The restricted-value policy** in Lean: $`\mathrm{excludesHost}`$ on a
-  type, the restricted operations identified on the program graph, the
-  checker's premise at each and the theorem that accepted programs meet it;
-  and the audit of what the fragment admits on readonly records, readonly
-  arrays and `unknown`, each form classified as admitted or restricted.
+- **The restricted-value policy**: first the audit, a classification of
+  every source form the fragment admits and every entry of the library
+  overlays, stored with the entry and checked complete; then in Lean the
+  host mark, $`\mathrm{excludesHost}`$ and $`\mathrm{excludesHost}^{*}`$,
+  the downward-closure and substitution lemmas, the obligations as premises
+  of the operations' rules, the refusal of first-class library values, and
+  `checkJson_safe`'s conclusion over the marked interpretation.
 - **A compact representation of kind sets** in claims and evidence, and a
   benchmark of the complete generated contract (member-complete shapes,
   inherited methods, exact literal unions) on a slice larger than the one
