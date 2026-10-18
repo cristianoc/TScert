@@ -120,6 +120,89 @@ function hostBrandsFunction(t: Extract<TypeTerm, { k: "function" }>, out: boolea
     rest: t.rest && go(t.rest, flip), result: go(t.result, out) };
 }
 
+/** The named views of the host classes (reading rule 4): each class is read
+ * through the members its view lists, each read exactly as its reviewed
+ * declaration text states it; an overloaded member is the overloads listed.
+ * A class the contract lists no view for has none: no member. The members
+ * are the ones the front end reads (2026-10-18), but `Symbol.getExports` and
+ * `getMembers`, whose `ReadonlyMap<__String, Symbol>` takes the branded key
+ * from the client at `get` (reading rule 5), and `Type`'s `this is X`
+ * methods, which wait for stated type guards. `Type`, an interface, has a
+ * view of its own as a class does. */
+export const hostViews: readonly { owner: string; members: readonly { name: string; text: string }[] }[] = [
+  { owner: "API", members: [
+    { name: "close", text: "close(): void;" },
+    { name: "updateSnapshot", text: "updateSnapshot(params?: FromLSP extends true ? LSPUpdateSnapshotParams : UpdateSnapshotParams): Snapshot;" },
+  ] },
+  { owner: "Snapshot", members: [
+    { name: "getDefaultProjectForFile", text: "getDefaultProjectForFile(file: DocumentIdentifier): Project | undefined;" },
+    { name: "getProject", text: "getProject(configFileName: string): Project | undefined;" },
+  ] },
+  { owner: "Project", members: [
+    { name: "checker", text: "readonly checker: Checker;" },
+    { name: "compilerOptions", text: "readonly compilerOptions: CompilerOptions;" },
+    { name: "configFileName", text: "readonly configFileName: string;" },
+    { name: "program", text: "readonly program: Program;" },
+  ] },
+  { owner: "Program", members: [
+    { name: "getProgramDiagnostics", text: "getProgramDiagnostics(): readonly Diagnostic[];" },
+    { name: "getSemanticDiagnostics", text: "getSemanticDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
+    { name: "getSourceFile", text: "getSourceFile(file: DocumentIdentifier): SourceFile | undefined;" },
+    { name: "getSourceFileNames", text: "getSourceFileNames(): readonly string[];" },
+    { name: "getSyntacticDiagnostics", text: "getSyntacticDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];" },
+    { name: "isSourceFileDefaultLibrary", text: "isSourceFileDefaultLibrary(file: SourceFile): boolean;" },
+  ] },
+  { owner: "Checker", members: [
+    { name: "getAliasedSymbol", text: "getAliasedSymbol(symbol: Symbol): Symbol;" },
+    { name: "getConstantValue", text: "getConstantValue(node: Node): string | number | undefined;" },
+    { name: "getExportsOfModule", text: "getExportsOfModule(symbol: Symbol): readonly Symbol[];" },
+    { name: "getImmediateAliasedSymbol", text: "getImmediateAliasedSymbol(symbol: Symbol): Symbol | undefined;" },
+    { name: "getIndexInfosOfType", text: "getIndexInfosOfType(type: Type): readonly IndexInfo[];" },
+    { name: "getNonNullableType", text: "getNonNullableType(type: Type): Type | undefined;" },
+    { name: "getParameterType", text: "getParameterType(signature: Signature, index: number): Type | undefined;" },
+    { name: "getPropertiesOfType", text: "getPropertiesOfType(type: Type): readonly Symbol[];" },
+    { name: "getPropertyOfType", text: "getPropertyOfType(type: Type, name: string): Symbol | undefined;" },
+    { name: "getResolvedSignature", text: "getResolvedSignature(node: Node): Signature | undefined;" },
+    { name: "getReturnTypeOfSignature", text: "getReturnTypeOfSignature(signature: Signature): Type | undefined;" },
+    { name: "getShorthandAssignmentValueSymbol", text: "getShorthandAssignmentValueSymbol(node: Node): Symbol | undefined;" },
+    { name: "getSignaturesOfType", text: "getSignaturesOfType(type: Type, kind: SignatureKind): readonly Signature[];" },
+    { name: "getSymbolAtLocation", text: "getSymbolAtLocation(node: Node): Symbol | undefined;" },
+    { name: "getTypeArguments", text: "getTypeArguments(type: TypeReference): readonly Type[];" },
+    { name: "getTypeAtLocation", text: "getTypeAtLocation(node: Node): Type | undefined;" },
+    { name: "getTypeFromTypeNode", text: "getTypeFromTypeNode(node: TypeNode): Type | undefined;" },
+    { name: "getTypeOfSymbol", text: "getTypeOfSymbol(symbol: Symbol): Type | undefined;" },
+    { name: "isArrayType", text: "isArrayType(type: Type): boolean;" },
+    { name: "isTupleType", text: "isTupleType(type: Type): boolean;" },
+    { name: "isUndefinedSymbol", text: "isUndefinedSymbol(symbol: Symbol): boolean;" },
+    { name: "isUnknownSymbol", text: "isUnknownSymbol(symbol: Symbol): boolean;" },
+    { name: "resolveName", text: "resolveName(name: string, meaning: SymbolFlags, location?: Node | DocumentPosition, excludeGlobals?: boolean): Symbol | undefined;" },
+    { name: "typeToString", text: "typeToString(type: Type, enclosingDeclaration?: Node, flags?: number): string;" },
+  ] },
+  { owner: "NodeHandle", members: [
+    { name: "resolve", text: "resolve(project?: Project): Node | undefined;" },
+  ] },
+  { owner: "Symbol", members: [
+    { name: "declarations", text: "readonly declarations: readonly NodeHandle[];" },
+    { name: "flags", text: "readonly flags: SymbolFlags;" },
+    { name: "id", text: "readonly id: number;" },
+    { name: "name", text: "readonly name: string;" },
+    { name: "valueDeclaration", text: "readonly valueDeclaration: NodeHandle | undefined;" },
+  ] },
+  { owner: "Type", members: [
+    { name: "flags", text: "readonly flags: TypeFlags;" },
+    { name: "id", text: "readonly id: number;" },
+    { name: "getSymbol", text: "getSymbol(): Symbol | undefined;" },
+    { name: "getAliasTypeArguments", text: "getAliasTypeArguments(): readonly Type[];" },
+    { name: "getAliasSymbol", text: "getAliasSymbol(): Symbol | undefined;" },
+    { name: "isErrorType", text: "isErrorType(): boolean;" },
+  ] },
+  { owner: "Signature", members: [
+    { name: "getParameters", text: "getParameters(): readonly Symbol[];" },
+    { name: "getTypeParameters", text: "getTypeParameters(): readonly TypeParameter[];" },
+    { name: "thisParameter", text: "readonly thisParameter?: number | undefined;" },
+  ] },
+];
+
 /** The host package's node list interface, read as a dense readonly array of
  * its elements (COMPILER-API.md, "Node lists in the model"), never through
  * its declaration. */

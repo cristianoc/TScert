@@ -34,7 +34,7 @@ design, not its progress.
 | [A semantics of the Fragment](#a-semantics-of-the-fragment) | open | extraction is proved a simulation of a Lean interpreter of the Fragment |
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
-| [The front end's own functions](#the-front-ends-own-functions) | open: 56 of 313 verify in `tools/` (2026-10-18), 21 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: 57 of 313 verify in `tools/` (2026-10-18), 21 of 24 in `dev/` (2026-10-18) and 4 of 13 in `tests/` (2026-10-17) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -315,8 +315,9 @@ The first blockers, by the number of slices each stops (2026-10-18):
   reader does not read (76), listed below as the source annotations to add;
 - the parser's `Gate` class (30);
 - a missing annotation, or a value TypeScript types `any` (31);
-- the compiler API's host classes read member-complete, `Checker` and
-  `Symbol` (11); library globals absent from the overlay or refused (10):
+- the standard library's `BuiltinIteratorReturn`, an intrinsic type a
+  node list's or an array's iterator reaches (9); library globals absent
+  from the overlay or refused (10):
   the global function `parseInt`, `Reflect`
   ([refused](docs/SOURCE-FRAGMENT.md)), `Array.from`, `Object.fromEntries`,
   `new RegExp`, `JSON.stringify` with an indent; Node's modules, `path` and

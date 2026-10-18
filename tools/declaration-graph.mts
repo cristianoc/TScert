@@ -24,7 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
-import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, isHostFile } from "./compiler-api.mts";
+import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -2292,6 +2292,13 @@ export function collectDeclarations(file: string, options: {
           return partners.get(node) ?? [node];
         },
         library: node => libraryFile(node.getSourceFile()),
+        // A host class's members are its view's (reading rule 4).
+        admits: member => member.declarations.length === 0 || member.declarations.some(d => {
+          const owner = d.parent;
+          if (!owner || !ts.isClassDeclaration(owner) || !isHostFile(d.getSourceFile().fileName)) return true;
+          const view = hostViews.find(v => v.owner === owner.name?.text)?.members ?? [];
+          return view.some(entry => d.getText(d.getSourceFile()).trim() === entry.text);
+        }),
         read: (node, binder) => typeTerm(sweepScope(node, binder), node),
         reference: (name, args) => {
           const node = lookup(name, name.text);
@@ -3236,10 +3243,23 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         }) });
       continue;
     }
+    // A host class, and a host interface the contract names a view for, is
+    // read through its named view (reading rule 4): the members the contract
+    // lists, each as its reviewed text declares it.
+    const named = isHostFile(source.fileName) ? hostViews.find(v => v.owner === node.name?.text) : undefined;
+    const view = ts.isClassDeclaration(node) && isHostFile(source.fileName) ? named?.members ?? []
+      : ts.isInterfaceDeclaration(node) ? named?.members ?? null : null;
+    if (view && (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)))
+      for (const entry of view)
+        if (!parts.some(part => (ts.isClassDeclaration(part) || ts.isInterfaceDeclaration(part)) &&
+            part.members.some((m: Node) => m.getText(part.getSourceFile()).trim() === entry.text)))
+          throw Error(`${node.name?.text}.${entry.name} is not declared as reviewed: ${entry.text}`);
+    const admitted = (member: Node): boolean =>
+      !view || view.some(entry => member.getText(member.getSourceFile()).trim() === entry.text);
     let expression = ts.isTypeAliasDeclaration(node)
       ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
-        ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end]), parts.flatMap(part => {
+        ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end], admitted), parts.flatMap(part => {
             if (part === node || !ts.isInterfaceDeclaration(part)) return [];
             const file = part.getSourceFile();
             return [members(scopeOf(file), part.members, part, [part.getStart(file), part.end], true)];
@@ -3247,7 +3267,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         : mergeMembers(parts.map(part => {
             const file = part.getSourceFile();
             if (!ts.isInterfaceDeclaration(part)) return scope.fail(part, "a declaration merged with an interface is not one");
-            return members(partScope(part), part.members, part,
+            return members(partScope(part), part.members.filter(admitted), part,
               [part.getStart(file), part.end], true);
           }), (at, message) => scope.fail(at, message), node);
     // A host type's members are readonly views, whether or not they are

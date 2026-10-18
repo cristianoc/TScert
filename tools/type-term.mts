@@ -1020,7 +1020,8 @@ export const CLASS_ACCESS: ts.SyntaxKind[] = [ts.SyntaxKind.PublicKeyword, ts.Sy
  * reaches a method through the prototype; within the fragment nothing tells a
  * prototype member from an own one, and no write reaches either, so the
  * readonly field is exact. Construction is the class value's concern. */
-export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span: Span): TypeTerm {
+export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span: Span,
+    admit: (member: ts.ClassElement) => boolean = () => true): TypeTerm {
   const fields: Extract<TypeTerm, { k: "object" }>["fields"] = [];
   const names = new Set<string>();
   const named = (member: ts.ClassElement & { name?: Node }): PropertyKey => {
@@ -1041,6 +1042,7 @@ export function classInstance(scope: TermScope, node: ts.ClassDeclaration, span:
       scope.fail(member, "a class member modifier outside the fragment");
   };
   for (const member of node.members) {
+    if (!admit(member)) continue;
     const memberSpan = spanOf(scope, member);
     // A static member is the class value's, not an instance's.
     if ((ts.isPropertyDeclaration(member) || ts.isMethodDeclaration(member)) &&

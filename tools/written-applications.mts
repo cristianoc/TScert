@@ -68,6 +68,9 @@ export type SweepContext = {
   module(file: ts.SourceFile): string;
   /** The client file, whose spans the verifier reports. */
   client: ts.SourceFile;
+  /** Whether a class member is read: a host class's are its view's
+   * (COMPILER-API.md, reading rule 4). */
+  admits?: (member: Entity) => boolean;
 };
 
 /** A written application whose obligation cannot be stated: refused where
@@ -180,7 +183,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     // by its declaration.
     if (entity.declarations.some(d => ts.isClassDeclaration(d) || ts.isClassExpression(d) || ts.isModuleDeclaration(d) ||
         ts.isSourceFile(d)))
-      parts.push(...entity.members().map(determining));
+      parts.push(...entity.members().filter(m => context.admits?.(m) ?? true).map(determining));
     for (const d of declarations)
       if (ts.isClassDeclaration(d) || ts.isClassExpression(d))
         for (const member of d.members) {

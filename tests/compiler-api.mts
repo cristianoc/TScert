@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { allocatingMembers, declarationsDigest, hostDeclarationsDigest, hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
+import { allocatingMembers, hostViews, declarationsDigest, hostDeclarationsDigest, hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 
 // The package the front end resolves, from tools/.
@@ -221,6 +221,17 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   };
   visit(tree);
   console.log(`rule 2: ${brands.length} members declared any; none of ${nodes} nodes holds a brand`);
+}
+
+// Declaration texts: every member a named view lists (reading rule 4) is
+// declared as reviewed in the sync API's declarations.
+{
+  const declared = ["api.d.ts", "types.d.ts"].map(f => readFileSync(join(root, "dist", "api", "sync", f), "utf8"))
+    .join("\n").split("\n").map(l => l.trim());
+  for (const view of hostViews)
+    for (const { name, text } of view.members)
+      assert.ok(declared.includes(text), `${view.owner}.${name} is declared as reviewed: ${text}`);
+  console.log(`views: ${hostViews.length} named views, ${hostViews.reduce((n, v) => n + v.members.length, 0)} members, each declared as reviewed`);
 }
 
 // C4 for the allocating members: each is declared as reviewed, and under Node
