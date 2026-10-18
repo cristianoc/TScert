@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fields, nat, showTag, showTerm, unmatched, type Json } from "../tools/calculus.mts";
 import { decodeNode, type Continuation, type ProgramNode, type Target } from "../tools/control-flow.mts";
-import { verifier } from "../pipeline/verify-source.mts";
+import { readOutcome, verifier } from "../pipeline/verify-source.mts";
 
 const [file, wanted] = process.argv.slice(2);
 if (!file) throw new Error("usage: lowering-dump.mts <file.ts> [function]");
@@ -20,10 +20,10 @@ const here = import.meta.dirname;
 
 // verify-source exits non-zero on a refusal; its outcome is on stdout either way.
 const out = spawnSync("node", [join(here, "../pipeline/verify-source.mts"), resolve(file)], { encoding: "utf8" }).stdout;
-const outcome = JSON.parse(out.slice(out.indexOf("{")));
+const outcome = readOutcome(JSON.parse(out.slice(out.indexOf("{"))));
 const artifacts: string = outcome.artifacts;
 const claims = join(artifacts, "claims.json");
-const firstLine = (s: unknown) => String(s).split("\n")[0];
+const firstLine = (s: unknown): string | undefined => String(s).split("\n")[0];
 console.log(`outcome: ${outcome.status}${outcome.status === "verified" ? "" : `: ${firstLine(outcome.detail)}`}`);
 if (!existsSync(claims)) process.exit(0);
 
@@ -50,7 +50,7 @@ function decodeUnits(v: Json): Unit[] {
 }
 const units = decodeUnits(JSON.parse(lowered.stdout));
 
-const to = (t: Target) => `n${t.label}`;
+const to = (t: Target): string => `n${t.label}`;
 function showStep(k: Continuation): string {
   switch (k.kind) {
     case "ret": return "return";

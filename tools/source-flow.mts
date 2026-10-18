@@ -241,7 +241,8 @@ const invalid = (what: string): never => {
 const object = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== "object" || Array.isArray(value))
     return invalid("object required");
-  return Object.fromEntries(Object.entries(value));
+  const entries: [string, unknown][] = Object.entries(value);
+  return Object.fromEntries(entries);
 };
 const exact = (
   value: Record<string, unknown>,

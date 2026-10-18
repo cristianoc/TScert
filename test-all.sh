@@ -94,8 +94,9 @@ typecheck() {
 
 run_test "Front-end types" typecheck
 run_test "JSON field names agree (TS, Lean, OCaml)" node tests/json-field-names.mts
-# tools/unchecked.mts enforces the decoder convention: every written `any`, `as` and `!` in the node side carries its reason.
-run_test "Assertions carry their reasons" node tools/unchecked.mts
+# tools/unchecked.mts enforces the node side's typing conventions: every unit boundary annotated, no value typed `any`,
+# and every `as` and `!` carrying its reason.
+run_test "Boundaries annotated, no any, assertions with reasons" node tools/unchecked.mts
 # tests/docs.mts checks every document's links, anchors and math.
 run_test "Documents: links, math" node tests/docs.mts
 # tests/node-runs.mts runs examples and native-contract counterexamples under Node.

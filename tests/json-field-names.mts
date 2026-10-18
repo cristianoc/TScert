@@ -12,18 +12,18 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
-const read = (file: string) => readFileSync(join(root, file), "utf8");
+const read = (file: string): string => readFileSync(join(root, file), "utf8");
 /** A match's first group, the name each pattern below captures. */
 const captured = (m: RegExpMatchArray): string[] => (m[1] === undefined ? [] : [m[1]]);
 
 /** Property names a TypeScript file declares. */
-const declared = (files: string[], before?: string) => new Set(files.flatMap((file) =>
+const declared = (files: string[], before?: string): Set<string> => new Set(files.flatMap((file) =>
   [...(before ? read(file).split(before)[0] ?? "" : read(file)).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "")
     .matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)].flatMap(captured)));
 
 /** Field names a Lean file reads or states: explicit field reads, exact field
  * lists and, where a file decodes structures with `FromJson`, their fields. */
-const lean = (files: string[], structures = false, before?: string) => new Set(files.flatMap((file) => {
+const lean = (files: string[], structures: boolean = false, before?: string): Set<string> => new Set(files.flatMap((file) => {
   const s = (before ? read(file).split(before)[0] ?? "" : read(file)).replace(/\/-[\s\S]*?-\//g, "").replace(/--.*/g, "");
   const exact = [...s.matchAll(/fieldsExactly\s+\S+\s+\[([^\]]*)\]/g)]
     .flatMap((m) => [...(m[1] ?? "").matchAll(/"(\w+)"/g)].flatMap(captured));
@@ -39,17 +39,17 @@ const lean = (files: string[], structures = false, before?: string) => new Set(f
 }));
 
 /** Field names the OCaml producer reads from a document. */
-const ocamlReads = (file: string) => new Set([...read(file)
+const ocamlReads = (file: string): Set<string> => new Set([...read(file)
   .matchAll(/\b(?:field|text|items|List\.mem_assoc|List\.assoc_opt)\s+"(\w+)"/g)].flatMap(captured));
 
 /** Field names the OCaml producer writes into an object. */
-const ocamlWrites = (file: string) => new Set([...read(file).matchAll(/"(\w+)",/g)].flatMap(captured));
+const ocamlWrites = (file: string): Set<string> => new Set([...read(file).matchAll(/"(\w+)",/g)].flatMap(captured));
 
-const missing = (names: Set<string>, from: Set<string>, allowed: Record<string, string>) =>
+const missing = (names: Set<string>, from: Set<string>, allowed: Record<string, string>): string[] =>
   [...names].filter((n) => !from.has(n) && !(n in allowed)).sort();
 
 let checked = 0;
-const expectSubset = (what: string, names: Set<string>, from: Set<string>, allowed: Record<string, string>) => {
+const expectSubset = (what: string, names: Set<string>, from: Set<string>, allowed: Record<string, string>): void => {
   assert.deepEqual(missing(names, from, allowed), [], `${what}: field names differ; update every side, or record why here`);
   // An exception that no longer applies is itself drift.
   for (const n of Object.keys(allowed)) assert(names.has(n) && !from.has(n), `${what}: stale exception '${n}'`);

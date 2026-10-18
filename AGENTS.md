@@ -254,12 +254,25 @@ increasing trust silently.
   pipe through node's own `_handle`, which bun does not expose
   (`undefined is not an object (evaluating 'stdout._handle.fd')`). Every tool
   that opens the compiler is affected, so this is not a per-suite choice.
+- A unit's boundary is written and what lies inside a unit is inferred.
+  Every function declaration and class member, and every arrow or function
+  expression bound to a module-level name or a class field, states the type
+  of each parameter and of its result; `tools/tsconfig.json` sets
+  `isolatedDeclarations`, so every export states its type. A local `const` or
+  `let`, and an arrow written as an argument, are typed by inference. No value
+  is typed `any`: a value the checker types `any` (a written `any`, a library
+  member typed `any`, an array literal no annotation types) flows only into a
+  place typed `unknown`, and `JSON.parse` of a text also into one typed
+  `Json`, the parsed data the overlay of library globals states.
+  `node tools/unchecked.mts` ([source](tools/unchecked.mts)) reports both,
+  over every file that configuration includes, and fails on one; no comment
+  excuses either. `test-all.sh` runs it as a suite.
 - A decoder is the only place that asserts a shape. Everything else narrows:
   a type predicate, a `typeof` before a comparison, a case table keyed by the
-  language's own union. `node tools/unchecked.mts` ([source](tools/unchecked.mts)) reports every written `any`, `as`
-  and `!` in the node side, and fails on one without a reason, a comment
-  `// asserted: REASON` at the end of its line or alone on the line above; `test-all.sh`
-  runs it as a suite. The assertion that has its reason is an `as` at the last
+  language's own union. `tools/unchecked.mts` reports every `as` and `!` in
+  the node side, and fails on one without a reason, a comment
+  `// asserted: REASON` at the end of its line or alone on the line above.
+  The assertion that has its reason is an `as` at the last
   line of a decoder, where the checks it just ran become the type it returns.
   An assertion anywhere else is standing in for a check that is missing; where
   that check would cost more than it guards, the reason says so.

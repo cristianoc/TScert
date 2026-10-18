@@ -7,12 +7,12 @@ import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { stripTypes } from "../tools/strip-types.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
-import { producerExecutable } from "./verify-source.mts";
+import { producerExecutable, readFragmentFile, readClaimsFile } from "./verify-source.mts";
 
 /** Reachable pattern defaults require claims even when a producer omits them. */
 export function checkPatternDefaults(verifier: string, artifacts: string): void {
-  const ast: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
-  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const claims: SourceClaims = readClaimsFile(join(artifacts, "claims.json"));
   const statement = ast.functions.find((f) => f.name === "optionalDefault")?.body[0];
   assert(statement?.k === "destructure" && statement.target.k === "object");
   const fallback = statement.target.props[0]?.default_;
@@ -48,12 +48,8 @@ export function checkPatternDefaults(verifier: string, artifacts: string): void 
  * the later read and require both Lean entry points to reject its scope. */
 export function checkDefaults(verifier: string, artifacts: string): void {
   const source = join(artifacts, "source.ts");
-  const ast: Ast = JSON.parse(
-    readFileSync(join(artifacts, "fragment.json"), "utf8"),
-  );
-  const claims: SourceClaims = JSON.parse(
-    readFileSync(join(artifacts, "claims.json"), "utf8"),
-  );
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const claims: SourceClaims = readClaimsFile(join(artifacts, "claims.json"));
   const first = ast.functions[0]?.body[0];
   assert(first?.k === "const");
   const lambda = first.bindings[0]?.init;
@@ -94,7 +90,7 @@ export function checkDefaults(verifier: string, artifacts: string): void {
   }
 
   const examples = join(import.meta.dirname, "examples");
-  const execute = (file: string, expression: string) =>
+  const execute = (file: string, expression: string): unknown =>
     vm.runInNewContext(
       stripTypes(readFileSync(join(examples, `${file}.ts`), "utf8")) +
         "\n" +
@@ -203,7 +199,7 @@ export function checkSchemeDefaults(verifier: string, artifacts: string): void {
 /** A proposed well-typed closure still cannot read its capture during TDZ.
  * This must be a located refusal from both independent entry points. */
 export function checkEarlyDefault(verifier: string, artifacts: string): void {
-  const sanitized: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  const sanitized: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const statement = sanitized.functions[0]?.body[0];
   assert(statement?.k === "const");
   const lambda = statement.bindings[0]?.init;

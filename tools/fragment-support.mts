@@ -221,10 +221,10 @@ export function unnamedMember(member: ts.ClassElement, isStatic: boolean): strin
 /** The names an expression reads, closures' included: a superset of what
  * it may read when it runs. */
 export function namesRead(e: unknown, out: Set<string> = new Set()): Set<string> {
-  if (Array.isArray(e)) for (const x of e) namesRead(x, out);
+  if (Array.isArray(e)) e.forEach((x: unknown) => namesRead(x, out));
   else if (e !== null && typeof e === "object") {
     if ("k" in e && e.k === "id" && "name" in e && typeof e.name === "string") out.add(e.name);
-    for (const v of Object.values(e)) namesRead(v, out);
+    Object.values(e).forEach((v: unknown) => namesRead(v, out));
   }
   return out;
 }

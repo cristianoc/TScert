@@ -42,7 +42,7 @@ const methodField = (name: Field["name"], params: TypeTerm[], result: TypeTerm,
 
 /** The synthetic symbols the marks are keyed by: no source declaration has
  * these identities, so no source type, literal or class states them. */
-export const marks = {
+export const marks: { matcher: DeclarationIdentity; stringIterator: DeclarationIdentity } = {
   matcher: { module: "tscert/regexp", name: "RegExpMatcher", span } satisfies DeclarationIdentity,
   stringIterator: { module: "tscert/regexp", name: "RegExpStringIterator", span } satisfies DeclarationIdentity,
 };

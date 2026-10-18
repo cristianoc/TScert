@@ -98,7 +98,9 @@ const primitive: TypeTerm = { k: "union", span: at,
 /** A descriptor `FromPropertyDescriptor` makes of an own property: a data
  * property's `value` and `writable` or an accessor's `get` and `set`, and
  * both kinds' `enumerable` and `configurable`. */
-const descriptorField = (name: string, type: TypeTerm, isOptional: boolean) =>
+/** A field of an object type term. */
+type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
+const descriptorField = (name: string, type: TypeTerm, isOptional: boolean): Field =>
   ({ name, optional: isOptional, readonly: true, type, span: at });
 const propertyDescriptor: TypeTerm = { k: "object", stringIndex: null, calls: [], span: at, fields: [
   descriptorField("configurable", atom("boolean"), false), descriptorField("enumerable", atom("boolean"), false),

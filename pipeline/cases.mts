@@ -31,7 +31,7 @@ const positive = (file: string, area: string): Case => ({
 const negative = (
   file: string,
   area: string,
-  diagnostic = /evidence search failed/,
+  diagnostic: RegExp = /evidence search failed/,
 ): Case => ({
   file,
   area,

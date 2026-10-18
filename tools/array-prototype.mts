@@ -62,7 +62,7 @@ export type OverlayEntry = {
   /** A reviewed replacement signature: restrict implicit client hooks (e.g.
    * split on strings only), or correct explicit callback arguments (find
    * visits missing positions with undefined). The receiver is the prototype's. */
-  stated?: { receiver?: TypeTerm; params: TypeTerm[]; result: TypeTerm; effect?: Effect }[];
+  stated?: StatedSignature[];
   /** The effect the member's signatures state, where reviewed: the member,
    * called at them, runs no client code beyond callbacks whose own
    * signatures state the same effect, and writes no location the call did not
@@ -70,6 +70,8 @@ export type OverlayEntry = {
   effect?: Effect;
 };
 type Effect = CallEffect;
+/** A reviewed replacement signature of an overlay entry. */
+type StatedSignature = { receiver?: TypeTerm; params: TypeTerm[]; result: TypeTerm; effect?: Effect };
 
 const at: [number, number] = [0, 0];
 const atomOf = (name: "string" | "number" | "undefined" | "unknown" | "boolean" | "null" | "bigint" | "symbol"): TypeTerm => ({ k: "atom", name, span: at });
@@ -117,7 +119,7 @@ const stableForDensity = closedFootprints.filter((f) => f.store !== "any");
  * callback within `ε`, the member is within `ε`, since besides the callback
  * it reads the receiver and allocates only its result. */
 const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootprint) =>
-    { params: TypeTerm[]; result: TypeTerm }, fresh = false) =>
+    { params: TypeTerm[]; result: TypeTerm }, fresh: boolean = false): StatedSignature[] =>
   closedFootprints.map((footprint) => {
     const effect = footprintEffect(footprint);
     return { ...signature(effect, footprint), effect: { ...effect, fresh } };

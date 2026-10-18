@@ -236,7 +236,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     return { inferred: d };
   };
   const signature = (d: Node): Determined => {
-    const parameters = "parameters" in d && Array.isArray(d.parameters) ? d.parameters : [];
+    const parameters = childrenOf(d, "parameters");
     const typed = ts.isConstructorDeclaration(d) || ("type" in d && !!d.type);
     if (!typed || !parameters.every(p => ts.isParameterDeclaration(p) && !!p.type)) return { inferred: d };
     return { nodes: [d] };

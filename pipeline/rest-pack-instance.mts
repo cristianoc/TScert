@@ -3,13 +3,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { SourceClaims } from "../tools/source-claims.mts";
+import { readClaimsFile } from "./verify-source.mts";
 
 /** A type parameter typing a value and a rest is instantiated at an array or
  * tuple type, whose argument lists the rest's are: a forged instance that is
  * no array, at the call or `new` whose text starts with `at`, is refused by
  * both verifier entry points, not read as a pack. */
 export function checkRestPackInstance(verifier: string, artifacts: string, at: string): void {
-  const claims: SourceClaims = JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
+  const claims: SourceClaims = readClaimsFile(join(artifacts, "claims.json"));
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
   const start = source.indexOf(at);
   assert(start >= 0);

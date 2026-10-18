@@ -3,12 +3,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { SourceClaims } from "../tools/source-claims.mts";
+import { readClaimsFile } from "./verify-source.mts";
 
 /** Per-signature claims cross the same independent boundary as ordinary claims. */
 export function checkOverloads(verifier: string, artifacts: string): void {
-  const original: SourceClaims = JSON.parse(
-    readFileSync(join(artifacts, "claims.json"), "utf8"),
-  );
+  const original: SourceClaims = readClaimsFile(join(artifacts, "claims.json"));
   const edits = new Map<string, (c: SourceClaims) => void>([
     [
       "duplicate owner",

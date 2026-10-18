@@ -9,6 +9,8 @@ import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { collectDeclarations, tsconfigOf } from "../tools/declaration-graph.mts";
 import { overlay as arrayOverlay } from "../tools/array-prototype.mts";
+import type { DeclarationDocument } from "../tools/declaration-types.mts";
+import type { Ast } from "../tools/fragment.mts";
 const pipelineDir = resolve(import.meta.dirname, "../pipeline");
 const libraryConfig = tsconfigOf(resolve(pipelineDir, "library-project"));
 
@@ -19,7 +21,7 @@ function must<T>(value: T | null | undefined, message: string): T {
 /** A TypeScript project of `files`, strict, with `@fixture/NAME` mapped to
  * `NAME.ts`; `graphOf` collects the declaration graph of a client importing
  * from it, `parse` parses such a client. */
-function fixtureProject(files: Record<string, string>) {
+function fixtureProject(files: Record<string, string>): { graphOf: (text: string) => DeclarationDocument; parse: (text: string) => Ast } {
   const dir = mkdtempSync(join(tmpdir(), "tscert-fixture-project-"));
   for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
   const config = join(dir, "tsconfig.json");

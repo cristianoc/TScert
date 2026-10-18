@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { check, producerExecutable, verifier } from "./verify-source.mts";
+import { check, producerExecutable, readClaimsFile, readFragmentFile, verifier } from "./verify-source.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { useHostInstallationForTests } from "../tools/compiler-api.mts";
 import { cases } from "./cases.mts";
@@ -35,7 +35,7 @@ function must<T>(value: T | null | undefined, message: string): T {
 /** Check `claims` against `evidence` with the verifier's acceptance entry, and
  * require a refusal; its words, for the caller to match. */
 const invoke = (claims: string, evidence: string, artifacts: string,
-  ast = join(artifacts, "fragment.json")): string => {
+  ast: string = join(artifacts, "fragment.json")): string => {
   const p = spawnSync(verifier, ["--check-source-claims", ast, claims, join(artifacts, "source.ts"), evidence],
     { encoding: "utf8", timeout: 30_000 });
   assert.ifError(p.error);
@@ -45,7 +45,7 @@ const invoke = (claims: string, evidence: string, artifacts: string,
 };
 /** Search for evidence of forged claims, or of a forged parser document. */
 const produceWith = (artifacts: string, claims: string, name: string,
-    fragmentPath = join(artifacts, "fragment.json")): SpawnSyncReturns<string> =>
+    fragmentPath: string = join(artifacts, "fragment.json")): SpawnSyncReturns<string> =>
   spawnSync(verifier, ["--produce-source-claims", fragmentPath, claims, join(artifacts, "source.ts"),
     join(artifacts, `${name}-evidence.json`), "12"], { encoding: "utf8", timeout: 30_000 });
 /** Require search over forged claims to fail at the obligation named `at`. */
@@ -65,8 +65,7 @@ const rowOf = (claims: SourceClaims, clause: Row[number]): number => {
 const narrowerFootprints: ClosedFootprint[] = (["keep", "any"] as const).flatMap((value) =>
   (["keep", "grow", "any"] as const).map((store) => ({ value, store })))
   .filter((f) => f.value !== "any" || f.store !== "any");
-const readClaims = (artifacts: string): SourceClaims =>
-  JSON.parse(readFileSync(join(artifacts, "claims.json"), "utf8"));
+const readClaims = (artifacts: string): SourceClaims => readClaimsFile(join(artifacts, "claims.json"));
 /** Write forged claims beside a run's artifacts. */
 const writeClaims = (artifacts: string, name: string, claims: SourceClaims): string => {
   const path = join(artifacts, `${name}.json`);
@@ -125,7 +124,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // the method in a copy of the AST. Both verifier entry points must still
   // refuse the ORIGINAL contract before accepting any such proposal/evidence.
   const erased = run("invalid-generic-contract-erasure");
-  const ast: Ast = JSON.parse(readFileSync(join(erased, "fragment.json"), "utf8"));
+  const ast: Ast = readFragmentFile(join(erased, "fragment.json"));
   const declaration = ast.declarations?.definitions.find(d => d.declaration.name === "Witness");
   assert(declaration?.expression?.k === "object");
   const member = declaration.expression.fields.find(f => f.name === "choose");
@@ -171,7 +170,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     { k: "pack", of: binder("P"), span }, { k: "atom", name: "number", span }),
     { k: "array", presence: "readable", readonly: false, element: { k: "atom", name: "unknown", span }, span });
   const forgeDefinition = (artifacts: string, name: string, file: string, change: (d: TypeDefinition) => void) => {
-    const fragment: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+    const fragment: Ast = readFragmentFile(join(artifacts, "fragment.json"));
     change(must(fragment.declarations.definitions.find((d) => d.declaration.name === name), name));
     const path = join(artifacts, `${file}.json`);
     writeFileSync(path, JSON.stringify(fragment));
@@ -202,7 +201,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // verifier checks each supplied entry at its arguments, its target's
   // bounds and its scope's assumptions (the front end supplies every one).
   const forgeDocument = (artifacts: string, file: string, change: (fragment: Ast) => void) => {
-    const fragment: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+    const fragment: Ast = readFragmentFile(join(artifacts, "fragment.json"));
     change(fragment);
     const path = join(artifacts, `${file}.json`);
     writeFileSync(path, JSON.stringify(fragment));
@@ -436,7 +435,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
 }
 {
   const good = run("generic-prototype-instanceof");
-  const ast: Ast = JSON.parse(readFileSync(join(good, "fragment.json"), "utf8"));
+  const ast: Ast = readFragmentFile(join(good, "fragment.json"));
   const statement = ast.functions.find((f) => f.name === "typedIdentity")?.body[0];
   assert(statement?.k === "if" && statement.cond.k === "instanceTest");
   const pos = statement.cond.proto.pos;
@@ -1210,7 +1209,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   // Borrow evidence from a weakened constructor contract, then require the
   // native contract to refuse it at its ordinary write obligation.
   const write = run("invalid-native-promise-constructor-write");
-  const weakAst: Ast = JSON.parse(readFileSync(join(write, "fragment.json"), "utf8"));
+  const weakAst: Ast = readFragmentFile(join(write, "fragment.json"));
   const promise = must(weakAst.declarations.definitions.find(d =>
     d.declaration.name === "Promise" && d.declaration.module.startsWith("typescript/lib/")),
     "the native Promise declaration");
@@ -1255,7 +1254,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   // Widening a generic wrapper's result preserves its input qualification.
   // Forging an unbounded target must fail search and accepted-evidence replay.
   const artifacts = run("native-promise-qualified-return");
-  const ast: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const target = must(ast.declarations.definitions.find(d => d.declaration.name === "NumericUnknownWrapper"),
     "the result-widened generic wrapper declaration").expression;
   assert.ok(target?.k === "scheme" && target.binders.length === 1);
@@ -1884,7 +1883,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   refuse(cycle, "forged-certified-cycle", cyclic, /module \.\/p[io]ng\.ts: a cycle of qualified reads through it/);
   // A module document whose unit `twice` takes a string: the two readings of
   // its signature differ.
-  const fragment: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const fragment: Ast = readFragmentFile(join(imported, "fragment.json"));
   const twice = must(fragment.modules.flatMap(m => m.functions).find(f => f.name === "twice"), "the module's twice");
   const param = must(twice.params[0], "twice's parameter");
   assert.ok(param.type.k === "atom" && param.type.name === "number", "twice takes a number");
@@ -1896,7 +1895,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     tampered);
   // A module document in which `label` writes the binding of `twice`: the
   // binding is not stable, and the read of `twice` is refused.
-  const rebinding: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const rebinding: Ast = readFragmentFile(join(imported, "fragment.json"));
   const label = must(rebinding.modules.flatMap(m => m.functions).find(f => f.name === "label"), "the module's label");
   const pos = label.namePos;
   label.body.unshift({ k: "effect", pos, e: { k: "assign", pos, name: "twice", namePos: pos, rhs: { k: "id", pos, name: "label" } } });
@@ -1906,7 +1905,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     /certified import \.\/certified\.ts#twice: a qualified read names a unit whose module writes its binding/, rebound);
   // A module document whose `ArrayProto` lacks a member the importer's has:
   // `tally`'s array parameter reads it implicitly, and the readings differ.
-  const prototype: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const prototype: Ast = readFragmentFile(join(imported, "fragment.json"));
   const proto = must(must(prototype.modules.find(m => m.location === "./certified.ts"), "the module").declarations
     .definitions.find(d => d.declaration.name === "ArrayProto"), "the module's ArrayProto");
   const members = proto.expression?.k === "object" ? proto.expression.fields : [];
@@ -1919,7 +1918,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     shortened);
   // A module document whose written application in `unwrap`'s signature
   // states another bound: the readings of the application differ.
-  const bounded: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+  const bounded: Ast = readFragmentFile(join(imported, "fragment.json"));
   const application = must(must(bounded.modules.find(m => m.location === "./certified.ts"), "the module").declarations
     .applications.find(a => a.site === "./certified.ts#unwrap"), "unwrap's written application");
   const bound = must(application.bounds[0], "Bounded's bound");
@@ -1936,11 +1935,11 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // names either). Refused where the module's document lacks `%Stable%` the
   // importer's states, and where both state `%Stable%` or `Promise` under
   // one identity and the definitions differ.
-  const resolvable: Ast = JSON.parse(readFileSync(join(run("generic-promise-resolvable"), "fragment.json"), "utf8"));
+  const resolvable: Ast = readFragmentFile(join(run("generic-promise-resolvable"), "fragment.json"));
   const intrinsic = (name: string): TypeDefinition =>
     must(resolvable.declarations.definitions.find(d => d.declaration.name === name), `${name}'s definition`);
   const qualifiedScheme = (): Ast => {
-    const doc: Ast = JSON.parse(readFileSync(join(imported, "fragment.json"), "utf8"));
+    const doc: Ast = readFragmentFile(join(imported, "fragment.json"));
     const value = must(doc.declarations.values.find(v => v.declaration.name === "twice"), "twice's value");
     const unit = must(doc.modules.flatMap(m => m.functions).find(f => f.name === "twice"), "the unit twice");
     if (value.type.k !== "function") assert.fail("twice's value is a function");
@@ -2055,7 +2054,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
  * to refuse the evidence searched over the weakened document. That evidence
  * is over another graph, so checking refuses it unlocated. */
 const bypassed = (artifacts: string, name: string, at: [number, number], change: (fragment: Ast) => void): void => {
-  const ast: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   change(ast);
   const weak = join(artifacts, `${name}-fragment.json`);
   writeFileSync(weak, JSON.stringify(ast));
@@ -2269,7 +2268,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // from `isPresence`'s document, the producer's claims, which read
   // `isPresence` at its qualified signature, are refused at that read.
   const artifacts = run("type-guards");
-  const fragment: Ast = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  const fragment: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const isPresence = must(fragment.functions.find((f) => f.name === "isPresence"), "isPresence");
   assert.ok(isPresence.guard, "isPresence states a promise");
   isPresence.guard = null;

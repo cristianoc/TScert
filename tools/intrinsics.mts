@@ -86,7 +86,7 @@ export const promiseResolveName = "%PromiseResolve%";
 /** The file declaring `Resolvable`, the bound that makes a type parameter
  * resolution-qualified, recognized by this declaration's identity. Every
  * project a program writing it is checked in lists the file. */
-export const resolvableDeclaration = join(import.meta.dirname, "resolvable.d.ts");
+export const resolvableDeclaration: string = join(import.meta.dirname, "resolvable.d.ts");
 /** The intrinsics typed through a resolution descriptor, which need the
  * stable family `%Stable%` and the native `Promise`. */
 export const resolutionIntrinsics: readonly string[] = ["%Await%", "%AsyncReturn%", "%PromiseResolve%"];

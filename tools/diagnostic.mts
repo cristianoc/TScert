@@ -244,7 +244,7 @@ function record(v: Json | undefined, required: string[], optional: string[] = []
   if (!isRecord(v) || required.some(k => !(k in v)) || Object.keys(v).some(k => ![...required,...optional].includes(k))) throw Error("invalid diagnostic fields");
   return v;
 }
-function nat(v: Json | undefined) { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw Error("invalid diagnostic index"); }
+function nat(v: Json | undefined): void { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) throw Error("invalid diagnostic index"); }
 function span(v: Json | undefined): asserts v is Span {
   if (!Array.isArray(v) || v.length !== 2) throw Error("invalid diagnostic span");
   const [start, end] = v;
@@ -272,7 +272,7 @@ function directJudgment(v: Json | undefined, size: number): DirectJudgment {
   return {kind:"subtyping",subject,
     actual:decodeLabels(j.actual,size),expected:decodeLabels(j.expected,size)};
 }
-function knowledge(v: Json | undefined) {
+function knowledge(v: Json | undefined): void {
   if (v === null) return;
   const k = record(v,["cells","values","links"]);
   for (const key of ["cells","values"]) {
@@ -297,7 +297,7 @@ function knowledge(v: Json | undefined) {
 }
 /** A node record with its node decoded in place of its wire form, as the
  * term and tag below are. */
-function diagnosticNode(v: Json | undefined, size: number) {
+function diagnosticNode(v: Json | undefined, size: number): { [key: string]: Json | ProgramNode | null } {
   const n = record(v,["label","sourceMap","node","claim","requiredKnowledge"]);
   nat(n.label); sourceMap(n.sourceMap); knowledge(n.requiredKnowledge);
   if (n.claim !== null) {

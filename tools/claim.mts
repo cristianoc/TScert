@@ -79,7 +79,7 @@ function keys(
   v: Record<string, unknown>,
   required: string[],
   optional: string[] = [],
-) {
+): void {
   if (
     required.some((k) => !(k in v)) ||
     Object.keys(v).some((k) => ![...required, ...optional].includes(k))
@@ -95,7 +95,7 @@ function list(v: unknown): unknown[] {
 function str(v: unknown): asserts v is string {
   if (typeof v !== "string") throw Error("expected a string");
 }
-function bool(v: unknown) {
+function bool(v: unknown): void {
   if (typeof v !== "boolean") throw Error("expected a boolean");
 }
 function atom(v: unknown): void {

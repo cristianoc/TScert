@@ -32,7 +32,9 @@ const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span: at });
 const text = (value: string): TypeTerm => ({ k: "literal", name: "string", text: value, span: at });
 const union = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", parts, span: at });
 const no = (): TypeTerm => ({ k: "literal", name: "false", text: "false", span: at });
-const field = (name: string, type: TypeTerm, optional: boolean) =>
+/** A field of an object type term. */
+type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
+const field = (name: string, type: TypeTerm, optional: boolean): Field =>
   ({ name, optional, readonly: true, type, span: at });
 
 /** A function that computes a string and allocates only it, also when it

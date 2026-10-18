@@ -54,12 +54,17 @@ const types = typeof imports === "object" && imports !== null && "types" in impo
 assert.ok(target && types, "the manifest maps #enums/* to a declaration and a runtime file");
 
 // The entry points, as the manifest's `exports` map resolves them.
-const exportsMap = new Map(Object.entries("exports" in manifest && typeof manifest.exports === "object" &&
-  manifest.exports !== null ? manifest.exports : {}));
+const exportEntries: [string, unknown][] = Object.entries("exports" in manifest && typeof manifest.exports === "object" &&
+  manifest.exports !== null ? manifest.exports : {});
+const exportsMap = new Map(exportEntries);
+/** A module namespace object, read by key. */
+const isNamespace = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const entryPoint = async (path: string): Promise<Record<string, unknown>> => {
   const file = exportsMap.get(path);
   assert.ok(typeof file === "string", `the manifest exports ${path}`);
-  return import(pathToFileURL(join(root, file)).href);
+  const module: unknown = await import(pathToFileURL(join(root, file)).href);
+  assert.ok(isNamespace(module), `${path}: a module namespace`);
+  return module;
 };
 const ast = await entryPoint("./unstable/ast");
 const sync = await entryPoint("./unstable/sync");
@@ -73,10 +78,12 @@ for (const { name, file } of hostEnums) {
     assert.ok(member, `${name}: a member that is no integer literal: ${line}`);
     return { member: member[1] ?? "", value: Number(member[2]) };
   });
-  const module: Record<string, unknown> = await import(pathToFileURL(join(root, target.replace("*", file))).href);
+  const module: unknown = await import(pathToFileURL(join(root, target.replace("*", file))).href);
+  assert.ok(isNamespace(module), `${name}: a module namespace`);
   const runtime = module[name];
   assert.ok(typeof runtime === "object" && runtime !== null, `${name}: the runtime module exports an object`);
-  const values = new Map(Object.entries(runtime));
+  const runtimeEntries: [string, unknown][] = Object.entries(runtime);
+  const values = new Map(runtimeEntries);
   for (const { member, value } of declared)
     assert.equal(values.get(member), value, `${name}.${member}: declared ${value}, at run time ${values.get(member)}`);
   // The runtime object's keys: the members, and for each numeric value the
@@ -108,7 +115,8 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
     for (let i = 0; i < list.length; i++) elements.push(list[i]);
     const rows = (): void => {
       assert.equal(list.length, n, `${what}: length`);
-      assert.ok(Array.isArray(list) && typeof list === "object", `${what}: an array object`);
+      const isArray: boolean = Array.isArray(list);
+      assert.ok(isArray && typeof list === "object", `${what}: an array object`);
       elements.forEach((e, i) => assert.equal(list[i], e, `${what}: index ${i}`));
       assert.equal(list[n], undefined, `${what}: past the end`);
       assert.equal(Reflect.get(list, "0.5"), undefined, `${what}: a non-integer index`);
@@ -146,7 +154,7 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
       if (n) assert.equal(list.at(0), elements[0], `${what}: at`);
       assert.deepEqual([...new Set(list)], elements, `${what}: new Set`);
       const collect = (...xs: unknown[]): unknown[] => xs;
-      assert.deepEqual(collect.apply(null, list), elements, `${what}: apply of the list itself`);
+      assert.deepEqual(Reflect.apply(collect, null, list), elements, `${what}: apply of the list itself`);
       assert.deepEqual(collect(...list), elements, `${what}: argument spread`);
       const [first, ...rest] = list;
       assert.deepEqual([first, ...rest].slice(0, n), elements, `${what}: destructuring with a rest`);
