@@ -183,6 +183,15 @@ let meet_objects a b = match a,b with
       calls=x.calls @ y.calls}])
   | _ -> None
 let top = Atoms [Top]
+(* The key the model reserves for a host object (COMPILER-API.md, "Restricted
+   values"). A record type marked by an optional field of it owns no such key:
+   its objects are ordinary, which a claim states as an own-key bound
+   excluding the key. *)
+let host_key = Name "[[host]]"
+let host_mark : field = {name=host_key;optional=true;read=Atoms [];write=None;host=false;receivers=[]}
+(* `nonHost`: every value but a host object. *)
+let non_host = Atoms [Nul;Undef;True;False;Num;Str;Bigint;Symbol;
+  Shape {fields=[host_mark];indexes=[];calls=[];elements=None};Callable;Ctors ([],[])]
 let arrow ?(call_effect=ordinary_effect) params result =
   Atoms [Shape {fields=[];indexes=[];calls=[{quantified=[];receiver=top;params;variadic=None;rest_pack=None;result;call_effect}];elements=None}]
 let quantified_arrow ?(call_effect=ordinary_effect) ?(receiver=top) quantified params result =

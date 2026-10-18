@@ -417,6 +417,15 @@ def atomLabels (term : Json) : M Union := do
   | "object" =>
     return normUnion [← prim "object" (.refs [] [] []), ← prim "function" (.arrs [] []),
       ← prim "constructor" (.ctors [])]
+  -- Every value but a host object (COMPILER-API.md, "Restricted values"):
+  -- the primitives, the callables and the objects owning no `[[host]]`. No
+  -- source spells it; the library overlay states it at the parameters of the
+  -- obligated `Object` members.
+  | "nonHost" =>
+    return normUnion [← prim "null" .nul, ← prim "undefined" .undef, ← prim "true" (.boolLit true),
+      ← prim "false" (.boolLit false), ← prim "number" .num, ← prim "string" .str, ← prim "bigint" .bigint,
+      ← prim "symbol" .symbol, ← prim "non-host object" (.refs [] [] [] [] [] [⟨false, [hostKey]⟩]),
+      ← prim "function" (.arrs [] []), ← prim "constructor" (.ctors [])]
   | _ => throw "unsupported declaration primitive"
 
 

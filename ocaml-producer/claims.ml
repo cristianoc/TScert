@@ -284,7 +284,9 @@ let encode (proposal : Proposal_types.t) =
       (* An optional field constrains its key only where the object has it:
          a writable one under one invariant contract, a readonly one as a
          view there. *)
-      let hosted,plain = List.partition (fun (f:Semantic.field) -> f.host) shape.fields in
+      let marked = List.exists (fun (f:Semantic.field) -> f.name = Semantic.host_key) shape.fields in
+      let hosted,plain = List.partition (fun (f:Semantic.field) -> f.host)
+        (List.filter (fun (f:Semantic.field) -> f.name <> Semantic.host_key) shape.fields) in
       let optional,present = List.partition (fun (f:Semantic.field) -> f.optional) plain in
       let writes,reads = List.partition (fun (f:Semantic.field) -> f.write <> None) present in
       (* A method is a host-relative member: its signatures, received by the
@@ -326,9 +328,13 @@ let encode (proposal : Proposal_types.t) =
          states (the library overlay's hidden members). *)
       let hidden_bound = match List.find_opt (fun (f:Semantic.field) -> f.name = Name "[[proto]]") shape.fields with
         | Some {read=Atoms [Shape p];_} ->
-          ["bounds",Array [Object ["among",Bool false;
-            "keys",Array (List.map (fun (f:Semantic.field) -> key_json f.name) p.fields)]]]
+          [Object ["among",Bool false;
+            "keys",Array (List.map (fun (f:Semantic.field) -> key_json f.name) p.fields)]]
         | _ -> [] in
+      (* The host mark: the object owns no `[[host]]`. *)
+      let hidden_bound = match hidden_bound @ (if marked then
+          [Object ["among",Bool false;"keys",Array [key_json Semantic.host_key]]] else []) with
+        | [] -> [] | bs -> ["bounds",Array bs] in
       List.iter (fun (a:Semantic.signature) ->
         if a.quantified <> [] then unsupported "quantified callable claim encoding") shape.calls;
       (* Fixed arrows and variadic signatures of one value share its clause; the

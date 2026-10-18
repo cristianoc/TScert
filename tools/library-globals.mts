@@ -139,7 +139,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // without running client code the fragment can write (no getters, no
   // symbol-keyed methods such as a custom inspection), and returns
   // `undefined`. `any` is read as `unknown`, so any argument is admitted.
-  { host: obligated("each argument", "the host formats every reachable key of an object argument"), global: "console", member: "log", signature: "log(...data: any[]): void;" },
+  { host: obligated("each argument", "the host formats every reachable key of an object argument"), global: "console", member: "log", signature: "log(...data: any[]): void;",
+    stated: { binders: [], params: [], rest: primitive, result: atom("undefined") } },
   // `BigInt(v)` throws a RangeError for a number that is not an integer and
   // a SyntaxError for a string that is not an integer's spelling; it runs no
   // code of the client's on a primitive, and returns a bigint otherwise.
@@ -223,8 +224,11 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // them, `any` read as `unknown`, and each pair is a fresh array. Reading a
   // value runs an accessor's getter: the fragment writes none, and a host
   // object's is assumed to return.
-  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "values", signature: "values(o: {}): any[];" },
-  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];" },
+  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "values", signature: "values(o: {}): any[];",
+    stated: { binders: [], params: [atom("nonHost")], result: array(atom("unknown")) } },
+  { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "entries", signature: "entries(o: {}): [string, any][];",
+    stated: { binders: [], params: [atom("nonHost")], result: array({ k: "tuple", presence: "dense", readonly: false,
+      required: [atom("string"), atom("unknown")], optional: [], rest: null, span: at }) } },
   // `Object.getOwnPropertyDescriptor(o, k)`: ToObject of `o` (a TypeError of
   // `null` or `undefined`, an outcome; a primitive's wrapper otherwise), then
   // the key, which a string, number or symbol converts to without running
@@ -237,7 +241,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // a setter: each is `unknown`, and the fields are stated readonly.
   { host: obligated("the object", "hands the values of its own fields to the program"), global: "Object", member: "getOwnPropertyDescriptor",
     signature: "getOwnPropertyDescriptor(o: any, p: PropertyKey): PropertyDescriptor | undefined;",
-    stated: { binders: [], params: [atom("unknown"),
+    stated: { binders: [], params: [atom("nonHost"),
       { k: "union", parts: [atom("string"), atom("number"), atom("symbol")], span: at }],
       result: optional(propertyDescriptor) } },
   // The generic overloads, which TypeScript selects for a record type whose

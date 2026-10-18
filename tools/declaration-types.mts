@@ -70,8 +70,10 @@ export type Reference = {
  * equation or a function annotation, read by type-term.mts. */
 export type TypeTerm =
   /** `object` is every object: an ordinary one, an array, or one with call or
-   * construct code. */
-  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "unknown" | "never" | "void" | "object"; span: Span }
+   * construct code. `nonHost`, which no source spells and only the library
+   * overlay states, is every value but a host object (COMPILER-API.md,
+   * "Restricted values"): a primitive, a callable or an ordinary object. */
+  | { k: "atom"; name: "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "unknown" | "never" | "void" | "object" | "nonHost"; span: Span }
   /* A number's `text` is its decimal spelling, a bigint's its canonical
      decimal integer; either may be negative. */
   | { k: "literal"; name: "true" | "false" | "string" | "number" | "bigint"; text: string; span: Span }

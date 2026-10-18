@@ -29,6 +29,13 @@ let rec plausible_subtype_with excludes actual expected =
   | Atoms xs,Atoms ys -> List.for_all (fun x -> List.exists (fun y ->
       x=y || match x,y with
       | NumLit _,Num | StrLit _,Str | BigintLit _,Bigint | SymbolLit _,Symbol -> true
+      (* The host-marked record: an object whose type excludes host values,
+         as Lean's `hostFree` decides. *)
+      | Exact _,Shape {fields=[m];indexes=[];calls=[];elements=None} when m=host_mark -> true
+      | Shape a,Shape {fields=[m];indexes=[];calls=[];elements=None} when m=host_mark ->
+        List.mem host_mark a.fields || a.indexes <> [] || a.calls <> [] ||
+        List.exists (fun (f:Semantic.field) -> f.write <> None && not f.optional && not f.host) a.fields ||
+        (match a.elements with Some s -> not s.readonly | None -> false)
       | Shape a,Shape b when a.fields=b.fields && a.indexes=b.indexes && plausible_elements excludes a.elements b.elements ->
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           Semantic.effect_covers p.call_effect q.call_effect &&

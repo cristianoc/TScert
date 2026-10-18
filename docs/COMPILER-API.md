@@ -17,7 +17,10 @@ views, `jsDoc` omitted from its shape, checked by C4 under Node), C0's
 binding of the host package to the audited installation's declarations,
 the host classification with R8 for the steps that merge objects (an object
 spread, an object pattern's rest, `Object.assign` and a key-adding write),
-and the `JsonValue` traversal lemma;
+the non-host parameter of `Object.values`, `Object.entries` and
+`Object.getOwnPropertyDescriptor`, the primitive arguments of `console.log`,
+the refusal of `Object.assign` read as a value, and the `JsonValue`
+traversal lemma;
 the other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
@@ -434,7 +437,12 @@ model key (`copiedKey`, `mergeParts_host`) and a computed key is never one
 (`refsT` of a non-empty field list, `dictViewT`, `dictCellT`, an own-key
 bound without the key, `NoHost`), the merge step, which `Object.assign`
 lowers to, is stuck on it (`ownAll`, `ownData`) and its rule requires
-`hostFree` of every operand clause (`MergeOk`, `hostFree_sound`), and the stated parameter of the
+`hostFree` of every operand clause (`MergeOk`, `hostFree_sound`). The
+family of non-host values is the type term `nonHost`, which only the library
+overlay states, lowered to the primitives, the callables and the record
+clause whose own-key bound excludes `[[host]]`; a source record clause meets
+that bound when it names an invariant field or an index (`CoversBounds`,
+`refs_noHost`, `dict_noHost`), and the stated parameter of the
 obligated `Object` members is the family of **non-host values**: the
 primitives, the callables and the ordinary-classified objects. The
 checker's admission rule for an argument at that parameter is

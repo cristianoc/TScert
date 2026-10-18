@@ -604,16 +604,14 @@ private theorem slots_names (base : Nat) (ns : List PropKey) :
   | nil => simp [slots]
   | cons name rest ih => simp [slots, ih]
 
-/-- An own-key bound listing the keys, none of them the host key: its objects
-are ordinary. -/
-def KeyBound.closed (K : KeyBound) : Bool := K.among && !K.keys.contains hostKey
+/-- An own-key bound the host key is not among: one listing keys without
+it, or one excluding it. Its objects are ordinary. -/
+def KeyBound.closed (K : KeyBound) : Bool := !K.admits hostKey
 
 theorem KeyBound.closed_lookup {K : KeyBound} (hK : K.closed = true) {n : Nat} {W : WorldT n}
     {flds : List (PropKey × Nat)} {oid : Nat} (h : ownKeysT K n W (.objAt flds .absent oid)) :
-    flds.lookup hostKey = none := by
-  simp only [KeyBound.closed, Bool.and_eq_true, Bool.not_eq_true'] at hK
-  have hn : hostKey ∉ K.keys := by simpa using hK.2
-  exact ownKeysT_lookup h (by simp [KeyBound.admits, hK.1, hn])
+    flds.lookup hostKey = none :=
+  ownKeysT_lookup h (by simpa [KeyBound.closed] using hK)
 
 /-- A fresh object's own keys are exactly the names it allocated. -/
 theorem ownKeysT_slots {K : KeyBound} {k : Nat} {W : WorldT k} {base : Nat}
