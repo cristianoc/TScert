@@ -1,7 +1,7 @@
 import { fork, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { Socket } from "node:net";
-import { availableParallelism, tmpdir } from "node:os";
+import { availableParallelism } from "node:os";
 import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 // ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.
@@ -10,6 +10,7 @@ import { clientErrors, tsconfigOf, type SeenDiagnostic } from "../tools/declarat
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 import { fieldOf, messageOf } from "../tools/thrown.mts";
+import { keepRunDirectories, runDirectory, runRoot } from "./run-directory.mts";
 import type { Ast } from "../tools/fragment.mts";
 // ../tools/source-flow.mts checks the shared execution graph wire before proposal.
 import { decodeFlowDocument } from "../tools/source-flow.mts";
@@ -312,7 +313,7 @@ function failedImport(detail: string): { module: string; name: string | null } |
  * construct the public verified outcome: both Lean phases must succeed. */
 export function check(source: string, tsconfigPath?: string, typescriptErrors = false,
     subtypeRounds?: number): Outcome {
-  const artifacts = mkdtempSync(join(tmpdir(), "pipeline-"));
+  const artifacts = runDirectory("pipeline-");
   let phase: Phase = "source";
   try {
     if (subtypeRounds !== undefined && (!Number.isSafeInteger(subtypeRounds) || subtypeRounds < 0))
@@ -519,6 +520,8 @@ function dispatch(): void {
 }
 function startWorker(): ChildProcess {
   workers++;
+  // The workers write their runs under the caller's root, which outlives them.
+  runRoot();
   const worker = fork(import.meta.filename, ["--serve"], { cwd: repo, stdio: ["ignore", "ignore", "pipe", "ipc"] });
   // What the worker writes to standard error is shown only with a failure.
   worker.stderr?.setEncoding("utf8");
@@ -602,6 +605,8 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
       " [--subtype-rounds n]\n");
     process.exitCode = 2;
   } else {
+    // The printed outcome names the run's directory, kept for inspection.
+    keepRunDirectories();
     try {
       const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, subtypeRounds);
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");

@@ -20,13 +20,13 @@
 // declared as reviewed, and under Node two reads of it give different values
 // where a stable member gives one.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { allocatingMembers, hostViews, declarationsDigest, hostDeclarationsDigest, hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
+import { runDirectory } from "../pipeline/run-directory.mts";
 
 // The package the front end resolves, from tools/.
 const root = dirname(createRequire(resolve(import.meta.dirname, "../tools/package.json"))
@@ -96,7 +96,7 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
 // callbacks recording their arguments, throwing, re-entering and iterators
 // interleaved or left early; afterwards every row answers as at the start.
 {
-  const dir = mkdtempSync(join(tmpdir(), "tscert-nodelist-"));
+  const dir = runDirectory("tscert-nodelist-");
   for (const n of [0, 1, 15, 16, 17, 32]) {
     const source = Array.from({ length: n }, (_, i) => `export const v${i} = ${i};\n`).join("");
     const file = join(dir, `list${n}.ts`);
@@ -258,7 +258,7 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const declarations = readFileSync(join(root, "dist", "ast", "ast.d.ts"), "utf8");
   for (const { owner, name, text } of allocatingMembers)
     assert.ok(declarations.includes(text), `${owner}.${name} is declared as reviewed: ${text}`);
-  const file = join(mkdtempSync(join(tmpdir(), "tscert-jsdoc-")), "documented.ts");
+  const file = join(runDirectory("tscert-jsdoc-"), "documented.ts");
   const source = "/** The answer. */\nexport const answer = 42;\n";
   writeFileSync(file, source);
   const tree = openText(file, source);

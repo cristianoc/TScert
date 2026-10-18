@@ -3,12 +3,12 @@
 // and the array prototype overlay read from TypeScript's declarations.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { collectDeclarations, tsconfigOf } from "../tools/declaration-graph.mts";
 import { overlay as arrayOverlay } from "../tools/array-prototype.mts";
+import { runDirectory } from "../pipeline/run-directory.mts";
 const pipelineDir = resolve(import.meta.dirname, "../pipeline");
 const libraryConfig = tsconfigOf(resolve(pipelineDir, "library-project"));
 
@@ -20,7 +20,7 @@ function must<T>(value: T | null | undefined, message: string): T {
  * `NAME.ts`; `graphOf` collects the declaration graph of a client importing
  * from it, `parse` parses such a client. */
 function fixtureProject(files: Record<string, string>) {
-  const dir = mkdtempSync(join(tmpdir(), "tscert-fixture-project-"));
+  const dir = runDirectory("tscert-fixture-project-");
   for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
   const config = join(dir, "tsconfig.json");
   writeFileSync(config, JSON.stringify({
@@ -60,7 +60,7 @@ function fixtureProject(files: Record<string, string>) {
 
 {
   const jsonPath = resolve(pipelineDir, "examples/collections-json.ts");
-  const changedCopy = join(mkdtempSync(join(tmpdir(), "tscert-copy-")), "client.ts");
+  const changedCopy = join(runDirectory("tscert-copy-"), "client.ts");
   writeFileSync(changedCopy, readFileSync(jsonPath, "utf8").replace("value, null", "null, value"));
   assert.throws(() => parseFile(changedCopy, false, libraryConfig, jsonPath),
     /gate:.*TypeScript client source bytes differ/);
@@ -120,7 +120,7 @@ function fixtureProject(files: Record<string, string>) {
   // An import the overlay of library modules lists is read through it only
   // where TypeScript binds it to Node's declarations: a module the project
   // maps to its own file under Node's name is refused.
-  const dir = mkdtempSync(join(tmpdir(), "tscert-fixture-node-name-"));
+  const dir = runDirectory("tscert-fixture-node-name-");
   writeFileSync(join(dir, "fake.ts"), "export function writeFileSync(file: string, data: string): number { return file.length + data.length; }\n");
   writeFileSync(join(dir, "client.ts"), 'import { writeFileSync } from "fs";\n' +
     "export function save(path: string): number { return writeFileSync(path, \"\"); }\n");
@@ -135,7 +135,7 @@ function fixtureProject(files: Record<string, string>) {
   // A string's `split` gives an array, so a source calling one collects the
   // array prototype; a structural `split`, of an object's own member, does
   // not: the receiver's type decides, as for a primitive's prototype.
-  const dir = mkdtempSync(join(tmpdir(), "tscert-fixture-split-dependency-"));
+  const dir = runDirectory("tscert-fixture-split-dependency-");
   const files = {
     structural: "export function f(x: { split(): number }): number { return x.split(); }\n",
     string: "export function g(s: string): number { return s.split(\",\").length; }\n",
@@ -199,7 +199,7 @@ function fixtureProject(files: Record<string, string>) {
   // identity, not its path: the binder of a bounded application under a
   // generic declaration's scope, and only binders. A literal type and a
   // property key spelling such a name keep it.
-  const dir = mkdtempSync(join(tmpdir(), "tscert-binder-names-"));
+  const dir = runDirectory("tscert-binder-names-");
   const spelled = (offset: number) => `T@${join(dir, "mod.ts")}:${offset}`;
   writeFileSync(join(dir, "mod.ts"), `export interface Box<T extends number> {
   value: T;

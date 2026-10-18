@@ -13,11 +13,14 @@ import { join, resolve } from "node:path";
 import { fields, nat, showTag, showTerm, unmatched, type Json } from "../tools/calculus.mts";
 import { decodeNode, type Continuation, type ProgramNode, type Target } from "../tools/control-flow.mts";
 import { verifier } from "../pipeline/verify-source.mts";
+import { runRoot } from "../pipeline/run-directory.mts";
 
 const [file, wanted] = process.argv.slice(2);
 if (!file) throw new Error("usage: lowering-dump.mts <file.ts> [function]");
 const here = import.meta.dirname;
 
+// The run is written under this command's root, removed when it exits.
+runRoot();
 // verify-source exits non-zero on a refusal; its outcome is on stdout either way.
 const out = spawnSync("node", [join(here, "../pipeline/verify-source.mts"), resolve(file)], { encoding: "utf8" }).stdout;
 const outcome = JSON.parse(out.slice(out.indexOf("{")));

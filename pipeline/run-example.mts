@@ -2,12 +2,12 @@
 // checks, for the controls that compare a case's outcome with its execution.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import vm from "node:vm";
 // ../tools/strip-types.mts erases the annotations of an example run as JavaScript.
 import { stripTypes } from "../tools/strip-types.mts";
+import { runDirectory } from "./run-directory.mts";
 const here = import.meta.dirname;
 /** An example run as JavaScript, then `expression` evaluated after it. */
 export const runExample = (file: string, expression: string): unknown =>
@@ -17,7 +17,7 @@ export const runExample = (file: string, expression: string): unknown =>
  * `expression`: the example and the modules of `imports-project` it imports
  * are stripped of types, `@fixture/NAME` resolved to `NAME`'s module. */
 export const runImporting = (file: string, expression: string): unknown => {
-  const out = mkdtempSync(join(tmpdir(), "imports-"));
+  const out = runDirectory("imports-");
   const project = join(here, "imports-project");
   const relink = (text: string): string => stripTypes(text).replace(/from "@fixture\/([\w-]+)"/g, 'from "./$1.mjs"');
   for (const name of ["lib", "relay", "certified", "scaled", "outer", "ping", "pong", "cell-left", "cell-right"]) {
@@ -38,7 +38,7 @@ console.log(JSON.stringify(${expression}));
  * transforming stripper may replace by their values. TypeScript emits the
  * file whatever errors it reports. */
 export const runEmitted = (file: string, expression: string): unknown => {
-  const out = mkdtempSync(join(tmpdir(), "emitted-"));
+  const out = runDirectory("emitted-");
   const tsc = spawnSync(join(here, "..", "tools", "node_modules", ".bin", "tsc"),
     ["--target", "es2022", "--strict", "--outDir", out, join(here, "examples", `${file}.ts`)], { encoding: "utf8", timeout: 60_000 });
   assert.ifError(tsc.error);
