@@ -50,6 +50,16 @@ export const allocatingMembers: readonly { owner: string; name: string; text: st
  * Every class the package declares is a host type too. */
 export const hostTypeRoots: readonly string[] = ["Node", "NodeArray", "Type"];
 
+/** The branded strings (COMPILER-API.md, reading rule 5): host-introduced
+ * types whose values are strings the package produces. Read as `string` where
+ * the client receives one; a host signature's parameter mentioning one is
+ * refused (L5), since the calculus has no opaque primitive type to admit only
+ * the package's own values. Each entry is its declaration as reviewed. */
+export const brandedTypes: readonly { name: string; text: string }[] = [
+  { name: "Path", text: "export type Path = string & {\n    __pathBrand: any;\n};" },
+  { name: "__String", text: "export type __String = (string & {\n    __escapedIdentifier: void;\n}) | InternalSymbolName;" },
+];
+
 /** The host package's node list interface, read as a dense readonly array of
  * its elements (COMPILER-API.md, "Node lists in the model"), never through
  * its declaration. */

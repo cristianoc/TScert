@@ -1862,6 +1862,13 @@ const bypassed = (artifacts: string, name: string, change: (fragment: Ast) => vo
     const written = check(example("invalid-host-fixture-node-list-write"), project);
     assert.ok(written.status !== "verified" && "detail" in written && /transformFlags/.test(written.detail),
       JSON.stringify(written));
+    // Branded strings (reading rule 5): read as strings, refused as a host
+    // parameter (L5).
+    const branded = check(example("host-fixture-branded-read"), project);
+    assert.equal(branded.status, "verified", JSON.stringify(branded));
+    const passed = check(example("invalid-host-fixture-branded-parameter"), project);
+    assert.ok(passed.status === "unsupported" && /branded string type is refused/.test(passed.detail),
+      JSON.stringify(passed));
     const kept = check(example("host-fixture-jsdoc-other-reads"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
     const lookalike = check(example("host-fixture-lookalike"), project);
@@ -1869,7 +1876,7 @@ const bypassed = (artifacts: string, name: string, change: (fragment: Ast) => vo
   } finally {
     useHostInstallationForTests(null);
   }
-  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, its members unread\n");
+  process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, its members unread; a branded string read as a string, refused as a host parameter\n");
 }
 
 {

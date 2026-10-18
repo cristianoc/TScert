@@ -24,7 +24,7 @@ import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePro
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
-import { allocatingMembers, hostEnums, hostNodeList, hostTypeRoots, isHostFile } from "./compiler-api.mts";
+import { allocatingMembers, brandedTypes, hostEnums, hostNodeList, hostTypeRoots, isHostFile } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -3214,7 +3214,14 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         }) });
       continue;
     }
-    let expression = ts.isTypeAliasDeclaration(node)
+    // A branded string of the host package is a string (reading rule 5).
+    const brand = ts.isTypeAliasDeclaration(node) && isHostFile(source.fileName)
+      ? brandedTypes.find(b => b.name === node.name.text) : undefined;
+    if (brand && node.getText(source).trim() !== brand.text)
+      throw Error(`the branded string ${brand.name} is not declared as reviewed: ${brand.text}`);
+    let expression = brand
+      ? { k: "atom", name: "string", span: [node.getStart(source), node.end] } satisfies TypeTerm
+      : ts.isTypeAliasDeclaration(node)
       ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
         ? mergedClass(classInstance(scope, node, [node.getStart(source), node.end]), parts.flatMap(part => {

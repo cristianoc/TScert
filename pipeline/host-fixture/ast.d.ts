@@ -14,3 +14,12 @@ export interface NodeArray<T extends Node> extends ReadonlyArray<T> {
 export interface Block extends Node {
   readonly statements: NodeArray<Node>;
 }
+// The branded string, declared as the package declares it: a string where the
+// client receives one, refused as a host parameter.
+export type Path = string & {
+    __pathBrand: any;
+};
+export interface SourceFile extends Node {
+  readonly path: Path;
+}
+export declare function fileAt(path: Path): SourceFile | undefined;

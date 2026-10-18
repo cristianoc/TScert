@@ -20,8 +20,9 @@ spread, an object pattern's rest, `Object.assign` and a key-adding write),
 the non-host parameter of `Object.values`, `Object.entries` and
 `Object.getOwnPropertyDescriptor`, the primitive arguments of `console.log`,
 the refusal of `Object.assign` read as a value, the `JsonValue`
-traversal lemma, and `NodeArray<T>` read as a dense readonly array of `T`
-(`hostNodeList`; C4 runs its rows under Node);
+traversal lemma, `NodeArray<T>` read as a dense readonly array of `T`
+(`hostNodeList`; C4 runs its rows under Node), and reading rule 5 with L5
+(`brandedTypes`);
 the other rules below are a design, which the pipeline does not implement, and
 their Lean obligations are unproved; [WORK](../WORK.md#the-front-ends-own-functions)
 tracks the work. The prerequisites are the reading of declarations in
@@ -1218,10 +1219,10 @@ The reading rules split along the same dependencies:
   (`NoSubstitutionTemplateLiteral.rawText` and `.templateFlags` from
   `TemplateLiteralLikeNodeBase`, `parent` of `SourceFile` from `Node`), which
   only a member-complete shape states per kind.
-- With $`\mathsf{NodeList}`$, a declaration reaching `Node` reaches the
-  next unread form: `SourceFile.path` is `Path`
-  (`string & { __pathBrand: any }`), an empty intersection without reading
-  rule 5 (counted in 30 slices of `tools/` on 2026-10-18).
+- Reading rule 5 reads a branded string at a host declaration as `string`
+  and refuses a host signature's parameter that mentions one; within the
+  audited host files the names `Path` and `__String` are the branded
+  aliases, each checked against its reviewed text.
 
 So the pieces land in this order: rule 1 with the allocating-member
 refusal; the restricted-value policy, then $`\mathsf{NodeList}`$; then rules 2, 4 and 5, the contract file (views,
