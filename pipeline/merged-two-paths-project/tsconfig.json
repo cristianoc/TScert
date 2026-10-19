@@ -1,0 +1,12 @@
+{
+  // A project whose own module merges into the standard library: the
+  // `*merged-two-paths*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["./augment.ts", "../examples/*merged-two-paths*.ts"]
+}

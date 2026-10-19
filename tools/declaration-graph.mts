@@ -1528,6 +1528,19 @@ export function collectDeclarations(file: string, options: {
           target }, args: completeArguments(node, args, null, target.name), span };
       },
       libraryFile,
+      // The reviewed text as an interface appended to the client, in a probe
+      // program of its own, at a name the client does not spell.
+      reviewed: (body, read) => {
+        let index = 0;
+        while (client.text.includes(`__TScertReviewed${index}`)) index++;
+        const name = `__TScertReviewed${index}`;
+        return probeProgram(new Map([[client.fileName, `${client.text}\ninterface ${name}${body}\n`]]), program => {
+          const declaration = program.getSourceFile(client.fileName)?.statements
+            .find((n): n is InterfaceDeclaration => ts.isInterfaceDeclaration(n) && n.name.text === name);
+          if (!declaration) throw Error("the reviewed signatures do not parse as an interface");
+          return read(declaration);
+        });
+      },
     };
     // The keys a regex's type states (`regexp.mts`): the well-known symbols
     // its methods are keyed by, and the marks, synthetic symbols no source
@@ -1592,7 +1605,7 @@ export function collectDeclarations(file: string, options: {
     for (const name of ["Object", "Function"]) {
       const parts = (checker.resolveName(name, SymbolFlags.Interface, client, false)?.declarations ?? [])
         .map(d => d.resolve()).filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
-      const refusal = mergeRefusal(checker, libraryFile, parts);
+      const { refusal } = mergeRefusal(checker, libraryFile, parts, overlayLibrary.reviewed);
       if (refusal) throw new DeclarationError(options.root ?? [0, 0], mergeMessage(name, refusal));
     }
     let arrayProto: TypeDefinition[] = [];

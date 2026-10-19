@@ -451,7 +451,14 @@ export type OverlayLibrary = {
   /** Whether a file is one of the standard library's, by the compiler's own
    * library resolution. */
   libraryFile: (file: ts.SourceFile) => boolean;
+  reviewed: ReviewedReader;
 };
+
+/** Read `body`, an interface's binders and members (`<T> { ... }`), as the
+ * compiler parses an interface declaration of it: the overlay's reviewed
+ * signatures, which the project's library may not declare. Only the syntax is
+ * read, inside `read`. */
+export type ReviewedReader = <R>(body: string, read: (declaration: ts.InterfaceDeclaration) => R) => R;
 
 /** The synthetic declaration the array types' prototype view names. */
 const arrayProtoIdentity: DeclarationIdentity =
@@ -565,28 +572,41 @@ export const mergeMessage = (name: string, refusal: string): string =>
   `${name} is not the standard library's alone: a declaration merges ${refusal} into it, ` +
   `which the standard library's ${name} does not declare at that contract`;
 
-/** What a declaration outside the standard library merges into an
- * interface a prototype contract reads that the standard library's own
- * declarations do not state; `null` where it merges nothing else.
+/** The overlay entries reviewing the members of the standard library
+ * interface `name`, from every prototype's overlay. An `Array` is read at
+ * `ArrayProto`, whose members `ReadonlyArray` declares too. */
+function reviewedEntries(name: string): OverlayEntry[] {
+  const from = name === "Array" ? ["Array", "ReadonlyArray"] : [name];
+  return [overlay, ...Object.values(primitiveOverlay), ...Object.values(interfaceOverlay)]
+    .flatMap(entries => entries.filter(entry => from.includes(entry.from)));
+}
+
+/** A merge into an interface: what it merges that the reviewed contract
+ * does not state (`refusal`, `null` where nothing), and the members it
+ * states that the reviewed contract does (`admitted`).
  *
- * Every value of the interface is read at the contract, a review of the
- * host's prototype read from the standard library's declarations. A merged
- * declaration (a global augmentation, or a base it adds) states a member of
- * every value of the type, and a merge installs nothing at run time; so each
- * member it gives the interface must be one a standard library declaration
- * of the interface states at the same contract, or it would be erased. Node's
- * `at` polyfill (`RelativeIndexable<T>`) states the library's `at`; a
- * `toJSON` stating that every array holds a hook is no member the library
- * declares. Contracts are compared as the TypeTerm reader reads them: the
- * interfaces' binders by position, a base's at the arguments its heritage
- * gives, a member's own binders by position with their bounds, its
- * optionality, and each declaration of an overloaded member on its own. A
- * form the reader does not read here (a named type, a computed key, a call,
+ * Every value of the interface is read at TScert's reviewed interpretation
+ * of the host's prototype, the overlay. A merged declaration (a global
+ * augmentation, or a base it adds) states a member of every value of the
+ * type, and a merge installs nothing at run time; so each member it gives the
+ * interface must be one the overlay reviews at the same contract, which the
+ * reviewed translation, its corrections and effects included, then
+ * represents; any other would be erased. Node's `at` polyfill
+ * (`RelativeIndexable<T>`) states the reviewed `at`; a `toJSON` stating that
+ * every array holds a hook is no member the overlay reviews. Contracts are
+ * compared as the TypeTerm reader reads them, the merged declaration and the
+ * overlay's reviewed signature alike: the interfaces' binders by position, a
+ * base at the arguments each heritage path gives it, a member's own binders
+ * by position with their bounds, its optionality, and each declaration of an
+ * overloaded member on its own; a parameter's name is no part of it. A form
+ * the reader does not read here (a named type, a computed key, a call,
  * construct or index signature, a base outside the merge) is refused. */
 export function mergeRefusal(checker: Checker, libraryFile: (file: ts.SourceFile) => boolean,
-    parts: readonly ts.InterfaceDeclaration[]): string | null {
+    parts: readonly ts.InterfaceDeclaration[], reviewed: ReviewedReader):
+    { refusal: string | null; admitted: ReadonlySet<string> } {
   const isLibrary = (node: Node): boolean => libraryFile(node.getSourceFile());
-  if (parts.every(isLibrary)) return null;
+  const none = { refusal: null, admitted: new Set<string>() };
+  if (parts.every(isLibrary)) return none;
   type Member = ts.MethodSignatureDeclaration | ts.PropertySignatureDeclaration;
   type Binders = ReadonlyMap<string, TypeTerm>;
   const positional = (part: ts.InterfaceDeclaration): Binders => new Map((part.typeParameters ?? [])
@@ -606,8 +626,8 @@ export function mergeRefusal(checker: Checker, libraryFile: (file: ts.SourceFile
       throw new Unread("a named type");
     },
   });
-  // A member's contract without its spans: the reader keeps no parameter
-  // name, so equal contracts read alike.
+  // A contract without its spans: the reader keeps no parameter name, so
+  // equal contracts read alike.
   const canonical = (value: unknown): string => {
     if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
     if (value !== null && typeof value === "object")
@@ -635,10 +655,18 @@ export function mergeRefusal(checker: Checker, libraryFile: (file: ts.SourceFile
   };
   const nameOf = (member: Member): string | null => ts.isIdentifier(member.name) ? member.name.text : null;
   const merged: { member: Member; binders: Binders }[] = [];
-  const seen = new Set<ts.InterfaceDeclaration>();
+  // Each declaration once at each substitution: a base two heritage paths
+  // reach at different arguments is read at both. TypeScript refuses a
+  // circular base, and the bound keeps the walk finite regardless.
+  const seen = new Map<ts.InterfaceDeclaration, Set<string>>();
+  let visits = 0;
   const visit = (part: ts.InterfaceDeclaration, binders: Binders): string | null => {
-    if (seen.has(part)) return null;
-    seen.add(part);
+    const at = canonical([...binders.entries()]);
+    const known = seen.get(part) ?? new Set<string>();
+    if (known.has(at)) return null;
+    known.add(at);
+    seen.set(part, known);
+    if (++visits > 256) return "a chain of bases the reader does not bound";
     for (const member of part.members) {
       if (!ts.isMethodSignatureDeclaration(member) && !ts.isPropertySignatureDeclaration(member))
         return "a call, construct or index signature";
@@ -659,14 +687,14 @@ export function mergeRefusal(checker: Checker, libraryFile: (file: ts.SourceFile
           throw error;
         }
         for (const declaration of bases) {
-          const at = new Map<string, TypeTerm>();
+          const substitution = new Map<string, TypeTerm>();
           for (const [index, parameter] of (declaration.typeParameters ?? []).entries()) {
             const argument = args[index];
             if (!argument) return "a base at arguments the reader does not read";
-            at.set(parameter.name.text, argument);
+            substitution.set(parameter.name.text, argument);
           }
-          if (at.size !== args.length) return "a base at arguments the reader does not read";
-          const refused = visit(declaration, at);
+          if (substitution.size !== args.length) return "a base at arguments the reader does not read";
+          const refused = visit(declaration, substitution);
           if (refused) return refused;
         }
       }
@@ -675,18 +703,33 @@ export function mergeRefusal(checker: Checker, libraryFile: (file: ts.SourceFile
   for (const part of parts) {
     if (isLibrary(part)) continue;
     const refused = visit(part, positional(part));
-    if (refused) return refused;
+    if (refused) return { refusal: refused, admitted: new Set() };
   }
-  const library = parts.filter(isLibrary).flatMap(part => part.members
-    .filter((m): m is Member => ts.isMethodSignatureDeclaration(m) || ts.isPropertySignatureDeclaration(m))
-    .map(member => ({ member, binders: positional(part) })));
+  if (!merged.length) return none;
+  // The overlay's reviewed signatures, read as one interface over the
+  // library declaration's binders.
+  const entries = reviewedEntries(parts[0]?.name.text ?? "");
+  const library = parts.find(isLibrary);
+  const binderList = (library?.typeParameters ?? []).map(p => p.name.text).join(", ");
+  const contracts = entries.length && library
+    ? reviewed(`${binderList ? `<${binderList}>` : ""} {\n${entries.map(e => e.signature).join("\n")}\n}`,
+        declaration => declaration.members
+          .filter((m): m is Member => ts.isMethodSignatureDeclaration(m) || ts.isPropertySignatureDeclaration(m))
+          .flatMap(m => {
+            const name = nameOf(m);
+            const stated = contract(m, positional(declaration));
+            return name !== null && stated !== null ? [`${name} ${stated}`] : [];
+          }))
+    : [];
+  const admitted = new Set<string>();
   for (const { member, binders } of merged) {
     const name = nameOf(member);
     const stated = contract(member, binders);
-    if (stated === null || !library.some(l => nameOf(l.member) === name && contract(l.member, l.binders) === stated))
-      return `'${name}'`;
+    if (name === null || stated === null || !contracts.includes(`${name} ${stated}`))
+      return { refusal: `'${name}'`, admitted: new Set() };
+    admitted.add(name);
   }
-  return null;
+  return { refusal: null, admitted };
 }
 
 function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: Prototype): TypeDefinition {
@@ -700,12 +743,15 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
   // The interfaces the contract reads, each with the standard library's
   // bases its declarations name, are validated once (`mergeRefusal`).
   const validated = new Set<ts.InterfaceDeclaration>();
+  // The members a merge states at the reviewed contract, by interface.
+  const admitted = new Map<string, ReadonlySet<string>>();
   const standard = (parts: readonly ts.InterfaceDeclaration[]): void => {
     const [first] = parts;
     if (!first || validated.has(first)) return;
     validated.add(first);
-    const refusal = mergeRefusal(checker, library.libraryFile, parts);
-    if (refusal) throw Error(mergeMessage(first.name.text, refusal));
+    const merge = mergeRefusal(checker, library.libraryFile, parts, library.reviewed);
+    if (merge.refusal) throw Error(mergeMessage(first.name.text, merge.refusal));
+    admitted.set(first.name.text, merge.admitted);
     // A merged part's bases are the merge's, which `mergeRefusal` reads.
     for (const part of parts.filter(p => library.libraryFile(p.getSourceFile())))
       for (const clause of part.heritageClauses ?? [])
@@ -729,22 +775,41 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
   };
 
   const fields = proto.entries.flatMap(entry => {
-    const named = libraryOf(entry.from).flatMap(part => part.members
-      .filter(ts.isMethodSignatureDeclaration)
-      .filter(m => (ts.isIdentifier(m.name) ? m.name.text : m.name.getText(part.getSourceFile())) === entry.name)
-      .map(m => ({ member: m, source: part.getSourceFile() })));
-    // A member the project's standard library does not declare, as `at`
-    // before ES2022, is not part of its prototype.
-    if (!named.length) return [];
+    // The reviewed declaration is the library's: a merged one is validated
+    // by its contract (`mergeRefusal`), never selected by its spelling.
+    const named = libraryOf(entry.from).filter(part => library.libraryFile(part.getSourceFile()))
+      .flatMap(part => part.members
+        .filter(ts.isMethodSignatureDeclaration)
+        .filter(m => (ts.isIdentifier(m.name) ? m.name.text : m.name.getText(part.getSourceFile())) === entry.name)
+        .map(m => ({ member: m, source: part.getSourceFile() })));
+    if (!named.length) {
+      // A member the project's standard library does not declare, as `at`
+      // before ES2022, is part of the prototype where a merge states it at
+      // the reviewed contract: read from the reviewed signature.
+      if (!admitted.get(entry.from)?.has(entry.name)) return [];
+      return library.reviewed(` {\n${entry.signature}\n}`, declaration => {
+        const [member] = declaration.members;
+        if (!member || !ts.isMethodSignatureDeclaration(member) || !ts.isIdentifier(member.name))
+          throw Error(`${entry.from}.${entry.name}: its reviewed signature is no method`);
+        return field(entry, member, member.getSourceFile());
+      });
+    }
     const found = named.filter(({ member, source }) =>
       member.getText(source).trim() === entry.signature);
     const [only, ...more] = found;
     if (!only || more.length)
       throw Error(`${entry.from}.${entry.name} is not declared as reviewed: ${entry.signature}`);
-    const { member, source } = only;
+    return field(entry, only.member, only.source);
+  });
+  return { declaration: proto.identity, parameters: [], bases: [],
+    expression: { k: "object", fields, stringIndex: null, calls: [], span: [0, 0] } };
+
+  /** The prototype's field of `entry`, read from its declaration `member`. */
+  function field(entry: OverlayEntry, member: ts.MethodSignatureDeclaration, source: ts.SourceFile):
+      Extract<TypeTerm, { k: "object" }>["fields"] {
     // The library's own result interface (`ArrayIterator<T>`), read as
     // `Iterator<T>`, is validated with its chain as the contract's.
-    if (entry.resultAs && member.type && ts.isTypeReferenceNode(member.type))
+    if (entry.resultAs && library.libraryFile(source) && member.type && ts.isTypeReferenceNode(member.type))
       standard(interfacesOf(checker, member.type.typeName));
     const span: [number, number] = [0, 0];
     const own = (member.typeParameters ?? []).map(p => p.name.text)
@@ -789,7 +854,5 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
         (ts.isPropertyAccessExpression(member.name.expression) || ts.isIdentifier(member.name.expression))
       ? { symbol: library.symbol(member.name.expression) } : entry.name;
     return [{ name: key, optional: false, readonly: true, type, span }];
-  });
-  return { declaration: proto.identity, parameters: [], bases: [],
-    expression: { k: "object", fields, stringIndex: null, calls: [], span: [0, 0] } };
+  }
 }

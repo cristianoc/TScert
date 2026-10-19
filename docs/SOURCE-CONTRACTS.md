@@ -1889,8 +1889,7 @@ inherited declaration (`invalid-array-tojson-inherited`), a write
 an element at `unknown` (`invalid-json-stringify-hidden-hook`) gives one.
 A declaration merging a `toJSON` into the global `Array`, `ReadonlyArray` or
 `Object` states a hook the host's prototypes do not hold: a merged member is
-admitted only where a standard library declaration of the interface states it
-at the same contract ([source fragment](SOURCE-FRAGMENT.md)), so a unit an
+admitted only where the overlay reviews it at the same contract ([source fragment](SOURCE-FRAGMENT.md)), so a unit an
 array reaches under such a merge is refused, whether the array is written or
 a callback's parameter by context (`invalid-merged-array-param`,
 `invalid-merged-array-callback`, `invalid-merged-readonly-array-param`,

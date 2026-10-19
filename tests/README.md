@@ -29,9 +29,9 @@ cases; `pipeline/lib-collision-project/` holds one at
 printed with, for the `*lib-collision*` case;
 the `pipeline/merged-*-project/` directories each merge a member into one
 standard library interface (`Array`, `ReadonlyArray`, `Object`, `Function`,
-`Iterator`, `ArrayIterator`, `String`, and `ReadonlyArray`'s `at` restated
-and narrowed), for the cases whose file names contain the directory's
-`merged-*` part;
+`Iterator`, `ArrayIterator`, `String`, `Iterable`, and `ReadonlyArray`'s
+`at` restated, renamed, narrowed and reached along two bases), for the cases
+whose file names contain the directory's `merged-*` part;
 `pipeline/host-fixture-project/` reads `pipeline/host-fixture/`, a package
 whose manifest names the host package and whose `Node` reaches no node list:
 as a case it is no host (`host-fixture-lookalike`), and `pipeline/test.mts`
