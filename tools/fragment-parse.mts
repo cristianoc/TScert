@@ -32,7 +32,7 @@ import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFa
 import { childOf, isStatic, nameOf } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
-import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
+import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, releaseCompiler, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
@@ -120,10 +120,18 @@ function openFile(absolute: string, text: string): { file: SourceFile; checker: 
 
 /** Release the compiler. A long-lived caller may parse again afterwards. */
 export function close(): void {
-  compiler?.close();
+  release(null);
+}
+
+/** The parser's state reset, then its compiler released as
+ * `releaseCompiler` does after `thrown`: the next parse opens another,
+ * whatever releasing this one does. */
+function release(thrown: { error: unknown } | null): void {
+  const held = compiler;
   compiler = null;
   opened.clear();
   contents.clear();
+  if (held) releaseCompiler(held, thrown);
 }
 
 /* -------------------------------------------------------------- the gate -- */
@@ -978,7 +986,7 @@ export function parseFile(file: string, carriesContext: boolean = false,
   } catch (error) {
     const failure = toolFailureOf(error);
     if (!failure) throw error;
-    close();
+    release({ error });
     // A failure no read located is reported as one, in the file.
     if (messageOf(error).startsWith("tool failure:")) throw error;
     throw new Error(toolFailureText(failure, `(in ${file})`), { cause: error });

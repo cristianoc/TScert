@@ -34,7 +34,9 @@ function forcedParse(name: string, text: string, force: Record<string, string>):
   } finally {
     for (const key of Object.keys(force)) delete process.env[key];
   }
-  assert.ok(readFileSync(fired, "utf8").length > 0, `${name}: the failure was not forced where ${JSON.stringify(force)} says`);
+  const requests = readFileSync(fired, "utf8");
+  assert.ok(requests.length > 0, `${name}: the failure was not forced where ${JSON.stringify(force)} says`);
+  assert.doesNotMatch(requests, /^later /m, `${name}: a request was sent on the channel after its failure`);
   return report;
 }
 
@@ -63,12 +65,18 @@ for (const { name, site, text, force, at } of sites) {
   process.stdout.write(`${site}: a tool failure\n`);
 }
 
-// After a tool failure the parser's compiler is released, so the next parse
-// reads replies of its own.
-writeFileSync(fired, "");
-const fresh = parseFile(join(dir, "iterable.ts"), false, config);
-assert.ok(fresh.functions.length === 1, "a parse after a tool failure lowers its function");
-process.stdout.write("a parse after a tool failure: as without it\n");
+// A failure after a request was sent leaves its reply unread: the failure
+// is the report, the compilers are abandoned without a further request, and
+// the next parse reads replies of its own.
+const iterable = sites.find((s) => s.name === "iterable.ts")?.text ?? "";
+for (const [site, frame] of [["the parser's compiler", "at openFile \\("], ["the declaration reader's", "at kindsOf \\("]]) {
+  const report = forcedParse("sent.ts", iterable, { TSCERT_FORCE_FRAME: frame ?? "", TSCERT_FORCE_AFTER_SEND: "1" });
+  assert.match(report, /^tool failure: the front end exhausted the call stack/, `${site}, after a request was sent: ${report}`);
+  writeFileSync(fired, "");
+  const fresh = parseFile(join(dir, "sent.ts"), false, config);
+  assert.ok(fresh.functions.length === 1, `a parse after ${site} failed lowers its function`);
+  process.stdout.write(`${site}, failing after a request was sent: a tool failure, and the next parse as without it\n`);
+}
 closeParser();
 
 // unchecked.mts asks a node's type again only after a panic the compiler
@@ -79,11 +87,11 @@ mkdirSync(project);
 writeFileSync(join(project, "tsconfig.json"), JSON.stringify({ compilerOptions: { target: "es2022", module: "preserve",
   moduleResolution: "bundler", noEmit: true, strict: true, skipLibCheck: true, lib: ["es2022"], types: [] }, include: ["*.mts"] }));
 writeFileSync(join(project, "one.mts"), "export function twice(n: number): number {\n  return n * 2;\n}\n");
-const run = (kind: string): SpawnSyncReturns<string> => {
+const run = (kind: string, limit: string = ""): SpawnSyncReturns<string> => {
   writeFileSync(fired, "");
   const ran = spawnSync(process.execPath, [unchecked, "--project", project], { encoding: "utf8",
     env: { ...process.env, NODE_OPTIONS: `--import ${new URL("./force-tool-failure.mts", import.meta.url).href}`,
-      TSCERT_FORCE_FRAME: "at typesOf \\(", TSCERT_FORCE_KIND: kind } });
+      TSCERT_FORCE_FRAME: "at typesOf \\(", TSCERT_FORCE_KIND: kind, TSCERT_FORCE_LIMIT: limit } });
   assert.ok(existsSync(fired) && readFileSync(fired, "utf8").length > 0, `unchecked.mts (${kind}): the failure was not forced`);
   return ran;
 };
@@ -91,6 +99,12 @@ const exhausted = run("stack");
 assert.notEqual(exhausted.status, 0, "unchecked.mts after a stack exhaustion fails");
 assert.match(exhausted.stderr, /Maximum call stack size exceeded/);
 const panicked = run("panic");
-assert.match(panicked.stdout, /`uninspected`/);
-assert.doesNotMatch(panicked.stdout, / 0 `uninspected`/, "unchecked.mts after a panic reports the nodes uninspected");
-process.stdout.write("unchecked.mts: a panic leaves its nodes uninspected, a stack exhaustion ends it\n");
+assert.notEqual(panicked.status, 0, "unchecked.mts after a panic fails");
+assert.match(panicked.stdout, /error: .*\[tool failure\]  Checker\.getTypeAtLocation panicked on \d+ nodes from this one, asked again in halves/);
+assert.match(panicked.stdout, /error: .*\[tool failure\]  Checker\.getTypeAtLocation panicked on this node/);
+// A panic the retry answers is reported all the same.
+const answered = run("panic", "1");
+assert.notEqual(answered.status, 0, "unchecked.mts after a panic its retry answered fails");
+assert.match(answered.stdout, /\[tool failure\]  Checker\.getTypeAtLocation panicked on \d+ nodes from this one, asked again in halves/);
+assert.match(answered.stdout, / 0 `uninspected`/);
+process.stdout.write("unchecked.mts: a panic is reported where it was asked, retried or not, and a stack exhaustion ends it\n");

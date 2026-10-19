@@ -36,7 +36,7 @@ import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, 
 import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
-import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
+import { fieldOf, messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -154,7 +154,7 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     if (!project) throw Error("TypeScript did not load the probe program");
     return read(project.program, project.checker);
   };
-  let failed = false;
+  let thrown: { error: unknown } | null = null;
   try {
     const snapshot = api.updateSnapshot({ openFiles: [file],
       ...(tsconfigPath ? { openProjects: [tsconfigPath] } : {}) });
@@ -172,13 +172,41 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     config = project.configFileName;
     return use(project.checker, client, dirname(project.configFileName), project.program, probe);
   } catch (error) {
-    failed = true;
+    thrown = { error };
     throw error;
   } finally {
-    // A failure closing the API after another error is not the report:
-    // the error that was in flight is.
-    if (!failed) api.close();
-    else try { api.close(); } catch { /* the error in flight is reported */ }
+    releaseCompiler(api, thrown);
+  }
+}
+
+/** A procedure of no arguments, as a client's `close` is. */
+const isProcedure = (f: unknown): f is () => unknown => typeof f === "function";
+
+/** Releases a compiler after its work, or after `thrown`. After none, a
+ * refusal, or a panic the compiler replied, its channel is readable: it is
+ * closed in order, its snapshots released by request. After any other tool
+ * failure the channel may be unreadable: the compiler is abandoned, its
+ * process ended by its client (`API`'s private `client`, whose `close` ends
+ * the process and sends nothing), without a further request. After a
+ * failure, a failure releasing it is not the report: what was thrown is. */
+export function releaseCompiler(api: API, thrown: { error: unknown } | null): void {
+  const failure = thrown && toolFailureOf(thrown.error);
+  if (failure && failure.kind !== "panic") {
+    const client = fieldOf(api, "client");
+    const close = client && typeof client === "object" && "close" in client ? client.close : undefined;
+    if (!isProcedure(close))
+      throw new Error("the compiler's API has no client to abandon", { cause: thrown.error });
+    close.call(client);
+    return;
+  }
+  if (!thrown) {
+    api.close();
+    return;
+  }
+  try {
+    api.close();
+  } catch {
+    // The error in flight is the report.
   }
 }
 

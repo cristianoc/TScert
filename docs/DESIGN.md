@@ -217,7 +217,9 @@ The outcome is one of:
   it may interrupt a query mid-reply, after which the channel's replies are
   unreadable. A tool failure is never made a refusal, an absence or an
   unknown answer: every front-end catch passes it on, and one caught within
-  a located read keeps that location. The compiler's API (typescript 7.0.2)
+  a located read keeps that location. After a panic the compiler replied,
+  its channel stays readable; after any other tool failure the compiler is
+  abandoned without a further request, and the next parse opens another. The compiler's API (typescript 7.0.2)
   panics writing the type of an empty array literal TypeScript types as a
   tuple (`[] as const`, or `[]` where a destructuring or a tuple type is its
   context) into a reply, observed of `Checker.getTypeAtLocation` and

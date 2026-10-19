@@ -42,9 +42,11 @@
  * expression of the program, which is checked itself. A report is made
  * where the `any` arises; what it then flows into is not reported again.
  * A node whose type the compiler's API does not return, or returns as its
- * error type, is `[uninspected]`; an external declaration that does not
- * check as written (an unresolved name), or a shadow program that does not
- * load, ends the command with an error.
+ * error type, is `[uninspected]`. A panic the compiler replies to a query is
+ * a `[tool failure]` at its first node, an error whether or not asking again
+ * in halves answered; any other failure of the API ends the command, as
+ * does an external declaration that does not check as written (an
+ * unresolved name) or a shadow program that does not load.
  *
  * What lies outside: a program free of `any` may still break a type by
  * mutation (`Object.assign(target, r)` overwrites `target`'s fields), by a
@@ -105,7 +107,7 @@ import { prelude, shadowText, type ReplacedInput } from "./shadow-contracts.mts"
 import { toolFailureOf } from "./thrown.mts";
 
 /** What was found, which report it is, and the reason written with it. */
-type Kind = "any" | "as" | "!" | "any flow" | "suppressed" | "typed any" | "unannotated" | "uninspected";
+type Kind = "any" | "as" | "!" | "any flow" | "suppressed" | "typed any" | "unannotated" | "uninspected" | "tool failure";
 interface Found {
   file: string;
   line: number;
@@ -115,7 +117,7 @@ interface Found {
   reason: string | null;
 }
 
-const KINDS: Kind[] = ["any", "any flow", "suppressed", "typed any", "unannotated", "uninspected", "as", "!"];
+const KINDS: Kind[] = ["any", "any flow", "suppressed", "typed any", "unannotated", "uninspected", "tool failure", "as", "!"];
 
 /** A comment directive that silences the checker: `@ts-ignore`,
  * `@ts-expect-error`, `@ts-nocheck`. */
@@ -256,10 +258,15 @@ function boundary(checker: Checker, node: Node, moduleLevel: boolean, moduleScop
 
 /* ------------------------------------------------------------ the types -- */
 
+/** A panic the compiler replied to a query about a node: reported there as a
+ * `[tool failure]`, an error, whether or not asking again answered. */
+type Panicked = (node: Node, text: string) => void;
+
 /** Whether a value of `type` is `any`: the type itself, a member of a union
  * or an intersection, or a type argument, at any depth; `null` where the
  * compiler's API does not give a part of it. */
-function isAny(checker: Checker, type: Type, seen: Set<number> = new Set<number>()): boolean | null {
+function isAny(checker: Checker, type: Type, node: Node, panicked: Panicked,
+    seen: Set<number> = new Set<number>()): boolean | null {
   if (type.isErrorType()) return null;
   if (type.flags & TypeFlags.Any) return true;
   if (seen.has(type.id)) return false;
@@ -271,12 +278,14 @@ function isAny(checker: Checker, type: Type, seen: Set<number> = new Set<number>
   } catch (error) {
     // A panic the compiler replied leaves the channel readable, and the
     // part it did not give is uninspected; any other failure is thrown on.
-    if (toolFailureOf(error)?.kind !== "panic") throw error;
+    const failure = toolFailureOf(error);
+    if (failure?.kind !== "panic") throw error;
+    panicked(node, `${failure.query} panicked on a part of its type (${failure.reason}); the part is uninspected: `);
     return null;
   }
   let result: boolean | null = false;
   for (const part of parts) {
-    const held = isAny(checker, part, seen);
+    const held = isAny(checker, part, node, panicked, seen);
     if (held) return true;
     if (held === null) result = null;
   }
@@ -314,17 +323,21 @@ function typeOnly(node: Node): boolean {
 
 /** The type of each node, `null` where the compiler's API fails to return
  * it. */
-function typesOf(checker: Checker, nodes: Node[]): (Type | undefined | null)[] {
+function typesOf(checker: Checker, nodes: Node[], panicked: Panicked): (Type | undefined | null)[] {
   try {
     return checker.getTypeAtLocation(nodes);
   } catch (error) {
     // A panic the compiler replied leaves the channel readable, so the
     // nodes are asked again in halves, down to the one it fails on; any
     // other failure may leave the channel unreadable, and is thrown on.
-    if (toolFailureOf(error)?.kind !== "panic") throw error;
+    const failure = toolFailureOf(error);
+    if (failure?.kind !== "panic") throw error;
+    const [first] = nodes;
+    if (first) panicked(first, `${failure.query} panicked on ${nodes.length === 1 ? "this node" :
+      `${nodes.length} nodes from this one, asked again in halves`} (${failure.reason}): `);
     if (nodes.length === 1) return [null];
     const half = Math.ceil(nodes.length / 2);
-    return [...typesOf(checker, nodes.slice(0, half)), ...typesOf(checker, nodes.slice(half))];
+    return [...typesOf(checker, nodes.slice(0, half), panicked), ...typesOf(checker, nodes.slice(half), panicked)];
   }
 }
 
@@ -372,7 +385,8 @@ function findIn(file: string, source: SourceFile, program: Program, checker: Che
     if (!inType && valued(node)) order.push(node);
   };
   source.forEachChild((child) => walk(child, true, true, false));
-  const types = typesOf(checker, order);
+  const panicked: Panicked = (node, text) => at(node, "tool failure", text);
+  const types = typesOf(checker, order, panicked);
   // A node whose `any` comes from one reported inside it is not reported again.
   const reported = new Set<Node>();
   const within = (node: Node): boolean => {
@@ -389,7 +403,7 @@ function findIn(file: string, source: SourceFile, program: Program, checker: Che
     const type = types[index];
     if (type === null) return at(node, "uninspected");
     if (!type) return at(node, "uninspected");
-    const value = isAny(checker, type);
+    const value = isAny(checker, type, node, panicked);
     if (value === null) return at(node, "uninspected");
     if (!value || within(node)) return;
     // A residual `any` the checker gives without a declaration (a dynamic
