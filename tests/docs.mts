@@ -29,13 +29,17 @@ const excluded = new Set(["node_modules", ".lake", "_build"]);
  * checked only as a link, whose target must be a document checked here. */
 const links: string[] = [];
 function markdownFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    if (excluded.has(entry.name)) return [];
+  const found: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (excluded.has(entry.name)) continue;
     const path = join(dir, entry.name);
-    if (entry.isSymbolicLink()) { if (entry.name.endsWith(".md")) links.push(path); return []; }
-    if (entry.isDirectory()) return existsSync(join(path, ".git")) ? [] : markdownFiles(path);
-    return entry.name.endsWith(".md") ? [path] : [];
-  });
+    if (entry.isSymbolicLink()) { if (entry.name.endsWith(".md")) links.push(path); }
+    else if (entry.isDirectory()) {
+      if (!existsSync(join(path, ".git"))) for (const file of markdownFiles(path)) found.push(file);
+    }
+    else if (entry.name.endsWith(".md")) found.push(path);
+  }
+  return found;
 }
 
 /** The document with code fences removed, math fences kept. */

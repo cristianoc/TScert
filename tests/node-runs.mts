@@ -201,6 +201,58 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
       "const xs = [1, 2]; process.on(\"exit\", () => { if (xs.length === 2) { xs.pop(); throw new Error(\"listener\"); } }); console.log(1 in rows(xs)); process.exitCode = 0;");
     assert.equal(handled.stdout, "false", "invalid-node-process-exit-handler: the handler goes on and the result has a hole");
   }
+  {
+    // A timer's extra arguments reach its callback.
+    const ticked = runNode("invalid-node-set-timeout-parameter", "later((n) => console.log(typeof n));");
+    assert.equal(ticked.stdout, "number", "invalid-node-set-timeout-parameter: the callback receives the argument after the delay");
+  }
+  assert.equal(runImporting("invalid-node-structured-clone-result",
+    "(() => { const outer = [0, 2]; const inner = [1]; Object.defineProperty(inner, \"extra\", { enumerable: true, get() { outer.pop(); return 0; } }); outer[0] = inner; const c = copy(outer); return [c.length, 1 in c].join(); })()"),
+    "2,false", "invalid-node-structured-clone-result: a getter popping the enclosing array leaves a hole in the copy");
+  assert.equal(runImporting("invalid-node-structured-clone-preserving",
+    "(() => { const xs = [1, 2]; const v = [1]; Object.defineProperty(v, \"extra\", { enumerable: true, get() { xs.pop(); return 0; } }); return 1 in rows(xs, v); })()"),
+    false, "invalid-node-structured-clone-preserving: a getter beside a JSON array's elements shrinks the mapped array");
+  // `JSON.stringify` of that array serializes its elements alone: the getter
+  // does not run.
+  assert.equal(runExample("node-structured-clone",
+    "(() => { let ran = 0; const v = [1]; Object.defineProperty(v, \"extra\", { enumerable: true, get() { ran++; return 0; } }); return JSON.stringify(v) + ran; })()"),
+    "[1]0", "JSON.stringify of a JSON array reads its elements only");
+  assert.equal(runImporting("invalid-node-readdir-buffer-encoding", "typeof names(\".\")[0]"), "object",
+    "invalid-node-readdir-buffer-encoding: a Buffer name");
+  assert.equal(runImporting("invalid-node-readdir-options-alias",
+    "typeof names(\".\", { withFileTypes: true, encoding: \"buffer\" })[0]"), "object",
+    "invalid-node-readdir-options-alias: a Buffer name through options typed by withFileTypes alone");
+  assert.equal(runImporting("invalid-node-spawn-sync-stdout", "output(\"tscert-no-such-command\") === undefined"), true,
+    "invalid-node-spawn-sync-stdout: a command that cannot be spawned leaves stdout undefined");
+  assert.equal(runImporting("invalid-node-spawn-sync-stdio", "output(\"true\") === null"), true,
+    "invalid-node-spawn-sync-stdio: an ignored stream leaves stdout null");
+  assert.equal(runImporting("invalid-node-readdir-options-signal",
+    "typeof names(\".\", { withFileTypes: true, encoding: \"utf8\", get signal() { this.encoding = \"buffer\"; return undefined; } })[0]"),
+    "object", "invalid-node-readdir-options-signal: a signal getter switching encoding gives a Buffer name");
+  assert.equal(runImporting("invalid-node-readdir-test-result",
+    "(() => { const fs = process.getBuiltinModule(\"node:fs\"); fs.Dirent.prototype.isDirectory = () => 7; return typeof flags(\".\")[0]; })()"),
+    "number", "invalid-node-readdir-test-result: a replaced isDirectory answers a number");
+  assert.equal(runImporting("invalid-node-readdir-recursive",
+    "(() => { const fs = process.getBuiltinModule(\"node:fs\"); let ran = 0; const test = fs.Dirent.prototype.isDirectory; fs.Dirent.prototype.isDirectory = function () { ran++; return test.call(this); }; walk(\".\"); return ran > 0; })()"),
+    true, "invalid-node-readdir-recursive: the walk calls each entry's isDirectory through its prototype");
+  assert.equal(runImporting("invalid-node-dirent-name-accessor",
+    "(() => { hide(); const fs = process.getBuiltinModule(\"node:fs\"); const e = fs.readdirSync(\".\", { withFileTypes: true })[0]; return [typeof e.name, Object.hasOwn(e, \"name\")].join(); })()"),
+    "number,false", "invalid-node-dirent-name-accessor: the entry's name is the accessor's 7, not own");
+  assert.equal(runImporting("invalid-node-dirent-method-getter",
+    "(() => { const xs = [1, 2]; hook(xs); const fs = process.getBuiltinModule(\"node:fs\"); fs.readdirSync(\".\", { withFileTypes: true })[0].isDirectory; return xs.length; })()"),
+    1, "invalid-node-dirent-method-getter: the lookup pops the array");
+  assert.equal(runImporting("invalid-node-dirent-chain-insert",
+    "(() => { insert({ set name(v) {}, get name() { return 7; } }); const fs = process.getBuiltinModule(\"node:fs\"); const e = fs.readdirSync(\".\", { withFileTypes: true })[0]; return [typeof e.name, Object.hasOwn(e, \"name\")].join(); })()"),
+    "number,false", "invalid-node-dirent-chain-insert: an inserted ancestor's accessor takes the constructor's name");
+  for (const [act, expected] of [["replace", "number"], ["remove", "undefined"]] as const)
+    assert.equal(runImporting("invalid-node-dirent-test-replaced",
+      `(() => { ${act}(); const fs = process.getBuiltinModule("node:fs"); return typeof fs.readdirSync(".", { withFileTypes: true })[0].isDirectory; })()`),
+      expected, `invalid-node-dirent-test-replaced: after ${act}, isDirectory is no function`);
+  assert.equal(runImporting("invalid-node-dirent-prototype-write",
+    "(() => { replace(); const fs = process.getBuiltinModule(\"node:fs\"); return fs.readdirSync(\".\", { withFileTypes: true }).every((e) => e.isDirectory() === true); })()"),
+    true, "invalid-node-dirent-prototype-write: every entry reads the replaced member");
+  assert.equal(runImporting("invalid-node-readdir-dirent-path", "paths(\".\").every((p) => p === undefined)"), true,
+    "invalid-node-readdir-dirent-path: an entry has no path");
   assert.equal(runImporting("invalid-node-assert-deep-preserving",
     "(() => { const s = Symbol(\"k\"); const xs = []; const hooked = (pop) => { const o = { a: 1 }; Object.defineProperty(o, s, { enumerable: true, get() { if (pop) xs.pop(); return 1; } }); return o; }; xs.push(hooked(true), hooked(false)); return 1 in checked(xs, hooked(false)); })()"),
     false, "invalid-node-assert-deep-preserving: a symbol getter a passing deepEqual reads shrinks the mapped array");
