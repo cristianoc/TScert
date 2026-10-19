@@ -435,9 +435,21 @@ r\,?.\,b\;\equiv\;\mathsf{let}\ \mathsf{chain}=r\ \mathsf{in}\ \mathsf{if}\ \mat
 
 with $`T_q`$ the nullish tag's slices. The body is checked where the saved
 receiver holds its present slice, so a method called through the chain
-(`o?.m()`) has the present `o` as its receiver. `o.m?.()` would test the
-method but call it with `o`, which the chain does not save apart from the
-tested value, and is refused. On a `null` or `undefined` literal receiver the
+(`o?.m()`) has the present `o` as its receiver. `o.m?.(a)` tests the member
+read once, `o.m`, and calls it with `o` as its receiver (ECMA-262's
+OptionalChain: the reference's base is the call's `this`), the arguments
+evaluated only where the member is present:
+
+```math
+o.m\,?.\,(\vec a)\;\equiv\;\mathsf{let}\ \mathsf{chain}=o.m\ \mathsf{in}\ \mathsf{if}\ \mathsf{nullish}(\mathsf{chain})\ \mathsf{then}\ \mathsf{undefined}\ \mathsf{else}\ \mathsf{chain}.\mathtt{call}(o,\vec a)
+```
+
+The chain saves the tested value, and the receiver is read again: `o` is
+`this` or a name whose read cannot throw nor run code (`readCannotThrow`) and
+that the file assigns nowhere, so the second read gives the value the first
+did (`optional-method-call`, run under Node). A member at a computed key
+(`o[k]?.()`), any other object (`f().m?.()`, a name the file assigns) and
+spread arguments are refused (`optional-method-call-object-refused`). On a `null` or `undefined` literal receiver the
 chain is `r, undefined`: the literal is the receiver's whole value, and the
 body never runs.
 

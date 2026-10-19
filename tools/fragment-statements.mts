@@ -233,39 +233,8 @@ export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
   const assigned = gate.assignedNames();
   // A name read before the spread runs after the collection: it must hold
   // the same value then, and its read must not throw where the source's
-  // would. So it is a parameter or a function declaration with a body, a `let` or
-  // `const` of a function body the early-binding analysis finds initialized
-  // at every read (`markEarly`), or, declared nowhere in the file, a name
-  // TypeScript binds to the standard library's `var`s or functions alone
-  // (`libraryValues`); a module binding, an import, a class, an ambient or
-  // unresolved name is not skipped.
-  const initialized = (id: ts.Identifier): boolean => {
-    for (let at: Node | undefined = id.parent; at; at = at.parent) {
-      if (functionLikeNode(at) && at.parameters.some(p => ts.isIdentifier(p.name) && p.name.text === id.text))
-        return true;
-      const statements = ts.isBlock(at) || ts.isSourceFile(at) || ts.isCaseClause(at) || ts.isDefaultClause(at)
-        ? at.statements : null;
-      if (!statements) continue;
-      for (const st of statements) {
-        // A function declaration with a body is created when its scope is
-        // entered; an ambient one (`declare function`, an overload without
-        // a body) says nothing of what the name holds at run time.
-        if (ts.isFunctionDeclaration(st) && st.name?.text === id.text) {
-          const named = statements.filter((d): d is ts.FunctionDeclaration =>
-            ts.isFunctionDeclaration(d) && d.name?.text === id.text);
-          return named.some(d => !!d.body) &&
-            !named.some(d => d.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword));
-        }
-        if (ts.isClassDeclaration(st) && st.name?.text === id.text) return false;
-        if (ts.isImportDeclaration(st) && importedNames(st).includes(id.text)) return false;
-        if (ts.isVariableStatement(st))
-          for (const d of st.declarationList.declarations)
-            if (ts.isIdentifier(d.name) && d.name.text === id.text)
-              return !ts.isSourceFile(at) && !gate.earlyDecls.has(d);
-      }
-    }
-    return gate.libraryValues.has(gate.span(id).join(":"));
-  };
+  // would (`readCannotThrow`).
+  const initialized = (id: ts.Identifier): boolean => gate.readCannotThrow(id);
   const stable = (x: Node) => ts.isIdentifier(x) ? !assigned.has(x.text) && initialized(x)
     : ts.isNumericLiteral(x) || ts.isStringLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword ||
       x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword;
@@ -306,6 +275,43 @@ export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
   };
   const found = first(e);
   return found === "stable" ? null : found;
+}
+
+/** Whether reading the name `id` cannot throw nor run code, and gives the
+ * value it gives at any other read where the file assigns it nowhere: a
+ * parameter, a function declaration with a body, a function body's `let` or
+ * `const` the early-binding analysis finds initialized at every read
+ * (`markEarly`), or a name the file declares nowhere that TypeScript binds
+ * to the standard library's `var`s or functions alone (`libraryValues`); a
+ * module binding, an import, a class, an ambient or unresolved name is not
+ * one. */
+export function readCannotThrow(this: Gate, id: ts.Identifier): boolean {
+  const gate: Gate = this;
+  for (let at: Node | undefined = id.parent; at; at = at.parent) {
+    if (functionLikeNode(at) && at.parameters.some(p => ts.isIdentifier(p.name) && p.name.text === id.text))
+      return true;
+    const statements = ts.isBlock(at) || ts.isSourceFile(at) || ts.isCaseClause(at) || ts.isDefaultClause(at)
+      ? at.statements : null;
+    if (!statements) continue;
+    for (const st of statements) {
+      // A function declaration with a body is created when its scope is
+      // entered; an ambient one (`declare function`, an overload without
+      // a body) says nothing of what the name holds at run time.
+      if (ts.isFunctionDeclaration(st) && st.name?.text === id.text) {
+        const named = statements.filter((d): d is ts.FunctionDeclaration =>
+          ts.isFunctionDeclaration(d) && d.name?.text === id.text);
+        return named.some(d => !!d.body) &&
+          !named.some(d => d.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword));
+      }
+      if (ts.isClassDeclaration(st) && st.name?.text === id.text) return false;
+      if (ts.isImportDeclaration(st) && importedNames(st).includes(id.text)) return false;
+      if (ts.isVariableStatement(st))
+        for (const d of st.declarationList.declarations)
+          if (ts.isIdentifier(d.name) && d.name.text === id.text)
+            return !ts.isSourceFile(at) && !gate.earlyDecls.has(d);
+    }
+  }
+  return gate.libraryValues.has(gate.span(id).join(":"));
 }
 
 /** The local names an import declaration binds. */
