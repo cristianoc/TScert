@@ -2260,14 +2260,16 @@ unrestricted in its effect unless its entry states one. The entries:
   `parentPath`, writable strings; a path it cannot read throws, and the call
   states no effect (`node-readdir-dirents`). That the assignments define own
   data properties and that reading a test runs no code rest on a host
-  assumption ([trust surface](DESIGN.md#trust-surface)): `Dirent.prototype`
-  and `DirentFromStats.prototype` hold data properties only, also in
-  external code. An accessor there breaks both (`invalid-node-dirent-name-accessor`,
-  `invalid-node-dirent-method-getter`, run under Node). A program reaches
-  neither prototype: a class value's `prototype`, an entry's `constructor`,
-  `Object.getPrototypeOf`, `Object.setPrototypeOf` and
-  `Object.defineProperty` are refused (`invalid-node-dirent-prototype-write`,
-  run under Node, `invalid-node-dirent-constructor-prototype`,
+  assumption ([trust surface](DESIGN.md#trust-surface)): `Dirent` and `DirentFromStats` instances keep their audited prototype chains, `DirentFromStats.prototype` → `Dirent.prototype` → `Object.prototype`, whose two Node prototypes hold data properties only, the seven `is…` tests among them callable throughout execution, also in external code.
+  An accessor on either prototype or on an inserted ancestor breaks the
+  first two, and a replaced or deleted test the third
+  (`invalid-node-dirent-name-accessor`, `invalid-node-dirent-method-getter`,
+  `invalid-node-dirent-chain-insert`, `invalid-node-dirent-test-replaced`,
+  run under Node). A program reaches neither prototype: a class value's
+  `prototype`, an entry's `constructor`, `Object.getPrototypeOf`,
+  `Object.setPrototypeOf`, `Object.defineProperty` and `Reflect` are refused
+  (`invalid-node-dirent-prototype-write`, run under Node,
+  `invalid-node-dirent-constructor-prototype`,
   `invalid-node-dirent-get-prototype`, `invalid-node-dirent-set-prototype`). `encoding: "buffer"` names the entries by
   Buffers, and options of a type stating no `encoding`, or no `signal`, may
   hold it or a getter switching it between the reads

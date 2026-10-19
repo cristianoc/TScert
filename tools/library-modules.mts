@@ -233,9 +233,12 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // reports an unknown type, a `DirentFromStats` built from `fs.lstatSync`
   // of the joined path, both writable properties other code may replace.
   // Each constructor assigns `name` and `parentPath`, which become own
-  // writable strings under the host assumption that `Dirent.prototype` and
-  // `DirentFromStats.prototype` hold data properties only, also in external
-  // code (SOURCE-CONTRACTS.md, "Library modules"). An entry's `is…` tests
+  // writable strings under the host assumption that entries keep their
+  // audited prototype chains, `DirentFromStats.prototype` →
+  // `Dirent.prototype` → `Object.prototype`, whose two Node prototypes hold
+  // data properties only, the seven `is…` tests among them callable
+  // throughout execution, also in external code (SOURCE-CONTRACTS.md,
+  // "Library modules"). An entry's `is…` tests
   // dispatch through prototypes other code may change (`Stats`'s call
   // `this._checkModeProperty`): each is stated at `() => unknown`, its
   // effect unrestricted. The declared `path` is absent (`"path" in entry` is

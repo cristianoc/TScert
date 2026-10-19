@@ -235,6 +235,13 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runImporting("invalid-node-dirent-method-getter",
     "(() => { const xs = [1, 2]; hook(xs); const fs = process.getBuiltinModule(\"node:fs\"); fs.readdirSync(\".\", { withFileTypes: true })[0].isDirectory; return xs.length; })()"),
     1, "invalid-node-dirent-method-getter: the lookup pops the array");
+  assert.equal(runImporting("invalid-node-dirent-chain-insert",
+    "(() => { insert({ set name(v) {}, get name() { return 7; } }); const fs = process.getBuiltinModule(\"node:fs\"); const e = fs.readdirSync(\".\", { withFileTypes: true })[0]; return [typeof e.name, Object.hasOwn(e, \"name\")].join(); })()"),
+    "number,false", "invalid-node-dirent-chain-insert: an inserted ancestor's accessor takes the constructor's name");
+  for (const [act, expected] of [["replace", "number"], ["remove", "undefined"]] as const)
+    assert.equal(runImporting("invalid-node-dirent-test-replaced",
+      `(() => { ${act}(); const fs = process.getBuiltinModule("node:fs"); return typeof fs.readdirSync(".", { withFileTypes: true })[0].isDirectory; })()`),
+      expected, `invalid-node-dirent-test-replaced: after ${act}, isDirectory is no function`);
   assert.equal(runImporting("invalid-node-dirent-prototype-write",
     "(() => { replace(); const fs = process.getBuiltinModule(\"node:fs\"); return fs.readdirSync(\".\", { withFileTypes: true }).every((e) => e.isDirectory() === true); })()"),
     true, "invalid-node-dirent-prototype-write: every entry reads the replaced member");
