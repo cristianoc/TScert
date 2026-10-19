@@ -737,6 +737,19 @@ The description of `typescript` 7.0.2's syntax trees
 Its rows are T1 (F1 and F2), T1′ (F1′), T2 (F3) and T4, which includes F4
 ([the compiler API's trust](COMPILER-API.md#trust)).
 
+### A string-tagged stand-in
+
+A test-only stand-in package (`pipeline/string-family-fixture/`), which
+`pipeline/test.mts` installs as the host with a description of its own,
+shows the mechanism general over the tag's primitive: its units are tagged
+by `type`, a string, whose constants are a string enum; its guard table
+lists `isName`, an equality, and `isExpression`, through a helper of its
+tag, each activated over the stand-in's own modules; `isNameLoosely`, whose
+answer depends on an option argument, takes two parameters and has no
+entry. Each listed guard's call is the membership test of the family's
+string constants and narrows both edges; the unlisted one narrows nothing
+(`string-family-fixture-guards`, `invalid-string-family-fixture-loose`).
+
 ### A second instance: a readonly Babel interface
 
 A sketch, not implemented. Babel's nodes are plain objects that transforms

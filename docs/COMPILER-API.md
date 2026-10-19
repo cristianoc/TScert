@@ -520,8 +520,8 @@ a host type is read as a readonly view:
 A view states no equality between two reads: a readonly `parent` may give
 different values. That stable members return the same value on every read is
 the host assumption T1; no rule of the node shapes or the guards reads it,
-since the host-guard expansion reads `kind` with nothing between the reads
-and the field slice's exclusion is timeless.
+since a guard's membership test reads `kind` once and the field slice's
+exclusion is timeless.
 [Stable members](HOST-FAMILIES.md#stable-members) are the one rule that
 reads it.
 
@@ -1161,9 +1161,11 @@ The pieces, by file:
 - `tools/declaration-graph.mts`: reading rules 1–5, the family's readings at
   the run's selection, host enums, method overloads in declared classes,
   private members skipped.
-- `tools/fragment-*.mts`: `host-guard` over the guard table, namespace
-  imports, bitwise operators; the table's generator is a review aid, outside
-  the front end.
+- `tools/fragment-*.mts`: `host-guard` over the guard table, the
+  membership test `tagMember`, namespace imports, bitwise operators; the
+  table's generator is a review aid, outside the front end; the table's
+  activation, in `tools/compiler-api.mts`, reads the package's modules with
+  a compiler of its own.
 - `tests/compiler-api.mts`: C0–C4; the suite wrapper of C5.
 - `docs/SOURCE-CONTRACTS.md`, `docs/SOURCE-FRAGMENT.md` and
   `docs/DESIGN.md`: the rules, the restrictions and the trust rows.

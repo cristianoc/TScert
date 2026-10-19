@@ -1,0 +1,14 @@
+{
+  // A project reading `../string-family-fixture/`, a stand-in host package
+  // of a string-tagged family with guards: the `*string-family-fixture*`
+  // examples pipeline/test.mts reads.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": [],
+    "paths": { "@fixture/strings": ["../string-family-fixture/ast.d.ts"] }
+  },
+  "include": ["../examples/*string-family-fixture*.ts"]
+}

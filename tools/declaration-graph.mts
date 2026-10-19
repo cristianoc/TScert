@@ -23,7 +23,7 @@ import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, 
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
-import { familyTable, type FamilyArm, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry } from "./host-families.mts";
+import { compareTags, familyTable, type FamilyArm, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { allocatingMembers, guardEntry, hostFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
@@ -608,8 +608,8 @@ export function collectDeclarations(file: string, options: {
    * (HOST-FAMILIES.md, "Residuals"), when an imported module of the run is
    * lowered; otherwise it is computed over the modules the checked file
    * reaches and reported to `familySelected`. */
-  familySelection?: readonly number[];
-  familySelected?: (selection: readonly number[]) => void;
+  familySelection?: readonly TagValue[];
+  familySelected?: (selection: readonly TagValue[]) => void;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
@@ -750,7 +750,7 @@ export function collectDeclarations(file: string, options: {
     const familyDescription = hostFamily();
     // The promises of the listed node guards the run reads, by their
     // definitions' names: each the tag values of its entry.
-    const guardPromises = new Map<string, readonly number[]>();
+    const guardPromises = new Map<string, readonly TagValue[]>();
     const baseDeclarations = (d: InterfaceDeclaration): InterfaceDeclaration[] =>
       (d.heritageClauses ?? []).flatMap(clause => clause.types.map(base => {
         if (!ts.isIdentifier(base.expression) || base.typeArguments?.length)
@@ -775,7 +775,7 @@ export function collectDeclarations(file: string, options: {
       return null;
     };
     let family: { table: FamilyTable; members: Set<InterfaceDeclaration>; enums: readonly ts.EnumDeclaration[];
-      literals: (type: TypeNode) => readonly number[] | null; constants: readonly EnumMemberValue[] } | null = null;
+      literals: (type: TypeNode) => readonly TagValue[] | null; constants: readonly EnumMemberValue[] } | null = null;
     // The family's files: the root's and those its module statements name,
     // transitively, within the package.
     const familyFiles = (root: InterfaceDeclaration): SourceFile[] => {
@@ -817,13 +817,16 @@ export function collectDeclarations(file: string, options: {
       const enums = tagName && tagName.text === familyDescription.tag.constants.enum ? enumsOf(tagName) : null;
       if (!enums) throw Error(`the root ${root.name.text} states no ${familyDescription.tag.field} of the enum ${familyDescription.tag.constants.enum}`);
       const constants = enumMembersOf(enums, familyDescription.tag.constants.enum);
-      const values = [...new Set(constants.flatMap(c => typeof c.value === "number" ? [c.value] : []))].sort((a, b) => a - b);
+      // The tag values: the constants of the description's primitive.
+      const primitive = familyDescription.tag.primitive;
+      const values = [...new Set(constants.flatMap((c): TagValue[] => typeof c.value === primitive && c.value !== undefined ? [c.value] : []))]
+        .sort(compareTags);
       // The tag values a type node states, through aliases of the package.
-      const literals = (type: TypeNode, seen = new Set<Node>()): number[] | null => {
+      const literals = (type: TypeNode, seen = new Set<Node>()): TagValue[] | null => {
         if (ts.isParenthesizedTypeNode(type)) return literals(type.type, seen);
         if (ts.isUnionTypeNode(type)) {
           const parts = type.types.map(t => literals(t, seen));
-          return parts.every((p): p is number[] => p !== null) ? [...new Set(parts.flat())].sort((a, b) => a - b) : null;
+          return parts.every((p): p is TagValue[] => p !== null) ? [...new Set(parts.flat())].sort(compareTags) : null;
         }
         if (!ts.isTypeReferenceNode(type) || type.typeArguments?.length) return null;
         if (ts.isQualifiedName(type.typeName)) {
@@ -832,7 +835,7 @@ export function collectDeclarations(file: string, options: {
           if (!named || !named.every(e => enums.includes(e))) return null;
           const member = type.typeName.right.text;
           const value = constants.find(c => c.name === member)?.value;
-          return typeof value === "number" ? [value] : null;
+          return typeof value === primitive && value !== undefined ? [value] : null;
         }
         const target = (targetOf(checker, type.typeName)?.declarations ?? []).map(d => d.resolve());
         const [only] = target;
@@ -924,8 +927,8 @@ export function collectDeclarations(file: string, options: {
       visit(client);
       return files;
     };
-    const scanSelection = (files: readonly SourceFile[]): number[] => {
-      const found = new Set<number>();
+    const scanSelection = (files: readonly SourceFile[]): TagValue[] => {
+      const found = new Set<TagValue>();
       const constant = (expression: Node): void => {
         while (ts.isParenthesizedExpression(expression)) expression = expression.expression;
         if (!ts.isPropertyAccessExpression(expression) || !ts.isIdentifier(expression.name)) return;
@@ -935,7 +938,7 @@ export function collectDeclarations(file: string, options: {
         if (!ts.isEnumDeclaration(owner)) return;
         if (family ? !family.enums.includes(owner) : owner.name.text !== familyDescription.tag.constants.enum) return;
         const value = checker.getConstantValue(declaration);
-        if (typeof value === "number") found.add(value);
+        if (typeof value === familyDescription.tag.primitive && value !== undefined) found.add(value);
       };
       const seenAliases = new Set<Node>();
       const namedType = (type: TypeNode): void => {
@@ -977,7 +980,7 @@ export function collectDeclarations(file: string, options: {
         const constants = guardConstants(declaration, entry);
         for (const tag of entry.tags) {
           const value = constants.find(c => c.name === tag)?.value;
-          if (typeof value === "number") found.add(value);
+          if (value !== undefined) found.add(value);
         }
       };
       const visit = (node: Node): void => {
@@ -991,12 +994,12 @@ export function collectDeclarations(file: string, options: {
         node.forEachChild(visit);
       };
       files.forEach(visit);
-      return [...found].sort((a, b) => a - b);
+      return [...found].sort(compareTags);
     };
-    let selection: readonly number[] | null = options.familySelection ?? null;
-    const selected = (): readonly number[] => selection ??= scanSelection(closure());
-    let selectionSet: ReadonlySet<number> | null = null;
-    const familyOf = (node: InterfaceDeclaration): { table: FamilyTable; selection: ReadonlySet<number> } | null => {
+    let selection: readonly TagValue[] | null = options.familySelection ?? null;
+    const selected = (): readonly TagValue[] => selection ??= scanSelection(closure());
+    let selectionSet: ReadonlySet<TagValue> | null = null;
+    const familyOf = (node: InterfaceDeclaration): { table: FamilyTable; selection: ReadonlySet<TagValue> } | null => {
       const found = familyFrom(node);
       return found ? { table: found.table, selection: selectionSet ??= new Set(selected()) } : null;
     };
@@ -1433,7 +1436,7 @@ export function collectDeclarations(file: string, options: {
         promised = only && parts.length === 1 ? only : parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span };
       } else {
         const name = `guard.${entry.name}`;
-        guardPromises.set(name, values.filter((v): v is number => typeof v === "number"));
+        guardPromises.set(name, values);
         promised = { k: "reference", span, args: [], reference: { name, span, arguments: [],
           target: { module: `tscert/family/${familyDescription.marker}`, name, span: [0, 0] } } };
       }
@@ -3954,10 +3957,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   memberName: (name: ts.EntityName) => Identifier | null;
   /** A host family's table and the run's tag selection, where `node` is a
    * declaration of the family. */
-  family: (node: InterfaceDeclaration) => { table: FamilyTable; selection: ReadonlySet<number> } | null;
+  family: (node: InterfaceDeclaration) => { table: FamilyTable; selection: ReadonlySet<TagValue> } | null;
   /** The promises of the listed node guards the run reads, by their
    * definitions' names: each the tag values of its entry. */
-  guardPromises: ReadonlyMap<string, readonly number[]>;
+  guardPromises: ReadonlyMap<string, readonly TagValue[]>;
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -4138,7 +4141,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         if (declared.length !== 1 || declared.some(m => m.getText(source).trim() !== entry.text))
           throw Error(`${entry.owner}.${entry.name} is not declared as reviewed: ${entry.text}`);
       }
-      const tagTerm = (values: readonly number[]): TypeTerm => {
+      const tagTerm = (values: readonly TagValue[]): TypeTerm => {
         const parts = values.map(v => literalTerm(v, span));
         const [only] = parts;
         return only && parts.length === 1 ? only : { k: "union", parts, span };
@@ -4148,7 +4151,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // the tags `tags` the reading covers; a generic owner's tag parameter
       // is read at `value` where a synthetic shape reads it.
       type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
-      const readMember = (f: FlatMember, tags: readonly number[], value: number | null): Field => {
+      const readMember = (f: FlatMember, tags: readonly TagValue[], value: TagValue | null): Field => {
         const file = f.owner.getSourceFile();
         const names = (f.owner.typeParameters ?? []).map(p => p.name.text);
         const term = members(scopeOf(file, names), f.members, f.owner, [f.owner.getStart(file), f.owner.end], true);
@@ -4181,7 +4184,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // shape states optional, by its declaration or by a correction of the
       // shape's tag, is that shape's own optional member.
       const isMethod = (f: FlatMember): boolean => f.members.every(ts.isMethodSignatureDeclaration);
-      const shared = (f: FlatMember, tags: readonly number[]): boolean => isMethod(f) && !table.optional(f, tags);
+      const shared = (f: FlatMember, tags: readonly TagValue[]): boolean => isMethod(f) && !table.optional(f, tags);
       const methodBase = (f: FlatMember): TypeTerm => {
         const made = synthetic(`${f.owner.name.text}.${f.name}`);
         if (made.fresh) {
@@ -4253,7 +4256,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           for (const [name, values] of context.guardPromises) {
             const made = synthetic(name);
             if (!made.fresh) continue;
-            const armValues = (a: FamilyArm): readonly number[] =>
+            const armValues = (a: FamilyArm): readonly TagValue[] =>
               a.k === "declaration" ? table.tagsOf(a.declaration) : a.values;
             definitions.push({ declaration: made.id, parameters: [], bases: [],
               expression: union(arms.filter(a => armValues(a).some(v => values.includes(v)))) });

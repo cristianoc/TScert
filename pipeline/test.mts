@@ -12,6 +12,7 @@ import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcom
 import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { compilerApiFamily, useFamilyDescriptionForTests, useHostInstallationForTests } from "../tools/compiler-api.mts";
+import type { FamilyDescription } from "../tools/host-families.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
@@ -3330,6 +3331,67 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     useHostInstallationForTests(null);
   }
   process.stdout.write("declared-optional method: each shape's own optional member, the required one shared, its call refused\n");
+}
+{
+  // A second family (HOST-FAMILIES.md, "Instances"): a stand-in package of
+  // string-tagged units, read through a description whose tag is `type`,
+  // a string, with a guard table of its own, which activates over the
+  // stand-in's own modules. A guard of one tag and one through a helper of
+  // its tag narrow both edges, each call a membership test of the family's
+  // string constants; a guard whose answer depends on an option argument
+  // has no entry and narrows nothing.
+  const project = tsconfigOf(join(import.meta.dirname, "string-family-fixture-project"));
+  const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
+  const helper = "function isExpressionKind(type) {\n    return type === SyntaxKind.Name\n        || type === SyntaxKind.Call;\n}";
+  const strings: FamilyDescription = {
+    package: "string-family-fixture",
+    marker: "StringFixture",
+    root: { name: "Unit", form: "inheritance", text: "export interface Unit {" },
+    tag: { field: "type", primitive: "string", constants: { enum: "SyntaxKind" } },
+    table: [{ rule: "literal" }],
+    corrections: [],
+    guards: {
+      entryPoint: "./ast",
+      conditions: ["node", "import", "default"],
+      entryModule: "ast.js",
+      imports: {},
+      helpers: { "ast.js#isExpressionKind": helper },
+      guards: [
+        { name: "isName", kind: "node", domain: "Unit", tags: ["Name"], module: "ast.js", chain: ["ast.js"],
+          helpers: [], edges: [["SyntaxKind", "kinds.js"]],
+          text: "export function isName(node) {\n    return node.type === SyntaxKind.Name;\n}" },
+        { name: "isExpression", kind: "node", domain: "Unit", tags: ["Name", "Call"], module: "ast.js", chain: ["ast.js"],
+          helpers: ["ast.js#isExpressionKind"], edges: [["SyntaxKind", "kinds.js"]],
+          text: "export function isExpression(node) {\n    return isExpressionKind(node.type);\n}" },
+      ],
+      excluded: [["isNameLoosely", "two parameters"]],
+    },
+  };
+  useHostInstallationForTests(join(import.meta.dirname, "string-family-fixture"));
+  useFamilyDescriptionForTests(strings);
+  try {
+    const kept = check(example("string-family-fixture-guards"), project);
+    assert.equal(kept.status, "verified", JSON.stringify(kept));
+    const tagSets: string[] = [];
+    const visit = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(visit);
+      else if (typeof v === "object" && v !== null) {
+        if ("k" in v && v.k === "tagMember" && "tags" in v) tagSets.push(JSON.stringify(v.tags) ?? "");
+        Object.values(v).forEach(visit);
+      }
+    };
+    visit(JSON.parse(readFileSync(join(kept.artifacts, "fragment.json"), "utf8")));
+    assert.ok(tagSets.includes(JSON.stringify([{ a: "stringlit", v: "name" }, { a: "stringlit", v: "call" }]) ?? ""),
+      `isExpression's call tests the family's string constants: ${tagSets.join(" ")}`);
+    const file = example("invalid-string-family-fixture-loose");
+    const refused = check(file, project);
+    const at = readFileSync(file, "utf8").lastIndexOf("n.name");
+    assert.ok(refused.status === "unsupported" && refused.detail.includes(`at [${at},`), JSON.stringify(refused));
+  } finally {
+    useFamilyDescriptionForTests(null);
+    useHostInstallationForTests(null);
+  }
+  process.stdout.write("string-tagged family: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing\n");
 }
 {
   // Each correction of the compiler API's family (COMPILER-API.md,

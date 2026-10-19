@@ -36,6 +36,7 @@ design, not its progress.
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
+| [A guard's false edge over a tag-set arm](#guard-false-edge-tag-sets) | open | where `ts.isToken(node)` answers `false`, `node` holds no `Token` arm |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -336,6 +337,14 @@ node (`compiler-api-node-callback`, a gap). A re-exported guard narrows,
 and a local function of a guard's name and a guard's wrapper are ordinary
 functions (`compiler-api-guard-calls`, `invalid-compiler-api-guard-wrapper`,
 `invalid-compiler-api-guard-local`).
+
+<a id="guard-false-edge-tag-sets"></a>
+**A guard's false edge over a tag-set arm.** A family guard's `false` edge
+drops an object arm whose tag is one of the guard's tags, each tag decided
+alone ([a membership test](docs/PROGRAM-TYPING.md#a-membership-test)); an
+arm whose tag is a set of several values all in the guard's set, `Token`
+under `isToken`, stays, since no one tag excludes it. A slice of the whole
+set, its soundness proved over the set clauses, removes it.
 
 <a id="corrected-members"></a>
 **Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)
