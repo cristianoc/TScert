@@ -2303,32 +2303,50 @@ Four implementations discharge the tested-slot obligation:
 ```
 
 **Proposal, under review: a key found on an open object.** This paragraph is
-a design, not the current rules. A value that `typeof v === "object"`,
-`v !== null` and `"k" in v` admit (`in1`: `if (typeof v === "object" && v
-!== null && "k" in v) return v.k`) holds an object of an open record clause
-$`c`$, which states no key $`k`$ and no bound excluding it. The test
-$`\mathsf{hasKey}(k)`$ has no answer on $`c`$ (above), so the true branch keeps
-$`c`$, and the read $`v.k`$ that TypeScript then admits has no rule: the
+a design, not the current rules, and a change to the model: it adds an
+invariant to what `checkJson_safe`'s premise says about inputs. A value that
+`typeof v === "object"`, `v !== null` and `"k" in v` admit (`if (typeof v
+=== "object" && v !== null && "k" in v) return v.k`) holds an object of an
+open record clause $`c`$, stating no key $`k`$ and no bound excluding it. The
+test $`\mathsf{hasKey}(k)`$ has no answer on $`c`$ (above), the true branch
+keeps $`c`$, and the read $`v.k`$ TypeScript then admits has no rule: the
 producer stops at "field read on non-object" (4 `tools/` slices and 2
 drivers, 2026-10-19). The proposed rule reads it at $`\top`$:
 
 ```math
-\frac{\Gamma\vdash v:c\quad c\ \text{an open record clause}\quad k\notin\mathrm{objectProtoKeys}}
+\frac{\Gamma\vdash v:c\quad c\ \text{an open record clause}\quad k\ \text{a string key}\notin\mathrm{objectProtoKeys}\quad c\ \text{excludes host values}}
      {\Gamma\vdash v.k:\top}\ \textsf{read-unstated}
 ```
 
-Its soundness obligation is that a read of any string key of an object
-steps to a value: the calculus's lookup gives the own entry, else the one
-its `[[proto]]` chain gives, else `undefined` (`Tag.hasKey` asks only
-ownership; the read follows the chain), so the result is a value and
-$`\top`$ holds of it. The key test is then not needed for safety, only for
-TypeScript: the rule does not use the test's answer. The restriction to keys
-no `Object.prototype` member names keeps the existing correspondence between
-the model's read and JavaScript's (`objectProtoKeys`, the read at a key that
-may name an inherited member). For a host object the read's value is one of
-the undeclared fields the model leaves unknown, which $`\top`$ admits.
-Controls: the positive `in1` shape and a decoder over `JSON.parse`'s result;
-a read at `toString` after `"toString" in v` stays refused; a write at the
+Under the current premises its safety does not hold: the record meaning
+(`recT`) constrains the named fields only, so an unnamed key of an open
+record may hold a location outside the heap, which `HeapOk` does not cover;
+an unconstrained `[[proto]]` can leave the lookup without a result; and a
+host object's property is no inert data (its audited stable members aside,
+allocating getters are refused, and JavaScript's OrdinaryGet can run a
+getter, throw or diverge). The rule needs:
+
+- **a lookup invariant**, part of the premise on inputs and preserved by
+  every step: every object's field locations are valid heap locations and
+  its prototype links lead through such objects, so a lookup of any key
+  steps to a value (the own entry, then the chain's, then `undefined`);
+  with its preservation and the read rule proved in Lean;
+- **the plain-data caller assumption** extended to state it of the
+  properties a value's type leaves unstated and of the prototype chain a
+  read traverses: a checked class's instance meets it through its modeled
+  prototypes, and an arbitrary external instance does not by its shape;
+- **host values excluded** ($`c`$ excludes host values, the existing
+  $`\mathrm{excludesHost}`$) unless a reviewed contract grants the read;
+- **`objectProtoKeys` kept refused** (`__proto__`, `constructor`,
+  `toString`, …), and symbol keys outside the rule until an explicit
+  extension states them;
+- **array own-key exclusions preserved**: reading at $`\top`$ grants no
+  ownership and no write, so an array's excluded keys stay excluded.
+
+Reading at $`\top`$, and not depending on the `in` test's answer, are sound
+once the lookup is justified. Controls: the positive shape above and a
+decoder over `JSON.parse`'s result; a read at `toString` after
+`"toString" in v`, a host value and a symbol key stay refused; a write at the
 key is not admitted by this rule.
 
 For the current primitive profile, null filtering gives:

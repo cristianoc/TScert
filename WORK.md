@@ -230,7 +230,12 @@ reading `undefined` beyond an exact length.
 
 <a id="remaining-source-forms"></a>
 **Remaining source forms.** A method call on a union of primitives,
-which needs one callee contract its receiver meets. A source binder used both
+which needs one callee contract its receiver meets. An optional call of a
+method on any object (`f().m?.(a)`, `optional-method-call-object-refused`):
+saving the receiver once, `let r = o; let m = r.m` then
+`optional(m, callWithReceiver(m, r, a))`, admits every object and needs no
+analysis of whether a second read of `o` is stable; the Fragment has no
+expression binding a hidden name, so the lowering needs one. A source binder used both
 as a pack and as an array value (`...args: T`, `args: T`): a binder whose instances are
 arrays or tuples of required positions, its pack meaning that tuple contract's lists, so an
 entry collects the fresh store at it and a spread of its value gives a list in the pack. Explicit type arguments on an element call,
