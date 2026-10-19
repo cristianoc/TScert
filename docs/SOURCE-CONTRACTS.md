@@ -249,7 +249,8 @@ declaration of the project is refused (`invalid-fake-process-argv`); a mixed dec
 `invalid-node-console-unreviewed`). So is every global function: its implementation is outside what is verified,
 wherever its declaration lies (the standard library, an installed package,
 a declaration file of the project), so each overload a call resolves to is
-one an entry lists with its exact text, an augmentation's included, or the
+one an entry lists with its text, normalized as a module entry's
+([library modules](#library-modules)), an augmentation's included, or the
 call is refused (`node-clear-timeout`; `invalid-parse-int-overload`, run
 under Node; `invalid-node-global-unreviewed`, `invalid-host-global-unreviewed`,
 `invalid-host-global-changed`). The checked file's own ambient declarations
@@ -1859,9 +1860,12 @@ The entries, each with the code its restriction keeps from running:
   Node).
 - Node's `structuredClone(v)` reads every own enumerable property of `v` by
   [[Get]], so a getter runs, and builds a copy of data properties whose
-  prototypes are `Object.prototype`. At a `JsonValue`, whose members are
-  data, no code runs: $`(\mathsf{JsonValue})\Rightarrow\mathsf{JsonValue}`$
-  within the empty footprint (`node-structured-clone`). A record typed by its
+  prototypes are `Object.prototype`. A `JsonValue` array may own enumerable
+  properties beside its elements, which it reads and copies too:
+  $`(\mathsf{JsonValue})\Rightarrow\mathsf{JsonValue}`$, stating no effect
+  (`node-structured-clone`; `invalid-node-structured-clone-preserving`, run
+  under Node: such a getter shrinks a mapped array). `JSON.stringify` of that
+  array serializes its elements alone (run under Node). A record typed by its
   fields is no `JsonValue` and is refused (`invalid-node-structured-clone-record`,
   run under Node: the getter runs, the copy holds a data property).
 - `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
@@ -2122,8 +2126,10 @@ is read through the reviewed overlay of library modules
 (`library-modules.mts`) where an entry lists it, and otherwise as an
 imported value ([imported values](#imported-ambient-and-global-values)).
 An entry names one overload of the function's declaration in Node's
-declarations, with exactly the text it was reviewed against (white space
-collapsed), and states the signature the host meets at the arguments it
+declarations, with the text it was reviewed against, its string and template
+literals verbatim and the text between them normalized (white space
+collapsed, none after `(` or before `)`, a comma before `)` dropped), and
+states the signature the host meets at the arguments it
 admits, $`(\vec P)\Rightarrow R`$. With $`\Omega_m`$ the overlay, $`f`$
 imported from module $`\mu`$ and $`O_f`$ the overloads TypeScript binds it to:
 
@@ -2242,11 +2248,21 @@ unrestricted in its effect unless its entry states one. The entries:
   declared `string` omits (`invalid-node-spawn-sync-stdout`, run under
   Node); `stdio` naming no pipe leaves it `null` and is outside the stated
   call (`invalid-node-spawn-sync-stdio`, run under Node).
-- `readdirSync(path, { withFileTypes: true })` with a string path returns a
-  fresh array of entries, each owning its `name` and `parentPath`, writable
-  strings, its seven `is…` tests on `Dirent.prototype`, each
-  $`()\Rightarrow\mathtt{boolean}`$ within the empty footprint; a path it
-  cannot read throws, and the call states no effect (`node-readdir-dirents`).
+- `readdirSync(path, o)` with a string path and options
+  $`o=\{\mathtt{withFileTypes}\colon\mathtt{true};\ \mathtt{encoding}^?\colon\texttt{"utf8"}\mid\mathtt{undefined};\ \mathtt{recursive}^?\colon\mathtt{boolean}\mid\mathtt{undefined}\}`$,
+  the three properties Node reads, returns a fresh array of entries, each
+  owning its `name` and `parentPath`, writable strings, and seven `is…` tests,
+  each $`()\Rightarrow\mathtt{boolean}`$ within the empty footprint; a path
+  it cannot read throws, and the call states no effect
+  (`node-readdir-dirents`). `encoding: "buffer"` names the entries by
+  Buffers, and options of a type stating no `encoding` may hold it
+  (`invalid-node-readdir-buffer-encoding`, `invalid-node-readdir-options-alias`,
+  run under Node). An entry is a `Dirent`, whose tests compare its own type
+  field, or, where the directory reports an unknown type, a `DirentFromStats`,
+  whose tests call those of the `Stats` it holds under a symbol, which test
+  that object's `mode`. The empty footprint assumes `Dirent.prototype`'s and
+  `Stats.prototype`'s tests keep their standard identities
+  ([trust surface](DESIGN.md#trust-surface)).
   The declared `Dirent.path` is absent under Node 25.2.1, so the entry states
   none (`invalid-node-readdir-dirent-path`, run under Node), and a closure
   whose parameter TypeScript types as `Dirent` is refused.

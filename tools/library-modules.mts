@@ -18,7 +18,7 @@ export type ModuleEntry = {
   module: string;
   /** The exported function. */
   name: string;
-  /** The overload, exactly as reviewed, its white space collapsed. */
+  /** The overload as reviewed, in `reviewedText`'s form. */
   signature: string;
   stated: Stated;
   /** The effect the stated signature states, where reviewed: a call at it
@@ -218,19 +218,27 @@ export const modulesOverlay: readonly ModuleEntry[] = [
         field("stdout", union(atom("string"), atom("undefined")), false),
         field("stderr", union(atom("string"), atom("undefined")), false),
         field("error", atom("unknown"), true)] } } },
-  // `readdirSync(path, { withFileTypes: true })` with a string path reads the
-  // directory and returns a fresh array of `Dirent`s, one per entry, each
-  // owning its `name` and `parentPath`, writable strings, its seven `is…`
-  // tests on `Dirent.prototype`, which answer from the entry's own type
-  // without running code: the empty footprint. The declared `path` is absent
-  // (Node 25.2.1: `"path" in entry` is false), so the element states none
-  // and a value read at the declared `Dirent` is refused. A path it cannot read
-  // throws. The options' other properties are read, which an object of
-  // another type may hold as accessors: the call states no effect.
+  // `readdirSync(path, options)` with a string path and options stating the
+  // three properties Node reads, `withFileTypes: true`, `encoding` "utf8" or
+  // absent (`"buffer"` names the entries by Buffers) and `recursive`, reads
+  // the directory and returns a fresh array of entries, each owning its
+  // `name` and `parentPath`, writable strings. An entry is a `Dirent`, whose
+  // seven `is…` tests on `Dirent.prototype` compare its own type field, or,
+  // where the directory reports an unknown type, a `DirentFromStats`, whose
+  // tests call those of the `Stats` it holds under a symbol, which test that
+  // object's `mode` (Node 25.2.1). Neither runs the client's code while those
+  // prototypes' tests keep their standard identities, a host assumption: the
+  // empty footprint. The declared `path` is absent (`"path" in entry` is
+  // false), so the element states none and a value read at the declared
+  // `Dirent` is refused. A path it cannot read throws. The options are
+  // read, which an object of another type may hold as accessors: the call
+  // states no effect.
   { module: "fs", name: "readdirSync",
     signature: "export function readdirSync(path: PathLike, options: ObjectEncodingOptions & { withFileTypes: true; recursive?: boolean | undefined; }): Dirent[];",
     stated: { binders: [], params: [atom("string"),
-      { k: "object", stringIndex: null, calls: [], span: at, fields: [field("withFileTypes", yes(), false)] }],
+      { k: "object", stringIndex: null, calls: [], span: at, fields: [field("withFileTypes", yes(), false),
+        field("encoding", union(text("utf8"), atom("undefined")), true),
+        field("recursive", union(atom("boolean"), atom("undefined")), true)] }],
       result: { k: "array", presence: "readable", readonly: false, span: at, element: { k: "object", stringIndex: null,
         calls: [], span: at, fields: [{ ...field("name", atom("string"), false), readonly: false },
           { ...field("parentPath", atom("string"), false), readonly: false },
@@ -299,10 +307,13 @@ export const modulesOverlay: readonly ModuleEntry[] = [
     stated: { binders: [], params: [atom("string"), atom("string")], result: atom("string") } },
 ];
 
-/** A declaration's text as an entry spells it: white space collapsed, none
+/** A declaration's text as an entry spells it: its string and template
+ * literals verbatim, the text between them with white space collapsed, none
  * after `(` or before `)`, and no comma before `)`. */
 export function reviewedText(declaration: string): string {
-  return declaration.replace(/\s+/g, " ").replace(/,\s*\)/g, ")").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")").trim();
+  const parts = declaration.split(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/);
+  return parts.map((part, i) => i % 2 === 1 ? part
+    : part.replace(/\s+/g, " ").replace(/,\s*\)/g, ")").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")")).join("").trim();
 }
 
 /** The entries of an import from `specifier` of `name`: `node:fs` and `fs` name one module. */

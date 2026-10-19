@@ -203,6 +203,19 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runImporting("invalid-node-structured-clone-record",
     "(() => { let ran = 0; const o = { get a() { ran++; return 1; } }; const c = copy(o); return [ran, typeof Object.getOwnPropertyDescriptor(c, \"a\").get].join(); })()"),
     "1,undefined", "invalid-node-structured-clone-record: the getter runs and the copy holds a data property");
+  assert.equal(runImporting("invalid-node-structured-clone-preserving",
+    "(() => { const xs = [1, 2]; const v = [1]; Object.defineProperty(v, \"extra\", { enumerable: true, get() { xs.pop(); return 0; } }); return 1 in rows(xs, v); })()"),
+    false, "invalid-node-structured-clone-preserving: a getter beside a JSON array's elements shrinks the mapped array");
+  // `JSON.stringify` of that array serializes its elements alone: the getter
+  // does not run.
+  assert.equal(runExample("node-structured-clone",
+    "(() => { let ran = 0; const v = [1]; Object.defineProperty(v, \"extra\", { enumerable: true, get() { ran++; return 0; } }); return JSON.stringify(v) + ran; })()"),
+    "[1]0", "JSON.stringify of a JSON array reads its elements only");
+  assert.equal(runImporting("invalid-node-readdir-buffer-encoding", "typeof names(\".\")[0]"), "object",
+    "invalid-node-readdir-buffer-encoding: a Buffer name");
+  assert.equal(runImporting("invalid-node-readdir-options-alias",
+    "typeof names(\".\", { withFileTypes: true, encoding: \"buffer\" })[0]"), "object",
+    "invalid-node-readdir-options-alias: a Buffer name through options typed by withFileTypes alone");
   assert.equal(runImporting("invalid-node-spawn-sync-stdout", "output(\"tscert-no-such-command\") === undefined"), true,
     "invalid-node-spawn-sync-stdout: a command that cannot be spawned leaves stdout undefined");
   assert.equal(runImporting("invalid-node-spawn-sync-stdio", "output(\"true\") === null"), true,

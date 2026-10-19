@@ -6,8 +6,9 @@
  * not say and soundness needs:
  *
  * - which signatures exist: a global's call, construct, method or property
- *   signature is read only when an entry lists it, with exactly the text it
- *   was reviewed against, so a changed library is refused and reviewed again;
+ *   signature is read only when an entry lists it, with the text it was
+ *   reviewed against (a global function's in `reviewedText`'s form), so a
+ *   changed library is refused and reviewed again;
  * - where the host runs code of the client's on an argument the declaration
  *   admits (`String` of an object calls its `toString`), the parameter the
  *   reader states instead: the part of the declared type on which it runs
@@ -43,7 +44,8 @@ export type GlobalEntry = {
   global: string;
   /** The member read, `Symbol.for`; absent for a call of the global itself. */
   member?: string;
-  /** The declaration, exactly as reviewed. */
+  /** The declaration as reviewed: a global function's in `reviewedText`'s
+   * form, any other's exactly. */
   signature: string;
   /** A parameter some declared arguments of which the host runs the client's
    * code on: it is stated as `safe`, the part on which it runs none. */
@@ -448,13 +450,14 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // Node's global `structuredClone(value)` serializes its argument, reading
   // every own enumerable property by [[Get]], so a getter runs, and builds a
   // fresh copy of data properties, its prototypes `Object.prototype`, its
-  // symbol keys dropped; a function throws a `DataCloneError`. At a
-  // `JsonValue`, whose members are data, no code runs and the copy is a
-  // `JsonValue`: the empty footprint.
+  // symbol keys dropped; a function throws a `DataCloneError`. A `JsonValue`
+  // array may own enumerable properties beside its elements, which it reads
+  // and copies too (Node 25.2.1: a getter there runs): no effect is stated.
+  // The copy of a `JsonValue` is one, an array's extra properties included.
   ...["function structuredClone<T>(value: T, options?: { transfer?: Transferable[] }): T;",
     "function structuredClone<T>(value: T, transfer?: { transfer: ReadonlyArray<import(\"worker_threads\").TransferListItem> }): T;"].map(
-    (signature): GlobalEntry => ({ host: transparent("the parameter is JsonValue, whose traversal reaches no host object"),
-      origin: node, global: "structuredClone", signature, effect: emptyEffect, definitions: [jsonValueDefinition],
+    (signature): GlobalEntry => ({ host: contract,
+      origin: node, global: "structuredClone", signature, definitions: [jsonValueDefinition],
       stated: { binders: [], params: [jsonValue], result: jsonValue } })),
   // `Math.ceil(x)` of a number, a primitive: no conversion code runs.
   { host: contract, global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },

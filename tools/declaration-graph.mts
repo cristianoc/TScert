@@ -2989,8 +2989,7 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
   }
   const calls = [...chosen].flatMap(([overload, calls]): FunctionTerm[] => {
     const at = spanOf(overload);
-    // The declaration's text with its white space collapsed, as an entry
-    // spells it.
+    // The declaration's text normalized as an entry spells it.
     const text = reviewedText(overload.getText(overload.getSourceFile()));
     const entry = globalEntry(context.overlay, name, undefined, text,
       declarationOrigin(overload.getSourceFile(), context.libraryFile));
