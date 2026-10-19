@@ -82,8 +82,8 @@ const searchDepth = 12;
  * error naming the step and the limit, never a verdict. */
 const stepTimeoutMs = 60_000;
 /** A step run: its exit code, its output, and what it reports on failure. */
-type Ran = { code: number; out: string; detail: string };
-function run(command: string, args: string[]): Ran {
+export type Ran = { code: number; out: string; detail: string };
+export function run(command: string, args: string[]): Ran {
   const p = spawnSync(command, args, {
     cwd: repo,
     timeout: stepTimeoutMs,
@@ -97,10 +97,14 @@ function run(command: string, args: string[]): Ran {
     throw Error(
       `timeout: ${step} did not finish within ${stepTimeoutMs / 1000} s`,
     );
-  if (p.error || p.signal || p.status === null)
-    throw Error(
-      `${step}: ${p.error?.message ?? p.signal ?? "no exit status"}`,
-    );
+  // A step killed by a signal (the verifier aborting on a stack overflow)
+  // or that did not start is a failure of the tool, no verdict, reported
+  // with the first line it wrote.
+  if (p.error || p.signal || p.status === null) {
+    const said = (p.stderr ? Buffer.from(p.stderr).toString("utf8") : "").trim().split("\n")[0] ?? "";
+    throw Error(`tool failure: ${step} ${p.signal ? `was killed by ${p.signal}` : "did not run"}: ` +
+      `${p.error?.message ?? (said || "no exit status")}`);
+  }
   // Every wire document a step prints is valid UTF-8 (`wireText`).
   const out = wireText(p.stdout, step);
   const err = wireText(p.stderr, step);

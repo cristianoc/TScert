@@ -566,22 +566,40 @@ one for an increment), and the slot of the old value. -/
     let (rightIndex, _) ← executionSaved scope Γ right
     emitAt source (.merge [] (.var leftIndex) (.var rightIndex)) (.bind next) Γ A (scope := scope)
 
+/-- The newest origin recorded for `name`, with the origins older than it,
+the bindings its own names were read in when it was recorded, and the names
+the newer entries and this one bind. -/
+private def originEntry (name : String) (newer : List String := []) :
+    List (String × Fragment.Expr) → Option (Fragment.Expr × List (String × Fragment.Expr) × List String)
+  | [] => none
+  | (n, origin) :: older =>
+    if n == name then some (origin, older, n :: newer) else originEntry name (n :: newer) older
+
 /-- Predicate metadata recovers immutable aliases and reads whose cells have
-not been invalidated by an intervening effect. -/
+not been invalidated by an intervening effect. A binding's origin names the
+bindings older than it, so it is expanded in those alone, a shorter list at
+each step. The expansion replaces the binding only where each name it
+mentions still denotes the binding it was recorded with: bound once in the
+scope, and by no entry from the binding's own to the newest. One name binds
+every optional chain's saved receiver (`Fragment.chainName`), and a mention of
+it recorded for an inner chain does not denote an outer chain's binding. -/
 @[nospecialize] private partial def executionPredicate (scope : List (ScopeBinding Tree))
     (origins : List (String × Fragment.Expr)) (e : Fragment.Expr) : Fragment.Expr :=
   match e with
   | .var p name =>
-    match origins.lookup name with
-    | some (.var _ original) =>
-      if original != name && (valueSlot scope original).isSome then
-        .var p original
-      else e
-    | some predicate@(.not ..) | some predicate@(.shapeTest ..)
-      | some predicate@(.singletonTest ..) | some predicate@(.arith ..)
-      | some predicate@(.inKeys ..) | some predicate@(.read ..) =>
-        executionPredicate scope origins predicate
-    | _ => e
+    let expanded := match originEntry name [] origins with
+      | some (.var _ original, _, newer) =>
+        if original != name && (valueSlot scope original).isSome then some (Fragment.Expr.var p original, newer)
+        else none
+      | some (predicate@(.not ..), older, newer) | some (predicate@(.shapeTest ..), older, newer)
+        | some (predicate@(.singletonTest ..), older, newer) | some (predicate@(.arith ..), older, newer)
+        | some (predicate@(.inKeys ..), older, newer) | some (predicate@(.read ..), older, newer) =>
+          some (executionPredicate scope older predicate, newer)
+      | _ => none
+    match expanded with
+    | some (x, newer) =>
+      if x.freeNames.all fun n => !newer.contains n && ((names scope).filter (· == n)).length ≤ 1 then x else e
+    | none => e
   | .not p e => .not p (executionPredicate scope origins e)
   | .shapeTest p tag eq e => .shapeTest p tag eq (executionPredicate scope origins e)
   | .singletonTest p tag eq side l r => .singletonTest p tag eq side

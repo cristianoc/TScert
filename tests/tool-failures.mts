@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { messageOf } from "../tools/thrown.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
+import { run as runStep } from "../pipeline/verify-source.mts";
 
 const dir = runDirectory("tscert-tool-failures-");
 const config = join(dir, "tsconfig.json");
@@ -108,3 +109,9 @@ assert.notEqual(answered.status, 0, "unchecked.mts after a panic its retry answe
 assert.match(answered.stdout, /\[tool failure\]  Checker\.getTypeAtLocation panicked on \d+ nodes from this one, asked again in halves/);
 assert.match(answered.stdout, / 0 `uninspected`/);
 process.stdout.write("unchecked.mts: a panic is reported where it was asked, retried or not, and a stack exhaustion ends it\n");
+
+// A step killed by a signal, as the verifier is when it aborts on a stack
+// overflow, is a tool failure naming the signal and what the step wrote.
+assert.throws(() => runStep("/bin/sh", ["-c", "echo 'Stack overflow detected. Aborting.' >&2; kill -ABRT $$"]),
+  /^Error: tool failure: sh was killed by SIGABRT: Stack overflow detected\. Aborting\.$/);
+process.stdout.write("a step killed by a signal: a tool failure naming it\n");

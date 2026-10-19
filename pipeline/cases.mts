@@ -1767,6 +1767,7 @@ export const cases: Case[] = [
   positive("construct-signature-types", "an interface of construct signatures only is a class value meeting each, read as such a type literal is"),
   positive("callable-type-literals", "a type literal with call signatures is a callable where a claim states it, as in a declaration"),
   positive("optional-chaining", "`?.` on a field, an element, a call and a method: the receiver once, `undefined` where it is nullish, the rest of the chain skipped with it; a second `?.` in a chain; `null?.` is `undefined`"),
+  positive("optional-chain-element-receiver", "a chain of two `?.` links over an element read, returned and tested: the outer link's receiver is no alias of the inner's, though both are saved under one name, and lowering terminates"),
   negative("invalid-optional-chain", "a chain is `undefined` where its receiver is nullish, so it is not the skipped link's type"),
   positive("void-and-comma", "`void e` and the comma operator evaluate the left operand for its effects"),
   negative("invalid-void-result", "`void e` is undefined, not the operand's value"),
