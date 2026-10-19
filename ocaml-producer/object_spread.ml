@@ -25,7 +25,9 @@ let numeric_name = function Name s -> canonical_numeric s | Key _ -> false
    than a string, a record's fields otherwise, a class value's static fields,
    and no key a string's copy gives. *)
 let string_key (f:Semantic.field) = match f.name with Name _ -> true | Key _ -> false
-let rec source_alternatives ?(target=false) declarations seen t = match t with
+let rec source_alternatives ?(target=false) ?(bound=fun _ -> None) declarations seen t =
+  let recur = source_alternatives ~target ~bound declarations in
+  match t with
   | Atoms atoms -> List.concat_map (function
       | Nul | Undef | True | False | Num | NumLit _ | Bigint | BigintLit _ | Symbol ->
         [empty_alternative]
@@ -45,7 +47,7 @@ let rec source_alternatives ?(target=false) declarations seen t = match t with
             (List.find_opt (fun (i:index_signature) -> i.keys=Symbols) indexes);numeric=None}]
       | Named (id,args) ->
         if List.mem id seen then Proposal_diagnostics.unsupported "unguarded spread cycle";
-        source_alternatives ~target declarations (id::seen) (definition declarations id args)
+        recur (id::seen) (definition declarations id args)
       (* A string's own enumerable properties are its code units at its
          index keys, which no record states, and a `Function`'s whatever was
          assigned to it: the copy's type states none of their keys. *)
@@ -72,8 +74,23 @@ let rec source_alternatives ?(target=false) declarations seen t = match t with
       | Shape _ -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; \
           a function with an index signature owns what its type does not state"
       | _ -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment") atoms
-  | Union ts -> List.concat_map (source_alternatives ~target declarations seen) ts
-  | Meet _ | Rigid _ -> Proposal_diagnostics.unsupported "a spread of an intersection or a type parameter is outside the fragment"
+  | Union ts -> List.concat_map (recur seen) ts
+  (* A value of an intersection of records is the one object its operands
+     describe, as Lean meets them; one of other operands is outside the
+     fragment. *)
+  | Meet (t,ts) ->
+    let expand t = match t with
+      | Atoms [Named (id,args)] when not (List.mem id seen) -> definition declarations id args
+      | t -> t in
+    (match List.fold_left (fun acc part -> Option.bind acc (fun a -> meet_objects a (expand part)))
+             (Some (expand t)) ts with
+     | Some merged -> recur seen merged
+     | None -> Proposal_diagnostics.unsupported "a spread of an intersection of other than disjoint records is outside the fragment")
+  (* A value of a type parameter is one of its bound, whose own enumerable
+     properties it copies: the copy is typed at the bound's fields. *)
+  | Rigid r -> (match bound r with
+    | Some b -> recur seen b
+    | None -> Proposal_diagnostics.unsupported "a spread of a type parameter without an object bound is outside the fragment")
 
 (* A source's properties defined over an alternative's: a key the source
    surely has takes its type; one the alternative has keeps its own where the

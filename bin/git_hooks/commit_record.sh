@@ -39,7 +39,25 @@ if [[ "$outcome" != "no-behaviour-change" && -z "$(value Trust)" ]]; then
     problems+=("no 'Trust:' trailer (write 'Trust: none' when nothing new is trusted)")
 fi
 
+known='^(Units|Outcome|Parts|Lean|Wire|Trust|Depends|Measured|Tests|Co-Authored-By)$'
+while IFS= read -r key; do
+    [[ -z "$key" ]] && continue
+    if ! [[ "$key" =~ $known ]]; then
+        problems+=("unknown trailer '$key:' (the trailers are Units, Outcome, Parts, Lean, Wire, Trust, Depends, Measured, Tests, Co-Authored-By)")
+    fi
+done < <(printf '%s\n' "$trailers" | sed -n 's/^\([^:]*\): .*/\1/p')
+if [[ "$(value Units)" == "none" ]]; then
+    problems+=("'Units: none': leave the Units trailer out when no unit is named")
+fi
+
 body=$(grep -v '^#' "$message_file")
+subject=$(printf '%s\n' "$body" | sed -n '1p')
+if (( ${#subject} > 100 )); then
+    problems+=("the subject line has ${#subject} characters; keep it to 100 (the change in a short sentence)")
+fi
+while IFS= read -r heading; do
+    problems+=("a change heading must close on its own line with '):' — '$heading' wraps")
+done < <(printf '%s\n' "$body" | grep -E '^(Rule|Semantics|Definition|Typing|Lowering|Refusal|Trust|Wire|Docs|Tooling|Example|Counterexample) (added|modified|removed) \(' | grep -v '):')
 if ! printf '%s\n' "$body" | grep -q '^Why:'; then
     problems+=("no 'Why:' section (the problem this commit addresses)")
 fi

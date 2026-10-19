@@ -386,7 +386,14 @@ allocation from parts, copying the value's own enumerable data properties
 when it is evaluated
 ([allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)): a class
 instance's methods are its prototype's and are not copied, nor is an
-`Error`'s non-enumerable `message`. The model's copy takes string keys
+`Error`'s non-enumerable `message`. A value of a binder bounded by a record
+(`B extends {…}`) is copied at its bound, the meet row it is read as being
+below the bound's clauses, and a value of an intersection of records at the
+one record they describe; the copy is a record of those fields, no value of
+the binder, since a binder narrower than its bound may fix a field the
+literal replaces: at `B := { name: "a"; size: number }`, `{ ...b, name: "x" }`
+meets the bound and not `B` (`invalid-spread-binder-result`, executed under
+Node by `node-runs.mts`). The model's copy takes string keys
 only, where JavaScript's also takes an own enumerable symbol-keyed property:
 a spread of a value whose type states a symbol-keyed field is refused, the
 copy's type states symbol keys only as the source's type says JavaScript's

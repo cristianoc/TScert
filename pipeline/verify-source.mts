@@ -265,7 +265,7 @@ function eligibleReads(declarations: unknown, units: Map<string, unknown[]>, cla
   });
 }
 /** Propose a document's claims, its eligible reads qualified. */
-function propose(ast: string, flow: string, reads: QualifiedRead[], qualifiedPath: string): ReturnType<typeof run> {
+function propose(ast: string, flow: string, reads: QualifiedRead[], qualifiedPath: string): Ran {
   writeFileSync(qualifiedPath, JSON.stringify(reads.map(({ local, declaration, footprint, onThrow }) =>
     ({ local, declaration, footprint, onThrow }))));
   return run(producerExecutable, reads.length ? [ast, flow, qualifiedPath] : [ast, flow]);
@@ -437,7 +437,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
     const claims = join(artifacts, "claims.json"),
       evidence = join(artifacts, "evidence.json");
     const budget = subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)];
-    let produced: ReturnType<typeof run>;
+    let produced: Ran;
     for (;;) {
       phase = "proposal";
       const { claims: moduleClaims, readsOf, reads } = modules.claims(field(parsedData, "declarations"), withdrawn);

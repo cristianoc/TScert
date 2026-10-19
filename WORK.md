@@ -40,7 +40,7 @@ design, not its progress.
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
 | [Node's process](#nodes-process) | open: the environment write a located gap; events known only as strings refused | a write of `process.env` through a receiver-bound host setter over shared state preserving every alias's view; signals reached through iteration proven admitted |
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
-| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 101 of 341 functions verify in `tools/` (2026-10-19, the missing library globals reviewed), 24 of 24 in `dev/`, 8 of 13 in `tests/` and 2 of 35 in `pipeline/` (2026-10-19, `node:assert/strict` read, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 109 of 350 functions verify in `tools/`, 24 of 24 in `dev/`, 9 of 13 in `tests/` and 3 of 37 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -140,6 +140,16 @@ Left open:
 array from another beyond fresh storage, so that `pop` on an array literal
 the callback allocated is admitted; and a declaration's fresh result, which
 only closures state.
+
+**Field facts across calls** are deferred, measured (2026-10-19): a call
+step keeps no current-content fact, and keeping those a call's checked
+footprint leaves true would move the evidence search of 7 functions of the
+front end's census past the fact's loss at an empty-footprint call, none
+more at a `value: keep` footprint, and 3 more only where every step keeps
+them; search completes for 2 (`completes`, `heapAtom`), and the others stop
+at a later obligation. The measurement kept facts in search's untrusted step
+choice and in the producer's proposals, with the checker unchanged; no
+function was verified by it.
 
 <a id="keys-known-only-at-run-time"></a>
 **Keys known only at run time.** A write at a string key known only at run
@@ -521,11 +531,21 @@ in search; of the drivers' 48, 4 and 8. By the judgment that fails:
   recognition;
 - a read of a key `in` found on an open object (4, and 2 drivers): the
   [proposal](docs/PROGRAM-TYPING.md) under review;
-- a spread of a narrowed union member or a type parameter (5);
+- past their spreads of a bounded binder and of an intersection of records
+  (5, 2026-10-19): `promisedBinders` returns the copy at its binder `B`,
+  refused on principle, a binder narrower than its bound fixing a field the
+  copy replaces (`invalid-spread-binder-result`), and `promisedMethods` calls it; the
+  `hostBrands` family reads `b.bound` through the intersection
+  `SourceTypeParameter<TypeTerm> & { default; span }` after `b.bound &&`,
+  and maps through callbacks calling its `brand` and `fail` parameters,
+  whose effects no claim states, so `map`'s results admit holes;
 - `Number` both called and read through its members, a callable with
   readonly members no clause states (4), and the enum helpers past it (3);
-- a call through a union of arrows none of which all arguments call (2, and
-  2 drivers); key-adding writes through a parameter (`gate.bindings`,
+- `reduce` without an initial value (2 drivers, `refusedByName` and
+  `refusedByTypeScript`): the prototype contract states one signature per
+  member, `reduce<U>(callback, initial)`; `runsCode` and `selfConstructs`,
+  past their parameter's closure default, stop at `forEachChild` and a
+  guarded node's `text` (2026-10-19); key-adding writes through a parameter (`gate.bindings`,
   `process.env`: 2, and 2 drivers); reads at keys an inherited member may
   name (2); singletons.
 
@@ -537,21 +557,22 @@ evidence search covers `decodeTerm`, which `decodeNode` reads, and takes
 slices run at once exceed it (2026-10-18). `control-flow.mts` verifies
 whole.
 
-Of the 35 functions of `pipeline/*.mts`, `keepRunDirectories` and
-`typeScriptErrors` verify; of the 13 of `tests/`, `docs.mts`'s six and
+Of the 37 functions of `pipeline/*.mts`, `keepRunDirectories`, `isJsonArray`
+and `typeScriptErrors` verify; of the 13 of `tests/`, `docs.mts`'s seven and
 `rule-inventory.mts`'s `withoutBlockComments` and `alternatives`
 (2026-10-19, the slices of `tests/` with `pipeline/*.mts` beside them).
 Their first blockers, by the number of slices each stops:
 
-- Node functions outside the reviewed overlay of library modules, whose
-  declarations reach `Buffer` and, through `BufferConstructor`, a
-  conditional type over a signature's own binder (`ImplicitArrayBuffer`),
-  computed only at an instance (5): `spawnSync` and `readdirSync` with
-  `withFileTypes`;
-- written applications: `Pick` over a generic interface (3) and
-  `ReturnType<typeof run>` (2);
-- the global `setTimeout` (4), a generic function merged with a namespace;
-- Node's global `structuredClone` (3), a generic function;
+- Node's `Buffer`, through `readFileSync` and `spawnSync` without an
+  encoding: `ArrayBufferLike`, an indexed access into a named type (5), and
+  `Buffer<ImplicitArrayBuffer<…>>`, a conditional type over a signature's own
+  binder computed only at an instance (2);
+- the worker's socket, `Duplex` a member the checker synthesises (4), and
+  `createHash`'s `TransformOptions` (1);
+- a member read after `assert` narrowed a union (the producer's "missing
+  field", 2, and `process.stdout`, outside the reviewed globals, 1);
+- the verifier's search exceeding the stack (`checkOverloads`), cause
+  unknown;
 - a key-adding write to `process.env` (2);
 - `import.meta`, `new Array(n)`, a mapped type over `Readonly` and a record at
   an index signature (1 each);

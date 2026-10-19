@@ -72,6 +72,12 @@ open S
              | Json.Error message when inputs <> [] && String.starts_with ~prefix:"unbound name " message ->
                Proposal_diagnostics.unsupported ("parameter default may only read initialized earlier parameters and captures: " ^ message))
             in
+          (* A closure default is built at the function type the parameter
+             states: the binding holds that type, whichever value it took,
+             and Lean checks the closure against it. *)
+          let default=match expression.node,(try declared_head declarations [] present with Json.Error _ -> present) with
+            | Lambda _,Atoms [Shape {calls=_::_;elements=None;_}] -> present
+            | _ -> default in
           let after=run_execution env fallback in
           let after=if present=Atoms [] then after else join env env after in
           run after (put values result (union present default)) next
@@ -98,7 +104,7 @@ open S
         let drop=List.map (fun field -> Name field) drop in
         let alternatives=List.map (fun (a:alternative) ->
           {a with afields=List.filter (fun (f:Semantic.field) -> not (List.mem f.name drop)) a.afields})
-          (source_alternatives declarations [] (get values receiver)) in
+          (source_alternatives ~bound:S.rigid_bound declarations [] (get values receiver)) in
         let t=combine (List.map (fun a -> alternative_type
           (merge_alternative empty_alternative a)) alternatives) in
         publish source t None; run env (put values value t) next

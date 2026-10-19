@@ -64,6 +64,10 @@ private def saved (root : Span) (origin : Span) (role : String := "value") : Bui
 
 private def readSaved (binding : Saved) : Expr := .var binding.source binding.name
 
+/-- The span of a negation's `!`, its first code unit: no source expression
+has it, an expression starting there being the negation itself. -/
+def negationMark (negation : Span) : Span := (negation.1, negation.1 + 1)
+
 /-- A test: an expression whose value is a Boolean by its form. -/
 def testForm : Expr → Bool
   | .shapeTest .. | .equality .. | .singletonTest .. | .not .. | .inKeys .. => true
@@ -263,13 +267,43 @@ private partial def logical (root : Span) (e left right : Expr) (andOp : Bool) (
     at an empty span no claim names, and the operands keep their own. -/
 private partial def truthOf (root : Span) (cond : Expr) : Builder Plan :=
   match cond with
+  -- `(a || b) || c` is `a || (b || c)` for its truthiness and its
+  -- evaluation, `&&` alike: the left operand's operands are dispatched on
+  -- in turn, the same operator's right operand its new right one's.
+  | .logical p andOp (.logical _ andOp' l1 l2) right =>
+    if andOp == andOp' && !testForm (.logical p andOp' l1 l2) then
+      truthOf root (.logical p andOp l1 (.logical p andOp l2 right))
+    else logicalTruth root cond
+  | _ => logicalTruth root cond
+where
+  logicalTruth (root : Span) (cond : Expr) : Builder Plan :=
+  match cond with
+  -- A negated operand that is no test, `!a || b` or `!a && b`: the left
+  -- dispatch is `a`'s truthiness, its arms exchanged. Where `!a` decides,
+  -- the outcome is that answer, `true` for `||` and `false` for `&&`, a
+  -- literal at the span of the `!` (`negationMark`), which no source
+  -- expression has and the producer claims at that literal; elsewhere it is
+  -- `b`'s. `a` is evaluated once, then `b` exactly where `!a` does not
+  -- decide, as the operator evaluates them.
+  | .logical _ andOp (.not negation left) right =>
+    if testForm left then expression root cond
+    else do
+      let truth : Span := (cond.span.1, cond.span.1)
+      let binding ← saved root left.span "truth"
+      let lhs ← expression root left
+      let rhs ← truthOf root right
+      let mark := negationMark negation
+      let decided := Expr.lit mark (.vbool (!andOp))
+      let keep := Plan.atom mark (.evaluate decided decided .none)
+      return .choose truth left.span .truthy binding lhs
+        (if andOp then keep else rhs) (if andOp then rhs else keep)
   | .logical _ andOp left right =>
     if testForm left then expression root cond
     else do
       let truth : Span := (cond.span.1, cond.span.1)
       let binding ← saved root left.span "truth"
       let lhs ← expression root left
-      let rhs ← expression root right
+      let rhs ← truthOf root right
       let keep := Plan.atom truth (.evaluate (.var truth binding.name) (.var truth binding.name) .none)
       return .choose truth left.span .truthy binding lhs
         (if andOp then rhs else keep) (if andOp then keep else rhs)

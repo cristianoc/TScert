@@ -85,6 +85,16 @@ private def obligationRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : 
     !(ExpressionClaims.checkResult G (StoreView.images r.types) (StoreView.valid r.types) q.sequent e codes).accepted).map
     fun (q, _) => s!"source evidence refusal at [{q.pos.1},{q.pos.2}): the evidence does not establish this obligation's claim"
 
+/-- Where evidence states another claim than the unit's: the first node of
+the unit's graph whose evidence is for another claim, at its source position.
+A diagnostic only. -/
+private def claimRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (c : Response ι) :
+    Option String :=
+  ((c.certificate.zip r.claims).zipIdx.find? fun ((e, q), _) =>
+      !decide (CertificateProducer.signature e = q)).bind fun (_, l) =>
+    ((r.sourceMap[l]?).bind id).map fun m =>
+      s!"source evidence refusal at [{m.pos.1},{m.pos.2}): the evidence does not establish this node's claim"
+
 def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
     (budget : PositiveCertificates.SearchBudget := {})
     (qualified : List (String × Footprints.Closed × Bool) := []) : Except String Unit := do
@@ -103,7 +113,7 @@ def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
     (((certified.zip b.functions).findSome? fun (plan, c) => match plan with
       | .graph name namePos r => footprintRefusal name namePos r c) <|>
      (((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
-      | .graph _ _ r => nodeRefusal r c <|> obligationRefusal r c es)).getD fallback)
+      | .graph _ _ r => nodeRefusal r c <|> obligationRefusal r c es <|> claimRefusal r c)).getD fallback)
 
 def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
     (budget : PositiveCertificates.SearchBudget := {})

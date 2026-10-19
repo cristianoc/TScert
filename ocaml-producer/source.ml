@@ -774,6 +774,10 @@ let rec footprint_expr ?(fresh=[]) ~callable ~iteration ~readable (e:expr) : foo
      lowering is a key test of each singleton the key names. *)
   | HasKey (a,b) -> all [a;b]
   | Alloc fields -> all (List.map snd fields)
+  (* A literal with spreads reads its sources' own properties and allocates
+     their copy, which changes no location (Lean's inspection admits a
+     merge). *)
+  | Build parts -> all (List.map snd parts)
   (* A spread part reads its operand's store, an array; the parser writes a
      spread of any other iterable as its spread intrinsic's call, whose
      signature states its footprint. *)
@@ -807,7 +811,7 @@ let rec footprint_expr ?(fresh=[]) ~callable ~iteration ~readable (e:expr) : foo
      the receiver as `?.`, where the receiver is present. *)
   | Optional (r,b) -> join_bound (go r) (footprint_expr ~fresh ~callable ~iteration ~readable:("?." :: readable) b)
   | BlockBody body -> footprint_stmts ~fresh ~callable ~iteration ~readable body
-  | Unary _ | InstanceTest _ | Build _
+  | Unary _ | InstanceTest _
   | Write _ | Update _ | LogicalAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
@@ -870,6 +874,7 @@ and throws_expr ~callable (e:expr) : bool =
     go a && go b
   | Conditional (c,a,b) -> go c && go a && go b
   | Alloc fields -> List.for_all (fun (_,v) -> go v) fields
+  | Build parts -> List.for_all (fun (_,v) -> go v) parts
   | ArrayLiteral (es,_) -> List.for_all go es
   | Assign (_,v) -> go v
   | Update (_,{node=Id _;_},r,_) -> List.for_all go (Option.to_list r)
@@ -879,7 +884,7 @@ and throws_expr ~callable (e:expr) : bool =
   | New (callee,_,args,spreads) -> spreads = [] && List.for_all go (callee :: args) && calls callee
   | Optional (r,b) -> go r && go b
   | BlockBody body -> throws_stmts ~callable body
-  | Unary _ | InstanceTest _ | Build _
+  | Unary _ | InstanceTest _
   | Write _ | Update _ | LogicalAssign _ | NullishAssign _
   | ArrayAssign _ | Invoke _ | Apply _ | Ctor _
   | IndexWrite _ | Bind _ | ObjectAssign _
