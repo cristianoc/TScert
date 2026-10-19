@@ -36,7 +36,7 @@ design, not its progress.
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
-| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 101 of 341 functions verify in `tools/` (2026-10-19, the missing library globals reviewed), 24 of 24 in `dev/`, 6 of 13 in `tests/` and 2 of 35 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 101 of 341 functions verify in `tools/` (2026-10-19, the missing library globals reviewed), 24 of 24 in `dev/`, 8 of 13 in `tests/` and 2 of 35 in `pipeline/` (2026-10-19, `node:assert/strict` read, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -439,24 +439,32 @@ slices run at once exceed it (2026-10-18). `control-flow.mts` verifies
 whole.
 
 Of the 35 functions of `pipeline/*.mts`, `keepRunDirectories` and
-`typeScriptErrors` verify; of the 13 of `tests/`, `docs.mts`'s six (2026-10-19,
-the slices of `tests/` with `pipeline/*.mts` beside them). Their first
-blockers, by the number of slices each stops:
+`typeScriptErrors` verify; of the 13 of `tests/`, `docs.mts`'s six and
+`rule-inventory.mts`'s `withoutBlockComments` and `alternatives`
+(2026-10-19, the slices of `tests/` with `pipeline/*.mts` beside them).
+Their first blockers, by the number of slices each stops:
 
-- `node:assert`, which the drivers import as `assert` (14): a function merged
-  with a namespace and exported whole (`export =`), read at no reviewed
-  contract;
-- the global `setTimeout` (4), a generic function merged with a namespace;
 - Node functions outside the reviewed overlay of library modules, whose
   declarations reach `Buffer` and, through `BufferConstructor`, a
   conditional type over a signature's own binder (`ImplicitArrayBuffer`),
-  computed only at an instance (3): `spawnSync` and `readdirSync` with
+  computed only at an instance (5): `spawnSync` and `readdirSync` with
   `withFileTypes`;
-- `ReturnType<typeof run>` (2) and `Pick` over a generic interface (1), written
-  applications;
+- written applications: `Pick` over a generic interface (3) and
+  `ReturnType<typeof run>` (2);
+- the global `setTimeout` (4), a generic function merged with a namespace;
+- Node's global `structuredClone` (3), a generic function;
 - a key-adding write to `process.env` (2);
-- `import.meta`, `new Array(n)` and a mapped type over `Readonly` (1 each);
-- the producer or the search (11), each a separate investigation.
+- `import.meta`, `new Array(n)`, a mapped type over `Readonly` and a record at
+  an index signature (1 each);
+- the producer or the search (15), each a separate investigation, among them
+  the two `must` helpers, whose `assert.ok` takes a message that is no literal
+  and so narrows nothing.
+
+`node:assert/strict`'s `equal` promises its actual is the expected value only
+in its declaration: the promise is generic, and the producer encodes no
+generic promise signature ("quantified callable claim encoding"), which a
+program's own generic assertion function meets too (`node-assert-equal-promise`,
+a gap).
 
 `readFragmentFile` and `readClaimsFile` in `pipeline/verify-source.mts` read
 back a document the run wrote, for a test to forge, and assert its type with

@@ -13,7 +13,15 @@
  *
  * Any other mention of `ns` (`const m = ns`, `ns[k]`, `ns?.x`, `{ ns }`, an
  * export of it) and a member written (`ns.x = e`, `ns.x++`, `delete ns.x`,
- * a destructuring target) are refused at the mention. */
+ * a destructuring target) are refused at the mention.
+ *
+ * A default import of a module that exports a function merged with a
+ * namespace, whose members the overlay of library modules reviews
+ * (`import assert from "node:assert/strict"`), is read the same way: each
+ * member read `assert.m` is the binding `assert.m`, of the export
+ * `default.m`, and a call `assert(…)` stays a call of the import's own
+ * binding. Any other mention is refused. */
+import { moduleEntries } from "./library-modules.mts";
 import type { Checker } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Expression, Identifier, ImportDeclaration, Node, SourceFile } from "typescript/unstable/ast";
@@ -38,7 +46,12 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
   const members = new Map<string, NamespaceMember>();
   const imports = file.statements.filter((s): s is ImportDeclaration =>
     ts.isImportDeclaration(s) && !!s.importClause?.namedBindings && ts.isNamespaceImport(s.importClause.namedBindings));
-  if (!imports.length) return members;
+  // Default imports of a function merged with a namespace the overlay reviews.
+  const functions = file.statements.filter((s): s is ImportDeclaration =>
+    ts.isImportDeclaration(s) && !!s.importClause?.name && !s.importClause.namedBindings &&
+    ts.isStringLiteral(s.moduleSpecifier) &&
+    moduleEntries(s.moduleSpecifier.text, "default").some(e => e.member !== undefined));
+  if (!imports.length && !functions.length) return members;
   const occurrences = new Map<string, Identifier[]>();
   const collect = (node: Node): void => {
     if (ts.isIdentifier(node)) {
@@ -49,6 +62,28 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
     node.forEachChild(collect);
   };
   collect(file);
+  for (const declaration of functions) {
+    const name = declaration.importClause?.name;
+    if (!name || !ts.isStringLiteral(declaration.moduleSpecifier)) continue;
+    const specifier = declaration.moduleSpecifier.text;
+    const symbol = checker.getSymbolAtLocation(name);
+    if (!symbol) fail(name, `TypeScript binds no default import to ${name.text}`);
+    const candidates = (occurrences.get(name.text) ?? []).filter(id => id !== name);
+    const symbols = checker.getSymbolAtLocation(candidates);
+    candidates.forEach((id, i) => {
+      if (symbols[i]?.id !== symbol.id) return;
+      const parent = id.parent;
+      if (parent && ts.isCallExpression(parent) && parent.expression === id) return;
+      if (!parent || !ts.isPropertyAccessExpression(parent) || parent.expression !== id || parent.questionDotToken ||
+          !ts.isIdentifier(parent.name) || !callee(parent))
+        fail(id, `the default import ${name.text} is only called, or its members called`);
+      const use: MemberUse = { node: parent, name: parent.name, value: true, callee: true };
+      const local = memberLocal(name.text, parent.name.text);
+      const known = members.get(local);
+      if (known) known.uses.push(use);
+      else members.set(local, { local, imported: `default.${parent.name.text}`, specifier, uses: [use] });
+    });
+  }
   for (const declaration of imports) {
     const clause = declaration.importClause;
     const bindings = clause?.namedBindings;

@@ -23,7 +23,7 @@ import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, 
   primitivePrototypeName, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
-  literalTerm, type EnumMemberValue } from "./intrinsics.mts";
+  literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
@@ -384,6 +384,9 @@ export function collectDeclarations(file: string, options: {
   /** The client uses arrays: `Array.prototype`'s contract joins the graph
    * (`array-prototype.mts`), at `arrays`, the first array the client writes. */
   arrays?: Span;
+  /** A statement call of `node:assert/strict`'s `assert` or `ok` read as the
+   * calculus's own test (`ModuleEntry.lowering`), by the call's span. */
+  assertionCall?: (span: Span) => void;
   /** The first construct of the client that reaches the graph, where a
    * declaration merging into `Object` or `Function` is refused. */
   root?: Span;
@@ -1357,6 +1360,92 @@ export function collectDeclarations(file: string, options: {
       }
       return completed;
     };
+    // A module exporting a function merged with a namespace, read by its
+    // default import (`import assert from "node:assert/strict"`): one value,
+    // the function's call and the members the file calls, each the
+    // declaration TypeScript resolves the call to, read at the reviewed
+    // entry of its text (`library-modules.mts`). Every mention is a call of
+    // the value or of a member.
+    const assertionSpans: Span[] = [];
+    const namespaceFunction = (binding: { name: string; at: Identifier; specifier: string; imported: string },
+        nodes: readonly Node[]): Omit<ValueRoot, "binding"> | null => {
+      const member = binding.imported === "default" ? undefined : binding.imported.slice("default.".length);
+      const entries = moduleEntries(binding.specifier, "default");
+      const what = `the default import of ${binding.specifier}`;
+      const symbol = checker.getSymbolAtLocation(binding.at);
+      if (!symbol) throw Error(`TypeScript binds no ${what}`);
+      // The direct calls `assert(…)`; a member read `assert.m` is a binding
+      // of its own (`namespace-members.mts`), found through `members`.
+      const calls: ts.CallExpression[] = [];
+      const find = (n: Node): void => {
+        if (ts.isIdentifier(n) && n !== binding.at && n.text === binding.name &&
+            checker.getSymbolAtLocation(n)?.id === symbol.id && ts.isCallExpression(n.parent) && n.parent.expression === n)
+          calls.push(n.parent);
+        n.forEachChild(find);
+      };
+      if (member === undefined) find(client);
+      else
+        for (const use of (options.namespaceMembers ?? []).find(m => m.local === binding.name)?.uses ?? []) {
+          const access = expressionAt(client, use.span);
+          const call = access?.parent;
+          if (!access || !call || !ts.isCallExpression(call) || call.expression !== access)
+            throw Error(`${binding.name} is only called`);
+          calls.push(call);
+        }
+      const spanOf = (node: Node): Span => [node.getStart(client), node.end];
+      const entryAt = (call: ts.CallExpression, member: string | undefined): ModuleEntry => {
+        const declaration = checker.getResolvedSignature(call)?.declaration?.resolve();
+        const text = declaration ? reviewedText(declaration.getText(declaration.getSourceFile())) : "";
+        const entry = entries.find(e => e.member === member && e.signature === text);
+        if (!entry)
+          throw Error(`${member === undefined ? binding.name : `${binding.name}.${member}`}(…) is not declared as reviewed: ${text}`);
+        return entry;
+      };
+      // A statement call with no message or a literal one, read as a test.
+      const lowered = (call: ts.CallExpression): boolean => {
+        const [value, message, ...more] = call.arguments;
+        return ts.isExpressionStatement(call.parent) && call.parent.expression === call && !!value && !more.length &&
+          !call.typeArguments?.length && !call.arguments.some(ts.isSpreadElement) &&
+          (!message || ts.isStringLiteral(message) || ts.isNoSubstitutionTemplateLiteral(message));
+      };
+      const chosen = new Map<ModuleEntry, Span>();
+      for (const call of calls) {
+        if (call.questionDotToken) throw Error(`${binding.name} is called without an optional chain`);
+        const entry = entryAt(call, member);
+        const span = spanOf(call);
+        chosen.set(entry, span);
+        if (entry.lowering === "test" && lowered(call)) {
+          assertionSpans.push(span);
+          options.assertionCall?.(span);
+        }
+      }
+      // An entry's forms: its statement, and where it states a promise, the
+      // promise signature beside it.
+      const forms = (entry: ModuleEntry, receiver: TypeTerm | null, at: Span): FunctionTerm[] => {
+        const effect = entry.effect ?? ordinaryEffect;
+        const plain: FunctionTerm = { k: "function", effect, receiver, params: entry.stated.params,
+          rest: entry.stated.rest ?? null, result: entry.stated.result, span: at };
+        return entry.promise
+          ? [plain, { ...plain, effect: { ...effect, promise: { asserts: { param: entry.promise.param } } }, result: entry.promise.type }]
+          : [plain];
+      };
+      // The value: the forms of each overload its calls resolve to; a generic
+      // statement's binders are the value's type parameters, as an imported
+      // generic function's are.
+      const entriesChosen = [...chosen];
+      const binders = entriesChosen.flatMap(([entry]) => entry.stated.binders);
+      if (binders.length && entriesChosen.length > 1)
+        throw Error(`${binding.name} selects a generic statement beside other overloads`);
+      const signatures = entriesChosen.flatMap(([entry, at]) => forms(entry, null, at));
+      const [first] = nodes;
+      if (!first) throw Error(`TypeScript declares no ${what}`);
+      const source = first.getSourceFile();
+      const at: Span = [first.getStart(source), first.end];
+      if (!signatures.length) return null;
+      return { declaration: { module: idOf(source), name: member === undefined ? "default" : `default.${member}`, span: at },
+        construct: false, typeParams: binders.map(name => ({ name, bound: null, resolution: null })),
+        type: oneTerm(signatures, at) };
+    };
     for (const binding of importBindings(client, options.namespaceMembers ?? [])) {
       try {
         // A function with overloads is its several declarations; any other
@@ -1371,6 +1460,13 @@ export function collectDeclarations(file: string, options: {
           continue;
         }
         const reviewed = moduleEntries(binding.specifier, binding.imported);
+        if (!binding.typeOnly && (binding.imported === "default" || binding.imported.startsWith("default.")) &&
+            moduleEntries(binding.specifier, "default").some(e => e.member !== undefined)) {
+          const value = namespaceFunction(binding, nodes);
+          if (value) values.push({ binding: { local: binding.name, imported: binding.imported,
+            specifier: binding.specifier, span: binding.span }, ...value });
+          continue;
+        }
         if (!binding.typeOnly && reviewed.length) {
           values.push({ binding: { local: binding.name, imported: binding.imported,
             specifier: binding.specifier, span: binding.span }, ...moduleValue(nodes, reviewed, binding.name) });
@@ -1807,6 +1903,7 @@ export function collectDeclarations(file: string, options: {
       }
     };
     if (options.intrinsics) listIntrinsics(options.intrinsics.span, options.intrinsics.names);
+    for (const span of assertionSpans) listIntrinsics(span, [assertionFailureName]);
     if (resolutionContextAt) listStable(resolutionContextAt);
     // `k in o` with a key TypeScript types as string literals only is the
     // model's key test, which narrows `o`; any other key, a number, a symbol

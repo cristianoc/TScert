@@ -2154,106 +2154,96 @@ unrestricted in its effect unless its entry states one. The entries:
   exports one object (`export = path`), whose methods are the overloads an
   entry names.
 
-### Proposal: `node:assert/strict`
+### `node:assert/strict`
 
-A proposal under review; nothing below is admitted. The drivers import
-`node:assert/strict` by default (`import assert from "node:assert/strict"`).
-Node declares that module's export as a function merged with a namespace,
-`function strict(value, message?): asserts value` beside
-`namespace strict { export { ok, strictEqual as equal, … } }` and
-`export = strict`, its members aliases of `node:assert`'s functions; the
-module `node:assert` itself, whose `equal` is loose equality, is not proposed.
+A file may import `node:assert/strict` by default (`import assert from
+"node:assert/strict"`). Node declares that module's export as a function
+merged with a namespace (`function strict(value, message?): asserts value`
+beside `namespace strict { export { ok, strictEqual as equal, … } }` and
+`export = strict`), or, in an earlier `@types/node`, as a constant of a type
+with that call signature and those members; its members are `node:assert`'s
+functions. The module `node:assert` itself, whose `equal` is loose equality,
+is not read.
 
-**Reading.** The default import is one value: the call signature of
-`strict` and, as fields, the members the file reads, each the declaration
-TypeScript resolves the member to. Every mention of the binding is a call of
-it or a call of one of its members, `assert.m(…)`; any other mention (passing
-`assert`, `assert.strict`, a member read uncalled) is refused. A member call
-passes the namespace function as its receiver, which none of these functions
-reads, so it is read as a call of the member's binding, as a namespace
-import's member is ([namespace imports](SOURCE-ELABORATION.md#derived-source-forms)).
-Each member is an entry of the overlay of library modules (module
-`assert/strict`, name `default`, the member, and the declaration's text,
-pinned as every entry is), so a changed declaration is refused and reviewed
-again.
+**Reading.** As a namespace import's member is
+([namespace imports](SOURCE-ELABORATION.md#derived-source-forms)), each
+member read `assert.m` is a binding of the file, named `assert.m`, of the
+export `default.m`, and a call `assert(…)` is a call of the import's own
+binding; any other mention (passing `assert`, a member read uncalled) is
+refused (`namespace-members.mts`). A member call passes the function as its
+receiver, which none of these functions reads. Each binding is the forms of
+the overloads its calls resolve to, each an entry of the overlay of library
+modules (module `assert/strict`, name `default`, the member, and the
+declaration's text, pinned as every entry is), so a changed declaration is
+refused and reviewed again; a generic entry's binders are the binding's type
+parameters.
 
-**Footprints.** Under Node 25.2.1 (observed 2026-10-19 by probes run
-under Node), a passing `ok`, `equal` and `notEqual` run no
-code: ToBoolean and `Object.is`. A failing call builds an `AssertionError`:
-it calls no `inspect.custom` hook, but it reads the compared values'
-accessors while building the message, sets and restores
-`Error.stackTraceLimit`, and runs a program's `Error.prepareStackTrace`; a
-message that is an `Error` is thrown as it is. Failure construction can so
-run code of the program's. Each entry states a footprint for normal return
-only, and on the exceptional edge unrestricted effects: `onThrow` false, so
-a handler catching an `AssertionError` holds no fact about the heap that the
-call's footprint would preserve, as the
+**Footprints.** Under Node 25.2.1 (observed 2026-10-19 by probes run under
+Node), a passing `ok`, `equal`, `notEqual` and `ifError` run no code:
+ToBoolean, `Object.is` and a comparison with `null` and `undefined`. A failing
+call builds an `AssertionError`: it calls no `inspect.custom` hook, but it
+reads the compared values' accessors while building the message, sets and
+restores `Error.stackTraceLimit`, and runs a program's
+`Error.prepareStackTrace`; a message that is an `Error` is thrown as it is.
+Each entry states a footprint for normal return only, and unrestricted
+effects on the exceptional edge: `onThrow` false, so a handler catching an
+`AssertionError`, or whatever a hook throws instead, holds no fact about the
+heap that the call's footprint would preserve, as the
 [effect](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)
-of any call reaching a handler. A message is stated at `string`.
+of any call reaching a handler (`invalid-node-assert-catch-continue`, run
+under Node). A message is stated at `string`.
 
 **Entries.** With $`M=\mathtt{string}\mid\mathtt{undefined}`$, the message:
 
-- `assert(v, m)` and `assert.ok(v, m)`: a falsy `v` throws. Lowered as the
-  calculus's own test, `if (!v) throw %AssertionFailure%(m)`, so the
-  argument narrows exactly as an `if` narrows it, where `m` is absent or a
-  string literal, which then is evaluated after `v` with nothing observable
-  between; with another message the call is read in its order and narrows
-  nothing. `%AssertionFailure%` returns a fresh `AssertionError` and states
-  no effect.
+- `assert(v, m)` and `assert.ok(v, m)`: a falsy `v` throws. A statement call
+  whose message is absent or a string literal is the calculus's own test,
+  `if (!v) throw %AssertionFailure%(m)`, so the argument narrows exactly as
+  an `if` narrows it, the literal evaluated after `v` with nothing observable
+  between (`node-assert-strict`). Any other call is read at
+  $`(\mathtt{unknown},\ M)\Rightarrow\mathtt{void}`$, the empty footprint on
+  normal return, and narrows nothing. `%AssertionFailure%` returns a fresh
+  `AssertionError` and states no effect.
 - `assert.equal(a, e, m)` (`strictEqual`):
-  $`\forall T.\ (\mathtt{unknown},\ T,\ M)\to T\,[\mathsf{asserts}\ 0]`$, the
-  empty footprint on normal return, which `Object.is(a, e)` implies: $`a`$ is
-  the value $`e`$, of type $`T`$. `notEqual`: $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{undefined}`$,
-  the empty footprint on normal return.
+  $`\forall T.\ (\mathtt{unknown},\ T,\ M)\Rightarrow\mathtt{void}`$, the empty
+  footprint on normal return. `Object.is(a, e)` makes $`a`$ the value $`e`$, of
+  type $`T`$; that promise, $`(\mathtt{unknown},\ T,\ M)\to T\,[\mathsf{asserts}\ 0]`$,
+  is not stated, as the producer encodes no generic promise signature
+  (`node-assert-equal-promise`, a gap). `notEqual`:
+  $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{void}`$, the empty
+  footprint on normal return.
 - `assert.deepEqual(a, e, m)` (`deepStrictEqual`) and `notDeepEqual` compare
   by traversal, which can traverse enumerable own string and symbol
   properties, including extra array properties, accessors among them
-  (observed: a passing comparison calls an enumerable symbol getter and
-  an extra array property's getter). No type the fragment states bounds all
-  of these, `JsonValue` included:
-  $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{undefined}`$,
-  stating no effect, on normal return too. A stronger form would need a type
-  bounding everything the comparison traverses, with Node-run controls.
-  Neither narrows: deep equality to a value of type $`T`$ is not shown to give
-  type $`T`$ (the declaration's `asserts actual is T` is not read).
-- `assert.match(s, r, m)` and `doesNotMatch`: Node checks `r`'s regex slot and
-  runs `RegExp.prototype.exec` on it, which reads `lastIndex` by ToLength
-  (observed: an object `lastIndex` runs its `valueOf`). At a native regex
-  $`N(\Sigma)`$, the effect of its `exec` ([regular expressions](#regular-expressions));
-  at a structural `RegExp`, none. No narrowing.
-- `assert.throws(f, x, m)` and `doesNotThrow(f, m)` call `f`, and `throws`
-  tests the thrown value against `x`: a regex converts it by `String`, which
-  runs an object's `toString` (observed). Stated with no effect, `f` at
-  `() => unknown`, `x` absent or a regex. No narrowing.
-- `assert.ifError(v)`: $`(\mathtt{unknown})\to\mathtt{null}\mid\mathtt{undefined}\,[\mathsf{asserts}\ 0]`$,
+  (observed: a passing comparison calls an enumerable symbol getter and an
+  extra array property's getter). No type the fragment states bounds all of
+  these, `JsonValue` included:
+  $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{void}`$, stating
+  no effect, on normal return too (`invalid-node-assert-deep-preserving`, run
+  under Node). Neither narrows: deep equality to a value of type $`T`$ is not
+  shown to give type $`T`$.
+- `assert.match(s, r, m)` and `doesNotMatch`: Node checks `r`'s regex slot,
+  throwing on another value, and runs `RegExp.prototype.exec` on it, which
+  reads `lastIndex` by ToLength (observed: an object `lastIndex` runs its
+  `valueOf`): $`(\mathtt{string},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{void}`$,
+  stating no effect. No narrowing.
+- `assert.throws(f, m)`, `assert.throws(f, x, m)` and `doesNotThrow` call `f`,
+  and `throws` tests the thrown value against `x`: a regex converts it by
+  `String`, which runs an object's `toString` (observed); `f` at
+  `() => unknown`, `x` at `unknown`, stating no effect
+  (`invalid-node-assert-throws-callback`, run under Node). No narrowing.
+- `assert.ifError(v)`: $`(\mathtt{unknown})\Rightarrow\mathtt{void}`$ and the
+  promise $`(\mathtt{unknown})\to\mathtt{null}\mid\mathtt{undefined}\,[\mathsf{asserts}\ 0]`$,
   the empty footprint on normal return; a failure reads `v`'s `message` and
   `stack` (observed).
 - `assert.fail(m)`: $`(M)\Rightarrow\mathtt{never}`$, no effect.
 
-**Trust.** Each entry is an assumption about the host, as a library module's
-is: the promises of `equal` and `ifError` follow from the comparison the
-host makes before it returns, and the footprints from the steps observed
-above; nothing in Lean proves them. Controls the implementation would carry,
-each run under Node:
-
-- for each failure path that runs code (an accessor of a compared value, a
-  program's `Error.prepareStackTrace`, an object `lastIndex`, a thrown
-  object's `toString`), a catch-and-continue program: a `try` around a
-  failing call whose hook mutates an alias of an array the code reads after
-  the handler, refused where it relies on a fact the call's normal-return
-  footprint would have kept (a `map` result's density, an element's type);
-- the same program with a passing call, verified, for the entries that state
-  a preservation guarantee on normal return (`ok`, `equal`, `notEqual`,
-  `ifError`, `match` at a native regex), showing the footprint is used only
-  on that edge; a passing deep comparison and a callback-running assertion
-  (`throws`, `doesNotThrow`) keep unrestricted effects, and the program
-  relying on a fact across them is refused;
-- a handler catching whatever a hook throws (an accessor of a compared value,
-  `Error.prepareStackTrace`, a thrown object's `toString`) rather than the
-  `AssertionError`, typed at `unknown`, the fact relied on refused there too;
-- a passing `deepEqual` whose compared value holds an enumerable symbol
-  getter or an extra array property's getter that mutates an alias, refused
-  where a fact across the call is relied on.
+Each entry is an assumption about the host, as a library module's is: the
+promise of `ifError` follows from the comparison the host makes before it
+returns, and the footprints from the steps observed above; nothing in Lean
+proves them. The module's object is assumed unmodified: no code replaces
+`assert.ok`. A passing call with an empty footprint keeps a fact across it,
+a `map` calling `equal` staying dense (`node-assert-strict`); the failure
+leaves the callback by its throw.
 
 ## Regular expressions
 
