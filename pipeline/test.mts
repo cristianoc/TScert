@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { check, producerExecutable, readClaimsFile, readFragmentFile, verifier } from "./verify-source.mts";
+import { check, producerExecutable, readClaimsFile, readFragmentFile, verifier, type Outcome } from "./verify-source.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { compilerApiFamily, useFamilyDescriptionForTests, useHostInstallationForTests } from "../tools/compiler-api.mts";
 import { cases } from "./cases.mts";
@@ -3082,6 +3082,60 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     useHostInstallationForTests(null);
   }
   process.stdout.write("declared-optional method: each shape's own optional member, the required one shared, its call refused\n");
+}
+{
+  // Each correction of the compiler API's family (COMPILER-API.md,
+  // "Corrections"), bypassing the producer: its negative fixture returns the
+  // corrected member at its declared type. Read without that correction it
+  // verifies; the claims and evidence of that run, offered with the
+  // document the real description gives, which names the same definitions
+  // in order, are refused by the search and by the checker at the read.
+  const project = tsconfigOf(join(import.meta.dirname, "compiler-api-project"));
+  const located = (detail: string, position: number): boolean =>
+    [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= position && position < Number(m[2]));
+  const fixtures = new Map([
+    ["Node.parent", "source-file-parent"], ["PropertySignatureDeclaration.initializer", "property-signature-initializer"],
+    ["PropertyAssignment.type", "property-assignment-type"], ["ShorthandPropertyAssignment.type", "shorthand-assignment-type"],
+    ["ExportAssignment.type", "export-assignment-type"], ["DefaultClause.expression", "default-clause-expression"],
+    ["TemplateLiteralLikeNodeBase.rawText", "template-raw-text"], ["TemplateLiteralLikeNodeBase.templateFlags", "template-flags"],
+    ["TaggedTemplateExpression.questionDotToken", "tagged-template-question-dot"], ["JSDocTemplateTag.constraint", "template-tag-constraint"],
+  ]);
+  assert.equal(fixtures.size, compilerApiFamily.corrections.length, "a fixture for each correction");
+  for (const correction of compilerApiFamily.corrections) {
+    const slug = must(fixtures.get(`${correction.owner}.${correction.member}`), `the fixture of ${correction.owner}.${correction.member}`);
+    const file = join(import.meta.dirname, "examples", `invalid-compiler-api-corrected-${slug}.ts`);
+    const text = readFileSync(file, "utf8");
+    const at = text.indexOf("return ") + "return ".length;
+    useFamilyDescriptionForTests({ ...compilerApiFamily, corrections: compilerApiFamily.corrections.filter((c) => c !== correction) });
+    let plain: Outcome;
+    try {
+      plain = check(file, project);
+    } finally {
+      useFamilyDescriptionForTests(null);
+    }
+    assert.equal(plain.status, "verified", `${slug} uncorrected: ${JSON.stringify(plain)}`);
+    const corrected = check(file, project);
+    assert.ok(corrected.status === "unverified" && located(corrected.detail, at), `${slug}: ${JSON.stringify(corrected)}`);
+    const identities = (dir: string): string[] => must(readFragmentFile(join(dir, "fragment.json")).declarations, "the declarations")
+      .definitions.map((d) => JSON.stringify(d.declaration));
+    assert.deepEqual(identities(corrected.artifacts), identities(plain.artifacts), `${slug}: one numbering`);
+    const fragment = readFragmentFile(join(corrected.artifacts, "fragment.json"));
+    const claims: unknown = JSON.parse(readFileSync(join(plain.artifacts, "claims.json"), "utf8"));
+    assert.ok(typeof claims === "object" && claims !== null);
+    const forged = join(corrected.artifacts, "forged-uncorrected.json");
+    writeFileSync(forged, JSON.stringify({ ...claims, file: fragment.file }));
+    const searched = produceWith(corrected.artifacts, forged, "forged-uncorrected");
+    assert.ok(searched.status === 1 && located(searched.stdout + searched.stderr, at),
+      `${slug}: the search refuses at the read: ${searched.stdout + searched.stderr}`);
+    const checked = spawnSync(verifier, ["--check-source-claims", join(corrected.artifacts, "fragment.json"), forged,
+      join(corrected.artifacts, "source.ts"), join(plain.artifacts, "evidence.json")], { encoding: "utf8", timeout: 60_000 });
+    // The checker names the read, or refuses the evidence as a whole where
+    // the corrected document's rows leave it justifying no claim.
+    assert.ok(checked.status === 1 && (located(checked.stdout + checked.stderr, at) ||
+      /evidence does not justify the extracted program and exact claims/.test(checked.stdout + checked.stderr)),
+      `${slug}: the checker refuses: ${checked.stdout + checked.stderr}`);
+  }
+  process.stdout.write(`corrections: each of the ${compilerApiFamily.corrections.length} verifies uncorrected, and its claims and evidence are refused with the corrected document by the search at the read and by the checker\n`);
 }
 {
   // One tag selection per run (HOST-FAMILIES.md, "Residuals"): the importer

@@ -61,7 +61,7 @@ states one invariant for syntax trees and derives the guards from it.
   numeric enum type at a package position is `number`; each host class is
   read through a named view; branded strings are opaque host-introduced
   types. Values of host types come from the package alone.
-- **Corrections** state the eight fields the declarations call required and
+- **Corrections** state the ten fields the declarations call required and
   the runtime leaves absent, and the `this is X` guards of `Type`, whose
   promise no field test carries.
 
@@ -619,9 +619,11 @@ declaration text it was reviewed against, and its reading as optional:
 `PropertySignatureDeclaration.initializer`, `PropertyAssignment.type`,
 `ShorthandPropertyAssignment.type`, `ExportAssignment.type`,
 `DefaultClause.expression`, `NoSubstitutionTemplateLiteral.rawText`,
-`NoSubstitutionTemplateLiteral.templateFlags`, and `parent` on kind
-`SourceFile`. A correction makes a field optional; it adds no field and
-narrows no type.
+`NoSubstitutionTemplateLiteral.templateFlags`, `parent` on kind
+`SourceFile`, `TaggedTemplateExpression.questionDotToken` (absent on an
+ordinary tag`a`) and `JSDocTemplateTag.constraint` (absent on
+`/** @template T */`). A correction makes a field optional; it adds no
+field and narrows no type.
 
 ## Node lists
 
@@ -837,7 +839,17 @@ as regression evidence.
   outside the accepted syntax are exactly the refused list, and execution on
   every kind (and on every number in a range around $`\mathcal K`$ for
   guards taking a kind) gives the derived sets.
-- **C3, shapes (regression evidence).** Every node of a corpus
+- **C3, shapes (regression evidence).** `make compiler-api-shapes`
+  (`tests/compiler-api-shapes.mts`, about 20 s) reads the family table over
+  the installed declarations and walks every node of `tools/*.mts`,
+  `pipeline/*.mts`, `tests/*.mts`, `dev/*.mts`, `pipeline/examples/*.ts` and
+  `tests/node-shapes-corpus/` (TypeScript, JSX and JavaScript with JSDoc),
+  each node's JSDoc included: it fails on a property a kind's shape states
+  required, not admitting `undefined`, that a node of that kind lacks and no
+  correction covers, and it reports the kinds no node of the corpus has and
+  the members of reached kinds no node holds. Its coverage is the corpus's:
+  a member absent only in a form the corpus does not contain is not found.
+  The rest of the check as designed: every node of a corpus
   (`tools/*.mts`, `tests/*.mts`, `dev/*.mts`, `pipeline/**/*.ts`, the
   standard library `.d.ts` files, and a JavaScript file with JSDoc) has every
   member its shape states as required, every child within its member's
@@ -1165,7 +1177,7 @@ The reading rules split along the same dependencies:
   refusal of a member whose read allocates; the narrowing it needs is the
   field slice's on views.
 - The corrections apply to node shapes, which the node invariant builds:
-  three of the eight are members a kind inherits
+  three of the ten are members a kind inherits
   (`NoSubstitutionTemplateLiteral.rawText` and `.templateFlags` from
   `TemplateLiteralLikeNodeBase`, `parent` of `SourceFile` from `Node`), which
   only a member-complete shape states per kind.

@@ -328,6 +328,8 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
     ["default-clause-expression", "DefaultClause", "declare const x: number;\nswitch (x) { default: }\n"],
     ["template-raw-text", "NoSubstitutionTemplateLiteral", "export const t = `a`;\n"],
     ["template-flags", "NoSubstitutionTemplateLiteral", "export const t = `a`;\n"],
+    ["tagged-template-question-dot", "TaggedTemplateExpression", "declare const tag: (s: TemplateStringsArray) => string;\nexport const t = tag`a`;\n"],
+    ["template-tag-constraint", "JSDocTemplateTag", "/** @template T */\nexport function same<T>(x: T): T { return x; }\n"],
   ];
   for (const [slug, kindName, source] of corrected) {
     const fixture = join(dir, `${slug}.ts`);
@@ -340,8 +342,11 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
     const kind: unknown = syntaxKind[kindName];
     type AstNode = Parameters<Parameters<typeof tree.forEachChild>[0]>[0];
     let found: AstNode | typeof tree | undefined = kind === tree.kind ? tree : undefined;
+    // JSDoc is no child: each documented node holds its comments apart.
     const visit = (node: AstNode): undefined => {
       if (!found && node.kind === kind) found = node;
+      const docs: unknown = Reflect.get(node, "jsDoc");
+      if (Array.isArray(docs)) for (const doc of docs.filter((d): d is AstNode => typeof d === "object" && d !== null && "kind" in d)) visit(doc);
       return node.forEachChild(visit);
     };
     tree.forEachChild(visit);

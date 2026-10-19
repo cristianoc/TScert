@@ -30,7 +30,7 @@ design, not its progress.
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
-| [Corrected members](#corrected-members) | closed: each of the eight corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
+| [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
@@ -272,8 +272,10 @@ Read as declared (a8caafd), a function returning one at its declared type
 verified and returns `undefined` under Node: `sf.parent` at `Node`,
 `PropertySignatureDeclaration.initializer`, `PropertyAssignment.type`,
 `ShorthandPropertyAssignment.type`, `ExportAssignment.type`,
-`DefaultClause.expression`, and `NoSubstitutionTemplateLiteral.rawText` and
-`.templateFlags`. The family contract reads each optional; the eight
+`DefaultClause.expression`, `NoSubstitutionTemplateLiteral.rawText` and
+`.templateFlags`, `TaggedTemplateExpression.questionDotToken` and
+`JSDocTemplateTag.constraint`; the last two `make compiler-api-shapes`
+finds. The family contract reads each optional; the ten
 `invalid-compiler-api-corrected-*` cases are refused, each run under Node
 by `tests/compiler-api.mts`.
 
