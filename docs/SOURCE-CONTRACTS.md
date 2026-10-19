@@ -1778,6 +1778,11 @@ The entries, each with the code its restriction keeps from running:
   argument: its declaration, `<T>(value?: T): boolean`, states none, so
   `filter(Boolean)` keeps its receiver's element type, as TypeScript keeps it
   (`invalid-boolean-filter-narrowing`).
+- `Number(v, …)` is ToNumber of its first argument, which runs an object's
+  `Symbol.toPrimitive`, `valueOf` or `toString`, and ignores the rest. It is
+  stated at a primitive, defined below: $`(\mathsf{Prim},\ \ldots\mathtt{unknown})\Rightarrow\mathtt{number}`$,
+  a value too (`texts.map(Number)`; `number-value`; `invalid-number-value-object`,
+  run under Node).
 - `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
   `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
   object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,
@@ -2063,6 +2068,20 @@ unrestricted in its effect unless its entry states one. The entries:
 - `writeFileSync(file, data)` with a path and a string writes the string to
   the file as UTF-8 and returns `undefined`; a path it cannot write throws:
   $`(\mathtt{string},\ \mathtt{string})\Rightarrow\mathtt{undefined}`$.
+- `readFileSync(path, "utf8")` with a string path returns the file's
+  contents decoded as UTF-8; a path it cannot read throws:
+  $`(\mathtt{string},\ \texttt{"utf8"})\Rightarrow\mathtt{string}`$. Without
+  an encoding it returns a `Buffer`, outside the stated call
+  (`node-fs-read`, `invalid-node-fs-read-buffer`).
+- `existsSync(path)` with a string returns whether the path exists, and does
+  not throw: $`(\mathtt{string})\Rightarrow\mathtt{boolean}`$.
+- `mkdtempSync(prefix)` with a string creates a directory named by the prefix
+  and six random characters and returns its path:
+  $`(\mathtt{string})\Rightarrow\mathtt{string}`$; an encoding option, which
+  may select a `Buffer`, is outside the stated call. `rmSync(path, options)`
+  with a string path and `{ recursive: true, force: true }` removes the path
+  and everything under it and returns `undefined`; the host reads the options'
+  properties, so the call is unrestricted in its effect (`node-fs-temp`).
 - `realpathSync(path)` with a string returns the canonical path, its
   symbolic links followed, and throws where the path does not exist:
   $`(\mathtt{string})\Rightarrow\mathtt{string}`$; an encoding option, which

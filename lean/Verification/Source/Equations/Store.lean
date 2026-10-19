@@ -859,6 +859,22 @@ instance : StoreView (Checked E p) (CheckedLabel E p) where
     { rows := pr.rows, position := fun l => pr.position l.tree, names := pr.names }
   images c := eitherImages (finiteInstanceImages E.graph) (imagesUpTo E c.variances c.heads.subtypeBudget)
 
+
+/-- A checked store's graph is its equations': it reads none of the store's
+fields. -/
+theorem Checked.graph_eq (c : Checked E p) : StoreView.graph c = E.graph := rfl
+
+/-- A checked store's image check reads the equations, the store's variances
+and its budget only: two stores agreeing on those have one image check, so
+every search in one answers as in the other, its whole result (an exhaustion
+included) the same. -/
+theorem Checked.images_eq (c c' : Checked E p) (hv : c.variances = c'.variances)
+    (hb : c.heads.subtypeBudget = c'.heads.subtypeBudget) :
+    StoreView.images c = StoreView.images c' := by
+  show eitherImages _ (imagesUpTo E c.variances c.heads.subtypeBudget) =
+    eitherImages _ (imagesUpTo E c'.variances c'.heads.subtypeBudget)
+  rw [hv, hb]
+
 end
 
 /-- Extracted heads, frozen: their validated equations and the store over

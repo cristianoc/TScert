@@ -68,7 +68,7 @@ const entryPoint = async (path: string): Promise<Record<string, unknown>> => {
 };
 const ast = await entryPoint("./unstable/ast");
 const sync = await entryPoint("./unstable/sync");
-let members = 0;
+let members: number = 0;
 for (const { name, file } of hostEnums) {
   const declaration = readFileSync(join(root, types.replace("*", file)), "utf8");
   const body = /export declare enum (\w+) \{\n([^}]*)\}/.exec(declaration);

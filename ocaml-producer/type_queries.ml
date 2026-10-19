@@ -615,9 +615,40 @@ let singleton_atom = function
    holds nothing is dropped. The arm stays dropped whatever the field holds
    later: an object's arm is fixed where it is allocated. Lean checks the
    slice. *)
+(* The arms an atom stands for: a declaration whose definition is a union of
+   atoms, the arms of each of those atoms; any other atom, itself. A test
+   keeps or drops each arm, wherever its declaration occurs in a union: a
+   join can leave a declaration beside arms of it a test already split. *)
+let rec atom_arms declarations seen = function
+  | Named (id,args) as a when not (List.mem id seen) ->
+    (match (try Some (definition declarations id args) with Json.Error _ -> None) with
+     | Some (Atoms (_::_::_ as atoms)) -> List.concat_map (atom_arms declarations (id::seen)) atoms
+     | _ -> [a])
+  | a -> [a]
+let union_arms declarations atoms =
+  List.sort_uniq compare (List.concat_map (atom_arms declarations []) atoms)
+(* `ToBoolean` of every value of an atom, through the declaration it names:
+   a declaration all of whose arms settle it one way (a named union of
+   records, always truthy) settles it so. *)
+let rec atom_truthiness declarations seen = function
+  | Named (id,args) when not (List.mem id seen) ->
+    (match (try Some (definition declarations id args) with Json.Error _ -> None) with
+     | Some (Atoms (_::_ as atoms)) ->
+       (match List.sort_uniq compare (List.map (atom_truthiness declarations (id::seen)) atoms) with
+        | [answer] -> answer
+        | _ -> None)
+     | _ -> None)
+  | a -> truthiness a
+(* The part of a type a truthiness test answering [truth] leaves, an atom
+   naming a declaration dropped where all its values answer the other way. *)
+let truthy_refine declarations truth t = match t with
+  | Atoms xs -> truthy_slice truth (Atoms (List.filter (fun a ->
+      atom_truthiness declarations [] a <> Some (not truth)) xs))
+  | t -> truthy_slice truth t
 let discriminate bounds declarations t key slice =
   match declared_head declarations [] t with
   | Atoms atoms ->
+    let atoms = union_arms declarations atoms in
     let admits atom =
       match (try Some (field_type bounds declarations [] (Atoms [atom]) key) with Json.Error _ -> None) with
       | Some field -> slice field <> Atoms []
@@ -631,6 +662,7 @@ let discriminate bounds declarations t key slice =
 let discriminate_fixed bounds declarations t key slice =
   match declared_head declarations [] t with
   | Atoms atoms ->
+    let atoms = union_arms declarations atoms in
     let fixed atom = match (try Some (declared_head declarations [] (Atoms [atom])) with Json.Error _ -> None) with
       | Some (Atoms [Shape {fields;_}]) | Some (Atoms [Exact fields]) ->
         List.exists (fun (f:Semantic.field) -> f.name = key && not f.optional) fields

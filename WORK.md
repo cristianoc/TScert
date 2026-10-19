@@ -23,7 +23,7 @@ design, not its progress.
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
-| [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 13.7 s of evidence search with candidate selection and the reuse of answered requests, 25.2 s without the reuse (user time, median of 3, 2026-10-19) | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
+| [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 10.0 s of evidence search with candidate selection and the answered requests threaded through the document's search, 25.2 s without any reuse (user time, median of 3, 2026-10-19) | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
 | [Function declarations in bodies](docs/SOURCE-MODEL.md#lexical-bindings-before-initialization) | open | `function-declaration-in-body-refused` verifies: a function declared in a body is created at its block's entry, and a call of it before the block's bindings are initialized reaches their checked accesses |
 | [Optional-field truthiness over unions](#optional-field-truthiness) | open: an investigation, cause unknown | `optional-field-truthiness-union-refused` verifies |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
@@ -36,7 +36,7 @@ design, not its progress.
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
-| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 101 of 337 functions verify in `tools/` (2026-10-19, the `then` member admitted), 24 of 24 in `dev/`, 4 of 13 in `tests/` and 1 of 35 in `pipeline/` (2026-10-18, a071881, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 101 of 337 functions verify in `tools/` (2026-10-19, the `then` member admitted), 24 of 24 in `dev/`, 6 of 13 in `tests/` and 2 of 35 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -428,10 +428,7 @@ first three items 2026-10-19):
   `Checker.getTypeFromTypeNode` the client cannot decode), cause unknown.
 
 Thirty-four slices reach the producer and fail there, and 55 fail in
-search. Of the 35 functions of `pipeline/*.mts`, 9 stop at an import other than a
-named or namespace one and 7 at a module `let` without a written type
-(2026-10-18). Of the 13 functions of `tests/`, 4 verify (2026-10-17), and of the
-24 of `dev/`, the record tools and the lowering dump, all 24 (2026-10-18), each
+search. Of the 24 of `dev/`, the record tools and the lowering dump, all 24 (2026-10-18), each
 sliced with the same-file declarations it uses, their imports from
 `record-render`, `control-flow` and `calculus` certified. `printGraph`'s
 evidence search covers `decodeTerm`, which `decodeNode` reads, and takes
@@ -439,9 +436,26 @@ evidence search covers `decodeTerm`, which `decodeNode` reads, and takes
 slices run at once exceed it (2026-10-18). `control-flow.mts` verifies
 whole.
 
-In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
-verify; the others stop at a namespace import, Node's `Buffer` type, `join`
-of `node:path`, `Number` read as a value, or a top-level block.
+Of the 35 functions of `pipeline/*.mts`, `keepRunDirectories` and
+`typeScriptErrors` verify; of the 13 of `tests/`, `docs.mts`'s six (2026-10-19,
+the slices of `tests/` with `pipeline/*.mts` beside them). Their first
+blockers, by the number of slices each stops:
+
+- `node:assert`, which the drivers import as `assert` (14): a function merged
+  with a namespace and exported whole (`export =`), read at no reviewed
+  contract;
+- the global `clearTimeout`, absent from the overlay (4);
+- Node functions outside the reviewed overlay of library modules, whose
+  declarations reach `Buffer` and, through `BufferConstructor`, a
+  conditional type over a signature's own binder (`ImplicitArrayBuffer`),
+  computed only at an instance (3): `spawnSync` and `readdirSync` with
+  `withFileTypes`;
+- `ReturnType<typeof run>` (2) and `Pick` over a generic interface (1), written
+  applications;
+- a key-adding write to `process.env` (2);
+- `Error` as `instanceof`'s right operand, `Array.from` and
+  `Object.fromEntries`, absent from the overlay (1 each);
+- the producer or the search (11), each a separate investigation.
 
 `readFragmentFile` and `readClaimsFile` in `pipeline/verify-source.mts` read
 back a document the run wrote, for a test to forge, and assert its type with
@@ -453,7 +467,8 @@ read is decoded again by Lean before anything is checked.
 Two forms of the record tools are rewritten for a verifier limit, not
 for a departure from the fragment; each rewrite is reverted when its limit
 lifts: element reads the code already guards by a test of the same element
-(`mathRoles`' `afterRelation` and `textWord`; `guarded-element-read-refused`);
+(`mathRoles`' `afterRelation` and `textWord`, `docs.mts`'s `numbered`;
+`guarded-element-read-refused`);
 and a `flatMap` callback returning a string (`card`;
 `flat-map-scalar-result-refused`).
 

@@ -1188,7 +1188,9 @@ function lowerFile(file: string, carriesContext: boolean,
   // stands for it.
   const imported = new Set<string>(importNodes.flatMap(node => {
     const bindings = node.importClause?.namedBindings;
-    return !bindings ? [] : ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [bindings.name.text];
+    const named = !bindings ? [] : ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [bindings.name.text];
+    const name = node.importClause?.name;
+    return name ? [name.text, ...named] : named;
   }));
   const rooted = new Set<string>([
     ...imported,
@@ -1628,12 +1630,14 @@ function lowerFile(file: string, carriesContext: boolean,
       spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ??
       regexpNodes[0] ?? dispatchNodes[0];
     if (!first) throw Error("missing declaration root");
-    // Named imports only. A type import joins the declaration graph; a value
-    // import is an assumption at the type its declaration states.
+    // Named, default and namespace imports. A type import joins the
+    // declaration graph; a value import is an assumption at the type its
+    // declaration states, a default import the module's `default` export's.
+    // An import binding nothing runs the module for its effects alone.
     for (const node of importNodes) {
       const clause = node.importClause;
-      if (!clause || clause.name || !clause.namedBindings)
-        gate.fail(node, "only named and namespace imports are in the source fragment");
+      if (!clause || (!clause.name && !clause.namedBindings))
+        gate.fail(node, "an import binding no name is outside the source fragment");
     }
     // TypeScript resolves every name, in the project that owns the file or the
     // one named explicitly: the declaration graph is the compiler's.
@@ -1860,17 +1864,21 @@ function lowerFile(file: string, carriesContext: boolean,
  * declaration document gives it. */
 function importedModules(importNodes: ImportDeclaration[], checker: Checker,
     values: Ast["declarations"]["values"], root: string | null): ImportedModule[] {
+  // Each value import's local name: a named import's, and a default
+  // import's, which binds the module's `default` export.
   const elements = importNodes.flatMap((node) => {
     const bindings = node.importClause?.namedBindings;
     const clause = node.importClause;
     const typeOnly = !!clause && "isTypeOnly" in clause && clause.isTypeOnly === true;
-    return typeOnly || !bindings || !ts.isNamedImports(bindings) ? []
-      : bindings.elements.filter((e) => !e.isTypeOnly);
+    if (typeOnly || !clause) return [];
+    const named = !bindings || !ts.isNamedImports(bindings) ? []
+      : bindings.elements.filter((e) => !e.isTypeOnly).map((e) => e.name);
+    return clause.name ? [clause.name, ...named] : named;
   });
   if (elements.length === 0) return [];
-  const symbols = checker.getSymbolAtLocation(elements.map((e) => e.name));
+  const symbols = checker.getSymbolAtLocation(elements);
   return elements.flatMap((element, i) => {
-    const value = values.find((v) => v.binding.local === element.name.text);
+    const value = values.find((v) => v.binding.local === element.text);
     if (!value || value.construct || value.typeParams.length > 0 || value.type.k !== "function") return [];
     const location = value.declaration.module;
     if (location.startsWith("typescript/lib/") || location.startsWith("tscert/")) return [];

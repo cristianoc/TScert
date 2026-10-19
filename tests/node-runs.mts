@@ -157,7 +157,11 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     `[roundTrip('{"a":{"toJSON":1},"b":[{"toJSON":"x"}]}'), wrapped('{"toJSON":[1]}')].join(" ")`),
     '{"a":{"toJSON":1},"b":[{"toJSON":"x"}]} [{"toJSON":[1]},{"toJSON":{"toJSON":[1]}}]',
     "json-parse-stringify-tojson-member: noncallable toJSON members round-trip");
-  assert.equal(runExample("json-stringify-arrays", "[nested([[1, 2], []]), ...mixed([[1, { a: [true] }], null])].join(\" \")"),
+  assert.equal(runExample("invalid-number-value-object",
+    "(() => { const xs = [{}, {}]; xs[0] = { valueOf() { xs.pop(); return 1; } }; return 1 in values(xs); })()"),
+    false, "invalid-number-value-object: an object's valueOf shrinks the mapped array, leaving a hole");
+  assert.equal(runExample("number-value", "parts(\"1.20.3\").join()"), "1,20,3", "number-value: the parts");
+  assert.equal(runExample("json-stringify-arrays","[nested([[1, 2], []]), ...mixed([[1, { a: [true] }], null])].join(\" \")"),
     '[[1,2],[]] [[1,{"a":[true]}],[[1,{"a":[true]}],null]] [null,[null,null]]', "json-stringify-arrays: strings");
   assert.equal(runExample("map-stable-json-error", `JSON.stringify([quotedAll(["a"]), checkedAll([1, 2])])`),
     '[["\\"a\\""],[1,2]]', "map-stable-json-error: dense results");

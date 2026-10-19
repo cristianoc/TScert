@@ -63,7 +63,7 @@ assert.deepEqual(Object.keys(/(?<a>x)/u.exec("x")?.groups ?? {}), ["a"]);
 // The differential fuzz: random patterns over classes, escapes read by mode,
 // named and unnamed groups, back references, lookarounds, quantifiers and
 // alternatives, each matched against random strings, with and without `u`.
-let seed = 0x5eed;
+let seed: number = 0x5eed;
 const random = (n: number): number => { // mulberry32
   seed = (seed + 0x6d2b79f5) | 0;
   let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -79,7 +79,7 @@ const atoms = ["a", "b", ".", "[^]", "[]", "[ab]", "[\\]a]", "\\(", "[(]", "x", 
   "\\p{L}", "\\P{L}", "\\p{a|x}", "\\u{a|x}", "\\u0061", "\\u{62}", "\\k<n0>", "\\k<a|x>", "\\k", "\\c", "\\cA",
   "\\c|", "\\1", "\\0", "\\d", "\\b", "^", "$", "\\u", "\\u{", "\\p"];
 // Half the patterns name no group, where `\k` is a letter outside Unicode mode.
-let names = 0, named = true;
+let names: number = 0, named: boolean = true;
 const generate = (depth: number): string => {
   const alternatives: string[] = [];
   for (let a = 0, n = random(4) === 0 ? 2 + random(2) : 1; a < n; a++) {
@@ -102,7 +102,7 @@ for (let i = 0; i < 200; i++) {
   for (let j = 0, n = random(7); j < n; j++) s += pick(alphabet);
   inputs.push(s);
 }
-let patterns = 0, read = 0, alwaysGroups = 0, matches = 0;
+let patterns: number = 0, read: number = 0, alwaysGroups: number = 0, matches: number = 0;
 const violations: string[] = [];
 for (let i = 0; i < 20000; i++) {
   names = 0;

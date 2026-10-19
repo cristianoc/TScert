@@ -323,7 +323,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
   | Not e -> branch env e (not truth)
   (* A name as a condition is tested for truthiness; a Boolean's slice is
      its literal. *)
-  | Id name -> refine_value env name (truthy_slice truth)
+  | Id name -> refine_value env name (truthy_refine declarations truth)
   (* Where some arm leaves the field optional or unnamed, so that nothing is
      known of what it holds, the test keeps the arms whose field may answer
      so (Lean's `fieldSlice` through the read's link): `IteratorResult` by

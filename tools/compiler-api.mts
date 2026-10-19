@@ -261,7 +261,7 @@ let audited: Installation | null = null;
 /** A stand-in installation a test supplies (`useHostInstallationForTests`);
  * no entry point of the pipeline sets it. */
 let standIn: Installation | null = null;
-let digestChecked = false;
+let digestChecked: boolean = false;
 
 function installation(): Installation {
   if (standIn) return standIn;

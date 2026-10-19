@@ -38,11 +38,12 @@ def ifE [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (A : Ty ι) (c
       [c, cast Γ A (if q then t else e)]
   | _ => node Γ (.ite c.term t.term e.term) A .ifBool [c,cast Γ A t,cast Γ A e]
 
-/-- Subtype search results already found, by source and target type. The graph,
-its image checker and the pool are fixed for one cache's life, so the two
-types are the key. -/
+/-- Subtype search results already found, by source and target type
+(`CertificateProducer.Answered`), and the current render's exhaustion. The
+graph and its image checker are fixed for one cache's life, so the two types
+are the key. -/
 structure SubtypeCache (ι : Type) [BEq ι] [Hashable ι] where
-  answers : Std.HashMap (Ty ι × Ty ι) (CheckResult ι (PositiveCertificates.SubtypeChoices ι)) := {}
+  answers : CertificateProducer.Answered ι := {}
   /-- The first unfinished coercion in the current render only. -/
   active : Option (Exhaustion ι) := none
 
@@ -57,14 +58,8 @@ what it did the first time. -/
 def coerceM (G : NormalGraph ι) (images : InstanceImageCheck G) (e : Evidence ι) (A : Ty ι) :
     RenderM ι (Evidence ι) := do
   if (claim e).type = A then return e
-  let key := ((claim e).type, A)
-  let found ← match (← get).answers.get? key with
-    | some found => pure found
-    | none =>
-      let found := subtypeUsing G images (claim e).type A
-      modify fun c => { c with answers := c.answers.insert key found }
-      pure found
-  modify fun c => { c with active := c.active <|> found.exhaustion }
+  let (found, answers) := subtypeUsing G images (claim e).type A (← get).answers
+  modify fun c => { c with answers, active := c.active <|> found.exhaustion }
   let some p := found.value | failure
   return .node ⟨(claim e).context, (claim e).term, A⟩ (.sub p) [e]
 
@@ -89,8 +84,8 @@ def renderAt (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
     -- The member's covering proofs are searched in the actual context.
     | .bindMember _ _ _, .letE (.readAt k (.var i)) _, [] =>
       let some O := Γ[i]? | failure
-      let searched := memberProofsUsing G images O k j.type
-      modify fun c => { c with active := c.active <|> searched.exhaustion }
+      let (searched, answers) := memberProofsUsing G images O k j.type (← get).answers
+      modify fun c => { c with answers, active := c.active <|> searched.exhaustion }
       let some (ps, rs, vs) := searched.value | failure
       pure (.node ⟨Γ,j.term,j.type⟩ (.bindMember ps rs vs) [])
     | .ifBoolVar T F, .ite (.var i) _ _, [t,e] =>

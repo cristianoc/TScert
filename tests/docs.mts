@@ -101,7 +101,8 @@ function numbered(text: string, heading: string): boolean {
   if (!cited || !own) return true;
   const h = sectionNumber(own[1] ?? "");
   const from = sectionNumber(cited[1] ?? "");
-  const to = cited[2] ? sectionNumber(cited[2]) : from;
+  const upper = cited[2];
+  const to = upper ? sectionNumber(upper) : from;
   const within = (n: number[]) => h.length >= n.length ? compare(h.slice(0, n.length), n) : compare(h, n.slice(0, h.length));
   return within(from) >= 0 && within(to) <= 0;
 }

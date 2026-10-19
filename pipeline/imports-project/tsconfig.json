@@ -22,7 +22,8 @@
       "@fixture/relay": ["./relay.ts"],
       "@fixture/whole": ["./whole.ts", "./defaulted.ts"],
       "@fixture/defaulted": ["./defaulted.ts"],
-      "@fixture/defaulted-key": ["./defaulted-key.ts"]
+      "@fixture/defaulted-key": ["./defaulted-key.ts"],
+      "@fixture/default-function": ["./default-function.ts"]
     }
   },
   "include": [
@@ -38,6 +39,7 @@
     "./ping.ts",
     "./pong.ts",
     "./relay.ts",
+    "./default-function.ts",
     "./whole.ts",
     "./defaulted.ts",
     "./defaulted-key.ts",

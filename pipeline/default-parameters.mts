@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import vm from "node:vm";
+import { runInNewContext } from "node:vm";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { stripTypes } from "../tools/strip-types.mts";
@@ -37,9 +37,9 @@ export function checkPatternDefaults(verifier: string, artifacts: string): void 
   }
   const source = stripTypes(readFileSync(join(artifacts, "source.ts"), "utf8"))
     .replace(/^export /gm, "");
-  assert.equal(vm.runInNewContext(source + "\noptionalDefault({})"), false);
-  assert.equal(vm.runInNewContext(source + "\noptionalDefault({ f: 3 })"), 3);
-  assert.equal(vm.runInNewContext(source +
+  assert.equal(runInNewContext(source + "\noptionalDefault({})"), false);
+  assert.equal(runInNewContext(source + "\noptionalDefault({ f: 3 })"), 3);
+  assert.equal(runInNewContext(source +
     "\nconst state = { value: null }; skippedEffect({ f: 3 }, state); state.value"), 1);
   console.log("pattern defaults: skipped effects, reachable fallback and omitted-claim refusal checked");
 }
@@ -91,7 +91,7 @@ export function checkDefaults(verifier: string, artifacts: string): void {
 
   const examples = join(import.meta.dirname, "examples");
   const execute = (file: string, expression: string): unknown =>
-    vm.runInNewContext(
+    runInNewContext(
       stripTypes(readFileSync(join(examples, `${file}.ts`), "utf8")) +
         "\n" +
         expression,
