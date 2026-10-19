@@ -11,7 +11,7 @@
  * states (an imported value). */
 import type { Stated } from "./library-globals.mts";
 import type { CallEffect, TypeTerm } from "./declaration-types.mts";
-import { emptyEffect } from "./type-graph.mts";
+import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 
 export type ModuleEntry = {
   /** The module, as `node:` names it without the prefix: `child_process`. */
@@ -24,6 +24,18 @@ export type ModuleEntry = {
   /** The effect the stated signature states, where reviewed: a call at it
    * changes at most what its footprint says; absent, it may change anything. */
   effect?: CallEffect;
+  /** For a module that exports a function merged with a namespace
+   * (`export = strict`), read by its default import: the member the entry
+   * reviews, absent for the call of the function itself. */
+  member?: string;
+  /** A promise on normal return about the actual at `param`: it holds a
+   * value of `type` (`asserts actual is T`), which the host's comparison
+   * establishes before it returns. */
+  promise?: { param: number; type: TypeTerm };
+  /** The call is the calculus's own test: written as a statement with no
+   * message or a literal one, `assert(v, m)` is `if (!v) throw
+   * %AssertionFailure%(m)`, narrowing `v` as an `if` does. */
+  lowering?: "test";
 };
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -52,7 +64,74 @@ const stdio: TypeTerm = { k: "tuple", presence: "dense", readonly: true, optiona
 const strings: TypeTerm = { k: "object", fields: [], calls: [], span: at,
   stringIndex: { readonly: true, value: union(atom("string"), atom("undefined")), span: at } };
 
+/** `node:assert/strict`'s message: a string, or absent. A message that is
+ * an `Error` would be thrown in place of the `AssertionError`. */
+const message: TypeTerm = union(atom("string"), atom("undefined"));
+/** A callback `() => unknown`, whatever it runs. */
+const block: TypeTerm = { k: "function", effect: ordinaryEffect, receiver: null, params: [], rest: null,
+  result: atom("unknown"), span: at };
+/** `node:assert/strict`'s entries (SOURCE-CONTRACTS.md, "node:assert/strict").
+ * A passing `ok`, `equal`, `notEqual` and `ifError` run no code (ToBoolean,
+ * `Object.is`, a comparison with `null` and `undefined`): their footprint is
+ * empty on normal return. A failure builds an `AssertionError`, which reads
+ * the compared values' accessors, runs a program's `Error.prepareStackTrace`
+ * and sets and restores `Error.stackTraceLimit` (Node 25.2.1): no entry
+ * preserves anything across the throw (`onThrow` false). A deep comparison
+ * traverses enumerable own string and symbol properties, an array's extra
+ * ones included, accessors among them; `match` runs the regex's `exec`,
+ * reading `lastIndex` by ToLength; `throws` calls its block and converts a
+ * thrown value by `String` to test a regex: these state no effect. */
+const assertEntry = (members: (string | undefined)[], signature: string, entry: Omit<ModuleEntry, "module" | "name" | "signature" | "member">):
+    ModuleEntry[] => members.map(member => ({ module: "assert/strict", name: "default", signature,
+      ...(member === undefined ? {} : { member }), ...entry }));
+const asserted: Omit<ModuleEntry, "module" | "name" | "signature" | "member"> = { lowering: "test", effect: emptyEffect,
+  stated: { binders: [], params: [atom("unknown"), message], result: atom("void") } };
+const assertEntries: ModuleEntry[] = [
+  // The call of the module's function itself, as each pinned installation
+  // declares it: a function merged with a namespace, or a call signature of
+  // the exported constant's type.
+  ...assertEntry([undefined], "function strict(value: unknown, message?: string | Error): asserts value;", asserted),
+  ...assertEntry([undefined], "(value: unknown, message?: string | Error): asserts value;", asserted),
+  ...assertEntry(["ok"], "function ok(value: unknown, message?: string | Error): asserts value;", asserted),
+  // `equal` is `strictEqual`: `Object.is(actual, expected)`, after which
+  // `actual` is the value `expected` is, of its type. That promise, a generic
+  // one, is not stated: the producer encodes no generic promise signature
+  // (WORK.md), so `equal` narrows nothing.
+  ...assertEntry(["equal", "strictEqual"],
+    "function strictEqual<T>(actual: unknown, expected: T, message?: string | Error): asserts actual is T;",
+    { effect: emptyEffect,
+      stated: { binders: ["T"], params: [atom("unknown"), { k: "binder", name: "T", span: at }, message], result: atom("void") } }),
+  ...assertEntry(["notEqual", "notStrictEqual"],
+    "function notStrictEqual(actual: unknown, expected: unknown, message?: string | Error): void;",
+    { effect: emptyEffect, stated: { binders: [], params: [atom("unknown"), atom("unknown"), message], result: atom("void") } }),
+  // A deep comparison narrows nothing: the declaration's `asserts actual is
+  // T` is not read.
+  ...assertEntry(["deepEqual", "deepStrictEqual"],
+    "function deepStrictEqual<T>(actual: unknown, expected: T, message?: string | Error): asserts actual is T;",
+    { stated: { binders: [], params: [atom("unknown"), atom("unknown"), message], result: atom("void") } }),
+  ...assertEntry(["notDeepEqual", "notDeepStrictEqual"],
+    "function notDeepStrictEqual(actual: unknown, expected: unknown, message?: string | Error): void;",
+    { stated: { binders: [], params: [atom("unknown"), atom("unknown"), message], result: atom("void") } }),
+  // A non-regex `regExp` throws a TypeError, an outcome.
+  ...["match", "doesNotMatch"].flatMap(member => assertEntry([member],
+    `function ${member}(value: string, regExp: RegExp, message?: string | Error): void;`,
+    { stated: { binders: [], params: [atom("string"), atom("unknown"), message], result: atom("void") } })),
+  ...["throws", "doesNotThrow"].flatMap(member => [
+    ...assertEntry([member], `function ${member}(block: () => unknown, message?: string | Error): void;`,
+      { stated: { binders: [], params: [block, message], result: atom("void") } }),
+    ...assertEntry([member], `function ${member}(block: () => unknown, error: AssertPredicate, message?: string | Error): void;`,
+      { stated: { binders: [], params: [block, atom("unknown"), message], result: atom("void") } })]),
+  // `ifError(v)` returns where `v` is `null` or `undefined`, and throws
+  // otherwise.
+  ...assertEntry(["ifError"], "function ifError(value: unknown): asserts value is null | undefined;",
+    { effect: emptyEffect, promise: { param: 0, type: union(atom("null"), atom("undefined")) },
+      stated: { binders: [], params: [atom("unknown")], result: atom("void") } }),
+  ...assertEntry(["fail"], "function fail(message?: string | Error): never;",
+    { stated: { binders: [], params: [message], result: atom("never") } }),
+];
+
 export const modulesOverlay: readonly ModuleEntry[] = [
+  ...assertEntries,
   // `execFileSync`'s restricted form, read first: options naming every key the synchronous path
   // reads, each at a type the host validates without code of the client's
   // (SOURCE-CONTRACTS.md, "Library modules"). `env` is absent or undefined,

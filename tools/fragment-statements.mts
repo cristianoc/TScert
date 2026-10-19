@@ -6,7 +6,7 @@ import * as ts from "typescript/unstable/ast";
 import type { Expression, FunctionDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { BindingAst, Expr, FunctionAst, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import { asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
+import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
 import { GENERATOR, UNCLOSABLE, bindingScope, firstOptional, forInEntryReads, freeOffsets, jumpTarget, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
@@ -1099,6 +1099,21 @@ export function abrupt(this: Gate, s: Statement): boolean {
 
 export function stmt(this: Gate, node: Statement): Stmt {
   const gate: Gate = this;
+  // `assert(v, m);` of `node:assert/strict`, which the declaration graph
+  // found to be the reviewed one, with no message or a literal one: the
+  // calculus's own test, `if (!v) throw %AssertionFailure%(m)`. The literal
+  // is evaluated after `v`, with nothing observable between.
+  if (ts.isExpressionStatement(node) && ts.isCallExpression(node.expression) &&
+      gate.assertionCalls.has(gate.span(node.expression).join(":"))) {
+    const call = node.expression;
+    const [value, message] = call.arguments;
+    if (!value) return gate.fail(call, "an assertion of no value");
+    const callee = call.expression;
+    const failure = gate.intrinsic(assertionFailureName, gate.span(callee), [callee.end, callee.end + 1],
+      message ? [gate.expr(message)] : []);
+    return { k: "if", pos: gate.span(node), cond: { k: "not", pos: gate.span(call), e: gate.expr(value) },
+      then: [{ k: "throw", pos: gate.span(callee), e: failure }], else_: null };
+  }
   if (ts.isExpressionStatement(node))
     return {
       k: "effect",

@@ -288,6 +288,9 @@ export class Gate {
   /** Calls the reviewed overlay of library globals reads as a test of the
    * calculus, `Array.isArray(e)`, and `e instanceof Array`, by span. */
   readonly globalTests: Set<string> = new Set();
+  /** Statement calls of `node:assert/strict`'s `assert` and `ok` read as the
+   * calculus's own test, by span. */
+  readonly assertionCalls: Set<string> = new Set();
   /** Calls the reviewed overlay reads as a call of an intrinsic,
    * `Promise.resolve(v)`, by span: the intrinsic's name. */
   readonly globalIntrinsics: Map<string, string> = new Map();
@@ -1743,6 +1746,7 @@ function lowerFile(file: string, carriesContext: boolean,
         mappedType: ([start, end], members) => gate.mappedMembers.set(`${start}:${end}`, members),
         symbolName: ([start, end], result) => gate.symbolNames.set(`${start}:${end}`, result),
         globalTest: ([start, end]) => gate.globalTests.add(`${start}:${end}`),
+        assertionCall: ([start, end]) => gate.assertionCalls.add(`${start}:${end}`),
         globalIntrinsic: ([start, end], name) => gate.globalIntrinsics.set(`${start}:${end}`, name),
         globalConstruct: ([start, end]) => gate.globalConstructs.add(`${start}:${end}`),
         enums: enumNodes.map(node => gate.span(node)),

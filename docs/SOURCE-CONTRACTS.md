@@ -224,8 +224,27 @@ says nothing of keys it does not name, a method's receiver is its host, and a
 global both called and read through a method, or both constructed and read
 through members, has no clause and is refused, unless the overlay reads those
 members as intrinsics. A global both read as a value and constructed is
-refused too. A standard library global is
-read through the reviewed overlay ([Library globals](#library-globals)), and
+refused too. A global declared as a function, its overloads without
+bodies (`declare function parseInt(…)`), is only called, at the overloads
+TypeScript resolves its calls to:
+
+```math
+\frac{x\ \text{a global function of overloads}\ F\qquad
+      \text{every occurrence of}\ x\ \text{is a callee}\qquad
+      C\subseteq F}
+     {\Gamma(x)=⟦\mathsf{calls}(C)⟧}\ \textsf{global-function}
+```
+
+A standard library global is
+read through the reviewed overlay ([Library globals](#library-globals)). So
+is every global function: its implementation is outside what is verified,
+wherever its declaration lies (the standard library, an installed package,
+a declaration file of the project), so each overload a call resolves to is
+one an entry lists with its exact text, an augmentation's included, or the
+call is refused (`node-clear-timeout`; `invalid-parse-int-overload`, run
+under Node; `invalid-node-global-unreviewed`, `invalid-host-global-unreviewed`,
+`invalid-host-global-changed`). The checked file's own ambient declarations
+are the [ambient assumption](DESIGN.md#trust-surface). A
 a function of Node's modules an overlay entry lists, through the overlay of
 library modules ([Library modules](#library-modules)).
 
@@ -1783,6 +1802,42 @@ The entries, each with the code its restriction keeps from running:
   stated at a primitive, defined below: $`(\mathsf{Prim},\ \ldots\mathtt{unknown})\Rightarrow\mathtt{number}`$,
   a value too (`texts.map(Number)`; `number-value`; `invalid-number-value-object`,
   run under Node).
+- `parseInt(s, r)` and `Math.ceil(x)` convert a string and numbers, primitives
+  no conversion code runs on, and write nothing: as declared, within the empty
+  footprint (`library-parse-int`, `library-math-ceil`). No argument of their
+  parameter types converts by code.
+- `Object.fromEntries(entries)` steps its argument's iterator, reads each
+  element's 0 and 1, converts the key and defines it on a fresh object. Over
+  an array the iterator is the host's and a pair an array of data, so it runs
+  no code and writes nothing it did not allocate:
+  $`\forall T.\ (\mathtt{readonly}\ (\mathtt{readonly}\ [\mathtt{string},\ T])[\,])\Rightarrow\{[k:\mathtt{string}]:T\}`$,
+  within the empty footprint (`object-from-entries`). A program's iterable
+  runs its iterator (`invalid-from-entries-iterable`, run under Node).
+- `Array.from(xs)` of an array copies it through the host's iterator,
+  a hole read as `undefined`: $`\forall T.\ (\mathtt{readonly}\ T[\,])\Rightarrow T[\,]`$
+  within the empty footprint (`array-from-copy`). `Array.from(items, f)` of a
+  length record steps the record's own iterator where it holds one, client
+  code yielding any value, and else reads its length and indices; it calls
+  `f` with each value and index:
+  $`\forall U.\ (\{\mathtt{readonly}\ \mathit{length}:\mathtt{number}\},\ (\mathtt{unknown},\ \mathtt{number})\Rightarrow U)\Rightarrow U[\,]`$,
+  stating no effect (`array-from-length`; `invalid-array-from-iterator`, run
+  under Node).
+- `new RegExp(p, flags)` of strings compiles a pattern known only at run
+  time, a SyntaxError where it or the flags are invalid: the structural regex
+  $`⟦\mathtt{RegExp}⟧=P(\Sigma_\top)`$ ([regular expressions](#regular-expressions)),
+  no native mark stated, within the empty footprint on its throw too
+  (`regexp-dynamic`). A regex pattern would be read by its `Symbol.match`,
+  `source` and `flags` (`invalid-regexp-object-pattern`, run under Node).
+- `e instanceof Error` walks `e`'s prototype chain for `Error.prototype`,
+  which runs no code, `Error` owning no `[Symbol.hasInstance]`:
+  `%InstanceOf:Error%`, $`(\mathtt{unknown})\Rightarrow\mathtt{boolean}`$ within
+  the empty footprint (`instanceof-error`, run under Node). It narrows
+  nothing: an object gets `Error.prototype` without `Error` constructing it,
+  its `message` any value (`invalid-instanceof-error-message`, run under
+  Node; [source fragment](SOURCE-FRAGMENT.md)).
+- Node's `clearTimeout(t)` of any value cancels a timer by id or by object,
+  reading and writing an object's `_onTimeout`, which may be an accessor:
+  $`(\mathtt{unknown})\Rightarrow\mathtt{undefined}`$, stating no effect.
 - `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
   `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
   object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,
@@ -2099,6 +2154,102 @@ unrestricted in its effect unless its entry states one. The entries:
   exports one object (`export = path`), whose methods are the overloads an
   entry names.
 
+### `node:assert/strict`
+
+A file may import `node:assert/strict` by default (`import assert from
+"node:assert/strict"`). Node declares that module's export as a function
+merged with a namespace (`function strict(value, message?): asserts value`
+beside `namespace strict { export { ok, strictEqual as equal, … } }` and
+`export = strict`), or, in an earlier `@types/node`, as a constant of a type
+with that call signature and those members; its members are `node:assert`'s
+functions. The module `node:assert` itself, whose `equal` is loose equality,
+is not read.
+
+**Reading.** As a namespace import's member is
+([namespace imports](SOURCE-ELABORATION.md#derived-source-forms)), each
+member read `assert.m` is a binding of the file, named `assert.m`, of the
+export `default.m`, and a call `assert(…)` is a call of the import's own
+binding; any other mention (passing `assert`, a member read uncalled) is
+refused (`namespace-members.mts`), a default import beside named bindings
+included (`invalid-node-assert-default-and-named`). A value imported from
+`node:assert/strict` any other way (a named import, a namespace import) or
+from `node:assert` is refused rather than read at its declaration, whose
+promises only it asserts (`invalid-node-assert-named-import`,
+`invalid-node-assert-namespace-import`, `invalid-node-assert-loose-import`). A member call passes the function as its
+receiver, which none of these functions reads. Each binding is the forms of
+the overloads its calls resolve to, each an entry of the overlay of library
+modules (module `assert/strict`, name `default`, the member, and the
+declaration's text, pinned as every entry is), so a changed declaration is
+refused and reviewed again; a generic entry's binders are the binding's type
+parameters.
+
+**Footprints.** Under Node 25.2.1 (observed 2026-10-19 by probes run under
+Node), a passing `ok`, `equal`, `notEqual` and `ifError` run no code:
+ToBoolean, `Object.is` and a comparison with `null` and `undefined`. A failing
+call builds an `AssertionError`: it calls no `inspect.custom` hook, but it
+reads the compared values' accessors while building the message, sets and
+restores `Error.stackTraceLimit`, and runs a program's
+`Error.prepareStackTrace`; a message that is an `Error` is thrown as it is.
+Each entry states a footprint for normal return only, and unrestricted
+effects on the exceptional edge: `onThrow` false, so a handler catching an
+`AssertionError`, or whatever a hook throws instead, holds no fact about the
+heap that the call's footprint would preserve, as the
+[effect](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)
+of any call reaching a handler (`invalid-node-assert-catch-continue`, run
+under Node). A message is stated at `string`.
+
+**Entries.** With $`M=\mathtt{string}\mid\mathtt{undefined}`$, the message:
+
+- `assert(v, m)` and `assert.ok(v, m)`: a falsy `v` throws. A statement call
+  whose message is absent or a string literal is the calculus's own test,
+  `if (!v) throw %AssertionFailure%(m)`, so the argument narrows exactly as
+  an `if` narrows it, the literal evaluated after `v` with nothing observable
+  between (`node-assert-strict`). Any other call is read at
+  $`(\mathtt{unknown},\ M)\Rightarrow\mathtt{void}`$, the empty footprint on
+  normal return, and narrows nothing. `%AssertionFailure%` returns a fresh
+  `AssertionError` and states no effect.
+- `assert.equal(a, e, m)` (`strictEqual`):
+  $`\forall T.\ (\mathtt{unknown},\ T,\ M)\Rightarrow\mathtt{void}`$, the empty
+  footprint on normal return. `Object.is(a, e)` makes $`a`$ the value $`e`$, of
+  type $`T`$; that promise, $`(\mathtt{unknown},\ T,\ M)\to T\,[\mathsf{asserts}\ 0]`$,
+  is not stated, as the producer encodes no generic promise signature
+  (`node-assert-equal-promise`, a gap). `notEqual`:
+  $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{void}`$, the empty
+  footprint on normal return.
+- `assert.deepEqual(a, e, m)` (`deepStrictEqual`) and `notDeepEqual` compare
+  by traversal, which can traverse enumerable own string and symbol
+  properties, including extra array properties, accessors among them
+  (observed: a passing comparison calls an enumerable symbol getter and an
+  extra array property's getter). No type the fragment states bounds all of
+  these, `JsonValue` included:
+  $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{void}`$, stating
+  no effect, on normal return too (`invalid-node-assert-deep-preserving`, run
+  under Node). Neither narrows: deep equality to a value of type $`T`$ is not
+  shown to give type $`T`$.
+- `assert.match(s, r, m)` and `doesNotMatch`: Node checks `r`'s regex slot,
+  throwing on another value, and runs `RegExp.prototype.exec` on it, which
+  reads `lastIndex` by ToLength (observed: an object `lastIndex` runs its
+  `valueOf`): $`(\mathtt{string},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{void}`$,
+  stating no effect. No narrowing.
+- `assert.throws(f, m)`, `assert.throws(f, x, m)` and `doesNotThrow` call `f`,
+  and `throws` tests the thrown value against `x`: a regex converts it by
+  `String`, which runs an object's `toString` (observed); `f` at
+  `() => unknown`, `x` at `unknown`, stating no effect
+  (`invalid-node-assert-throws-callback`, run under Node). No narrowing.
+- `assert.ifError(v)`: $`(\mathtt{unknown})\Rightarrow\mathtt{void}`$ and the
+  promise $`(\mathtt{unknown})\to\mathtt{null}\mid\mathtt{undefined}\,[\mathsf{asserts}\ 0]`$,
+  the empty footprint on normal return; a failure reads `v`'s `message` and
+  `stack` (observed).
+- `assert.fail(m)`: $`(M)\Rightarrow\mathtt{never}`$, no effect.
+
+Each entry is an assumption about the host, as a library module's is: the
+promise of `ifError` follows from the comparison the host makes before it
+returns, and the footprints from the steps observed above; nothing in Lean
+proves them. The module's object is assumed unmodified: no code replaces
+`assert.ok`. A passing call with an empty footprint keeps a fact across it,
+a `map` calling `equal` staying dense (`node-assert-strict`); the failure
+leaves the callback by its throw.
+
 ## Regular expressions
 
 A regex is an object of host-relative methods (`regexp.mts`), read in two
@@ -2251,7 +2402,9 @@ inherits from `RegExp.prototype` is refused whatever the operand
 (`inKeyRefusal`, `invalid-regexp-lastindex-in`). `compile`, which replaces a
 regex's pattern and so its shape, is no member (`invalid-regexp-compile`); a
 library class is no base (`invalid-regexp-subclass`). A replacement callback
-and `new RegExp` are not stated. Match results are readonly views.
+is not stated. `new RegExp` of strings is the structural regex
+$`⟦\mathtt{RegExp}⟧`$ ([library globals](#library-globals); `regexp-dynamic`).
+Match results are readonly views.
 
 ## Async functions and await
 
