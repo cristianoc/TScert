@@ -404,31 +404,51 @@ Operations excluded, refused with a location:
   holding a prototype is not;
 - members JavaScript's instance or `Error.prototype` holds and the model does
   not state: `e.stack`, `e.toString()`, `D.captureStackTrace`, `super.m(…)`;
-- an instance member named `message` or `stack`, of a class extending `Error`
-  at any depth, which JavaScript's own property shadows, refused at the
-  member; a write of `this.message` or `this.stack` in such a class, which
-  would make an enumerable key, refused at the write;
+- an instance member named `message` or `stack` (a method, a field or an
+  accessor), and a parameter property of either name, of a class extending
+  `Error` at any depth, refused at the member: JavaScript's own property
+  shadows a method, and a field or a parameter property defines or assigns
+  the own property where the model would add an enumerable field;
 - `super(m, options)`, whose `options.cause` is read through `[[Get]]`, as
   the overlay's `Error` is;
 - another library base (`TypeError`, `Map`, an ambient class).
 
-The mutation and copy paths reaching an instance from outside its class are
-refused today by evidence search, not by an enforced boundary (observed
-2026-10-19, `invalid-error-subclass-*` cases):
+**Writes of `message` and `stack`.** JavaScript keeps an instance's own
+`stack` non-enumerable through an assignment, and its own `message` too where
+the construction passed one; after `new D()` or `new D(undefined)` the
+instance owns no `message`, and an assignment creates an own enumerable one
+(observed under Node, `invalid-error-subclass-assign-target`). Either way the
+model, which states neither property, would add or change an enumerable own
+field, which a later copy, `Object.keys` or an exact-key claim observes. So a
+write that may set either key is refused where its receiver's type admits an
+instance of the family: an assignment or an update at `.message`,
+`.stack`, `["message"]` or `["stack"]`, at a computed key whose type may be
+either string, a target of a destructuring assignment or a loop head, and
+`Object.assign` onto such a receiver from a source whose type may carry
+either key. TypeScript's type of the receiver decides, so a structural alias
+typed `{ stack?: string }` is covered with the class's own type and `this`.
+A type admits an instance unless every part of it is a primitive, an array
+or tuple, a callable or constructible type, or an object type whose `name`,
+`message` or `stack`, or string index, holds no string, each of its parts
+another primitive, `object`, an array or a callable type (`reservedWrites` in
+`declaration-graph.mts`); a write of `message` onto a record whose `name` is a
+number stays an ordinary field write (`reserved-write-excluded`).
 
-- `e.message = v`: the link's `message` is a readonly view;
-- `e.stack = v` then a copy, a write through an alias typed `{ stack?: string
-  }`, `Object.assign(e, …)` and a rest pattern `{ message, ...rest } = e`: no
-  rule derives the merge of a record holding a prototype;
-- `Object.assign({}, e)`: the source may own `__proto__`.
+External code is required to create no enumerable own `message` or `stack`
+on an instance of the family: no assignment of `message` to one constructed
+without a message, and no definition of either key as enumerable. An
+external function's effect does not exempt it: a footprint says which
+locations a call may change, not whether a key it writes is enumerable, and
+after the call the model reads the instance at its declared type, which
+states neither key as an own field. With the requirement, every admitted
+observation of the instance after the call (its reads, keys, copies and
+entries) agrees with the model's; a change of the non-enumerable properties
+JavaScript keeps is invisible to them, and `e.stack` is refused.
 
-JavaScript writes the own non-enumerable property in each of the first two,
-and a copy then leaves it out, where the model would add an enumerable own
-key; a merge rule for such records needs the store of non-enumerable own
-properties ([model limits](../WORK.md#model-limits-of-one-form-each)) first.
-External code reaches an instance at its declared types: a parameter typed
-`Error` is the overlay's instance, and a function's effect on it is its
-footprint.
+**Trusted boundary.** The member and parameter-property reservations and the
+write refusals are the parser's: Lean reads no class declaration and no
+TypeScript type, and accepts a fragment, claims and evidence with a member
+renamed `stack` throughout (`pipeline/test.mts`, "forged stack member").
 
 The pipeline cases `error-subclass` and `error-subclass-methods` (run under
 Node) and `invalid-error-subclass-*` hold each row, and forged claims of a

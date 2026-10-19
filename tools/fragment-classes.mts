@@ -283,9 +283,10 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
   // An `Error`-derived instance owns `message` and `stack` in JavaScript
   // (Node gives every instance an own `stack`, and an own `message` where one
   // is passed): an instance member under either name would be shadowed by the
-  // own property, and a write of either through `this` would make an
-  // enumerable key where JavaScript's is not. Each class extending one of the
-  // family is checked here, so the names are reserved at every depth.
+  // own property. Each class extending one of the family is checked here, so
+  // the names are reserved at every depth. A write of either, through `this`
+  // or any other receiver, is refused by its receiver's type
+  // (`reservedWrites` in declaration-graph.mts).
   if (base?.error) {
     const spelled = (key: Node | undefined): string | undefined =>
       key && (ts.isIdentifier(key) || ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) ? key.text : undefined;
@@ -296,16 +297,13 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
     for (const m of node.members) {
       const key = isStatic(m) ? undefined : reserved(nameOf(m));
       if (key) gate.fail(m, `a member named \`${key}\` of a class extending \`Error\` is outside the fragment: an instance's own \`${key}\` in JavaScript shadows it`);
+      // A parameter property is a field the constructor defines.
+      if (ts.isConstructorDeclaration(m))
+        for (const p of m.parameters) {
+          const field = p.modifiers?.length ? reserved(p.name) : undefined;
+          if (field) gate.fail(p, `a parameter property named \`${field}\` of a class extending \`Error\` is outside the fragment: it assigns the instance's own \`${field}\`, which JavaScript keeps non-enumerable`);
+        }
     }
-    const target = (n: Node): string | undefined => ts.isPropertyAccessExpression(n) && n.expression.kind === ts.SyntaxKind.ThisKeyword
-      ? reserved(n.name)
-      : ts.isElementAccessExpression(n) && n.expression.kind === ts.SyntaxKind.ThisKeyword ? reserved(n.argumentExpression) : undefined;
-    const write = (n: Node): Node | undefined => ts.isBinaryExpression(n) &&
-      n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
-      target(n.left) ? n : n.forEachChild(write);
-    const written = write(node);
-    if (written && ts.isBinaryExpression(written))
-      gate.fail(written, `a write of \`this.${target(written.left)}\` in a class extending \`Error\` is outside the fragment: the instance's own \`${target(written.left)}\` is not enumerable, which a write would make it`);
   }
   const instanceMembers = { name: name.text, generic: binders.length > 0 };
   gate.selfClass = instanceMembers;

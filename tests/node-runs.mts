@@ -235,6 +235,13 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "invalid-error-subclass-null-message: ToString converts null");
   for (const file of ["invalid-error-subclass-stack-copy", "invalid-error-subclass-alias-stack"])
     assert.equal(runExample(file, "copied()"), undefined, `${file}: the copy has no stack`);
+  // A write of `message` or `stack` onto an instance: `stack` stays
+  // non-enumerable; `message` does where one was passed, and becomes
+  // enumerable where none was.
+  assert.equal(JSON.stringify(runExample("invalid-error-subclass-assign-target", "relabelled()")), '["message"]',
+    "invalid-error-subclass-assign-target: an enumerable message");
+  assert.equal(JSON.stringify(runExample("invalid-error-subclass-pattern-write", "traced()")), "[]",
+    "invalid-error-subclass-pattern-write: no enumerable stack");
   assert.equal(runExample("invalid-error-subclass-spread", "main()"), undefined,
     "invalid-error-subclass-spread: the copy has no message");
   assert.equal(runExample("error-subclass-json-replacer", "text()"), '{"message":"x"}',

@@ -502,6 +502,26 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged error instances: an own message and a stack claimed of a constructed error, refused\n");
 }
 {
+  // The trusted boundary: the parser reserves `message` and `stack` as member
+  // names of a class extending `Error` (SOURCE-ELABORATION.md, "A class
+  // extending Error"), and Lean reads no class declaration. A fragment, claims
+  // and evidence with `text` renamed `stack` throughout are accepted: the
+  // reservation is the parser's alone.
+  const methods = run("error-subclass-methods");
+  const renamed = (file: string): string => {
+    const path = join(methods, `forged-stack-member-${file}`);
+    writeFileSync(path, readFileSync(join(methods, file), "utf8").replaceAll('"text"', '"stack"')
+      .replaceAll("Located.text", "Located.stack"));
+    return path;
+  };
+  const fragment = renamed("fragment.json");
+  const accepted = spawnSync(verifier, ["--check-source-claims", fragment, renamed("claims.json"),
+    join(methods, "source.ts"), renamed("evidence.json")], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  assert.ok(readFileSync(fragment, "utf8").includes('"name":"stack"'), "the forged fragment names a member `stack`");
+  process.stdout.write("forged stack member: accepted by Lean, the reservation enforced by the parser alone\n");
+}
+{
   // An optional call of a method reads its object again as the call's
   // receiver, claimed at the method's name: claimed at `undefined`, it is
   // refused there where evidence is produced, and checking refuses the
