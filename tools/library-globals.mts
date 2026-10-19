@@ -6,9 +6,8 @@
  * not say and soundness needs:
  *
  * - which signatures exist: a global's call, construct, method or property
- *   signature is read only when an entry lists it, with the text it was
- *   reviewed against (a global function's by its tokens, `sameReviewed`), so a
- *   changed library is refused and reviewed again;
+ *   signature is read only when an entry lists it, with exactly the text it
+ *   was reviewed against, so a changed library is refused and reviewed again;
  * - where the host runs code of the client's on an argument the declaration
  *   admits (`String` of an object calls its `toString`), the parameter the
  *   reader states instead: the part of the declared type on which it runs
@@ -44,8 +43,7 @@ export type GlobalEntry = {
   global: string;
   /** The member read, `Symbol.for`; absent for a call of the global itself. */
   member?: string;
-  /** The declaration as reviewed: a global function's compared by its tokens
-   * (`sameReviewed`), any other's exactly. */
+  /** The declaration, exactly as reviewed. */
   signature: string;
   /** A parameter some declared arguments of which the host runs the client's
    * code on: it is stated as `safe`, the part on which it runs none. */
@@ -440,9 +438,9 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // and returns the timer, an object read at no member. Scheduling runs
   // asynchronous-resource hooks other code may have installed: no effect is
   // stated. The callback states no effect either.
-  ...["function setTimeout<TArgs extends any[]>(callback: (...args: TArgs) => void, delay?: number, ...args: TArgs): NodeJS.Timeout;",
+  ...["function setTimeout<TArgs extends any[]>(\n            callback: (...args: TArgs) => void,\n            delay?: number,\n            ...args: TArgs\n        ): NodeJS.Timeout;",
     "function setTimeout(callback: (_: void) => void, delay?: number): NodeJS.Timeout;",
-    "function setTimeout<TArgs extends any[]>(callback: (...args: TArgs) => void, ms?: number, ...args: TArgs): NodeJS.Timeout;",
+    "function setTimeout<TArgs extends any[]>(\n            callback: (...args: TArgs) => void,\n            ms?: number,\n            ...args: TArgs\n        ): NodeJS.Timeout;",
     "function setTimeout(callback: (args: void) => void, ms?: number): NodeJS.Timeout;"].map(
     (signature): GlobalEntry => ({ host: contract, origin: node, global: "setTimeout", signature,
       stated: { binders: [], params: [{ k: "function", effect: ordinaryEffect, receiver: null, params: [], rest: null,
@@ -455,8 +453,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // be none (Node 25.2.1: a getter beside an array's elements popping an
   // enclosing array leaves a hole in its copy). Stated at any value, the
   // result `unknown`, no effect stated; a transfer list is not admitted.
-  ...["function structuredClone<T>(value: T, options?: { transfer?: Transferable[] }): T;",
-    "function structuredClone<T>(value: T, transfer?: { transfer: ReadonlyArray<import(\"worker_threads\").TransferListItem> }): T;"].map(
+  ...["function structuredClone<T>(\n            value: T,\n            options?: { transfer?: Transferable[] },\n        ): T;",
+    "function structuredClone<T>(\n        value: T,\n        transfer?: { transfer: ReadonlyArray<import(\"worker_threads\").TransferListItem> },\n    ): T;"].map(
     (signature): GlobalEntry => ({ host: contract,
       origin: node, global: "structuredClone", signature,
       stated: { binders: [], params: [atom("unknown")], result: atom("unknown") } })),

@@ -2,7 +2,7 @@
  * may import and call them: through a reviewed overlay (SOURCE-CONTRACTS.md,
  * "Library modules"), as `library-globals.mts` reads the standard library's
  * globals. An entry names one overload of the function's declaration in
- * `@types/node`, with the tokens it was reviewed against, so a changed
+ * `@types/node`, with exactly the text it was reviewed against, so a changed
  * declaration is refused and reviewed again, and states the signature the
  * host meets at the arguments it admits: what the host does there, stated as
  * a type. The value is the statements' intersection; the declaration's types
@@ -12,15 +12,13 @@
 import type { Stated } from "./library-globals.mts";
 import type { CallEffect, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
-import { SyntaxKind } from "typescript/unstable/ast";
-import { createScanner } from "typescript/unstable/ast/scanner";
 
 export type ModuleEntry = {
   /** The module, as `node:` names it without the prefix: `child_process`. */
   module: string;
   /** The exported function. */
   name: string;
-  /** The overload as reviewed, compared by its tokens (`sameReviewed`). */
+  /** The overload, exactly as reviewed: its text in the declaration file. */
   signature: string;
   stated: Stated;
   /** The effect the stated signature states, where reviewed: a call at it
@@ -145,7 +143,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // did not allocate before it returns or throws: the empty footprint, on a
   // throw too.
   { module: "child_process", name: "execFileSync",
-    signature: "function execFileSync(file: string, args: readonly string[], options: ExecFileSyncOptionsWithStringEncoding): string;",
+    signature: "function execFileSync(\n        file: string,\n        args: readonly string[],\n        options: ExecFileSyncOptionsWithStringEncoding,\n    ): string;",
     stated: { binders: [], params: [atom("string"),
       { k: "array", presence: "readable", readonly: true, element: atom("string"), span: at },
       { k: "object", stringIndex: null, calls: [], span: at, fields: [
@@ -184,7 +182,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // under Node 25.2.1, and `env` alone did. A record type states nothing of
   // the keys it does not name, so `env` is stated.
   { module: "child_process", name: "execFileSync",
-    signature: "function execFileSync(file: string, args: readonly string[], options: ExecFileSyncOptionsWithStringEncoding): string;",
+    signature: "function execFileSync(\n        file: string,\n        args: readonly string[],\n        options: ExecFileSyncOptionsWithStringEncoding,\n    ): string;",
     stated: { binders: [], params: [atom("string"),
       { k: "array", presence: "readable", readonly: true, element: atom("string"), span: at },
       { k: "object", stringIndex: null, calls: [], span: at, fields: [
@@ -203,7 +201,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // runs no other code of the client's: no effect is stated. The result is a
   // fresh record of what it ran, `error` an `Error` or absent.
   { module: "child_process", name: "spawnSync",
-    signature: "function spawnSync(command: string, args: readonly string[], options: SpawnSyncOptionsWithStringEncoding): SpawnSyncReturns<string>;",
+    signature: "function spawnSync(\n        command: string,\n        args: readonly string[],\n        options: SpawnSyncOptionsWithStringEncoding,\n    ): SpawnSyncReturns<string>;",
     stated: { binders: [], params: [atom("string"),
       { k: "array", presence: "readable", readonly: true, element: atom("string"), span: at },
       { k: "object", stringIndex: null, calls: [], span: at, fields: [
@@ -224,13 +222,20 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `encoding` and `signal` (`getOptions`), then `recursive`, `encoding` and
   // `withFileTypes` again (Node 25.2.1's `lib/fs.js`). The four are stated:
   // `withFileTypes: true`, `encoding` "utf8" or absent (`"buffer"` names the
-  // entries by Buffers), `recursive` false or absent (true takes another
-  // path) and `signal` absent, so under the caller contract each is a data
-  // property every read of which agrees. The result is a fresh array of
-  // entries, each owning its `name` and `parentPath`, writable strings: a
-  // `Dirent`, or, where the directory reports an unknown type, a
-  // `DirentFromStats` built from `fs.lstatSync` of the joined path, both
-  // writable properties other code may replace. An entry's `is…` tests
+  // entries by Buffers), `recursive` false or absent and `signal` absent, so
+  // under the caller contract each is a data property every read of which
+  // agrees. `recursive: true` walks the subdirectories (`readdirSyncRecursive`,
+  // `handleDirents`): it calls each entry's `isDirectory` through its
+  // prototype and `path.join`, both other code may replace, and the
+  // `internalModuleStat` of the joined path to choose what to read next,
+  // and collects entries of every depth; that walk is not audited. The
+  // result is a fresh array of entries: a `Dirent`, or, where the directory
+  // reports an unknown type, a `DirentFromStats` built from `fs.lstatSync`
+  // of the joined path, both writable properties other code may replace.
+  // Each constructor assigns `name` and `parentPath`, which become own
+  // writable strings under the host assumption that `Dirent.prototype` and
+  // `DirentFromStats.prototype` hold data properties only, also in external
+  // code (SOURCE-CONTRACTS.md, "Library modules"). An entry's `is…` tests
   // dispatch through prototypes other code may change (`Stats`'s call
   // `this._checkModeProperty`): each is stated at `() => unknown`, its
   // effect unrestricted. The declared `path` is absent (`"path" in entry` is
@@ -238,7 +243,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // `Dirent` is refused. A path it cannot read throws. The call states no
   // effect.
   { module: "fs", name: "readdirSync",
-    signature: "export function readdirSync(path: PathLike, options: ObjectEncodingOptions & { withFileTypes: true; recursive?: boolean | undefined; }): Dirent[];",
+    signature: "export function readdirSync(\n        path: PathLike,\n        options: ObjectEncodingOptions & {\n            withFileTypes: true;\n            recursive?: boolean | undefined;\n        },\n    ): Dirent[];",
     stated: { binders: [], params: [atom("string"),
       { k: "object", stringIndex: null, calls: [], span: at, fields: [field("withFileTypes", yes(), false),
         field("encoding", union(text("utf8"), atom("undefined")), true),
@@ -254,7 +259,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // path it cannot open or write, or one holding a NUL character, throws.
   // It runs no code of the client's on a string.
   { module: "fs", name: "writeFileSync",
-    signature: "export function writeFileSync(file: PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView, options?: WriteFileOptions): void;",
+    signature: "export function writeFileSync(\n        file: PathOrFileDescriptor,\n        data: string | NodeJS.ArrayBufferView,\n        options?: WriteFileOptions,\n    ): void;",
     stated: { binders: [], params: [atom("string"), atom("string")], result: atom("undefined") } },
   // `readFileSync(path, "utf8")` with a string path reads the whole file and
   // returns its contents decoded as UTF-8, a string; a path it cannot open
@@ -262,7 +267,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   // client's on a string path and a string encoding. Stated at the encoding
   // "utf8", where the declaration's other forms return a `Buffer`.
   { module: "fs", name: "readFileSync",
-    signature: "export function readFileSync(path: PathOrFileDescriptor, options: | { encoding: BufferEncoding; flag?: string | undefined; } | BufferEncoding): string;",
+    signature: "export function readFileSync(\n        path: PathOrFileDescriptor,\n        options:\n            | {\n                encoding: BufferEncoding;\n                flag?: string | undefined;\n            }\n            | BufferEncoding,\n    ): string;",
     stated: { binders: [], params: [atom("string"), text("utf8")], result: atom("string") } },
   // `existsSync(path)` with a string tests whether the path exists on the
   // file system and returns a Boolean; it does not throw. It runs no code of
@@ -315,33 +320,6 @@ export const modulesOverlay: readonly ModuleEntry[] = [
 /** A declaration's text as messages print it: white space collapsed. */
 export function reviewedText(declaration: string): string {
   return declaration.replace(/\s+/g, " ").trim();
-}
-
-/** A declaration's tokens as TypeScript's scanner reads them, each literal's
- * text exact (a template's substitutions scanned as code), comments and white
- * space dropped and a comma before `)` dropped, joined by spaces: two texts
- * are the same declaration exactly when their tokens agree. */
-export function reviewedTokens(declaration: string): string {
-  const scanner = createScanner(false, undefined, declaration);
-  const tokens: string[] = [];
-  // Per open brace, whether it opened a template's substitution.
-  const braces: boolean[] = [];
-  for (let kind = scanner.scan(); kind !== SyntaxKind.EndOfFile; kind = scanner.scan()) {
-    if (kind === SyntaxKind.CloseBraceToken && braces.pop()) {
-      kind = scanner.reScanTemplateToken(false);
-      if (kind === SyntaxKind.TemplateMiddle) braces.push(true);
-    } else if (kind === SyntaxKind.OpenBraceToken) braces.push(false);
-    else if (kind === SyntaxKind.TemplateHead) braces.push(true);
-    if (kind === SyntaxKind.WhitespaceTrivia || kind === SyntaxKind.NewLineTrivia ||
-        kind === SyntaxKind.SingleLineCommentTrivia || kind === SyntaxKind.MultiLineCommentTrivia) continue;
-    tokens.push(scanner.getTokenText());
-  }
-  return tokens.filter((token, k) => !(token === "," && tokens[k + 1] === ")")).join(" ");
-}
-
-/** Whether a declaration's text is the overload an entry pins. */
-export function sameReviewed(declaration: string, signature: string): boolean {
-  return reviewedTokens(declaration) === reviewedTokens(signature);
 }
 
 /** The entries of an import from `specifier` of `name`: `node:fs` and `fs` name one module. */

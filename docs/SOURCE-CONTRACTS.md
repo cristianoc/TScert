@@ -249,8 +249,7 @@ declaration of the project is refused (`invalid-fake-process-argv`); a mixed dec
 `invalid-node-console-unreviewed`). So is every global function: its implementation is outside what is verified,
 wherever its declaration lies (the standard library, an installed package,
 a declaration file of the project), so each overload a call resolves to is
-one an entry lists with its text, normalized as a module entry's
-([library modules](#library-modules)), an augmentation's included, or the
+one an entry lists with its exact text, an augmentation's included, or the
 call is refused (`node-clear-timeout`; `invalid-parse-int-overload`, run
 under Node; `invalid-node-global-unreviewed`, `invalid-host-global-unreviewed`,
 `invalid-host-global-changed`). The checked file's own ambient declarations
@@ -2127,10 +2126,7 @@ is read through the reviewed overlay of library modules
 (`library-modules.mts`) where an entry lists it, and otherwise as an
 imported value ([imported values](#imported-ambient-and-global-values)).
 An entry names one overload of the function's declaration in Node's
-declarations by its tokens as TypeScript's scanner reads them, each
-literal's text exact and a template's substitutions scanned as code, white
-space, comments and a comma before `)` aside (`sameReviewed`), and
-states the signature the host meets at the arguments it
+declarations, with exactly the text it was reviewed against, and states the signature the host meets at the arguments it
 admits, $`(\vec P)\Rightarrow R`$. With $`\Omega_m`$ the overlay, $`f`$
 imported from module $`\mu`$ and $`O_f`$ the overloads TypeScript binds it to:
 
@@ -2254,10 +2250,25 @@ unrestricted in its effect unless its entry states one. The entries:
   25.2.1's `lib/fs.js`). The four are stated,
   $`o=\{\mathtt{withFileTypes}\colon\mathtt{true};\ \mathtt{encoding}^?\colon\texttt{"utf8"}\mid\mathtt{undefined};\ \mathtt{recursive}^?\colon\mathtt{false}\mid\mathtt{undefined};\ \mathtt{signal}^?\colon\mathtt{undefined}\}`$,
   so under the caller contract ([trust surface](DESIGN.md#trust-surface))
-  each is a data property whose reads agree. The call returns a fresh array
-  of entries, each owning its `name` and `parentPath`, writable strings; a
-  path it cannot read throws, and the call states no effect
-  (`node-readdir-dirents`). `encoding: "buffer"` names the entries by
+  each is a data property whose reads agree. `recursive: true` walks the
+  subdirectories, calling each entry's `isDirectory` through its prototype,
+  `path.join` and a stat of the joined path to choose what to read next, and
+  collects entries of every depth; that walk is not audited, so it is refused
+  (`invalid-node-readdir-recursive`, run under Node: a replaced test runs
+  during the call; [source fragment](SOURCE-FRAGMENT.md)). The call returns
+  a fresh array of entries, whose constructors assign each its `name` and
+  `parentPath`, writable strings; a path it cannot read throws, and the call
+  states no effect (`node-readdir-dirents`). That the assignments define own
+  data properties and that reading a test runs no code rest on a host
+  assumption ([trust surface](DESIGN.md#trust-surface)): `Dirent.prototype`
+  and `DirentFromStats.prototype` hold data properties only, also in
+  external code. An accessor there breaks both (`invalid-node-dirent-name-accessor`,
+  `invalid-node-dirent-method-getter`, run under Node). A program reaches
+  neither prototype: a class value's `prototype`, an entry's `constructor`,
+  `Object.getPrototypeOf`, `Object.setPrototypeOf` and
+  `Object.defineProperty` are refused (`invalid-node-dirent-prototype-write`,
+  run under Node, `invalid-node-dirent-constructor-prototype`,
+  `invalid-node-dirent-get-prototype`, `invalid-node-dirent-set-prototype`). `encoding: "buffer"` names the entries by
   Buffers, and options of a type stating no `encoding`, or no `signal`, may
   hold it or a getter switching it between the reads
   (`invalid-node-readdir-buffer-encoding`, `invalid-node-readdir-options-alias`,

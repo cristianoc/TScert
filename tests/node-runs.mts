@@ -226,6 +226,18 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runImporting("invalid-node-readdir-test-result",
     "(() => { const fs = process.getBuiltinModule(\"node:fs\"); fs.Dirent.prototype.isDirectory = () => 7; return typeof flags(\".\")[0]; })()"),
     "number", "invalid-node-readdir-test-result: a replaced isDirectory answers a number");
+  assert.equal(runImporting("invalid-node-readdir-recursive",
+    "(() => { const fs = process.getBuiltinModule(\"node:fs\"); let ran = 0; const test = fs.Dirent.prototype.isDirectory; fs.Dirent.prototype.isDirectory = function () { ran++; return test.call(this); }; walk(\".\"); return ran > 0; })()"),
+    true, "invalid-node-readdir-recursive: the walk calls each entry's isDirectory through its prototype");
+  assert.equal(runImporting("invalid-node-dirent-name-accessor",
+    "(() => { hide(); const fs = process.getBuiltinModule(\"node:fs\"); const e = fs.readdirSync(\".\", { withFileTypes: true })[0]; return [typeof e.name, Object.hasOwn(e, \"name\")].join(); })()"),
+    "number,false", "invalid-node-dirent-name-accessor: the entry's name is the accessor's 7, not own");
+  assert.equal(runImporting("invalid-node-dirent-method-getter",
+    "(() => { const xs = [1, 2]; hook(xs); const fs = process.getBuiltinModule(\"node:fs\"); fs.readdirSync(\".\", { withFileTypes: true })[0].isDirectory; return xs.length; })()"),
+    1, "invalid-node-dirent-method-getter: the lookup pops the array");
+  assert.equal(runImporting("invalid-node-dirent-prototype-write",
+    "(() => { replace(); const fs = process.getBuiltinModule(\"node:fs\"); return fs.readdirSync(\".\", { withFileTypes: true }).every((e) => e.isDirectory() === true); })()"),
+    true, "invalid-node-dirent-prototype-write: every entry reads the replaced member");
   assert.equal(runImporting("invalid-node-readdir-dirent-path", "paths(\".\").every((p) => p === undefined)"), true,
     "invalid-node-readdir-dirent-path: an entry has no path");
   assert.equal(runImporting("invalid-node-assert-deep-preserving",

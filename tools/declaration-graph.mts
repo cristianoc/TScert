@@ -26,7 +26,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
-import { moduleEntries, reviewedText, sameReviewed, type ModuleEntry } from "./library-modules.mts";
+import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
   nativeRegExp, regexpIntrinsicName, reviewedRegExpMembers,
@@ -1253,7 +1253,7 @@ export function collectDeclarations(file: string, options: {
           overloads.some(o => !idOf(o.getSourceFile()).includes("@types/node/")))
         throw Error(`${what} is not a function Node's declarations declare, as the reviewed overlay of library modules states it`);
       const forms = entries.map(entry => {
-        const match = overloads.find(o => sameReviewed(o.getText(o.getSourceFile()), entry.signature));
+        const match = overloads.find(o => o.getText(o.getSourceFile()) === entry.signature);
         if (!match) throw Error(`${what} is not declared as reviewed: ${entry.signature}`);
         const source = match.getSourceFile();
         const span: Span = [match.getStart(source), match.end];
@@ -1397,7 +1397,7 @@ export function collectDeclarations(file: string, options: {
         const declaration = checker.getResolvedSignature(call)?.declaration?.resolve();
         const written = declaration ? declaration.getText(declaration.getSourceFile()) : "";
         const text = reviewedText(written);
-        const entry = declaration ? entries.find(e => e.member === member && sameReviewed(written, e.signature)) : undefined;
+        const entry = declaration ? entries.find(e => e.member === member && e.signature === written) : undefined;
         if (!entry)
           throw Error(`${member === undefined ? binding.name : `${binding.name}.${member}`}(…) is not declared as reviewed: ${text}`);
         return entry;
@@ -2990,10 +2990,10 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
   }
   const calls = [...chosen].flatMap(([overload, calls]): FunctionTerm[] => {
     const at = spanOf(overload);
-    // The declaration matched to an entry by its tokens.
+    // The declaration matched to an entry by its exact text.
     const declared = overload.getText(overload.getSourceFile());
     const text = reviewedText(declared);
-    const entry = globalEntry(context.overlay, name, undefined, signature => sameReviewed(declared, signature),
+    const entry = globalEntry(context.overlay, name, undefined, signature => signature === declared,
       declarationOrigin(overload.getSourceFile(), context.libraryFile));
     if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
     for (const definition of entry.definitions ?? []) context.define(definition);

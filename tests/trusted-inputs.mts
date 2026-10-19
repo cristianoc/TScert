@@ -8,24 +8,11 @@ import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { collectDeclarations, tsconfigOf } from "../tools/declaration-graph.mts";
 import { overlay as arrayOverlay } from "../tools/array-prototype.mts";
-import { sameReviewed } from "../tools/library-modules.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import type { DeclarationDocument } from "../tools/declaration-types.mts";
 import type { Ast } from "../tools/fragment.mts";
 const pipelineDir = resolve(import.meta.dirname, "../pipeline");
 const libraryConfig = tsconfigOf(resolve(pipelineDir, "library-project"));
-
-// An overload matches an entry by its tokens: layout, comments and a comma
-// before `)` aside, and each literal's text exact, a nested template's and
-// one after a comment holding a quote included.
-assert.ok(sameReviewed('function f(\n  a: "x",\n  /* " */ b: `${1}`,\n): void;', 'function f(a: "x", b: `${1}`): void;'));
-for (const [one, other] of [
-  ['function f(a: `${`x  y`}`): void;', 'function f(a: `${`x y`}`): void;'],
-  ['function f(/* " */ a: "x  y"): void;', 'function f(/* " */ a: "x y"): void;'],
-  ['function f(a: "x\\\ny"): void;', 'function f(a: "x\\ y"): void;'],
-  ['function f(a: `x${1}  y`): void;', 'function f(a: `x${1} y`): void;'],
-])
-  assert.ok(!sameReviewed(one, other), `${one} and ${other} are different declarations`);
 
 function must<T>(value: T | null | undefined, message: string): T {
   assert.ok(value !== null && value !== undefined, message);
