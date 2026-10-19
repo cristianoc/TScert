@@ -78,6 +78,15 @@ infinities compare by sign, and distinct finite doubles stay distinct. -/
 #guard !(numberEqual 0x7ff0000000000000 0xfff0000000000000)
 #guard !(numberEqual 0x3ff0000000000000 0x3ff0000000000001)
 
+/-! A tag set holding a NaN, which no source type spells: an equality test
+answers the NaN `false`, and a set of a NaN and `1` is answered element by
+element; the two zeros of a set answer a test against `+0` alike, `true`. -/
+
+#guard tagClause (.numEq 0x7ff8000000000000) (Clause.numIn [0x3ff0000000000000, 0x7ff8000000000000] : Clause Nat) == some false
+#guard tagClause (.numEq 0x3ff0000000000000) (Clause.numIn [0x3ff0000000000000, 0x7ff8000000000000] : Clause Nat) == none
+#guard tagClause .truthy (Clause.numIn [0, 0x7ff8000000000000, 0x8000000000000000] : Clause Nat) == some false
+#guard tagClause (.numEq 0) (Clause.numIn [0, 0x8000000000000000] : Clause Nat) == some true
+
 /-! The bitwise operators on numbers, each case's expected value Node's:
 `5 & 3`, `-1 & 255`, `5 | 3`, `-8 | 3`, `1 << 31`, `1 << 32`, `1 << -1`,
 `-8 >> 1`, `-(2 ** 31) >> 31`, `-1 >>> 0`, `-8 >>> 28`, `(2 ** 32 + 5) & 7`,

@@ -36,19 +36,67 @@ theorem onlyBoolean_sound {G : NormalGraph ι} {A n W v}
   have h := List.all_eq_true.mp h.2 c hc
   cases c <;> simp_all [semWithArgs, boolT]
 
-/-- Drop only labels whose every clause contradicts the observed tag. A mixed
+/-- A tag set label the test answers element by element: the labels of the
+elements it does not contradict, where the graph holds a label for each
+(HOST-FAMILIES.md, "Tag sets"). -/
+def setSplit (G : NormalGraph ι) (a : ι) (tag : Tag) (q : Bool) : Option (List ι) :=
+  match G a with
+  | [c] => if c.elements.length == 1 then none else
+      (c.elements.filter fun e => tagClause tag e != some (!q)).mapM (elementLabel G)
+  | _ => none
+
+/-- Drop only labels whose every clause contradicts the observed tag, and
+split a tag set into the labels of the elements the test leaves. A mixed
 label is retained intact: this does not assume that labels have uniform shapes.
 A parameter or scheme row has no clauses to contradict it, and is retained. -/
 def tagSlice (G : NormalGraph ι) (A : Ty ι) (tag : Tag) (q : Bool) : Ty ι :=
-  A.filter fun a => !(G.plain a && (expand G [a]).all fun c => (tagClause tag c) == some (!q))
+  A.flatMap fun a =>
+    if G.plain a && (expand G [a]).all (fun c => (tagClause tag c) == some (!q)) then []
+    else (setSplit G a tag q).getD [a]
+
+/-- A value of a label the split names is in one of the split's labels. -/
+theorem setSplit_sound {G : NormalGraph ι} {a : ι} {tag q ls n W v}
+    (hs : setSplit G a tag q = some ls) (hv : meaning G [a] n W v)
+    (hq : tagHolds tag v = q ∨ protoFree tag v = false) : meaning G ls n W v := by
+  unfold setSplit at hs
+  split at hs
+  · rename_i c hrow
+    split at hs
+    · cases hs
+    · have hplain : G.plain a = true := NormalGraph.plain_of_clauses (c := c) (by simp [hrow])
+      have hpt : G.plainTy [a] = true := by simp [NormalGraph.plainTy, hplain]
+      obtain ⟨c', hc', hcv⟩ := (expand_sem G [a] hpt n W v).mp hv
+      have hcc : c' = c := by
+        simpa [expand, hpt, clausesOf, hrow] using hc'
+      subst hcc
+      obtain ⟨e, he, hev⟩ := rowSem_elements G _ _ _ hcv
+      have hkeep : e ∈ c'.elements.filter fun e => tagClause tag e != some (!q) := by
+        refine List.mem_filter.mpr ⟨he, ?_⟩
+        cases ht : tagClause tag e with
+        | none => rfl
+        | some r =>
+          by_cases hr : r = !q
+          · subst hr
+            have hans := tagClause_sound ht hev.1
+            have hpf := tagClause_protoFree ht hev.1
+            rcases hq with hq | hq
+            · rw [hq] at hans; cases q <;> simp at hans
+            · rw [hpf] at hq; cases hq
+          · simp [hr]
+      obtain ⟨l, hl, hel⟩ := mapM_mem hs e hkeep
+      have hlr := elementLabel_sound hel
+      have hlp : G.plain l = true :=
+        NormalGraph.plain_of_clauses (c := e) (show e ∈ G l by rw [hlr]; exact List.mem_singleton_self e)
+      have hlt : G.plainTy [l] = true := by simp [NormalGraph.plainTy, hlp]
+      obtain ⟨u, hu, hmu⟩ := (expand_sem G [l] hlt n W v).mpr ⟨e, by simp [expand, hlt, clausesOf, hlr], hev⟩
+      exact ⟨u, by simp at hu; subst hu; exact hl, hmu⟩
+  · cases hs
 
 theorem tagSlice_sound {G : NormalGraph ι} {A tag q n W v}
     (hv : meaning G A n W v) (hq : tagHolds tag v = q ∨ protoFree tag v = false) :
     meaning G (tagSlice G A tag q) n W v := by
   obtain ⟨a, ha, hv⟩ := hv
-  refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hv⟩
   cases h : (G.plain a && (expand G [a]).all fun c => (tagClause tag c) == some (!q)) with
-  | false => rfl
   | true =>
     simp only [Bool.and_eq_true] at h
     have hop : Answers G [a] tag (!q) := by
@@ -56,6 +104,12 @@ theorem tagSlice_sound {G : NormalGraph ι} {A tag q n W v}
       exact beq_iff_eq.mp (List.all_eq_true.mp h.2 c hc)
     have he := answers_weak hop (show meaning G [a] n W v from ⟨a, by simp, hv⟩) hq
     cases q <;> simp at he
+  | false =>
+    cases hs : setSplit G a tag q with
+    | none => exact ⟨a, List.mem_flatMap.mpr ⟨a, ha, by simp [h, hs]⟩, hv⟩
+    | some ls =>
+      obtain ⟨l, hl, hlv⟩ := setSplit_sound hs ⟨a, by simp, hv⟩ hq
+      exact ⟨l, List.mem_flatMap.mpr ⟨a, ha, by simp [h, hs, hl]⟩, hlv⟩
 
 /-! ### Refinement by an observed field
 
@@ -543,8 +597,9 @@ def familyMember (cs : List (Clause α)) : Tag → Bool → Bool
   -- Equality with one number other than a zero, or one string, holds of that
   -- value alone.
   | .numEq b, true => b &&& 0x7fffffffffffffff != 0 &&
-      cs.any fun c => match c with | .numLit b' => b' == b | _ => false
-  | .strEq s, true => cs.any fun c => match c with | .strLit s' => s' == s | _ => false
+      cs.any fun c => match c with | .numLit b' => b' == b | .numIn S => S.contains b | _ => false
+  | .strEq s, true => cs.any fun c => match c with
+      | .strLit s' => s' == s | .strIn S => S.contains s | _ => false
   | _, _ => false
 
 /-- A closed value a family test admits is in one of the family's clauses,
@@ -556,22 +611,22 @@ theorem familyMember_sound {X : α → Fam} {P : α → ArgFam} {cs : List (Clau
   case numEq.true b =>
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hm
     obtain ⟨c, hc, hk⟩ := List.any_eq_true.mp hm.2
-    cases c <;> simp at hk
-    subst hk
     cases v <;> simp [tagHolds, isVal] at ht hv
     rename_i bits
     simp only [numberEqual, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at ht
     rcases ht.2 with h | h
     · subst h
-      exact ⟨_, hc, by simp [semWithArgs], rfl⟩
+      cases c <;> simp at hk
+      · subst hk; exact ⟨_, hc, by simp [semWithArgs], rfl⟩
+      · exact ⟨_, hc, ⟨_, hk, rfl⟩, rfl⟩
     · exact absurd h.2 hm.1
   case strEq.true s =>
     obtain ⟨c, hc, hk⟩ := List.any_eq_true.mp hm
-    cases c <;> simp at hk
-    subst hk
     cases v <;> simp [tagHolds, isVal] at ht hv
     subst ht
-    exact ⟨_, hc, by simp [semWithArgs], rfl⟩
+    cases c <;> simp at hk
+    · subst hk; exact ⟨_, hc, by simp [semWithArgs], rfl⟩
+    · exact ⟨_, hc, ⟨_, hk, rfl⟩, rfl⟩
   case isFun.true =>
     simp only [Bool.and_eq_true, List.any_eq_true] at hm
     obtain ⟨⟨a, ha, hka⟩, ⟨k, hk, hkk⟩⟩ := hm
@@ -886,6 +941,72 @@ theorem arraySlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι}
       cases List.mem_singleton.mp hl
       exact ⟨L, hLB, hvl⟩
 
+/-! ### A tag set under a test
+
+A test answers on a tag set element by element (HOST-FAMILIES.md, "Tag
+sets"): what the slice keeps of a set is the elements the test does not
+contradict, each of which a clause of the target must hold. -/
+
+/-- Whether the literal `e` is a member of the primitive clause `d`: its
+family, itself, or a tag set holding it. -/
+def litIn (e d : Clause α) : Bool :=
+  match e, d with
+  | .numLit _, .num | .strLit _, .str => true
+  | .numLit a, .numLit b => a == b
+  | .strLit a, .strLit b => a == b
+  | .numLit a, .numIn S => S.contains a
+  | .strLit a, .strIn S => S.contains a
+  | _, _ => false
+
+theorem litIn_sound {X : α → Fam} {P : α → ArgFam} {e d : Clause α} (h : litIn e d = true) {n W v}
+    (hv : semWithArgs Ξ X P e n W v) : semWithArgs Ξ X P d n W v ∧ d.carriesInvariant = false := by
+  cases e <;> cases d <;> simp [litIn] at h <;> simp only [semWithArgs] at hv ⊢ <;> subst hv
+  all_goals first
+    | exact ⟨⟨_, rfl⟩, rfl⟩
+    | (subst h; exact ⟨rfl, rfl⟩)
+    | exact ⟨⟨_, h, rfl⟩, rfl⟩
+
+/-- Every label the tag slice keeps is in `B`, or each of its clauses the test
+contradicts, `B` holds, or is a tag set whose every element the test
+contradicts or a clause of `B` holds. -/
+def setSlice [DecidableEq ι] (G : NormalGraph ι) (A B : Ty ι) (t : Tag) (q : Bool) : Bool :=
+  (tagSlice G A t q).all fun a => B.contains a ||
+    (G.plain a && (expand G [a]).all fun c => tagClause t c == some (!q) ||
+      (expand G B).contains c ||
+      (c.elements != [c] && c.elements.all fun e => tagClause t e == some (!q) ||
+        (expand G B).any (litIn e)))
+
+theorem setSlice_sound [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} {t : Tag} {q : Bool}
+    (h : setSlice G A B t q = true) {n W v} (hv : meaning G A n W v)
+    (ho : tagHolds t v = q ∨ protoFree t v = false) : meaning G B n W v := by
+  obtain ⟨a, ha, hva⟩ := tagSlice_sound hv ho
+  have ha' := List.all_eq_true.mp h a ha
+  simp only [Bool.or_eq_true, Bool.and_eq_true, List.contains_iff_mem] at ha'
+  rcases ha' with hB | ⟨hplain, hcs⟩
+  · exact ⟨a, hB, hva⟩
+  have hpt : G.plainTy [a] = true := by simp [NormalGraph.plainTy, hplain]
+  obtain ⟨c, hc, hcv⟩ := (expand_sem G [a] hpt n W v).mp ⟨a, by simp, hva⟩
+  -- A clause the test contradicts holds no tested value.
+  have contra : ∀ d, tagClause t d = some (!q) → semWithArgs (builtinExc G (builtinValues G))
+      (meaning G) (argMeaning G) d n W v → False := by
+    intro d hd hdv
+    have hpf := tagClause_protoFree hd hdv
+    have hans := tagClause_sound hd hdv
+    rcases ho with ho | ho
+    · rw [ho] at hans; cases q <;> simp at hans
+    · rw [hpf] at ho; cases ho
+  have hcc := List.all_eq_true.mp hcs c hc
+  simp only [Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true, List.contains_iff_mem, bne_iff_ne,
+    ne_eq, List.all_eq_true, List.any_eq_true] at hcc
+  rcases hcc with (hno | hin) | ⟨-, helems⟩
+  · exact (contra c hno hcv.1).elim
+  · exact expand_sem_mpr ⟨c, expand_sub hin, hcv⟩
+  · obtain ⟨e, he, hev⟩ := rowSem_elements G _ _ _ hcv
+    rcases helems e he with hno | ⟨d, hd, hlit⟩
+    · exact (contra e hno hev.1).elim
+    · obtain ⟨hdv, hdr⟩ := litIn_sound hlit hev.1
+      exact expand_sem_mpr ⟨d, expand_sub hd, hdv, builtinInvariant_of_withoutInvariant hdr _ _ _⟩
+
 /-- Sufficient implementations of ObservedSub. Whole-label filtering is only
 an algorithm for the tag case, not the meaning of refinement. -/
 @[nospecialize] def checkObservedSubResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
@@ -895,7 +1016,7 @@ an algorithm for the tag case, not the meaning of refinement. -/
   | .tag t q =>
       (ProgramCertificates.checkSubtypeUsing G images (tagSlice G A t q) B p).orElse fun _ =>
       CheckResult.ofBool (tagMember G B t q || presentKey t q (promotes G (tagSlice G A t q) B) ||
-        (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q)
+        (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q || setSlice G A B t q)
 
 @[nospecialize] def checkObservedSubUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) (o : Observation) (p : PositiveCertificates.SubtypeChoices ι) : Bool :=
@@ -912,7 +1033,7 @@ theorem checkObservedSubUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images :
   | .boolean q => booleanMember G B q
   | .tag t q => PositiveCertificates.checkUsing G images (tagSlice G A t q) B p || tagMember G B t q ||
       presentKey t q (promotes G (tagSlice G A t q) B) ||
-      (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q := by
+      (t == .isArray && q && arraySlice G A B) || meetSlice G A B t q || setSlice G A B t q := by
   cases o <;> simp only [checkObservedSubUsing, checkObservedSubResult, CheckResult.accepted_ofBool,
     CheckResult.accepted_orElse, ProgramCertificates.checkSubtypeUsing_accepted, Bool.or_assoc]
 
@@ -928,7 +1049,7 @@ theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
     exact booleanMember_sound hb n W
   | tag t q =>
     simp only [checkObservedSubUsing_eq, Bool.or_eq_true, Bool.and_eq_true] at hc
-    rcases hc with (((hc | hm) | hk) | ⟨⟨ht, hq⟩, hs⟩) | hmeet
+    rcases hc with ((((hc | hm) | hk) | ⟨⟨ht, hq⟩, hs⟩) | hmeet) | hset
     · exact PositiveCertificates.acceptedUsing hc n W v (tagSlice_sound hv ho)
     · exact tagMember_sound hm (meaning_value hv).1 (meaning_value hv).2 (ho.resolve_right (by
         cases t <;> cases q <;> simp [tagMember, familyMember] at hm <;> simp [protoFree]))
@@ -938,6 +1059,7 @@ theorem checkObservedSub_sound [DecidableEq ι] {G : NormalGraph ι} {images : I
       subst ht; subst hq
       exact arraySlice_sound hs hv (ho.resolve_right (by simp [protoFree]))
     · exact meetSlice_sound hmeet hv ho
+    · exact setSlice_sound hset hv ho
 
 /-- The field refinements a tag observation admits for other slots: each
 object a current read link says the tested value was read from, and the

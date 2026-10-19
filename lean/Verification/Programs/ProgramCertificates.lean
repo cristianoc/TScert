@@ -1054,7 +1054,7 @@ declared bounds. -/
     match j.term, ps with
     | _, ps =>
       match j.context[i]? with
-      | some C => ps = C.map (fun a => ⟨j.context.set i [a], j.term, j.type⟩)
+      | some C => ps = (members G C).map (fun a => ⟨j.context.set i [a], j.term, j.type⟩)
       | none => False
   | .callCallable effect =>
     match j.term, ps with

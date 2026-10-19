@@ -2743,3 +2743,32 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     /%RegExp:111%/);
   process.stdout.write("forged regex shape: a literal naming a shape no declaration lists refused\n");
 }
+{
+  // A tag set has one spelling: its elements sorted and distinct, at least
+  // two (HOST-FAMILIES.md, "Tag sets"). Claims spelling a set otherwise are
+  // refused by the decoder.
+  const artifacts = run("tag-sets");
+  const original = readClaims(artifacts);
+  const numbers = original.types.findIndex((row) => row.length === 1 && typeof row[0] === "object" && "numIn" in row[0]);
+  const strings = original.types.findIndex((row) => row.length === 1 && typeof row[0] === "object" && "strIn" in row[0]);
+  assert.ok(numbers >= 0 && strings >= 0, "the claims state a number set and a string set");
+  const forgeries: [string, number, (bits: string[]) => string[], RegExp][] = [
+    ["unsorted-number-set", numbers, (xs) => [...xs].reverse(), /a number set lists two or more bit patterns, sorted and distinct/],
+    ["duplicate-number-set", numbers, (xs) => [xs[0] ?? "0", ...xs], /a number set lists two or more bit patterns, sorted and distinct/],
+    ["single-number-set", numbers, (xs) => xs.slice(0, 1), /a number set lists two or more bit patterns, sorted and distinct/],
+    ["unsorted-string-set", strings, (xs) => [...xs].reverse(), /a string set lists two or more strings, sorted and distinct/],
+    ["single-string-set", strings, (xs) => xs.slice(0, 1), /a string set lists two or more strings, sorted and distinct/],
+  ];
+  for (const [name, row, forge, refusal] of forgeries) {
+    const claims = readClaims(artifacts);
+    const clause = claims.types[row]?.[0];
+    if (typeof clause === "object" && "numIn" in clause) clause.numIn.bits = forge(clause.numIn.bits);
+    else if (typeof clause === "object" && "strIn" in clause) clause.strIn.values = forge(clause.strIn.values);
+    else assert.fail("the forged row is a tag set");
+    const forged = writeClaims(artifacts, `forged-${name}`, claims);
+    const searched = produceWith(artifacts, forged, `forged-${name}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.match(searched.stdout + searched.stderr, refusal);
+  }
+  process.stdout.write("forged tag sets: unsorted, duplicated and single-element sets refused\n");
+}

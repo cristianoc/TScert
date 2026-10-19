@@ -356,6 +356,12 @@ structure ArrayBuiltins (ι : Type) where
   keys : List PropKey
   deriving DecidableEq, Repr
 
+/-- A literal a tag set's element is: a number by bit pattern, or a string. -/
+inductive LitKey where
+  | num (bits : UInt64)
+  | str (value : String)
+  deriving DecidableEq, Repr, Hashable
+
 structure NormalGraph (ι : Type) where
   /-- A clause row's clauses. -/
   rows : ι → List (Clause (List ι))
@@ -375,6 +381,11 @@ structure NormalGraph (ι : Type) where
   dictionary type is of objects meeting the array invariant
   (`builtinInvariant`). A graph without arrays states none. -/
   builtins : Option (ArrayBuiltins ι) := none
+  /-- A label of the graph whose row is one literal, where the graph has one:
+  how a tag set splits into its elements (HOST-FAMILIES.md, "Tag sets"). A
+  reader checks the label's row before reading it so; nothing else depends on
+  this lookup. -/
+  literal : LitKey → Option ι := fun _ => none
 
 /-- Whether a row is a parameter is derived from its kind, never maintained
 separately. -/

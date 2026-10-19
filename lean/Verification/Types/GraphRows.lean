@@ -51,8 +51,9 @@ finite protocol and equation graphs: no representation gets its own choices
 about parameters, quantification or dependent intersections. -/
 def NormalGraph.ofRowMap (row : ι → GraphRow ι)
     (builtins : Option (ArrayBuiltins ι) := none)
-    (domain : SchemeDomain ι .mixed := .ordinary) : NormalGraph ι :=
-  { builtins, domain
+    (domain : SchemeDomain ι .mixed := .ordinary)
+    (literal : LitKey → Option ι := fun _ => none) : NormalGraph ι :=
+  { builtins, domain, literal
     rows i := (row i).union
     schemes i := match row i with
       | .scheme bs sigs bounds rests resolution construct =>

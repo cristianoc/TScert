@@ -130,6 +130,10 @@ export type Clause<L = number> =
   /** One symbol: the declaration document's `id`-th listed symbol, the one
    * a symbol key `{"symbol": id}` names. */
   | { symbolLit: { id: number } }
+  /** A tag set (HOST-FAMILIES.md, "Tag sets"): two or more numbers by bit
+   * pattern, or strings, sorted and distinct. */
+  | { numIn: { bits: string[] } }
+  | { strIn: { values: string[] } }
   /** `views` are read capabilities: a field read at a sound upper bound on
    * its contents, with no write permission through this contract. `optional`
    * fields constrain their key only where the object has it, as a view there
@@ -392,6 +396,24 @@ export function decodeGraph(value: unknown): TypeGraph {
     strLit: (b) => {
       if (typeof obj(b, ["value"]).value !== "string")
         throw Error("invalid string literal");
+    },
+    // Sorted and distinct, at least two: the one spelling of a set.
+    numIn: (b) => {
+      const bits = array(obj(b, ["bits"]).bits).map((x) => {
+        if (typeof x !== "string" || !/^[0-9]+$/.test(x) || BigInt(x) > 0xffffffffffffffffn)
+          throw Error("invalid number set");
+        return BigInt(x);
+      });
+      if (bits.length < 2 || bits.some((x, i) => i > 0 && !((bits[i - 1] ?? x) < x)))
+        throw Error("invalid number set");
+    },
+    strIn: (b) => {
+      const values = array(obj(b, ["values"]).values).map((x) => {
+        if (typeof x !== "string") throw Error("invalid string set");
+        return x;
+      });
+      if (values.length < 2 || values.some((x, i) => i > 0 && !((values[i - 1] ?? x) < x)))
+        throw Error("invalid string set");
     },
     bigintLit: (b) => {
       const value = obj(b, ["value"]).value;

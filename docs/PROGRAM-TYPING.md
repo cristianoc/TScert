@@ -1545,11 +1545,14 @@ result; all other bindings retain their original types:
 
 ```math
 \frac{\Gamma(x)=C\qquad
-      \forall a\in C.\;\Gamma[x:=[a]]\vdash_G t:A}
+      \forall a\in\mathrm{members}(C).\;\Gamma[x:=[a]]\vdash_G t:A}
      {\Gamma\vdash_G t:A}.
 ```
 
-`unionVar i` carries one premise for each label in $`C`$, in list order. The checker
+$`\mathrm{members}(C)`$ is the labels of $`C`$, a tag set's split into its
+elements' labels where the graph holds a label for each
+([tag sets](HOST-FAMILIES.md#tag-sets)). `unionVar i` carries one premise for
+each member, in list order. The checker
 rejects missing alternatives, changed terms/results, and changes to unrelated
 bindings. An empty union needs no premises because that input environment has
 no inhabitants. Soundness chooses the member containing the actual immutable

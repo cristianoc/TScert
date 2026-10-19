@@ -54,7 +54,7 @@ def keyedClause (c : Clause (List ι)) (A : List ι) : Option (Clause (List ι))
 and the object each gives at the initializer's type `A` is a clause of the
 result `R`. -/
 def KeyedOk [DecidableEq ι] (G : NormalGraph ι) (K A R : List ι) : Bool :=
-  G.plainTy K && (expand G K).all fun c => match keyedClause c A with
+  G.plainTy K && (splitSets (expand G K)).all fun c => match keyedClause c A with
     | some d => (expand G R).contains d
     | none => false
 
@@ -153,7 +153,10 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
   | succ p =>
   simp only [KeyedOk, Bool.and_eq_true, List.all_eq_true] at hk
   obtain ⟨hpK, hall⟩ := hk
-  obtain ⟨c, hc, hcv, -⟩ := (expand_sem G K hpK _ _ _).mp hkv
+  obtain ⟨c₀, hc₀, hcv₀, -⟩ := (expand_sem G K hpK _ _ _).mp hkv
+  -- A tag set's member is a member of one of its elements.
+  obtain ⟨c, hce, hcv⟩ := (elements_sem _ _ _ c₀ _ _ _).mpr hcv₀
+  have hc : c ∈ splitSets (expand G K) := List.mem_flatMap.mpr ⟨c₀, hc₀, hce⟩
   have hd := hall c hc
   cases hkc : keyedClause c A with
   | none => rw [hkc] at hd; cases hd

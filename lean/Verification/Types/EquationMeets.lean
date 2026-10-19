@@ -111,6 +111,19 @@ theorem setSem_filter_value (G : NormalGraph ι) (Z X : List ι → Fam) (P : Li
     refine ⟨c, List.mem_filter.mpr ⟨hc, ?_⟩, hv⟩
     cases c <;> simp_all [Clause.isValue, rowSem, semWithArgs]
 
+/-- Tag-set normalization keeps a row's members (`mergeSets`): literals and
+tag sets carry no array invariant. -/
+theorem setSem_mergeSets_row (G : NormalGraph ι) (Z X : List ι → Fam) (P : List ι → ArgFam)
+    (L : List (Clause (List ι))) (n : Nat) (W : WorldT n) (v : Val) :
+    setSem (rowSem G Z X P) (mergeSets L) n W v ↔ setSem (rowSem G Z X P) L n W v := by
+  refine setSem_mergeSets (fun c bs h n W v => ?_) (fun c ss h n W v => ?_) L n W v
+  · have hc : c.carriesInvariant = false := by
+      cases c <;> simp [Clause.numBits] at h <;> rfl
+    simp only [rowSem, numBits_sem h, builtinInvariant_of_withoutInvariant hc, and_true]
+  · have hc : c.carriesInvariant = false := by
+      cases c <;> simp [Clause.strVals] at h <;> rfl
+    simp only [rowSem, strVals_sem h, builtinInvariant_of_withoutInvariant hc, and_true]
+
 private theorem meet_row (equations : Equations) (ps : Types)
     (valid : (Tree.meet ps).scoped equations.signature 0 0 = true) :
     equations.row ⟨.meet ps, valid⟩ =
@@ -147,10 +160,10 @@ theorem Equations.meet_denote (equations : Equations)
   cases hr : meetRigid rows with
   | nil =>
     have hrow' : equations.row ⟨.meet ps, valid⟩ =
-        .clauses ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue) := by
+        .clauses (mergeSets ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue)) := by
       rw [hrow]; simp only [meetRowOf]; rw [hr]
     obtain ⟨hplain, hG⟩ := equations.graph_clauses hrow'
-    rw [mixed_unfold_plain η hplain, hG, setSem_filter_value, setSem_meetAll]
+    rw [mixed_unfold_plain η hplain, hG, setSem_mergeSets_row, setSem_filter_value, setSem_meetAll]
     simp
   | cons p rs =>
     have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll ((meetClauseLists rows).eraseDups)) rs := by
@@ -199,14 +212,16 @@ theorem Equations.meet_noArguments (equations : Equations)
   cases hr : meetRigid rows with
   | nil =>
     have hrow' : equations.row ⟨.meet ps, valid⟩ =
-        .clauses ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue) := by
+        .clauses (mergeSets ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue)) := by
       rw [hrow]; simp only [meetRowOf]; rw [hr]
     simp only [Equations.graph, NormalGraph.ofRowMap, hrow',
       NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, GraphRow.union, NormalGraph.listParam] at h
     obtain ⟨c, hc, h⟩ := h
-    simp only [Option.isSome_none, Bool.not_false, Option.isNone_none, Bool.and_self, ite_true,
-      List.mem_filter] at hc
-    cases c <;> simp_all [Clause.isValue, clauseArguments]
+    simp only [Option.isSome_none, Bool.not_false, Option.isNone_none, Bool.and_self, ite_true] at hc
+    rcases mem_mergeSets hc with hc | hc
+    · have hc := List.mem_filter.mp hc
+      cases c <;> simp_all [Clause.isValue, clauseArguments]
+    · cases c <;> simp_all [Clause.numBits, Clause.strVals, clauseArguments]
   | cons p rs =>
     have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll ((meetClauseLists rows).eraseDups)) rs := by
       rw [hrow]; simp only [meetRowOf]; rw [hr]

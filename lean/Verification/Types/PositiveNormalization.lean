@@ -108,6 +108,15 @@ inductive Clause (α : Type) where
   /-- One symbol, below the `symbol` family: the symbol of a `unique symbol`
   constant, by its identity; appended last so every earlier case order holds. -/
   | symbolLit (id : Nat)
+  /-- A finite set of numbers, by bit pattern: a **kind set** (COMPILER-API.md,
+  "Compact kind sets"). A union of number singletons is one; the wire and the
+  normal forms keep its list sorted, distinct and of at least two patterns,
+  which no meaning depends on. Appended last so every earlier case order
+  holds. -/
+  | numIn (bits : List UInt64)
+  /-- A finite set of strings, a tag set of strings; kept sorted, distinct and
+  of at least two values as `numIn` is. -/
+  | strIn (values : List String)
   deriving Repr, DecidableEq
 
 /-- Every value. A closed value, as every member of every family is. -/
@@ -130,6 +139,8 @@ def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → 
   | .bigint => bigintT
   | .bigintLit i => fun _ _ v => v = .bigint i
   | .symbolLit i => fun _ _ v => v = .sym i
+  | .numIn bs => fun _ _ v => ∃ b ∈ bs, v = .num b
+  | .strIn ss => fun _ _ v => ∃ s ∈ ss, v = .str s
   | .symbol => symbolT
   | .refs a bs vs os ms ks => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewsT (famsOf X vs) n W v ∧
@@ -165,6 +176,183 @@ def clauseArguments (X : α → Fam) : Clause α → ArgFam
 def semList (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) (L : List (Clause α)) : Fam :=
   setSem (semWithArgs Ξ X P) L
 
+/-- The clause of a finite set of numbers: none for the empty set, the
+singleton for one pattern, the kind set otherwise. -/
+def numSet : List UInt64 → List (Clause α)
+  | [] => []
+  | [b] => [.numLit b]
+  | bs => [.numIn bs]
+
+/-- The clause of a finite set of strings, as `numSet`. -/
+def strSet : List String → List (Clause α)
+  | [] => []
+  | [s] => [.strLit s]
+  | ss => [.strIn ss]
+
+theorem strSet_sem (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) (ss : List String) (n W v) :
+    setSem (semWithArgs Ξ X P) (strSet ss) n W v ↔ ∃ s ∈ ss, v = .str s := by
+  match ss with
+  | [] => simp [strSet, setSem]
+  | [s] => simp [strSet, setSem, semWithArgs]
+  | s :: t :: ss => simp [strSet, setSem, semWithArgs]
+
+theorem mem_strSet {d : Clause α} {L : List String} (h : d ∈ strSet L) :
+    (∃ s, d = .strLit s) ∨ ∃ L', d = .strIn L' := by
+  match L, h with
+  | [s], h => exact .inl ⟨s, by simpa [strSet] using h⟩
+  | s :: t :: ss, h => exact .inr ⟨_, by simpa [strSet] using h⟩
+
+theorem mem_numSet {d : Clause α} {L : List UInt64} (h : d ∈ numSet L) :
+    (∃ b, d = .numLit b) ∨ ∃ L', d = .numIn L' := by
+  match L, h with
+  | [b], h => exact .inl ⟨b, by simpa [numSet] using h⟩
+  | b :: c :: bs, h => exact .inr ⟨_, by simpa [numSet] using h⟩
+
+theorem numSet_sem (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) (bs : List UInt64) (n W v) :
+    setSem (semWithArgs Ξ X P) (numSet bs) n W v ↔ ∃ b ∈ bs, v = .num b := by
+  match bs with
+  | [] => simp [numSet, setSem]
+  | [b] => simp [numSet, setSem, semWithArgs]
+  | b :: c :: bs => simp [numSet, setSem, semWithArgs]
+
+/-- A clause as the clauses of its elements: a tag set as its literals, any
+other clause as itself. A consumer enumerating literals reads a type's
+clauses through it. -/
+def Clause.elements : Clause α → List (Clause α)
+  | .numIn bs => bs.map .numLit
+  | .strIn ss => ss.map .strLit
+  | c => [c]
+
+/-- A clause list with its tag sets as their literals. -/
+def splitSets (cs : List (Clause α)) : List (Clause α) := cs.flatMap Clause.elements
+
+theorem elements_sem (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) (c : Clause α) (n W v) :
+    setSem (semWithArgs Ξ X P) c.elements n W v ↔ semWithArgs Ξ X P c n W v := by
+  cases c <;> simp only [Clause.elements, setSem, List.mem_singleton, exists_eq_left]
+  all_goals first
+    | rfl
+    | (simp only [List.mem_map, semWithArgs]
+       constructor
+       · rintro ⟨_, ⟨b, hb, rfl⟩, hv⟩; exact ⟨b, hb, hv⟩
+       · rintro ⟨b, hb, hv⟩; exact ⟨_, ⟨b, hb, rfl⟩, hv⟩)
+
+/-- The numbers a number literal or number set clause is. -/
+def Clause.numBits : Clause α → Option (List UInt64)
+  | .numLit b => some [b]
+  | .numIn bs => some bs
+  | _ => none
+
+/-- The strings a string literal or string set clause is. -/
+def Clause.strVals : Clause α → Option (List String)
+  | .strLit s => some [s]
+  | .strIn ss => some ss
+  | _ => none
+
+/-- A list of numbers' one spelling: sorted and distinct. -/
+def canonNums (bs : List UInt64) : List UInt64 := (bs.mergeSort (· ≤ ·)).eraseDups
+def canonStrs (ss : List String) : List String := (ss.mergeSort fun a b => decide (a ≤ b)).eraseDups
+
+theorem mem_canonNums {b : UInt64} {bs : List UInt64} : b ∈ canonNums bs ↔ b ∈ bs := by
+  simp [canonNums, List.mem_eraseDups]
+theorem mem_canonStrs {s : String} {ss : List String} : s ∈ canonStrs ss ↔ s ∈ ss := by
+  simp [canonStrs, List.mem_eraseDups]
+
+/-- **Tag-set normalization of a clause list** (HOST-FAMILIES.md, "Tag sets"):
+its literals and tag sets of one primitive as one tag set, sorted and
+distinct; every other clause as it is. A list with at most one such clause of
+each primitive is left as it is. -/
+def mergeSets (cs : List (Clause α)) : List (Clause α) :=
+  if (cs.filterMap Clause.numBits).length ≤ 1 && (cs.filterMap Clause.strVals).length ≤ 1 then cs
+  else cs.filter (fun c => c.numBits.isNone && c.strVals.isNone) ++
+    numSet (canonNums (cs.filterMap Clause.numBits).flatten) ++
+    strSet (canonStrs (cs.filterMap Clause.strVals).flatten)
+
+/-- A clause of a merged list is one of the list's or a literal or tag set. -/
+theorem mem_mergeSets {cs : List (Clause α)} {c : Clause α} (h : c ∈ mergeSets cs) :
+    c ∈ cs ∨ (c.numBits.isSome ∨ c.strVals.isSome) := by
+  unfold mergeSets at h
+  split at h
+  · exact .inl h
+  · simp only [List.mem_append, List.mem_filter] at h
+    rcases h with (⟨hc, -⟩ | hn) | hs
+    · exact .inl hc
+    · right; left
+      rcases mem_numSet hn with ⟨b, rfl⟩ | ⟨L, rfl⟩ <;> rfl
+    · right; right
+      rcases mem_strSet hs with ⟨b, rfl⟩ | ⟨L, rfl⟩ <;> rfl
+
+/-- Merging keeps the members of a union, read through any clause meaning
+under which literals and tag sets mean their elements. -/
+theorem setSem_mergeSets {F : Clause α → Fam}
+    (hnum : ∀ c bs, c.numBits = some bs → ∀ n W v, F c n W v ↔ ∃ b ∈ bs, v = .num b)
+    (hstr : ∀ c ss, c.strVals = some ss → ∀ n W v, F c n W v ↔ ∃ s ∈ ss, v = .str s)
+    (cs : List (Clause α)) (n W v) :
+    setSem F (mergeSets cs) n W v ↔ setSem F cs n W v := by
+  unfold mergeSets
+  split
+  · rfl
+  · -- The literal-free part, and each primitive's set.
+    have hset : ∀ (L : List (Clause α)), (∀ c ∈ L, ∃ bs, c.numBits = some bs) →
+        (setSem F L n W v ↔ ∃ b ∈ (L.filterMap Clause.numBits).flatten, v = .num b) := by
+      intro L hL
+      constructor
+      · rintro ⟨c, hc, hv⟩
+        obtain ⟨bs, hbs⟩ := hL c hc
+        obtain ⟨b, hb, rfl⟩ := (hnum c bs hbs n W v).mp hv
+        exact ⟨b, List.mem_flatten.mpr ⟨bs, List.mem_filterMap.mpr ⟨c, hc, hbs⟩, hb⟩, rfl⟩
+      · rintro ⟨b, hb, rfl⟩
+        obtain ⟨bs, hbs, hb⟩ := List.mem_flatten.mp hb
+        obtain ⟨c, hc, hcb⟩ := List.mem_filterMap.mp hbs
+        exact ⟨c, hc, (hnum c bs hcb n W _).mpr ⟨b, hb, rfl⟩⟩
+    have numSetF : ∀ bs, setSem F (numSet bs) n W v ↔ ∃ b ∈ bs, v = .num b := by
+      intro bs
+      match bs with
+      | [] => simp [numSet, setSem]
+      | [b] => simp [numSet, setSem, hnum (.numLit b) [b] rfl n W v]
+      | b :: c :: bs => simp [numSet, setSem, hnum (.numIn (b :: c :: bs)) _ rfl n W v]
+    have strSetF : ∀ ss, setSem F (strSet ss) n W v ↔ ∃ s ∈ ss, v = .str s := by
+      intro ss
+      match ss with
+      | [] => simp [strSet, setSem]
+      | [s] => simp [strSet, setSem, hstr (.strLit s) [s] rfl n W v]
+      | s :: t :: ss => simp [strSet, setSem, hstr (.strIn (s :: t :: ss)) _ rfl n W v]
+    constructor
+    · rintro ⟨c, hc, hv⟩
+      simp only [List.mem_append, List.mem_filter] at hc
+      rcases hc with (⟨hc, -⟩ | hn) | hs
+      · exact ⟨c, hc, hv⟩
+      · obtain ⟨b, hb, rfl⟩ := (numSetF _).mp ⟨c, hn, hv⟩
+        obtain ⟨bs, hbs, hb⟩ := List.mem_flatten.mp (mem_canonNums.mp hb)
+        obtain ⟨d, hd, hdb⟩ := List.mem_filterMap.mp hbs
+        exact ⟨d, hd, (hnum d bs hdb n W _).mpr ⟨b, hb, rfl⟩⟩
+      · obtain ⟨s, hs', rfl⟩ := (strSetF _).mp ⟨c, hs, hv⟩
+        obtain ⟨ss, hss, hs'⟩ := List.mem_flatten.mp (mem_canonStrs.mp hs')
+        obtain ⟨d, hd, hds⟩ := List.mem_filterMap.mp hss
+        exact ⟨d, hd, (hstr d ss hds n W _).mpr ⟨s, hs', rfl⟩⟩
+    · rintro ⟨c, hc, hv⟩
+      cases hcn : c.numBits with
+      | some bs =>
+        obtain ⟨b, hb, rfl⟩ := (hnum c bs hcn n W v).mp hv
+        obtain ⟨d, hd, hdv⟩ := (numSetF (canonNums _)).mpr
+          ⟨b, mem_canonNums.mpr (List.mem_flatten.mpr ⟨bs, List.mem_filterMap.mpr ⟨c, hc, hcn⟩, hb⟩), rfl⟩
+        exact ⟨d, by simp [hd], hdv⟩
+      | none =>
+        cases hcs : c.strVals with
+        | some ss =>
+          obtain ⟨s, hs, rfl⟩ := (hstr c ss hcs n W v).mp hv
+          obtain ⟨d, hd, hdv⟩ := (strSetF (canonStrs _)).mpr
+            ⟨s, mem_canonStrs.mpr (List.mem_flatten.mpr ⟨ss, List.mem_filterMap.mpr ⟨c, hc, hcs⟩, hs⟩), rfl⟩
+          exact ⟨d, by simp [hd], hdv⟩
+        | none => exact ⟨c, by simp [hc, hcn, hcs], hv⟩
+
+theorem numBits_sem {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c : Clause α} {bs : List UInt64}
+    (h : c.numBits = some bs) (n W v) : semWithArgs Ξ X P c n W v ↔ ∃ b ∈ bs, v = .num b := by
+  cases c <;> simp [Clause.numBits] at h <;> subst h <;> simp [semWithArgs]
+
+theorem strVals_sem {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c : Clause α} {ss : List String}
+    (h : c.strVals = some ss) (n W v) : semWithArgs Ξ X P c n W v ↔ ∃ s ∈ ss, v = .str s := by
+  cases c <;> simp [Clause.strVals] at h <;> subst h <;> simp [semWithArgs]
+
 /-- Intersection of clauses: preserve all constraints of the same shape. -/
 def meet : Clause α → Clause α → List (Clause α)
   | .top, c | c, .top => [c]
@@ -188,6 +376,12 @@ def meet : Clause α → Clause α → List (Clause α)
   | .symbol, .symbol => [.symbol]
   | .symbol, .symbolLit i | .symbolLit i, .symbol => [.symbolLit i]
   | .symbolLit a, .symbolLit b => if a == b then [.symbolLit a] else []
+  | .num, .numIn S | .numIn S, .num => [.numIn S]
+  | .numLit b, .numIn S | .numIn S, .numLit b => if S.contains b then [.numLit b] else []
+  | .numIn S, .numIn T => numSet (S.filter T.contains)
+  | .str, .strIn S | .strIn S, .str => [.strIn S]
+  | .strLit s, .strIn S | .strIn S, .strLit s => if S.contains s then [.strLit s] else []
+  | .strIn S, .strIn T => strSet (S.filter T.contains)
   -- Object contracts meet on one object: their first operands are one record
   -- (`ReferenceConjunctions.flatten`), whose named fields the read rules find.
   | .refs a bs vs os ms ks, .refs c ds ws ps ns ls =>
@@ -279,7 +473,7 @@ private theorem nil_sem (X : α → Fam) (P : α → ArgFam) (n W v) : ¬ semLis
 
 def shape : Clause α → Nat
   | .nul => 0 | .bool | .boolLit _ => 1 | .refs .. | .dict .. => 2 | .arrs .. | .callable .. => 3
-  | .undef => 4 | .num | .numLit _ => 5 | .str | .strLit _ => 6
+  | .undef => 4 | .num | .numLit _ | .numIn _ => 5 | .str | .strLit _ | .strIn _ => 6
   | .top => 7 | .list .. => 8 | .bigint | .bigintLit _ => 9 | .symbol | .symbolLit _ => 10 | .ctors .. => 11
   | .pack .. => 12
   | .source => 7
@@ -321,6 +515,8 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | symbol => obtain ⟨i, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | ctors L S a bs vs => obtain ⟨_, _, _, _, _, _, _, _, rfl, hs⟩ := h.1.1.1; exact ⟨rfl, hs⟩
   | pack a bs => exact h.elim
+  | numIn bs => obtain ⟨b, -, rfl⟩ := h; exact ⟨rfl, trivial⟩
+  | strIn ss => obtain ⟨s, -, rfl⟩ := h; exact ⟨rfl, trivial⟩
 
 
 /-- A member's shape is its clause's, except under the two value universes. -/
@@ -358,6 +554,8 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
     obtain ⟨_, _, _, _, _, _, _, _, rfl, -⟩ := h.1.1.1
     rfl
   | pack a bs => exact h.elim
+  | numIn bs => obtain ⟨b, -, rfl⟩ := h; rfl
+  | strIn ss => obtain ⟨s, -, rfl⟩ := h; rfl
 
 /-- Every inhabited clause other than calculus top or an element-store clause
 contains only JavaScript values. Argument-pack clauses have no term members. -/
@@ -452,6 +650,68 @@ theorem meet_ctors (L M : List (MethodArrow α)) (S T : List (MethodRestArrow α
       else [.ctors (L ++ M) (S ++ T) a (bs ++ c :: ds) (vs ++ ws)] := by
   cases a <;> cases bs <;> cases vs <;> cases c <;> cases ds <;> cases ws <;> simp [meet]
 
+theorem meet_numIn_num (X : α → Fam) (P : α → ArgFam) (S : List UInt64) (n : Nat) (W : WorldT n) (v : Val) :
+    semList Ξ X P (meet (.numIn S) .num) n W v ↔
+      interT (semWithArgs Ξ X P (.numIn S)) (semWithArgs Ξ X P .num) n W v := by
+  simp only [meet, singleton_sem, semWithArgs, interT, numT]
+  exact ⟨fun h => ⟨h, by obtain ⟨b, -, rfl⟩ := h; exact ⟨b, rfl⟩⟩, And.left⟩
+
+theorem meet_numIn_numLit (X : α → Fam) (P : α → ArgFam) (S : List UInt64) (c : UInt64)
+    (n : Nat) (W : WorldT n) (v : Val) :
+    semList Ξ X P (meet (.numIn S) (.numLit c)) n W v ↔
+      interT (semWithArgs Ξ X P (.numIn S)) (semWithArgs Ξ X P (.numLit c)) n W v := by
+  simp only [meet, interT, semWithArgs]
+  by_cases hc : c ∈ S
+  · simp only [List.contains_iff_mem, hc, if_true, singleton_sem, semWithArgs]
+    exact ⟨fun h => ⟨⟨c, hc, h⟩, h⟩, And.right⟩
+  · simp only [List.contains_iff_mem, hc, if_false, semList, setSem, List.not_mem_nil, false_and,
+      exists_false, false_iff, not_and]
+    rintro ⟨b, hb, rfl⟩ he
+    cases he
+    exact hc hb
+
+theorem meet_numIn_numIn (X : α → Fam) (P : α → ArgFam) (S T : List UInt64) (n : Nat) (W : WorldT n) (v : Val) :
+    semList Ξ X P (meet (.numIn S) (.numIn T)) n W v ↔
+      interT (semWithArgs Ξ X P (.numIn S)) (semWithArgs Ξ X P (.numIn T)) n W v := by
+  simp only [meet, semList, numSet_sem, interT, semWithArgs, List.mem_filter, List.contains_iff_mem]
+  constructor
+  · rintro ⟨b, ⟨hs, ht⟩, rfl⟩
+    exact ⟨⟨b, hs, rfl⟩, ⟨b, by simpa using ht, rfl⟩⟩
+  · rintro ⟨⟨b, hs, rfl⟩, ⟨c, ht, he⟩⟩
+    cases he
+    exact ⟨b, ⟨hs, by simpa using ht⟩, rfl⟩
+
+theorem meet_strIn_str (X : α → Fam) (P : α → ArgFam) (S : List String) (n : Nat) (W : WorldT n) (v : Val) :
+    semList Ξ X P (meet (.strIn S) .str) n W v ↔
+      interT (semWithArgs Ξ X P (.strIn S)) (semWithArgs Ξ X P .str) n W v := by
+  simp only [meet, singleton_sem, semWithArgs, interT, strT]
+  exact ⟨fun h => ⟨h, by obtain ⟨b, -, rfl⟩ := h; exact ⟨b, rfl⟩⟩, And.left⟩
+
+theorem meet_strIn_strLit (X : α → Fam) (P : α → ArgFam) (S : List String) (c : String)
+    (n : Nat) (W : WorldT n) (v : Val) :
+    semList Ξ X P (meet (.strIn S) (.strLit c)) n W v ↔
+      interT (semWithArgs Ξ X P (.strIn S)) (semWithArgs Ξ X P (.strLit c)) n W v := by
+  simp only [meet, interT, semWithArgs]
+  by_cases hc : c ∈ S
+  · simp only [List.contains_iff_mem, hc, if_true, singleton_sem, semWithArgs]
+    exact ⟨fun h => ⟨⟨c, hc, h⟩, h⟩, And.right⟩
+  · simp only [List.contains_iff_mem, hc, if_false, semList, setSem, List.not_mem_nil, false_and,
+      exists_false, false_iff, not_and]
+    rintro ⟨b, hb, rfl⟩ he
+    cases he
+    exact hc hb
+
+theorem meet_strIn_strIn (X : α → Fam) (P : α → ArgFam) (S T : List String) (n : Nat) (W : WorldT n) (v : Val) :
+    semList Ξ X P (meet (.strIn S) (.strIn T)) n W v ↔
+      interT (semWithArgs Ξ X P (.strIn S)) (semWithArgs Ξ X P (.strIn T)) n W v := by
+  simp only [meet, semList, strSet_sem, interT, semWithArgs, List.mem_filter, List.contains_iff_mem]
+  constructor
+  · rintro ⟨b, ⟨hs, ht⟩, rfl⟩
+    exact ⟨⟨b, hs, rfl⟩, ⟨b, by simpa using ht, rfl⟩⟩
+  · rintro ⟨⟨b, hs, rfl⟩, ⟨c, ht, he⟩⟩
+    cases he
+    exact ⟨b, ⟨hs, by simpa using ht⟩, rfl⟩
+
 theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : Nat) (W : WorldT n) (v : Val) :
     semList Ξ X P (meet a b) n W v ↔ interT (semWithArgs Ξ X P a) (semWithArgs Ξ X P b) n W v := by
   by_cases ha : a = .top
@@ -472,9 +732,39 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
     rw [hm, meet_source]
     exact and_comm
   by_cases hs : shape a = shape b
-  · unfold meet
+  · by_cases hna : ∃ S, a = .numIn S
+    · obtain ⟨S, rfl⟩ := hna
+      cases b <;> (try simp [shape] at hs)
+      · exact meet_numIn_num X P S n W v
+      · rename_i c; exact meet_numIn_numLit X P S c n W v
+      · rename_i T; exact meet_numIn_numIn X P S T n W v
+    by_cases hnb : ∃ S, b = .numIn S
+    · obtain ⟨S, rfl⟩ := hnb
+      have swap : ∀ {p q : Prop}, (p ∧ q) ↔ (q ∧ p) := and_comm
+      cases a <;> (try simp [shape] at hs)
+      · exact (meet_numIn_num X P S n W v).trans swap
+      · rename_i c; exact (meet_numIn_numLit X P S c n W v).trans swap
+      · exact absurd ⟨_, rfl⟩ hna
+    by_cases hsa : ∃ S, a = .strIn S
+    · obtain ⟨S, rfl⟩ := hsa
+      cases b <;> (try simp [shape] at hs)
+      · exact meet_strIn_str X P S n W v
+      · rename_i c; exact meet_strIn_strLit X P S c n W v
+      · rename_i T; exact meet_strIn_strIn X P S T n W v
+    by_cases hsb : ∃ S, b = .strIn S
+    · obtain ⟨S, rfl⟩ := hsb
+      have swap : ∀ {p q : Prop}, (p ∧ q) ↔ (q ∧ p) := and_comm
+      cases a <;> (try simp [shape] at hs)
+      · exact (meet_strIn_str X P S n W v).trans swap
+      · rename_i c; exact (meet_strIn_strLit X P S c n W v).trans swap
+      · exact absurd ⟨_, rfl⟩ hsa
+    unfold meet
     cases a <;> cases b <;> simp only [shape] at hs
     all_goals try contradiction
+    all_goals try exact absurd ⟨_, rfl⟩ hna
+    all_goals try exact absurd ⟨_, rfl⟩ hnb
+    all_goals try exact absurd ⟨_, rfl⟩ hsa
+    all_goals try exact absurd ⟨_, rfl⟩ hsb
     · simp [singleton_sem, semWithArgs, interT]
     · simp [singleton_sem, semWithArgs, interT]
     · rename_i b
@@ -725,6 +1015,8 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
   | boolLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | num => exact numT_adm
   | numLit b => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | numIn _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
+  | strIn _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | refs a bs vs os ms ks => exact ⟨fun n W v h => ⟨(adm _ _).down n W v h.1, (viewsT_adm _).down n W v h.2.1,
         (optT_adm _).down n W v h.2.2.1, (methodT_adm _).down n W v h.2.2.2.1,
         fun K hK => (ownKeysT_adm K).down n W v (h.2.2.2.2 K hK)⟩,
@@ -869,6 +1161,8 @@ theorem semWithArgs_congr {Ξ Ξ' : Fam} (X Y : α → Fam) (P Q : α → ArgFam
   | boolLit _ => rfl
   | num => rfl
   | numLit _ => rfl
+  | numIn _ => rfl
+  | strIn _ => rfl
   | str => rfl
   | strLit _ => rfl
   | bigint => rfl
@@ -964,6 +1258,8 @@ def Clause.map (f : α → β) : Clause α → Clause β
       (S.map (MethodRestArrow.map f)) (mapFields f a) (bs.map (mapFields f))
       (mapFields f vs)
   | .pack a bs => .pack (a.map f) (bs.map (·.map f))
+  | .numIn bs => .numIn bs
+  | .strIn ss => .strIn ss
 
 theorem Clause.carriesInvariant_of_record {c : Clause α} (h : c.record = true) : c.carriesInvariant = true := by
   cases c <;> simp_all [Clause.record, Clause.carriesInvariant]
@@ -977,13 +1273,19 @@ theorem carriesInvariant_of_meet {a b d : Clause α} (h : d ∈ meet a b) (hd : 
     a.carriesInvariant = true ∨ b.carriesInvariant = true := by
   cases a <;> cases b <;> unfold meet at h <;> simp only [List.mem_singleton, List.not_mem_nil] at h <;>
     (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
-    (try subst h) <;> simp_all [Clause.carriesInvariant]
+    (try subst h) <;> first
+      | (simp_all [Clause.carriesInvariant]; done)
+      | (rcases mem_numSet h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> simp_all [Clause.carriesInvariant])
+      | (rcases mem_strSet h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> simp_all [Clause.carriesInvariant])
 
 /-- Only top meets top in top. -/
 theorem top_of_meet {a b : Clause α} (h : Clause.top ∈ meet a b) : a = .top ∧ b = .top := by
   cases a <;> cases b <;> unfold meet at h <;> simp only [List.mem_singleton, List.not_mem_nil] at h <;>
     (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
-    simp_all
+    first
+      | (simp_all; done)
+      | (rcases mem_numSet h with ⟨_, he⟩ | ⟨_, he⟩ <;> cases he)
+      | (rcases mem_strSet h with ⟨_, he⟩ | ⟨_, he⟩ <;> cases he)
 
 /-- A member of a clause other than top that the built-ins' invariant does not
 apply to is no plain object: its shape is a primitive's, a store's or a

@@ -633,7 +633,7 @@ came from a different context. No execution budget is inspected. -/
     -- it neither evaluates the operation twice nor inserts a runtime tag test.
     let splitReceiver := fun receiver => do
       let .var i := receiver | none
-      let B ← Γ[i]?
+      let B := ProgramTyping.members G (← Γ[i]?)
       if B.length ≤ 1 then none else do
         let ps ← B.mapM fun b => recur (Γ.set i [b]) t A
         pure (ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ (.unionVar i) ps)
@@ -1077,7 +1077,7 @@ came from a different context. No execution budget is inspected. -/
       -- Split only an explicit union. A singleton whose graph clause itself
       -- mixes shapes is not made smaller by repeating this rule; its answer
       -- is unknown, the test is a Boolean, and both arms are typed.
-      if B.length ≤ 1 then
+      if (ProgramTyping.members G B).length ≤ 1 then
         return (A :: pool).findSearch? fun C => do
           if !decide ((.boolLit true) ∈ expand G C ∧ (.boolLit false) ∈ expand G C) then none else do
           let pc := ProgramCertificates.Evidence.node ⟨Γ,.test tag (.var i),C⟩ .test
@@ -1086,7 +1086,7 @@ came from a different context. No execution budget is inspected. -/
           let pe ← recur Γ e A
           pure (.node ⟨Γ,t,A⟩ .ifBool [pc,pt,pe])
       return do
-        let ps ← B.mapM fun a => recur (Γ.set i [a]) t A
+        let ps ← (ProgramTyping.members G B).mapM fun a => recur (Γ.set i [a]) t A
         pure (.node ⟨Γ,t,A⟩ (.unionVar i) ps)
     | .ite c t e =>
       let known := pool.findSearch? fun C => do
@@ -1179,6 +1179,8 @@ observation comes from graph dispatch, never from supplied point annotations. -/
             else if t == .isArray && q && BranchRefinement.arraySlice G A B then some {}
             -- A type parameter's value: its meet with what the test admits.
             else if BranchRefinement.meetSlice G A B t q then some {}
+            -- A tag set: the elements the test leaves.
+            else if BranchRefinement.setSlice G A B t q then some {}
             else none
       else ((subtypeUsing G images A B).orElse (fun _ => match o with
         -- An object the tested value was read from keeps the labels whose
@@ -1355,6 +1357,12 @@ where
       if tag == .isArray && q && arrays != sliced && BranchRefinement.arraySlice G A arrays then
         pure [{ conditional := true, target := i, type := arrays, evidence := some {} }]
       else
+      -- A tag set the test splits: a claimed type holding the elements it
+      -- leaves.
+      let decided := decided <|> (pool.filter fun B => !B.isEmpty &&
+        BranchRefinement.setSlice G A B tag q).foldl (fun best B => match best with
+          | some b => if B.length < b.length then some B else best
+          | none => some B) none
       match (if sliced != A then none else decided) with
       | some B => pure [{ conditional := true, target := i, type := B, evidence := some {} }]
       | none => do

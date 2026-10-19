@@ -13,9 +13,10 @@ spell the union of its shapes, and the guards are library code.
 This document specifies one mechanism for every such family, parameterized
 by a reviewed **family description**. Each part has one implementation,
 which reads the description; no part names a family. The
-[compiler API](COMPILER-API.md) is the first instance. This document is a
-design: the pipeline implements no part of it, and its Lean obligations are
-unproved.
+[compiler API](COMPILER-API.md) is the first instance. The pipeline
+implements [tag sets](#tag-sets), with their Lean proofs; the other parts are
+a design, which the pipeline does not implement, and their Lean obligations
+are unproved.
 
 ## The parts
 
@@ -29,26 +30,38 @@ is in $`S`$, and $`\mathsf{strIn}(S)`$ exactly the strings in $`S`$. Tag sets
 are general clauses: a program's union of literals is one as a family's tag
 is.
 
-**Normalization.** In every union, at a row's clauses and at a type's
-labels, the literals and tag sets of one primitive are merged into one set,
-a set of one element being its literal:
+**Normalization.** The literals and tag sets of one primitive in a union are
+merged into one set, a set of one element being its literal:
 
 ```math
 \mathsf{numLit}(b_1)\cup\cdots\cup\mathsf{numLit}(b_n)\cup\mathsf{numIn}(T_1)\cup\cdots\cup\mathsf{numIn}(T_m)
 =\mathsf{numIn}(\{b_1,\ldots,b_n\}\cup T_1\cup\cdots\cup T_m)
 ```
 
-and likewise for strings. The merge applies wherever a union is formed: the
-producer's claims, a source annotation's lowering, a declaration's
-equation, and the results of meets and of substitution. It leaves every
-other clause, and every label of a parameter or scheme row, as it is, so a
-binder's identity survives. A label whose row is one literal or set and a
-label of another row are merged only through their rows' clauses; a type's
-labels that are rows of single literals or sets of one primitive become one
-row. The meaning is unchanged (proved: the two unions have the same
-members); the checker's acceptance is not implied by the meaning, which is
-why coverage, selection, slicing and key enumeration below each read sets
-directly.
+and likewise for strings. Every other clause, and every label of a parameter
+or scheme row, is left as it is, so a binder's identity survives. The merge
+applies where a union is formed:
+
+- the producer's claims: a type's labels that are literals of one primitive
+  are one set row;
+- a source annotation's lowering (`SourceTypes.numberLabels`) and a
+  declaration's equation (`mergeLiterals`, at a union's arms and at the
+  literal `0`, whose two zeros are one set);
+- a meet row's clauses (`mergeSets`).
+
+Lean's instantiation of an equation at its arguments forms no label, so a
+union a substitution forms (`A | 3` at `A = 1 | 2`) stays a union of
+labels; the producer merges the unions it states, and the element rule
+below covers the rest. Wherever a set label is formed, each element's own
+label is formed beside it. The meaning is unchanged (proved:
+`setSem_mergeSets`); the checker's acceptance is not implied by the meaning,
+which is why coverage, elimination, slicing and key enumeration below each
+read sets directly.
+
+**Elements.** A graph states, for a literal, a label whose row is that
+literal, where it has one (`NormalGraph.literal`); a reader checks the
+label's row before reading it so (`elementLabel`). A set label all of whose
+elements have labels has those labels as its **members**.
 
 **Subtyping.** Inclusion of sets, and every tag set is within its
 primitive:
@@ -61,21 +74,23 @@ primitive:
 \frac{}{\mathsf{numIn}(S)\le\mathsf{Number}}
 ```
 
-A source set is covered by a target union when the target's clauses cover
-its elements between them, each clause the part it admits (all for
-$`\mathsf{Number}`$, $`\{b\}`$ for $`\mathsf{numLit}(b)`$, $`S\cap T`$ for
-$`\mathsf{numIn}(T)`$):
+A source set is also covered by a target union whose clauses cover its
+elements between them, each element by one:
 
 ```math
-\frac{S\subseteq\textstyle\bigcup_i \mathrm{admits}(d_i)}
+\frac{\forall b\in S.\ \exists i.\ \mathsf{numLit}(b)\le d_i}
      {\mathsf{numIn}(S)\le d_1\cup\cdots\cup d_m}
 ```
 
-decided by one pass over $`S`$ against the target's sets, without expanding
-$`S`$ into literals.
+tried only where no one target clause covers the set.
 
-**Tests.** A test answers on a tag set element by element, and its slices are
-sets again (a set of one element is its literal, an empty one no clause):
+**Elimination.** A union of labels in one immutable slot is eliminated
+member by member (`unionVar`): a set label by its elements' labels. So a
+dispatch over a set's elements (a computed key, an equality of two operands
+of several singletons) reads each element as a label of its own.
+
+**Tests.** A test answers on a tag set where all its elements answer the
+same way, and otherwise element by element:
 
 ```math
 T_{\mathsf{numEq}(b)}(\mathsf{numIn}(S))=\{s\in S\mid\mathrm{numberEqual}(s,b)\},\qquad
@@ -89,30 +104,40 @@ with $`\mathrm{numberEqual}`$ the step's equality of numbers
 are equal and a NaN equals nothing, so for $`S=\{-0,1\}`$ a test against
 $`+0`$ keeps $`-0`$ on its true edge, and a NaN in $`S`$ is on every false
 edge. $`Z`$ is the bit patterns of $`0`$, $`-0`$ and the NaNs. String sets
-slice by `strEq`, and their falsy part is `""` if $`S`$ holds it. A test of
-a slot at a tag set is one node of evidence, and a field test reaches the
-record arms through the field slice unchanged. Clause selection
+slice by `strEq`, and their falsy part is `""` if $`S`$ holds it. A slice
+splits a set label into the labels of the elements it keeps, where the
+graph has them (`tagSlice`); where it does not, the set label is kept, and a
+claim of the elements the test leaves is checked element by element
+(`setSlice`). A passed equality with a singleton the target's set holds
+leaves the operand in the target (`familyMember`). A field test reaches the
+record arms through the field slice, a set-valued field answering as its
+elements do. A field's current contents at a set are its elements' atoms
+(`HeapKnowledge.primitive`). Clause selection
 ([union shapes](UNION-SHAPES.md), R2 and R3) reads a set as the literals it
 admits. A computed key at a tag set enumerates its elements, as a key at a
-union of literals does (the producer's `key_singletons`, Lean's per-key
-read), reading the member each names.
+union of literals does, in a read and in a key-adding allocation
+(`splitSets`, `KeyedOk`).
 
 **Wire.** A tag set is `{"numIn": {"bits": [b, …]}}` or
 `{"strIn": {"values": [s, …]}}`, sorted and distinct, at least two; a
-decoder refuses any other list.
+decoder refuses any other list (`RequestJson`, `type-graph.mts`).
 
 **Cost.** The demonstrated cost is a residual arm's tag
 ([residuals](#residuals)): 20 record arms beside one arm whose tag was a
 union of 330 literals took 9.2 s through `verify-source.mts` (cbe2893,
 2026-10-16). A tag set makes such a union one clause and one evidence node.
 Sorting, inclusion and slicing still take time proportional to the sets'
-sizes, and the record arms' own cost grows with their number (100 record
-arms exceeded the 30 s limit, same measurement); both are measured as units
-grow.
+sizes, a split into members as many labels as elements, and the record
+arms' own cost grows with their number (100 record arms exceeded the 30 s
+limit, same measurement).
 
-Lean: the clauses `numIn` and `strIn` of `PositiveNormalization.Clause`, their
-meaning, meets, coverings (the clause rules and the set rule over a union)
-and slices, and the normalization's soundness.
+Lean: the clauses `numIn` and `strIn` of `PositiveNormalization.Clause` with
+their meaning, meets (`meet_sound`), coverings (`Covers.sound`,
+`ClauseCovered.sound`), normalization (`setSem_mergeSets`,
+`setSem_mergeSets_row`), elements (`Clause.elements`, `rowSem_elements`,
+`elementLabel_sound`, `members_sound`), tests (`tagClause_sound`,
+`tagSlice_sound`, `setSlice_sound`, `familyMember_sound`) and keys
+(`keyed_values_safe`).
 
 ### The family contract
 

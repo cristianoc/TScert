@@ -237,8 +237,8 @@ copy takes: the copy of such an object holds all of it. -/
 @[nospecialize] private def noPrototypeValue (G : PositiveGraphs.NormalGraph Tree) (V : Ty Tree) : Bool :=
   let cs := PositiveRules.expand G V
   G.plainTy V && cs.all fun c => match c with
-    | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _ | .bigint | .bigintLit _
-    | .symbol | .symbolLit _ => true
+    | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .str | .strLit _ | .strIn _
+    | .bigint | .bigintLit _ | .symbol | .symbolLit _ => true
     | _ => false
 
 /-- A checked owned write replaces every reference to its object, each
@@ -315,8 +315,8 @@ copy takes: the copy of such an object holds all of it. -/
     -- is allocated at that index's type, as a literal meant for a dictionary
     -- is (`allocDict`): the copy then keeps the index.
     let keyClass := fun (c : PositiveNormalization.Clause (Ty Tree)) => match c with
-      | .str | .strLit _ => some IndexKeys.strings
-      | .num | .numLit _ => some IndexKeys.numeric
+      | .str | .strLit _ | .strIn _ => some IndexKeys.strings
+      | .num | .numLit _ | .numIn _ => some IndexKeys.numeric
       | .symbol | .symbolLit _ => some IndexKeys.symbols
       | _ => none
     let classes := (cs.filterMap keyClass).eraseDups
@@ -328,7 +328,7 @@ copy takes: the copy of such an object holds all of it. -/
         | _ => none
       | _ => none
     let F ← keyedType K (cellType.getD W)
-    let proto := cs.any fun c => match c with | .str => true | .strLit s => s == "__proto__" | _ => false
+    let proto := cs.any fun c => match c with | .str => true | .strLit s => s == "__proto__" | .strIn ss => ss.contains "__proto__" | _ => false
     if proto && !noPrototypeValue G (Γ[v]?.getD []) then
       refuse "a write at a string key known only at run time may name `__proto__`, whose setter, where the object does not own the key, makes an object or `null` value the object's prototype rather than a property"
     -- Where the copy is of the object's own type, the local keeps it: the

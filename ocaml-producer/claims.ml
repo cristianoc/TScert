@@ -149,7 +149,28 @@ let encode (proposal : Proposal_types.t) =
         | [] -> []) (distributed (t::ts)))
     (* An intersection, whose row Lean builds from its operands'. *)
     | Meet (t,ts) -> [Meet (List.map label_list (t::ts))]
-    | Atoms atoms -> List.sort_uniq compare (List.concat_map atom_labels atoms)
+    (* Two or more literals of one primitive are one tag set
+       (HOST-FAMILIES.md, "Tag sets"): sorted and distinct, as the decoder
+       requires, bit patterns unsigned and strings by their bytes. *)
+    | Atoms atoms ->
+      let nums = List.sort_uniq Int64.unsigned_compare
+        (List.filter_map (function NumLit b -> Some b | _ -> None) atoms) in
+      let strs = List.sort_uniq compare (List.filter_map (function StrLit s -> Some s | _ -> None) atoms) in
+      (* Each element's own row is in the table too, so that the verifier
+         splits the set into its elements where a rule needs them. *)
+      if List.length nums >= 2 then List.iter (fun b -> ignore (atom_labels (NumLit b))) nums;
+      if List.length strs >= 2 then List.iter (fun v -> ignore (atom_labels (StrLit v))) strs;
+      let sets = (if List.length nums >= 2 then
+          [Row (intern (Array [Object ["numIn",Object ["bits",
+            Array (List.map (fun b -> String (Printf.sprintf "%Lu" b)) nums)]]]))] else [])
+        @ (if List.length strs >= 2 then
+          [Row (intern (Array [Object ["strIn",Object ["values",
+            Array (List.map (fun v -> String v) strs)]]]))] else []) in
+      let rest = List.filter (function
+        | NumLit _ -> List.length nums < 2
+        | StrLit _ -> List.length strs < 2
+        | _ -> true) atoms in
+      List.sort_uniq compare (sets @ List.concat_map atom_labels rest)
   and atom_labels = function
     | Nul -> [Row 0] | True -> [Row 1] | False -> [Row 2] | Undef -> [Row 3]
     | Num -> [Row (intern (Array [String "num"]))] | Str -> [Row (intern (Array [String "str"]))]

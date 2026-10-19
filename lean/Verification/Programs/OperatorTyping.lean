@@ -23,7 +23,7 @@ inductive OpResult where
   deriving DecidableEq, Repr
 
 def numberClause : Clause α → Bool
-  | .num | .numLit _ => true
+  | .num | .numLit _ | .numIn _ => true
   | _ => false
 
 def bigintClause : Clause α → Bool
@@ -31,25 +31,25 @@ def bigintClause : Clause α → Bool
   | _ => false
 
 def stringClause : Clause α → Bool
-  | .str | .strLit _ => true
+  | .str | .strLit _ | .strIn _ => true
   | _ => false
 
 /-- Primitives `ToNumeric` converts to a number or a bigint without running
 code (`relNumeric`): numbers, bigints, Booleans, `null` and `undefined`. -/
 def numericClause : Clause α → Bool
-  | .num | .numLit _ | .bigint | .bigintLit _ | .bool | .boolLit _ | .nul | .undef => true
+  | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .bool | .boolLit _ | .nul | .undef => true
   | _ => false
 
 /-- Primitives `ToString` converts without running code (`primString`):
 every primitive but a symbol. -/
 def printableClause : Clause α → Bool
-  | .str | .strLit _ | .num | .numLit _ | .bigint | .bigintLit _
+  | .str | .strLit _ | .strIn _ | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _
   | .bool | .boolLit _ | .nul | .undef => true
   | _ => false
 
 /-- A clause of primitives only, which strict equality compares by content. -/
 def primitiveClause : Clause α → Bool
-  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _
+  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .str | .strLit _ | .strIn _
   | .bigint | .bigintLit _ | .symbol => true
   | _ => false
 
@@ -97,6 +97,7 @@ theorem numberClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α}
   cases c <;> simp [numberClause] at hc
   · exact hv
   · exact ⟨_, hv⟩
+  · obtain ⟨_, -, rfl⟩ := hv; exact ⟨_, rfl⟩
 
 theorem bigintClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : bigintClause c = true) (hv : semWithArgs Ξ X P c n W v) : ∃ i, v = .bigint i := by
@@ -109,6 +110,7 @@ theorem stringClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α}
   cases c <;> simp [stringClause] at hc
   · exact hv
   · exact ⟨_, hv⟩
+  · obtain ⟨_, -, rfl⟩ := hv; exact ⟨_, rfl⟩
 
 /-- A member of a printable clause converts by `ToString`. -/
 theorem printableClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
@@ -119,6 +121,7 @@ theorem printableClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause 
     | (obtain ⟨_, rfl⟩ := hv; exact ⟨_, rfl⟩)
     | (subst hv; exact ⟨_, rfl⟩)
     | (split at hv <;> subst hv <;> exact ⟨_, rfl⟩)
+    | (obtain ⟨_, -, rfl⟩ := hv; exact ⟨_, rfl⟩)
 
 theorem primitiveClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : primitiveClause c = true) (hv : semWithArgs Ξ X P c n W v) : isPrim v = true := by
@@ -126,6 +129,7 @@ theorem primitiveClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause 
   all_goals first
     | (rcases hv with rfl | rfl <;> rfl)
     | (obtain ⟨_, rfl⟩ := hv; rfl)
+    | (obtain ⟨_, -, rfl⟩ := hv; rfl)
     | (subst hv; rfl)
     | (split at hv <;> subst hv <;> rfl)
     | (simp only [nulT, undefT, boolT, numT, strT, bigintT, symbolT] at hv;
@@ -139,6 +143,7 @@ theorem numericClause_member {X : α → Fam} {P : α → ArgFam} {c : Clause α
   all_goals first
     | (rcases hv with rfl | rfl <;> exact ⟨_, rfl, by simp⟩)
     | (obtain ⟨_, rfl⟩ := hv; exact ⟨_, rfl, by simp⟩)
+    | (obtain ⟨_, -, rfl⟩ := hv; exact ⟨_, rfl, by simp⟩)
     | (subst hv; exact ⟨_, rfl, by simp⟩)
     | (split at hv <;> subst hv <;> exact ⟨_, rfl, by simp⟩)
 

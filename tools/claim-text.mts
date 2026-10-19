@@ -350,6 +350,8 @@ const _handled = {
   symbol: 1,
   bigintLit: 1,
   symbolLit: 1,
+  numIn: 1,
+  strIn: 1,
 } satisfies Record<StringClause | ClauseKey, 1>;
 void _handled;
 
@@ -368,6 +370,15 @@ const rowAt = (types: Table, label: unknown): unknown =>
   (typeof label === "number" || typeof label === "string")
     ? Object.getOwnPropertyDescriptor(types.rows, label)?.value
     : undefined;
+
+// A tag set's literal clauses; any other clause, itself.
+function setLiterals(clause: unknown): unknown[] {
+  if (isObject(clause) && isObject(clause.numIn) && Array.isArray(clause.numIn.bits))
+    return clause.numIn.bits.map((bits: unknown) => ({ numLit: { bits } }));
+  if (isObject(clause) && isObject(clause.strIn) && Array.isArray(clause.strIn.values))
+    return clause.strIn.values.map((value: unknown) => ({ strLit: { value } }));
+  return [clause];
+}
 
 function liftClause(types: Table, clause: unknown, depth: number): unknown {
   if (clause === "nul") return { a: "null" };
@@ -408,6 +419,10 @@ function liftClause(types: Table, clause: unknown, depth: number): unknown {
   const symbolLit = body("symbolLit");
   if (symbolLit)
     return `unique symbol ${String(isObject(symbolLit) ? symbolLit.id : undefined)}`;
+  // A tag set is the union of its literals, which `liftType` lists as atoms;
+  // met elsewhere, it is shown as that union's text.
+  if (body("numIn") !== undefined || body("strIn") !== undefined)
+    return setLiterals(clause).map((c) => JSON.stringify(liftClause(types, c, depth))).join(" | ");
   const strLit = body("strLit");
   if (strLit)
     return {
@@ -612,7 +627,7 @@ function liftType(types: Table, labels: unknown, depth: number): Shown {
     if (name !== undefined) return [name];
     const row = rowAt(types, label);
     if (!Array.isArray(row)) return ["type " + String(label)];
-    return row.map((clause: unknown) => liftClause(types, clause, depth));
+    return row.flatMap(setLiterals).map((clause: unknown) => liftClause(types, clause, depth));
   });
   return { top: false, atoms };
 }

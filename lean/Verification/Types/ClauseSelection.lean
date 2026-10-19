@@ -33,6 +33,8 @@ def admitsVal (c : Clause α) (v : Val) : Bool :=
   | .bool, .tru | .bool, .fls => true
   | .strLit t, .str s => t == s
   | .numLit a, .num b => a == b
+  | .numIn S, .num b => S.contains b
+  | .strIn S, .str s => S.contains s
   | .boolLit true, .tru | .boolLit false, .fls => true
   | .bigintLit i, .bigint j => i == j
   | .symbolLit i, .sym j => i == j

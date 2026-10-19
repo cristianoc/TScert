@@ -137,7 +137,7 @@ invariantly or as a view. -/
 /-- A source numeric key must denote one valid array index. The two runtime
 zeros name the same property although their numeric values remain distinct. -/
 @[nospecialize] private def arrayIndex (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Except String Nat := do
-  let cs := PositiveRules.expand G K
+  let cs := PositiveNormalization.splitSets (PositiveRules.expand G K)
   let .numLit b :: _ := cs
     | throw "a numeric array key needs a proved array-index singleton; ordinary numeric properties are not modeled"
   let some k := indexOfBits b
@@ -249,10 +249,11 @@ singletons, each a key `in` answers as JavaScript does (`inKeyRefusal`). -/
 @[nospecialize] def inKeyList (p : Span) (K : Ty Tree) : Compiler (List String) := do
   let G := SourceTypes.graph (← table)
   let located := s!"unsupported source expression at [{p.1},{p.2}): "
-  let keys := (PositiveRules.expand G K).filterMap fun
+  let cs := PositiveNormalization.splitSets (PositiveRules.expand G K)
+  let keys := cs.filterMap fun
     | .strLit s => some s
     | _ => none
-  unless G.plainTy K && !keys.isEmpty && keys.length == (PositiveRules.expand G K).length do
+  unless G.plainTy K && !keys.isEmpty && keys.length == cs.length do
     throw (located ++ "`in` with a key that is not a union of string literals")
   let keys := keys.eraseDups
   for k in keys do
@@ -326,7 +327,7 @@ it and the property key it converts to (`ToPropertyKey`: a number's is the
 key its `ToString` spells). `none` unless every clause is a string or number
 singleton; NaN, which no equality test finds, is not one. -/
 @[nospecialize] def keySingletons (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Option (List (Tag × PropKey)) :=
-  let cs := PositiveRules.expand G K
+  let cs := PositiveNormalization.splitSets (PositiveRules.expand G K)
   if !G.plainTy K || cs.isEmpty then none else
   cs.mapM fun c => match c with
     | .strLit v => some (.strEq v, .str v)
@@ -349,7 +350,7 @@ singleton; NaN, which no equality test finds, is not one. -/
           if let .str s := k then
             if SourceTypes.reservedKey s then throw s!"'{s}' is internal to the model, not a source property"
         return .dynamic
-  match PositiveRules.expand G K with
+  match PositiveNormalization.splitSets (PositiveRules.expand G K) with
   | [.strLit s] => spelled s
   | [.str] => pure .dynamic
   | [.num] | [.symbol] => if dict then pure .dynamic else
@@ -376,7 +377,7 @@ string, a number or a symbol, singletons or families, and not one key the
 source spells (one string or number singleton, which `growingWrite` reads as
 a named write). -/
 @[nospecialize] def computedKeyClaim (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Bool :=
-  let cs := PositiveRules.expand G K
+  let cs := PositiveNormalization.splitSets (PositiveRules.expand G K)
   G.plainTy K && !cs.isEmpty &&
   cs.all (fun c => match c with
     | .strLit _ | .str | .num | .symbolLit _ | .symbol => true
@@ -391,7 +392,7 @@ null, undefined, a number (both zeros are one), a string, a Boolean or a
 bigint. -/
 @[nospecialize] def singletonTag (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Option Tag :=
   if A == [Labels.nul] then some Tag.isNul else if A == [Labels.undef] then some Tag.isUndef else
-    match PositiveRules.expand G A with
+    match PositiveNormalization.splitSets (PositiveRules.expand G A) with
     | .numLit bits :: cs =>
       if cs.all (fun c => match c with | .numLit b => numberEqual bits b | _ => false)
       then some (.numEq bits) else none

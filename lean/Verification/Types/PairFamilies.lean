@@ -145,7 +145,7 @@ RECURSIVE-EQUATIONS §7.3), premises read through `R`. -/
   SameKind G A B = true ∧
     OpaqueFamily G sub R known (fun L S M => ∀ p ∈ M,
       CallArrow (compatible G) (restElem G) R L S p) hyps A B ∧
-    ∀ a ∈ sourceClauses G A ++ meetSources G A B hyps, ∃ b ∈ clausesOf G B, Covers G sub R known A a b
+    ∀ a ∈ sourceClauses G A ++ meetSources G A B hyps, ClauseCovered G sub R known A a B
 
 /-- **Quantified-α, soundly.** At every instance the target admits, the
 source admits it too at its own binders (each bound is matched); there the
@@ -301,9 +301,8 @@ theorem pair_values_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
       exact hv'
   rcases mixed_cases hv with ⟨c, hcm, hv⟩ | ⟨i, hi, hp, hv⟩
   · obtain ⟨a, ha, hv⟩ := (splitClause_row G _ _ _ c n W v).mpr hv
-    obtain ⟨b, hb, hcover⟩ :=
-      hc.2.2 a (List.mem_append_left _ (List.mem_flatMap.mpr ⟨c, hcm, ha⟩))
-    exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hknown n hr hpa hre W v hself hv⟩
+    exact (hc.2.2 a (List.mem_append_left _ (List.mem_flatMap.mpr ⟨c, hcm, ha⟩))).sound
+      hknown n hr hpa hre W v hself hv
   · rcases (hc.2.1 i hi).resolve_left (by simp [hp]) with
       hB | htop | hmeet | ⟨y, hy, hh⟩ | ⟨j, hj, hsc⟩
     · exact ⟨i, hB, hv⟩
@@ -328,8 +327,7 @@ theorem pair_values_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (R
           have hmem : a ∈ meetSources G A B hyps := List.mem_flatMap.mpr ⟨c,
             List.mem_flatMap.mpr ⟨i, List.mem_filter.mpr ⟨hi, by simp [hmeet, hB, hbelow, hsm]⟩,
               hcm⟩, ha⟩
-          obtain ⟨b, hb, hcover⟩ := hc.2.2 a (List.mem_append_right _ hmem)
-          exact mixed_expand_mpr ⟨b, hb, Covers.sound hcover hknown n hr hpa hre W v hself hv⟩
+          exact (hc.2.2 a (List.mem_append_right _ hmem)).sound hknown n hr hpa hre W v hself hv
       · rcases hsrc with hbelow | ⟨q, hq, hqp, j, hj, hsc⟩ | hcov
         · obtain ⟨j, hj, hij⟩ := List.any_eq_true.mp hbelow
           exact ⟨j, hj, meetBelow_sound hmeet hij (by simp) hv⟩
@@ -399,7 +397,7 @@ theorem pair_arguments_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option
     case pack a bs =>
       have hsrc : .pack a bs ∈ sourceClauses G A :=
         List.mem_flatMap.mpr ⟨.pack a bs, List.mem_flatMap.mpr ⟨i, hi, hci⟩, by simp [splitClause]⟩
-      obtain ⟨b, hb, hcov⟩ := hcover _ (List.mem_append_left _ hsrc)
+      obtain ⟨b, hb, hcov⟩ := (hcover _ (List.mem_append_left _ hsrc)).single rfl
       obtain ⟨d, ds, rfl⟩ := argument_clause hba hb
       obtain ⟨j, hj, hbj⟩ := List.mem_flatMap.mp hb
       have hjplain := NormalGraph.plain_of_clauses hbj

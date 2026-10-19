@@ -103,8 +103,21 @@ private def derivedClauseFromJson [FromJson α] : Json → Except String (Clause
 
 instance (priority := high) [ToJson α] : ToJson (Clause α) :=
   ⟨fun c => withoutEmptyVariadic (derivedClauseToJson c)⟩
+/-- A tag set's list is sorted, distinct and of at least two elements: its one
+spelling (HOST-FAMILIES.md, "Tag sets"). -/
+def canonicalSet [LT β] [DecidableRel (α := β) (· < ·)] (xs : List β) : Bool :=
+  xs.length ≥ 2 && (xs.zip xs.tail).all fun (a, b) => decide (a < b)
+
 instance (priority := high) [FromJson α] : FromJson (Clause α) :=
-  ⟨fun j => derivedClauseFromJson (withEmptyVariadic j)⟩
+  ⟨fun j => do
+    let c ← derivedClauseFromJson (withEmptyVariadic j)
+    match c with
+    | .numIn bs => unless canonicalSet bs do
+        throw "a number set lists two or more bit patterns, sorted and distinct"
+    | .strIn ss => unless canonicalSet ss do
+        throw "a string set lists two or more strings, sorted and distinct"
+    | _ => pure ()
+    return c⟩
 instance : ToJson ParameterKind := ⟨fun
   | .value => .str "value"
   | .arguments => .str "arguments"

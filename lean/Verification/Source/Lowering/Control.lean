@@ -259,7 +259,7 @@ name is split first, as before; otherwise a field read. -/
     | .read _ f (.var _ name) => (valueSlot scope name).map (·, some f)
     | _ => none
   let singletons := fun (C : Ty Tree) =>
-    if C.isEmpty then none else C.mapM fun a => singletonTag G [a]
+    if C.isEmpty then none else (ProgramTyping.members G C).mapM fun a => singletonTag G [a]
   let attempt := fun (s o : Fragment.Expr) (field : Bool) => do
     let some sop := operand s | return none
     let some oop := operand o | return none
@@ -288,7 +288,7 @@ effect changes, is the other operand. -/
     | _ =>
       let C ← exprType fc e
       if C.isEmpty then return none
-      match C.mapM fun a => singletonTag G [a] with
+      match (ProgramTyping.members G C).mapM fun a => singletonTag G [a] with
       | some tags => return some (k, n, e, tags)
       | none => return none
   if let some x ← attempt l r then return some x
