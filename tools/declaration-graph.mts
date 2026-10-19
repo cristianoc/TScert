@@ -1460,6 +1460,14 @@ export function collectDeclarations(file: string, options: {
           continue;
         }
         const reviewed = moduleEntries(binding.specifier, binding.imported);
+        // Node's assertion functions state promises their declarations alone
+        // assert: a value of `node:assert` or `node:assert/strict` is read
+        // through the latter's default import and its members alone, at
+        // their reviewed entries, never at a declaration.
+        const module = binding.specifier.startsWith("node:") ? binding.specifier.slice("node:".length) : binding.specifier;
+        if (!binding.typeOnly && (module === "assert" || (module === "assert/strict" &&
+            binding.imported !== "default" && !binding.imported.startsWith("default."))))
+          throw Error(`${binding.name} of ${binding.specifier} is read through the default import of node:assert/strict alone`);
         if (!binding.typeOnly && (binding.imported === "default" || binding.imported.startsWith("default.")) &&
             moduleEntries(binding.specifier, "default").some(e => e.member !== undefined)) {
           const value = namespaceFunction(binding, nodes);

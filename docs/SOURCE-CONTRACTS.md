@@ -2170,7 +2170,12 @@ is not read.
 member read `assert.m` is a binding of the file, named `assert.m`, of the
 export `default.m`, and a call `assert(…)` is a call of the import's own
 binding; any other mention (passing `assert`, a member read uncalled) is
-refused (`namespace-members.mts`). A member call passes the function as its
+refused (`namespace-members.mts`), a default import beside named bindings
+included (`invalid-node-assert-default-and-named`). A value imported from
+`node:assert/strict` any other way (a named import, a namespace import) or
+from `node:assert` is refused rather than read at its declaration, whose
+promises only it asserts (`invalid-node-assert-named-import`,
+`invalid-node-assert-namespace-import`, `invalid-node-assert-loose-import`). A member call passes the function as its
 receiver, which none of these functions reads. Each binding is the forms of
 the overloads its calls resolve to, each an entry of the overlay of library
 modules (module `assert/strict`, name `default`, the member, and the

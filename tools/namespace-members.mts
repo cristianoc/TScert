@@ -48,7 +48,8 @@ export function namespaceMembers(file: SourceFile, checker: Checker,
     ts.isImportDeclaration(s) && !!s.importClause?.namedBindings && ts.isNamespaceImport(s.importClause.namedBindings));
   // Default imports of a function merged with a namespace the overlay reviews.
   const functions = file.statements.filter((s): s is ImportDeclaration =>
-    ts.isImportDeclaration(s) && !!s.importClause?.name && !s.importClause.namedBindings &&
+    ts.isImportDeclaration(s) && !!s.importClause?.name &&
+    (!s.importClause.namedBindings || ts.isNamedImports(s.importClause.namedBindings)) &&
     ts.isStringLiteral(s.moduleSpecifier) &&
     moduleEntries(s.moduleSpecifier.text, "default").some(e => e.member !== undefined));
   if (!imports.length && !functions.length) return members;
