@@ -768,7 +768,9 @@ came from a different context. No execution budget is inspected. -/
         return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb])
     | .invoke f recv args =>
       -- A callee read from a slot is tried first at the slot's own type, a
-      -- fixed signature before any variadic one of the pool: coercing it to
+      -- fixed signature of it before its variadic ones (a call of a guard at
+      -- its promise signature, beside one taking further arguments), and
+      -- those before any variadic one of the pool: coercing it to
       -- each of those first, where its own type is fixed, fails at the cost
       -- of a table over the pool each time. Order only; every premise is
       -- still proved.
@@ -830,7 +832,7 @@ came from a different context. No execution budget is inspected. -/
             let eus ← omitted.mapM fun D => recur Γ .undef D
             pure (coerceBy sub (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A)
       -- A callee or, for a method dispatched on its object, the receiver.
-      return (variadic own <|> direct own <|> variadic pool <|> direct pool).firstOr
+      return (direct own <|> variadic own <|> variadic pool <|> direct pool).firstOr
         (splitReceiver f <|> splitReceiver recv)
     | .makeAt .absent ns inits =>
       return (A :: pool).findSearch? fun R => do

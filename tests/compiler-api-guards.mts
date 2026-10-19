@@ -11,7 +11,8 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { compilerApiGuards } from "../tools/compiler-api-guards.mts";
-import { hostPackage } from "../tools/compiler-api.mts";
+import { activeGuards, hostPackage } from "../tools/compiler-api.mts";
+import type { GuardEntry, GuardTable } from "../tools/host-families.mts";
 
 const repository = resolve(import.meta.dirname, "..");
 const generated = spawnSync(process.execPath, [join(repository, "dev", "guard-table.mts"), "--check"], { encoding: "utf8" });
@@ -49,3 +50,40 @@ for (const guard of compilerApiGuards.guards) {
 }
 console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under Node, each answering exactly its tag set; ` +
   `${compilerApiGuards.excluded.length} declared guards outside the contract: ${compilerApiGuards.excluded.map(([n]) => n).join(", ")}`);
+
+// The table's activation (HOST-FAMILIES.md, "The guard table"): the reviewed
+// table resolves as recorded over the installation, every entry; a table
+// differing from the installation in any recorded resolution fact (its entry
+// module, conditions or `imports` mapping; an entry's module, chain or text;
+// a helper's text; the helpers or binding edges its closure reaches) is no
+// table.
+{
+  const active = activeGuards(compilerApiGuards);
+  assert.ok(active && active.size === compilerApiGuards.guards.length, "the reviewed table resolves, every entry");
+  const named = (name: string): GuardEntry => {
+    const found = compilerApiGuards.guards.find(g => g.name === name);
+    assert.ok(found, name);
+    return found;
+  };
+  const identifier = named("isIdentifier");
+  const helped = compilerApiGuards.guards.find(g => g.helpers.length > 0);
+  assert.ok(helped, "an entry with a helper");
+  const [helper] = helped.helpers;
+  assert.ok(helper !== undefined, "its helper");
+  const one = (entry: GuardEntry): GuardTable => ({ ...compilerApiGuards, guards: [entry] });
+  const mismatches: [string, GuardTable][] = [
+    ["another entry module", { ...compilerApiGuards, entryModule: "dist/ast/is.js" }],
+    ["other conditions", { ...compilerApiGuards, conditions: ["browser"] }],
+    ["another imports mapping", { ...compilerApiGuards, imports: { "#enums/*": { default: "./dist/ast/*.js" } } }],
+    ["another module", one({ ...identifier, module: "dist/ast/is.js" })],
+    ["another chain", one({ ...identifier, chain: [compilerApiGuards.entryModule, identifier.module] })],
+    ["another text", one({ ...identifier, text: identifier.text.replace("===", "!==") })],
+    ["a helper more", one({ ...identifier, helpers: [helper] })],
+    ["a helper less", one({ ...helped, helpers: helped.helpers.slice(1) })],
+    ["an edge less", one({ ...identifier, edges: [] })],
+    ["another helper text", { ...one(helped), helpers: { ...compilerApiGuards.helpers, [helper]: "function f() {}" } }],
+  ];
+  for (const [what, table] of mismatches)
+    assert.equal(activeGuards(table), null, `${what}: no table`);
+  console.log(`activation: the reviewed table resolves, every entry; ${mismatches.length} tables differing from the installation in one recorded fact each are none`);
+}

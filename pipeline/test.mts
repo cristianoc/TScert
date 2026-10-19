@@ -3139,6 +3139,25 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
       at(read).type = at(excluded).type;
       return read;
     }],
+    // A guard's false edge (HOST-FAMILIES.md, "Calls"): the argument
+    // claimed at the shape its true edge leaves, which every input reaching
+    // the false edge contradicts.
+    ["forged-guard-false-edge", "compiler-api-guard-false-branch", "count", (text, f) => {
+      const at = (start: number) => must(f.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + "node".length), `the claim at ${start}`);
+      const read = text.lastIndexOf("node.elements");
+      at(read).type = at(text.indexOf("node.text")).type;
+      return read;
+    }],
+    // A guard value's promise (HOST-FAMILIES.md, "Guards as values"): where
+    // a call of a name holding it answers `true`, the argument claimed at
+    // what its `false` answer leaves, which excludes every input answering
+    // `true`.
+    ["forged-guard-value-promise", "compiler-api-guard-values", "stored", (text, f) => {
+      const at = (start: number) => must(f.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + "node".length), `the claim at ${start}`);
+      const read = text.indexOf("node.text", text.indexOf("g(node)"));
+      at(read).type = at(text.indexOf("node.pos", read)).type;
+      return read;
+    }],
     ["forged-family-member", "compiler-api-family-identity", "held", (text, f) => {
       const literal = text.indexOf("{ node: n }");
       const node = text.indexOf("n }", literal);
@@ -3165,7 +3184,52 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
       /evidence does not justify the extracted program and exact claims|evidence refusal at \[\d+,\d+\)/);
   }
-  process.stdout.write("forged family claims: the excluded arm on a false edge and a program allocation at a family type, refused by the search at the forged claim and by the checker against the case's evidence\n");
+  process.stdout.write("forged family claims: the excluded arm on a kind test's and on a guard's false edge, a guard value's promise at the shapes it excludes, and a program allocation at a family type, refused by the search at the forged claim and by the checker against the case's evidence\n");
+}
+{
+  // The domain obligation (HOST-FAMILIES.md, "Calls"): a parser document
+  // stating a guard's call at a domain its argument's claim is not within,
+  // `Identifier` for a `BindingName`, is refused at the call by Lean's
+  // `guard-domain` obligation, whatever the producer claims; one stating no
+  // domain, by the decoder.
+  const artifacts = run("compiler-api-guard-false-branch");
+  const document: unknown = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+  const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+  const found: Record<string, unknown>[] = [];
+  const visit = (v: unknown): void => {
+    if (Array.isArray(v)) v.forEach(visit);
+    else if (isObject(v)) {
+      if (v.k === "tagMember") found.push(v);
+      Object.values(v).forEach(visit);
+    }
+  };
+  visit(document);
+  const [call] = found;
+  assert.ok(call && found.length === 1 && Array.isArray(call.pos), "the guard's call");
+  const declarations = isObject(document) && isObject(document.declarations) ? document.declarations : null;
+  const definitions = declarations && Array.isArray(declarations.definitions) ? declarations.definitions : [];
+  const identifier = definitions.map((d: unknown) => isObject(d) && isObject(d.declaration) ? d.declaration : null)
+    .find((d) => d !== null && d.name === "Identifier");
+  assert.ok(identifier, "Identifier's definition");
+  const domain = call.domain;
+  assert.ok(isObject(domain) && isObject(domain.reference), "the call's domain, a reference");
+  const narrowed = { ...domain, reference: { ...domain.reference, name: "Identifier", target: identifier } };
+  const forgedDocument = (name: string, replaced: unknown): string => {
+    call.domain = replaced;
+    const path = join(artifacts, `${name}.fragment.json`);
+    writeFileSync(path, JSON.stringify(document) ?? "");
+    call.domain = domain;
+    return path;
+  };
+  const claims = join(artifacts, "claims.json");
+  const searched = produceWith(artifacts, claims, "forged-guard-domain", forgedDocument("forged-guard-domain", narrowed));
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, detail);
+  assert.ok(detail.includes(`at [${call.pos.join(",")})`), `the narrowed domain refused at the call: ${detail}`);
+  const absent = produceWith(artifacts, claims, "forged-guard-no-domain", forgedDocument("forged-guard-no-domain", null));
+  assert.equal(absent.status, 1, absent.stdout + absent.stderr);
+  assert.match(absent.stdout + absent.stderr, /a family guard's call states its guard's domain/);
+  process.stdout.write("forged guard domains: a domain the argument is not within refused at the call, and a call without its domain by the decoder\n");
 }
 {
   // A correction of a method to absent (HOST-FAMILIES.md, "The family

@@ -332,8 +332,10 @@ where a node is expected (`invalid-compiler-api-boxed-node`), `{ ...node }`
 allocation at a family type (`pipeline/test.mts`). Left: a callback of
 `forEachChild` reading its argument and one whose result is claimed at a
 node type it did not receive, which wait on a generic method called on a
-node (`compiler-api-node-callback`, a gap); a re-exported guard and a
-guard's wrapper, which wait on guard recognition.
+node (`compiler-api-node-callback`, a gap). A re-exported guard narrows,
+and a local function of a guard's name and a guard's wrapper are ordinary
+functions (`compiler-api-guard-calls`, `invalid-compiler-api-guard-wrapper`,
+`invalid-compiler-api-guard-local`).
 
 <a id="corrected-members"></a>
 **Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)

@@ -18,5 +18,13 @@ export function names(nodes: readonly ts.Node[]): number {
 export function stored(node: ts.Node): number {
   const g = ts.isIdentifier;
   if (g(node)) return node.text.length;
-  return 0;
+  return node.pos;
+}
+
+export function anyName(nodes: readonly ts.Node[]): boolean {
+  return nodes.some((n) => ts.isIdentifier(n));
+}
+
+export function identifiers(nodes: readonly ts.Node[]): number {
+  return nodes.filter(ts.isIdentifier).length;
 }

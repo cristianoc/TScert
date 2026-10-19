@@ -1402,7 +1402,8 @@ export function collectDeclarations(file: string, options: {
     };
     // A guard of the compiler API's family (HOST-FAMILIES.md, "Guards as
     // values"): a listed one is read at the signature its entry gives, its
-    // plain signature changing no value and no store, beside the promise
+    // plain signature changing no value and no store and taking any further
+    // arguments, beside the promise
     // signature of its tag set, the union of the family's shapes at those
     // tags (a node guard's, `guard.<name>` of the family's definitions) or
     // of the tags themselves (a tag guard's); an unlisted one at its plain
@@ -1436,9 +1437,13 @@ export function collectDeclarations(file: string, options: {
         promised = { k: "reference", span, args: [], reference: { name, span, arguments: [],
           target: { module: `tscert/family/${familyDescription.marker}`, name, span: [0, 0] } } };
       }
+      // Any further argument, which the entry states changes no answer, is
+      // an element of a third signature's rest, of every value.
+      const rest: TypeTerm = { k: "atom", name: "unknown", span };
       const plainForm = { ...one, effect: emptyEffect };
       return { k: "intersection", span, parts: [plainForm,
-        { ...one, effect: { ...emptyEffect, promise: { guards: { param: 0 } } }, result: promised }] };
+        { ...one, effect: { ...emptyEffect, promise: { guards: { param: 0 } } }, result: promised },
+        { ...plainForm, rest }] };
     };
     const valueRead = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
       const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !ts.isTypeAliasDeclaration(n));

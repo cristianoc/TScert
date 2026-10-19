@@ -364,3 +364,62 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   closeParser();
   console.log(`corrections: the ${corrected.length} corrected members' fixtures return undefined under Node`);
 }
+
+// The guards' fixtures under Node (HOST-FAMILIES.md, "Guard recognition"):
+// `invalid-compiler-api-js-alias` returns 345 on a JSDoc `@typedef`, which
+// `isTypeAliasDeclaration` accepts; `compiler-api-guard-argument` evaluates
+// a guard's argument once; and the write `invalid-compiler-api-enum-record-write`
+// makes, which F5 excludes, turns `isIdentifier` false on an identifier.
+{
+  const dir = runDirectory("tscert-guards-");
+  mkdirSync(join(dir, "node_modules"));
+  symlinkSync(root, join(dir, "node_modules", hostPackage.name));
+  const fixture = async (name: string): Promise<Record<string, unknown>> => {
+    const copy = join(dir, `${name}.ts`);
+    copyFileSync(resolve(import.meta.dirname, `../pipeline/examples/${name}.ts`), copy);
+    const module: unknown = await import(pathToFileURL(copy).href);
+    assert.ok(isNamespace(module), `${name}: a module`);
+    return module;
+  };
+  type AstNode = Parameters<Parameters<ReturnType<typeof openText>["forEachChild"]>[0]>[0];
+  const first = (file: string, source: string, kind: number): AstNode => {
+    writeFileSync(file, source);
+    const tree = openText(file, source);
+    let found: AstNode | undefined;
+    const visit = (node: AstNode): undefined => {
+      if (!found && node.kind === kind) found = node;
+      const docs: unknown = Reflect.get(node, "jsDoc");
+      if (Array.isArray(docs)) for (const doc of docs.filter((d): d is AstNode => typeof d === "object" && d !== null && "kind" in d)) visit(doc);
+      return node.forEachChild(visit);
+    };
+    tree.forEachChild(visit);
+    assert.ok(found, `a node of kind ${kind} in ${JSON.stringify(source)}`);
+    return found;
+  };
+  const syntaxKind: unknown = Reflect.get(ast, "SyntaxKind");
+  assert.ok(isNamespace(syntaxKind), "the package exports SyntaxKind");
+  const unary = (v: unknown): v is (x: unknown) => unknown => typeof v === "function";
+  const nullary = (v: unknown): v is () => unknown => typeof v === "function";
+  const alias = await fixture("invalid-compiler-api-js-alias");
+  assert.ok(unary(alias.aliasKind), "the fixture exports aliasKind");
+  const typedef = first(join(dir, "typedef.js"), "/** @typedef {string} Name */\nexport {};\n", 345);
+  assert.equal(alias.aliasKind(typedef), 345, "aliasKind returns 345 on a @typedef");
+  const argument = await fixture("compiler-api-guard-argument");
+  assert.ok(unary(argument.counted), "the fixture exports counted");
+  const name = first(join(dir, "name.ts"), "export const x = y;\n", Number(syntaxKind.Identifier));
+  assert.equal(argument.counted(name), 1, "the argument is evaluated once");
+  const write = await fixture("invalid-compiler-api-enum-record-write");
+  assert.ok(nullary(write.rewrite), "the fixture exports rewrite");
+  const isIdentifier: unknown = Reflect.get(ast, "isIdentifier");
+  assert.ok(unary(isIdentifier), "the package exports isIdentifier");
+  const before = syntaxKind.Identifier;
+  assert.equal(isIdentifier(name), true, "isIdentifier holds of an identifier");
+  try {
+    write.rewrite();
+    assert.equal(isIdentifier(name), false, "after the write, isIdentifier answers false of an identifier");
+  } finally {
+    Reflect.set(syntaxKind, "Identifier", before);
+  }
+  closeParser();
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, and a write to SyntaxKind turns isIdentifier false");
+}

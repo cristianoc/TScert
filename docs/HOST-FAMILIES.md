@@ -468,7 +468,7 @@ place of its declared type. A node guard:
 
 ```math
 \frac{g\ \text{a node guard of}\ F,\quad K_g,\quad A\ \text{the reading of its domain}}
-     {g : (A)\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}\ \land\ (A)\to\textstyle\bigcup_{t\in K_g} S_t\,[\mathsf{guards}\ 0]}\ \textsf{guard-value}
+     {g : (A)\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}\ \land\ (A)\to\textstyle\bigcup_{t\in K_g} S_t\,[\mathsf{guards}\ 0]\ \land\ (A,\ \ldots\mathtt{unknown}[])\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}}\ \textsf{guard-value}
 ```
 
 A tag guard promises a union of literals, its domain the tag's primitive
@@ -476,7 +476,7 @@ $`P`$:
 
 ```math
 \frac{g\ \text{a tag guard of}\ F,\quad K_g}
-     {g : (P)\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}\ \land\ (P)\to\textstyle\bigcup_{t\in K_g}\{t\}\,[\mathsf{guards}\ 0]}\ \textsf{tag-guard-value}
+     {g : (P)\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}\ \land\ (P)\to\textstyle\bigcup_{t\in K_g}\{t\}\,[\mathsf{guards}\ 0]\ \land\ (P,\ \ldots\mathtt{unknown}[])\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}}\ \textsf{tag-guard-value}
 ```
 
 with $`\{\mathsf{keep},\mathsf{keep}\}`$ the footprint that changes no value
@@ -488,7 +488,9 @@ own, an arm covering several tags otherwise), and the promise signature of
 narrows the `true` edge. The parameter is the domain: a callback receives
 the guard only where its argument type is within $`A`$ (or $`P`$), so its
 marker is established at every call; the entry states that further
-arguments (an index, the array) and a receiver change no answer. The
+arguments (an index, the array) and a receiver change no answer, which the
+third signature states, so the guard meets a callback of more parameters
+(`nodes.filter(ts.isIdentifier)`, `compiler-api-guard-values`). The
 declaration document states this signature for the guard's import, so Lean
 reads it as any import's declared type; what it rests on is the table.
 
