@@ -314,8 +314,11 @@ naming of a package type:
   provenance: a program value claimed there must be derived, and none is,
   since no program allocation owns `[[host]]`.
 - **Wrappers:** a verified function returning a family value it received
-  returns it with its marker, the same object. Wrapping it in a new object
-  (`{ node }`, a spread) gives an object of ordinary classification.
+  returns it with its marker, the same object. A new object holding it
+  (`{ node }`) is an ordinary object whose field holds the host value. A
+  spread of it (`{ ...node }`) is refused by the host-operation boundary
+  ([operations](COMPILER-API.md#operations-and-their-obligations)), which
+  admits no copy of a host object's own keys.
 - **Callbacks:** a callback's argument has a marker only where the audited
   contract of the function passing it states a family type; a callback's
   result at a family type must be derived, as any result.
@@ -327,7 +330,8 @@ Controls, each with a forged-evidence counterpart refused in search and in
 checking: a program alias and a re-export of `Node` read as the family type;
 a generic identity function returning a node at `T`; a verified wrapper
 returning its node argument; `{ node }` passed where a node is expected
-(refused); a program literal annotated as a node (refused); a callback of
+(refused) and its field read as a node (verified); `{ ...node }` (refused at
+the spread); a program literal annotated as a node (refused); a callback of
 `forEachChild` reading its node argument's members, and one whose result is
 claimed at a node type it did not receive (refused); a re-exported guard
 narrowing; a wrapper of a guard, read at its own signature.
@@ -352,8 +356,8 @@ It states:
   runtime object, or the string literals the shapes state;
 - **table:** an ordered list of selection rules the interpreter applies to
   each tag value, the first that selects a declaration giving $`I_t`$:
-  - `literal`: the declaration whose tag is the literal $`t`$ and which
-    extends no other such;
+  - `literal`: the declaration whose tag is the literal $`t`$, excluding
+    declarations that extend another candidate with the same tag;
   - `generic`: the meet of the named generic declarations whose tag
     parameter's bound admits $`t`$, instantiated at $`t`$;
   - `base`: a named declaration;
@@ -437,8 +441,9 @@ The description of `typescript` 7.0.2's syntax trees
 - tag: `kind`, a number, its constants the enum `SyntaxKind` of
   `#enums/syntaxKind`, which C1 compares with the runtime object;
   $`\mathcal T_F`$ is its 352 values;
-- table: `literal`, excluding the interfaces another such extends (so
-  `PropertyAccessExpression` is the interface its two refinements extend);
+- table: `literal`, excluding interfaces that extend another candidate with
+  the same tag (so `PropertyAccessExpression` is selected, not its two
+  refinements);
   `generic` over `Token<k>` and `KeywordTypeNode<k>`; `base` `NodeBase`
   (`JSTypeAliasDeclaration`, `JSImportDeclaration`);
 - corrections: the [corrections](COMPILER-API.md#corrections) table;
