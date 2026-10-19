@@ -195,6 +195,9 @@ export const errorBase = (span: Span): ClassRecord => ({ params: [{ name: "messa
 /** The binding holding an `Error`-derived instance's message. */
 export const messageName = (cls: string): string => `${cls}.[[message]]`;
 
+/** The binding holding the message argument `super` passes to `Error`. */
+export const messageArgumentName = (cls: string): string => `${cls}.[[messageArgument]]`;
+
 /** The binding holding a class's constructor where a class extends it: the
  * class value itself, claimed also at the fresh instance it allocates, whose
  * own keys are exactly known. */

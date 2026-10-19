@@ -227,6 +227,14 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("error-subclass",
     `[decode("a\\\\b"), decode("ab"), located([0, 1]).message, deeper(), JSON.stringify(omitted()), observed()].join(";")`),
     'declined;ab;here;deep@0;"";true,at,true,true', "error-subclass: the messages and observations");
+  assert.equal(runExample("error-subclass-methods", `[direct(), deeper()].join(";")`), "at: x;at: y (2)at: ",
+    "error-subclass-methods: the methods through the chain");
+  assert.throws(() => runExample("invalid-error-subclass-stack-method", "trace()"), /not a function/,
+    "invalid-error-subclass-stack-method: the own stack shadows the method");
+  assert.equal(runExample("invalid-error-subclass-null-message", "read()"), "null",
+    "invalid-error-subclass-null-message: ToString converts null");
+  for (const file of ["invalid-error-subclass-stack-copy", "invalid-error-subclass-alias-stack"])
+    assert.equal(runExample(file, "copied()"), undefined, `${file}: the copy has no stack`);
   assert.equal(runExample("invalid-error-subclass-spread", "main()"), undefined,
     "invalid-error-subclass-spread: the copy has no message");
   assert.equal(runExample("error-subclass-json-replacer", "text()"), '{"message":"x"}',

@@ -10,7 +10,7 @@ import type { BindingAst, Expr, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enumIntrinsicName, enumMembersTerm, literalTerm } from "./intrinsics.mts";
-import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, messageName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
+import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, messageArgumentName, messageName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { ordinaryEffect } from "./type-graph.mts";
 
@@ -280,22 +280,32 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
   // read that binding directly.
   gate.strict = true;
   gate.superClass = base;
-  // An `Error`-derived instance's message is its first link's: a member of
-  // its own under that name would stand for another property, and an
-  // assignment of it would write the instance where JavaScript writes its
-  // own `message`.
+  // An `Error`-derived instance owns `message` and `stack` in JavaScript
+  // (Node gives every instance an own `stack`, and an own `message` where one
+  // is passed): an instance member under either name would be shadowed by the
+  // own property, and a write of either through `this` would make an
+  // enumerable key where JavaScript's is not. Each class extending one of the
+  // family is checked here, so the names are reserved at every depth.
   if (base?.error) {
-    const member = node.members.find((m) => {
-      const key = nameOf(m);
-      return !!key && (ts.isIdentifier(key) || ts.isStringLiteral(key)) && key.text === "message";
-    });
-    if (member) gate.fail(member, "a member named `message` of a class extending `Error` is outside the fragment: the instance's message is the one `Error` gives it");
+    const spelled = (key: Node | undefined): string | undefined =>
+      key && (ts.isIdentifier(key) || ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) ? key.text : undefined;
+    const reserved = (key: Node | undefined): string | undefined => {
+      const text = key && ts.isComputedPropertyName(key) ? spelled(key.expression) : spelled(key);
+      return text === "message" || text === "stack" ? text : undefined;
+    };
+    for (const m of node.members) {
+      const key = isStatic(m) ? undefined : reserved(nameOf(m));
+      if (key) gate.fail(m, `a member named \`${key}\` of a class extending \`Error\` is outside the fragment: an instance's own \`${key}\` in JavaScript shadows it`);
+    }
+    const target = (n: Node): string | undefined => ts.isPropertyAccessExpression(n) && n.expression.kind === ts.SyntaxKind.ThisKeyword
+      ? reserved(n.name)
+      : ts.isElementAccessExpression(n) && n.expression.kind === ts.SyntaxKind.ThisKeyword ? reserved(n.argumentExpression) : undefined;
     const write = (n: Node): Node | undefined => ts.isBinaryExpression(n) &&
       n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
-      ts.isPropertyAccessExpression(n.left) && n.left.expression.kind === ts.SyntaxKind.ThisKeyword &&
-      n.left.name.text === "message" ? n : n.forEachChild(write);
+      target(n.left) ? n : n.forEachChild(write);
     const written = write(node);
-    if (written) gate.fail(written, "a write of `this.message` in a class extending `Error` is outside the fragment: the message is read-only where the instance holds it");
+    if (written && ts.isBinaryExpression(written))
+      gate.fail(written, `a write of \`this.${target(written.left)}\` in a class extending \`Error\` is outside the fragment: the instance's own \`${target(written.left)}\` is not enumerable, which a write would make it`);
   }
   const instanceMembers = { name: name.text, generic: binders.length > 0 };
   gate.selfClass = instanceMembers;
@@ -717,11 +727,20 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
         // which `Error.prototype.message`, `""`, stands for.
         if (actuals.length > 1)
           gate.fail(heritage, "`super(message, options)` of `Error` is outside the fragment: its options are not stated");
+        // The argument is bound at `string | undefined` before it defaults:
+        // another value would be converted by `ToString`.
         const [actual] = actuals;
+        const empty: Expr = { k: "lit", pos: calleeAt, lit: { a: "stringlit", v: "" } };
+        const argument = messageArgumentName(name.text);
+        if (actual) {
+          const actualAt = actual.pos;
+          prelude.push({ k: "const", pos: actualAt, bindings: [{ early: false, name: argument, namePos: actualAt,
+            annot: { k: "union", parts: [{ k: "atom", name: "string", span: actualAt }, { k: "atom", name: "undefined", span: actualAt }], span: actualAt },
+            init: actual }] });
+        }
         prelude.push({ k: "const", pos: at, bindings: [{ early: false, name: messageName(name.text), namePos: at,
           annot: { k: "atom", name: "string", span: at },
-          init: actual ? { k: "coalesce", pos: at, left: actual, right: { k: "lit", pos: calleeAt, lit: { a: "stringlit", v: "" } } }
-            : { k: "lit", pos: calleeAt, lit: { a: "stringlit", v: "" } } }] });
+          init: actual ? { k: "coalesce", pos: at, left: { k: "id", pos: actual.pos, name: argument }, right: empty } : empty }] });
       } else {
         const slot = baseName(name.text);
         prelude.push({ k: "const", pos: at, bindings: [{ early: false, name: slot, namePos: at, annot: null,

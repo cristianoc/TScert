@@ -353,9 +353,10 @@ $`\textit{base}`$ is the base's construction, as for any derived class
 (above), absent where $`B`$ is `Error`; its own keys are copied and its links
 replaced by $`D`$'s. $`\mathsf{\%ErrorMessage\%}`$ binds a string argument as
 it is and an omitted or `undefined` one to `""`, which JavaScript's instance
-reads from `Error.prototype.message`; the binding is annotated `string`, so
-an argument of another type, which `ToString` would convert by running its
-code, is refused at it. The instance's own keys are its declared fields;
+reads from `Error.prototype.message`. The argument is bound at `string |
+undefined` before it defaults, so an argument of another type, which
+`ToString` converts (`null` to `"null"`, an object by running its code), is
+refused at it. The instance's own keys are its declared fields;
 `e.message` reads $`\mu_D`$; `e instanceof D` finds $`\kappa_D`$ on
 $`D.\texttt{[[prototype]]}`$ further up; `D.prototype`'s own `[[proto]]` is
 `Error.prototype`'s contract (`instanceof Error` stays the intrinsic stating
@@ -364,31 +365,75 @@ the Boolean).
 The model and JavaScript place the message differently: an own
 non-enumerable property in JavaScript, a field of a link in the model (for an
 omitted message, `Error.prototype`'s in JavaScript, `""` on the link in the
-model). That they agree on every admitted observation is the conclusion of
-this audit of the operations reaching an instance, by the fragment's own
-rules, given stable prototypes:
+model). JavaScript's instance also owns a non-enumerable `stack`, which the
+model does not state. That the two agree on every admitted observation is the
+conclusion of this audit of the operations reaching an instance, given stable
+prototypes. Each operation is in one of three groups.
 
-| Operation | JavaScript | Model | Fragment |
-| --- | --- | --- | --- |
-| `e.message`, destructuring `{ message }` | the message, or `""` | $`\mu_D`$ | admitted |
-| `e instanceof D`, `instanceof Error` | the chain walk | $`\kappa_D`$ on the chain; the intrinsic's Boolean | admitted |
-| `"message" in e` | `true` | a Boolean | admitted, typed a Boolean |
-| `Object.keys(e)`, `{ ...e }` | the declared fields | the declared fields | admitted; a copy has no `message` |
-| `for (k in e)` | the declared fields | strings, `%ForIn%`'s contract | admitted, its keys typed strings |
-| `JSON.stringify(e)`, with a replacer `["message"]` | the fields; the message | — | refused: the parameter is a JSON value, which an instance holding a prototype is not |
-| `e.hasOwnProperty("message")`, `Object.hasOwn`, `Object.getOwnPropertyDescriptor` | ownness, an exact descriptor | — | refused, located |
-| `Object.getPrototypeOf(e)` | `D.prototype` | — | refused, located |
-| `e.message = v`, `this.message = v` | writes the own property | — | refused: the link's `message` is read-only, and a write of `this.message` in the class is refused at the write |
-| `e.stack`, `D.captureStackTrace`, `e.toString()`, `super.m(…)` | engine and prototype members | — | refused, located |
+Observations that agree:
 
-A member named `message` of the class, which would stand for another
-property, is refused at the member; `super(m, options)`, whose `options.cause`
-is read through `[[Get]]`, is refused, as the overlay's `Error` is. Another
-library base (`TypeError`, `Map`, an ambient class) stays refused, with its
-located refusal. The pipeline cases `error-subclass` (run under Node) and
-`invalid-error-subclass-*` hold each row, and forged claims of a constructed
-instance owning `message` or holding `stack` are refused in search and check
-(`pipeline/test.mts`).
+- `e.message` and a destructuring `{ message }` read the message, or `""`,
+  in both: $`\mu_D`$ on the link.
+- `e instanceof D` walks the chain in both, finding $`\kappa_D`$;
+  `instanceof Error` is the intrinsic stating a Boolean.
+- `Object.keys(e)` and `{ ...e }` see the declared fields in both: the
+  message and `stack` are not enumerable in JavaScript, and not own in the
+  model.
+- `Object.values(e)` and `Object.entries(e)` hand over the values of the
+  same own enumerable fields, by the overlay's obligated contracts; evidence
+  search finds no derivation of either at an instance holding a prototype
+  (observed 2026-10-19).
+
+Observations that differ, abstracted by a broad result type, also admitted:
+
+- `"message" in e` is `true` in JavaScript; it is typed a Boolean.
+- `for (k in e)` enumerates the declared fields; its keys are typed strings,
+  `%ForIn%`'s contract.
+- `Object.getOwnPropertyDescriptor(e, k)` exposes JavaScript's descriptor of
+  the own `message` or `stack`; its reviewed contract
+  (`library-globals.mts`) is `undefined` or a fresh descriptor whose value,
+  getter and setter are `unknown`, which either placement meets; evidence
+  search finds no derivation of it at an instance (observed 2026-10-19).
+
+Operations excluded, refused with a location:
+
+- ownness and the prototype: `e.hasOwnProperty`, `Object.hasOwn` and
+  `Object.getPrototypeOf`, whose results tell the placements apart;
+- serialization: `JSON.stringify(e)`, whose replacer `["message"]` reads the
+  message through `[[Get]]`; the parameter is a JSON value, which an instance
+  holding a prototype is not;
+- members JavaScript's instance or `Error.prototype` holds and the model does
+  not state: `e.stack`, `e.toString()`, `D.captureStackTrace`, `super.m(…)`;
+- an instance member named `message` or `stack`, of a class extending `Error`
+  at any depth, which JavaScript's own property shadows, refused at the
+  member; a write of `this.message` or `this.stack` in such a class, which
+  would make an enumerable key, refused at the write;
+- `super(m, options)`, whose `options.cause` is read through `[[Get]]`, as
+  the overlay's `Error` is;
+- another library base (`TypeError`, `Map`, an ambient class).
+
+The mutation and copy paths reaching an instance from outside its class are
+refused today by evidence search, not by an enforced boundary (observed
+2026-10-19, `invalid-error-subclass-*` cases):
+
+- `e.message = v`: the link's `message` is a readonly view;
+- `e.stack = v` then a copy, a write through an alias typed `{ stack?: string
+  }`, `Object.assign(e, …)` and a rest pattern `{ message, ...rest } = e`: no
+  rule derives the merge of a record holding a prototype;
+- `Object.assign({}, e)`: the source may own `__proto__`.
+
+JavaScript writes the own non-enumerable property in each of the first two,
+and a copy then leaves it out, where the model would add an enumerable own
+key; a merge rule for such records needs the store of non-enumerable own
+properties ([model limits](../WORK.md#model-limits-of-one-form-each)) first.
+External code reaches an instance at its declared types: a parameter typed
+`Error` is the overlay's instance, and a function's effect on it is its
+footprint.
+
+The pipeline cases `error-subclass` and `error-subclass-methods` (run under
+Node) and `invalid-error-subclass-*` hold each row, and forged claims of a
+constructed instance owning `message` or holding `stack` are refused in
+search and check (`pipeline/test.mts`).
 
 A generic method `m<V>(…)` is the instance's member with quantified
 signatures ([generic methods](SOURCE-CONTRACTS.md#generic-methods)), and its closure `D.m` a

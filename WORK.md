@@ -281,7 +281,12 @@ refused. The Error family's general mechanism is a store of non-enumerable own
 properties: reads and ownness tests see it, enumeration and copies exclude
 it, the instance's prototype stays `D.prototype`, and a write or redefinition
 and every subclass's construction act on it; it admits `TypeError` and the
-other native errors, `hasOwnProperty("message")` and `Object.getPrototypeOf`. `keyof T` and `T[K]` over a function's own binder need a row whose
+other native errors, `hasOwnProperty("message")` and `Object.getPrototypeOf`.
+Until then, a key-adding write of `message` or `stack` onto an instance from
+outside its class, followed by a copy, is refused by evidence search finding
+no merge of a record holding a prototype, not by an enforced boundary
+(`invalid-error-subclass-stack-copy`, `invalid-error-subclass-alias-stack`):
+a merge rule for such records needs that store first. `keyof T` and `T[K]` over a function's own binder need a row whose
 meaning fixes a key set, which a value set does not. `o.m?.()` needs the receiver saved
 across the test. `key in o` at a key the built-in prototypes hold needs those
 prototypes' keys in the model.
