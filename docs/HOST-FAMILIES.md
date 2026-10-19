@@ -343,7 +343,9 @@ Before the table is activated, the front end resolves each entry again
 over the installation the run admits, once per process, reading the
 package's modules with a compiler of its own: the entry point's module from
 the manifest's `exports` under the table's conditions, the `imports`
-mappings as recorded; each export as the module linker resolves it, through
+mappings as recorded, each `#` specifier through the key Node selects (a
+key equal to it before any pattern, then the pattern of the longest prefix,
+then the longest pattern), which must be one the table records; each export as the module linker resolves it, through
 the module's own exports and its `export *` modules, a name two of them
 provide being no export, to the recorded function and chain, of exactly its
 reviewed text and assigned nowhere in its module; and the function's

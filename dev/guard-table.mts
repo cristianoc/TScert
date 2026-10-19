@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { hostPackage } from "../tools/compiler-api.mts";
+import { hostPackage, importsKey } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
@@ -42,15 +42,12 @@ if (!entryFile) throw Error(`the manifest maps no ${entryPoint}`);
 const resolveSpecifier = (from: string, specifier: string): { module: string; via: string | null } | null => {
   if (specifier.startsWith("./") || specifier.startsWith("../"))
     return { module: relative(root, resolve(dirname(join(root, from)), specifier)), via: null };
-  for (const [pattern, mapping] of Object.entries(manifest.imports)) {
-    const to = target(mapping);
-    if (!to) continue;
-    if (pattern === specifier) return { module: relative(root, join(root, to)), via: pattern };
-    const star = pattern.indexOf("*");
-    if (star >= 0 && specifier.startsWith(pattern.slice(0, star)) && specifier.endsWith(pattern.slice(star + 1)))
-      return { module: relative(root, join(root, to.replace("*", specifier.slice(star, specifier.length - (pattern.length - star - 1))))), via: pattern };
-  }
-  return null;
+  // The key Node selects: exact before patterns, the most specific pattern
+  // first (`importsKey`).
+  const match = importsKey(Object.keys(manifest.imports), specifier);
+  const to = match ? target(manifest.imports[match.key]) : null;
+  if (!match || !to) return null;
+  return { module: relative(root, join(root, match.star === null ? to : to.replaceAll("*", match.star))), via: match.key };
 };
 
 // The package's modules, parsed once each.

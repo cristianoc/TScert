@@ -344,10 +344,12 @@ export function isHostFile(file: string): boolean {
   return true;
 }
 
-/** A guard table checked against the installation the run admits, once
- * per table (HOST-FAMILIES.md, "The guard table"). Its entry point is
- * re-derived from the package's own manifest under the table's conditions,
- * and its `imports` mappings found as recorded. Each entry's export is
+/** A guard table checked against the installation the run admits, or the
+ * package at `root`, once per table and root (HOST-FAMILIES.md, "The guard
+ * table"). Its entry point is re-derived from the package's own manifest
+ * under the table's conditions, and its `imports` mappings found as
+ * recorded; a `#` specifier resolves through the key Node selects
+ * (`importsKey`), which must be one the table records. Each entry's export is
  * resolved as the module linker resolves it, through each module's own
  * exports and its `export *` modules, a name two of those provide being no
  * export, to the function the entry records, of exactly its text and never
@@ -357,10 +359,11 @@ export function isHostFile(file: string): boolean {
  * exactly the entry's, each helper of exactly its recorded text and never
  * assigned. `parse` gives a module's tree. A mismatch is no table: every
  * guard of the family is then read without predicate. */
-const activeTables = new Map<GuardTable, ReadonlyMap<string, GuardEntry> | null>();
-export function activeGuards(table: GuardTable): ReadonlyMap<string, GuardEntry> | null {
-  if (activeTables.has(table)) return activeTables.get(table) ?? null;
-  const root = installation().root;
+const activeTables = new Map<string, Map<GuardTable, ReadonlyMap<string, GuardEntry> | null>>();
+export function activeGuards(table: GuardTable, root: string = installation().root): ReadonlyMap<string, GuardEntry> | null {
+  const tables = activeTables.get(root) ?? new Map<GuardTable, ReadonlyMap<string, GuardEntry> | null>();
+  activeTables.set(root, tables);
+  if (tables.has(table)) return tables.get(table) ?? null;
   // The package's modules, read by a compiler of the check's own.
   const contents = new Map<string, string>();
   const api = openCompiler({ cwd: root, fs: {
@@ -384,9 +387,31 @@ export function activeGuards(table: GuardTable): ReadonlyMap<string, GuardEntry>
   } finally {
     releaseCompiler(api, thrown);
   }
-  activeTables.set(table, result);
+  tables.set(table, result);
   return result;
 }
+/** The key of a package's `imports` map that Node resolves `specifier`
+ * through, and the text its `*` stands for (PACKAGE_IMPORTS_EXPORTS_RESOLVE):
+ * a key equal to the specifier and holding no `*`; otherwise, of the keys
+ * holding one `*` whose prefix and suffix the specifier extends, the one of
+ * the longest prefix, then the longest key. */
+export function importsKey(keys: readonly string[], specifier: string): { key: string; star: string | null } | null {
+  if (!specifier.includes("*") && keys.includes(specifier)) return { key: specifier, star: null };
+  let best: { key: string; star: string } | null = null;
+  for (const key of keys) {
+    const i = key.indexOf("*");
+    if (i < 0 || key.lastIndexOf("*") !== i || !specifier.startsWith(key.slice(0, i))) continue;
+    const trailer = key.slice(i + 1);
+    if (specifier.length < key.length || !specifier.endsWith(trailer)) continue;
+    if (best !== null) {
+      const b: number = best.key.indexOf("*");
+      if (b > i || (b === i && best.key.length >= key.length)) continue;
+    }
+    best = { key, star: specifier.slice(i, specifier.length - trailer.length) };
+  }
+  return best;
+}
+
 function checkedGuards(table: GuardTable, root: string, parse: (path: string, text: string) => ts.SourceFile):
     ReadonlyMap<string, GuardEntry> | null {
   const manifest: unknown = JSON.parse(readText(join(root, "package.json")));
@@ -412,17 +437,13 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
     if (!specifier.startsWith("#")) return null;
     // A specifier through `imports`: the manifest's mapping, which must be
     // one the table records.
-    for (const [pattern, mapping] of Object.entries(imports)) {
-      const star = pattern.indexOf("*");
-      const matches = pattern === specifier || (star >= 0 && specifier.startsWith(pattern.slice(0, star)) &&
-        specifier.endsWith(pattern.slice(star + 1)) && specifier.length >= pattern.length - 1);
-      if (!matches) continue;
-      if (!(pattern in table.imports)) return null;
-      const to = target(mapping);
-      if (!to) return null;
-      return star >= 0 ? normal(to.replace("*", specifier.slice(star, specifier.length - (pattern.length - star - 1)))) : normal(to);
-    }
-    return null;
+    // The key Node selects, exact before patterns and the most specific
+    // pattern first, must be one the table records.
+    const match = importsKey(Object.keys(imports), specifier);
+    if (!match || !(match.key in table.imports)) return null;
+    const to = target(imports[match.key]);
+    if (!to) return null;
+    return normal(match.star === null ? to : to.replaceAll("*", match.star));
   };
   const trees = new Map<string, ts.SourceFile>();
   const tree = (module: string): ts.SourceFile => {

@@ -7,9 +7,11 @@
 // callback receives them.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { runDirectory } from "../pipeline/run-directory.mts";
 import { compilerApiGuards } from "../tools/compiler-api-guards.mts";
 import { activeGuards, hostPackage } from "../tools/compiler-api.mts";
 import type { GuardEntry, GuardTable } from "../tools/host-families.mts";
@@ -85,5 +87,24 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
   ];
   for (const [what, table] of mismatches)
     assert.equal(activeGuards(table), null, `${what}: no table`);
-  console.log(`activation: the reviewed table resolves, every entry; ${mismatches.length} tables differing from the installation in one recorded fact each are none`);
+  // A manifest override: the package's own entries, its manifest's
+  // `imports` with an exact `#enums/syntaxKind` after the reviewed
+  // `#enums/*`. Node resolves the exact key, so the reviewed table is no
+  // table there; the unchanged manifest's copy activates it.
+  const copy = (imports: (recorded: Record<string, unknown>) => Record<string, unknown>): string => {
+    const dir = runDirectory("tscert-guard-manifest-");
+    for (const name of readdirSync(root)) if (name !== "package.json") symlinkSync(join(root, name), join(dir, name));
+    const manifest: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    assert.ok(isRecord(manifest) && isRecord(manifest.imports), "the package's manifest has imports");
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ ...manifest, imports: imports(manifest.imports) }));
+    return dir;
+  };
+  assert.ok(activeGuards(compilerApiGuards, copy((m) => m))?.size === compilerApiGuards.guards.length,
+    "the reviewed table resolves over the unchanged manifest's copy");
+  const overridden = copy((m) => ({ ...m, "#enums/syntaxKind": "./dist/enums/tokenFlags.js" }));
+  writeFileSync(join(overridden, "probe.mjs"), `console.log(import.meta.resolve("#enums/syntaxKind"));\n`);
+  const resolved = spawnSync(process.execPath, [join(overridden, "probe.mjs")], { encoding: "utf8" });
+  assert.match(resolved.stdout, /dist\/enums\/tokenFlags\.js/, `Node resolves the exact key: ${resolved.stdout}${resolved.stderr}`);
+  assert.equal(activeGuards(compilerApiGuards, overridden), null, "an exact imports key after the reviewed pattern: no table");
+  console.log(`activation: the reviewed table resolves, every entry; ${mismatches.length} tables differing from the installation in one recorded fact each, and a manifest whose exact imports key Node prefers to the reviewed pattern, are none`);
 }
