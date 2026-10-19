@@ -115,7 +115,7 @@ arguments must be inert for the deferred primitive member lookup. -/
       | .var .. | .lit .. => true
       | _ => false
     let G := SourceTypes.graph (← table)
-    pure (if O.length > 1 && B.length > 1 && args.all plain &&
+    pure (if O.length > 1 && (B.length > 1 || !Lowering.hasPrimitiveShape G O) && args.all plain &&
       (ProgramTyping.restSigs G B).isEmpty then some fld else none)
   | _ => pure none
 

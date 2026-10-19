@@ -17,8 +17,10 @@
       ],
       "typescript/unstable/sync": [
         "../../tools/node_modules/typescript/dist/api/sync/api.d.ts"
-      ]
+      ],
+      "@fixture/node-names": ["./node-names.ts"],
+      "@fixture/node-types": ["./node-types.ts"]
     }
   },
-  "include": ["../examples/*compiler-api*.ts"]
+  "include": ["../examples/*compiler-api*.ts", "./node-names.ts", "./node-types.ts"]
 }

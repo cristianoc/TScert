@@ -120,6 +120,8 @@ run_test "Trusted inputs" node tests/trusted-inputs.mts
 run_test "Tool failures stay tool failures" node tests/tool-failures.mts
 # tests/compiler-api.mts binds the compiler-API contract to the installed package: C1, its enums.
 run_test "Compiler-API contract" node tests/compiler-api.mts
+# tests/host-families.mts checks the family interpreter on declarations no audited package has: generic arms, residual members, refinements.
+run_test "Host family interpreter" node tests/host-families.mts
 # tests/regexp-shapes.mts checks the capture-shape reading of regex literals against the host.
 run_test "RegExp shapes" node tests/regexp-shapes.mts
 # tests/claim-text.mts checks the claim printer on malformed producer output.

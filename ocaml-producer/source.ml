@@ -316,6 +316,14 @@ let rec source_type ctx j =
     let fields = match List.assoc_opt "prototype" (obj j) with
       | Some p -> fields @ [{name=Name "[[proto]]";optional=false;read=recur p;write=None;host=false;receivers=[]}]
       | None -> fields in
+    (* A host family's marker: a required readonly view of `[[host]]` at the
+       marker's string, which no allocation of the program owns. *)
+    let fields = match List.assoc_opt "host" (obj j) with
+      | Some (String marker) ->
+        if indexes <> [] || calls <> [] then unsupported "a host family's marker on a record with indexes or calls";
+        fields @ [{name=Name "[[host]]";optional=false;read=Atoms [StrLit marker];write=None;host=false;receivers=[]}]
+      | Some _ -> fail "invalid host marker"
+      | None -> fields in
     Atoms [Shape {fields;indexes;calls;elements=None}]
   | "reference" ->
     let id = identity (field "target" (field "reference" j)) in

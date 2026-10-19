@@ -10,6 +10,7 @@
 import { createHash } from "node:crypto";
 import { dirname, join, relative, sep } from "node:path";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
+import type { FamilyDescription } from "./host-families.mts";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { nameOf } from "./syntax.mts";
@@ -57,6 +58,49 @@ export const hostEnums: readonly { name: string; file: string }[] = [
 export const allocatingMembers: readonly { owner: string; name: string; text: string }[] = [
   { owner: "Node", name: "jsDoc", text: "readonly jsDoc?: readonly Node[] | undefined;" },
 ];
+
+/** The compiler API's family description (HOST-FAMILIES.md, "The compiler
+ * API"): the syntax tree's nodes, tagged by `kind`. The generic rule names
+ * every generic node declaration; `KeywordExpression` gives the shapes of
+ * `null`, `true`, `false`, `this`, `super` and `import`, which the
+ * declarations make expressions. Each correction is a field the
+ * declarations state required and the runtime leaves absent (COMPILER-API.md,
+ * "Corrections"). */
+export const compilerApiFamily: FamilyDescription = {
+  package: hostPackage.name,
+  marker: "RemoteNode",
+  root: { name: "Node", form: "inheritance", text: "export interface Node extends ReadonlyTextRange {" },
+  tag: { field: "kind", primitive: "number", constants: { enum: "SyntaxKind" } },
+  table: [
+    { rule: "literal" },
+    { rule: "generic", declarations: ["Token", "KeywordTypeNode", "KeywordExpression"] },
+    { rule: "base", declaration: "NodeBase" },
+  ],
+  corrections: [
+    { kind: "PropertySignature", owner: "PropertySignatureDeclaration", member: "initializer", text: "readonly initializer: Expression;" },
+    { kind: "PropertyAssignment", owner: "PropertyAssignment", member: "type", text: "readonly type: TypeNode;" },
+    { kind: "ShorthandPropertyAssignment", owner: "ShorthandPropertyAssignment", member: "type", text: "readonly type: TypeNode;" },
+    { kind: "ExportAssignment", owner: "ExportAssignment", member: "type", text: "readonly type: TypeNode;" },
+    { kind: "DefaultClause", owner: "DefaultClause", member: "expression", text: "readonly expression: Expression;" },
+    { kind: "NoSubstitutionTemplateLiteral", owner: "TemplateLiteralLikeNodeBase", member: "rawText", text: "readonly rawText: string;" },
+    { kind: "NoSubstitutionTemplateLiteral", owner: "TemplateLiteralLikeNodeBase", member: "templateFlags", text: "readonly templateFlags: TokenFlags;" },
+    { kind: "SourceFile", owner: "Node", member: "parent", text: "readonly parent: Node;" },
+    { kind: "TaggedTemplateExpression", owner: "TaggedTemplateExpression", member: "questionDotToken", text: "readonly questionDotToken: QuestionDotToken;" },
+    { kind: "JSDocTemplateTag", owner: "JSDocTemplateTag", member: "constraint", text: "readonly constraint: Node;" },
+  ],
+};
+
+let familyStandIn: FamilyDescription | null = null;
+/** Tests only: read the compiler API's family through `description` until
+ * called again with null. */
+export function useFamilyDescriptionForTests(description: FamilyDescription | null): void {
+  familyStandIn = description;
+}
+/** The description the declaration reader reads the compiler API's family
+ * through: `compilerApiFamily`, or a test's stand-in. */
+export function hostFamily(): FamilyDescription {
+  return familyStandIn ?? compilerApiFamily;
+}
 
 /** The interfaces of the host package that are host types by themselves
  * (reading rule 1): `Node`, every node shape reaching it through `extends`,

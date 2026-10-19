@@ -491,6 +491,13 @@ inductive PrimitiveArm (ι : Type) where
   | length
   | proto (proto : Nat) (P R : Ty ι)
 
+/-- Whether a type has a primitive's shape among its clauses: a string, a
+number, a bigint or a boolean, whose members are its prototype's. -/
+@[nospecialize] def Lowering.hasPrimitiveShape (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) : Bool :=
+  (PositiveRules.expand G O).any fun c => match c with
+    | .str | .strLit _ | .strIn _ | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .bool | .boolLit _ => true
+    | _ => false
+
 /-- The shapes a member read of `O` dispatches on: each primitive shape among
 `O`'s clauses, with the arm that reads it (`ToObject`'s wrapper, whose
 prototype is the built-ins'). An object shape needs none. -/

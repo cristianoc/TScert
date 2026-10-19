@@ -61,7 +61,7 @@ states one invariant for syntax trees and derives the guards from it.
   numeric enum type at a package position is `number`; each host class is
   read through a named view; branded strings are opaque host-introduced
   types. Values of host types come from the package alone.
-- **Corrections** state the eight fields the declarations call required and
+- **Corrections** state the ten fields the declarations call required and
   the runtime leaves absent, and the `this is X` guards of `Type`, whose
   promise no field test carries.
 
@@ -551,7 +551,8 @@ the **shape** $`S_k`$ is the record type with the marker `"RemoteNode"`,
   extends no other such interface (for `PropertyAccessExpression`, the
   interface its two refinements extend);
 - otherwise, the meet of the generic families whose kind parameter's bound
-  admits $`k`$, at $`k`$ (`Token<k>`, `KeywordTypeNode<k>`);
+  admits $`k`$, at $`k`$ (`Token<k>`, `KeywordTypeNode<k>`,
+  `KeywordExpression<k>`);
 - otherwise, `NodeBase` (`JSTypeAliasDeclaration`, `JSImportDeclaration`),
 
 with the [corrections](#corrections) applied and reading rules 1–3. A node
@@ -566,20 +567,23 @@ expression); the guard's kind set serves the guard and the hierarchy the
 type. A concrete union (`MemberName = Identifier | PrivateIdentifier`) is
 read as declared.
 
-### Arms per unit
+### Arms per run
 
-A unit keeps the arms of the kinds its tests and types name and one
-[residual](HOST-FAMILIES.md#residuals). A unit naming `Identifier` and
-leaving `SourceFile` to the residual gets `parent` optional in its residual,
-since a source file's `parent` is absent. The shapes with the same members
-and different kinds are the 15 modifier keywords and the token families. A
-unit's union has the size of its use: median 4 named kinds, at most 57.
+A run keeps the arms of the kinds its candidate modules' tests and types
+name and one [residual](HOST-FAMILIES.md#residuals)
+([the run's selection](HOST-FAMILIES.md#the-runs-selection)). A run naming
+`Identifier` and leaving `SourceFile` to the residual gets `parent` optional
+in its residual, since a source file's `parent` is absent. The shapes with
+the same members and different kinds are the 15 modifier keywords and the
+token families. Per top-level unit the kinds named are median 4, at most 57;
+a run of a slice of `fragment-statements.mts`, which imports functions from
+`fragment-support.mts`, reads `Node` with 47 arms (`abrupt`, 2026-10-19).
 Through `verify-source.mts` at commit cbe2893 on 2026-10-16, a union of
 $`n`$ record arms narrowed by `kind` took 1.2 s for $`n=20`$ and 9.4 s for
 $`n=50`$, and exceeded the 30 s search limit for $`n=100`$; 20 arms plus one
 arm whose `kind` is a union of 330 literals took 9.2 s. Two units' readings
 agree for the values T1 and T1′ describe
-([agreement across units](HOST-FAMILIES.md#agreement-across-units)).
+([agreement across runs](HOST-FAMILIES.md#agreement-across-runs)).
 
 ## Guards
 
@@ -615,9 +619,11 @@ declaration text it was reviewed against, and its reading as optional:
 `PropertySignatureDeclaration.initializer`, `PropertyAssignment.type`,
 `ShorthandPropertyAssignment.type`, `ExportAssignment.type`,
 `DefaultClause.expression`, `NoSubstitutionTemplateLiteral.rawText`,
-`NoSubstitutionTemplateLiteral.templateFlags`, and `parent` on kind
-`SourceFile`. A correction makes a field optional; it adds no field and
-narrows no type.
+`NoSubstitutionTemplateLiteral.templateFlags`, `parent` on kind
+`SourceFile`, `TaggedTemplateExpression.questionDotToken` (absent on an
+ordinary tag`a`) and `JSDocTemplateTag.constraint` (absent on
+`/** @template T */`). A correction makes a field optional; it adds no
+field and narrows no type.
 
 ## Node lists
 
@@ -833,7 +839,29 @@ as regression evidence.
   outside the accepted syntax are exactly the refused list, and execution on
   every kind (and on every number in a range around $`\mathcal K`$ for
   guards taking a kind) gives the derived sets.
-- **C3, shapes (regression evidence).** Every node of a corpus
+- **C3, shapes (regression evidence).** `make compiler-api-shapes`
+  (`tests/compiler-api-shapes.mts`, about 20 s) reads the family table over
+  the installed declarations and walks every node of `tools/*.mts`,
+  `pipeline/*.mts`, `tests/*.mts`, `dev/*.mts`, `pipeline/examples/*.ts` and
+  `tests/node-shapes-corpus/` (TypeScript, JSX and JavaScript with JSDoc),
+  each node's JSDoc included: it fails on a property a kind's flattened
+  shape states required, not admitting `undefined` (inherited and generic
+  components included), that a node of that kind lacks and no correction
+  covers. It checks the presence of every checked required property, not
+  required methods, member types, children's kinds or stability: presence
+  regression evidence, not a completeness proof, and its coverage is the
+  corpus's, so a member absent only in a form the corpus does not contain
+  is not found. It reports the kinds the corpus never reaches and the
+  members of reached kinds no node holds. On 2026-10-19 it reaches 268 of
+  352 kinds; of the 84 others, 80 state no checked property beyond the
+  root's and `NodeBase`'s, which every reached node is checked for (trivia,
+  punctuation and keyword tokens, which `forEachChild` does not visit,
+  `NotEmittedStatement`, `NotEmittedTypeElement` and `Count`), and 4 state
+  their own: `SyntaxList` (`children`), which only `getChildren` builds,
+  and `SyntheticExpression`, `PartiallyEmittedExpression` and
+  `SyntheticReferenceExpression`, which the checker and the emitter make
+  and no parse gives.
+  The rest of the check as designed: every node of a corpus
   (`tools/*.mts`, `tests/*.mts`, `dev/*.mts`, `pipeline/**/*.ts`, the
   standard library `.d.ts` files, and a JavaScript file with JSDoc) has every
   member its shape states as required, every child within its member's
@@ -1004,9 +1032,10 @@ from `.ts` and `.d.ts` files. So no input it accepts changes.
 Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
 
 - positive `compiler-api-kind-narrowing`: `n.kind === SyntaxKind.Identifier
-? n.text : ""`, a `switch` on `n.kind`, a guard call
-  `ts.isIdentifier(n) && n.text`, a kind-number guard
-  `isAssignmentOperator(op)`;
+? n.text : ""` and the JavaScript typedef's base shape; a guard call
+  `ts.isIdentifier(n) && n.text` and a kind-number guard
+  `isAssignmentOperator(op)` belong to guard recognition; a `switch` on
+  `n.kind` waits on [enum-member case labels](../WORK.md#enum-member-case-labels);
 - positive `compiler-api-traversal`: `forEachChild` collecting identifiers
   into an array, `for…of` and `.some` over `sourceFile.statements`,
   `getText` and `getStart` on a `Node`;
@@ -1018,11 +1047,12 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
   `node.kind` at `SyntaxKind.TypeAliasDeclaration` after
   `isTypeAliasDeclaration(node)`; under Node (`tests/node-runs.mts`), on the
   JavaScript typedef above, the function returns 345;
-- negative `invalid-compiler-api-default-clause`:
-  `function expr(c: DefaultClause): Expression { return c.expression; }`;
-  under Node, on `switch (x) { default: }`, it returns `undefined`;
-- negative `invalid-compiler-api-source-file-parent`: returning `sf.parent`
-  at `Node`; under Node it returns `undefined`;
+- negatives `invalid-compiler-api-corrected-*`, one per correction: the
+  corrected member returned at the type the declarations state
+  (`function read(c: DefaultClause): Expression { return c.expression; }`,
+  `sf.parent` at `Node`); under Node (`tests/compiler-api.mts`), on a node of
+  its kind (`switch (x) { default: }`, a source file), each returns
+  `undefined`;
 - negative `invalid-compiler-api-residual-parent`: a unit naming
   `Identifier` and leaving `SourceFile` to its residual, returning
   `n.parent` at `Node`, refused because its residual's `parent` is
@@ -1117,9 +1147,11 @@ The pieces, by file:
   types and their views; the corrections; the allocating members; the
   stated `Type` guards; the refused guards; the hashes of C0. Each entry
   carries the declaration text reviewed, as in `library-globals.mts`.
-- `tools/declaration-graph.mts`: reading rules 1–5, `node-union` with
-  arms per unit, host enums, method overloads in declared classes, private
-  members skipped.
+- `tools/host-families.mts` and `compilerApiFamily` in
+  `tools/compiler-api.mts`: the family description and its interpreter.
+- `tools/declaration-graph.mts`: reading rules 1–5, the family's readings at
+  the run's selection, host enums, method overloads in declared classes,
+  private members skipped.
 - `tools/fragment-*.mts`: `host-guard` and the guard check, namespace
   imports, bitwise operators.
 - `tests/compiler-api.mts`: C0–C4; the suite wrapper of C5.
@@ -1157,7 +1189,7 @@ The reading rules split along the same dependencies:
   refusal of a member whose read allocates; the narrowing it needs is the
   field slice's on views.
 - The corrections apply to node shapes, which the node invariant builds:
-  three of the eight are members a kind inherits
+  three of the ten are members a kind inherits
   (`NoSubstitutionTemplateLiteral.rawText` and `.templateFlags` from
   `TemplateLiteralLikeNodeBase`, `parent` of `SourceFile` from `Node`), which
   only a member-complete shape states per kind.

@@ -1,0 +1,14 @@
+{
+  // A project reading `../family-fixture/`, a stand-in host package whose
+  // family root declares an optional method: the `*family-fixture*` examples
+  // pipeline/test.mts reads.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": [],
+    "paths": { "@fixture/family": ["../family-fixture/ast.d.ts"] }
+  },
+  "include": ["../examples/*family-fixture*.ts"]
+}

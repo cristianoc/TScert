@@ -839,8 +839,9 @@ below.
 **The documents.** The parser lowers its documents before any claim exists,
 so it lowers every module the qualified-dependency graph may need: every
 program module the checked file imports a function from, transitively,
-each under the checked file's TypeScript program and options, so that both
-readings of a declaration resolve alike. The fragment's required `modules`
+each under the checked file's TypeScript program and options and the run's
+[tag selection](HOST-FAMILIES.md#the-runs-selection), so that both readings
+of a declaration resolve alike. The fragment's required `modules`
 array ([the wire](FRAGMENT-FORMAT.md)) lists each once: its **artifact**,
 the module identity its declarations carry (`location`) and the `sha256` of
 the exact bytes lowered, then its declarations, top-level code and
@@ -862,8 +863,8 @@ at its ordinary signature is refused where that signature is not
 representable in full, as today.
 
 **What a unit's certification covers.** A unit is checked in its module's
-run, as a run of that file alone checks it, over that module's own type
-table: its module's initialisation (the existing initialisation unit and
+run, as a run of that file alone checks it but for the run's tag selection,
+over that module's own type table: its module's initialisation (the existing initialisation unit and
 order, `Extraction.lean`), its own code at its claimed signature, the
 module's functions its code reads, and, recursively, every unit it reads
 at a qualified signature. So the certified set is the closure of the units

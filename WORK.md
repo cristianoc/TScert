@@ -34,6 +34,10 @@ design, not its progress.
 | [Optional-field truthiness over unions](#optional-field-truthiness) | open: an investigation, cause unknown | `optional-field-truthiness-union-refused` verifies |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
+| [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
+| [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
+| [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
+| [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
@@ -309,6 +313,54 @@ point's number and the live locals, whose `next` resumes at a `switch` on
 it. An element read past a readonly tuple arm's length needs a rule
 reading `undefined` beyond an exact length.
 
+<a id="enum-member-case-labels"></a>
+**Enum-member case labels.** A `switch` whose `case` labels are enum
+members (`case K.One:`, `case ts.SyntaxKind.SourceFile:`) narrows nothing in
+the producer, where the same constants narrow in an `===` test and literal
+labels narrow in a `switch` (`switch-enum-case-narrowing`, a gap). The
+compiler API's code switches on `node.kind` this way.
+
+<a id="family-identity-controls"></a>
+**Family identity controls.** Of the
+[identity controls](docs/HOST-FAMILIES.md#identity-through-program-code),
+the cases cover a program alias and a re-export of `Node`, a generic
+identity at `Identifier` and at `Node`, a verified wrapper, a record's
+field holding a node (`compiler-api-family-identity`), a program literal
+annotated as a node (`invalid-compiler-api-forged-node`), `{ node }` passed
+where a node is expected (`invalid-compiler-api-boxed-node`), `{ ...node }`
+(`invalid-compiler-api-node-spread`) and forged claims of a program
+allocation at a family type (`pipeline/test.mts`). Left: a callback of
+`forEachChild` reading its argument and one whose result is claimed at a
+node type it did not receive, which wait on a generic method called on a
+node (`compiler-api-node-callback`, a gap); a re-exported guard and a
+guard's wrapper, which wait on guard recognition.
+
+<a id="corrected-members"></a>
+**Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)
+are fields the declarations state required and the runtime leaves absent.
+Read as declared (a8caafd), a function returning one at its declared type
+verified and returns `undefined` under Node: `sf.parent` at `Node`,
+`PropertySignatureDeclaration.initializer`, `PropertyAssignment.type`,
+`ShorthandPropertyAssignment.type`, `ExportAssignment.type`,
+`DefaultClause.expression`, `NoSubstitutionTemplateLiteral.rawText` and
+`.templateFlags`, `TaggedTemplateExpression.questionDotToken` and
+`JSDocTemplateTag.constraint`; the last two `make compiler-api-shapes`
+finds. The family contract reads each optional; the ten
+`invalid-compiler-api-corrected-*` cases are refused, each run under Node
+by `tests/compiler-api.mts`.
+
+<a id="effects-of-dispatched-calls"></a>
+**Effects of dispatched calls.** A method call on a union receiver is
+dispatched on the receiver only where no alternative has a primitive's
+shape or the alternatives read different members
+([PROGRAM-TYPING](docs/PROGRAM-TYPING.md)). A dispatched call is an outer
+conditional whose callee is a wrapper allocation and a member lookup, and
+effect selection admits only a direct call, with evaluated operands, so a
+dispatched call's effect is not established (`split-non-empty`, dispatched,
+leaves `{value: keep, store: keep}` unestablished). Either the dispatch
+lowers into branch nodes whose callees are evaluated values, or effects are
+checked compositionally for these terms.
+
 <a id="remaining-source-forms"></a>
 **Remaining source forms.** A method call on a union of primitives,
 which needs one callee contract its receiver meets. An optional call of a
@@ -535,7 +587,7 @@ first three items 2026-10-19):
   `if (ts.isIdentifier(node)) return …`, and `knownLocal` reads `name`
   after `!ts.isSpreadAssignment(parent)` (2026-10-19, 829513e); the
   [host-guard rule](docs/COMPILER-API.md#guards) reads the call as a kind
-  test refining both edges, and waits on the node invariant;
+  test refining both edges, and waits on guard recognition;
 - a member read through a host node's member a test refined,
   `ts.isIdentifier(m.name) && m.name.text` (7: `staticFieldOf`,
   `staticMethodOf`, `hasInstanceClass`, `hasInstanceAlong`, `localArrow`,
@@ -563,6 +615,36 @@ first three items 2026-10-19):
   field holding an object beside `null` or `undefined`, and `diagnosticNode` in
   search at a key read that may name an `Object.prototype` member
   (2026-10-19).
+
+<a id="census-host-family-contract"></a>
+The `tools/` census of a8caafd (main) and of 0337c3f (the family contract,
+with that main merged), run back to back on one machine (2026-10-19, load
+averages 20 to 40): 105 of 350 slices verify on main, 107 of 353 on the
+branch. The branch adds 3 slices: `compiler-api.mts#useFamilyDescriptionForTests`
+and `#hostFamily`, verified, and `host-families.mts#familyTable`, refused at
+the gate on a `TransformOptions` declaration. Of the 350 common slices:
+
+- verified on the branch only (4): `declaration-graph.mts#expressionAt`,
+  `#identifierAt`, `#typeNodeAt` and `type-probe.mts#identifiers`, refused
+  in search on main;
+- verified on main only (3), each now refused in search, and none a
+  timeout: `fragment-support.mts#jumpTarget` and `#writtenElement` write
+  `parent = parent.parent` into a `let` TypeScript types `Node`, and the
+  branch's `Node` reads `parent` optional, since a source file's is absent
+  ([corrected members](#corrected-members)); `fragment-support.mts#bindingScope`
+  reads `holder.parent` again after testing it, which no fact of the first
+  read narrows ([stable members](docs/HOST-FAMILIES.md#stable-members));
+- verified on main, a timeout on the branch (1):
+  `declaration-graph.mts#untypedAmbientField`, the search past 60 s;
+- a changed failure (3): `declaration-graph.mts#computedAt`, refused in
+  search on main, the search past 60 s on the branch;
+  `fragment-statements.mts#closeStatements`, the search past 60 s on main,
+  the check past 60 s on the branch; `diagnostic.mts#diagnosticNode`, the
+  call stack exceeded on main, on the branch a reply of
+  `Checker.getTypeFromTypeNode` to the query `keyTypeOf` makes that the
+  client cannot decode ("Expected fixed 3-element array (0x93), received:
+  0x69"), seen once; two runs of the slice alone on 0337c3f exceeded the
+  call stack, and the failing query's arguments and stack were not kept.
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:
@@ -662,10 +744,10 @@ against the fragment (2026-10-16) gives the work, each item its own design:
   through `typescript/unstable/ast` and its checker through
   `typescript/unstable/sync`; [the compiler API](docs/COMPILER-API.md)
   specifies the contract they are verified under. Its implementation waits
-  on reading rules 2 and 4 and the node invariant (the restricted-value
-  policy and `NodeList` hold), a compact
-  representation of kind sets in claims and evidence, and guard signatures
-  for the sync API's type guards.
+  on [guard recognition](docs/HOST-FAMILIES.md#guard-recognition),
+  [stable members](docs/HOST-FAMILIES.md#stable-members) and guard
+  signatures for the sync API's type guards; a generic method called on a
+  node, `forEachChild<T>`, is refused.
 - **Guard signatures.** A guard's promise is part of its function type,
   proved at its definition and consumed at a call, for any promised type
   and across modules.

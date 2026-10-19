@@ -1565,8 +1565,19 @@ Proof search uses the rule for tag tests over explicit unions of labels. It does
 not repeatedly split a singleton label whose graph definition itself contains
 mixed shapes; that representation needs additional decomposition rules.
 
-A method call on a union receiver whose alternatives read different members
-is split on its receiver the same way. With the object $`x`$ and the actuals
+A method call on a union receiver is split on its receiver the same way
+where its alternatives read different members, or where every alternative
+is an object, holding one member each reads. A union with a primitive's
+shape whose alternatives read one member keeps the plain call: this is an
+eligibility choice, not a semantic limit, since `dispatchCallTerm` reads a
+primitive's member through its wrapper. A dispatched call is an outer
+conditional whose arm's callee is a wrapper allocation and a member lookup,
+and effect selection admits a call only directly, by subsumption, with its
+operands evaluated values, so the effect of a dispatched call is not
+established: `ps[ps.length - 1].split("\n")` at `undefined | string`
+(`split-non-empty`) would leave its function's claimed footprint, which keeps
+every existing value and store, unestablished. The refusal is conservative
+([WORK](../WORK.md#effects-of-dispatched-calls)). With the object $`x`$ and the actuals
 $`\vec y`$ already in slots, the source call `x.k(y…)` lowers to one term that
 reads the member and invokes it, dispatched as a member read is
 (`dispatchCallTerm`, over `dispatchTerm`'s tests):

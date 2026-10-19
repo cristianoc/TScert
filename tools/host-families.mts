@@ -1,0 +1,352 @@
+/** Host families (HOST-FAMILIES.md): the declared type of a family
+ * description, the trusted data each host package's contract file
+ * contributes, and the one interpreter that reads it: the shape table, the
+ * members of each family type and the reading of each declaration under a
+ * run's tag selection.
+ *
+ * The interpreter works on the package's declarations as TypeScript parses
+ * them, through `FamilyGraph`, which the declaration reader supplies from
+ * the compiler's resolution; the reader then reads each member the reading
+ * keeps by its ordinary rules. */
+import { createHash } from "node:crypto";
+import type { InterfaceDeclaration, TypeElement, TypeNode } from "typescript/unstable/ast";
+
+/** A rule of the shape table, tried in order for each tag value. */
+export type FamilyRule =
+  /** The declaration whose tag is the literal `t`, among those not
+   * extending another declaration whose tag is `t`. */
+  | { rule: "literal" }
+  /** The meet of the named generic declarations whose tag parameter's bound
+   * admits `t`, each applied at `t`. */
+  | { rule: "generic"; declarations: readonly string[] }
+  /** A named declaration, its tag read at `t`. */
+  | { rule: "base"; declaration: string };
+
+/** A member the declarations state required and the runtime leaves absent
+ * from the shape of one tag value: read as optional there. `kind` names the
+ * tag value (its constant), `owner` the declaration stating the member, and
+ * `text` the member's declaration as reviewed. */
+export type FamilyCorrection = { kind: string; owner: string; member: string; text: string };
+
+/** A family description (HOST-FAMILIES.md, "The family description"). The
+ * package's identity and the digest of its audited installation are its
+ * contract file's binding check; the description names the package. */
+export type FamilyDescription = {
+  /** The host package, whose audited files hold every declaration below. */
+  package: string;
+  /** The value `m_F` of the model's `[[host]]` in every member. */
+  marker: string;
+  /** The root declaration, an inheritance root: the family's declarations
+   * are the interfaces reaching it through `extends`. */
+  root: { name: string; form: "inheritance"; text: string };
+  /** The tag field, its primitive, and the enum holding its constants. */
+  tag: { field: string; primitive: "number"; constants: { enum: string } };
+  table: readonly FamilyRule[];
+  corrections: readonly FamilyCorrection[];
+};
+
+/** The package's declarations as the interpreter reads them, resolved by
+ * the compiler. */
+export type FamilyGraph = {
+  /** Every interface of the family: the root and those reaching it. */
+  interfaces: readonly InterfaceDeclaration[];
+  /** A declaration's resolved bases, in the order its heritage states them;
+   * each may be outside the family (`Node`'s `ReadonlyTextRange`). */
+  bases: (declaration: InterfaceDeclaration) => readonly InterfaceDeclaration[];
+  /** The tag values a type states: the literal constants of a set, through
+   * aliases and unions; null for a type that is no set of literals (the
+   * enum itself, `number`, a type parameter). */
+  literals: (type: TypeNode) => readonly number[] | null;
+  /** The tag's constants: the enum's values, each once, ascending. */
+  values: readonly number[];
+  /** A tag value's constant name, the first the enum states for it. */
+  constantName: (value: number) => string;
+  /** The name of a declaration's tag parameter, or null. */
+  tagParameter: (declaration: InterfaceDeclaration) => string | null;
+  /** Whether a member is declared optional, `name?: T`. */
+  questioned: (member: TypeElement) => boolean;
+  /** A member's name, where it is an identifier. */
+  name: (member: TypeElement) => string | null;
+  /** The text of a member as reviewed against (`getText`, trimmed). */
+  text: (member: TypeElement) => string;
+  /** Whether a member's type mentions the named type parameter. */
+  mentions: (member: TypeElement, parameter: string) => boolean;
+  /** The members whose read allocates, by owner and name: no member of any
+   * shape. */
+  omitted: (owner: string, name: string) => boolean;
+  fail: (message: string) => never;
+};
+
+/** One member of a flattened declaration: its name, the declaration
+ * stating it, and its signatures there (a method may have several). */
+export type FlatMember = { name: string; owner: InterfaceDeclaration; members: readonly TypeElement[] };
+
+/** Where a tag value's shape comes from. */
+export type ShapeSource =
+  | { rule: "literal"; declaration: InterfaceDeclaration }
+  | { rule: "generic"; declarations: readonly InterfaceDeclaration[] }
+  | { rule: "base"; declaration: InterfaceDeclaration };
+
+/** How a declaration of the family is read. */
+export type FamilyTag =
+  /** Its tag is a set of literals: read as its flattened declared members,
+   * the shape itself where it is the table's choice, a refinement
+   * otherwise. */
+  | { k: "literal"; values: readonly number[] }
+  /** Its tag is its own type parameter: a generic shape, applied at tags. */
+  | { k: "parameter"; parameter: string }
+  /** Its tag is no set of literals: the union of its members' shapes. */
+  | { k: "open" };
+
+/** An arm of a family type's reading under a selection. */
+export type FamilyArm =
+  /** The table's literal declaration for a tag value. */
+  | { k: "declaration"; declaration: InterfaceDeclaration }
+  /** The meet of generic declarations, each applied at the tag set (one
+   * value, or several merged where only the tag varies). */
+  | { k: "generic"; declarations: readonly InterfaceDeclaration[]; values: readonly number[] }
+  /** A synthetic shape: a base declaration read at a tag set, or the
+   * residual joining the shapes the selection leaves out. */
+  | { k: "synthetic"; name: string; values: readonly number[]; fields: readonly SyntheticField[] };
+
+/** A member of a synthetic shape: its name, the flattened members it joins
+ * (one per distinct declaration), each with the tag value it is read at
+ * where its owner is generic, and whether it is optional. The tag member is
+ * left out: a synthetic shape's tag is its tag set. */
+export type SyntheticField = { name: string; sources: readonly { member: FlatMember; value: number }[]; optional: boolean };
+
+/** The interpreter's reading of one family. */
+export type FamilyTable = {
+  description: FamilyDescription;
+  tagOf: (declaration: InterfaceDeclaration) => FamilyTag;
+  /** A declaration's members, its bases' included, the nearest declaration
+   * of each name, without the members whose read allocates. */
+  flatten: (declaration: InterfaceDeclaration) => readonly FlatMember[];
+  /** Whether a flattened member is optional in a reading covering the tag
+   * values `values`: so declared, or corrected at one of them. */
+  optional: (member: FlatMember, values: readonly number[]) => boolean;
+  /** The tag values a declaration's values can have: its literals, its tag
+   * parameter's bound, or the members of an open declaration. */
+  tagsOf: (declaration: InterfaceDeclaration) => readonly number[];
+  /** The family's shape sources, by tag value. */
+  shapes: ReadonlyMap<number, ShapeSource>;
+  /** `members_F(A)`: the tag values whose shape source reaches `A`. */
+  membersOf: (declaration: InterfaceDeclaration) => readonly number[];
+  /** The arms of an open declaration's reading under a selection, in tag
+   * order, the residual last. */
+  arms: (declaration: InterfaceDeclaration, selection: ReadonlySet<number>) => readonly FamilyArm[];
+};
+
+/** The interpreter: the table and membership on the declaration graph as
+ * declared, before any flattening or correction. */
+export function familyTable(description: FamilyDescription, graph: FamilyGraph): FamilyTable {
+  const family = new Set(graph.interfaces);
+  const byName = new Map(graph.interfaces.map(d => [d.name.text, d]));
+  const named = (name: string): InterfaceDeclaration =>
+    byName.get(name) ?? graph.fail(`the family ${description.marker} has no declaration ${name}`);
+  // `a` reaches `b` through `extends`, itself included.
+  const reachCache = new Map<InterfaceDeclaration, Set<InterfaceDeclaration>>();
+  const reached = (a: InterfaceDeclaration): Set<InterfaceDeclaration> => {
+    const known = reachCache.get(a);
+    if (known) return known;
+    const set = new Set<InterfaceDeclaration>([a]);
+    reachCache.set(a, set);
+    for (const b of graph.bases(a)) for (const x of reached(b)) set.add(x);
+    return set;
+  };
+  const reaches = (a: InterfaceDeclaration, b: InterfaceDeclaration): boolean => reached(a).has(b);
+
+  // Flattening: the nearest declaration of each name. A name two bases
+  // state through different declarations, neither below the other, is
+  // refused: its contract would be their meet, which no rule here forms.
+  const flatCache = new Map<InterfaceDeclaration, FlatMember[]>();
+  const flatten = (d: InterfaceDeclaration): FlatMember[] => {
+    const known = flatCache.get(d);
+    if (known) return known;
+    const own: FlatMember[] = [];
+    for (const m of d.members) {
+      const name = graph.name(m) ?? graph.fail(`${d.name.text} has a member without a plain name: ${graph.text(m)}`);
+      const existing = own.find(f => f.name === name);
+      if (existing) own[own.indexOf(existing)] = { ...existing, members: [...existing.members, m] };
+      else own.push({ name, owner: d, members: [m] });
+    }
+    const result = own.filter(f => !graph.omitted(f.owner.name.text, f.name));
+    const names = new Set(own.map(f => f.name));
+    const inherited = new Map<string, FlatMember[]>();
+    for (const b of graph.bases(d))
+      for (const f of flatten(b)) {
+        if (names.has(f.name)) continue;
+        const list = inherited.get(f.name) ?? [];
+        if (!list.some(g => g.owner === f.owner)) list.push(f);
+        inherited.set(f.name, list);
+      }
+    for (const [name, list] of inherited) {
+      const nearest = list.filter(f => !list.some(g => g !== f && reaches(g.owner, f.owner)));
+      const [only] = nearest;
+      if (!only || nearest.length !== 1)
+        graph.fail(`${d.name.text} inherits ${name} from ${nearest.map(f => f.owner.name.text).join(" and ")}, neither extending the other`);
+      result.push(only);
+    }
+    flatCache.set(d, result);
+    return result;
+  };
+  const tagMember = (d: InterfaceDeclaration): FlatMember | undefined =>
+    flatten(d).find(f => f.name === description.tag.field);
+  const tagOf = (d: InterfaceDeclaration): FamilyTag => {
+    const member = tagMember(d);
+    const [signature] = member?.members ?? [];
+    if (!member || !signature || member.members.length !== 1 || !("type" in signature) || !signature.type)
+      return graph.fail(`${d.name.text} states no ${description.tag.field} of one type`);
+    const type = signature.type as TypeNode; // asserted: a property signature's `type`, which `in` found
+    const parameter = member.owner === d ? graph.tagParameter(d) : null;
+    if (parameter !== null) return { k: "parameter", parameter };
+    const values = graph.literals(type);
+    return values ? { k: "literal", values } : { k: "open" };
+  };
+
+  // The table, rule by rule for each tag value.
+  const candidates = new Map<number, InterfaceDeclaration[]>();
+  for (const d of graph.interfaces) {
+    const tag = tagOf(d);
+    if (tag.k !== "literal" || tag.values.length !== 1) continue;
+    const [t] = tag.values;
+    if (t === undefined) continue;
+    candidates.set(t, [...(candidates.get(t) ?? []), d]);
+  }
+  const shapes = new Map<number, ShapeSource>();
+  for (const t of graph.values) {
+    for (const rule of description.table) {
+      if (rule.rule === "literal") {
+        const list = candidates.get(t) ?? [];
+        const chosen = list.filter(d => !list.some(o => o !== d && reaches(d, o)));
+        if (!list.length) continue;
+        const [only] = chosen;
+        if (!only || chosen.length !== 1)
+          graph.fail(`the tag ${graph.constantName(t)} has ${chosen.length} literal declarations`);
+        shapes.set(t, { rule: "literal", declaration: only });
+        break;
+      }
+      if (rule.rule === "generic") {
+        const declarations = rule.declarations.map(named).filter(g => {
+          const tag = tagOf(g);
+          if (tag.k !== "parameter") graph.fail(`${g.name.text} has no tag parameter`);
+          // The reading applies a generic shape at its tag as its one argument.
+          if ((g.typeParameters ?? []).length !== 1)
+            graph.fail(`${g.name.text} has parameters beside its tag parameter, which the table reads as its only one`);
+          const parameter = g.typeParameters?.find(p => p.name.text === tag.parameter);
+          const bound = parameter?.constraint ? graph.literals(parameter.constraint) : null;
+          if (!bound) return graph.fail(`${g.name.text}'s tag parameter has no bound of literals`);
+          return bound.includes(t);
+        });
+        if (!declarations.length) continue;
+        shapes.set(t, { rule: "generic", declarations });
+        break;
+      }
+      shapes.set(t, { rule: "base", declaration: named(rule.declaration) });
+      break;
+    }
+    if (!shapes.has(t)) graph.fail(`the table selects no shape for the tag ${graph.constantName(t)}`);
+  }
+  const sourceReaches = (source: ShapeSource, a: InterfaceDeclaration): boolean =>
+    source.rule === "generic" ? source.declarations.some(g => reaches(g, a)) : reaches(source.declaration, a);
+  const membersCache = new Map<InterfaceDeclaration, number[]>();
+  const membersOf = (a: InterfaceDeclaration): number[] => {
+    const known = membersCache.get(a);
+    if (known) return known;
+    const result = graph.values.filter(t => {
+      const source = shapes.get(t);
+      return !!source && sourceReaches(source, a);
+    });
+    membersCache.set(a, result);
+    return result;
+  };
+
+  // Corrections, each checked against the declaration it was reviewed at.
+  const corrected = new Set<string>();
+  for (const c of description.corrections) {
+    const owner = named(c.owner);
+    const members = owner.members.filter(m => graph.name(m) === c.member);
+    const [only] = members;
+    if (!only || members.length !== 1 || graph.text(only) !== c.text)
+      graph.fail(`${c.owner}.${c.member} is not declared as reviewed: ${c.text}`);
+    const value = graph.values.find(t => graph.constantName(t) === c.kind);
+    if (value === undefined) graph.fail(`the correction of ${c.owner}.${c.member} names no tag ${c.kind}`);
+    corrected.add(`${value}:${c.owner}.${c.member}`);
+  }
+  const optional = (f: FlatMember, values: readonly number[]): boolean =>
+    f.members.some(graph.questioned) || values.some(v => corrected.has(`${v}:${f.owner.name.text}.${f.name}`));
+  const tagsOf = (d: InterfaceDeclaration): readonly number[] => {
+    const tag = tagOf(d);
+    if (tag.k === "literal") return tag.values;
+    if (tag.k === "open") return membersOf(d);
+    const parameter = d.typeParameters?.find(p => p.name.text === tag.parameter);
+    return (parameter?.constraint ? graph.literals(parameter.constraint) : null)
+      ?? graph.fail(`${d.name.text}'s tag parameter has no bound of literals`);
+  };
+  // Whether a shape source's other members depend on its tag parameter: then
+  // its applications at different tags are different arms.
+  const tagOnly = (g: InterfaceDeclaration): boolean => {
+    const tag = tagOf(g);
+    return tag.k === "parameter" && flatten(g).every(f => f.name === description.tag.field ||
+      f.members.every(m => !graph.mentions(m, tag.parameter)));
+  };
+
+  // A synthetic shape's members: those every source has, each joining the
+  // distinct declarations of it, optional where one is.
+  const sourceMembers = (source: ShapeSource): readonly FlatMember[] =>
+    source.rule === "generic" ? source.declarations.flatMap(flatten) : flatten(source.declaration);
+  const synthetic = (base: string, values: readonly number[]): FamilyArm => {
+    const per = values.map(t => {
+      const source = shapes.get(t);
+      if (!source) return graph.fail(`no shape for ${t}`);
+      return { t, members: sourceMembers(source) };
+    });
+    const [first] = per;
+    const fields: SyntheticField[] = [];
+    for (const f of first?.members ?? []) {
+      if (f.name === description.tag.field || fields.some(x => x.name === f.name)) continue;
+      const found = per.map(p => ({ t: p.t, members: p.members.filter(g => g.name === f.name) }));
+      if (found.some(p => !p.members.length)) continue;
+      const sources: { member: FlatMember; value: number }[] = [];
+      for (const p of found)
+        for (const member of p.members)
+          if (!sources.some(s => s.member.owner === member.owner &&
+              (!family.has(member.owner) || tagOf(member.owner).k !== "parameter" || s.value === p.t)))
+            sources.push({ member, value: p.t });
+      fields.push({ name: f.name, sources, optional: found.some(p => p.members.some(g => optional(g, [p.t]))) });
+    }
+    const digest = createHash("sha256").update(values.join(",")).digest("hex").slice(0, 16);
+    return { k: "synthetic", name: `${base} at ${values.length} tags ${digest}`, values, fields };
+  };
+  const arms = (a: InterfaceDeclaration, selection: ReadonlySet<number>): FamilyArm[] => {
+    const members = membersOf(a);
+    // Each arm at the least tag it holds, the arms in tag order: a literal
+    // declaration's tag, a generic application's or a base shape's first.
+    const groups = new Map<string, { first: number; arm: () => FamilyArm; values: number[] }>();
+    for (const t of members) {
+      if (!selection.has(t)) continue;
+      const source = shapes.get(t);
+      if (!source) continue;
+      if (source.rule === "literal") {
+        const declaration = source.declaration;
+        groups.set(`literal@${t}`, { first: t, values: [t], arm: () => ({ k: "declaration", declaration }) });
+        continue;
+      }
+      const key = source.rule === "generic"
+        ? source.declarations.map(g => g.name.text).join("&") + (source.declarations.every(tagOnly) ? "" : `@${t}`)
+        : `base:${source.declaration.name.text}`;
+      const known = groups.get(key);
+      if (known) { known.values.push(t); continue; }
+      const values = [t];
+      groups.set(key, { first: t, values, arm: source.rule === "generic"
+        ? () => ({ k: "generic", declarations: source.declarations, values })
+        : () => synthetic(source.declaration.name.text, values) });
+    }
+    const result = [...groups.values()].sort((x, y) => x.first - y.first).map(g => g.arm());
+    const rest = members.filter(t => !selection.has(t));
+    if (rest.length) result.push(synthetic(`${a.name.text} residual`, rest));
+    return result;
+  };
+  for (const d of graph.interfaces) if (!family.has(d)) graph.fail("a family interface outside the family");
+  return { description, tagOf, flatten, optional, tagsOf, shapes, membersOf, arms };
+}

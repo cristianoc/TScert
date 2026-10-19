@@ -4,7 +4,7 @@
 OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
-.PHONY: help setup build build-lean build-producer test suite cases check lowering semantic-diff fmt \
+.PHONY: help setup build build-lean build-producer test suite cases check lowering compiler-api-shapes semantic-diff fmt \
   check-fmt setup-git-hooks
 
 help: ## list the targets
@@ -37,6 +37,9 @@ check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir]
 
 lowering: ## the program graph a source lowers to: FILE=path.ts [FN=function]
 	node dev/lowering-dump.mts $(FILE) $(FN)
+
+compiler-api-shapes: ## C3: every node of the corpus holds the members its shape states required, or a correction covers them
+	node tests/compiler-api-shapes.mts
 
 semantic-diff: ## render the commit records of REV (a commit or base..tip, default HEAD) to OUT and open it
 	node dev/commit-records.mts --out $(OUT) $(REV)

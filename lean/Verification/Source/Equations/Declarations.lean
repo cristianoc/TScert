@@ -82,7 +82,8 @@ def indexSignatures (term : Json) : List (String × IndexKeys × Json) :=
 def objectMembers (term : Json) : List String :=
   ["k", "fields", "stringIndex", "calls", "span"] ++
     ((indexSignatures term).map (·.1)).filter (· != "stringIndex") ++
-    if (term.getObjVal? "prototype").toOption.isSome then ["prototype"] else []
+    (if (term.getObjVal? "prototype").toOption.isSome then ["prototype"] else []) ++
+    if (term.getObjVal? "host").toOption.isSome then ["host"] else []
 
 def kindOf (term : Json) : Option String := (term.getObjValAs? String "k").toOption
 

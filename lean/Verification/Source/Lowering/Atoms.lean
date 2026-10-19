@@ -131,9 +131,9 @@ where `split` holds one. -/
     | .invoke _ originalCallee _ _ _, some _ => exprType fc originalCallee
     | _, _ => pure headType
   -- A method of an object of a union whose alternatives read different
-  -- members, `x.toString()` on `string | number`, is read and called in
-  -- one step dispatched on the object (`dispatchCallTerm`), after the
-  -- actuals: so no actual may run code.
+  -- members, `x.toString()` on `string | number`, or of a union of objects,
+  -- is read and called in one step dispatched on the object
+  -- (`dispatchCallTerm`), after the actuals: so no actual may run code.
   let dispatch : Option PropKey ← if savedReceiver.isSome then executionDispatch fc original
     else match e, method, callee with
     | .invoke _ _ _ [] _, some (o, none, _), .read _ fld _ => do
@@ -142,7 +142,7 @@ where `split` holds one. -/
         | .var .. | .lit .. => true
         | _ => false
       let G := SourceTypes.graph (← table)
-      pure (if O.length > 1 && B.length > 1 && args.all plain
+      pure (if O.length > 1 && (B.length > 1 || !Lowering.hasPrimitiveShape G O) && args.all plain
           && (ProgramTyping.restSigs G B).isEmpty then some fld else none)
     | _, _, _ => pure none
   let headTys : List (Ty Tree) ← match method, dispatch with

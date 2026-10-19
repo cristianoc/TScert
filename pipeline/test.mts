@@ -11,7 +11,7 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
-import { useHostInstallationForTests } from "../tools/compiler-api.mts";
+import { compilerApiFamily, useFamilyDescriptionForTests, useHostInstallationForTests } from "../tools/compiler-api.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
@@ -3099,6 +3099,260 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     assert.match(searched.stdout + searched.stderr, refusal);
   }
   process.stdout.write("forged tag sets: unsorted, duplicated and single-element sets refused\n");
+}
+{
+  // A residual arm is no shape (HOST-FAMILIES.md, "Residuals"): claims
+  // stating the node a kind test's false edge leaves at the shape the test
+  // excluded, and its `parent` then at `Node`, bypass the producer and are
+  // refused by the search.
+  const artifacts = run("invalid-compiler-api-residual-parent");
+  const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const expressions = must(claims.functions[0], "up's claims").expressions;
+  const at = (start: number, length: number) =>
+    must(expressions.find((e) => e.pos[0] === start && e.pos[1] === start + length), `the claim at ${start}`);
+  const shape = at(text.lastIndexOf("return n;") + "return ".length, 1).type;
+  const parent = text.lastIndexOf("n.parent");
+  at(parent, 1).type = shape;
+  const read = at(parent, "n.parent".length);
+  const labels = read.type;
+  assert.ok(Array.isArray(labels), "n.parent is claimed at labels");
+  read.type = labels.filter((label) => typeof label === "object");
+  const forged = writeClaims(artifacts, "forged-residual-shape", claims);
+  refusedAt(artifacts, forged, "forged-residual-shape", `at [${parent},${parent + 1})`);
+  process.stdout.write("forged residual claims: the node a kind test's false edge leaves claimed at the excluded shape, refused\n");
+}
+{
+  // Forged claims of family readings bypassing the producer, refused in
+  // search and in checking against the case's own evidence: the node a
+  // kind test's false edge leaves claimed at the shape that test excluded,
+  // and a program allocation claimed at a family type, which it cannot meet
+  // since no program allocation owns the marker (HOST-FAMILIES.md, "The
+  // family contract", "Activation").
+  // Each forgery returns the position of the claim it forges; the refusal
+  // names an obligation whose span holds it.
+  const forgeries: [string, string, string, (text: string, function_: SourceClaims["functions"][number]) => number][] = [
+    ["forged-excluded-arm", "compiler-api-kind-narrowing", "fileName", (text, f) => {
+      const at = (start: number) => must(f.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + 1), `the claim at ${start}`);
+      const excluded = text.indexOf("n.fileName");
+      const read = text.lastIndexOf("n.text");
+      at(read).type = at(excluded).type;
+      return read;
+    }],
+    ["forged-family-member", "compiler-api-family-identity", "held", (text, f) => {
+      const literal = text.indexOf("{ node: n }");
+      const node = text.indexOf("n }", literal);
+      const claim = must(f.expressions.find((e) => e.pos[0] === literal && e.pos[1] === literal + "{ node: n }".length), "the literal's claim");
+      claim.type = must(f.expressions.find((e) => e.pos[0] === node && e.pos[1] === node + 1), "the node's claim").type;
+      return literal;
+    }],
+  ];
+  const locatedAt = (detail: string, position: number): boolean =>
+    [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= position && position < Number(m[2]));
+  for (const [name, file, function_, forge] of forgeries) {
+    const artifacts = run(file);
+    const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const claims = readClaims(artifacts);
+    const position = forge(text, must(claims.functions.find((f) => f.name === function_), `${function_}'s claims`));
+    const forged = writeClaims(artifacts, name, claims);
+    const searched = produceWith(artifacts, forged, name);
+    const detail = searched.stdout + searched.stderr;
+    assert.equal(searched.status, 1, detail);
+    assert.ok(/evidence search failed/.test(detail) && locatedAt(detail, position), `${name}: refused at the forged claim: ${detail}`);
+    // The case's evidence, offered for the forged claims, is refused: the
+    // checker names the first node whose evidence does not establish its
+    // claim, or the evidence as a whole, not the forged claim.
+    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
+      /evidence does not justify the extracted program and exact claims|evidence refusal at \[\d+,\d+\)/);
+  }
+  process.stdout.write("forged family claims: the excluded arm on a false edge and a program allocation at a family type, refused by the search at the forged claim and by the checker against the case's evidence\n");
+}
+{
+  // A correction of a method to absent (HOST-FAMILIES.md, "The family
+  // contract"): under a description correcting `getText` at one tag, the
+  // method is an optional member of every reading covering that tag, the
+  // tag's own shape, a generic declaration applied at any of its tags, a
+  // selected generic arm and a residual holding the tag, so each call is
+  // refused at its read; under the compiler API's own description each
+  // verifies.
+  const project = tsconfigOf(join(import.meta.dirname, "compiler-api-project"));
+  const getText = (kind: string) => ({ kind, owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;" });
+  const controls = [
+    ["SourceFile", "compiler-api-corrected-method", "f.getText"],
+    ["SourceFile", "compiler-api-corrected-residual", "n.getText"],
+    ["QuestionToken", "compiler-api-corrected-token", "t.getText"],
+    ["QuestionToken", "compiler-api-corrected-arm", "n.getText"],
+    ["QuestionToken", "compiler-api-corrected-residual", "n.getText"],
+  ] as const;
+  // The claims and evidence of a run under the compiler API's own
+  // description, offered with the corrected declaration document as if the
+  // producer had proposed them. The two documents name the same
+  // definitions in the same order, every method's definition written
+  // whether or not a reading shares it, so the claims and the evidence keep
+  // their meaning; offered with the plain document they are accepted.
+  const located = (detail: string, position: number): boolean =>
+    [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= position && position < Number(m[2]));
+  const verifierOn = (fragment: string, claims: string, source: string, evidence: string): SpawnSyncReturns<string> =>
+    spawnSync(verifier, ["--check-source-claims", fragment, claims, source, evidence], { encoding: "utf8", timeout: 60_000 });
+  const plainRuns = new Map<string, string>();
+  for (const name of new Set(controls.map(([, file]) => file))) {
+    const plain = check(join(import.meta.dirname, "examples", `${name}.ts`), project);
+    assert.equal(plain.status, "verified", `${name}: ${JSON.stringify(plain)}`);
+    plainRuns.set(name, plain.artifacts);
+  }
+  for (const [kind, name, read] of controls) {
+    useFamilyDescriptionForTests({ ...compilerApiFamily, corrections: [...compilerApiFamily.corrections, getText(kind)] });
+    let artifacts: string;
+    try {
+      const file = join(import.meta.dirname, "examples", `${name}.ts`);
+      const corrected = check(file, project);
+      const at = readFileSync(file, "utf8").indexOf(read);
+      // The producer finds no arrow to call in a possibly absent member, or
+      // no member in a residual that forgets it, at the read.
+      assert.ok(corrected.status === "unsupported" && corrected.detail.includes(`at [${at},`) &&
+        /call requires a single arrow the arguments can call|missing field getText/.test(corrected.detail),
+        `${name} with getText corrected at ${kind}: refused at ${read}: ${JSON.stringify(corrected)}`);
+      artifacts = corrected.artifacts;
+    } finally {
+      useFamilyDescriptionForTests(null);
+    }
+    const plain = must(plainRuns.get(name), "the plain run");
+    const identities = (dir: string): string[] => must(readFragmentFile(join(dir, "fragment.json")).declarations, "the declarations")
+      .definitions.map((d) => JSON.stringify(d.declaration));
+    assert.deepEqual(identities(artifacts), identities(plain), `${name}: both documents name the same definitions in order`);
+    const at = readFileSync(join(artifacts, "source.ts"), "utf8").indexOf(read);
+    // Accepted with the plain document, refused with the corrected one: by
+    // the search at the read, and by the checker at the call.
+    const accepted = verifierOn(join(plain, "fragment.json"), join(plain, "claims.json"), join(plain, "source.ts"), join(plain, "evidence.json"));
+    assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+    const fragment = readFragmentFile(join(artifacts, "fragment.json"));
+    const forged = join(artifacts, "forged-corrected.json");
+    const claims: unknown = JSON.parse(readFileSync(join(plain, "claims.json"), "utf8"));
+    assert.ok(typeof claims === "object" && claims !== null);
+    writeFileSync(forged, JSON.stringify({ ...claims, file: fragment.file }));
+    const searched = produceWith(artifacts, forged, "forged-corrected");
+    assert.ok(searched.status === 1 && located(searched.stdout + searched.stderr, at),
+      `${name} at ${kind}: the search refuses at ${read}: ${searched.stdout + searched.stderr}`);
+    const checked = verifierOn(join(artifacts, "fragment.json"), forged, join(artifacts, "source.ts"), join(plain, "evidence.json"));
+    assert.ok(checked.status === 1 && located(checked.stdout + checked.stderr, at),
+      `${name} at ${kind}: the checker refuses at ${read}: ${checked.stdout + checked.stderr}`);
+  }
+  process.stdout.write("corrected method: a method a correction makes absent at a tag is optional in that tag's shape, a generic declaration and a selected generic arm, and forgotten in a residual: each call refused by the producer at it, and claims made under the plain description refused by Lean's search at the read and by its checker\n");
+}
+{
+  // A method declared optional (HOST-FAMILIES.md, "The family contract"):
+  // on a stand-in host package whose family root declares `describe?()`
+  // beside `text()`, each shape names the shared definition of `text` as a
+  // base and states `describe` as its own optional member, and its call is
+  // refused at the call.
+  const project = tsconfigOf(join(import.meta.dirname, "family-fixture-project"));
+  const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
+  useHostInstallationForTests(join(import.meta.dirname, "family-fixture"));
+  useFamilyDescriptionForTests({ ...compilerApiFamily, table: [{ rule: "literal" }], corrections: [] });
+  try {
+    const kept = check(example("family-fixture-optional-method"), project);
+    assert.equal(kept.status, "verified", JSON.stringify(kept));
+    const first = must(must(readFragmentFile(join(kept.artifacts, "fragment.json")).declarations, "the declarations")
+      .definitions.find((d) => d.declaration.name === "First"), "First's reading");
+    assert.deepEqual(first.bases.map((b) => b.k === "reference" ? b.reference.name : b.k), ["Node.text"]);
+    assert.ok(first.expression?.k === "object" && first.expression.fields.some((f) => f.name === "describe" && f.optional),
+      "First states describe optional");
+    const file = example("invalid-family-fixture-optional-method");
+    const refused = check(file, project);
+    const at = readFileSync(file, "utf8").indexOf("n.describe");
+    assert.ok(refused.status === "unsupported" && refused.detail.includes(`at [${at},`), JSON.stringify(refused));
+  } finally {
+    useFamilyDescriptionForTests(null);
+    useHostInstallationForTests(null);
+  }
+  process.stdout.write("declared-optional method: each shape's own optional member, the required one shared, its call refused\n");
+}
+{
+  // Each correction of the compiler API's family (COMPILER-API.md,
+  // "Corrections"), bypassing the producer: its negative fixture returns the
+  // corrected member at its declared type. Read without that correction it
+  // verifies; the claims and evidence of that run, offered with the
+  // document the real description gives, which names the same definitions
+  // in order, are refused by the search and by the checker at the read.
+  const project = tsconfigOf(join(import.meta.dirname, "compiler-api-project"));
+  const located = (detail: string, position: number): boolean =>
+    [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= position && position < Number(m[2]));
+  const fixtures = new Map([
+    ["Node.parent", "source-file-parent"], ["PropertySignatureDeclaration.initializer", "property-signature-initializer"],
+    ["PropertyAssignment.type", "property-assignment-type"], ["ShorthandPropertyAssignment.type", "shorthand-assignment-type"],
+    ["ExportAssignment.type", "export-assignment-type"], ["DefaultClause.expression", "default-clause-expression"],
+    ["TemplateLiteralLikeNodeBase.rawText", "template-raw-text"], ["TemplateLiteralLikeNodeBase.templateFlags", "template-flags"],
+    ["TaggedTemplateExpression.questionDotToken", "tagged-template-question-dot"], ["JSDocTemplateTag.constraint", "template-tag-constraint"],
+  ]);
+  assert.equal(fixtures.size, compilerApiFamily.corrections.length, "a fixture for each correction");
+  for (const correction of compilerApiFamily.corrections) {
+    const slug = must(fixtures.get(`${correction.owner}.${correction.member}`), `the fixture of ${correction.owner}.${correction.member}`);
+    const file = join(import.meta.dirname, "examples", `invalid-compiler-api-corrected-${slug}.ts`);
+    const text = readFileSync(file, "utf8");
+    const at = text.indexOf("return ") + "return ".length;
+    useFamilyDescriptionForTests({ ...compilerApiFamily, corrections: compilerApiFamily.corrections.filter((c) => c !== correction) });
+    let plain: Outcome;
+    try {
+      plain = check(file, project);
+    } finally {
+      useFamilyDescriptionForTests(null);
+    }
+    assert.equal(plain.status, "verified", `${slug} uncorrected: ${JSON.stringify(plain)}`);
+    const corrected = check(file, project);
+    assert.ok(corrected.status === "unverified" && located(corrected.detail, at), `${slug}: ${JSON.stringify(corrected)}`);
+    const identities = (dir: string): string[] => must(readFragmentFile(join(dir, "fragment.json")).declarations, "the declarations")
+      .definitions.map((d) => JSON.stringify(d.declaration));
+    assert.deepEqual(identities(corrected.artifacts), identities(plain.artifacts), `${slug}: one numbering`);
+    const fragment = readFragmentFile(join(corrected.artifacts, "fragment.json"));
+    const claims: unknown = JSON.parse(readFileSync(join(plain.artifacts, "claims.json"), "utf8"));
+    assert.ok(typeof claims === "object" && claims !== null);
+    const forged = join(corrected.artifacts, "forged-uncorrected.json");
+    writeFileSync(forged, JSON.stringify({ ...claims, file: fragment.file }));
+    const searched = produceWith(corrected.artifacts, forged, "forged-uncorrected");
+    assert.ok(searched.status === 1 && located(searched.stdout + searched.stderr, at),
+      `${slug}: the search refuses at the read: ${searched.stdout + searched.stderr}`);
+    const checked = spawnSync(verifier, ["--check-source-claims", join(corrected.artifacts, "fragment.json"), forged,
+      join(corrected.artifacts, "source.ts"), join(plain.artifacts, "evidence.json")], { encoding: "utf8", timeout: 60_000 });
+    // The checker names the read, or refuses the evidence as a whole where
+    // the corrected document's rows leave it justifying no claim.
+    assert.ok(checked.status === 1 && (located(checked.stdout + checked.stderr, at) ||
+      /evidence does not justify the extracted program and exact claims/.test(checked.stdout + checked.stderr)),
+      `${slug}: the checker refuses: ${checked.stdout + checked.stderr}`);
+  }
+  process.stdout.write(`corrections: each of the ${compilerApiFamily.corrections.length} verifies uncorrected, and its claims and evidence are refused with the corrected document by the search at the read and by the checker\n`);
+}
+{
+  // One tag selection per run (HOST-FAMILIES.md, "Residuals"): the importer
+  // and the module it imports a function from name different kinds, and the
+  // run reads every family declaration alike in both modules' documents,
+  // the union of the kinds both name. The module's own run selects only its
+  // own kinds.
+  const artifacts = run("compiler-api-units");
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const [module] = ast.modules;
+  const family = (definitions: readonly TypeDefinition[]): Map<string, TypeDefinition> => new Map(definitions
+    .filter((d) => d.declaration.module.startsWith("tscert/family/") || d.declaration.module.includes("/typescript/dist/ast/"))
+    .map((d) => [`${d.declaration.module}#${d.declaration.name}`, d]));
+  const main = family(must(ast.declarations, "the importer's declarations").definitions);
+  const imported = family(must(must(module, "the imported module").declarations, "its declarations").definitions);
+  assert.deepEqual([...imported.keys()].sort(), [...main.keys()].sort(), "both documents read the same family declarations");
+  for (const [key, definition] of main)
+    assert.equal(JSON.stringify(imported.get(key)), JSON.stringify(definition), `${key} is read alike in both modules`);
+  const arms = (definitions: Map<string, TypeDefinition>): number[] => {
+    const node = [...definitions].find(([key]) => key.endsWith("/ast.d.ts#Node"));
+    const expression = must(node, "Node's reading")[1].expression;
+    assert.ok(expression?.k === "union", "Node's reading is a union");
+    return expression.parts.map((part) => part.k !== "reference" ? -2
+      : part.reference.name === "NumericLiteral" ? 9 : part.reference.name === "Identifier" ? 80 : -1);
+  };
+  assert.deepEqual(arms(main), [9, 80, -1], "the run's Node: NumericLiteral, Identifier and a residual");
+  const alone = check(join(import.meta.dirname, "compiler-api-project", "node-names.ts"),
+    tsconfigOf(join(import.meta.dirname, "compiler-api-project")));
+  assert.equal(alone.status, "verified", JSON.stringify(alone));
+  const own: Ast = readFragmentFile(join(alone.artifacts, "fragment.json"));
+  assert.deepEqual(arms(family(must(own.declarations, "the module's declarations").definitions)), [80, -1],
+    "the module's own run: Identifier and a residual");
+  process.stdout.write("tag selection: one per run, the importer's and its module's family readings equal; the module's own run selects its own kinds\n");
 }
 {
   // The wire orders a string set by Unicode code point, in every decoder:
