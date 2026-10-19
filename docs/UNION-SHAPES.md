@@ -744,7 +744,7 @@ The reruns sit mostly inside repeated requests: on `termsOf`, 6,017 reruns
 checker the requests do not repeat (`termsOf`: 220 requests, 219 distinct).
 
 **What this says.** Removing the reruns (the dependency representation of
-§9.5, step 2) would remove at most their 12.1 s on `termsOf` and 18.4 s on
+§9.6, step 2) would remove at most their 12.1 s on `termsOf` and 18.4 s on
 `printGraph`. Answering a request already answered in the same graph would
 remove the repeats, 14.7 s and 22.8 s, which include most of the reruns'
 time: the same refused comparisons are asked again, and each time they run
@@ -844,13 +844,96 @@ The limit stays 60 s. That run is a stress measurement; a decision on the
 limit needs per-step wall and CPU time at the suite's own concurrency on an
 otherwise idle machine.
 
-### 9.5 Next steps
+### 9.5 Reuse across graph objects: a design
+
+**What a "graph state" is.** Evidence search runs after the equations are
+frozen: `freezePlans` turns the lowering's growing store into one `Frozen`
+value, and every request it yields has the frozen store as its types
+(`SourceRequest.over`: `types := F.store`). That store's graph reads only
+the equations, `graph _ := E.graph`, the row map of their signature, bodies,
+built-ins and domain; its image check reads the equations, the store's
+variances and its budget (`images c := eitherImages (finiteInstanceImages
+E.graph) (imagesUpTo E c.variances c.heads.subtypeBudget)`). Each call of
+`RequestJson.graph` and `StoreView.images` builds these objects afresh.
+Logging the equations behind each graph built (a scratch patch, 2026-10-19,
+at b484bee): `termsOf`'s search builds 358 graphs, 333 distinct objects, from
+one equation set; `pageBody`'s 852 (573 objects) from one; `printGraph`'s 664
+(564 objects) from three, its own and those its certified imports bring. The
+"graph states" of §9.4 are rebuilt objects of one frozen equation set, not a
+graph that grows: no head, row or hypothesis is added between them.
+
+**The transport lemma.** For stores `c` and `c'` of one frozen equation set
+`E`,
+
+```math
+\mathrm{graph}(c)=\mathrm{graph}(c')=E.\mathrm{graph},\qquad
+c.\mathrm{variances}=c'.\mathrm{variances}\land c.\mathrm{budget}=c'.\mathrm{budget}
+\Rightarrow \mathrm{images}(c)=\mathrm{images}(c'),
+```
+
+both by the definitions (status: holds by unfolding; the Lean statements are
+`rfl` and a congruence). `subtypeSearch` is a function of the graph, the image
+check, the three dictionaries, the source and the target, so its answer in
+one object is its answer in the other: acceptances and refusals transport
+alike, and no monotonicity question arises, since nothing grows. The
+document's requests share one store (`types := F.store`), so the condition
+holds between all of them.
+
+**The key.** An answer depends on the equation set (its signature, bodies,
+built-ins and domain), the store's variances and budget, the dictionaries, the
+source and the target; never on the store's head table, which the frozen
+graph does not read. Answers do not transport between different equation
+sets: `printGraph`'s three are separate, a domain change (`withDomain`, which
+builds `{ E with domain := D }`) makes another, and so would a store whose
+variances or budget differ.
+
+**Growth proper**, for completeness. The lowering's own store grows (`grow`
+appends heads; "a store only grows: every operation above keeps the labels it
+had and their rows"). There an established answer over labels whose heads
+precede the growth keeps its meaning, the rows it reads being unchanged
+(sketched), and a refusal transports only if the search reads the graph
+nowhere but at labels reachable from its source and target. `NormalGraph`
+offers no enumeration of its labels, which suggests that locality, but it is
+not proved. Evidence search does not run on the growing store, so the design
+needs neither.
+
+**How the producer carries answers.** The graph and the image check are
+computed once for the document, from the frozen equations and store, and
+passed to every producer step of every request (`ExpressionClaims.produceUsing`,
+`renderKnownUsing`, `produceResponse` and what they call), in place of the
+per-call `RequestJson.graph r.toRequest` and `StoreView.images r.types`. The
+objects are then the same throughout the document, and the reuse keyed by
+their addresses (§9.4) answers across what are now separate objects. The
+change is in the producer's plumbing, pure, with no new unsafe code; the
+checker keeps calling `RequestJson.graph` as it does, and acceptance is
+unchanged.
+
+**Expected gain.** Of the requests first asked in their graph object, those
+asked before in another object of the document: `termsOf` 1,416 (6.4 s of
+profiled search time), `printGraph` 4,882 (11.5 s), §9.4. These are upper
+bounds: in `printGraph` some come from its other equation sets, and the
+profile's per-request cost inflates cheap requests (these average 4.5 ms and
+2.4 ms, so the inflation is small).
+
+**The safe memo: first, together or after.** The producer already threads a
+pure store of answered requests through one request's rendered plans
+(`DirectProof.SubtypeCache` in `ExpressionClaims.produceUsing`). The unsafe
+reuse of §9.4 could be replaced by that store threaded through
+`expressionWithUsing` and every caller of `subtypeUsing`, the producer's whole
+expression search, made state-passing. Hoisting the graph and the image check
+comes first: it is small, independent of how answers are stored, and
+measurable on its own with the reuse as it is. The safe memo comes after, in
+its own commit: once one document shares one graph, its scope is the document
+and its key needs no addresses, so it can replace the unsafe store with the
+gains measured equal.
+
+### 9.6 Next steps
 
 The steps are for the owner to choose. In order:
 
-1. **Reuse across graph states**, with a transport of answers across the
-   graph's growth: 6.4 s of `termsOf`'s and 11.5 s of `printGraph`'s profiled
-   search time.
+1. **One graph and image check per document**, then the safe memo (§9.5):
+   up to 6.4 s of `termsOf`'s and 11.5 s of `printGraph`'s profiled search
+   time.
 2. **Discovery of the selected certificate.** `valid_selected` keeps a
    completed certificate valid under selection. That the selected search
    finds it needs, beyond it: the certificate restricted to the root and the
