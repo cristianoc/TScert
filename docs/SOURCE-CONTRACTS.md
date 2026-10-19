@@ -236,9 +236,14 @@ TypeScript resolves its calls to:
 ```
 
 A standard library global is
-read through the reviewed overlay ([Library globals](#library-globals)), a
-global function declared elsewhere through it where an entry lists its text
-(Node's `clearTimeout`, `node-clear-timeout`) and else as declared, and
+read through the reviewed overlay ([Library globals](#library-globals)). So
+is a native global function, one of whose overloads the standard library or
+an installed package declares (Node's `clearTimeout`, `node-clear-timeout`):
+each overload a call resolves to is one an entry lists with its exact text,
+an augmentation's overload included, or the call is refused
+(`invalid-parse-int-overload`, run under Node; `invalid-node-global-unreviewed`).
+A global function the program alone declares is an assumption at its
+declaration, as an ambient declaration is. A
 a function of Node's modules an overlay entry lists, through the overlay of
 library modules ([Library modules](#library-modules)).
 
@@ -2378,7 +2383,9 @@ inherits from `RegExp.prototype` is refused whatever the operand
 (`inKeyRefusal`, `invalid-regexp-lastindex-in`). `compile`, which replaces a
 regex's pattern and so its shape, is no member (`invalid-regexp-compile`); a
 library class is no base (`invalid-regexp-subclass`). A replacement callback
-and `new RegExp` are not stated. Match results are readonly views.
+is not stated. `new RegExp` of strings is the structural regex
+$`⟦\mathtt{RegExp}⟧`$ ([library globals](#library-globals); `regexp-dynamic`).
+Match results are readonly views.
 
 ## Async functions and await
 

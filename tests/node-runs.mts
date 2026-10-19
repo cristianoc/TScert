@@ -157,6 +157,8 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     `[roundTrip('{"a":{"toJSON":1},"b":[{"toJSON":"x"}]}'), wrapped('{"toJSON":[1]}')].join(" ")`),
     '{"a":{"toJSON":1},"b":[{"toJSON":"x"}]} [{"toJSON":[1]},{"toJSON":{"toJSON":[1]}}]',
     "json-parse-stringify-tojson-member: noncallable toJSON members round-trip");
+  assert.equal(runExample("invalid-parse-int-overload", "Number.isNaN(fromFlag(true))"), true,
+    "invalid-parse-int-overload: parseInt of a Boolean converts it to \"true\", NaN");
   assert.equal(runExample("invalid-from-entries-iterable",
     "(() => { let ran = 0; build({ *[Symbol.iterator]() { ran++; yield [\"a\", 1]; } }); return ran; })()"),
     1, "invalid-from-entries-iterable: Object.fromEntries steps a program's iterator");
