@@ -316,6 +316,63 @@ chain holds. So the allocation's keys are exact, and `D`'s declared type,
 its own members and `B`'s, covers it through the prototype chain
 ([method coverage](POSITIVE-TYPES.md#clause-coverage), `CoversByProto`).
 
+**Proposal, under review: a class extending `Error`.** This paragraph is a
+design, not the current fragment, which refuses a library class as a base
+([fragment](SOURCE-FRAGMENT.md)). The `tools/` slices that stop at a class
+extension (`regexp-shape.mts`'s four, `declaration-graph.mts#importBindings`,
+2026-10-19) extend the standard `Error`, not a class of their file, whose
+extension the derived form above already admits: `class Decline extends
+Error {}`, thrown and tested by `instanceof Decline`, and `class
+DeclarationError extends Error { readonly at: Span; constructor(at, message)
+{ super(message); this.at = at; } }`.
+
+JavaScript constructs such an instance in the base: `super(m)` runs
+`Error(m)` with the derived class as the new target (ECMA-262, `Error ( message [ , options ] )` and
+OrdinaryCreateFromConstructor), which allocates an
+ordinary object whose `[[Prototype]]` is `D.prototype`, owning a
+non-enumerable `message` (`ToString(m)`, where `m` is not `undefined`) and, in
+V8, a non-enumerable `stack`; the derived constructor then defines its own
+fields on it. The model's Error result already places `message` where no copy
+reaches it: on a prototype object of the instance (the `Error` overlay entry,
+`library-globals.mts`), so a spread or `Object.keys` takes no `message`, as
+JavaScript's takes no non-enumerable key. The proposed lowering keeps that
+shape and links it below the derived prototype:
+
+```math
+\mathsf{new}\ D(\vec a)\;\equiv\;\mathsf{let}\ m=\mathsf{\%ErrorMessage\%}(\vec a_B)\ \mathsf{in}\
+  \{\texttt{[[proto]]}{:}\,\{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \mathit{message}{:}\,m\},\ \varphi\}
+```
+
+with $`\vec a_B`$ the arguments `super` passes (none, or the one message),
+$`\mathsf{\%ErrorMessage\%}`$ the trusted conversion of the message (a string
+argument as it is, none to `""`, which `Error.prototype.message` gives), and
+$`\varphi`$ the derived constructor's fields, by the constructor lowering
+above. The instance's own keys are its declared fields; `e.message` reads the
+string through its first link; `e instanceof D` finds $`\kappa_D`$ on
+$`D.\texttt{[[prototype]]}`$ further up; `D.prototype`'s own `[[proto]]` is
+`Error.prototype`'s contract (`instanceof Error` stays the intrinsic stating
+the Boolean). Obligations and limits:
+
+- the message's own non-enumerable property in JavaScript is a first link in
+  the model; the two agree on every read, copy and test the fragment admits
+  (`message` is read, not tested by `in` or `hasOwnProperty`, which the
+  fragment does not admit on it), an agreement to state as a host assumption
+  beside the `Error` entry's;
+- `stack` and the `options` argument stay unstated: a read of `stack` and a
+  `super(m, options)` are refused;
+- static members inherited from `Error` (`captureStackTrace`) are not read;
+  a read of one is refused;
+- `super(…)` must precede every use of `this`, as for any derived class, and
+  `super.m` and a super property assignment of `Error`'s are refused;
+- only the standard `Error`, by its declaration identity, is admitted; another
+  library base (`Map`, `TypeError`, an ambient class) stays refused, with its
+  located refusal;
+- controls: the two shapes above, verified, with a Node run of throwing,
+  catching and `instanceof` (and a spread of an instance taking no
+  `message`); forged claims of the instance's own `message` or of a
+  `stack` read, refused in search and check.
+
+
 A generic method `m<V>(…)` is the instance's member with quantified
 signatures ([generic methods](SOURCE-CONTRACTS.md#generic-methods)), and its closure `D.m` a
 generic closure, checked once at a scheme received by the instance
