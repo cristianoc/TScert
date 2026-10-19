@@ -2814,6 +2814,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const searched = produceWith(artifacts, escaped, "forged-lone-surrogate");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /not well-formed Unicode, a lone high surrogate/);
+  assert.throws(() => readClaimsFile(escaped), /not well-formed Unicode/);
   // Bytes that are no UTF-8, in place of a string's code point.
   const withByte = (text: string): Buffer => {
     const bytes = Buffer.from(text.replace("", "\u0001"), "utf8");
@@ -2837,6 +2838,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const proposed = spawnSync(producerExecutable, [loneFragment, flow], { encoding: "utf8", timeout: 30_000 });
   assert.notEqual(proposed.status, 0, proposed.stdout + proposed.stderr);
   assert.match(proposed.stdout + proposed.stderr, /low surrogate/);
+  assert.throws(() => readFragmentFile(loneFragment), /not well-formed Unicode/);
   const leanFragment = produceWith(artifacts, join(artifacts, "claims.json"), "forged-lone-fragment", loneFragment);
   assert.equal(leanFragment.status, 1, leanFragment.stdout + leanFragment.stderr);
   assert.match(leanFragment.stdout + leanFragment.stderr, /not well-formed Unicode/);

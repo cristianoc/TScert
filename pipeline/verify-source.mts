@@ -15,7 +15,7 @@ import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 // ../tools/source-flow.mts checks the shared execution graph wire before proposal.
 import { decodeFlowDocument } from "../tools/source-flow.mts";
-import { wireText } from "../tools/wire-strings.mts";
+import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
 
 /** A Fragment document this pipeline's parser wrote, read back by a test that
@@ -26,6 +26,7 @@ import { resolvableDeclaration } from "../tools/intrinsics.mts";
  * before the test reads it. */
 export function readFragmentFile(file: string): Ast {
   const parsed: unknown = JSON.parse(wireText(readFileSync(file), file));
+  requireWellFormed(parsed, file);
   return parsed as Ast; // asserted: the parser wrote the file from an Ast; a check of every field the tests read would cost more than it guards a test's forgery
 }
 
@@ -35,6 +36,7 @@ export function readFragmentFile(file: string): Ast {
  * stands for the producer's output, unchecked before the test reads it. */
 export function readClaimsFile(file: string): SourceClaims {
   const parsed: unknown = JSON.parse(wireText(readFileSync(file), file));
+  requireWellFormed(parsed, file);
   return parsed as SourceClaims; // asserted: the producer wrote the file against SourceClaims; a check of every field the tests read would cost more than it guards a test's forgery
 }
 
