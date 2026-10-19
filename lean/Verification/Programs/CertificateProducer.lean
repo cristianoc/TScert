@@ -1,4 +1,5 @@
 import Verification.Programs.ControlFlow
+import Std.Data.HashMap
 
 /-! Bounded, untrusted evidence search. Supplied point claims are immutable.
 Search fuel and the finite type vocabulary affect success, never acceptance.
@@ -428,9 +429,81 @@ theorem comparisonUsing_sound [DecidableEq ι] [Hashable ι] [Instantiates ι]
   PositiveCertificates.compareUsing_sound h
 
 /-- Instantiation choices, or the typed reason subtype search is unfinished. -/
-@[nospecialize] def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def subtypeSearch [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) : CheckResult ι (PositiveCertificates.SubtypeChoices ι) :=
   CheckResult.fromComparison images.budget.rounds A B (comparisonUsing G images A B)
+
+/-- The search's answered requests in one search context: the graph, the
+image check and the three class dictionaries of the label type the answers
+were computed with (`Instantiates` proposes candidates; `Hashable` and
+`DecidableEq` organize the search's tables), kept so that their addresses
+identify the context and the objects stay alive while the entries are kept;
+each answer under the hash of its source and target. The entries' types are
+erased; they are read back only in the context they were stored in, whose
+graph fixes the label type. -/
+structure Answered where
+  graph : NonScalar
+  images : NonScalar
+  dictionaries : NonScalar × NonScalar × NonScalar
+  answers : Std.HashMap UInt64 (List (NonScalar × NonScalar × NonScalar))
+
+initialize answeredRef : IO.Ref (Option Answered) ← IO.mkRef none
+
+/-- Set by the CLI's check mode (`RequestCli.sourceFiles` without fuel): the
+checker runs the reference search only, and reaching the reuse there is a
+fault that ends the process (`subtypeReused`). -/
+initialize checkingRef : IO.Ref Bool ← IO.mkRef false
+
+def enterChecking : IO Unit := checkingRef.set true
+
+/-- `subtypeSearch`, answering a request asked before in the same search
+context from its earlier answer. `subtypeSearch` is a function of its
+explicit arguments and the three dictionaries; the context compares the graph,
+the image check and the dictionaries by address, and the source and target by
+equality, so a stored answer is the one recomputation would give. A new
+context starts afresh. Unsafe because a pure search would have to thread the
+store through every caller of `subtypeUsing`, the producer's whole expression
+search; the producer is untrusted, and the CLI's check mode never runs it
+(`checkingRef`). -/
+@[noinline] unsafe def subtypeReused [deq : DecidableEq ι] [hsh : Hashable ι] [ins : Instantiates ι]
+    (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
+    CheckResult ι (PositiveCertificates.SubtypeChoices ι) :=
+  let key := hash (A, B)
+  let sameContext (r : Answered) : Bool :=
+    ptrAddrUnsafe r.graph == ptrAddrUnsafe G && ptrAddrUnsafe r.images == ptrAddrUnsafe images &&
+      ptrAddrUnsafe r.dictionaries.1 == ptrAddrUnsafe deq &&
+      ptrAddrUnsafe r.dictionaries.2.1 == ptrAddrUnsafe hsh &&
+      ptrAddrUnsafe r.dictionaries.2.2 == ptrAddrUnsafe ins
+  let run : IO (CheckResult ι (PositiveCertificates.SubtypeChoices ι)) := do
+    if ← checkingRef.get then
+      IO.eprintln "fault: the producer's answer reuse was reached in check mode"
+      IO.Process.exit 70
+    if let some r ← answeredRef.get then
+      if sameContext r then
+        for (a, b, v) in r.answers.getD key [] do
+          if (unsafeCast a : Ty ι) == A && (unsafeCast b : Ty ι) == B then return unsafeCast v
+    let v ← IO.lazyPure fun _ => subtypeSearch G images A B
+    let answers := match ← answeredRef.get with
+      | some r => if sameContext r then r.answers else {}
+      | none => {}
+    let entry : NonScalar × NonScalar × NonScalar := (unsafeCast A, unsafeCast B, unsafeCast v)
+    let next : Answered :=
+      ⟨unsafeCast G, unsafeCast images, (unsafeCast deq, unsafeCast hsh, unsafeCast ins),
+        answers.insert key (entry :: answers.getD key [])⟩
+    answeredRef.set (some next)
+    return v
+  match unsafeIO run with
+  | .ok v => v
+  | .error _ => subtypeSearch G images A B
+
+/-- Subtype search as the producer asks it. Its meaning is `subtypeSearch`'s;
+the compiled producer answers a request repeated in one search context from
+the first answer (`subtypeReused`). Untrusted: the consumer checks every
+result, and the CLI's check mode does not reach it. -/
+@[nospecialize, implemented_by subtypeReused] def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
+    CheckResult ι (PositiveCertificates.SubtypeChoices ι) :=
+  subtypeSearch G images A B
 
 /-- Proofs that the member of key `k` on `O` covers each signature of `F`:
 for each fixed one, a member signature of as many parameters, each claimed

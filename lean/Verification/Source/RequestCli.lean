@@ -37,6 +37,9 @@ def sourceFiles (astPath claimsPath fileKey evidencePath : String)
   let claims ← readJson claimsPath
   match fuel with
   | none =>
+    -- The checker runs the reference search: reaching the producer's answer
+    -- reuse from here ends the process (`CertificateProducer.checkingRef`).
+    CertificateProducer.enterChecking
     let evidence ← readJson evidencePath
     let checked := do
       SourceClaimJson.checkJson (← ast) (← claims) fileKey (← evidence) budget

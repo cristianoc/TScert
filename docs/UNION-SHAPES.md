@@ -744,7 +744,7 @@ The reruns sit mostly inside repeated requests: on `termsOf`, 6,017 reruns
 checker the requests do not repeat (`termsOf`: 220 requests, 219 distinct).
 
 **What this says.** Removing the reruns (the dependency representation of
-§9.4, step 2) would remove at most their 12.1 s on `termsOf` and 18.4 s on
+§9.5, step 2) would remove at most their 12.1 s on `termsOf` and 18.4 s on
 `printGraph`. Answering a request already answered in the same graph would
 remove the repeats, 14.7 s and 22.8 s, which include most of the reruns'
 time: the same refused comparisons are asked again, and each time they run
@@ -767,12 +767,90 @@ The time is in the front end's evaluation of computed types, before any
 search: none of recursive structural comparison, union expansion, repeated
 requests or reruns.
 
-### 9.4 Next steps
+### 9.4 Reuse of answered requests
+
+**Why requests repeat.** The producer's candidate search asks them: for an
+expression, `expressionWithUsing` tries the claimed type and then every type
+of the unit's pool (`List.findCheck?` over `A :: pool`), coercing each
+candidate to the target, so each expression asks the same pairs again. A
+sample of `termsOf`'s search puts 12,959 of its samples under those
+candidate searches and 4,210 under the producer's checks of the trees it
+builds (`checkTreeResult` from `HeapExpressionRules.checkedOutput`). The
+order already tries the claimed type first; the repetition is the pool's, so
+the answer is reused rather than the order changed.
+
+**Across graph states.** The graph changes rarely within a search (296 times
+in `termsOf`'s 107,721 outermost requests, 693 in `printGraph`'s 230,522), and
+a request almost always comes in the graph of the request before it. Besides
+the repeats within a state (`termsOf` 103,795, 13.5 s of profiled time;
+`printGraph` 218,393, 21.0 s), 1,416 requests of `termsOf` (6.4 s) and 4,882 of
+`printGraph` (11.5 s) are first in their state but were asked in an earlier
+one: what reuse across states, with a transport of answers, would add.
+
+**The reuse.** The compiled producer answers a request asked again in the
+same search context from its first answer (`CertificateProducer.subtypeReused`,
+the implementation of `subtypeUsing`, whose meaning is `subtypeSearch`). The
+context is the graph, the image check and the label type's three class
+dictionaries, `Instantiates` (which proposes instance candidates), `Hashable`
+and `DecidableEq`, compared by address and kept alive by the store; the
+source and target are compared by equality. `subtypeSearch` is a function of
+exactly these, so a stored answer is the one recomputation gives. The store
+is process-global and type-erased, read back only in the context it was
+written in. It is unsafe code because a pure store would have to be threaded
+through every caller of `subtypeUsing`, the producer's whole expression
+search; the producer is untrusted, its results are checked, and the CLI's
+check mode never reaches it: `checkJson` runs the reference search, and the
+check mode sets a flag (`CertificateProducer.checkingRef`) on which reaching
+the reuse ends the process with a fault, which no pipeline case triggers
+(`make suite`, 2026-10-19). Check mode constructs lowering recipes; only
+evidence production renders them (`DirectProof.renderWith`), which reaches
+the reuse. Of
+`termsOf`'s requests through it, 101,503 are answered from the store and
+3,497 searched (32 changes of state); `pageBody` 323,824 and 6,176;
+`statementsOnPath` 14,689 and 311.
+
+Measured at 09ddb9b (the context then without its dictionaries) against
+8780e6e on 2026-10-19, user time, median of 3, on
+a machine other work loaded (load averages 3 to 25); evidence byte-identical
+on all seven units:
+
+| Unit | Search before | Search after | Check before | Check after |
+| --- | --- | --- | --- | --- |
+| `termsOf` | 25.2 s | 13.7 s | 3.5 s | 3.3 s |
+| `decodeTerm` | 23.0 s | 13.9 s | 3.1 s | 3.6 s |
+| `decodeCode` | 23.7 s | 14.1 s | 3.2 s | 3.7 s |
+| `printGraph` | 36.9 s | 31.6 s | 6.2 s | 6.5 s |
+| `pageBody` | 14.4 s | 14.4 s | 4.9 s | 5.0 s |
+| `card` | 11.5 s | 11.8 s | 4.4 s | 4.3 s |
+| `statementsOnPath` | 11.7 s | 12.9 s | 6.4 s | 6.2 s |
+
+With the dictionaries in the context, at the following commit, the seven
+units measure within the noise of the after column (`termsOf` 14.8 s,
+`printGraph` 30.4 s, `statementsOnPath` 12.3 s of search), evidence again
+byte-identical.
+
+Where the repeats were cheap (`pageBody`, `card`, `statementsOnPath`) the
+reuse saves nothing measurable; the profile's per-request lines had inflated
+their share. The seven searches run at once take 47.8 s and 38.8 s of wall
+time before, 35.2 s and 43.2 s after (two rounds each, load 9 to 16):
+`printGraph` sets that time, and the rounds do not separate.
+
+**The step limit.** At a 30 s step limit, under the census's parallel load
+(load averages 28 to 33, other work running), 12 of the slices that verify at
+60 s time out in search: `termsOf`, `decodeTerm`, `decodeCode`, `showTerm`, `showCode`,
+`decodeTarget`, `untypedAmbientField`, four of `regexp.mts` (`members`,
+`nativeRegExp`, `structuralRegExp`, `libraryRegExpTerm`), and `printGraph`.
+The limit stays 60 s. That run is a stress measurement; a decision on the
+limit needs per-step wall and CPU time at the suite's own concurrency on an
+otherwise idle machine.
+
+### 9.5 Next steps
 
 The steps are for the owner to choose. In order:
 
-1. **Reuse of an answered request within one graph**, ranked first by the
-   measurements of §9.3.
+1. **Reuse across graph states**, with a transport of answers across the
+   graph's growth: 6.4 s of `termsOf`'s and 11.5 s of `printGraph`'s profiled
+   search time.
 2. **Discovery of the selected certificate.** `valid_selected` keeps a
    completed certificate valid under selection. That the selected search
    finds it needs, beyond it: the certificate restricted to the root and the
