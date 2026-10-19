@@ -421,8 +421,9 @@ An array is one store of element locations under the reserved
 store key and one object holding `Array.prototype` under `[[proto]]`, read
 through the one array shape (`arrayClauseOf`,
 [arrays](POSITIVE-TYPES.md#arrays)). Its own keys exclude the members declared by
-`ArrayProto`, `constructor` and `then`, so `xs.map` reaches the prototype
-and ordinary construction cannot be overridden; it may own other keys,
+`ArrayProto`, `constructor`, `then` and `toJSON`, so `xs.map` reaches the
+prototype, ordinary construction cannot be overridden and `JSON.stringify`
+calls no hook of an array; it may own other keys,
 as a library may tag the arrays it manages with a symbol key. Stores may be sparse;
 source `T[]` requires **readability**: every in-bounds read, including a hole's
 `undefined`, meets `T`. Density is a separate, stronger guarantee. All three
@@ -558,8 +559,11 @@ This is an explicit host assumption, like the restrictions on
 proxies and accessors; it is not a theorem about arbitrary JavaScript.
 
 The own-key part is stated in the existing array contract and the built-ins' invariant:
-`RequestJson.arrayExcludedKeys` adds `constructor` and `then` to the prototype's declared
-keys. Arrays cannot acquire it through an invariant-preserving allocation,
+`RequestJson.arrayExcludedKeys` adds `constructor`, `then` and `toJSON` to the prototype's
+declared keys. No object along an array's prototype chain holds `toJSON`
+(`Array.prototype`, `Object.prototype`): a host assumption, which external code
+supplies and preserves for the arrays it returns, stores, passes to callbacks
+or throws. Arrays cannot acquire it through an invariant-preserving allocation,
 structural alias or write. The fragment also refuses custom species definitions,
 array subclass construction and the unreviewed prototype-changing APIs. It
 continues to allow an ordinary record's own `constructor` field. Standard native

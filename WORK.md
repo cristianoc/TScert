@@ -35,6 +35,7 @@ design, not its progress.
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
+| [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
 | [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 101 of 337 functions verify in `tools/` (2026-10-19, the `then` member admitted), 24 of 24 in `dev/`, 4 of 13 in `tests/` and 1 of 35 in `pipeline/` (2026-10-18, a071881, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
@@ -373,12 +374,23 @@ every relation `any` satisfies.
 
 `JSON.stringify` of a function, or of an object whose `toJSON` returns
 `undefined`, is `undefined` under Node, and the check types it `string`
-(`gaps.mts`). The overlay's contract, a `JsonValue` (primitives and
-readonly string-indexed records of them, library-globals.mts), states no
-array, and TypeScript assigns no interface to an index signature: read at
-it, 84 calls of the sources stringify a value that is no `JsonValue`
-(2026-10-18), the Fragment and claims documents, arrays and spans among
-them.
+(`gaps.mts`). Read at the overlay's `JsonValue` (primitives, read-only
+arrays and string-indexed records of them, library-globals.mts), 56 calls of
+the sources stringify a value that is no `JsonValue` (2026-10-19; 84 before
+`JsonValue` held arrays): a value typed `unknown` (`claim-text.mts`,
+`diagnostic-view.mts`), or a record a declaration types by its fields (the
+Fragment, claims and flow documents, a `tsconfig.json`'s object), which
+[JSON records by their fields](#json-records-by-their-fields) would admit.
+
+<a id="json-records-by-their-fields"></a>
+**JSON records by their fields.** A record a declaration types by its fields
+(an interface, a type literal) is no `JsonValue`: a record is open, and an own
+string key it does not declare may hold a `toJSON` (`invalid-json-stringify-record`,
+run under Node). Admitting one needs a bound on all of its own string keys:
+each a declared field whose present value is a `JsonValue`, an ordinary data
+property, over a safe prototype; established where the record is built or
+validated and kept through its mutations and through external calls; and a
+policy for an optional field, absent or present at `undefined`.
 
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
