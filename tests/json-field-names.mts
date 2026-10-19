@@ -48,7 +48,7 @@ const ocamlWrites = (file: string): Set<string> => new Set([...read(file).matchA
 const missing = (names: Set<string>, from: Set<string>, allowed: Record<string, string>): string[] =>
   [...names].filter((n) => !from.has(n) && !(n in allowed)).sort();
 
-let checked = 0;
+let checked: number = 0;
 const expectSubset = (what: string, names: Set<string>, from: Set<string>, allowed: Record<string, string>): void => {
   assert.deepEqual(missing(names, from, allowed), [], `${what}: field names differ; update every side, or record why here`);
   // An exception that no longer applies is itself drift.

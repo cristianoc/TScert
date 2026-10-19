@@ -25,8 +25,8 @@
  * read, fails the suite instead of silently contributing no constructors.
  */
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 const LEAN = "lean/Verification";
 const DOCS = "docs";
@@ -118,7 +118,7 @@ function alternatives(line: string): string[] {
 
 function constructors(file: string, type: string): Constructor[] {
   const source = withoutBlockComments(
-    fs.readFileSync(path.join(LEAN, file), "utf8"),
+    readFileSync(join(LEAN, file), "utf8"),
   );
   const out: Constructor[] = [];
   for (const raw of declarationBody(source, type)) {
@@ -162,7 +162,7 @@ const report = (text: string): void => {
 
 /* 1. The one enumerative claim the documentation makes. */
 const PROTOCOL = "REQUEST-PROTOCOL.md";
-const protocol = fs.readFileSync(path.join(DOCS, PROTOCOL), "utf8");
+const protocol = readFileSync(join(DOCS, PROTOCOL), "utf8");
 const ANCHOR = "it applies:";
 const anchored = protocol.indexOf(ANCHOR);
 assert.notEqual(
@@ -197,12 +197,11 @@ for (const name of documented)
 
 /* 2. Every rule must be named somewhere. */
 const corpus = [".", DOCS].flatMap((dir) =>
-  fs
-    .readdirSync(dir)
+  readdirSync(dir)
     .filter((f) => f.endsWith(".md"))
     .map((f) => ({
-      file: path.join(dir, f),
-      lines: fs.readFileSync(path.join(dir, f), "utf8").split("\n"),
+      file: join(dir, f),
+      lines: readFileSync(join(dir, f), "utf8").split("\n"),
     })),
 );
 /** Every place `name`, or a qualified `HasTy.name`, is written as code. A
@@ -245,14 +244,14 @@ const snapshot =
         .map((c) => `  ${c.signature}`)
         .join("\n"),
   ).join("\n\n") + "\n";
-const SNAP = path.join("tests", "rule-inventory.snap");
+const SNAP = join("tests", "rule-inventory.snap");
 console.log();
 if (process.env.UPDATE_EXPECT === "1") {
-  fs.writeFileSync(SNAP, snapshot);
+  writeFileSync(SNAP, snapshot);
   console.log(`  signatures written: ${SNAP}`);
-} else if (!fs.existsSync(SNAP)) {
+} else if (!existsSync(SNAP)) {
   report(`${SNAP} does not exist; regenerate with UPDATE_EXPECT=1`);
-} else if (fs.readFileSync(SNAP, "utf8") !== snapshot) {
+} else if (readFileSync(SNAP, "utf8") !== snapshot) {
   report(
     `${SNAP} is stale: a rule's signature changed, so re-read its paragraph`,
   );

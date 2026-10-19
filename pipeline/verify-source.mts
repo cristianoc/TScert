@@ -528,7 +528,7 @@ type Job = { request: Request; done: (o: Outcome) => void; fail: (e: Error) => v
 const queue: Job[] = [];
 const idle: ChildProcess[] = [];
 const logs = new Map<ChildProcess, string>();
-let workers = 0;
+let workers: number = 0;
 /** Give queued checks to idle workers, starting one per core at most. An idle
  * worker does not keep the caller's process alive. */
 function dispatch(): void {

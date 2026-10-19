@@ -71,7 +71,9 @@
  * parentheses, assertions, `await`, a comma's last operand, an assignment's
  * right side, conditionals, logical operators, array literals and their
  * spreads), unless a type gives it its contextual type. Each states the type of every parameter and, but for a
- * constructor or a setter, its result. What lies inside a unit is inferred
+ * constructor or a setter, its result. A module binding the module's units
+ * read and write states its type: a top-level `let`, and a `var` the module
+ * declares outside any function, in a block or a loop too. What lies inside a unit is inferred
  * and checked there: a local `const` or `let`, and a function written as an
  * argument or held by a local.
  *
@@ -223,7 +225,7 @@ function writtenContext(checker: Checker, node: Node): boolean {
 
 /** The function-like nodes `node` puts at a unit's boundary, each with what
  * it leaves unstated. */
-function boundary(checker: Checker, node: Node, moduleLevel: boolean): [Node, string[]][] {
+function boundary(checker: Checker, node: Node, moduleLevel: boolean, moduleScope: boolean): [Node, string[]][] {
   const parent = node.parent;
   const member = parent !== undefined &&
     (ts.isClassLikeDeclaration(parent) || (ts.isObjectLiteralExpression(parent) && !writtenContext(checker, parent)));
@@ -234,7 +236,19 @@ function boundary(checker: Checker, node: Node, moduleLevel: boolean): [Node, st
   const held = (value: Node | undefined): [Node, string[]][] =>
     heldFunctions(value).filter((fn) => !writtenContext(checker, fn)).map((fn): [Node, string[]] => [fn, unstated(fn, true)]);
   if (member && (ts.isPropertyAssignment(node) || ts.isPropertyDeclaration(node))) return held(node.initializer);
-  if (moduleLevel && ts.isVariableDeclaration(node)) return held(node.initializer);
+  if (moduleScope && ts.isVariableDeclaration(node)) {
+    // A module `let` or `var` is a binding the module's units read and
+    // write: a unit boundary, whose type is written. A `var` is the
+    // module's wherever a block or a loop of the module declares it, as its
+    // scope is the enclosing function's or the module's; a `let` is the
+    // module's at its top level alone.
+    const list = node.parent;
+    const flags = list !== undefined && ts.isVariableDeclarationList(list) ? list.flags : null;
+    const isVar = flags !== null && !(flags & (ts.NodeFlags.Const | ts.NodeFlags.Let));
+    const mutable = flags !== null && !(flags & ts.NodeFlags.Const) && (moduleLevel || isVar);
+    return [...(mutable && node.type === undefined ? [[node, ["its type"]] satisfies [Node, string[]]] : []),
+      ...(moduleLevel ? held(node.initializer) : [])];
+  }
   if (ts.isExportAssignment(node)) return held(node.expression);
   return [];
 }
@@ -334,19 +348,22 @@ function findIn(file: string, source: SourceFile, program: Program, checker: Che
     if (SUPPRESSION.test(text.slice(start))) atLine(start, "suppressed");
   // Nodes in post-order, each with whether it holds a value to type.
   const order: Node[] = [];
-  const walk = (node: Node, moduleLevel: boolean, typed: boolean): void => {
+  // `moduleScope`: no function or class static block encloses the node, so
+  // a `var` it declares is the module's.
+  const walk = (node: Node, moduleLevel: boolean, moduleScope: boolean, typed: boolean): void => {
     const written = WRITTEN.find(([syntax]) => syntax === node.kind)?.[1];
     if (written !== undefined && !assertsNothing(node)) at(node, written);
-    for (const [fn, missing] of boundary(checker, node, moduleLevel))
+    for (const [fn, missing] of boundary(checker, node, moduleLevel, moduleScope))
       if (missing.length) at(fn, "unannotated", `${missing.join(", ")}: `);
     // A type, an import or a type declaration holds no value: nothing below
     // it is typed as one.
     const inType = typed || typeOnly(node);
     const inner = moduleLevel && (ts.isVariableStatement(node) || ts.isVariableDeclarationList(node));
-    node.forEachChild((child) => walk(child, inner, inType));
+    const scope = moduleScope && !ts.isFunctionLikeDeclaration(node) && !ts.isClassStaticBlockDeclaration(node);
+    node.forEachChild((child) => walk(child, inner, scope, inType));
     if (!inType && valued(node)) order.push(node);
   };
-  source.forEachChild((child) => walk(child, true, false));
+  source.forEachChild((child) => walk(child, true, true, false));
   const types = typesOf(checker, order);
   // A node whose `any` comes from one reported inside it is not reported again.
   const reported = new Set<Node>();

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const variable = "TSCERT_RUN_ROOT";
-let kept = false;
+let kept: boolean = false;
 
 /** This invocation's root, created on first use. */
 export function runRoot(): string {

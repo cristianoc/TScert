@@ -202,6 +202,19 @@ reads); a pattern element may name one bound before it in the pattern:
      {\text{refused (temporal dead zone)}}
 ```
 
+**Default imports.** `import x from M` binds `x` to the export of $`M`$
+named `default` ([ECMA-262](REFERENCES.md#ecma-262)'s ImportedDefaultBinding),
+as `import { default as x } from M` does, and is read as that named import:
+
+```math
+\frac{\Gamma(\mathtt{default}@M)=T}{\Gamma(x)=T}\ \textsf{default-import}
+```
+
+`export default function f` exports $`f`$'s own binding as `default`, which
+no code of an imported module may write, so its unit is certified as a named
+export's is (`default-import-value-import`). An import binding no name
+(`import "m"`) runs the module for its effects alone and is refused.
+
 **Namespace imports.** A module namespace object's members are the module's
 export bindings, read as an import binding reads them
 ([ECMA-262](REFERENCES.md#ecma-262)). So in `import * as ns from M`, where
