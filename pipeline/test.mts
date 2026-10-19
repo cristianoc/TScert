@@ -475,6 +475,33 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged computed key: a key's read claimed at another literal, a field renamed or spelled otherwise than its number's ToString: refused\n");
 }
 {
+  // An `Error`-derived instance holds its message on its first link, and no
+  // `stack`: `new Decline()` claimed at a record owning `message`, or
+  // holding `stack` beside it, is refused where evidence is produced, and
+  // checking refuses the evidence of the original claim for it.
+  const errors = run("error-subclass");
+  const source = readFileSync(join(errors, "source.ts"), "utf8");
+  const start = source.indexOf("new Decline()");
+  const at = `[${start},${start + "new Decline()".length})`;
+  const forgeries: [name: string, owned: string[], viewed: string[]][] = [
+    ["forged-error-own-message", ["message"], []],
+    ["forged-error-stack", [], ["message", "stack"]],
+  ];
+  for (const [name, owned, viewed] of forgeries) {
+    const claims = readClaims(errors);
+    const str = rowOf(claims, "str");
+    const fields = (names: string[]): [string, number[]][] => names.map((field) => [field, [str]]);
+    const fn = must(claims.functions.find((f) => f.name === "omitted"), "omitted's claims");
+    const made = must(fn.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + "new Decline()".length),
+      "the construction's claim");
+    made.type = [rowOf(claims, { refs: { first: fields(owned), rest: [], views: fields(viewed) } })];
+    const forged = writeClaims(errors, name, claims);
+    refusedAt(errors, forged, name, at);
+    invoke(forged, join(errors, "evidence.json"), errors);
+  }
+  process.stdout.write("forged error instances: an own message and a stack claimed of a constructed error, refused\n");
+}
+{
   // An optional call of a method reads its object again as the call's
   // receiver, claimed at the method's name: claimed at `undefined`, it is
   // refused there where evidence is produced, and checking refuses the

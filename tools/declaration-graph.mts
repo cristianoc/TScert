@@ -25,7 +25,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
-import { globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
+import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
@@ -3898,6 +3898,12 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           return clause.types.map(base => {
             if (!ts.isIdentifier(base.expression))
               throw Error(`qualified heritage in ${identity.module}#${identity.name}`);
+            // A class extending the standard `Error` is, beside its own
+            // members, what `Error` constructs (SOURCE-ELABORATION.md, a
+            // class extending `Error`).
+            if (ts.isClassDeclaration(part) && base.expression.text === "Error" && !base.typeArguments?.length &&
+                context.libraryFile(lookup(base.expression, `${identity.module}#Error`).getSourceFile()))
+              return errorInstance([base.getStart(file), base.end]);
             return reference(file, base.expression, base.typeArguments ?? [],
               [base.getStart(file), base.end], read, true);
           });

@@ -274,7 +274,14 @@ module-level `let`) needs cells every call may write, read at their declared
 type. Sloppy code's `this` at a receiver type that may hold a primitive,
 `undefined` or `null` needs the receiver conversion (the global object, a
 wrapper). A library class as a base needs a construction rule for what its
-constructor allocates. `keyof T` and `T[K]` over a function's own binder need a row whose
+constructor allocates; `Error` has one, its message on the instance's first
+link ([a class extending `Error`](docs/SOURCE-ELABORATION.md#a-class-extending-error)),
+which serves while ownness, descriptors and the prototype of an instance are
+refused. The Error family's general mechanism is a store of non-enumerable own
+properties: reads and ownness tests see it, enumeration and copies exclude
+it, the instance's prototype stays `D.prototype`, and a write or redefinition
+and every subclass's construction act on it; it admits `TypeError` and the
+other native errors, `hasOwnProperty("message")` and `Object.getPrototypeOf`. `keyof T` and `T[K]` over a function's own binder need a row whose
 meaning fixes a key set, which a value set does not. `o.m?.()` needs the receiver saved
 across the test. `key in o` at a key the built-in prototypes hold needs those
 prototypes' keys in the model.
@@ -596,8 +603,7 @@ against the fragment (2026-10-16) gives the work, each item its own design:
   `execFileSync`, `fork` and its messages), `os`, `crypto`, `vm`, `net`,
   `module`, `assert/strict` (assertion functions) and `process`.
 - **Classes and `this` parameters.** The parser's `Gate` class, the functions
-  of `fragment-*.mts` declaring `this: Gate` (198 reads of `this`), and the
-  error classes extending `Error`.
+  of `fragment-*.mts` declaring `this: Gate` (198 reads of `this`).
 - **Imports between the repository's modules.** Default imports, and a
   value imported from another module certified against its signature, which [module composition](#module-composition) proves sound.
 - **The code's own departures from the fragment.** Downcasting `as`

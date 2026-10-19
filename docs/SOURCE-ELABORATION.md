@@ -316,62 +316,79 @@ chain holds. So the allocation's keys are exact, and `D`'s declared type,
 its own members and `B`'s, covers it through the prototype chain
 ([method coverage](POSITIVE-TYPES.md#clause-coverage), `CoversByProto`).
 
-**Proposal, under review: a class extending `Error`.** This paragraph is a
-design, not the current fragment, which refuses a library class as a base
-([fragment](SOURCE-FRAGMENT.md)). The `tools/` slices that stop at a class
-extension (`regexp-shape.mts`'s four, `declaration-graph.mts#importBindings`,
-2026-10-19) extend the standard `Error`, not a class of their file, whose
-extension the derived form above already admits: `class Decline extends
-Error {}`, thrown and tested by `instanceof Decline`, and `class
+<a id="a-class-extending-error"></a>
+**A class extending `Error`.** The standard `Error`, by its declaration
+identity, is a base too: `class Decline extends Error {}`, and `class
 DeclarationError extends Error { readonly at: Span; constructor(at, message)
-{ super(message); this.at = at; } }`.
+{ super(message); this.at = at; } }`, and a class extending either, to any
+depth. JavaScript constructs such an instance in the base: `super(m)` runs
+`Error(m)` with the derived class as the new target (ECMA-262, `Error (
+message [ , options ] )` and OrdinaryCreateFromConstructor), which allocates
+an ordinary object whose `[[Prototype]]` is `D.prototype`, owning a
+non-enumerable `message` (`ToString(m)`, where `m` is not `undefined`) and,
+in V8, a non-enumerable `stack`; each derived constructor then defines its
+own fields on it.
 
-JavaScript constructs such an instance in the base: `super(m)` runs
-`Error(m)` with the derived class as the new target (ECMA-262, `Error ( message [ , options ] )` and
-OrdinaryCreateFromConstructor), which allocates an
-ordinary object whose `[[Prototype]]` is `D.prototype`, owning a
-non-enumerable `message` (`ToString(m)`, where `m` is not `undefined`) and, in
-V8, a non-enumerable `stack`; the derived constructor then defines its own
-fields on it. The model's Error result already places `message` where no copy
-reaches it: on a prototype object of the instance (the `Error` overlay entry,
-`library-globals.mts`), so a spread or `Object.keys` takes no `message`, as
-JavaScript's takes no non-enumerable key. The proposed lowering keeps that
-shape and links it below the derived prototype:
+The model states the message on the instance's first link, between the
+instance and `D.prototype`, which no copy reaches, as the `Error` overlay
+entry's result places it on a prototype object (`library-globals.mts`). One
+construction serves the family, at the class's prototype and the message its
+base gives:
 
 ```math
-\mathsf{new}\ D(\vec a)\;\equiv\;\mathsf{let}\ m=\mathsf{\%ErrorMessage\%}(\vec a_B)\ \mathsf{in}\
-  \{\texttt{[[proto]]}{:}\,\{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \mathit{message}{:}\,m\},\ \varphi\}
+\mathsf{new}\ D(\vec a)\;\equiv\;\{\texttt{[[proto]]}{:}\,\{\texttt{[[proto]]}{:}\,D.\texttt{[[prototype]]},\ \mathit{message}{:}\,\mu_D\},\ \ldots\textit{base},\ \varphi\}
 ```
 
-with $`\vec a_B`$ the arguments `super` passes (none, or the one message),
-$`\mathsf{\%ErrorMessage\%}`$ the trusted conversion of the message (a string
-argument as it is, none to `""`, which `Error.prototype.message` gives), and
-$`\varphi`$ the derived constructor's fields, by the constructor lowering
-above. The instance's own keys are its declared fields; `e.message` reads the
-string through its first link; `e instanceof D` finds $`\kappa_D`$ on
+```math
+\mu_D=\begin{cases}
+\mathsf{\%ErrorMessage\%}(\vec a_B) & B=\mathsf{Error}\\
+\textit{base}.\mathit{message} & B\ \text{extends}\ \mathsf{Error}
+\end{cases}
+\qquad
+\mathsf{\%ErrorMessage\%}(m)=m\ ??\ \texttt{""},\ \ m:\mathsf{string}\mid\mathsf{undefined}
+```
+
+where $`\vec a_B`$ is what `super` passes, none or the one message, and
+$`\textit{base}`$ is the base's construction, as for any derived class
+(above), absent where $`B`$ is `Error`; its own keys are copied and its links
+replaced by $`D`$'s. $`\mathsf{\%ErrorMessage\%}`$ binds a string argument as
+it is and an omitted or `undefined` one to `""`, which JavaScript's instance
+reads from `Error.prototype.message`; the binding is annotated `string`, so
+an argument of another type, which `ToString` would convert by running its
+code, is refused at it. The instance's own keys are its declared fields;
+`e.message` reads $`\mu_D`$; `e instanceof D` finds $`\kappa_D`$ on
 $`D.\texttt{[[prototype]]}`$ further up; `D.prototype`'s own `[[proto]]` is
 `Error.prototype`'s contract (`instanceof Error` stays the intrinsic stating
-the Boolean). Obligations and limits:
+the Boolean).
 
-- the message's own non-enumerable property in JavaScript is a first link in
-  the model; the two agree on every read, copy and test the fragment admits
-  (`message` is read, not tested by `in` or `hasOwnProperty`, which the
-  fragment does not admit on it), an agreement to state as a host assumption
-  beside the `Error` entry's;
-- `stack` and the `options` argument stay unstated: a read of `stack` and a
-  `super(m, options)` are refused;
-- static members inherited from `Error` (`captureStackTrace`) are not read;
-  a read of one is refused;
-- `super(…)` must precede every use of `this`, as for any derived class, and
-  `super.m` and a super property assignment of `Error`'s are refused;
-- only the standard `Error`, by its declaration identity, is admitted; another
-  library base (`Map`, `TypeError`, an ambient class) stays refused, with its
-  located refusal;
-- controls: the two shapes above, verified, with a Node run of throwing,
-  catching and `instanceof` (and a spread of an instance taking no
-  `message`); forged claims of the instance's own `message` or of a
-  `stack` read, refused in search and check.
+The model and JavaScript place the message differently: an own
+non-enumerable property in JavaScript, a field of a link in the model (for an
+omitted message, `Error.prototype`'s in JavaScript, `""` on the link in the
+model). That they agree on every admitted observation is the conclusion of
+this audit of the operations reaching an instance, by the fragment's own
+rules, given stable prototypes:
 
+| Operation | JavaScript | Model | Fragment |
+| --- | --- | --- | --- |
+| `e.message`, destructuring `{ message }` | the message, or `""` | $`\mu_D`$ | admitted |
+| `e instanceof D`, `instanceof Error` | the chain walk | $`\kappa_D`$ on the chain; the intrinsic's Boolean | admitted |
+| `"message" in e` | `true` | a Boolean | admitted, typed a Boolean |
+| `Object.keys(e)`, `{ ...e }` | the declared fields | the declared fields | admitted; a copy has no `message` |
+| `for (k in e)` | the declared fields | strings, `%ForIn%`'s contract | admitted, its keys typed strings |
+| `JSON.stringify(e)`, with a replacer `["message"]` | the fields; the message | — | refused: the parameter is a JSON value, which an instance holding a prototype is not |
+| `e.hasOwnProperty("message")`, `Object.hasOwn`, `Object.getOwnPropertyDescriptor` | ownness, an exact descriptor | — | refused, located |
+| `Object.getPrototypeOf(e)` | `D.prototype` | — | refused, located |
+| `e.message = v`, `this.message = v` | writes the own property | — | refused: the link's `message` is read-only, and a write of `this.message` in the class is refused at the write |
+| `e.stack`, `D.captureStackTrace`, `e.toString()`, `super.m(…)` | engine and prototype members | — | refused, located |
+
+A member named `message` of the class, which would stand for another
+property, is refused at the member; `super(m, options)`, whose `options.cause`
+is read through `[[Get]]`, is refused, as the overlay's `Error` is. Another
+library base (`TypeError`, `Map`, an ambient class) stays refused, with its
+located refusal. The pipeline cases `error-subclass` (run under Node) and
+`invalid-error-subclass-*` hold each row, and forged claims of a constructed
+instance owning `message` or holding `stack` are refused in search and check
+(`pipeline/test.mts`).
 
 A generic method `m<V>(…)` is the instance's member with quantified
 signatures ([generic methods](SOURCE-CONTRACTS.md#generic-methods)), and its closure `D.m` a

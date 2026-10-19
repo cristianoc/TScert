@@ -25,6 +25,7 @@
  * is read as its declaration states, member by member (`selectGlobal`). */
 import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import type { Span } from "./span.mts";
 import { asyncCompleteName, instanceOfErrorName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
   symbolKeyForName } from "./intrinsics.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
@@ -88,6 +89,16 @@ export type GlobalEntry = {
    * (`@types/node`), as `declarationOrigin` resolves it. */
   origin?: string;
 };
+
+/** What `Error` constructs, and what a class extending it is beside its own
+ * members: an object whose prototype link holds its `message`, a string, a
+ * key no copy takes, as JavaScript's own non-enumerable `message` is not
+ * copied either. */
+export function errorInstance(span: Span): TypeTerm {
+  return { k: "object", fields: [], stringIndex: null, calls: [], span,
+    prototype: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
+      type: { k: "atom", name: "string", span }, span }], stringIndex: null, calls: [], span } };
+}
 
 const at: [number, number] = [0, 0];
 const binder = (name: string): TypeTerm => ({ k: "binder", name, span: at });
@@ -410,10 +421,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     "(message?: string): Error;", "(message?: string, options?: ErrorOptions): Error;"].map(
     (signature): GlobalEntry => ({ host: contract, global: "Error", signature,
       ...(signature.startsWith("new ") ? {} : { construct: true }), effect: { ...emptyEffect, onThrow: true },
-      stated: { binders: [], params: [atom("string")],
-        result: { k: "object", fields: [], stringIndex: null, calls: [], span: at,
-          prototype: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
-            type: atom("string"), span: at }], stringIndex: null, calls: [], span: at } } } })),
+      stated: { binders: [], params: [atom("string")], result: errorInstance(at) } })),
   // `parseInt(s, radix)` converts `s` by ToString and `radix` by ToInt32,
   // which run no code on a string and a number, the calculus's primitive
   // types its declaration states: a number, `NaN` where `s` spells none.

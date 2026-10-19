@@ -180,7 +180,20 @@ export const classKey = (cls: string): string => `[[${cls}.prototype]]`;
  * its own overriding them), and the binding holding its constructor at the
  * fresh instance it allocates. */
 export type ClassRecord = { params: { name: string; type: TypeTerm }[]; methods: Map<string, string>; fresh: string;
-  proto: string | null; binders: string[] };
+  proto: string | null; binders: string[];
+  /** The class is the standard `Error` itself (`native`), or extends it
+   * through classes of the file (SOURCE-ELABORATION.md, a class extending
+   * `Error`). */
+  error?: "native" | "derived" };
+
+/** The standard `Error` as a base: its construction takes one optional
+ * message, a string; its prototype holds no method the file reads. */
+export const errorBase = (span: Span): ClassRecord => ({ params: [{ name: "message",
+  type: { k: "union", parts: [{ k: "atom", name: "string", span }, { k: "atom", name: "undefined", span }], span } }],
+  methods: new Map(), fresh: "", proto: null, binders: [], error: "native" });
+
+/** The binding holding an `Error`-derived instance's message. */
+export const messageName = (cls: string): string => `${cls}.[[message]]`;
 
 /** The binding holding a class's constructor where a class extends it: the
  * class value itself, claimed also at the fresh instance it allocates, whose

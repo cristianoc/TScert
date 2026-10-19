@@ -221,6 +221,16 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-instanceof-error-message",
     "typeof text(Object.create(Error.prototype, { message: { value: 5 } }))"),
     "number", "invalid-instanceof-error-message: an object holding Error.prototype has a numeric message");
+  // An `Error`-derived message: read through the chain, `""` where omitted,
+  // seen by `in`, left out of keys and spreads, serialized where a replacer
+  // names it.
+  assert.equal(runExample("error-subclass",
+    `[decode("a\\\\b"), decode("ab"), located([0, 1]).message, deeper(), JSON.stringify(omitted()), observed()].join(";")`),
+    'declined;ab;here;deep@0;"";true,at,true,true', "error-subclass: the messages and observations");
+  assert.equal(runExample("invalid-error-subclass-spread", "main()"), undefined,
+    "invalid-error-subclass-spread: the copy has no message");
+  assert.equal(runExample("error-subclass-json-replacer", "text()"), '{"message":"x"}',
+    "error-subclass-json-replacer: the replacer reads the message");
   assert.equal(runExample("instanceof-error", "[isError(new Error(\"x\")), isError({ message: \"x\" })].join()"),
     "true,false", "instanceof-error: the walk");
   assert.equal(runExample("invalid-number-value-object",
