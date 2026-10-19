@@ -366,6 +366,32 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
     let env = refine_value env name (if shape = "array" && truth = equal then array_slice declarations
       else typeof_refine declarations shape (truth = equal)) in
     env
+  (* A family guard's test of a name: its value, or its object's arms by
+     their field, as Lean's slices leave them (`PromiseCalls.memberSlice`):
+     where it answered `true`, each atom one of the tags may equal, kept as
+     it is; where `false`, each atom less the tags' values. *)
+  | TagMember (field,tags,{node=Id name;_}) ->
+    let atoms = List.filter_map (fun l -> singleton_atom (literal_type l)) tags in
+    let rec passing t = match t with
+      | Atoms xs -> Atoms (List.filter (fun x ->
+          List.exists (fun a -> restrict ~declarations a true (Atoms [x]) <> Atoms []) atoms) xs)
+      | Union ts -> List.fold_left union (Atoms []) (List.map passing ts)
+      (* An intersection holds nothing where one operand holds nothing. *)
+      | Meet (p,others) when List.exists (fun o -> passing o = Atoms []) (p :: others) -> Atoms []
+      | Meet _ | Rigid _ -> t in
+    (* A name's own value: each tag's values taken out in turn. An object's
+       arm, by its field: dropped where one tag is every value the field
+       holds, as Lean's field slice decides each tag in turn. *)
+    let own t =
+      if truth then passing t
+      else List.fold_left (fun t a -> restrict ~declarations a false t) t atoms in
+    let through field =
+      if truth then passing field
+      else if List.exists (fun a -> restrict ~declarations a false field = Atoms []) atoms then Atoms []
+      else field in
+    (match field with
+     | None -> refine_value env name own
+     | Some f -> refine_value env name (fun t -> discriminate bounds declarations t (Name f) through))
   | HasKey ({node=Literal (LString key);_},{node=Id name;_}) ->
     refine_value env name (key_slice key truth)
   (* `x instanceof C` is the same test of the class's key: primitives and

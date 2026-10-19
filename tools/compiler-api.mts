@@ -10,10 +10,13 @@
 import { createHash } from "node:crypto";
 import { dirname, join, relative, sep } from "node:path";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
-import type { FamilyDescription } from "./host-families.mts";
+import type { FamilyDescription, GuardEntry, GuardTable } from "./host-families.mts";
+import { compilerApiGuards } from "./compiler-api-guards.mts";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { nameOf } from "./syntax.mts";
+import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
+import { toolFailureOf } from "./thrown.mts";
 // files.mts makes every file-system failure a tool failure.
 import { listDirectory, orAbsent, readBytes, readText, realPath, resolveModule } from "./files.mts";
 
@@ -88,6 +91,7 @@ export const compilerApiFamily: FamilyDescription = {
     { kind: "TaggedTemplateExpression", owner: "TaggedTemplateExpression", member: "questionDotToken", text: "readonly questionDotToken: QuestionDotToken;" },
     { kind: "JSDocTemplateTag", owner: "JSDocTemplateTag", member: "constraint", text: "readonly constraint: Node;" },
   ],
+  guards: compilerApiGuards,
 };
 
 let familyStandIn: FamilyDescription | null = null;
@@ -338,4 +342,240 @@ export function isHostFile(file: string): boolean {
     digestChecked = true;
   }
   return true;
+}
+
+/** A guard table checked against the installation the run admits, once
+ * per table (HOST-FAMILIES.md, "The guard table"). Its entry point is
+ * re-derived from the package's own manifest under the table's conditions,
+ * and its `imports` mappings found as recorded. Each entry's export is
+ * resolved as the module linker resolves it, through each module's own
+ * exports and its `export *` modules, a name two of those provide being no
+ * export, to the function the entry records, of exactly its text and never
+ * assigned in its module. Each free name of that function, and of each
+ * helper it reaches, is a function of its module or a named import of the
+ * package: the helpers and the binding edges this closure reaches are
+ * exactly the entry's, each helper of exactly its recorded text and never
+ * assigned. `parse` gives a module's tree. A mismatch is no table: every
+ * guard of the family is then read without predicate. */
+const activeTables = new Map<GuardTable, ReadonlyMap<string, GuardEntry> | null>();
+export function activeGuards(table: GuardTable): ReadonlyMap<string, GuardEntry> | null {
+  if (activeTables.has(table)) return activeTables.get(table) ?? null;
+  const root = installation().root;
+  // The package's modules, read by a compiler of the check's own.
+  const contents = new Map<string, string>();
+  const api = openCompiler({ cwd: root, fs: {
+    readFile: (name) => contents.get(name),
+    fileExists: (name) => (contents.has(name) ? true : undefined),
+  } });
+  const parse = (path: string, text: string): ts.SourceFile => {
+    contents.set(path, text);
+    const file = api.updateSnapshot({ openFiles: [path] }).getDefaultProjectForFile(path)?.program.getSourceFile(path);
+    if (!file) throw Error(`the compiler produced no tree for ${path}`);
+    return file;
+  };
+  let result: ReadonlyMap<string, GuardEntry> | null = null;
+  let thrown: { error: unknown } | null = null;
+  try {
+    result = checkedGuards(table, root, parse);
+  } catch (error) {
+    // A tool failure is no mismatch: it is reported, not read as no table.
+    if (toolFailureOf(error)) { thrown = { error }; throw error; }
+    result = null;
+  } finally {
+    releaseCompiler(api, thrown);
+  }
+  activeTables.set(table, result);
+  return result;
+}
+function checkedGuards(table: GuardTable, root: string, parse: (path: string, text: string) => ts.SourceFile):
+    ReadonlyMap<string, GuardEntry> | null {
+  const manifest: unknown = JSON.parse(readText(join(root, "package.json")));
+  if (typeof manifest !== "object" || manifest === null || !("exports" in manifest) || !("imports" in manifest)) return null;
+  const { exports, imports } = manifest;
+  const record = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+  if (!record(exports) || !record(imports)) return null;
+  const target = (mapping: unknown): string | null => {
+    if (typeof mapping === "string") return mapping;
+    if (!record(mapping)) return null;
+    for (const [condition, value] of Object.entries(mapping))
+      if (table.conditions.includes(condition)) return target(value);
+    return null;
+  };
+  const normal = (path: string): string => relative(root, join(root, path)).split(sep).join("/");
+  const entryTarget = target(exports[table.entryPoint]);
+  if (!entryTarget || normal(entryTarget) !== table.entryModule) return null;
+  for (const [pattern, mapping] of Object.entries(table.imports))
+    if (JSON.stringify(imports[pattern]) !== JSON.stringify(mapping)) return null;
+  const resolveSpecifier = (from: string, specifier: string): string | null => {
+    if (specifier.startsWith("./") || specifier.startsWith("../"))
+      return relative(root, join(root, dirname(from), specifier)).split(sep).join("/");
+    if (!specifier.startsWith("#")) return null;
+    // A specifier through `imports`: the manifest's mapping, which must be
+    // one the table records.
+    for (const [pattern, mapping] of Object.entries(imports)) {
+      const star = pattern.indexOf("*");
+      const matches = pattern === specifier || (star >= 0 && specifier.startsWith(pattern.slice(0, star)) &&
+        specifier.endsWith(pattern.slice(star + 1)) && specifier.length >= pattern.length - 1);
+      if (!matches) continue;
+      if (!(pattern in table.imports)) return null;
+      const to = target(mapping);
+      if (!to) return null;
+      return star >= 0 ? normal(to.replace("*", specifier.slice(star, specifier.length - (pattern.length - star - 1)))) : normal(to);
+    }
+    return null;
+  };
+  const trees = new Map<string, ts.SourceFile>();
+  const tree = (module: string): ts.SourceFile => {
+    const known = trees.get(module);
+    if (known) return known;
+    const parsed = parse(join(root, module), readText(join(root, module)));
+    trees.set(module, parsed);
+    return parsed;
+  };
+  const exported = (s: ts.Statement): boolean =>
+    (ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s) || ts.isVariableStatement(s)) &&
+    (s.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) ?? false);
+  // The names a module assigns anywhere: an assignment, compound or not, or
+  // an update of a plain name.
+  const assignedIn = new Map<string, Set<string>>();
+  const assigned = (module: string): Set<string> => {
+    const known = assignedIn.get(module);
+    if (known) return known;
+    const names = new Set<string>();
+    const visit = (n: Node): void => {
+      if (ts.isBinaryExpression(n) && n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+          n.operatorToken.kind <= ts.SyntaxKind.LastAssignment && ts.isIdentifier(n.left)) names.add(n.left.text);
+      if ((ts.isPrefixUnaryExpression(n) || ts.isPostfixUnaryExpression(n)) && ts.isIdentifier(n.operand) &&
+          (n.operator === ts.SyntaxKind.PlusPlusToken || n.operator === ts.SyntaxKind.MinusMinusToken))
+        names.add(n.operand.text);
+      n.forEachChild(visit);
+    };
+    visit(tree(module));
+    assignedIn.set(module, names);
+    return names;
+  };
+  // A module's function declaration named `name`, the one statement
+  // declaring it there and never assigned.
+  const functionOf = (module: string, name: string): ts.FunctionDeclaration | null => {
+    const found = tree(module).statements.filter((s): s is ts.FunctionDeclaration =>
+      ts.isFunctionDeclaration(s) && s.name?.text === name);
+    const [only] = found;
+    return only && found.length === 1 && only.body && !assigned(module).has(name) ? only : null;
+  };
+  // What the export `name` of a module resolves to, as the linker resolves
+  // it: the module's own export, else the one export of its `export *`
+  // modules that provides it; the modules passed through, in order.
+  type Resolved = { module: string; local: string; path: string[] };
+  const resolveExport = (module: string, name: string, seen: readonly string[]): Resolved | "ambiguous" | null => {
+    if (seen.includes(module)) return null;
+    const here = [...seen, module];
+    const file = tree(module);
+    for (const s of file.statements) {
+      if (exported(s) && (ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)) && s.name?.text === name)
+        return { module, local: name, path: here };
+      if (exported(s) && ts.isVariableStatement(s) &&
+          s.declarationList.declarations.some(d => ts.isIdentifier(d.name) && d.name.text === name))
+        return { module, local: name, path: here };
+      if (ts.isExportDeclaration(s) && s.exportClause && ts.isNamedExports(s.exportClause))
+        for (const e of s.exportClause.elements)
+          if (e.name.text === name) {
+            const local = e.propertyName ? e.propertyName.getText(file) : e.name.text;
+            if (!s.moduleSpecifier) return { module, local, path: here };
+            const next = ts.isStringLiteral(s.moduleSpecifier) ? resolveSpecifier(module, s.moduleSpecifier.text) : null;
+            return next ? resolveExport(next, local, here) : null;
+          }
+      if (ts.isExportDeclaration(s) && s.exportClause && ts.isNamespaceExport(s.exportClause) &&
+          s.exportClause.name.getText(file) === name) return null;
+    }
+    const found: Resolved[] = [];
+    for (const s of file.statements)
+      if (ts.isExportDeclaration(s) && !s.exportClause && s.moduleSpecifier && ts.isStringLiteral(s.moduleSpecifier)) {
+        const next = resolveSpecifier(module, s.moduleSpecifier.text);
+        if (!next) return null;
+        const r = resolveExport(next, name, here);
+        if (r === "ambiguous") return r;
+        if (r && !found.some(f => f.module === r.module && f.local === r.local)) found.push(r);
+      }
+    const [one] = found;
+    return found.length > 1 ? "ambiguous" : one ?? null;
+  };
+  // A module's named imports: each local name, the module it resolves to
+  // and the name it imports.
+  const importsOf = (module: string): Map<string, { module: string; name: string }> => {
+    const out = new Map<string, { module: string; name: string }>();
+    for (const s of tree(module).statements) {
+      if (!ts.isImportDeclaration(s) || !ts.isStringLiteral(s.moduleSpecifier)) continue;
+      const bindings = s.importClause?.namedBindings;
+      if (s.importClause?.name || !bindings || !ts.isNamedImports(bindings)) continue;
+      const from = resolveSpecifier(module, s.moduleSpecifier.text);
+      if (!from) continue;
+      for (const e of bindings.elements)
+        out.set(e.name.text, { module: from, name: e.propertyName ? e.propertyName.getText(tree(module)) : e.name.text });
+    }
+    return out;
+  };
+  // The free names of a function's body: every name read but a property's
+  // and those the function declares.
+  const freeNames = (f: ts.FunctionDeclaration): Set<string> => {
+    const declared = new Set(f.parameters.flatMap(p => ts.isIdentifier(p.name) ? [p.name.text] : []));
+    const names = new Set<string>();
+    const visit = (n: Node): void => {
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name)) declared.add(n.name.text);
+      if (ts.isPropertyAccessExpression(n)) { visit(n.expression); return; }
+      if (ts.isIdentifier(n)) names.add(n.text);
+      n.forEachChild(visit);
+    };
+    if (f.body) visit(f.body);
+    return new Set([...names].filter(n => !declared.has(n)));
+  };
+  const textOf = (module: string, f: ts.FunctionDeclaration): string => f.getText(tree(module)).trim();
+  const entries = new Map<string, GuardEntry>();
+  for (const entry of table.guards) {
+    const resolved = resolveExport(table.entryModule, entry.name, []);
+    if (!resolved || resolved === "ambiguous" || resolved.module !== entry.module || resolved.local !== entry.name ||
+        resolved.path.join("\n") !== entry.chain.join("\n")) return null;
+    const f = functionOf(entry.module, entry.name);
+    if (!f || textOf(entry.module, f) !== entry.text) return null;
+    // The dependency closure: helpers and binding edges reached.
+    const helpers = new Set<string>();
+    const edges = new Set<string>();
+    const pending: { module: string; f: ts.FunctionDeclaration }[] = [{ module: entry.module, f }];
+    for (let next = pending.pop(); next; next = pending.pop()) {
+      const { module } = next;
+      for (const name of freeNames(next.f)) {
+        const local = functionOf(module, name);
+        const imported = importsOf(module).get(name);
+        if (local) {
+          const key = `${module}#${name}`;
+          if (table.helpers[key] !== textOf(module, local)) return null;
+          if (!helpers.has(key)) { helpers.add(key); pending.push({ module, f: local }); }
+        } else if (imported) {
+          edges.add(JSON.stringify([name, imported.module]));
+          const helper = functionOf(imported.module, imported.name);
+          if (helper) {
+            const key = `${imported.module}#${imported.name}`;
+            if (table.helpers[key] !== textOf(imported.module, helper)) return null;
+            if (!helpers.has(key)) { helpers.add(key); pending.push({ module: imported.module, f: helper }); }
+          }
+        } else return null;
+      }
+    }
+    const recordedEdges = new Set(entry.edges.map(e => JSON.stringify(e)));
+    if (helpers.size !== entry.helpers.length || !entry.helpers.every(h => helpers.has(h)) ||
+        edges.size !== recordedEdges.size || ![...edges].every(e => recordedEdges.has(e))) return null;
+    entries.set(entry.name, entry);
+  }
+  return entries;
+}
+
+/** The entry of the compiler API's family guarding a declaration: the
+ * function `name` of the declaration file `file`, which the entry's module
+ * declares. */
+export function guardEntry(file: string, name: string): GuardEntry | null {
+  if (!isHostFile(file)) return null;
+  const entries = activeGuards(hostFamily().guards);
+  const entry = entries?.get(name);
+  if (!entry) return null;
+  const declared = relative(installation().root, realPath(file)).split(sep).join("/");
+  return declared === entry.module.replace(/\.js$/, ".d.ts") ? entry : null;
 }

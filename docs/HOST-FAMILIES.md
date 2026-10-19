@@ -336,10 +336,17 @@ code, throws nothing, and returns the same answer whatever it receives
 beyond its one parameter (further arguments, a receiver).
 
 Before the table is activated, the front end resolves each entry again
-over the installation the run admits, under the resolution conditions the
-run uses, with Node's resolution algorithm on the package's own manifest,
-and compares every recorded mapping, chain module, binding and edge; a mismatch, like a digest mismatch, leaves the family
-without guards, each read without predicate. File digests alone do not pin
+over the installation the run admits, once per process, reading the
+package's modules with a compiler of its own: the entry point's module from
+the manifest's `exports` under the table's conditions, the `imports`
+mappings as recorded; each export as the module linker resolves it, through
+the module's own exports and its `export *` modules, a name two of them
+provide being no export, to the recorded function and chain, of exactly its
+reviewed text and assigned nowhere in its module; and the function's
+dependency closure, each free name a function of its module or a named
+import of the package, whose helpers and binding edges are exactly the
+entry's, each helper of exactly its reviewed text. A mismatch, like a digest
+mismatch, leaves the family without guards, each read without predicate. File digests alone do not pin
 resolution, since a manifest or a re-export can select other code among
 files already hashed.
 
@@ -405,27 +412,32 @@ a spread or more than one argument is refused.
 
 **A call on an immutable name** $`x`$, a binding the existing
 classification calls immutable (a `const`, or a parameter no statement
-assigns), is written
-in the Fragment's existing forms, a `comma` whose left operand is a
-`satisfies` cast of $`x`$ at the guard's declared parameter type $`P`$ and
-whose right operand is the tests of its tag:
+assigns), is written as the Fragment's membership test, `tagMember`, of
+$`x`$, or of its tag field, against the entry's exact tag set, after the
+obligation that $`x`$ is within the guard's declared parameter type $`P`$:
 
 ```math
 \frac{g\ \text{a node guard of}\ F,\quad K_g=\{t_1,\ldots,t_n\},\quad x\ \text{an immutable name}}
-     {g(x)\ \leadsto\ (x\ \mathtt{satisfies}\ P\mathtt{,}\ x.\tau\equiv t_1\lor\cdots\lor x.\tau\equiv t_n)}\ \textsf{host-guard}
+     {g(x)\ \leadsto\ x : P\ \text{checked};\ \ \mathsf{member}(K_g,\ x.\tau)}\ \textsf{host-guard}
 ```
 
-and an empty $`K_g`$ as $`(x\ \mathtt{satisfies}\ P\mathtt{,}\ \mathsf{false})`$.
-Reading a name has no effect and throws nothing, so the call's single
-evaluation of its argument is kept.
+with $`\mathsf{member}`$ the calculus's tests of each tag in turn,
+`true` where one holds
+([a membership test](PROGRAM-TYPING.md#a-membership-test)). Lean lowers it
+to a read of $`x.\tau`$ into a slot of its own, then the test of that
+slot, at the `member-yield` rule: where the test answers `true`, $`x`$'s
+object is at the arms of its type whose tag meets $`K_g`$; where `false`,
+at those every tag of $`K_g`$ leaves, one after another. The derivation is
+one node per tag, whatever the number of arms. Reading a name has no effect
+and throws nothing, so the call's single evaluation of its argument is
+kept, and the tag is read once, as the guard reads it.
 
-**The domain obligation.** The `satisfies` cast is the parser's, and Lean
-emits its `cast-annotation` obligation (`Lowering/Expression.lean`) for
-it, checking $`x`$'s claim at $`P`$, the family type with its marker,
-whatever the producer claims; a value the checker cannot type there (an
-`unknown`, `null`, an arbitrary object) refuses the call, located at the
-argument. Every path writing `host-guard`, an empty $`K_g`$ included, emits
-the cast, so no path tests a tag without it.
+**The domain obligation.** Lean emits a `guard-domain` obligation for each
+`tagMember`, checking $`x`$'s claim at $`P`$, the family type with its
+marker, whatever the producer claims; a value the checker cannot type there
+(an `unknown`, `null`, an arbitrary object) refuses the call, located at the
+call. The Fragment decoder refuses a `tagMember` without its domain, an
+empty $`K_g`$ included.
 
 **A call on any other argument** (a call's result, a member path) is an
 ordinary call of the guard at the signature its entry gives
@@ -434,27 +446,18 @@ propagates its exception, Lean's call rule checks the argument at the
 domain, and the promise narrows no binding, since no name holds the
 argument. A member path narrows with [stable members](#stable-members).
 
-**The comma.** A `comma` in a test position runs its left operand, then
-its right operand is the test, refining on both edges in the state the left
-operand leaves ([`if-comma`](SOURCE-ELABORATION.md#derived-source-forms)),
-JavaScript's own meaning of the comma for every source; the cast and the
-tag tests above are its operands.
-
 On the guard's admitted domain the test is exactly the guard: `true` on an
-argument whose tag is in $`K_g`$, `false` otherwise, by the entry. So the
-`true` edge refines $`x`$ to the incoming type's arms whose tag is in
-$`K_g`$, and the `false` edge to the incoming type intersected with the
-complement of $`K_g`$, by `if-field` and `if-or` through the family union,
-since the test is the guard's body. The guard reads $`\tau`$ once; the
-chain reads it $`n`$ times. They agree because the tag is stable (F2) and a
-read of it on a member of the family runs no code and throws nothing (F4),
-so the chain has the call's result, effects and exceptions. Lean sees a
-cast, reads and tests (`compiler-api-guard-false-branch`).
+argument whose tag is in $`K_g`$, `false` otherwise, by the entry. The
+`false` edge subtracts $`K_g`$ from what $`x`$ already holds: an arm of
+the object whose tag is one of the set's tags is dropped, and one whose tag
+is a set of several values stays (a `Token` arm of its tag set, under
+`isToken`'s `false`), since each tag is decided alone
+(`compiler-api-guard-false-branch`, `compiler-api-guards`).
 
-A tag guard's call on an immutable name $`x`$ is written
-$`(x\ \mathtt{satisfies}\ P\mathtt{,}\ x\equiv t_1\lor\cdots\lor x\equiv t_n)`$,
-with $`P`$ the tag's primitive, and refines $`x`$ by `if-singleton` on both
-edges (`isAssignmentOperator(op)`); on any other argument it is an ordinary
+A tag guard's call on an immutable name $`x`$ is the membership test of
+$`x`$ itself, $`\mathsf{member}(K_g, x)`$, with $`P`$ the tag's primitive,
+and refines $`x`$ on both edges (`isModifierKind(kind)`); a broad number
+stays a number on the `false` edge. On any other argument it is an ordinary
 call at `tag-guard-value`.
 
 #### Guards as values
@@ -477,7 +480,10 @@ $`P`$:
 ```
 
 with $`\{\mathsf{keep},\mathsf{keep}\}`$ the footprint that changes no value
-and no store, and the promise signature of
+and no store, $`\bigcup_{t\in K_g} S_t`$ the union of the root's arms under
+the run's selection whose tags meet $`K_g`$ (the family's definition
+`guard.g`, of one arm per tag of $`K_g`$ where the selection gives each its
+own, an arm covering several tags otherwise), and the promise signature of
 [user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards), which
 narrows the `true` edge. The parameter is the domain: a callback receives
 the guard only where its argument type is within $`A`$ (or $`P`$), so its

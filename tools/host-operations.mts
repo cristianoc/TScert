@@ -53,6 +53,7 @@ export const expressionForms: { readonly [K in Expr["k"]]: HostClass } = {
   arrayTest: transparent("the store: true exactly of node lists among host values"),
   inTest: transparent("HasProperty over own fields and the prototype chain, as at run time (T4)"),
   instanceTest: transparent("a client class's key, which no host prototype owns"),
+  tagMember: transparent("the name, or its tag field, a stated member read once, compared with each tag"),
   apply: calls, new: calls, invoke: calls,
   applyWithReceiver: transparent("the list's length and indices: a node list's table"),
   callWithReceiver: calls, bindWithReceiver: calls,

@@ -301,6 +301,10 @@ export class Gate {
   /** Calls the reviewed overlay of library globals reads as a test of the
    * calculus, `Array.isArray(e)`, and `e instanceof Array`, by span. */
   readonly globalTests: Set<string> = new Set();
+  /** The import bindings of a listed guard of the compiler API's family
+   * (HOST-FAMILIES.md, "Calls"), by local name: its kind, its exact tag
+   * values and the domain its declared parameter states. */
+  readonly hostGuards: Map<string, { domain: TypeTerm; field: string | null; tags: readonly (number | string)[] }> = new Map();
   /** Statement calls of `node:assert/strict`'s `assert` and `ok` read as the
    * calculus's own test, by span. */
   readonly assertionCalls: Set<string> = new Set();
@@ -1808,6 +1812,7 @@ function lowerFile(file: string, carriesContext: boolean,
         },
         enumMemberRead: ([start, end], member) => gate.enumMemberReads.set(`${start}:${end}`, member.join(":")),
         importedEnum: (local, members) => gate.importedEnums.set(local, members),
+        hostGuard: (local, _entry, domain, field, tags) => gate.hostGuards.set(local, { domain, field, tags }),
         constEnumReads: constEnumNodes.map(node => gate.span(node)),
         constEnumRead: ([start, end], value) => gate.constEnumReads.set(`${start}:${end}`, value),
         library: ([start, end], library) => {

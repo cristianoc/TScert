@@ -70,7 +70,7 @@ def negationMark (negation : Span) : Span := (negation.1, negation.1 + 1)
 
 /-- A test: an expression whose value is a Boolean by its form. -/
 def testForm : Expr → Bool
-  | .shapeTest .. | .equality .. | .singletonTest .. | .not .. | .inKeys .. => true
+  | .shapeTest .. | .tagMember .. | .equality .. | .singletonTest .. | .not .. | .inKeys .. => true
   | .arith _ op _ _ => op == .lt || op == .le || op == .gt || op == .ge || op == .eq
   | .logical _ _ a b => testForm a && testForm b
   | _ => false
@@ -118,6 +118,8 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
     | .cast pos annot a => operand root a "value" fun a => do pure (atom (.cast pos annot (readSaved a)))
     | .shapeTest pos tag equal a => operand root a "value" fun a => do
         pure (atom (.shapeTest pos tag equal (readSaved a)))
+    | .tagMember pos domain field tags a => operand root a "value" fun a => do
+        pure (atom (.tagMember pos domain field tags (readSaved a)))
     | .read pos field a => operand root a "receiver" fun a => do pure (atom (.read pos field (readSaved a)))
     | .equality pos equal left right => operand root left "value" fun left => do
         operand root right "value" fun right => do pure (atom (.equality pos equal (readSaved left) (readSaved right)))

@@ -135,6 +135,16 @@ alone, which `tagMember` checks on the edge. -/
     else
       joinContexts Γ (conditionContext G scope Γ left answer arrays single original)
         (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single original) right answer arrays single original)
+  | .tagMember _ _ field tags (.var _ name) =>
+    -- A family guard's test leaves the name's type, or its object's arms, as
+    -- its answer's yields state them (`PromiseCalls.memberYield`).
+    match memberSlot scope name with
+    | none => Γ
+    | some i =>
+      let A := Γ[i]?.getD []
+      Γ.set i (match field with
+        | none => PromiseCalls.memberSlice (BranchRefinement.tagSlice G) A tags answer
+        | some f => PromiseCalls.memberSlice (fun B t q => BranchRefinement.fieldSlice G B f t q) A tags answer)
   | _ =>
     if let (true, some (j, T)) := (answer, promiseNarrowing G scope Γ false cond original) then Γ.set j T
     else if let some (i, tag, equal) := conditionTag G scope Γ cond then

@@ -30,7 +30,7 @@ private partial def exprSitesCore (includeBodies : Bool) : Fragment.Expr → Sit
     if !includeBodies then ([],[p],[p]) else
     defaults.attach.foldl (fun acc ⟨d,_⟩ => joinSites acc (exprSitesCore includeBodies d.2))
       (joinSites ([],[p],[p]) (exprSitesCore includeBodies e))
-  | .shapeTest p _ _ e | .not p e | .unary p _ e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSitesCore includeBodies e)
+  | .shapeTest p _ _ e | .tagMember p _ _ _ e | .not p e | .unary p _ e | .cast p _ e | .read p _ e => joinSites ([],[p],[]) (exprSitesCore includeBodies e)
   | .alloc p _ es | .build p _ es => es.foldl (fun acc a => joinSites acc (exprSitesCore includeBodies a)) ([],[p],[])
   -- A condition dispatching on a negated operand that is no test evaluates
   -- its deciding outcome at the span of the `!` (`SourceExecution.truthOf`):

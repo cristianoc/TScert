@@ -604,6 +604,7 @@ it recorded for an inner chain does not denote an outer chain's binding. -/
         if original != name && (valueSlot scope original).isSome then some (Fragment.Expr.var p original, newer)
         else none
       | some (predicate@(.not ..), older, newer) | some (predicate@(.shapeTest ..), older, newer)
+        | some (predicate@(.tagMember ..), older, newer)
         | some (predicate@(.singletonTest ..), older, newer) | some (predicate@(.arith ..), older, newer)
         | some (predicate@(.inKeys ..), older, newer) | some (predicate@(.read ..), older, newer) =>
           some (executionPredicate scope older predicate, newer)
@@ -614,6 +615,7 @@ it recorded for an inner chain does not denote an outer chain's binding. -/
     | none => e
   | .not p e => .not p (executionPredicate scope origins e)
   | .shapeTest p tag eq e => .shapeTest p tag eq (executionPredicate scope origins e)
+  | .tagMember p d f ts e => .tagMember p d f ts (executionPredicate scope origins e)
   | .singletonTest p tag eq side l r => .singletonTest p tag eq side
       (executionPredicate scope origins l) (executionPredicate scope origins r)
   | .arith p op l r => .arith p op (executionPredicate scope origins l) (executionPredicate scope origins r)

@@ -59,7 +59,7 @@ is given, less the dropped keys: one record per pair of their clauses
 escaping closure. Reads are plain modeled cells, never JavaScript accessors. -/
 partial def readOnly : Fragment.Expr → Bool
   | .var .. | .lit .. => true
-  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e => readOnly e
+  | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e | .shapeTest _ _ _ e | .tagMember _ _ _ _ e => readOnly e
   | .equality _ _ a b | .singletonTest _ _ _ _ a b | .logical _ _ a b | .coalesce _ a b
   | .optional _ _ a b | .index _ _ a b | .arith _ _ a b | .elemAt _ a b
   | .comma _ a b | .inKeys _ a b => readOnly a && readOnly b
@@ -148,6 +148,24 @@ singleton test, or, for a variable that is not a Boolean, its truthiness
     let A ← Γ[i]?
     if BranchRefinement.onlyBoolean G A then none else some (i, .truthy, true)
   | e => tagConditionVariable scope e
+
+/-- The derivation of a membership test of slot `slot`'s value, of type
+`B`, at the Boolean `A`: each test, a Boolean whatever the value's type, then
+`true`, or the next test, down to `false` (`PromiseCalls.memberOn`). One
+node per tag; the value's type is not split. -/
+def memberPlan (H : List (Ty ι)) (slot : Nat) (B A : Ty ι) : List Tag → DirectProof.Plan ι
+  | [] => DirectProof.cast H A (DirectProof.node H .fls [Labels.fls] .flsLit)
+  | t :: ts =>
+    let rest := memberPlan H slot B A ts
+    DirectProof.node H (.ite (.test t (.var slot)) .tru rest.term) A .ifBool
+      [DirectProof.node H (.test t (.var slot)) [Labels.tru, Labels.fls] .test [DirectProof.var H slot B],
+       DirectProof.cast H A (DirectProof.node H .tru [Labels.tru] .truLit), rest]
+
+/-- The slot a family guard's test reads: a name the scope holds as one value. -/
+@[nospecialize] def memberSlot (scope : List (ScopeBinding ι)) (name : String) : Option Nat := do
+  match ← resolve scope name with
+  | (i, .value) => some i
+  | _ => none
 
 def tagTestTerm (tag : Tag) (equal : Bool) (slot : Nat) : Tm :=
   .ite (.test tag (.var slot)) (if equal then .tru else .fls) (if equal then .fls else .tru)

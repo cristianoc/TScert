@@ -652,7 +652,7 @@ let truthy_refine declarations truth t = match t with
   | Atoms xs -> truthy_slice truth (Atoms (List.filter (fun a ->
       atom_truthiness declarations [] a <> Some (not truth)) xs))
   | t -> truthy_slice truth t
-let discriminate bounds declarations t key slice =
+let rec discriminate bounds declarations t key slice =
   match declared_head declarations [] t with
   | Atoms atoms ->
     let atoms = union_arms declarations atoms in
@@ -662,7 +662,16 @@ let discriminate bounds declarations t key slice =
       | None -> true in
     let kept = List.filter admits atoms in
     if List.length kept = List.length atoms then t else Atoms kept
-  | Rigid _ | Union _ | Meet _ -> t
+  (* A union's arms each, an intersection arm dropped where its field holds
+     nothing the slice keeps. *)
+  | Union ts ->
+    let parts = List.map (fun u -> discriminate bounds declarations u key slice) ts in
+    if parts = ts then t else List.fold_left union (Atoms []) parts
+  | Meet _ as m ->
+    (match (try Some (field_type bounds declarations [] m key) with Json.Error _ -> None) with
+     | Some field when slice field = Atoms [] -> Atoms []
+     | _ -> t)
+  | Rigid _ -> t
 (* The arms of `t` whose object may still be of them once the value of its
    field `key` answered `slice`: an arm is dropped only where it fixes the
    field, required, at a type none of whose values does. *)

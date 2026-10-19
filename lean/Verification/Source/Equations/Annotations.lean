@@ -10,7 +10,7 @@ open Lean EquationGraphs PositiveGraphs PositiveNormalization PositiveRules Posi
 
 /-- The fields of the function tree that hold a source annotation. -/
 def annotationFields : List String :=
-  ["annot", "functionType", "bagType", "type", "result", "bound", "retType"]
+  ["annot", "functionType", "bagType", "type", "result", "bound", "retType", "domain"]
 
 /-- The terms a unit's scheme reads: its parameters' and result's types and
 its binders' bounds. -/

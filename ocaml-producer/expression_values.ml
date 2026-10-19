@@ -20,7 +20,7 @@ open Support
    a key, an instance or an equality, a negation, a comparison, or `&&` and
    `||` of tests. *)
 let rec test_form (e:Source.expr) = match e.node with
-  | TypeofTest _ | HasKey _ | InstanceTest _ | Equality _ | Not _ -> true
+  | TypeofTest _ | TagMember _ | HasKey _ | InstanceTest _ | Equality _ | Not _ -> true
   | Arith (op,_,_) -> relational op
   | Logical (_,a,b) -> test_form a && test_form b
   | _ -> false
@@ -177,7 +177,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
        | t,_ -> t)
     | Literal l -> literal_type l
     | Not e -> ignore (expr env e); bool
-    | TypeofTest (_,_,e) -> ignore (expr env e); bool
+    | TypeofTest (_,_,e) | TagMember (_,_,e) -> ignore (expr env e); bool
     (* A string literal key is part of the test, not a claim site. *)
     | HasKey ({node=Literal (LString _);_},e) -> ignore (expr env e); bool
     | HasKey (k,e) -> ignore (expr env k); ignore (expr env e); bool

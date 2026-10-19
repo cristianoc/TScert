@@ -76,6 +76,9 @@ export type FamilyDescription = {
   tag: { field: string; primitive: "number"; constants: { enum: string } };
   table: readonly FamilyRule[];
   corrections: readonly FamilyCorrection[];
+  /** The guard table: the guards read from an audited entry, every other
+   * guard of the family read without predicate. */
+  guards: GuardTable;
 };
 
 /** The package's declarations as the interpreter reads them, resolved by

@@ -375,6 +375,33 @@ where `split` holds one. -/
         compile (held ⟨"",some o.span⟩ :: scope) (O₀::Γ) key read
     compile scope Γ o afterObject
 
+/-- A family guard's test of an immutable name (`Fragment.Expr.tagMember`):
+its derivation, with its operand's and its domain's obligations, then the
+test of the name's slot, or a read of its field into a slot of its own and
+the test of that, at the continuation `cont` gives past the slots the nodes
+add. The read's link states what the field holds, which the test's yields
+refine the name's object by (`PromiseCalls.memberYield`). -/
+@[nospecialize] def memberNodes (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (e : Fragment.Expr) (cont : Nat → Continuation) :
+    Compiler Target := do
+  let .tagMember p _ field tags (.var _ name) := e | throw "internal extraction error: a family guard's test of no name"
+  let some i := memberSlot scope name
+    | throw (locatedRefusal (← table) p .expressionClaim
+        "a family guard's test of a name the unit does not hold as one value")
+  let A ← exprType fc e
+  let _ ← LoweringExpression.closureExpr recursive fc scope Γ e
+  let some X := Γ[i]? | throw "internal extraction error: a family guard's slot"
+  -- The test's derivation is one node per tag (`memberPlan`), whatever the
+  -- tested value's type.
+  match field with
+  | none => emitPlanned p (memberPlan Γ i X A tags) (cont 0) Γ A "tag-dispatch" (scope := scope)
+  | some fld =>
+    let G := SourceTypes.graph (← table)
+    let R := (← readCell G Γ fld (DirectProof.var Γ i X)).type
+    let test ← emitPlanned p (memberPlan (R :: Γ) 0 R A tags) (cont 1) (R :: Γ) A "tag-dispatch"
+      (scope := held ⟨"",some p⟩ :: scope)
+    emitAt p (.readAt fld (.var i)) (.bind test) Γ R "tag-dispatch" (scope := scope)
+
 /-- Each expression leaves its result in slot zero and preserves the original
 slots after it. Anonymous temporary slots cannot be named by source identifiers.
 Mappings discard only the temporaries introduced by this expression. -/
@@ -540,6 +567,12 @@ Mappings discard only the temporaries introduced by this expression. -/
     let node ← emitAt e.span (.ite tested .fls .tru) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
     compileAtom recursive fc scope Γ a node
+  | .tagMember _ _ _ _ _ =>
+    -- A family guard's test as a value: its nodes (`memberNodes`), its
+    -- Boolean bound for `next`.
+    memberNodes recursive fc scope Γ e fun k =>
+      .bind ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
+        (fun j => if j == 0 then 0 else j+k))⟩
   | .cast _ annot a =>
     -- The operand's value, retyped at the cast's own claim: the node proves
     -- the claim from the operand, and an annotation is one more type the
@@ -1010,6 +1043,12 @@ expression still has an independent claimed typing obligation; the runtime
 traverses its operands once instead of evaluating it and then replaying it. -/
 @[nospecialize] partial def compileConditionAtom (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (cond : Fragment.Expr) (yes no : Target) : Compiler Target := do
+  -- A family guard's test dispatches on its own Boolean: the edges' yields
+  -- state what each answer leaves of the name (`PromiseCalls.memberYield`).
+  if let .tagMember .. := cond then
+    let shift := fun (t : Target) (k : Nat) =>
+      (⟨t.label, some ((t.mapping.getD (List.range scope.length)).map (·+k))⟩ : Target)
+    return ← memberNodes recursive fc scope Γ cond fun k => .branchBind (shift yes (k+1)) (shift no (k+1))
   let simple := do
     let A ← exprType fc cond
     if let some (snapshot, read, tested) := readGuard scope cond then

@@ -107,6 +107,10 @@ export type Expr =
   /* `left, right`: the left operand for its effects, then the right one's
      value. `void e` is `e, undefined`. */
   | { k: "comma"; pos: Span; left: Expr; right: Expr }
+  /* A family guard's call of an immutable name (HOST-FAMILIES.md, "Calls"):
+     the name, within the guard's domain, then whether its value, or its
+     object's `field`, is one of the tags, each tested in turn. */
+  | { k: "tagMember"; pos: Span; domain: TypeTerm; field: string | null; tags: Atom[]; e: Expr }
   | { k: "write"; pos: Span; field: PropertyKey; receiver: Expr; rhs: Expr }
   /* `target ??= rhs`, `||=` or `&&=` on a field, an element or, for the
      Boolean forms, a name: the target's parts once, its value read, the test

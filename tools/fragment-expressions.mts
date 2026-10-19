@@ -5,6 +5,7 @@
 import * as ts from "typescript/unstable/ast";
 import type { ArrowFunction, ClassDeclaration, BinaryExpression, Expression, FunctionExpression, Identifier, MethodDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
+import type { Atom } from "./claim.mts";
 import { bigintText, CLASS_ACCESS, numericLexeme, GENERIC_METHOD_RECEIVER, numericKey, optionalTerm } from "./type-term.mts";
 import type { Expr, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, TypeofShape } from "./fragment.mts";
 import { CHAIN } from "./fragment.mts";
@@ -431,6 +432,24 @@ export function expr(this: Gate, node: Expression): Expr {
     const [tested] = node.arguments;
     if (gate.globalTests.has(gate.span(node).join(":")) && tested)
       return { k: "arrayTest", pos: gate.span(node), e: gate.expr(tested) };
+    // A listed guard of the compiler API's family (HOST-FAMILIES.md,
+    // "Calls"): of an immutable name, the test of its value, or of its
+    // object's tag field, against the entry's exact tag set, after the
+    // obligation that the name is within the guard's domain. Of any other
+    // argument it is an ordinary call, at the guard's plain signature.
+    const callee = ts.isPropertyAccessExpression(node.expression) ? gate.namespaceMember(node.expression)
+      : ts.isIdentifier(node.expression) ? gate.local(node.expression) : undefined;
+    const guard = callee === undefined ? undefined : gate.hostGuards.get(callee);
+    if (guard && (node.arguments.length !== 1 || node.arguments.some(ts.isSpreadElement) || node.typeArguments?.length))
+      gate.fail(node, "a call of a family guard passes its one argument, written as one");
+    let argument: Expression | undefined = tested;
+    while (argument && ts.isParenthesizedExpression(argument)) argument = argument.expression;
+    if (guard && argument && ts.isIdentifier(argument) && !node.questionDotToken &&
+        !gate.assignedNames().has(argument.text) && gate.readCannotThrow(argument) &&
+        !gate.libraryValues.has(gate.span(argument).join(":")))
+      return { k: "tagMember", pos: gate.span(node), domain: guard.domain, field: guard.field,
+        tags: guard.tags.map((t): Atom => typeof t === "number" ? { a: "numberlit", v: String(t) } : { a: "stringlit", v: t }),
+        e: { k: "id", pos: gate.span(argument), name: gate.local(argument) } };
     // `Promise.resolve(v)` and the like, which the overlay reads as a call
     // of the intrinsic stating the same step, read at the member's name.
     const intrinsic = gate.globalIntrinsics.get(gate.span(node).join(":"));
