@@ -2294,8 +2294,8 @@ keys. The constructor's species behavior is standard. These requirements
 apply to external values and code as well as the checked source. The
 annotation's prototype and own-key bounds prevent a writable structural
 alias from replacing those members. Reading `constructor` yields `unknown`;
-the inherited constructor is present. The source refuses objects with a
-`then` member that could forge a promise. The native identity and standard
+the inherited constructor is present. No object the program makes meets the
+contract ([source objects and the tag](#source-objects-and-the-tag)). The native identity and standard
 prototype behavior remain [host assumptions](DESIGN.md#trust-surface). Source
 augmentations of the standard `Promise` interface are refused: native
 factory results meet the reviewed standard declaration, and an augmentation
@@ -2352,20 +2352,143 @@ supplies missing candidates while retaining those supplied by arguments,
 including `never` for an unused arm. This proposal heuristic assumes no
 variance of the named type: Lean checks the complete substituted parameter,
 result and binder bounds before accepting an instance.
-A `Promise` method's binder written beside a
-`PromiseLike` of itself is inferred the same way: `then`'s callback returns
-`TResult1 | PromiseLike<TResult1>` and `catch`'s `TResult | PromiseLike<TResult>`,
-so a callback returning a promise of $`U`$, or a primitive $`V`$, instantiates
-the binder at $`U`$ or $`V`$:
+A `Promise` method's binder written beside a promise of itself is inferred
+the same way: `then`'s callback returns `TResult1 | Promise<TResult1>` and
+`catch`'s `TResult | Promise<TResult>` (each a `PromiseLike` in TypeScript's
+declaration, read as below), so a callback returning a promise of $`U`$, or a
+primitive $`V`$, instantiates the binder at $`U`$ or $`V`$:
 
 ```math
 \frac{\Gamma\vdash f:(\vec A)\Rightarrow\mathsf{Promise}\langle U\rangle\mid V\quad V\le P}
-     {\mathit{TResult}:=U\mid V\ \ \text{at}\ \ (\vec A)\Rightarrow\mathit{TResult}\mid\mathsf{PromiseLike}\langle\mathit{TResult}\rangle}
+     {\mathit{TResult}:=U\mid V\ \ \text{at}\ \ (\vec A)\Rightarrow\mathit{TResult}\mid\mathsf{Promise}\langle\mathit{TResult}\rangle}
 ```
 
 The instance is the producer's proposal, checked as any instance of a
 scheme ([`compareInstArrsState`](POSITIVE-TYPES.md#instances-of-a-scheme-row)).
 Background: [promises and flattened types](REFERENCES.md#promises-and-flattened-types).
+
+### Source objects and the tag
+
+An object the program makes may own a `then` member, a field or a method of
+any type (`then-member-fields`). Two facts keep such an object from passing
+for a promise or being adopted as one.
+
+**No object the program makes meets `Promise<T>`.** The native `Promise`
+contract holds, on its prototype record, the methods' slots, `constructor`
+and the required readonly field $`\sigma_{\mathit{tag}}:\mathsf{string}`$, with
+$`\sigma_{\mathit{tag}}`$ the standard library's `Symbol.toStringTag`. A
+record with a prototype record is the model's `refs` clause owning
+`[[proto]]` at that record, so a value of `Promise<T>` owns `[[proto]]` at an
+object owning $`\sigma_{\mathit{tag}}`$. Lean checks:
+
+- the symbol list names $`\sigma_{\mathit{tag}}`$ by its declaration identity
+  (the module `lib.es2015.symbol.wellknown.d.ts`, the name `toStringTag`),
+  and the native `Promise` definition, selected by its identity, states it on
+  its prototype as a readonly `string`; a document lacking either is refused
+  (`tagDeclarations` in `Claims/Preparation.lean`);
+- every prototype a lowered head's row states under `[[proto]]`, through its
+  bases, intersections and instances as lowering resolves them, is a head
+  whose row is records (`refs` or `dict` clauses; a callable object or any
+  other shape is refused), and the only such records holding
+  $`\sigma_{\mathit{tag}}`$ are the native `Promise`'s (`tagPrototypes` in
+  `Equations/Store.lean`). A copy of
+  that record is the same record, so a declaration extending `Promise` holds
+  it (`tag-fake-holder`);
+- no allocation of the source's code (a literal, a class's prototype or
+  instance), no class value's static and no named write is keyed by it
+  (`tagGate`), and a key-adding write refuses a key whose possible values
+  include it: one typed `symbol`, listed or not, or the tag's literal
+  (`executionGrowth` in `Lowering/Execution.lean`;
+  `invalid-tag-computed-write`, `symbol-key-growth-refused`); a `unique
+  symbol` key other than the tag is admitted (`symbol-key-write`). The parser
+  refuses the keys the source writes (`writtenSymbol`, the write at
+  `Symbol.toStringTag`).
+
+The symbol list's authenticity and completeness, that its entry is the
+library's own symbol and that a symbol the source reaches is listed, are the
+parser's, a trusted extraction obligation: Lean checks duplicate entries and
+the identity's module and name.
+
+The exclusion these give is conjectured, not proved. It concerns the
+ordinary objects certified code allocates, its literals, classes' prototypes
+and instances, class values and merges, not the promises the native
+operations make:
+
+```math
+\frac{o\ \text{an ordinary allocation of certified code}\quad o'\ \text{reached from}\ o\ \text{through}\ [[\mathit{proto}]]}
+     {o'\notin⟦\mathsf{Promise}\langle A\rangle⟧}
+```
+
+for every $`A`$. The argument:
+
+- such an object owns no $`\sigma_{\mathit{tag}}`$: every key of a literal, a
+  class's prototype or instance and a class value is checked above, a
+  key-adding write adds no key that may be it, and a merge copies string keys
+  only (`copiedKey`, $`\mathsf{data}_h`$);
+- its `[[proto]]` is a class's prototype, itself such an allocation, or no
+  key at all (a literal owns none). A prototype is reached by no source
+  expression, so no write, alias or prototype change reaches it: `__proto__`,
+  `Object.create`, `Object.setPrototypeOf` and accessors are outside the
+  fragment ([fragment](SOURCE-FRAGMENT.md));
+- a class's base is a class of the same file (`invalid-tag-ambient-base`
+  refuses a declared one), so the chain holds only such prototypes.
+
+`checkJson_safe` does not depend on it: the theorem gives the modeled safety
+of every accepted unit under its premises, and the exclusion is part of the
+correspondence between that model and JavaScript, beside the native-promise
+invariant on the [trust surface](DESIGN.md#trust-surface). Promises come from
+the native operations: async functions and the intrinsics make them during
+certified execution, and the native identity and standard prototype of every
+value of the external heap at a `Promise` type are host assumptions. A
+declaration's tag is no evidence of that identity. A declared class's
+`[Symbol.toStringTag]`, own or inherited (`Map`'s), is a field of its
+instance, which states no prototype (`declared-symbol-members`,
+`invalid-tag-inherited-declaration`, refused first at its methods' binders;
+the forged controls of `tag-fake-holder` give a declaration the native
+methods, and without the tag it is refused at the return). Other well-known
+symbols keep their own restrictions: a declaration's `[Symbol.iterator]` is
+read as declared.
+
+**A callable `then` reaching a resolution is refused.** The obligations above
+stay at each resolving operation:
+
+- `%Await%` and `%PromiseResolve%` require $`\mathsf{Obs}`$ and `%AsyncReturn%`
+  $`\mathsf{Desc}`$;
+- a `finally` cleanup result is $`N`$ or a native `Promise<unknown>`;
+- `%NewPromise%`'s `resolve` takes $`T\le P`$.
+
+A record with a callable `then` is in neither $`N`$, whose record arm
+requires `then` absent or a primitive as a lifetime contract, nor `Promise`.
+So is an open record such as `{ a: number }`, which admits one. Each
+operation refuses it with its own diagnostic (`invalid-await-thenable-literal`,
+`invalid-await-thenable-width`, `invalid-await-inherited-then`,
+`invalid-async-return-thenable`, `invalid-promise-resolve-thenable`,
+`invalid-finally-thenable`, `invalid-new-promise-thenable`, each run under
+Node: the `then` is called). An object whose `then` is an array, a
+statement list, passes allocation and stays outside $`N`$, so awaiting or
+resolving it is refused too. No checked thenable protocol (calling `then`
+with resolving functions and adopting the result) exists.
+
+`PromiseLike<T>` is structural: an object whose `then` meets its signature
+meets it, and `await` refuses one (`invalid-await-promise-like`). The native
+`then` and `catch` resolve their callbacks' results, so there, and only
+there, the parser reads TypeScript's `PromiseLike<R>` as the native
+`Promise<R>`, by the declaration's identity, and Lean refuses a native
+`Promise` definition naming `PromiseLike` (`invalid-then-callback-thenable`,
+`invalid-catch-callback-thenable`). The native contract is then no
+`PromiseLike`: its `then` takes fewer callbacks (`promise-like`). `Awaited<T>`
+qualifies its binder through an alias as written ([implied bounds](#implied-bounds);
+`awaited-alias`, `invalid-awaited-alias-thenable`). `for await` stays refused.
+This reading covers the native `Promise` declaration; it is no audit of the
+`PromiseLike` positions of imported signatures.
+
+The forged controls (`pipeline/test.mts`) refuse a document whose tag is
+renamed or dropped, stated of another prototype or of a base's, whose
+native `then` names `PromiseLike`, or whose allocation is keyed by the tag; a
+declaration given the native methods without the tag; claims putting a
+thenable at each resolving operation's instance, claiming an allocation with
+a callable `then` as a `Promise<number>`, or a key-adding write's key at
+`symbol`.
 
 ## Loops and spreads over iterables
 

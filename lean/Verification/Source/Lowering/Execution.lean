@@ -280,6 +280,14 @@ copy takes: the copy of such an object holds all of it. -/
     if !listsCopiedKeys G X then
       refuse "a key-adding write of a symbol key on an object whose type does not list its keys: the copy of an object takes its string keys, and the symbol keys it may own are not known"
     mergeType F X
+  -- No object the source makes holds `Symbol.toStringTag`
+  -- (SOURCE-CONTRACTS.md, "Source objects and the tag"): a key-adding write
+  -- of a key that may be it is refused.
+  let tagged := fun (i : Nat) => T.tags.contains i
+  let tagRefusal := "a key-adding write at a key that may be `Symbol.toStringTag`: no object the program makes holds the tag the native `Promise` contract requires of a prototype"
+  match static with
+  | some (.sym i) => if tagged i then refuse tagRefusal
+  | _ => pure ()
   match static with
   | some (.str name) =>
     let F ← groupType [name] [W]
@@ -300,6 +308,9 @@ copy takes: the copy of such an object holds all of it. -/
     let stringy := cs.any fun c => match c with | .symbol | .symbolLit _ => false | _ => true
     if symbolic && stringy then
       refuse "a key-adding write at a key that may be a string or a symbol: the copy holds a string key of the allocation over the object, and the object over a symbol key's allocation"
+    -- A key at `symbol` may be the tag at run time, listed or not.
+    if cs.any (fun c => match c with | .symbol => true | .symbolLit i => tagged i | _ => false) then
+      refuse tagRefusal
     -- A value written where a writable index of the object admits the key
     -- is allocated at that index's type, as a literal meant for a dictionary
     -- is (`allocDict`): the copy then keeps the index.

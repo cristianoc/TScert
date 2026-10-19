@@ -1,7 +1,7 @@
-// `Promise<number>` at `PromiseLike<number>`: the two declarations state
-// `then` alike, so their quantified members bind the same rows (a generic
-// method's binder rows are its member's), and the covering rule for
-// quantified signatures relates them.
+// `Promise<number>` at `PromiseLike<number>`: the native `then` resolves
+// only a native promise or a stable value its callbacks return, where
+// `PromiseLike`'s takes a callback returning any thenable, so the native
+// contract is no `PromiseLike`.
 export function like(p: Promise<number>): PromiseLike<number> {
   return p;
 }

@@ -35,7 +35,7 @@ design, not its progress.
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
-| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 97 of 337 functions verify in `tools/` (90 of the 313 still present of the 314 counted at 3864876; e2ec915), 24 of 24 in `dev/`, 4 of 13 in `tests/` and 1 of 35 in `pipeline/` (2026-10-18, a071881, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 101 of 337 functions verify in `tools/` (2026-10-19, the `then` member admitted), 24 of 24 in `dev/`, 4 of 13 in `tests/` and 1 of 35 in `pipeline/` (2026-10-18, a071881, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -301,7 +301,12 @@ the compiler's synchronous API gives the instance's members but no
 instantiation of `T`, and `v`'s type carries the `undefined` optionality
 adds, so `v?: number` is not told from `v?: number | undefined`. Reading it
 needs the instantiation from the compiler (an API extension) or a checked
-elaboration of the contextual type.
+elaboration of the contextual type. A key-adding write at a symbol known only at run time
+(`symbol-key-growth-refused`: `d[fresh()] = 1` with `fresh(): symbol`
+returning `Symbol("k")`) is refused, as the key may be `Symbol.toStringTag`;
+admitting it needs a fact that the key is no tag, such as a type of the
+program's own fresh symbols, and the copy rule then refuses it too, the
+object's type listing no keys.
 
 <a id="a-semantics-of-the-fragment"></a>
 **A semantics of the Fragment.** The parser's rewrites and extraction rest
@@ -380,11 +385,17 @@ them.
 sliced into its own file with the same-file declarations it uses, is a piece
 of ordinary TypeScript the pipeline can be asked about: 337 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
-The first blockers, by the number of slices each stops (2026-10-18):
+The first blockers, by the number of slices each stops (2026-10-18; the
+first two items 2026-10-19):
 
-- an object built with a `then` member (31);
+- the producer reading an object's `elements` field it does not find (20),
+  18 of them the slices of `fragment-statements.mts` the `then` member
+  stopped before it was admitted, an investigation whose cause is unknown;
 - a spread of a program's iterable where its iterator's code would run out
-  of place (17);
+  of place (18);
+- a computed key in an object literal other than a `unique symbol` constant
+  (9), 8 of them slices of `fragment-expressions.mts` the `then` member
+  stopped;
 - a callback's parameter written without a type is read at its contextual
   type, records, indexes and aliases without parameters included; no slice
   stops there;
