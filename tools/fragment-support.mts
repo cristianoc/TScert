@@ -484,7 +484,7 @@ export function forInEntryReads(node: ts.ForInStatement): ts.ElementAccessExpres
       collect(s);
       continue;
     }
-    const [declaration] = ts.isVariableStatement(s) ? s.declarationList.declarations : [];
+    const declaration = ts.isVariableStatement(s) ? s.declarationList.declarations[0] : undefined;
     let read: Expression | undefined = declaration?.initializer;
     while (read && ts.isParenthesizedExpression(read)) read = read.expression;
     if (read && ts.isNonNullExpression(read)) read = read.expression;

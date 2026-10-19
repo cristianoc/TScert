@@ -43,7 +43,7 @@ design, not its progress.
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
 | [Node's process](#nodes-process) | open: the environment write a located gap; events known only as strings refused | a write of `process.env` through a receiver-bound host setter over shared state preserving every alias's view; signals reached through iteration proven admitted |
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
-| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 119 of 361 functions verify in `tools/`, 24 of 24 in `dev/`, 9 of 13 in `tests/` and 3 of 37 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 122 of 362 functions verify in `tools/`, 24 of 24 in `dev/`, 9 of 13 in `tests/` and 3 of 37 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -559,9 +559,6 @@ first three items 2026-10-19):
   `createRequire`, whose type names a qualified one (1); `node:path`'s
   `sep`, a constant of the object the module exports (2); a default import
   (5);
-- a union holding an empty array literal's tuple type, whose parts the
-  compiler's API panics writing, a [tool failure](docs/DESIGN.md)
-  (1: `forInEntryReads`, 2026-10-19);
 - `readDiagnostic` stops in the producer at a read of `forEach` through a
   field holding an object beside `null` or `undefined`, and `diagnosticNode` in
   search at a key read that may name an `Object.prototype` member
