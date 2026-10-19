@@ -4,7 +4,7 @@
  * resolve exactly as the compiler resolves them. This module turns each
  * declaration reached into a source equation, or refuses a form the fragment
  * cannot state; a refusal never drops a declaration. */
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { API, DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
@@ -25,7 +25,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
-import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
+import { globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
 import { dispatchIntrinsic, dispatchName, isDispatchMethod, libraryRegExpTerm, marks, nativeIterator, nativeIteratorDefinition,
@@ -2990,7 +2990,8 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
   const calls = [...chosen].flatMap(([overload, calls]): FunctionTerm[] => {
     if (overload.typeParameters?.length) throw Error(`${what} is generic`);
     const at = spanOf(overload);
-    const entry = globalEntry(context.overlay, name, undefined, overload.getText(overload.getSourceFile()).trim());
+    const entry = globalEntry(context.overlay, name, undefined, overload.getText(overload.getSourceFile()).trim(),
+      declarationOrigin(overload.getSourceFile(), context.libraryFile));
     if (!entry)
       throw Error(`${what} is not in the reviewed overlay of library globals: ${overload.getText(overload.getSourceFile()).trim()}`);
     if (entry && (entry.test || entry.intrinsic || entry.construct || entry.value || entry.admit))
@@ -3019,6 +3020,33 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
     expression: { k: "object", fields: [], stringIndex: null, calls, span: spanOf(uses[0] ?? declaration) } } };
 }
 
+/** Where a declaration comes from: the standard library (`library`), the
+ * installed package of that name, its directory under `node_modules`
+ * holding a `package.json` that names it (`@types/node`), or the project
+ * (`project`). A reviewed entry admits one origin, so an identically spelled
+ * declaration from another is no declaration it reviews. */
+const origins = new Map<string, string>();
+function declarationOrigin(file: SourceFile, libraryFile: (file: SourceFile) => boolean): string {
+  if (libraryFile(file)) return "library";
+  const path = realpathSync(file.fileName);
+  const known = origins.get(path);
+  if (known) return known;
+  const parts = path.split(sep);
+  const at = parts.lastIndexOf("node_modules");
+  const scope = parts[at + 1] ?? "";
+  const name = scope.startsWith("@") ? `${scope}/${parts[at + 2] ?? ""}` : scope;
+  let origin = "project";
+  if (at >= 0 && name) {
+    const directory = parts.slice(0, at + 1 + name.split("/").length).join(sep);
+    try {
+      const manifest: unknown = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
+      if (manifest && typeof manifest === "object" && "name" in manifest && manifest.name === name) origin = name;
+    } catch { origin = "project"; }
+  }
+  origins.set(path, origin);
+  return origin;
+}
+
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
     { definition: TypeDefinition } |
     { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm } } |
@@ -3039,18 +3067,26 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
     throw Error(`the global ${name} is not an annotated variable`);
   const where = (node: Node, key: string) => `${context.identityOf(node.getSourceFile())}#${key}`;
   for (const variable of variables) context.clean(variable, where(variable, name));
+  // Every declaration of the variable comes from an origin its entries
+  // admit: one from elsewhere states a value no entry reviews.
+  const admitted = globalOrigins(context.overlay, name);
+  for (const variable of variables) {
+    const origin = declarationOrigin(variable.getSourceFile(), context.libraryFile);
+    if (!admitted.has(origin))
+      throw Error(`the global ${name} is declared in ${context.identityOf(variable.getSourceFile())} (${origin}), an origin no reviewed entry admits`);
+  }
   const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
-  // A standard library global is read through the reviewed overlay: a
-  // signature it does not list, with exactly the text reviewed, is refused.
-  const library = variables.every(v => context.libraryFile(v.getSourceFile()));
+  // Every global is read through the reviewed overlay, wherever it is
+  // declared (the standard library, an installed package such as Node's
+  // `process`, a declaration file of the project): a member or signature it
+  // does not list, with exactly the text reviewed, is refused.
   // An entry stating several forms states construct signatures: each form is
   // one, under the entry's binders, which every form names alike. Read
   // anywhere else, or empty, the list is refused rather than an arm dropped.
   const reviewedForms = (member: string | undefined, node: Node, what: string):
       (Omit<GlobalEntry, "stated"> & { forms?: Stated[] }) | undefined => {
-    if (!library) return undefined;
     const text = node.getText(node.getSourceFile()).trim();
-    const entry = globalEntry(context.overlay, name, member, text);
+    const entry = globalEntry(context.overlay, name, member, text, declarationOrigin(node.getSourceFile(), context.libraryFile));
     if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
     for (const definition of entry.definitions ?? []) context.define(definition);
     const { stated: written, ...rest } = entry;
@@ -3217,14 +3253,18 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       // A generic member is a readonly scheme, and overloads none.
       const scheme = selected.some(form => form.k === "scheme");
       if (scheme && selected.length > 1) throw Error(`${what} selects a generic statement beside other overloads`);
-      fields.push({ name: key, optional: false, readonly: scheme, span,
+      // A reviewed method is readonly: neither the global nor a value its
+      // methods return as the receiver (`process.on(…)`) admits replacing it.
+      fields.push({ name: key, optional: false, readonly: true, span,
         type: selected.length === 1 && only ? only : { k: "intersection", parts: selected, span } });
     } else if (nodes.length === 1 && property && ts.isPropertySignatureDeclaration(property) && property.type &&
         !property.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword)) {
       const entry = reviewed(key, property, what);
       context.clean(property, where(property, key));
+      // A member read at a stated contract is a readonly view: no write of
+      // it is admitted.
       fields.push({ name: key, optional: property.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
-        readonly: property.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
+        readonly: !!entry?.stated || property.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
         type: entry?.stated ? entry.stated.result : typeTerm(scopeOf(property, what), property.type, property),
         span: spanOf(property) });
     } else throw Error(`${what} is not one property signature or method signatures`);
@@ -3245,7 +3285,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   if (valueUses.length) {
     if (!declared.length) throw Error(`${name} is read as a value, which declares no call signature`);
     for (const signature of declared) {
-      if (library && !reviewed(undefined, signature, `${name} as a value`)?.value)
+      if (!reviewed(undefined, signature, `${name} as a value`)?.value)
         throw Error(`${name} is read as a value only where the overlay states its call signatures for one`);
       if (!chosen.has(signature)) chosen.set(signature, []);
     }

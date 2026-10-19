@@ -1,7 +1,7 @@
 // Examples and native-contract counterexamples run under Node: each result is
 // what the case's outcome and the contracts it relies on say. No build needed.
 import assert from "node:assert/strict";
-import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mts";
+import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
 
 {
   for (const [file, call] of [
@@ -157,6 +157,36 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     `[roundTrip('{"a":{"toJSON":1},"b":[{"toJSON":"x"}]}'), wrapped('{"toJSON":[1]}')].join(" ")`),
     '{"a":{"toJSON":1},"b":[{"toJSON":"x"}]} [{"toJSON":[1]},{"toJSON":{"toJSON":[1]}}]',
     "json-parse-stringify-tojson-member: noncallable toJSON members round-trip");
+  {
+    // The audited listener contract under Node: a signal listener called with
+    // the signal's name, exit listeners with the code, a listener ignoring
+    // it; `kill` of the process's own pid at a signal with no listener ends
+    // it by that signal.
+    const delivered = runNode("node-process-listeners",
+      "register((code) => console.log(\"exit\", code), (s) => console.log(\"signal\", s)); process.kill(process.pid, \"SIGHUP\"); setTimeout(() => { process.exitCode = 4; }, 100);");
+    assert.deepEqual([delivered.stdout.split("\n"), delivered.status],
+      [["signal SIGHUP", "exit 4", "exit 4"], 4], "node-process-listeners: arguments as audited");
+    const killed = runNode("node-process-listeners", "register(() => {}, () => {}); stop(); setTimeout(() => console.log(\"alive\"), 500);");
+    assert.deepEqual([killed.stdout, killed.signal], ["", "SIGTERM"], "node-process-listeners: kill ends the process by the signal");
+    // A once listener re-delivering its signal, as `runRoot` does: the
+    // process ends by it.
+    const redelivered = runNode("node-process-listeners",
+      "process.once(\"SIGTERM\", (s) => { console.log(\"got\", s); process.kill(process.pid, s); }); stop(); setTimeout(() => console.log(\"alive\"), 500);");
+    assert.deepEqual([redelivered.stdout, redelivered.signal], ["got SIGTERM", "SIGTERM"], "node-process-listeners: re-delivery");
+    // `beforeExit` again after its listener scheduled another job: two
+    // invocations, each with the code and the process as `this`.
+    const idle = runNode("node-process-listeners",
+      "let n = 0; whenIdle(function (code) { n++; console.log(\"beforeExit\", code, this === process, n); if (n === 1) setTimeout(() => {}, 1); });");
+    assert.deepEqual(idle.stdout.split("\n"), ["beforeExit 0 true 1", "beforeExit 0 true 2"],
+      "node-process-listeners: beforeExit repeated, its arguments and receiver");
+    // A narrowing made at registration is stale when the listener runs.
+    const stale = runNode("invalid-node-process-listener-stale", "const box = { v: 1 }; register(box); box.v = undefined;");
+    assert.equal(stale.status, 1, "invalid-node-process-listener-stale: the listener reads undefined and throws at exit");
+    // An exit listener changes the array and throws into the caller's handler.
+    const handled = runNode("invalid-node-process-exit-handler",
+      "const xs = [1, 2]; process.on(\"exit\", () => { if (xs.length === 2) { xs.pop(); throw new Error(\"listener\"); } }); console.log(1 in rows(xs)); process.exitCode = 0;");
+    assert.equal(handled.stdout, "false", "invalid-node-process-exit-handler: the handler goes on and the result has a hole");
+  }
   assert.equal(runImporting("invalid-node-assert-deep-preserving",
     "(() => { const s = Symbol(\"k\"); const xs = []; const hooked = (pop) => { const o = { a: 1 }; Object.defineProperty(o, s, { enumerable: true, get() { if (pop) xs.pop(); return 1; } }); return o; }; xs.push(hooked(true), hooked(false)); return 1 in checked(xs, hooked(false)); })()"),
     false, "invalid-node-assert-deep-preserving: a symbol getter a passing deepEqual reads shrinks the mapped array");

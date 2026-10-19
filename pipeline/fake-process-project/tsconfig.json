@@ -1,0 +1,12 @@
+{
+  // A project declaring its own `process`, without Node's types: the
+  // `*fake-process*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["./process.d.ts", "../examples/*fake-process*.ts"]
+}

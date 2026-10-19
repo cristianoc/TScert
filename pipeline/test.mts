@@ -1607,6 +1607,48 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
 }
 
 {
+  // A signal listener is called with the signal's name, whatever claims are
+  // offered: claims and evidence borrowed from a weakened document whose
+  // `process.on` takes a listener of a number at the signals are accepted
+  // there and refused for the reviewed one, in search at the call and in
+  // checking.
+  const artifacts = run("invalid-collections-process-listener");
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const global = must(ast.declarations.definitions.find(d => d.declaration.name === "process"), "the process global");
+  const expression = global.expression;
+  assert.ok(expression?.k === "object");
+  const on = must(expression.fields.find(f => f.name === "on"), "process.on");
+  const weaken = (t: TypeTerm): TypeTerm => t.k === "intersection" ? { ...t, parts: t.parts.map(weaken) }
+    : t.k === "function" ? { ...t, params: t.params.map((p, i): TypeTerm => i === 1 && p.k === "function"
+      ? { ...p, params: [{ k: "atom", name: "number", span: p.span }] } : p) }
+    : t;
+  on.type = weaken(on.type);
+  const weak = join(artifacts, "weakened-process-on.json");
+  writeFileSync(weak, JSON.stringify(ast));
+  const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(lowered.status, 0, lowered.stderr);
+  const flow = join(artifacts, "weakened-process-on-flow.json");
+  writeFileSync(flow, lowered.stdout);
+  const proposed = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(proposed.status, 0, proposed.stderr);
+  const claims = join(artifacts, "weakened-process-on-claims.json");
+  writeFileSync(claims, proposed.stdout);
+  const borrowed = produceWith(artifacts, claims, "weakened-process-on", weak);
+  assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
+  const evidence = join(artifacts, "weakened-process-on-evidence.json");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("process.on(\"SIGTERM\", listener)");
+  const searched = produceWith(artifacts, claims, "forged-process-on");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  const failure = readDiagnostic(searched.stdout + searched.stderr);
+  assert.equal(failure?.kind, "node-typing");
+  // The invoke is located at its callee, `process.on`.
+  assert.deepEqual(failure?.source?.sourceMap?.pos, [at, at + "process.on".length]);
+  invoke(claims, evidence, artifacts);
+  process.stdout.write("a number listener at a signal, on borrowed claims and evidence: refused at the call and in checking\n");
+}
+
+{
   // Own-key exclusion preserves the inherited constructor read. A forged
   // undefined claim must fail both search and evidence consumption.
   const artifacts = run("native-promise-constructor-read");
