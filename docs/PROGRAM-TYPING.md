@@ -2302,6 +2302,35 @@ Four implementations discharge the tested-slot obligation:
   \mathsf{Dict}\bigl(\varphi;\ \psi\cup\{k{:}D\mid(\theta{:}D)\in\iota,\ \theta\ \text{surely admits}\ k\};\ \iota;\ \omega;\ \beta;\ \chi\bigr)
 ```
 
+**Proposal, under review: a key found on an open object.** This paragraph is
+a design, not the current rules. A value that `typeof v === "object"`,
+`v !== null` and `"k" in v` admit (`in1`: `if (typeof v === "object" && v
+!== null && "k" in v) return v.k`) holds an object of an open record clause
+$`c`$, which states no key $`k`$ and no bound excluding it. The test
+$`\mathsf{hasKey}(k)`$ has no answer on $`c`$ (above), so the true branch keeps
+$`c`$, and the read $`v.k`$ that TypeScript then admits has no rule: the
+producer stops at "field read on non-object" (4 `tools/` slices and 2
+drivers, 2026-10-19). The proposed rule reads it at $`\top`$:
+
+```math
+\frac{\Gamma\vdash v:c\quad c\ \text{an open record clause}\quad k\notin\mathrm{objectProtoKeys}}
+     {\Gamma\vdash v.k:\top}\ \textsf{read-unstated}
+```
+
+Its soundness obligation is that a read of any string key of an object
+steps to a value: the calculus's lookup gives the own entry, else the one
+its `[[proto]]` chain gives, else `undefined` (`Tag.hasKey` asks only
+ownership; the read follows the chain), so the result is a value and
+$`\top`$ holds of it. The key test is then not needed for safety, only for
+TypeScript: the rule does not use the test's answer. The restriction to keys
+no `Object.prototype` member names keeps the existing correspondence between
+the model's read and JavaScript's (`objectProtoKeys`, the read at a key that
+may name an inherited member). For a host object the read's value is one of
+the undeclared fields the model leaves unknown, which $`\top`$ admits.
+Controls: the positive `in1` shape and a decoder over `JSON.parse`'s result;
+a read at `toString` after `"toString" in v` stays refused; a write at the
+key is not admitted by this rule.
+
 For the current primitive profile, null filtering gives:
 
 ```math

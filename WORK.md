@@ -427,8 +427,28 @@ first three items 2026-10-19):
   `diagnosticNode`, which another run reports as a reply of
   `Checker.getTypeFromTypeNode` the client cannot decode), cause unknown.
 
-Thirty-four slices reach the producer and fail there, and 55 fail in
-search. Of the 24 of `dev/`, the record tools and the lowering dump, all 24 (2026-10-18), each
+Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
+in search; of the drivers' 48, 4 and 8. By the judgment that fails:
+
+- reading a compiler node's member after a `ts.isX` guard or a `.parent`
+  walk (the producer's "missing field": 55; in search, `forEachChild`,
+  `.parent` and guard edges: about 25), and a `let` holding nodes read after
+  a test (6): the compiler-node narrowing the host-families work covers;
+- a user guard's promise not established by its body (`isObject`,
+  `isRecord`: 9) and the reads it would narrow (about 16, `atom.required` in
+  `claim-text.mts` among them), and guard closures with binders (5): guard
+  recognition;
+- a read of a key `in` found on an open object (4, and 2 drivers): the
+  [proposal](docs/PROGRAM-TYPING.md) under review;
+- a spread of a narrowed union member or a type parameter (5);
+- `Number` both called and read through its members, a callable with
+  readonly members no clause states (4), and the enum helpers past it (3);
+- a call through a union of arrows none of which all arguments call (2, and
+  2 drivers); key-adding writes through a parameter (`gate.bindings`,
+  `process.env`: 2, and 2 drivers); reads at keys an inherited member may
+  name (2); singletons.
+
+Of the 24 of `dev/`, the record tools and the lowering dump, all 24 (2026-10-18), each
 sliced with the same-file declarations it uses, their imports from
 `record-render`, `control-flow` and `calculus` certified. `printGraph`'s
 evidence search covers `decodeTerm`, which `decodeNode` reads, and takes
