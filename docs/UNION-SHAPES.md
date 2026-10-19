@@ -788,15 +788,29 @@ the repeats within a state (`termsOf` 103,795, 13.5 s of profiled time;
 one: what reuse across states, with a transport of answers, would add.
 
 **The reuse.** The compiled producer answers a request asked again in the
-same graph state from its first answer (`CertificateProducer.subtypeReused`,
-the implementation of `subtypeUsing`, whose meaning is `subtypeSearch`): the
-graph and the image check compared by address, the source and target by
-equality. The checker's comparisons (`checkUsing`) are untouched. Of
+same search context from its first answer (`CertificateProducer.subtypeReused`,
+the implementation of `subtypeUsing`, whose meaning is `subtypeSearch`). The
+context is the graph, the image check and the label type's three class
+dictionaries, `Instantiates` (which proposes instance candidates), `Hashable`
+and `DecidableEq`, compared by address and kept alive by the store; the
+source and target are compared by equality. `subtypeSearch` is a function of
+exactly these, so a stored answer is the one recomputation gives. The store
+is process-global and type-erased, read back only in the context it was
+written in. It is unsafe code because a pure store would have to be threaded
+through every caller of `subtypeUsing`, the producer's whole expression
+search; the producer is untrusted, its results are checked, and the CLI's
+check mode never reaches it: `checkJson` runs the reference search, and the
+check mode sets a flag (`CertificateProducer.checkingRef`) on which reaching
+the reuse ends the process with a fault, which no pipeline case triggers
+(`make suite`, 2026-10-19). Check mode constructs lowering recipes; only
+evidence production renders them (`DirectProof.renderWith`), which reaches
+the reuse. Of
 `termsOf`'s requests through it, 101,503 are answered from the store and
 3,497 searched (32 changes of state); `pageBody` 323,824 and 6,176;
 `statementsOnPath` 14,689 and 311.
 
-Measured at 09ddb9b against 8780e6e on 2026-10-19, user time, median of 3, on
+Measured at 09ddb9b (the context then without its dictionaries) against
+8780e6e on 2026-10-19, user time, median of 3, on
 a machine other work loaded (load averages 3 to 25); evidence byte-identical
 on all seven units:
 
@@ -810,6 +824,11 @@ on all seven units:
 | `card` | 11.5 s | 11.8 s | 4.4 s | 4.3 s |
 | `statementsOnPath` | 11.7 s | 12.9 s | 6.4 s | 6.2 s |
 
+With the dictionaries in the context, at the following commit, the seven
+units measure within the noise of the after column (`termsOf` 14.8 s,
+`printGraph` 30.4 s, `statementsOnPath` 12.3 s of search), evidence again
+byte-identical.
+
 Where the repeats were cheap (`pageBody`, `card`, `statementsOnPath`) the
 reuse saves nothing measurable; the profile's per-request lines had inflated
 their share. The seven searches run at once take 47.8 s and 38.8 s of wall
@@ -817,11 +836,13 @@ time before, 35.2 s and 43.2 s after (two rounds each, load 9 to 16):
 `printGraph` sets that time, and the rounds do not separate.
 
 **The step limit.** At a 30 s step limit, under the census's parallel load
-(load averages 28 to 33), 12 of the slices that verify at 60 s time out in
-search: `termsOf`, `decodeTerm`, `decodeCode`, `showTerm`, `showCode`,
+(load averages 28 to 33, other work running), 12 of the slices that verify at
+60 s time out in search: `termsOf`, `decodeTerm`, `decodeCode`, `showTerm`, `showCode`,
 `decodeTarget`, `untypedAmbientField`, four of `regexp.mts` (`members`,
 `nativeRegExp`, `structuralRegExp`, `libraryRegExpTerm`), and `printGraph`.
-The limit stays 60 s.
+The limit stays 60 s. That run is a stress measurement; a decision on the
+limit needs per-step wall and CPU time at the suite's own concurrency on an
+otherwise idle machine.
 
 ### 9.5 Next steps
 
