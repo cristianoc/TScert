@@ -110,6 +110,10 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     '[{"a":1},[{},{}],0]', "guard-negated-short-circuit: the guarded values");
   assert.equal(runExample("invalid-guard-negated-and", "wrong(5, 0)"), 5,
     "invalid-guard-negated-and: 5 returned where a record is promised");
+  assert.equal(runExample("invalid-guard-array-promise", `isNumbers(["a"])`), true,
+    "invalid-guard-array-promise: the guard answers true of a string array");
+  assert.equal(runExample("guard-array-promise", "JSON.stringify([count([1, 2]), count(3), isNumbers([1])])"), "[2,0,true]",
+    "guard-array-promise: the guards' answers");
   assert.equal(runExample("invalid-guard-boolean-return", "isText(null)"), true,
     "invalid-guard-boolean-return: the guard answers true of null, which is no string");
   assert.equal(runExample("guard-boolean-return-boundaries", `(() => {
