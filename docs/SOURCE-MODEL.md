@@ -58,6 +58,70 @@ The calculus clause `source` denotes $`J`$ independently of the built-ins'
 record invariants; calculus `top` also includes internal stores. The
 [clause semantics](POSITIVE-TYPES.md#types-and-clauses) owns this distinction.
 
+#### Slices of the value universe by tag tests (design)
+
+A tag test splits $`J`$ by the kind of a value, which no heap write changes.
+Every source value (`isSourceVal`) is of exactly one kind: `null`,
+`undefined`, a Boolean, a number, a string, a bigint, a symbol, an object
+without call code ($`\mathsf{isRef}`$, `typeof` `"object"`), or an object
+with call code ($`\mathsf{isFun}`$, `typeof` `"function"`), so
+
+```math
+J = \mathsf{nul}\cup\mathsf{undef}\cup\mathsf{bool}\cup\mathsf{num}\cup\mathsf{str}\cup\mathsf{bigint}\cup\mathsf{sym}\cup J_{\mathrm{ref}}\cup J_{\mathrm{fun}},
+```
+
+a disjoint union, and `tagHolds` of each shape tag is decided by the kind
+alone. The rule: where a test of a tag $`t`$ answers $`q`$ on a value at the
+`source` clause, the value is at the union of the kinds whose members answer
+$`q`$; a primitive kind is its existing clause, and $`J_{\mathrm{ref}}`$ and
+$`J_{\mathrm{fun}}`$ are the `source` clause restricted to the kind, new
+clauses whose meaning is $`\{v \in J \mid \mathsf{tagHolds}\ \mathsf{isRef}\ v\}`$
+and its `isFun` analogue:
+
+```math
+\frac{\Gamma\vdash x:J\qquad \mathsf{typeof}\ x = \texttt{"object"}\ \text{answers}\ \mathsf{true}\qquad x\neq\mathsf{null}\ \text{answers}\ \mathsf{true}}
+     {\Gamma\vdash x:J_{\mathrm{ref}}}\ \textsf{slice-object}
+\qquad
+\frac{\Gamma\vdash x:J_{\mathrm{ref}}\qquad \mathsf{Array.isArray}(x)\ \text{answers}\ \mathsf{false}}
+     {\Gamma\vdash x:J_{\mathrm{ref}}\setminus\mathsf{arrays}}\ \textsf{slice-non-array}
+```
+
+$`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$ is $`J_{\mathrm{ref}}`$ with an
+own-key bound excluding the store key `[]`, the key `Array.isArray` reads.
+A `true` answer of `Array.isArray` is the built-ins' `readonly unknown[]`,
+as `arraySlice` gives it today. The partition is a lemma of `isSourceVal`
+and `tagHolds` by cases. A test's answer on a slot is a value fact, held by
+the slot's value, so a call does not end it.
+
+**What the slices do not give: the dictionary view.**
+`{ readonly [key: string]: unknown }` is `dictViewT` at the string keys and
+$`J`$: an object without call code, owning no `[[proto]]` and no
+`[[host]]`, every present string-keyed field's contract within $`J`$. A
+member of $`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$ may own a prototype
+(a class instance, an object `Object.create` made) or be a host object (a
+`Map`, a `Date`), which pass `typeof v === "object"`, `v !== null` and
+`!Array.isArray(v)` alike. So the guards over `unknown` that test exactly
+those (`isObject`, `isRecord` and their kind in `claim-text.mts`,
+`claim.mts`, `type-graph.mts`, `diagnostic-view.mts`) promise more than
+the model proves, and stay refused under the rule. Two ways close them:
+
+- **The program promises what the tests give** (the repository's code
+  rewritten): a guard promising a source type for $`J_{\mathrm{ref}}`$, its
+  callers reading keys after an `in` test, which narrows to the key's
+  presence (`key_slice`), or through `Object.keys` and `Object.entries`,
+  which read own keys only. No model change beyond the slices.
+- **The view admits more objects** (a model change): the readonly view of
+  $`J`$ at the string keys admits an object with a prototype, every read
+  at a string key, own or through the chain, being a value of $`J`$ or
+  `undefined`; a host object needs, beside it, the assumption that a read
+  at any string key of a host object yields a value of $`J`$, which its
+  accessors (`Map.prototype.size`) make a statement about native code, an
+  audited host assumption. Without that assumption the tests still do not
+  establish the view, a `Map` passing them.
+
+The slices are proposed as the general rule; for the dictionary view, the
+first way, which needs no new assumption, is recommended.
+
 ### Void
 
 The source type `void` denotes the same JavaScript-value universe as `unknown`.

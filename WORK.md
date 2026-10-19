@@ -20,6 +20,9 @@ design, not its progress.
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
+| [Slices of the value universe](#universe-slices) | open: a design, under review (2026-10-19) | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
+| [A guard's promise on a field](#guard-promise-field) | open | `str(o.name); o.name.length` verifies: an assertion or a guard on a field narrows the field's current content |
+| [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
 | [Guard overloads of `every` and `filter`](#guard-overloads) | open | a reviewed `every<S>` and `filter<S>` narrow their receiver and their result where a guard is passed, and `shadow-contracts.mts`'s `print` verifies |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
@@ -138,6 +141,31 @@ Left open:
 array from another beyond fresh storage, so that `pop` on an array literal
 the callback allocated is admitted; and a declaration's fresh result, which
 only closures state.
+
+<a id="universe-slices"></a>
+**Slices of the value universe.** A tag test on a value at `unknown`
+narrows nothing: `typeof v === "object" && v !== null` leaves `v` at
+`unknown`. The [design](docs/SOURCE-MODEL.md#slices-of-the-value-universe-by-tag-tests-design)
+slices the universe by kind; the dictionary view
+`{ readonly [key: string]: unknown }` stays out of reach of those tests, so
+the guards over `unknown` in `claim-text.mts`, `claim.mts`, `type-graph.mts`
+and `diagnostic-view.mts` (6 slices refused at their promise, 3 more behind
+them) wait on it and on their own promises.
+
+<a id="guard-promise-field"></a>
+**A guard's promise on a field.** A promise narrows an actual that is an
+immutable name: `str(o.name)` (`asserts v is string`) leaves `o.name` at its
+type, and a field's current-content facts hold primitive atoms only. The
+promise of a call whose actual is a field read, a primitive one, would be a
+current-content fact of the field through the read's link (`claim.mts`'s
+`atom` and `decodeClaimType`).
+
+<a id="guard-answer-constant"></a>
+**A guard's answer held in a constant.** `const ok = isRecord(v)` keeps the
+call's promise on the call's result, an implication of its slot, which no
+statement entry carries: `if (ok) return v` reads `v` at its declared type,
+and a narrowed claim there is refused at the edge. Carrying implications in
+entry claims is a fact kind of its own.
 
 <a id="guard-overloads"></a>
 **Guard overloads of `every` and `filter`.** TypeScript's `every` and
