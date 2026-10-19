@@ -185,7 +185,7 @@ export class Gate {
   /** The computed keys of the file's annotations' type literals, by span of
    * the key expression: the `unique symbol` each names, as the declaration
    * document lists it, or the reason it names none. */
-  readonly symbolNames: Map<string, number | { literal: string } | { refused: string }> = new Map();
+  readonly symbolNames: Map<string, number | { literal: string; value: string | number } | { refused: string }> = new Map();
   /** Mapped types' keys and library mapped types' arguments in the file's
    * annotations, by span: the union of literals and primitives TypeScript
    * computes for each, or null. */

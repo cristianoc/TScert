@@ -399,7 +399,25 @@ type leaves open; a function the program creates owns none, its one field,
 which gives it an identity, being under a key no source spells. A numeric
 key is the property its `ToString` spells, and a computed key naming a
 `unique symbol` constant (`Symbol.iterator`, or one the program makes) is that
-symbol's key; `__proto__`, any other computed key and accessors are refused.
+symbol's key. A computed key `[k]` whose expression, a name or a member read,
+TypeScript types as one string or number literal $`\ell`$ (a `const`
+binding's, an enum member's) is the key $`\ell`$ spells, the number's by its
+`ToString`. ECMA-262 evaluates the key expression, converts it to a property
+key, then evaluates the value
+([PropertyDefinitionEvaluation](REFERENCES.md#ecma-262)); converting a
+string or a number runs no code, so the field is
+
+```math
+⟦[k]\colon e⟧=\mathsf{key}(\ell)\colon(⟦k⟧\ \mathtt{satisfies}\ \ell,\ ⟦e⟧)
+```
+
+the key expression evaluated where it is written, checked at $`\ell`$, then
+the value (`object-computed-literal-key`). That the field's key is the
+literal checked is the parser's, as every key it writes. A key at a union of
+literals, at `string` or `number`, or written as any other expression is
+refused, as the allocation's keys are then known only at run time;
+`__proto__`, a key whose possible values include `Symbol.toStringTag`, and
+accessors are refused.
 A string's own enumerable properties are its code units at its indices, which
 its copy takes; a class value's are its static fields, which the class value
 holds as its fields and its copy takes; its type states the static fields it

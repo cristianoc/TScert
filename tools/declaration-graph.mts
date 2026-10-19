@@ -572,7 +572,7 @@ export function collectDeclarations(file: string, options: {
    * joins the symbols and is reported to `symbolName` with its index, any
    * other with the reason it names none. */
   symbolNames?: readonly Span[];
-  symbolName?: (span: Span, result: number | { literal: string } | { refused: string }) => void;
+  symbolName?: (span: Span, result: number | { literal: string; value: string | number } | { refused: string }) => void;
   /** Told each TypeScript error the gate reads while deciding whether a
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
@@ -2394,7 +2394,9 @@ export function collectDeclarations(file: string, options: {
       }
       try {
         const literal = literalKeyOf(node);
-        options.symbolName?.(span, literal !== null ? { literal } : symbolOf(node));
+        const type = checker.getTypeAtLocation(node);
+        const value = type?.isStringLiteralType() || type?.isNumberLiteralType() ? type.value : null;
+        options.symbolName?.(span, literal !== null && value !== null ? { literal, value } : symbolOf(node));
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         options.symbolName?.(span, { refused: error instanceof Error ? error.message : String(error) });

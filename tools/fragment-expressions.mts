@@ -10,7 +10,7 @@ import type { Expr, PatternAst, Stmt, ArithOp, BinaryOp, UnaryOp, ArrayElemAst, 
 import { CHAIN } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { nameOf } from "./syntax.mts";
-import { asyncReturnName, elementAtName, hasPropertyName } from "./intrinsics.mts";
+import { asyncReturnName, elementAtName, hasPropertyName, literalTerm } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { GENERATOR, HAS_INSTANCE, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
@@ -688,14 +688,42 @@ export function expr(this: Gate, node: Expression): Expr {
  * over an earlier one is refused, as in a literal without spreads. */
 export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen: Set<string>): ObjectPart[] {
   const gate: Gate = this;
+  // A computed key whose expression, a name or a member read, TypeScript
+  // types as one string or number literal is the key that literal spells:
+  // the expression is evaluated first, checked at the literal, then the
+  // value (ECMA-262, PropertyDefinitionEvaluation; SOURCE-MODEL.md, "Object
+  // literals").
+  const literalKey = (name: Node): { key: string; check: () => Expr } | null => {
+    if (!ts.isComputedPropertyName(name)) return null;
+    const result = gate.symbolNames.get(gate.span(name.expression).join(":"));
+    if (result === undefined || typeof result === "number" || !("literal" in result)) return null;
+    const span = gate.span(name.expression);
+    return { key: result.literal, check: () => ({ k: "cast", pos: gate.span(name), cast: "satisfies",
+      annot: literalTerm(result.value, span), e: gate.expr(name.expression) }) };
+  };
+  // The key's check, then the value, evaluated in that order.
+  const valued = (name: Node, value: () => Expr): Expr => {
+    const literal = literalKey(name);
+    if (!literal) return value();
+    const left = literal.check();
+    const right = value();
+    return { k: "comma", pos: right.pos, left, right };
+  };
   const key = (f: Node, name: Node): PropertyKey => {
+    const literal = literalKey(name);
+    if (literal) {
+      if (seen.has(literal.key)) gate.fail(f, "duplicate field name in a record");
+      if (literal.key === "__proto__") gate.fail(f, "prototype initializers are outside the fragment");
+      seen.add(literal.key);
+      return literal.key;
+    }
     // A computed key naming a `unique symbol` constant, such as the
     // well-known `Symbol.iterator`, is that symbol's key: evaluating the
     // name has no effect, and TypeScript decides which symbol it is.
     if (ts.isComputedPropertyName(name)) {
       const symbol = gate.writtenSymbol(name, f);
       if (symbol === null)
-        return gate.fail(f, "a computed key in an object literal other than a `unique symbol` constant is outside the fragment: an allocation's keys are the property names the literal spells, and a key computed at run time is none of them");
+        return gate.fail(f, "a computed key in an object literal other than a `unique symbol` constant or a name or member read TypeScript types as one string or number literal is outside the fragment: an allocation's keys are the property names the literal spells, and a key computed at run time is none of them");
       const text = `[symbol ${symbol}]`;
       if (seen.has(text)) gate.fail(f, "duplicate field name in a record");
       seen.add(text);
@@ -710,10 +738,13 @@ export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen:
     return text;
   };
   return node.properties.flatMap((f) => {
-    if (ts.isMethodDeclaration(f)) return [{ name: key(f, f.name), e: gate.lambda(f) }];
+    if (ts.isMethodDeclaration(f)) return [{ name: key(f, f.name), e: valued(f.name, () => gate.lambda(f)) }];
     if (ts.isShorthandPropertyAssignment(f) && !f.objectAssignmentInitializer && ts.isIdentifier(f.name))
       return [{ name: key(f, f.name), e: gate.expr(f.name) }];
-    if (ts.isPropertyAssignment(f)) return [{ name: key(f, f.name), e: gate.expr(f.initializer) }];
+    if (ts.isPropertyAssignment(f)) {
+      const name = key(f, f.name);
+      return [{ name, e: valued(f.name, () => gate.expr(f.initializer)) }];
+    }
     if (ts.isSpreadAssignment(f)) {
       let operand: Expression = f.expression;
       while (ts.isParenthesizedExpression(operand)) operand = operand.expression;

@@ -1026,3 +1026,9 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("invalid-tag-computed-write", "Object.prototype.toString.call(tagged(Symbol.toStringTag))"),
     "[object Promise]", "invalid-tag-computed-write: a computed write gives the object the tag");
 }
+{
+  // A computed key is evaluated before the value: read before its
+  // declaration, the key throws, and the value has not run.
+  assert.equal(runExample("object-computed-key-order", "(() => { const log = []; const k = order(log); return JSON.stringify([log, k]); })()"),
+    '[["thrown","value"],1]', "object-computed-key-order: the key throws before the value runs");
+}
