@@ -398,16 +398,16 @@ sliced into its own file with the same-file declarations it uses, is a piece
 of ordinary TypeScript the pipeline can be asked about: 337 of them. A slice
 stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-18; the
-first two items 2026-10-19):
+first three items 2026-10-19):
 
 - the producer reading an object's `elements` field it does not find (20),
   18 of them the slices of `fragment-statements.mts` the `then` member
   stopped before it was admitted, an investigation whose cause is unknown;
-- a spread of a program's iterable where its iterator's code would run out
-  of place (18);
-- a computed key in an object literal other than a `unique symbol` constant
-  (9), 8 of them slices of `fragment-expressions.mts` the `then` member
-  stopped;
+- an optional call of a method (17), the slices of `type-term.mts` past
+  their spread of a `ReadonlySet`;
+- the producer reading an object's `text` field it does not find (9), the
+  slices of `fragment-expressions.mts` and `guardOf` past their computed
+  keys and spreads, an investigation whose cause is unknown;
 - a callback's parameter written without a type is read at its contextual
   type, records, indexes and aliases without parameters included; no slice
   stops there;

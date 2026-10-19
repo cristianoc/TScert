@@ -2584,7 +2584,9 @@ A tuple meets `Iterable<T>` through the readonly array of its positions: the
 producer claims a tuple expected at an iterable other than an array at
 $`\mathsf{readonly}\ (A_0\cup\ldots\cup A_{n-1})[\,]`$, which Lean derives from
 the tuple ($`\mathsf{list}`$ inclusion) and relates to the iterable through
-`Array.prototype[Symbol.iterator]`, as for any array.
+`Array.prototype[Symbol.iterator]`, as for any array. A compiler-API node
+list, a subclass of `Array` ([node lists](COMPILER-API.md#node-lists)), is
+iterated as an array in every position (`compiler-api-node-list-spread`).
 
 ## The iterator protocol
 
@@ -2652,11 +2654,18 @@ without it, as IteratorClose is not called there. A jump past the loop to an
 outer target passes it as it passes a `finally`. Every edge is checked as
 any other; the close's statement entries state each cell at its contract.
 
-A spread of a program's iterable (`collect`), the one element of an array
-literal or an argument of a call of a name after names and literals the file
-never assigns, and the statement's value, is collected before the
+A spread of a program's iterable (`collect`) that is the first evaluation
+able to run code of the statement's value (an expression statement's, a
+`return`'s or a declaration's one initializer), every evaluation before it
+a literal or a name the file never assigns, is collected before the
 statement, where nothing the statement evaluates before the spread can be
-changed by the iterator's code: $`\mathsf{const}\ a=[\,],\ i,\ n;\ \mathsf{while}\ (\mathsf{true})\ \{\ \mathsf{const}\ r=n();\ \mathsf{if}\ (r.\mathit{done})\ \mathsf{break};\ a.\mathit{push}(r.\mathit{value})\ \}`$, then $`\ldots a`$ (or $`a`$ for the literal);
+changed by the iterator's code. Evaluation is followed in JavaScript's
+order: an array literal's elements, a call's or a construction's callee then
+arguments (a callee that is such a name, or a method read off a value whose
+first evaluation is the spread), a member read's object. So the spread may
+be the first element of an array literal before others, an argument of
+`new Set(…)`, or the receiver of a method call (`spread-program-iterable-first`,
+run under Node: the iterator's steps precede the later element's code): $`\mathsf{const}\ a=[\,],\ i,\ n;\ \mathsf{while}\ (\mathsf{true})\ \{\ \mathsf{const}\ r=n();\ \mathsf{if}\ (r.\mathit{done})\ \mathsf{break};\ a.\mathit{push}(r.\mathit{value})\ \}`$, then $`\ldots a`$ (or $`a`$ for the literal);
 a spread steps to the end and closes nothing. An array literal's spread of
 a host iterable (a string, a `Set`, a `Map`, a host collection iterator)
 spreads its spread intrinsic's array, `[…, ...e, …]` $`\equiv`$

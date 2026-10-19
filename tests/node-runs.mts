@@ -1032,3 +1032,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("object-computed-key-order", "(() => { const log = []; const k = order(log); return JSON.stringify([log, k]); })()"),
     '[["thrown","value"],1]', "object-computed-key-order: the key throws before the value runs");
 }
+{
+  // A program iterable spread first in its statement: its steps run before
+  // the later element's code, as in place.
+  assert.equal(runExample("spread-program-iterable-first",
+    "(() => { const log = []; before(new Counter(log, 2)); return JSON.stringify(log); })()"),
+  '["step","step","step","later"]', "spread-program-iterable-first: the iterator steps before the later element");
+}

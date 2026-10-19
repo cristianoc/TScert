@@ -208,12 +208,14 @@ export function collect(this: Gate, operand: Expression): Expr {
 }
 
 /** The spread of a program's iterable the statement `s` runs, where the
- * collection may run before the statement: the one element of an array
- * literal, or an argument of a call of a name, every operand before it a
- * name or a literal, none of them assigned anywhere in the file, so that
- * what they hold before the iterator's code runs is what they hold after.
- * The literal or call is the statement's value: an expression statement's,
- * a `return`'s or a declaration's one initializer. */
+ * collection may run before the statement: the first evaluation of the
+ * statement's value that may run code, every evaluation before it a name or
+ * a literal, none of the names assigned anywhere in the file, so that what
+ * they hold before the iterator's code runs is what they hold after. The
+ * value is an expression statement's, a `return`'s or a declaration's one
+ * initializer, and evaluation is followed in JavaScript's order: an array
+ * literal's elements, a call's or construction's callee then arguments, a
+ * member read's object. */
 export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
   const gate: Gate = this;
   let e: Expression | undefined;
@@ -228,19 +230,47 @@ export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
     const kind = gate.iterations.get(gate.span(x).join(":"));
     return !!kind?.startsWith("client");
   };
-  if (ts.isArrayLiteralExpression(e)) {
-    const [only, ...others] = e.elements;
-    return only && !others.length && ts.isSpreadElement(only) && program(only.expression) ? only : null;
-  }
-  if (!ts.isCallExpression(e) || e.questionDotToken || !ts.isIdentifier(e.expression)) return null;
-  const index = e.arguments.findIndex((a) => ts.isSpreadElement(a) && program(a.expression));
-  const spread = e.arguments[index];
-  if (!spread || !ts.isSpreadElement(spread)) return null;
   const assigned = gate.assignedNames();
   const stable = (x: Node) => ts.isIdentifier(x) ? !assigned.has(x.text)
     : ts.isNumericLiteral(x) || ts.isStringLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword ||
       x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword;
-  return stable(e.expression) && e.arguments.slice(0, index).every(stable) ? spread : null;
+  // The spread, if it is the first evaluation of `x` that may run code;
+  // `"stable"` where `x` runs none; null where code runs before it.
+  const first = (x: Node): ts.SpreadElement | "stable" | null => {
+    while (ts.isParenthesizedExpression(x)) x = x.expression;
+    if (stable(x)) return "stable";
+    const sequence = (parts: readonly Node[]): ts.SpreadElement | "stable" | null => {
+      for (const part of parts) {
+        if (ts.isSpreadElement(part) && program(part.expression)) return part;
+        if (!stable(part)) {
+          const inner = first(part);
+          return inner === "stable" ? null : inner;
+        }
+      }
+      return "stable";
+    };
+    if (ts.isArrayLiteralExpression(x)) return sequence(x.elements) === "stable" ? null : sequence(x.elements);
+    if ((ts.isCallExpression(x) && !x.questionDotToken) || ts.isNewExpression(x)) {
+      // A callee that is a stable name is read where the call is; a method
+      // read off a value reads that value's member, which the iterator's
+      // code may change, so the spread must come first within the value.
+      const callee = x.expression;
+      if (stable(callee)) {
+        const found = sequence(x.arguments ?? []);
+        return found === "stable" ? null : found;
+      }
+      const head = ts.isPropertyAccessExpression(callee) && !callee.questionDotToken ? callee.expression : callee;
+      const inner = first(head);
+      return inner === "stable" ? null : inner;
+    }
+    if (ts.isPropertyAccessExpression(x) && !x.questionDotToken) {
+      const inner = first(x.expression);
+      return inner === "stable" ? null : inner;
+    }
+    return null;
+  };
+  const found = first(e);
+  return found === "stable" ? null : found;
 }
 
 /** The names the file assigns anywhere: an assignment, a compound or
