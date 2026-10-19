@@ -113,18 +113,10 @@ interface StorageContract<L = Label> {
   type: ClaimType<L>;
 }
 
-interface FunctionClaims<L = Label> {
-  name: string;
-  namePos: Span;
-  params: NamedPoint<L>[];
-  result: ClaimType<L>;
+/** The claims of a unit's body: what a function's claims and the module
+ * initialization unit's share. */
+interface BodyClaims<L = Label> {
   contracts: StorageContract<L>[];
-  /** The footprint proposed for the declaration's signature, which its
-   * unit's graph must establish. */
-  footprint: ClosedFootprint;
-  /** Whether the footprint is proposed on a throw too, which the unit's
-   * graph must establish as well. */
-  onThrow: boolean;
   entries: EntryClaim<L>[];
   expressions: ExpressionClaim<L>[];
   /** One interior claim set per advertised signature of the closure at pos. */
@@ -132,6 +124,19 @@ interface FunctionClaims<L = Label> {
     pos: Span;
     rows: { contracts: StorageContract<L>[]; expressions: ExpressionClaim<L>[]; entries: EntryClaim<L>[] }[];
   }[];
+}
+
+interface FunctionClaims<L = Label> extends BodyClaims<L> {
+  name: string;
+  namePos: Span;
+  params: NamedPoint<L>[];
+  result: ClaimType<L>;
+  /** The footprint proposed for the declaration's signature, which its
+   * unit's graph must establish. */
+  footprint: ClosedFootprint;
+  /** Whether the footprint is proposed on a throw too, which the unit's
+   * graph must establish as well. */
+  onThrow: boolean;
 }
 
 export interface SourceClaims<L = Label> {
@@ -142,7 +147,7 @@ export interface SourceClaims<L = Label> {
   functions: FunctionClaims<L>[];
   /** The module initialization unit, present exactly when the source has
    * top-level code: its entries and expressions, with no parameters. */
-  init?: Pick<FunctionClaims<L>, "contracts" | "entries" | "expressions" | "arrows">;
+  init?: BodyClaims<L>;
   /** Claims documents of fragment modules, each a module run's own, over
    * its own rows, its `modules` and `qualified` empty. */
   modules: SourceClaims<L>[];

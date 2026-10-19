@@ -255,7 +255,7 @@ slots are introduced only after the operand supplying their type is checked. -/
           | none => pure g
           | some x => if fields.isEmpty then pure x else merge x g
         fields := []
-        acc := some (← merge base p)
+        acc := some (← merge base (← throughBound Γ p))
     let some x := acc | throw "internal: an object literal with spreads has none"
     let result ← if fields.isEmpty then pure x else merge x (← group fields)
     pure (DirectProof.cast Γ A result)

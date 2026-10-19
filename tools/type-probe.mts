@@ -30,7 +30,9 @@
  * type objects: a union of literals and primitives, unique symbols mapped
  * back to their original declarations; anything else is refused.
  */
-import { existsSync } from "node:fs";
+// files.mts makes every file-system failure a tool failure.
+import { present } from "./files.mts";
+
 import { TypeFlags, type Checker, type Program, type Symbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Identifier, Node, SourceFile, TypeNode } from "typescript/unstable/ast";
@@ -38,6 +40,7 @@ import { literalUnion } from "./computed-types.mts";
 import type { TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
+
 
 /** A symbol of the checker. */
 type Symbolic = Symbol;
@@ -122,7 +125,7 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
     // The statement list holding the application.
     let list: Node | undefined = use.parent;
     while (list && listEnd(list) === null) list = list.parent;
-    if (!list || !existsSync(useFile.fileName)) return refuse("its file cannot be read again with the probe beside it");
+    if (!list || !present(useFile.fileName)) return refuse("its file cannot be read again with the probe beside it");
     const useEnd = listEnd(list) ?? useFile.end;
     const copy = (n: Node): Piece => {
       const file = n.getSourceFile();
@@ -155,7 +158,7 @@ export function makeProbe(original: { program: Program; checker: Checker }, prob
     const insert = (file: SourceFile, at: number, pieces: Piece[]): void => {
       edits.set(file, [...(edits.get(file) ?? []), { at, pieces }]);
     };
-    if (ts.isSourceFile(declaration.parent) && existsSync(declarationFile.fileName)) {
+    if (ts.isSourceFile(declaration.parent) && present(declarationFile.fileName)) {
       const module = declarationFile.externalModuleIndicator !== undefined;
       insert(declarationFile, declarationFile.end, [{ text: module ? "\ndeclare global {\n" : "\n" }, ...probe,
         { text: module ? "\n}\n" : "\n" }]);

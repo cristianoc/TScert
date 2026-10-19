@@ -656,7 +656,13 @@ r\,?.\,b\;\equiv\;\mathsf{let}\ \mathsf{chain}=r\ \mathsf{in}\ \mathsf{if}\ \mat
      {\Gamma\vdash r\,?.\,b:\{\mathsf{undefined}\mid T_{\mathsf{true}}(A)\neq\emptyset\}\cup B}
 ```
 
-with $`T_q`$ the nullish tag's slices. The body is checked where the saved
+with $`T_q`$ the nullish tag's slices. Every chain binds the one variable
+$`\mathsf{chain}`$, so in `a?.b?.c` the outer chain's binding shadows the
+inner's. A test's lowering reads a saved value through the expression it was
+saved from (its origin) only where every name that expression mentions
+still denotes the binding it was recorded with; a mention of the inner
+$`\mathsf{chain}`$ is not read as the outer one, and is left as the saved
+value itself (`optional-chain-element-receiver`). The body is checked where the saved
 receiver holds its present slice, so a method called through the chain
 (`o?.m()`) has the present `o` as its receiver. `o.m?.(a)` tests the member
 read once, `o.m`, and calls it with `o` as its receiver (ECMA-262's
@@ -826,6 +832,25 @@ The dispatch's value is that truth, which no program reads but the test:
 it carries no obligation about the operator's value, whose claim is checked
 where the operator is read as a value, and each operand keeps its own
 (`logical-string-values`: `s && s` of a string in a condition).
+
+In a type guard or an assertion function, a `return` of a Boolean by its
+form (a shape, key, instance or equality test, a negation, a comparison, or
+`&&` and `||` of such) returns its truth's Boolean, a condition:
+
+```math
+\mathsf{return}\ e\;\equiv\;\mathsf{if}\ (e)\ \mathsf{return}\ \mathsf{true};\ \mathsf{else}\ \mathsf{return}\ \mathsf{false}
+\qquad (e\ \text{Boolean by its form}).
+```
+
+The equation holds of JavaScript's evaluation: such an `e` evaluates once to
+`true` or `false`, which is its truth. The guard's promise is then checked
+where it returns `true`, in the context the test's answer leaves, as a
+statement `if` narrows; returning the joined value would check it where the
+test's answers have joined. An arrow's expression body is such a `return`.
+The parser writes the literals at the first two code units of the `return`
+keyword (an arrow's `=>`), which no expression has, each the span of its own
+`return` (`booleanReturn`), and the producer claims them as it claims any
+literal (`guard-boolean-return`, `invalid-guard-boolean-return`).
 
 A negated left operand that is no test, `!a`, is a dispatch on `a` itself,
 its arms exchanged, and a left operand that is the same operator's
@@ -1321,7 +1346,11 @@ named declaration's instance is the reference at the instance's arguments,
 the declaration read as written with each binder at its argument, so
 `Box<T>`'s `v?: T` is `v?: number`, `v?: number | undefined` and `v?: never`
 (absent only) at `number`, `number | undefined` and `never`
-(`closure-contextual-optional-instances`). A type literal or mapped type the
+(`closure-contextual-optional-instances`). A type TypeScript gives with the
+name of a program's declaration, an alias of a union included, is read as
+that reference, before its structure: a recursive alias such as `Json`
+closes at its name (`closure-contextual-recursive-alias`), and a type reached
+again within its own structure through no declaration's name is refused. A type literal or mapped type the
 program writes is read as written, by the annotation reader, where
 TypeScript gives it outside any generic declaration or at its declaration's
 own binders. Any other record (an object literal's type, a library mapped

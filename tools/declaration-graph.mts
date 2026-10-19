@@ -4,9 +4,8 @@
  * resolve exactly as the compiler resolves them. This module turns each
  * declaration reached into a source equation, or refuses a form the fragment
  * cannot state; a refusal never drops a declaration. */
-import { readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { API, DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
+import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 // declaration-types.mts declares the declaration document this module writes, which the Fragment carries and Lean's EquationLowering reads.
@@ -36,20 +35,33 @@ import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, 
 import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
+// files.mts makes every file-system failure a tool failure.
+import { orAbsent, readText, realPath } from "./files.mts";
+// compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
+import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
   ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node);
 
 /** A refusal located at a root of the client: an import declaration or one of
- * its own type declarations. */
+ * its own type declarations. One made of a caught error carries it as its
+ * `cause`, so a tool failure stays one (`toolFailureOf`), located. */
 export class DeclarationError extends Error {
   readonly at: Span;
-  constructor(at: Span, message: string) {
-    super(message);
+  constructor(at: Span, message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
     this.at = at;
   }
 }
+
+/** A caught error as the refusal of a declaration read at `span`. A tool
+ * failure is no refusal: it is thrown on, located at `span`. */
+const refusalAt = (span: Span, thrown: unknown): string => {
+  if (toolFailureOf(thrown)) throw new DeclarationError(span, messageOf(thrown), thrown);
+  return messageOf(thrown);
+};
 
 /** A TypeScript error as the gate read it: the file TypeScript names, whether
  * that is the client, and the span, as offsets and as 0-based line and
@@ -118,7 +130,7 @@ export function tsconfigOf(path: string): string {
 function withProject<T>(file: string, tsconfigPath: string | undefined,
   use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
   const overlay = new Map<string, string>();
-  const api = new API({ cwd: dirname(file), fs: {
+  const api = openCompiler({ cwd: dirname(file), fs: {
     readFile: name => overlay.get(name),
     fileExists: name => (overlay.has(name) ? true : undefined),
   } });
@@ -145,7 +157,7 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     if (!project) throw Error("TypeScript did not load the probe program");
     return read(project.program, project.checker);
   };
-  let failed = false;
+  let thrown: { error: unknown } | null = null;
   try {
     const snapshot = api.updateSnapshot({ openFiles: [file],
       ...(tsconfigPath ? { openProjects: [tsconfigPath] } : {}) });
@@ -163,13 +175,10 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     config = project.configFileName;
     return use(project.checker, client, dirname(project.configFileName), project.program, probe);
   } catch (error) {
-    failed = true;
+    thrown = { error };
     throw error;
   } finally {
-    // A failure closing the API after another error is not the report:
-    // the error that was in flight is.
-    if (!failed) api.close();
-    else try { api.close(); } catch { /* the error in flight is reported */ }
+    releaseCompiler(api, thrown);
   }
 }
 
@@ -186,8 +195,8 @@ function namesArray(value: unknown): boolean {
  * file by name, anything else by its real path relative to the project. */
 function moduleIds(clientFile: string, root: string, program: Program):
     { idOf: (file: SourceFile) => string; libraryFile: (file: SourceFile) => boolean } {
-  const client = realpathSync(clientFile);
-  const projectRoot = realpathSync(root);
+  const client = realPath(clientFile);
+  const projectRoot = realPath(root);
   // The standard library is the files the compiler's own library resolution
   // gives the program (`isSourceFileDefaultLibrary`), whatever else is
   // named like one; only names of that form are asked. Every library
@@ -195,15 +204,15 @@ function moduleIds(clientFile: string, root: string, program: Program):
   const libraries = new Set(program.getSourceFileNames().filter(name => /^lib\..*\.d\.ts$/.test(basename(name)))
     .flatMap(name => {
       const file = program.getSourceFile(name);
-      return file && program.isSourceFileDefaultLibrary(file) ? [realpathSync(name)] : [];
+      return file && program.isSourceFileDefaultLibrary(file) ? [realPath(name)] : [];
     }));
-  const libraryFile = (file: SourceFile): boolean => libraries.has(realpathSync(file.fileName));
+  const libraryFile = (file: SourceFile): boolean => libraries.has(realPath(file.fileName));
   // The identities are disjoint by construction: the client by its absolute
   // path, a library file `typescript/lib/<file>`, any other file its path
   // from the project root, written `./…` inside it and `../…` outside, so
   // no other file's identity reads as a library file's.
   const idOf = (file: SourceFile): string => {
-    const path = realpathSync(file.fileName);
+    const path = realPath(file.fileName);
     if (path === client) return clientFile;
     if (libraries.has(path)) return `typescript/lib/${basename(path)}`;
     const inside = relative(projectRoot, path).split(sep).join("/");
@@ -257,7 +266,7 @@ function statementsOnPath(checker: Checker, identifier: Identifier):
 }
 
 /** The expression at exactly `span`, the outermost one there. */
-function expressionAt(file: SourceFile, span: Span): Node | null {
+export function expressionAt(file: SourceFile, span: Span): Node | null {
   const visit = (node: Node): Node | null => {
     if (node.end < span[1] || node.pos > span[0]) return null;
     if (node.getStart(file) === span[0] && node.end === span[1] && !ts.isSourceFile(node)) return node;
@@ -833,7 +842,8 @@ export function collectDeclarations(file: string, options: {
       try {
         const node = lookup(reference.typeName, reference.typeName.text);
         return ts.isTypeAliasDeclaration(node) ? node : null;
-      } catch {
+      } catch (error) {
+        passToolFailure(error);
         return null;
       }
     };
@@ -1208,7 +1218,7 @@ export function collectDeclarations(file: string, options: {
         const type = node.type;
         const unique = ts.isTypeOperatorNode(type) && type.operator === ts.SyntaxKind.UniqueKeyword &&
           type.type.kind === ts.SyntaxKind.SymbolKeyword;
-        const symbol = unique ? (() => { try { return symbolOf(node.name); } catch { return null; } })() : null;
+        const symbol = unique ? (() => { try { return symbolOf(node.name); } catch (error) { passToolFailure(error); return null; } })() : null;
         return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
           typeParams: [], type: symbol === null ? typeTerm(valueScope(node, what), type, node)
             : { k: "unique", symbol, span: [type.getStart(source), type.end] } };
@@ -1253,7 +1263,7 @@ export function collectDeclarations(file: string, options: {
           overloads.some(o => !idOf(o.getSourceFile()).includes("@types/node/")))
         throw Error(`${what} is not a function Node's declarations declare, as the reviewed overlay of library modules states it`);
       const forms = entries.map(entry => {
-        const match = overloads.find(o => reviewedText(o.getText(o.getSourceFile())) === entry.signature);
+        const match = overloads.find(o => o.getText(o.getSourceFile()) === entry.signature);
         if (!match) throw Error(`${what} is not declared as reviewed: ${entry.signature}`);
         const source = match.getSourceFile();
         const span: Span = [match.getStart(source), match.end];
@@ -1395,8 +1405,9 @@ export function collectDeclarations(file: string, options: {
       const spanOf = (node: Node): Span => [node.getStart(client), node.end];
       const entryAt = (call: ts.CallExpression, member: string | undefined): ModuleEntry => {
         const declaration = checker.getResolvedSignature(call)?.declaration?.resolve();
-        const text = declaration ? reviewedText(declaration.getText(declaration.getSourceFile())) : "";
-        const entry = entries.find(e => e.member === member && e.signature === text);
+        const written = declaration ? declaration.getText(declaration.getSourceFile()) : "";
+        const text = reviewedText(written);
+        const entry = declaration ? entries.find(e => e.member === member && e.signature === written) : undefined;
         if (!entry)
           throw Error(`${member === undefined ? binding.name : `${binding.name}.${member}`}(…) is not declared as reviewed: ${text}`);
         return entry;
@@ -1498,7 +1509,7 @@ export function collectDeclarations(file: string, options: {
         declaration: identityOf(declaration) } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        throw new DeclarationError(binding.span, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(binding.span, messageOf(error), error);
       }
     }
     // A call of a namespace member passes the namespace object as the
@@ -1526,7 +1537,7 @@ export function collectDeclarations(file: string, options: {
         values.push({ binding: { local: identifier.text, imported: identifier.text, specifier: ambientSpecifier,
           span: at }, ...valueOf(resolveDeclarations(identifier, identifier.text), identifier.text) });
       } catch (error) {
-        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(at, messageOf(error), error);
       }
     }
     let resolutionContextAt: Span | undefined;
@@ -1550,7 +1561,7 @@ export function collectDeclarations(file: string, options: {
         roots.push({ node, root: { binding: { kind: "local", local: declaration.name.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
-        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(span, messageOf(error), error);
       }
     }
     for (const span of options.globals ?? []) {
@@ -1586,7 +1597,7 @@ export function collectDeclarations(file: string, options: {
         roots.push({ node, root: { binding: { kind: "global", local: identifier.text, span },
           declaration: identityOf(node) } });
       } catch (error) {
-        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(span, messageOf(error), error);
       }
     }
     // The prototypes' contracts, `Array.prototype`'s and the primitive
@@ -1731,7 +1742,7 @@ export function collectDeclarations(file: string, options: {
       try {
         arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
       } catch (error) {
-        throw new DeclarationError(arraysAt, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(arraysAt, messageOf(error), error);
       }
     }
     for (const [kind, at] of primitives) {
@@ -1744,7 +1755,7 @@ export function collectDeclarations(file: string, options: {
           type: { k: "reference", reference: { name: definition.declaration.name, span: at, arguments: [],
             target: definition.declaration }, args: [], span: at } });
       } catch (error) {
-        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(at, messageOf(error), error);
       }
     }
     // A `for...of` over a host iterable other than an array steps the
@@ -1819,9 +1830,19 @@ export function collectDeclarations(file: string, options: {
     for (const { span, spread } of iterated) {
       const iterable = expressionAt(client, span);
       if (!iterable) throw new DeclarationError(span, "TypeScript iterable missing");
-      const type = checker.getTypeAtLocation(iterable);
-      const kinds = [...new Set((type && isUnionType(type) ? type.getTypes() : type ? [type] : [])
-        .map(iterationKind))];
+      // The iterable's type, read part by part: a failure of the compiler's
+      // API there is located at the iterable.
+      const kindsOf = (): string[] => {
+        const type = checker.getTypeAtLocation(iterable);
+        return [...new Set((type && isUnionType(type) ? type.getTypes() : type ? [type] : []).map(iterationKind))];
+      };
+      let kinds: string[];
+      try {
+        kinds = kindsOf();
+      } catch (error) {
+        if (error instanceof DeclarationError) throw error;
+        throw new DeclarationError(span, messageOf(error), error);
+      }
       const [kind] = kinds;
       // A union with a program's iterable among its parts runs the protocol
       // (`client`), which every part's own iterator answers.
@@ -1840,7 +1861,7 @@ export function collectDeclarations(file: string, options: {
             declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
             construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
         } catch (error) {
-          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+          throw new DeclarationError(span, messageOf(error), error);
         }
       }
       options.iterable?.(span, listed, program ? iteratorSymbol : null);
@@ -1892,7 +1913,7 @@ export function collectDeclarations(file: string, options: {
     const listStable = (at: Span): void => {
       if (stableListed) return;
       try { promiseType({ k: "atom", name: "unknown", span: [0, 0] }); }
-      catch (error) { throw new DeclarationError(at, error instanceof Error ? error.message : String(error)); }
+      catch (error) { throw new DeclarationError(at, messageOf(error), error); }
       stableListed = true;
     };
     const listIntrinsics = (at: Span, names: string[]): void => {
@@ -1907,7 +1928,7 @@ export function collectDeclarations(file: string, options: {
             construct: false, typeParams: intrinsic.typeParams, type: intrinsic.type });
         for (const name of needed) intrinsicsListed.add(name);
       } catch (error) {
-        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(at, messageOf(error), error);
       }
     };
     if (options.intrinsics) listIntrinsics(options.intrinsics.span, options.intrinsics.names);
@@ -1958,7 +1979,7 @@ export function collectDeclarations(file: string, options: {
             type: { k: "function", effect: emptyEffect, receiver: null, params: [], rest: null,
               result: nativeRegExp(shape, nativeMatches()), span: [0, 0] } });
         } catch (error) {
-          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+          throw new DeclarationError(span, messageOf(error), error);
         }
         intrinsicsListed.add(name);
       }
@@ -1985,7 +2006,7 @@ export function collectDeclarations(file: string, options: {
             declaration: { module: intrinsicModule, name, span: [0, 0] }, construct: false,
             typeParams: intrinsic.typeParams, type: intrinsic.type });
         } catch (error) {
-          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+          throw new DeclarationError(span, messageOf(error), error);
         }
         intrinsicsListed.add(name);
       }
@@ -2077,7 +2098,7 @@ export function collectDeclarations(file: string, options: {
             target: definition.declaration }, args: [], span: at } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(at, messageOf(error), error);
       }
     }
     // A private name reads the key of the member TypeScript binds it to.
@@ -2087,7 +2108,7 @@ export function collectDeclarations(file: string, options: {
       try {
         options.privateName?.(span, privateNameOf(name));
       } catch (error) {
-        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(span, messageOf(error), error);
       }
     }
     // An element key naming a `unique symbol` constant reads that symbol's
@@ -2105,7 +2126,7 @@ export function collectDeclarations(file: string, options: {
         try {
           options.symbolKey?.(span, symbolOf(access));
         } catch (error) {
-          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+          throw new DeclarationError(span, messageOf(error), error);
         }
         continue;
       }
@@ -2119,7 +2140,7 @@ export function collectDeclarations(file: string, options: {
       try {
         options.symbolKey?.(span, symbolOf(identifier));
       } catch (error) {
-        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(span, messageOf(error), error);
       }
     }
     for (const span of options.staticReads ?? []) {
@@ -2221,7 +2242,6 @@ export function collectDeclarations(file: string, options: {
     // read at its key's kind and capability. A member no object contract
     // states (a method, an accessor, a symbol key, a call signature, an index
     // of another key) is refused.
-    const recordsRead = new Set<Type>();
     const contextualRecord = (type: Type, span: Span): TypeTerm | null => {
       if (!(type.flags & TypeFlags.Object)) return null;
       const declarations = (type.getSymbol()?.declarations ?? []).map(d => d.resolve());
@@ -2235,70 +2255,65 @@ export function collectDeclarations(file: string, options: {
         if (!binders.length || checker.getTypeFromTypeNode(only)?.id === type.id)
           return computedContext.annotation(only, only, binders);
       }
-      if (recordsRead.has(type)) throw Error(`the contextual record ${text} contains itself, which no annotation names`);
       if (checker.getSignaturesOfType(type, SignatureKind.Call).length ||
           checker.getSignaturesOfType(type, SignatureKind.Construct).length)
         throw Error(`the contextual record ${text} is callable, which an annotation states`);
-      recordsRead.add(type);
-      try {
-        const fields = checker.getPropertiesOfType(type).map(p => {
-          const declaration = p.declarations[0]?.resolve();
-          if (p.name.startsWith("__@") || (declaration && (ts.isMethodSignatureDeclaration(declaration) ||
-              ts.isMethodDeclaration(declaration) || ts.isGetAccessorDeclaration(declaration) ||
-              ts.isSetAccessorDeclaration(declaration))))
-            throw Error(`the contextual record ${text} has a member ${p.name} no object contract states (a method, an accessor or a symbol key), which an annotation states`);
-          const member = checker.getTypeOfSymbol(p);
-          if (!member) throw Error(`TypeScript gives the member ${p.name} of ${text} no type`);
-          const optional = (p.flags & SymbolFlags.Optional) !== 0;
-          // A member of the record's own type literal is described by its
-          // syntax: its modifiers, and its written type where that names
-          // none of the literal's binders, read as the annotation reader
-          // reads it. A mapped type's member keeps its originating property
-          // as declaration, which describes it no more: it, and an object
-          // literal's, is the member TypeScript instantiates, readonly where
-          // the instantiation makes it so (`checkFlags & 8`).
-          const own = !!declaration && !!only && ts.isTypeLiteralNode(only) && declaration.parent === only &&
-            (ts.isPropertySignatureDeclaration(declaration) || ts.isPropertyDeclaration(declaration));
-          const node = own && declaration && (ts.isPropertySignatureDeclaration(declaration) ||
-            ts.isPropertyDeclaration(declaration)) ? declaration.type : undefined;
-          const binders = declaration ? enclosingBinders(declaration) : [];
-          const mentions = (n: Node): boolean => (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) &&
-            binders.includes(n.typeName.text)) || (n.forEachChild(c => mentions(c) || undefined) ?? false);
-          const writtenType = !!node && !!declaration && !libraryFile(declaration.getSourceFile()) && !mentions(node);
-          // An optional member's present value is its written type; where
-          // TypeScript gives only the type it reads, with the `undefined`
-          // optionality adds, the written contract is not recovered, save
-          // for an object literal's member at `undefined` alone (an array
-          // literal's records, each given the others' members so).
-          const literalMember = !!declaration && (ts.isPropertyAssignment(declaration) ||
-            ts.isShorthandPropertyAssignment(declaration));
-          if (optional && !writtenType &&
-              !(literalMember && member.flags & TypeFlags.Undefined && !member.isUnionType()))
-            throw Error(`the contextual record ${text} is an instance of an anonymous record, whose instantiation the compiler's API does not give, and its optional member ${p.name} is at a type with the \`undefined\` optionality adds, from which its written contract is not recovered; an annotation states it`);
-          const memberType = writtenType && node && declaration
-            ? computedContext.annotation(node, declaration, binders) : contextualTerm(member, span);
-          const readonly = own
-            ? !!declaration && childrenOf(declaration, "modifiers").some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword)
-            : (p.checkFlags & 8) !== 0;
-          return { name: p.name, optional, readonly, type: memberType, span };
-        });
-        let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
-        let numberIndex: Extract<TypeTerm, { k: "object" }>["numberIndex"];
-        let symbolIndex: Extract<TypeTerm, { k: "object" }>["symbolIndex"];
-        for (const info of checker.getIndexInfosOfType(type)) {
-          const index = { readonly: info.isReadonly, value: contextualTerm(info.valueType, span), span };
-          const key = info.keyType.flags;
-          if (key & TypeFlags.String) stringIndex = index;
-          else if (key & TypeFlags.Number) numberIndex = index;
-          else if (key & TypeFlags.ESSymbol) symbolIndex = index;
-          else throw Error(`the contextual record ${text} has an index of key ${checker.typeToString(info.keyType)}, which an annotation states`);
-        }
-        return { k: "object", fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
-          ...(symbolIndex ? { symbolIndex } : {}), calls: [], span };
-      } finally {
-        recordsRead.delete(type);
+      const fields = checker.getPropertiesOfType(type).map(p => {
+        const declaration = p.declarations[0]?.resolve();
+        if (p.name.startsWith("__@") || (declaration && (ts.isMethodSignatureDeclaration(declaration) ||
+            ts.isMethodDeclaration(declaration) || ts.isGetAccessorDeclaration(declaration) ||
+            ts.isSetAccessorDeclaration(declaration))))
+          throw Error(`the contextual record ${text} has a member ${p.name} no object contract states (a method, an accessor or a symbol key), which an annotation states`);
+        const member = checker.getTypeOfSymbol(p);
+        if (!member) throw Error(`TypeScript gives the member ${p.name} of ${text} no type`);
+        const optional = (p.flags & SymbolFlags.Optional) !== 0;
+        // A member of the record's own type literal is described by its
+        // syntax: its modifiers, and its written type where that names
+        // none of the literal's binders, read as the annotation reader
+        // reads it. A mapped type's member keeps its originating property
+        // as declaration, which describes it no more: it, and an object
+        // literal's, is the member TypeScript instantiates, readonly where
+        // the instantiation makes it so (`checkFlags & 8`).
+        const own = !!declaration && !!only && ts.isTypeLiteralNode(only) && declaration.parent === only &&
+          (ts.isPropertySignatureDeclaration(declaration) || ts.isPropertyDeclaration(declaration));
+        const node = own && declaration && (ts.isPropertySignatureDeclaration(declaration) ||
+          ts.isPropertyDeclaration(declaration)) ? declaration.type : undefined;
+        const binders = declaration ? enclosingBinders(declaration) : [];
+        const mentions = (n: Node): boolean => (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) &&
+          binders.includes(n.typeName.text)) || (n.forEachChild(c => mentions(c) || undefined) ?? false);
+        const writtenType = !!node && !!declaration && !libraryFile(declaration.getSourceFile()) && !mentions(node);
+        // An optional member's present value is its written type; where
+        // TypeScript gives only the type it reads, with the `undefined`
+        // optionality adds, the written contract is not recovered, save
+        // for an object literal's member at `undefined` alone (an array
+        // literal's records, each given the others' members so).
+        const literalMember = !!declaration && (ts.isPropertyAssignment(declaration) ||
+          ts.isShorthandPropertyAssignment(declaration));
+        if (optional && !writtenType &&
+            !(literalMember && member.flags & TypeFlags.Undefined && !member.isUnionType()))
+          throw Error(`the contextual record ${text} is an instance of an anonymous record, whose instantiation the compiler's API does not give, and its optional member ${p.name} is at a type with the \`undefined\` optionality adds, from which its written contract is not recovered; an annotation states it`);
+        const memberType = writtenType && node && declaration
+          ? computedContext.annotation(node, declaration, binders) : contextualTerm(member, span);
+        const readonly = own
+          ? !!declaration && childrenOf(declaration, "modifiers").some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword)
+          : (p.checkFlags & 8) !== 0;
+        return { name: p.name, optional, readonly, type: memberType, span };
+      });
+      let stringIndex: Extract<TypeTerm, { k: "object" }>["stringIndex"] = null;
+      let numberIndex: Extract<TypeTerm, { k: "object" }>["numberIndex"];
+      let symbolIndex: Extract<TypeTerm, { k: "object" }>["symbolIndex"];
+      for (const info of checker.getIndexInfosOfType(type)) {
+        const index = { readonly: info.isReadonly, value: contextualTerm(info.valueType, span), span };
+        const key = info.keyType.flags;
+        if (key & TypeFlags.String) stringIndex = index;
+        else if (key & TypeFlags.Number) numberIndex = index;
+        else if (key & TypeFlags.ESSymbol) symbolIndex = index;
+        else throw Error(`the contextual record ${text} has an index of key ${checker.typeToString(info.keyType)}, which an annotation states`);
       }
+      return { k: "object", fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
+        ...(symbolIndex ? { symbolIndex } : {}), calls: [], span };
     };
+    const typesRead = new Set<number>();
     const readContextualTerm = (type: Type, span: Span): TypeTerm => {
       if (type.flags & TypeFlags.Any)
         throw Error("TypeScript types this unannotated closure parameter from its context as `any`, which states no contract");
@@ -2307,68 +2322,79 @@ export function collectDeclarations(file: string, options: {
       const literals = literalUnion(type, span);
       if (literals) return literals;
       const text = () => checker.typeToString(type);
-      if (type.isUnionType() || type.isIntersectionType()) {
-        const parts = (type.getTypes() ?? []).map(part => contextualTerm(part, span));
-        const [only] = parts;
-        return parts.length === 1 && only ? only : { k: type.isUnionType() ? "union" : "intersection", parts, span };
-      }
-      if (type.isTypeParameter()) {
-        const name = type.getSymbol()?.name;
-        if (name) return { k: "binder", name, span };
-      }
-      if (checker.isArrayType(type) && isTypeReference(type)) {
-        const [element] = checker.getTypeArguments(type);
-        if (element) return { k: "array", presence: "readable", readonly: type.getSymbol()?.name === "ReadonlyArray",
-          element: contextualTerm(element, span), span };
-      }
-      // A tuple of required positions and a rest, as its annotation reads,
-      // readonly as TypeScript says. An optional position's type TypeScript
-      // gives with `undefined` whether or not it was written, so it is not
-      // read.
-      const tuple = checker.isTupleType(type) && isTypeReference(type) ? type.getTarget() : undefined;
-      if (tuple && isTupleType(tuple) && isTypeReference(type)) {
-        const elements = checker.getTypeArguments(type);
-        const required: TypeTerm[] = [];
-        let rest: TypeTerm | null = null;
-        for (const [i, flag] of tuple.elementFlags.entries()) {
-          const element = elements[i];
-          if (!element) throw Error(`the contextual tuple ${text()} states no type at position ${i}`);
-          if (flag === ElementFlags.Required && rest === null) required.push(contextualTerm(element, span));
-          else if (flag === ElementFlags.Rest && rest === null) rest = contextualTerm(element, span);
-          else throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, ` +
-            "a tuple with an optional or variadic position, which an annotation states");
+      // A declaration by name is read as a reference, which closes a
+      // recursive type at its name; any other type through its structure.
+      // A type reached again while it is being read contains itself through
+      // a structure no declaration names, which only an annotation states.
+      if (typesRead.has(type.id))
+        throw Error(`the contextual type ${text()} contains itself through a structure no declaration names, which an annotation states`);
+      typesRead.add(type.id);
+      try {
+        const symbol = type.getAliasSymbol() ?? type.getSymbol();
+        const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
+        const [node] = nodes;
+        if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !libraryFile(node.getSourceFile())) {
+          // An alias's own arguments, none for an alias without parameters
+          // (`type AbstractKeyword = Token<SyntaxKind.AbstractKeyword>`); a
+          // reference's otherwise.
+          const actuals = type.getAliasSymbol() ? type.getAliasTypeArguments()
+            : isTypeReference(type) ? checker.getTypeArguments(type) : [];
+          const args = actuals.map(argument => contextualTerm(argument, span));
+          if (args.length !== (node.typeParameters?.length ?? 0))
+            throw Error(`the contextual type ${text()} does not state every declaration argument`);
+          const declared = declarationOf([node], text());
+          contextualStarts.push({ node: declared, span });
+          return { k: "reference", reference: { name: node.name.text, span, arguments: args.map(() => span), target: identityOf(node) },
+            args, span };
         }
-        return { k: "tuple", presence: "dense", readonly: tuple.readonly, required, optional: [], rest, span };
+        if (type.isUnionType() || type.isIntersectionType()) {
+          const parts = (type.getTypes() ?? []).map(part => contextualTerm(part, span));
+          const [only] = parts;
+          return parts.length === 1 && only ? only : { k: type.isUnionType() ? "union" : "intersection", parts, span };
+        }
+        if (type.isTypeParameter()) {
+          const name = type.getSymbol()?.name;
+          if (name) return { k: "binder", name, span };
+        }
+        if (checker.isArrayType(type) && isTypeReference(type)) {
+          const [element] = checker.getTypeArguments(type);
+          if (element) return { k: "array", presence: "readable", readonly: type.getSymbol()?.name === "ReadonlyArray",
+            element: contextualTerm(element, span), span };
+        }
+        // A tuple of required positions and a rest, as its annotation reads,
+        // readonly as TypeScript says. An optional position's type TypeScript
+        // gives with `undefined` whether or not it was written, so it is not
+        // read.
+        const tuple = checker.isTupleType(type) && isTypeReference(type) ? type.getTarget() : undefined;
+        if (tuple && isTupleType(tuple) && isTypeReference(type)) {
+          const elements = checker.getTypeArguments(type);
+          const required: TypeTerm[] = [];
+          let rest: TypeTerm | null = null;
+          for (const [i, flag] of tuple.elementFlags.entries()) {
+            const element = elements[i];
+            if (!element) throw Error(`the contextual tuple ${text()} states no type at position ${i}`);
+            if (flag === ElementFlags.Required && rest === null) required.push(contextualTerm(element, span));
+            else if (flag === ElementFlags.Rest && rest === null) rest = contextualTerm(element, span);
+            else throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, ` +
+              "a tuple with an optional or variadic position, which an annotation states");
+          }
+          return { k: "tuple", presence: "dense", readonly: tuple.readonly, required, optional: [], rest, span };
+        }
+        const record = contextualRecord(type, span);
+        if (record) return record;
+        // A library regex type (`RegExpExecArray` for a match's callback), as
+        // `regexp.mts` reads it.
+        const library = nodes.filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+        if (symbol && library.length && library.length === nodes.length &&
+            library.every(n => libraryFile(n.getSourceFile()))) {
+          const stated = libraryRegExp(symbol.name, library);
+          if (stated) return stated;
+        }
+        throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, which is ` +
+          "not stated by primitives, literals, unions, intersections, arrays, tuples, type parameters and declarations by name");
+      } finally {
+        typesRead.delete(type.id);
       }
-      const symbol = type.getAliasSymbol() ?? type.getSymbol();
-      const nodes = (symbol?.declarations ?? []).map(d => d.resolve());
-      const [node] = nodes;
-      if (nodes.length === 1 && node && isTypeDeclaration(node) && node.name && !libraryFile(node.getSourceFile())) {
-        // An alias's own arguments, none for an alias without parameters
-        // (`type AbstractKeyword = Token<SyntaxKind.AbstractKeyword>`); a
-        // reference's otherwise.
-        const actuals = type.getAliasSymbol() ? type.getAliasTypeArguments()
-          : isTypeReference(type) ? checker.getTypeArguments(type) : [];
-        const args = actuals.map(argument => contextualTerm(argument, span));
-        if (args.length !== (node.typeParameters?.length ?? 0))
-          throw Error(`the contextual type ${text()} does not state every declaration argument`);
-        const declared = declarationOf([node], text());
-        contextualStarts.push({ node: declared, span });
-        return { k: "reference", reference: { name: node.name.text, span, arguments: args.map(() => span), target: identityOf(node) },
-          args, span };
-      }
-      const record = contextualRecord(type, span);
-      if (record) return record;
-      // A library regex type (`RegExpExecArray` for a match's callback), as
-      // `regexp.mts` reads it.
-      const library = nodes.filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
-      if (symbol && library.length && library.length === nodes.length &&
-          library.every(n => libraryFile(n.getSourceFile()))) {
-        const stated = libraryRegExp(symbol.name, library);
-        if (stated) return stated;
-      }
-      throw Error(`TypeScript types this unannotated closure parameter from its context as ${text()}, which is ` +
-        "not stated by primitives, literals, unions, intersections, arrays, tuples, type parameters and declarations by name");
     };
     const parameterAt = (span: Span): ts.ParameterDeclaration | null => {
       const visit = (node: Node): ts.ParameterDeclaration | null => {
@@ -2386,7 +2412,7 @@ export function collectDeclarations(file: string, options: {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this static field no type");
         options.staticType?.(span, contextualTerm(type, span));
       } catch (error) {
-        options.staticType?.(span, { refused: error instanceof Error ? error.message : String(error) });
+        options.staticType?.(span, { refused: refusalAt(span, error) });
       }
     }
     for (const span of options.contextualParams ?? []) {
@@ -2397,7 +2423,7 @@ export function collectDeclarations(file: string, options: {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this unannotated closure parameter no type");
         options.contextualParam?.(span, contextualTerm(type, span));
       } catch (error) {
-        options.contextualParam?.(span, { refused: error instanceof Error ? error.message : String(error) });
+        options.contextualParam?.(span, { refused: refusalAt(span, error) });
       }
     }
     // `Object.assign(arrow, literal)` without type arguments: the two
@@ -2435,7 +2461,7 @@ export function collectDeclarations(file: string, options: {
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         options.assignTypes?.(span, { refused: "the type arguments TypeScript infers for this Object.assign: " +
-          (error instanceof Error ? error.message : String(error)) });
+          refusalAt(span, error) });
       }
     }
     for (const span of options.enums ?? []) {
@@ -2445,7 +2471,7 @@ export function collectDeclarations(file: string, options: {
       try {
         clean(statement, `enum ${statement.name.text}`);
       } catch (error) {
-        throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(span, messageOf(error), error);
       }
       const members = statement.members.map(member => {
         const value = checker.getConstantValue(member);
@@ -2535,7 +2561,7 @@ export function collectDeclarations(file: string, options: {
         options.symbolName?.(span, literal !== null && value !== null ? { literal, value } : symbolOf(node));
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        options.symbolName?.(span, { refused: error instanceof Error ? error.message : String(error) });
+        options.symbolName?.(span, { refused: refusalAt(span, error) });
       }
     }
     // The client's computed types: each evaluated where it is written, with
@@ -2552,7 +2578,7 @@ export function collectDeclarations(file: string, options: {
         options.computedType?.(span, computedType(computedContext, node, span, part => typeTerm(scope, part)));
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        options.computedType?.(span, { refused: error instanceof Error ? error.message : String(error) });
+        options.computedType?.(span, { refused: refusalAt(span, error) });
       }
     }
     // The client's references that omit arguments of a declaration: the
@@ -2575,7 +2601,7 @@ export function collectDeclarations(file: string, options: {
             }
           } catch (error) {
             if (error instanceof DeclarationError) throw error;
-            options.completion?.(span, { refused: error instanceof Error ? error.message : String(error) });
+            options.completion?.(span, { refused: refusalAt(span, error) });
           }
         }
       }
@@ -2705,7 +2731,7 @@ export function collectDeclarations(file: string, options: {
     } catch (error) {
       if (error instanceof DeclarationError) throw error;
       throw new DeclarationError(error instanceof SweepError ? error.span ?? [0, 0] : [0, 0],
-        error instanceof Error ? error.message : String(error));
+        messageOf(error), error);
     }
     const seen = new Set<string>();
     const definitions: TypeDefinition[] = [];
@@ -2723,7 +2749,7 @@ export function collectDeclarations(file: string, options: {
             libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
             keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited });
         } catch (error) {
-          throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
+          throw new DeclarationError(span, messageOf(error), error);
         }
       }
     };
@@ -2748,7 +2774,7 @@ export function collectDeclarations(file: string, options: {
       try {
         arrayProto = arrayPrototype(checker, client, overlayLibrary, options.arrayOverlay ?? overlay);
       } catch (error) {
-        throw new DeclarationError(at, error instanceof Error ? error.message : String(error));
+        throw new DeclarationError(at, messageOf(error), error);
       }
       collectFrom(valueStarts.slice(from).map(node => ({ node, span: at })));
     }
@@ -2988,12 +3014,15 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
     chosen.set(overload, [...chosen.get(overload) ?? [], call]);
   }
   const calls = [...chosen].flatMap(([overload, calls]): FunctionTerm[] => {
-    if (overload.typeParameters?.length) throw Error(`${what} is generic`);
     const at = spanOf(overload);
-    const entry = globalEntry(context.overlay, name, undefined, overload.getText(overload.getSourceFile()).trim(),
+    // The declaration matched to an entry by its exact text.
+    const declared = overload.getText(overload.getSourceFile());
+    const text = reviewedText(declared);
+    const entry = globalEntry(context.overlay, name, undefined, signature => signature === declared,
       declarationOrigin(overload.getSourceFile(), context.libraryFile));
-    if (!entry)
-      throw Error(`${what} is not in the reviewed overlay of library globals: ${overload.getText(overload.getSourceFile()).trim()}`);
+    if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
+    for (const definition of entry.definitions ?? []) context.define(definition);
+    if (overload.typeParameters?.length && !entry.stated) throw Error(`${what} is generic`);
     if (entry && (entry.test || entry.intrinsic || entry.construct || entry.value || entry.admit))
       throw Error(`${what} is reviewed in a form a global function does not take`);
     const written = entry?.stated;
@@ -3028,7 +3057,7 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
 const origins = new Map<string, string>();
 function declarationOrigin(file: SourceFile, libraryFile: (file: SourceFile) => boolean): string {
   if (libraryFile(file)) return "library";
-  const path = realpathSync(file.fileName);
+  const path = realPath(file.fileName);
   const known = origins.get(path);
   if (known) return known;
   const parts = path.split(sep);
@@ -3038,10 +3067,11 @@ function declarationOrigin(file: SourceFile, libraryFile: (file: SourceFile) => 
   let origin = "project";
   if (at >= 0 && name) {
     const directory = parts.slice(0, at + 1 + name.split("/").length).join(sep);
-    try {
-      const manifest: unknown = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
-      if (manifest && typeof manifest === "object" && "name" in manifest && manifest.name === name) origin = name;
-    } catch { origin = "project"; }
+    // A directory without a manifest is the project's; a manifest that
+    // cannot be read or parsed is no absence.
+    const text = orAbsent(readText, join(directory, "package.json"));
+    const manifest: unknown = text === null ? null : JSON.parse(text);
+    if (manifest && typeof manifest === "object" && "name" in manifest && manifest.name === name) origin = name;
   }
   origins.set(path, origin);
   return origin;
@@ -3055,9 +3085,11 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   if (!first) throw Error("a global value without a reference");
   const name = first.text;
   const declarations = (checker.getSymbolAtLocation(first)?.declarations ?? []).map(d => d.resolve());
-  // A global declared as a function, `declare function parseInt(…)`.
+  // A global declared as a function, `declare function parseInt(…)`, or a
+  // function merged with a namespace (`setTimeout` and its `__promisify__`),
+  // which is only called: the namespace's members are not read.
   const functions = declarations.filter((d): d is ts.FunctionDeclaration => !!d && ts.isFunctionDeclaration(d) && !d.body);
-  if (functions.length && functions.length === declarations.length)
+  if (functions.length && declarations.every(d => !!d && (ts.isFunctionDeclaration(d) || ts.isModuleDeclaration(d))))
     return globalFunction(checker, name, uses, functions, context);
   const variables = declarations.filter((d): d is ts.VariableDeclaration =>
     !!d && ts.isVariableDeclaration(d) && !!d.type && ts.isIdentifier(d.name));
@@ -3086,7 +3118,8 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const reviewedForms = (member: string | undefined, node: Node, what: string):
       (Omit<GlobalEntry, "stated"> & { forms?: Stated[] }) | undefined => {
     const text = node.getText(node.getSourceFile()).trim();
-    const entry = globalEntry(context.overlay, name, member, text, declarationOrigin(node.getSourceFile(), context.libraryFile));
+    const entry = globalEntry(context.overlay, name, member, signature => signature === text,
+      declarationOrigin(node.getSourceFile(), context.libraryFile));
     if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
     for (const definition of entry.definitions ?? []) context.define(definition);
     const { stated: written, ...rest } = entry;

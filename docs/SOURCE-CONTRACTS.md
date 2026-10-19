@@ -966,7 +966,8 @@ mapped type is that type at the reference's arguments:
 ```
 
 so `Record<"a" | "b", V>` has both fields required and `Record<string, V>` is
-the writable string index. An interface's `extends` clauses are the meet of
+the writable string index. One whose value names its key, as `Pick`'s and
+`Readonly`'s $`T[P]`$, is refused. An interface's `extends` clauses are the meet of
 its own clauses with each base's, its own members first (`inheritRows`,
 [conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)); a source
 intersection has the same meaning (`meetRow`).
@@ -1847,6 +1848,26 @@ The entries, each with the code its restriction keeps from running:
 - Node's `clearTimeout(t)` of any value cancels a timer by id or by object,
   reading and writing an object's `_onTimeout`, which may be an accessor:
   $`(\mathtt{unknown})\Rightarrow\mathtt{undefined}`$, stating no effect.
+- Node's `setTimeout(f, ms)`, a function merged with a namespace, schedules
+  `f`, which the host calls with no argument between synchronous jobs, as it
+  calls a listener ([Node's process](#nodes-process)), and returns a timer
+  read at no member:
+  $`(()\Rightarrow\mathtt{unknown},\ \mathtt{number}^?)\Rightarrow\mathtt{unknown}`$,
+  stating no effect, scheduling running the asynchronous-resource hooks other
+  code installed (`node-set-timeout`). Arguments after the delay reach the
+  callback and are refused (`invalid-node-set-timeout-parameter`, run under
+  Node).
+- Node's `structuredClone(v)` reads every own enumerable property of `v` by
+  [[Get]], so a getter runs, and builds a copy of data properties whose
+  prototypes are `Object.prototype`. A getter may change what the traversal
+  reads after it, so the copy of a `JsonValue` may be none: one beside a JSON
+  array's elements popping the enclosing array leaves a hole in its copy
+  (`invalid-node-structured-clone-result`, run under Node). It is stated at
+  any value, $`(\mathtt{unknown})\Rightarrow\mathtt{unknown}`$, stating no
+  effect (`node-structured-clone`; `invalid-node-structured-clone-preserving`,
+  run under Node: such a getter shrinks a mapped array); a transfer list is
+  not admitted. `JSON.stringify` of such an array serializes its elements
+  alone (run under Node).
 - `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
   `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
   object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,
@@ -2105,8 +2126,7 @@ is read through the reviewed overlay of library modules
 (`library-modules.mts`) where an entry lists it, and otherwise as an
 imported value ([imported values](#imported-ambient-and-global-values)).
 An entry names one overload of the function's declaration in Node's
-declarations, with exactly the text it was reviewed against (white space
-collapsed), and states the signature the host meets at the arguments it
+declarations, with exactly the text it was reviewed against, and states the signature the host meets at the arguments it
 admits, $`(\vec P)\Rightarrow R`$. With $`\Omega_m`$ the overlay, $`f`$
 imported from module $`\mu`$ and $`O_f`$ the overloads TypeScript binds it to:
 
@@ -2214,6 +2234,57 @@ unrestricted in its effect unless its entry states one. The entries:
   $`(\mathtt{string})\Rightarrow\mathtt{string}`$; an encoding option, which
   may select a `Buffer`, is outside the stated call
   (`invalid-node-realpath-options`).
+- `spawnSync(command, args, options)` at options $`O`$ stating
+  `encoding: "utf8"`, `stdio` and `env` absent, and an optional `timeout`,
+  `cwd`, `maxBuffer` and `input`, runs the command and returns a fresh
+  record (Node 25.2.1):
+  $`(\mathtt{string},\ \mathsf{readonly}\ \mathtt{string}[\,],\ O)\Rightarrow\{\mathtt{pid}\colon\mathtt{number};\ \mathtt{status}\colon\mathtt{number}\mid\mathtt{null};\ \mathtt{signal}\colon\mathtt{string}\mid\mathtt{null};\ \mathtt{stdout},\mathtt{stderr}\colon\mathtt{string}\mid\mathtt{undefined};\ \mathtt{error}^?\colon\mathtt{unknown}\}`$,
+  stating no effect: the host reads the options' properties
+  (`node-spawn-sync`). Both streams are piped, so each output is a string
+  where the child ran and absent where it could not be spawned, which the
+  declared `string` omits (`invalid-node-spawn-sync-stdout`, run under
+  Node); `stdio` naming no pipe leaves it `null` and is outside the stated
+  call (`invalid-node-spawn-sync-stdio`, run under Node).
+- `readdirSync(path, o)` with a string path reads `o.encoding` and
+  `o.signal`, then `o.recursive`, `o.encoding` and `o.withFileTypes` (Node
+  25.2.1's `lib/fs.js`). The four are stated,
+  $`o=\{\mathtt{withFileTypes}\colon\mathtt{true};\ \mathtt{encoding}^?\colon\texttt{"utf8"}\mid\mathtt{undefined};\ \mathtt{recursive}^?\colon\mathtt{false}\mid\mathtt{undefined};\ \mathtt{signal}^?\colon\mathtt{undefined}\}`$,
+  so under the caller contract ([trust surface](DESIGN.md#trust-surface))
+  each is a data property whose reads agree. `recursive: true` walks the
+  subdirectories, calling each entry's `isDirectory` through its prototype,
+  `path.join` and a stat of the joined path to choose what to read next, and
+  collects entries of every depth; that walk is not audited, so it is refused
+  (`invalid-node-readdir-recursive`, run under Node: a replaced test runs
+  during the call; [source fragment](SOURCE-FRAGMENT.md)). The call returns
+  a fresh array of entries, whose constructors assign each its `name` and
+  `parentPath`, writable strings; a path it cannot read throws, and the call
+  states no effect (`node-readdir-dirents`). That the assignments define own
+  data properties and that reading a test runs no code rest on a host
+  assumption ([trust surface](DESIGN.md#trust-surface)): `Dirent` and `DirentFromStats` instances keep their audited prototype chains, `DirentFromStats.prototype` → `Dirent.prototype` → `Object.prototype`, whose two Node prototypes hold data properties only, the seven `is…` tests among them callable throughout execution, also in external code.
+  An accessor on either prototype or on an inserted ancestor breaks the
+  first two, and a replaced or deleted test the third
+  (`invalid-node-dirent-name-accessor`, `invalid-node-dirent-method-getter`,
+  `invalid-node-dirent-chain-insert`, `invalid-node-dirent-test-replaced`,
+  run under Node). A program reaches neither prototype: a class value's
+  `prototype`, an entry's `constructor`, `Object.getPrototypeOf`,
+  `Object.setPrototypeOf`, `Object.defineProperty` and `Reflect` are refused
+  (`invalid-node-dirent-prototype-write`, run under Node,
+  `invalid-node-dirent-constructor-prototype`,
+  `invalid-node-dirent-get-prototype`, `invalid-node-dirent-set-prototype`). `encoding: "buffer"` names the entries by
+  Buffers, and options of a type stating no `encoding`, or no `signal`, may
+  hold it or a getter switching it between the reads
+  (`invalid-node-readdir-buffer-encoding`, `invalid-node-readdir-options-alias`,
+  `invalid-node-readdir-options-signal`, run under Node). An entry is a
+  `Dirent`, or, where the directory reports an unknown type, a
+  `DirentFromStats` built from `fs.lstatSync`; its seven `is…` tests dispatch
+  through prototypes other code may change (`Stats.prototype`'s call
+  `this._checkModeProperty`), so each is
+  $`()\Rightarrow\mathtt{unknown}`$, its effect unrestricted
+  (`invalid-node-readdir-test-result`, run under Node: a replaced test
+  answers a number).
+  The declared `Dirent.path` is absent under Node 25.2.1, so the entry states
+  none (`invalid-node-readdir-dirent-path`, run under Node), and a closure
+  whose parameter TypeScript types as `Dirent` is refused.
 - `node:path`'s `dirname` and `basename` with an optional suffix compute a
   string from their strings alone, within the empty footprint on their throw
   too (Node 25.2.1's `lib/path.js`). `join` of any number of strings,
@@ -3219,7 +3290,13 @@ an actual past the prefix, at its new position.
 A closure's written promise is proved whatever its claim offers: one of the
 signatures its code is checked at states that promise over the annotation's
 whole domain, admitting every receiver and argument the annotation admits,
-at a type within the written one, or the closure is refused.
+at a type within the written one, or the closure is refused. A guard
+closure passed where a callback binding more parameters is expected
+(`every`'s or `filter`'s predicate) is claimed at its own signature, its
+promise and the longer signature, its body checked at each
+(`guard-closure-callback`). The reviewed `every` and `filter` state no guard
+overload (`every<S>`, `filter<S>`), so a call passing a guard narrows neither
+its receiver nor its result.
 
 An imported guard is read at its declared type, both signatures; its promise
 is the import assumption of [the trust surface](DESIGN.md#trust-surface),

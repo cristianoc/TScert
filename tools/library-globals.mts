@@ -440,6 +440,32 @@ export const globalsOverlay: readonly GlobalEntry[] = [
     "function clearTimeout(timeoutId: NodeJS.Timeout | string | number | undefined): void;"].map(
     (signature): GlobalEntry => ({ host: contract, origin: node, global: "clearTimeout", signature,
       stated: { binders: [], params: [atom("unknown")], result: atom("undefined") } })),
+  // Node's global `setTimeout(callback, delay)` schedules the callback, which
+  // the host calls with no argument after the delay, between synchronous
+  // jobs, as a listener is called (SOURCE-CONTRACTS.md, "Node's process"),
+  // and returns the timer, an object read at no member. Scheduling runs
+  // asynchronous-resource hooks other code may have installed: no effect is
+  // stated. The callback states no effect either.
+  ...["function setTimeout<TArgs extends any[]>(\n            callback: (...args: TArgs) => void,\n            delay?: number,\n            ...args: TArgs\n        ): NodeJS.Timeout;",
+    "function setTimeout(callback: (_: void) => void, delay?: number): NodeJS.Timeout;",
+    "function setTimeout<TArgs extends any[]>(\n            callback: (...args: TArgs) => void,\n            ms?: number,\n            ...args: TArgs\n        ): NodeJS.Timeout;",
+    "function setTimeout(callback: (args: void) => void, ms?: number): NodeJS.Timeout;"].map(
+    (signature): GlobalEntry => ({ host: contract, origin: node, global: "setTimeout", signature,
+      stated: { binders: [], params: [{ k: "function", effect: ordinaryEffect, receiver: null, params: [], rest: null,
+        result: atom("unknown"), span: at }, optional(atom("number"))], result: atom("unknown") } })),
+  // Node's global `structuredClone(value)` serializes its argument, reading
+  // every own enumerable property by [[Get]], so a getter runs, and builds a
+  // fresh copy of data properties, its prototypes `Object.prototype`, its
+  // symbol keys dropped; a function throws a `DataCloneError`. A getter may
+  // change what the traversal reads later, so the copy of a `JsonValue` may
+  // be none (Node 25.2.1: a getter beside an array's elements popping an
+  // enclosing array leaves a hole in its copy). Stated at any value, the
+  // result `unknown`, no effect stated; a transfer list is not admitted.
+  ...["function structuredClone<T>(\n            value: T,\n            options?: { transfer?: Transferable[] },\n        ): T;",
+    "function structuredClone<T>(\n        value: T,\n        transfer?: { transfer: ReadonlyArray<import(\"worker_threads\").TransferListItem> },\n    ): T;"].map(
+    (signature): GlobalEntry => ({ host: contract,
+      origin: node, global: "structuredClone", signature,
+      stated: { binders: [], params: [atom("unknown")], result: atom("unknown") } })),
   // `Math.ceil(x)` of a number, a primitive: no conversion code runs.
   { host: contract, global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },
   // `Object.fromEntries(entries)` iterates `entries` and, for each element,
@@ -610,8 +636,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
 
 /** The entry for `global`'s `member` (absent: its call) declared as `text`. */
 export function globalEntry(entries: readonly GlobalEntry[], global: string, member: string | undefined,
-    text: string, origin: string): GlobalEntry | undefined {
-  return entries.find(e => e.global === global && e.member === member && e.signature === text &&
+    matches: (signature: string) => boolean, origin: string): GlobalEntry | undefined {
+  return entries.find(e => e.global === global && e.member === member && matches(e.signature) &&
     (e.origin ?? "library") === origin);
 }
 

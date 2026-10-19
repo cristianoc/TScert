@@ -135,8 +135,11 @@ locations below the heap the body started in; the runs compose by
 
 - an **inspection**: a read, test, arithmetic or allocation, an array
   literal's spread parts included, which read their stores' elements in
-  place, which preserves the heap (`ExpressionEffects.check`,
-  `Purity.inspectTerm`; proved: `inspect_safe`, from `inspect_step`);
+  place, and a merge, which reads its operands' own properties and steps to
+  the allocation of their copy, which preserves the heap
+  (`ExpressionEffects.check`, `Purity.inspectTerm`; proved: `inspect_safe`,
+  from `inspect_step`, whose merge case is `mergeParts_vals`: every copied
+  value is a value);
 - a **typed write** of a field whose contract, at the written object's type,
   admits only source values, within `{value: any, store: keep}`: the written
   location holds no store, by its contract (`writeWithin`; proved:
@@ -294,7 +297,7 @@ optional one.
 > `xs.map(f)` has type `U[]` with no holes when `xs` has none and `f`, with
 > everything it calls, uses only operations that keep every array's dense
 > prefixes: reads (optional chains included), tests, arithmetic, allocation
-> (array literals with spreads included), writes to variables and to fields
+> (array and object literals with spreads included), writes to variables and to fields
 > holding values, writes of array elements at literal indices, `push` and `unshift`, `for...of` and spreads over arrays,
 > strings, sets, maps and regex matches, the readers and mutators of `Set`,
 > `Map`, `Date` and regex literals, the array members taking callbacks

@@ -294,14 +294,18 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       (* A guard closure offers its promise beside its own signature, at the
          same parameters, and its body is checked at each, returning its plain
          result under both (Lean's `lambdaCode`). *)
+      (* The signatures its context offers beside its own, which bind more
+         parameters, stay plain: Lean finds the promise at the closure's own
+         arity (`ClosureSetup`). *)
       let own = match guard,own with
         | None,_ -> own
-        | Some (promise_effect,promised),Atoms [Shape ({calls=[call];_} as shape)]
+        | Some (promise_effect,promised),Atoms [Shape ({calls=call :: offered;_} as shape)]
           when quantified=[] && element=None ->
           let row () = collect_overload_row_claims (fun () ->
             ignore (infer_closure_body ~expected:result inner)) in
-          publish_arrow e.pos [row (); row ()];
-          Atoms [Shape {shape with calls=[call;{call with call_effect=promise_effect;result=promised}]}]
+          let calls = call :: {call with call_effect=promise_effect;result=promised} :: offered in
+          publish_arrow e.pos (List.map (fun _ -> row ()) calls);
+          Atoms [Shape {shape with calls}]
         | Some _,_ -> Proposal_diagnostics.unsupported "a guard closure with binders or a rest" in
       (* A contract advertising several signatures is implemented by this one
          closure. Propose that contract and state what the body claims under

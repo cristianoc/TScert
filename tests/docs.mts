@@ -4,7 +4,8 @@
 // GitHub cannot render, and that cited authors are named only inside links to
 // REFERENCES.md.
 //   node tests/docs.mts
-import { readdirSync, readFileSync, existsSync, realpathSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
+import { present } from "../tools/files.mts";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -29,13 +30,17 @@ const excluded = new Set(["node_modules", ".lake", "_build"]);
  * checked only as a link, whose target must be a document checked here. */
 const links: string[] = [];
 function markdownFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    if (excluded.has(entry.name)) return [];
+  const found: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (excluded.has(entry.name)) continue;
     const path = join(dir, entry.name);
-    if (entry.isSymbolicLink()) { if (entry.name.endsWith(".md")) links.push(path); return []; }
-    if (entry.isDirectory()) return existsSync(join(path, ".git")) ? [] : markdownFiles(path);
-    return entry.name.endsWith(".md") ? [path] : [];
-  });
+    if (entry.isSymbolicLink()) { if (entry.name.endsWith(".md")) links.push(path); }
+    else if (entry.isDirectory()) {
+      if (!present(join(path, ".git"))) for (const file of markdownFiles(path)) found.push(file);
+    }
+    else if (entry.name.endsWith(".md")) found.push(path);
+  }
+  return found;
 }
 
 /** The document with code fences removed, math fences kept. */
@@ -118,7 +123,7 @@ const unrenderable: [RegExp, string][] = [
 const files = markdownFiles(root);
 const problems: string[] = [];
 for (const link of links) {
-  const target = existsSync(link) ? realpathSync(link) : undefined;
+  const target = present(link) ? realpathSync(link) : undefined;
   if (!target || !files.includes(target))
     problems.push(`${relative(root, link)}: symbolic link to a document this check does not cover`);
 }
@@ -133,7 +138,7 @@ for (const file of files) {
     if (/^[a-z]+:/i.test(url)) continue;
     const [path = "", anchor] = url.split("#");
     const target = path ? resolve(dirname(file), decodeURI(path)) : file;
-    if (path && !existsSync(target)) { fail(file, `link to missing file ${url}`); continue; }
+    if (path && !present(target)) { fail(file, `link to missing file ${url}`); continue; }
     if (anchor === undefined || !target.endsWith(".md")) continue;
     const heading = anchorsOf(target).get(decodeURIComponent(anchor));
     if (heading === undefined) fail(file, `link to missing anchor ${url}`);

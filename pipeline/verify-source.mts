@@ -9,7 +9,7 @@ import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { clientErrors, tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
-import { fieldOf, messageOf } from "../tools/thrown.mts";
+import { fieldOf, messageOf, passToolFailure } from "../tools/thrown.mts";
 import { keepRunDirectories, runDirectory, runRoot } from "./run-directory.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
@@ -44,7 +44,8 @@ const here = import.meta.dirname;
 // The producer runs from `_build/default/producer.exe` below `../ocaml-producer`.
 // Its dune file, `../ocaml-producer/dune`, declares that executable and the library it links;
 // `../ocaml-producer/dune-project` makes that directory the root `dune build --root` builds into `_build/`.
-export const producerExecutable: string = resolve(here, "../ocaml-producer/_build/default/producer.exe");
+export const producerExecutable: string =
+  process.env.PRODUCER ?? resolve(here, "../ocaml-producer/_build/default/producer.exe");
 const repo = resolve(here, "..");
 export const verifier: string =
   process.env.VERIFIER ??
@@ -82,8 +83,8 @@ const searchDepth = 12;
  * error naming the step and the limit, never a verdict. */
 const stepTimeoutMs = 60_000;
 /** A step run: its exit code, its output, and what it reports on failure. */
-type Ran = { code: number; out: string; detail: string };
-function run(command: string, args: string[]): Ran {
+export type Ran = { code: number; out: string; detail: string };
+export function run(command: string, args: string[]): Ran {
   const p = spawnSync(command, args, {
     cwd: repo,
     timeout: stepTimeoutMs,
@@ -97,10 +98,14 @@ function run(command: string, args: string[]): Ran {
     throw Error(
       `timeout: ${step} did not finish within ${stepTimeoutMs / 1000} s`,
     );
-  if (p.error || p.signal || p.status === null)
-    throw Error(
-      `${step}: ${p.error?.message ?? p.signal ?? "no exit status"}`,
-    );
+  // A step killed by a signal (the verifier aborting on a stack overflow)
+  // or that did not start is a failure of the tool, no verdict, reported
+  // with the first line it wrote.
+  if (p.error || p.signal || p.status === null) {
+    const said = (p.stderr ? Buffer.from(p.stderr).toString("utf8") : "").trim().split("\n")[0] ?? "";
+    throw Error(`tool failure: ${step} ${p.signal ? `was killed by ${p.signal}` : "did not run"}: ` +
+      `${p.error?.message ?? (said || "no exit status")}`);
+  }
   // Every wire document a step prints is valid UTF-8 (`wireText`).
   const out = wireText(p.stdout, step);
   const err = wireText(p.stderr, step);
@@ -110,6 +115,26 @@ function run(command: string, args: string[]): Ran {
     detail: err.trim() || out.trim(),
   };
 }
+/** The line that ends a refusal record, written by the verifier and by the
+ * producer after their refusal and nothing after it. */
+export const refusalEnd = "end of refusal";
+/** A step's refusal record, without its end line, or null where the step
+ * succeeded. A refusal is its exit status (the verifier's 1, the producer's
+ * 2), a first line naming it (`reject: …`, `unsupported: …`) and a last line
+ * `end of refusal`, so a record cut short is none. Any other exit but 0 (no
+ * output, an exception, a usage error, a file it could not read or write,
+ * the verifier's 3 and the producer's 3) is a failure of the tool, no
+ * verdict. */
+function refusalOf(ran: Ran, step: string, status: number, prefix: string): string | null {
+  if (ran.code === 0) return null;
+  const lines = ran.detail.split("\n");
+  if (ran.code === status && ran.detail.startsWith(prefix) && lines.at(-1) === refusalEnd)
+    return lines.slice(0, -1).join("\n").trim();
+  throw Error(`tool failure: ${step} exited with status ${ran.code} without a complete refusal: ` +
+    `${lines[0] || "no output"}`);
+}
+const verifierRefusal = (ran: Ran, step: string): string | null => refusalOf(ran, `verifier ${step}`, 1, "reject: ");
+const producerRefusal = (ran: Ran): string | null => refusalOf(ran, "the producer", 2, "unsupported: ");
 /** A failed search names the obligation it could not establish and why, in
  * source terms: the presentation's summary (`diagnostic-view.mts`) of the verifier's structured record, as
  * the line `obligation: …` after the verifier's own first line. Display only;
@@ -137,22 +162,29 @@ function isJsonArray(value: Json): value is readonly Json[] {
 function isJsonRecord(value: Json): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function readExplanations(text: string): Explanation[] {
+/** The producer's explanations (`producer --explain`), read field by field:
+ * a run that exits otherwise than 0, or prints anything but an array of
+ * `{pos, reason}` records, is a tool failure, never "no explanation". */
+function readExplanations(ran: Ran): Explanation[] {
+  const malformed = (what: string): Error =>
+    Error(`tool failure: the producer's --explain ${what}: ${ran.detail.split("\n")[0] || "no output"}`);
+  if (ran.code !== 0) throw malformed(`exited with status ${ran.code}`);
+  let parsed: Json;
   try {
-    const parsed: Json = JSON.parse(text);
-    if (!isJsonArray(parsed)) return [];
-    return parsed.flatMap((e: Json): Explanation[] => {
-      if (!isJsonRecord(e)) return [];
-      const reason = e["reason"];
-      const pos = e["pos"];
-      if (typeof reason !== "string" || !isJsonArray(pos) || pos.length !== 2) return [];
-      const start = pos[0];
-      const end = pos[1];
-      return typeof start === "number" && typeof end === "number" ? [{ pos: [start, end], reason }] : [];
-    });
+    parsed = JSON.parse(ran.out);
   } catch {
-    return [];
+    throw malformed("printed no JSON");
   }
+  if (!isJsonArray(parsed)) throw malformed("printed no array of explanations");
+  return parsed.map((e: Json): Explanation => {
+    if (!isJsonRecord(e) || Object.keys(e).sort().join() !== "pos,reason") throw malformed("printed a malformed explanation");
+    const reason = e["reason"];
+    const pos = e["pos"];
+    const [start, end] = isJsonArray(pos) && pos.length === 2 ? pos : [];
+    if (typeof reason !== "string" || typeof start !== "number" || typeof end !== "number")
+      throw malformed("printed a malformed explanation");
+    return { pos: [start, end], reason };
+  });
 }
 /** A search that found no derivation, or a quantified call it could not show
  * within its bound or resolution qualification, is refused by name where its cause is
@@ -203,7 +235,8 @@ function refusedByTypeScript(detail: string, read: () => SeenDiagnostic[]): stri
 function typeScriptErrors(file: string, tsconfigPath?: string): SeenDiagnostic[] {
   try {
     return clientErrors(file, tsconfigPath);
-  } catch {
+  } catch (error) {
+    passToolFailure(error);
     return [];
   }
 }
@@ -265,7 +298,7 @@ function eligibleReads(declarations: unknown, units: Map<string, unknown[]>, cla
   });
 }
 /** Propose a document's claims, its eligible reads qualified. */
-function propose(ast: string, flow: string, reads: QualifiedRead[], qualifiedPath: string): ReturnType<typeof run> {
+function propose(ast: string, flow: string, reads: QualifiedRead[], qualifiedPath: string): Ran {
   writeFileSync(qualifiedPath, JSON.stringify(reads.map(({ local, declaration, footprint, onThrow }) =>
     ({ local, declaration, footprint, onThrow }))));
   return run(producerExecutable, reads.length ? [ast, flow, qualifiedPath] : [ast, flow]);
@@ -295,7 +328,8 @@ class ModuleRuns {
       const ast = join(artifacts, `module-${index}.fragment.json`);
       writeFileSync(ast, JSON.stringify(doc));
       const lowered = run(verifier, ["--lower-control-flow", ast]);
-      if (lowered.code !== 0) continue;
+      // A module the verifier refuses to lower is read at its declared types.
+      if (verifierRefusal(lowered, "--lower-control-flow") !== null) continue;
       const flow = join(artifacts, `module-${index}.flow.json`);
       writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
       const imports = [...new Set(list(field(doc.declarations, "values")).map((v) => field(field(v, "declaration"), "module"))
@@ -323,7 +357,8 @@ class ModuleRuns {
       if (!this.proposed.has(key)) {
         const proposed = propose(doc.ast, doc.flow, reads, join(this.artifacts, `module-${doc.index}.qualified.json`));
         writeFileSync(join(this.artifacts, `module-${doc.index}.proposal.log`), proposed.detail);
-        this.proposed.set(key, proposed.code === 0 ? { text: proposed.out, parsed: JSON.parse(proposed.out) } : null);
+        // A module the producer refuses is read at its declared types.
+        this.proposed.set(key, producerRefusal(proposed) !== null ? null : { text: proposed.out, parsed: JSON.parse(proposed.out) });
       }
       const proposed = this.proposed.get(key);
       if (proposed) claims.set(location, proposed);
@@ -425,8 +460,9 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
     const flow = join(artifacts, "flow.json");
     const lowered = run(verifier, ["--lower-control-flow", ast]);
     writeFileSync(join(artifacts, "flow.log"), lowered.detail);
-    if (lowered.code !== 0)
-      return { status: "unsupported", artifacts, phase, detail: lowered.detail };
+    const loweringRefusal = verifierRefusal(lowered, "--lower-control-flow");
+    if (loweringRefusal !== null)
+      return { status: "unsupported", artifacts, phase, detail: loweringRefusal };
     writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
     phase = "proposal";
     // Certified imports: each module's claims, and the reads they may
@@ -437,16 +473,16 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
     const claims = join(artifacts, "claims.json"),
       evidence = join(artifacts, "evidence.json");
     const budget = subtypeRounds === undefined ? [] : ["--subtype-rounds", String(subtypeRounds)];
-    let produced: ReturnType<typeof run>;
+    let produced: Ran;
+    let searchRefusal: string | null = null;
     for (;;) {
       phase = "proposal";
       const { claims: moduleClaims, readsOf, reads } = modules.claims(field(parsedData, "declarations"), withdrawn);
       const proposed = propose(ast, flow, reads, join(artifacts, "qualified.json"));
       writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
-      if (proposed.code !== 0)
-        return proposed.detail.startsWith("unsupported:")
-          ? { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposed.detail, refusedErrors) }
-          : { status: "error", artifacts, phase, detail: proposed.detail };
+      const proposalRefusal = producerRefusal(proposed);
+      if (proposalRefusal !== null)
+        return { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposalRefusal, refusedErrors) };
       // The importer's claims, its `modules` the claims of each module a read
       // qualifies, directly or through a module's reads, spliced as text: a
       // bigint literal's digits pass through unrounded.
@@ -469,20 +505,21 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
         evidence,
         String(searchDepth),
       ]);
-      const failed = produced.code !== 0 ? failedImport(produced.detail) : null;
+      searchRefusal = verifierRefusal(produced, "--produce-source-claims");
+      const failed = searchRefusal !== null ? failedImport(searchRefusal) : null;
       if (!failed) break;
       const key = `${failed.module}#${failed.name ?? "*"}`;
       if (withdrawn.has(key)) break;
       withdrawn.add(key);
     }
     writeFileSync(join(artifacts, "search.log"), produced.detail);
-    if (produced.code !== 0)
+    if (searchRefusal !== null)
       return {
-        status: refusalStatus(produced.detail),
+        status: refusalStatus(searchRefusal),
         artifacts,
         phase,
-        detail: refusedByName(namingTheObligation(produced.detail, bytes.toString("utf8")),
-          () => readExplanations(run(producerExecutable, ["--explain", ast, flow]).out),
+        detail: refusedByName(namingTheObligation(searchRefusal, bytes.toString("utf8")),
+          () => readExplanations(run(producerExecutable, ["--explain", ast, flow])),
           refusedErrors),
       };
     phase = "check";
@@ -495,8 +532,9 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
       evidence,
     ]);
     writeFileSync(join(artifacts, "check.log"), checked.detail);
-    if (checked.code !== 0)
-      return { status: refusalStatus(checked.detail), artifacts, phase, detail: checked.detail };
+    const checkRefusal = verifierRefusal(checked, "--check-source-claims");
+    if (checkRefusal !== null)
+      return { status: refusalStatus(checkRefusal), artifacts, phase, detail: checkRefusal };
     return { status: "verified", artifacts, phase, functions, initialization };
   } catch (e) {
     return {

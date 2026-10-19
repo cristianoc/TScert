@@ -125,6 +125,23 @@ Co-Authored-By: <attribution>
   must read every key. Every behaviour change states `Outcome` and `Trust`.
 - A docs-only or tests-only commit still opens with `Why:` and names what
   it changes (`Docs modified (WORK.md row): …`).
+- **The subject is a short sentence, at most 100 characters**: the change
+  itself, scannable in a range. Detail belongs in the sections.
+- **A change heading is one line**, closing with `):` on that line
+  (`Docs modified (SOURCE-CONTRACTS.md, WORK.md):`); a heading that wraps is
+  not recognised and renders as prose. Name the objects briefly; list more
+  in the body.
+- **Only the trailers above.** `Units` is left out when no unit is named;
+  findings such as a gap go in a `Gap:` section, not a trailer.
+- **Prose in a change block is plain words for that reader**: say what the
+  object now does in the terms of the language and the type system, and let
+  the formula or code carry the precision. Internal names go in `Lean:`.
+- **A merge commit** carries `Why:` (what the merged line brings, which
+  conflicts were resolved) and `Outcome: no-behaviour-change` with `Parts`:
+  its changes are recorded in the merged commits, which a range renders.
+
+`bin/git_hooks/commit_record.sh` (the `commit-msg` hook) checks the
+trailers, the subject's length and the change headings.
 
 ## Rendering
 

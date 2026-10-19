@@ -7,7 +7,7 @@ import type { Expression, FunctionDeclaration, Node, Statement } from "typescrip
 import type { BindingAst, Expr, FunctionAst, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
-import { GENERATOR, UNCLOSABLE, bindingScope, firstOptional, forInEntryReads, freeOffsets, jumpTarget, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
+import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, forInEntryReads, freeOffsets, jumpTarget, namesRead, parameterName, patternNames, skipParentheses, switchLabel } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 
@@ -1136,6 +1136,9 @@ export function stmt(this: Gate, node: Statement): Stmt {
           : { k: "lit", pos: keyword, lit: { a: "undefined" } },
       };
     const e = gate.expr(node.expression);
+    // In a guard, a Boolean by its form returns the Boolean its truth is
+    // (`booleanReturn`), the literals at the keyword's first two code units.
+    if (gate.guardBody && !gate.asyncBody && booleanForm(e)) return booleanReturn(gate.span(node), e, start);
     // In an async body, `return e` is `return %AsyncReturn%(e)`, the call
     // spanning the statement, the intrinsic read at the keyword.
     return {
@@ -1436,6 +1439,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
     gate.fail(head, "a receiver needs a required type annotation");
   const outerReceiverMode = gate.receiverMode;
   const outerAsync = gate.asyncBody;
+  const outerGuard = gate.guardBody;
   gate.receiverMode = receiverParam
     ? gate.strict
       ? "strict"
@@ -1454,6 +1458,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
         : gate.typeOf(p.type, p)),
       };
     });
+    gate.guardBody = guard !== null;
     // A parameter written as a pattern or with a default binds a hidden
     // name, which the caller's argument initializes; a `destructure` over
     // it, first in the body in parameter order, binds the source's names,
@@ -1524,5 +1529,6 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
     gate.strict = outerStrict;
     gate.receiverMode = outerReceiverMode;
     gate.asyncBody = outerAsync;
+    gate.guardBody = outerGuard;
   }
 }
