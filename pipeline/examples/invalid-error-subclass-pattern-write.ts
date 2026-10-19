@@ -1,9 +1,8 @@
-// A destructuring assignment writing `stack`: the instance's own `stack`
-// stays non-enumerable (run under Node). Refused at the target's receiver.
-class Decline extends Error {}
-
-export function traced(): string[] {
-  const e = new Decline("x");
-  [e.stack] = ["s"];
-  return Object.keys(e);
+// A destructuring assignment writing `stack` through a parameter typed
+// `{ stack: string }`, which an instance of the `Error` family meets: its own
+// `stack` stays non-enumerable (run under Node). The receiver's type does not
+// exclude an object holding a prototype: refused at the write.
+export function traced(o: { stack: string }): string[] {
+  [o.stack] = ["s"];
+  return Object.keys(o);
 }

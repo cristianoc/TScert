@@ -6,7 +6,7 @@
  * cannot state; a refusal never drops a declaration. */
 import { readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { API, DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isIntersectionType, isStringLiteralType, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
+import { API, DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 // declaration-types.mts declares the declaration document this module writes, which the Fragment carries and Lean's EquationLowering reads.
@@ -54,13 +54,6 @@ export class DeclarationError extends Error {
 /** A TypeScript error as the gate read it: the file TypeScript names, whether
  * that is the client, and the span, as offsets and as 0-based line and
  * character. The text is TypeScript's own. */
-/** A write that may set an own `message` or `stack`: at a key the source
- * spells, at a computed key, or `Object.assign` copying its sources' keys. */
-export type ReservedWrite =
-  | { receiver: Span; key: "message" | "stack" }
-  | { receiver: Span; computed: Span }
-  | { receiver: Span; sources: Span[] };
-
 export interface SeenDiagnostic {
   file: string;
   client: boolean;
@@ -566,11 +559,6 @@ export function collectDeclarations(file: string, options: {
    * and whose built-in value joins the values, located at the first such
    * receiver. */
   memberReceivers?: readonly Span[];
-  /** The client's writes that may set `message` or `stack`
-   * (`ReservedWrite`): each whose receiver TypeScript types at a type
-   * admitting an instance of the `Error` family is refused there
-   * (SOURCE-ELABORATION.md, "A class extending Error"). */
-  reservedWrites?: readonly ReservedWrite[];
   /** The client's computed types (`computedForm`) outside its type
   * declarations, each outermost one: each is evaluated
   * (`computed-types.mts`) and reported to `computedType` with its term, or
@@ -1715,105 +1703,6 @@ export function collectDeclarations(file: string, options: {
     const primitiveProtos: TypeDefinition[] = [];
     const primitives = new Map<PrimitiveKind, Span>();
     let stringSplit: Span | undefined;
-    // An `Error`-family instance owns a non-enumerable `message` (where one
-    // is passed) and `stack` in JavaScript, which the model does not state
-    // (SOURCE-ELABORATION.md, "A class extending Error"): a write of either
-    // makes or changes that own property, where the model would add an
-    // enumerable key. A write that may set either is refused where its
-    // receiver's type admits such an instance. A class instance is not
-    // callable and not an array, and owns `message` and `stack` at strings;
-    // any type TypeScript cannot be shown to exclude it by these admits it. A
-    // type excludes strings where each part is another primitive, `object`,
-    // an array or a callable type.
-    const reserved = new Set(["name", "message", "stack"]);
-    const partsOf = (type: Type): readonly Type[] => isUnionType(type) ? type.getTypes().flatMap(partsOf) : [type];
-    const excludesStrings = (type: Type): boolean => partsOf(type).every(t =>
-      !!(t.flags & (TypeFlags.NumberLike | TypeFlags.BigIntLike | TypeFlags.BooleanLike | TypeFlags.ESSymbolLike |
-        TypeFlags.Null | TypeFlags.Undefined | TypeFlags.Void | TypeFlags.Never | TypeFlags.NonPrimitive)) ||
-      checker.isArrayType(t) || checker.isTupleType(t) || checker.getSignaturesOfType(t, SignatureKind.Call).length > 0);
-    const admitsError = (type: Type): boolean => partsOf(type).some(t => {
-      if (isIntersectionType(t)) return t.getTypes().every(admitsError);
-      if (t.flags & (TypeFlags.NumberLike | TypeFlags.StringLike | TypeFlags.BigIntLike | TypeFlags.BooleanLike |
-          TypeFlags.ESSymbolLike | TypeFlags.Null | TypeFlags.Undefined | TypeFlags.Void | TypeFlags.Never)) return false;
-      if (!(t.flags & TypeFlags.Object)) return true;
-      if (checker.isArrayType(t) || checker.isTupleType(t)) return false;
-      if (checker.getSignaturesOfType(t, SignatureKind.Call).length ||
-          checker.getSignaturesOfType(t, SignatureKind.Construct).length) return false;
-      for (const name of reserved) {
-        const property = checker.getPropertyOfType(t, name);
-        const declared = property && checker.getTypeOfSymbol(property);
-        if (declared && excludesStrings(declared)) return false;
-      }
-      return !checker.getIndexInfosOfType(t).some(i => !!(i.keyType.flags & TypeFlags.String) && excludesStrings(i.valueType));
-    });
-    // A key may be `message` or `stack` unless each of its parts is another
-    // literal, a number or a symbol.
-    const mayBeReserved = (type: Type): boolean => partsOf(type).some(t =>
-      isStringLiteralType(t) ? t.value === "message" || t.value === "stack"
-        : !(t.flags & (TypeFlags.NumberLike | TypeFlags.ESSymbolLike | TypeFlags.BooleanLike | TypeFlags.BigIntLike |
-          TypeFlags.Null | TypeFlags.Undefined | TypeFlags.Void | TypeFlags.Never)));
-    // A source of `Object.assign` copies its own enumerable keys, which its
-    // type need not mention: only a fresh object literal whose keys are all
-    // written, none of them `message` or `stack`, is known to carry neither.
-    const literalWithout = (node: Node): boolean => {
-      while (ts.isParenthesizedExpression(node)) node = node.expression;
-      return ts.isObjectLiteralExpression(node) && node.properties.every(p => {
-        if (ts.isSpreadAssignment(p) || !p.name) return false;
-        const key = ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) || ts.isNumericLiteral(p.name) ? p.name.text : null;
-        return key !== null && key !== "message" && key !== "stack";
-      });
-    };
-    // The receiver's type as its program declares it, never as TypeScript
-    // narrows it at the write: a call between a test and the write may have
-    // replaced what the test saw. A name is read at its declaration's type,
-    // a member at its declared type in its object's, step by step; anything
-    // else at the type TypeScript gives the expression itself, which no flow
-    // narrows; `undefined` where no declaration states one.
-    const declaredTypes = (node: Node): readonly Type[] | undefined => {
-      while (ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node) || ts.isAssertionExpression(node) ||
-          ts.isSatisfiesExpression(node)) node = node.expression;
-      if (ts.isIdentifier(node)) {
-        const symbol = checker.getSymbolAtLocation(node);
-        const target = symbol && symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
-        const type = target && checker.getTypeOfSymbol(target);
-        return type ? partsOf(type) : undefined;
-      }
-      if (ts.isPropertyAccessExpression(node)) {
-        const objects = declaredTypes(node.expression);
-        if (!objects || !ts.isIdentifier(node.name)) return undefined;
-        const name = node.name.text;
-        const types: Type[] = [];
-        for (const t of objects) {
-          if (t.flags & (TypeFlags.Null | TypeFlags.Undefined)) continue;
-          const property = checker.getPropertyOfType(t, name);
-          const type = property && checker.getTypeOfSymbol(property);
-          if (!type) return undefined;
-          types.push(...partsOf(type));
-        }
-        return types.length ? types : undefined;
-      }
-      if (ts.isElementAccessExpression(node)) return undefined;
-      const type = checker.getTypeAtLocation(node);
-      return type ? partsOf(type) : undefined;
-    };
-    for (const write of options.reservedWrites ?? []) {
-      const receiver = expressionAt(client, write.receiver);
-      if (!receiver) throw new DeclarationError(write.receiver, "TypeScript write receiver missing");
-      // A fresh literal is no instance of the family.
-      let fresh: Node = receiver;
-      while (ts.isParenthesizedExpression(fresh)) fresh = fresh.expression;
-      if (ts.isObjectLiteralExpression(fresh) || ts.isArrayLiteralExpression(fresh)) continue;
-      const types = declaredTypes(receiver);
-      const key = "key" in write ? write.key
-        : "computed" in write ? (() => {
-          const node = expressionAt(client, write.computed);
-          const keys = node ? declaredTypes(node) : undefined;
-          return !keys || keys.some(mayBeReserved) ? "message` or `stack" : null;
-        })()
-        : write.sources.some(span => { const node = expressionAt(client, span); return !node || !literalWithout(node); }) ? "message` or `stack" : null;
-      if (key && (!types || types.some(admitsError)))
-        throw new DeclarationError(write.receiver, `a write of \`${key}\` onto a value whose declared type admits an instance of the \`Error\` family is outside the fragment: JavaScript's instance owns a non-enumerable \`stack\`, and \`message\` where one is passed, which the model does not state`);
-    }
     for (const span of options.memberReceivers ?? []) {
       const receiver = expressionAt(client, span);
       if (!receiver) throw new DeclarationError(span, "TypeScript member receiver missing");

@@ -181,6 +181,10 @@ held in a slot. -/
   | .mergeObjects source left right final assign =>
     let L := (← executionSaved scope Γ left).2
     let R := (← executionSaved scope Γ right).2
+    -- `Object.assign` writes each key the source owns onto the target: a
+    -- source that may own a reserved key is a reserved write.
+    if assign then
+      reservedWriteCheck right.source L (!excludesReservedKeys (SourceTypes.graph (← table)) R)
     if assign && !ownsNoProto (SourceTypes.graph (← table)) R then
       throw (locatedRefusal (← table) right.source .expressionClaim
         "Object.assign from a source that may own `__proto__`: it sets that key through the prototype's setter, which replaces the target's prototype rather than adds a key")
@@ -276,6 +280,13 @@ copy takes: the copy of such an object holds all of it. -/
     (throw (locatedRefusal T original.span .expressionClaim reason) : Compiler α)
   let W ← exprType fc original
   let X := Γ[r]?.getD []
+  -- A key-adding write is a write: at a reserved key, onto a proto-free
+  -- object only (`reservedWriteCheck`).
+  reservedWriteCheck original.span X (match static with
+    | some fld => reservedKey fld
+    | none => match key with
+      | some (.var _ keyName) => (valueSlot scope keyName).all fun k => reservedKeyClaim G (Γ[k]?.getD [])
+      | _ => true)
   let symbolCopy := fun (F : Ty Tree) => do
     if !listsCopiedKeys G X then
       refuse "a key-adding write of a symbol key on an object whose type does not list its keys: the copy of an object takes its string keys, and the symbol keys it may own are not known"

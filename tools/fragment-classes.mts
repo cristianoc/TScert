@@ -284,9 +284,11 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
   // (Node gives every instance an own `stack`, and an own `message` where one
   // is passed): an instance member under either name would be shadowed by the
   // own property. Each class extending one of the family is checked here, so
-  // the names are reserved at every depth. A write of either, through `this`
-  // or any other receiver, is refused by its receiver's type
-  // (`reservedWrites` in declaration-graph.mts).
+  // the names are reserved at every depth. A parameter property and a
+  // constructor's `this.k = e` are fields of the instance's allocation, which
+  // the lowering defines, and are reserved here too; any other write of
+  // either key is Lean's (`reservedWriteCheck`, SOURCE-ELABORATION.md,
+  // "Reserved writes").
   if (base?.error) {
     const spelled = (key: Node | undefined): string | undefined =>
       key && (ts.isIdentifier(key) || ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) ? key.text : undefined;
@@ -303,6 +305,18 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
           const field = p.modifiers?.length ? reserved(p.name) : undefined;
           if (field) gate.fail(p, `a parameter property named \`${field}\` of a class extending \`Error\` is outside the fragment: it assigns the instance's own \`${field}\`, which JavaScript keeps non-enumerable`);
         }
+      // A constructor's write through `this` is a field of the allocation.
+      if (ts.isConstructorDeclaration(m) && m.body) {
+        const target = (n: Node): string | undefined => ts.isPropertyAccessExpression(n) && n.expression.kind === ts.SyntaxKind.ThisKeyword
+          ? reserved(n.name)
+          : ts.isElementAccessExpression(n) && n.expression.kind === ts.SyntaxKind.ThisKeyword ? reserved(n.argumentExpression) : undefined;
+        const write = (n: Node): Node | undefined => ts.isBinaryExpression(n) &&
+          n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+          target(n.left) ? n : n.forEachChild(write);
+        const written = write(m.body);
+        if (written && ts.isBinaryExpression(written))
+          gate.fail(written, `a write of \`this.${target(written.left)}\` in the constructor of a class extending \`Error\` is outside the fragment: it defines the instance's own \`${target(written.left)}\`, which JavaScript keeps non-enumerable`);
+      }
     }
   }
   const instanceMembers = { name: name.text, generic: binders.length > 0 };

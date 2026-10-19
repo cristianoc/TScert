@@ -1459,50 +1459,6 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findReceivers);
   };
   if (!carriesContext) findReceivers(source);
-  // Every write that may set `message` or `stack`: an assignment, an update,
-  // a target of a destructuring assignment or a loop head, and
-  // `Object.assign`; TypeScript's type of the receiver decides
-  // (`reservedWrites` in declaration-graph.mts).
-  const reservedWrites: { receiver: Node; key: "message" | "stack" | null; computed: Node | null; sources: Node[] | null }[] = [];
-  const reservedKey = (text: string): "message" | "stack" | null =>
-    text === "message" ? "message" : text === "stack" ? "stack" : null;
-  const writeTarget = (target: Node): void => {
-    while (ts.isParenthesizedExpression(target)) target = target.expression;
-    if (ts.isPropertyAccessExpression(target)) {
-      const key = ts.isIdentifier(target.name) ? reservedKey(target.name.text) : null;
-      if (key) reservedWrites.push({ receiver: target.expression, key, computed: null, sources: null });
-    } else if (ts.isElementAccessExpression(target)) {
-      const arg = target.argumentExpression;
-      if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
-        const key = reservedKey(arg.text);
-        if (key) reservedWrites.push({ receiver: target.expression, key, computed: null, sources: null });
-      } else if (!ts.isNumericLiteral(arg)) reservedWrites.push({ receiver: target.expression, key: null, computed: arg, sources: null });
-    } else if (ts.isObjectLiteralExpression(target)) {
-      for (const p of target.properties) {
-        if (ts.isPropertyAssignment(p)) writeTarget(p.initializer);
-        else if (ts.isSpreadAssignment(p)) writeTarget(p.expression);
-      }
-    } else if (ts.isArrayLiteralExpression(target)) {
-      for (const e of target.elements) writeTarget(ts.isSpreadElement(e) ? e.expression : e);
-    } else if (ts.isBinaryExpression(target) && target.operatorToken.kind === ts.SyntaxKind.EqualsToken) writeTarget(target.left);
-  };
-  const findWrites = (node: Node): void => {
-    if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
-        node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) writeTarget(node.left);
-    if ((ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
-        (node.operator === ts.SyntaxKind.PlusPlusToken || node.operator === ts.SyntaxKind.MinusMinusToken)) writeTarget(node.operand);
-    if ((ts.isForOfStatement(node) || ts.isForInStatement(node)) && !ts.isVariableDeclarationList(node.initializer))
-      writeTarget(node.initializer);
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-        ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" &&
-        node.expression.name.text === "assign" && node.arguments.length > 1) {
-      const [target, ...sources] = node.arguments;
-      if (target && !ts.isSpreadElement(target))
-        reservedWrites.push({ receiver: target, key: null, computed: null, sources: sources.map((a) => ts.isSpreadElement(a) ? a.expression : a) });
-    }
-    node.forEachChild(findWrites);
-  };
-  if (!carriesContext) findWrites(source);
   // A `for...of` loop steps the iteration intrinsic of its iterable's kind:
   // TypeScript's type of the iterable decides.
   const iterableNodes: Node[] = [];
@@ -1675,13 +1631,13 @@ function lowerFile(file: string, carriesContext: boolean,
       firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
       classTestNodes.length || classReadNodes.length || contextualNodes.length || assignNodes.length ||
       staticTypeNodes.length ||
-      hookTestNodes.length || receiverNodes.length || reservedWrites.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
+      hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || mappedNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
       restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length ||
       regexpNodes.length || dispatchNodes.length) {
     const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
-      hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? reservedWrites[0]?.receiver ?? enumNodes[0] ??
+      hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
       spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ??
       regexpNodes[0] ?? dispatchNodes[0];
@@ -1766,9 +1722,6 @@ function lowerFile(file: string, carriesContext: boolean,
         assignCalls: assignNodes.map(node => gate.span(node)),
         assignTypes: ([start, end], result) => gate.assignTypes.set(`${start}:${end}`, result),
         memberReceivers: receiverNodes.map(node => gate.span(node)),
-        reservedWrites: reservedWrites.map(({ receiver, key, computed, sources }) => key ? { receiver: gate.span(receiver), key }
-          : computed ? { receiver: gate.span(receiver), computed: gate.span(computed) }
-          : { receiver: gate.span(receiver), sources: (sources ?? []).map(node => gate.span(node)) }),
         iterables: iterableNodes.map(node => gate.span(node)),
         spreads: spreadNodes.map(node => gate.span(node)),
         iterable: ([start, end], intrinsic, symbol) => {
@@ -1833,7 +1786,7 @@ function lowerFile(file: string, carriesContext: boolean,
         ? [...importNodes, ...memberNodes, ...localNodes, ...globalNodes, ...globalValueNodes, ...(firstArray ? [firstArray] : []),
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
             ...classTestNodes, ...classReadNodes, ...contextualNodes, ...assignNodes,
-            ...receiverNodes, ...reservedWrites.map(w => w.receiver), ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
+            ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
             ...keyTypeNodes, ...bindingNodes, ...privateNodes].find(node =>
             node.getStart(source) === error.at[0]) ?? first
         : first;

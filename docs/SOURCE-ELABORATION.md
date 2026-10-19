@@ -413,35 +413,104 @@ Operations excluded, refused with a location:
   the overlay's `Error` is;
 - another library base (`TypeError`, `Map`, an ambient class).
 
-**Writes of `message` and `stack`.** JavaScript keeps an instance's own
-`stack` non-enumerable through an assignment, and its own `message` too where
-the construction passed one; after `new D()` or `new D(undefined)` the
-instance owns no `message`, and an assignment creates an own enumerable one
-(observed under Node, `invalid-error-subclass-assign-target`). Either way the
-model, which states neither property, would add or change an enumerable own
-field, which a later copy, `Object.keys` or an exact-key claim observes. So a
-write that may set either key is refused where its receiver's declared type
-admits an instance of the family: an assignment or an update at `.message`,
-`.stack`, `["message"]` or `["stack"]`, at a computed key whose declared type
-may be either string, a target of a destructuring assignment or a loop head,
-and `Object.assign` onto such a receiver from any source but an object
-literal whose keys are all written and none is `message` or `stack` (a
-source's type need not mention a key it owns, which the copy takes:
-`invalid-error-subclass-assign-alias`). The declared type is the program's,
-never TypeScript's narrowing at the write, since a call between a test and
-the write may have replaced what the test saw
-(`invalid-error-subclass-narrowed-write`): a name is read at its
-declaration's type, a member at its declared type in each part of its
-object's, step by step, an element read at none, so refused, and any other
-expression at the type TypeScript gives it; a fresh object or array literal
-is no instance. A structural alias typed
-`{ stack?: string }` is covered with the class's own type and `this`.
-A type admits an instance unless every part of it is a primitive, an array
-or tuple, a callable or constructible type, or an object type whose `name`,
-`message` or `stack`, or string index, holds no string, each of its parts
-another primitive, `object`, an array or a callable type (`reservedWrites` in
-`declaration-graph.mts`); a write of `message` onto a record whose `name` is a
-number stays an ordinary field write (`reserved-write-excluded`).
+**Reserved writes.** JavaScript keeps an instance's own `stack`
+non-enumerable through an assignment, and its own `message` too where the
+construction passed one; after `new D()` or `new D(undefined)` the instance
+owns no `message`, and an assignment creates an own enumerable one (observed
+under Node, `invalid-error-subclass-assign-target`). Either way the model,
+which states neither property, would add or change an enumerable own field,
+which a later copy, `Object.keys` or an exact-key claim observes. The
+restriction is one policy of two parts: a set $`R`$ of reserved keys, here
+$`R = \{\texttt{"message"}, \texttt{"stack"}\}`$, and an exclusion of the
+receivers that may hold them, here every object owning the prototype key.
+Lean's lowering decides it on the claims evidence establishes, at every
+write it emits. Notation: $`\mathrm{cl}(T)`$ is the clause list of a claim
+$`T`$ when $`T`$ is of clause rows (`plainTy`), its declared names expanded
+(`PositiveRules.expand`, then `splitSets`), and undefined for a type with a
+parameter or scheme row, which no clause describes.
+
+```math
+\mathrm{reserved}(K) \iff \lnot\,\mathrm{plain}(K) \;\lor\; \exists c \in \mathrm{cl}(K).\;
+  (c = \mathsf{strLit}\ s \land s \in R)
+  \lor (c = \mathsf{strIn}\ S \land S \cap R \neq \varnothing)
+  \lor c \notin \mathit{Keyless}
+```
+
+```math
+\mathit{Keyless} = \{\mathsf{num}, \mathsf{numLit}, \mathsf{numIn}, \mathsf{bigint}, \mathsf{bigintLit},
+  \mathsf{symbol}, \mathsf{symbolLit}, \mathsf{bool}, \mathsf{boolLit}, \mathsf{nul}, \mathsf{undef}\}
+  \cup \{\mathsf{strLit}\ s, \mathsf{strIn}\ S \mid s, S \text{ outside } R\}
+```
+
+```math
+\mathrm{protoFree}(T) \iff \mathrm{plain}(T) \land \forall c \in \mathrm{cl}(T).\;
+  \mathrm{primitive}(c)
+  \lor \bigl(c = \mathsf{dict} \land (\mathit{indexes}(c) \neq [] \lor \mathit{cells}(c) \neq [])\bigr)
+  \lor \bigl(c \in \{\mathsf{refs}, \mathsf{dict}\} \land \exists b \in \mathrm{bounds}(c).\ \lnot\, b.\mathrm{admits}(\texttt{[[proto]]})\bigr)
+```
+
+```math
+\frac{\Gamma \vdash r : T \qquad \kappa = f \ \text{or}\ \Gamma \vdash k : K \qquad
+  \mathrm{reserved}(\kappa) \Rightarrow \mathrm{protoFree}(T)}
+  {r[\kappa] \mathrel{=} e \ \text{is lowered}}\ (\textsf{Write-Reserved})
+```
+
+A key the source spells is reserved when it is in $`R`$; a computed key by
+its claim $`K`$. The key domain: a number key converts to its decimal
+spelling, never a reserved string; a bigint, a Boolean, `null` and
+`undefined` to theirs; a symbol stays a distinct key; a finite template type
+reaches the claims as its string alternatives. Any other key claim, an
+object's (whose conversion runs code) and `string` included, may be
+reserved. A primitive is a clause of `Keyless` or `str`. `top`, `source`,
+arrays (whose objects own `[[proto]]` where the graph states the built-ins),
+packs and callable clauses are never proto-free; optional fields and
+readonly views constrain no absent key and do not make a record proto-free;
+a union is proto-free when every alternative is, and an intersection as its
+normalization's clauses are. $`T`$ and $`K`$ are the claims at the receiver's
+and the key's spans, expression obligations evidence must establish, so the
+premise reads certified facts and no TypeScript type or narrowing.
+
+- **Where.** `reservedWriteCheck` (`Lowering/Types.lean`) is called where a
+  write is emitted: every graph node whose term is a field write
+  (`emitAt`, covering ordinary writes, the saved references of updates,
+  logical assignments and destructuring targets, and closures' bodies, which
+  are lowered through the same emission), the closed expressions' writes
+  (`writeCell`), the key-adding writes of an owned object (`executionGrowth`,
+  `growingWrite`, `computedGrowth`), and before any of them in
+  `comparisonsExpr`. An array element write's key is a number, never
+  reserved. `Object.assign` is the native call's contract check, at each
+  source's copy (`mergeObjects`): the source is a write at every key it may
+  own, reserved unless every clause of its claim is a primitive or a `refs`
+  or `dict` with no index and a key bound admitting neither reserved key.
+  A loop head whose target is a member is outside the fragment (the gate).
+- **Meaning.** `ProtoFree.clause_sound` proves that no member of a
+  proto-free clause owns `[[proto]]`, at every interpretation of the
+  clause's operands (any `Ξ`, `X`, `P` of `semWithArgs`), and
+  `ProtoFree.list_sound` lifts it to a union of clauses. Refusing more keeps
+  `checkJson_safe`; it does not by itself establish that a source write
+  corresponds to the model's, which is what the next item argues.
+- **Why the premise excludes an instance of the family.** In the model an
+  instance owns `[[proto]]` where the fragment builds it: an instance a
+  class extending `Error` constructs (its first link), the result of the
+  overlay's `new Error` and `Error(m)`, and a value at a class or `Error`
+  type, whose declared instance type holds a prototype (`errorInstance` in
+  `library-globals.mts`, for constructor results and explicit `Error`
+  heritage). A value a unit receives at a dictionary or a key-bounded record
+  is a plain object by the caller contract ([trust](DESIGN.md)); that is
+  assumed of external code, not derived from its annotation. So a receiver
+  whose checked claim is proto-free is no instance, also of any other class,
+  which the rule refuses alike. Being proto-free discriminates instances in
+  this representation; it says nothing of a plain object's own
+  non-enumerable properties, which the caller contract excludes.
+- **What stays the parser's.** A field of an allocation is no write: an
+  instance member, a parameter property, and a constructor's `this.k = e`,
+  which the lowering makes a field of the instance's allocation, are
+  reserved by the parser in a class extending `Error`. Lean reads no class
+  declaration, and accepts a fragment, claims and evidence with a member
+  renamed `stack` throughout (`pipeline/test.mts`, "forged stack member").
+  Each write form of `reserved-write-twin`, its key renamed `stack` in the
+  three documents, is a valid document only the rule refuses, located at the
+  write, in search and in check ("forged reserved writes").
 
 External code reaching an instance of the family is required to keep the
 message contract the model represents and to create no enumerable own
@@ -459,91 +528,6 @@ effect; both are stated of external code. With them, the admitted
 observations after the call agree with the model: `e.message` reads a string
 the model's type allows, and keys, copies and entries see the declared
 fields alone; `e.stack` is refused.
-
-**Proposal, under review: reserved writes decided by checked claims.** This
-paragraph is a design, not the current fragment, whose write refusal above
-reads TypeScript's types in the parser. The proposed rule is one check in
-Lean's lowering, on the claims evidence establishes, for every write of the
-fragment. Notation: $`\mathrm{cl}(T)`$ is the finite list of clauses of a
-claim $`T`$, its declared names expanded (`PositiveRules.expand`, then
-`splitSets`); $`R = \{\texttt{"message"}, \texttt{"stack"}\}`$.
-
-```math
-\mathrm{reservedKey}(K) \iff \exists c \in \mathrm{cl}(K).\;
-  c \in \{\mathsf{str}, \mathsf{top}, \mathsf{source}\}
-  \;\lor\; (c = \mathsf{strLit}\ s \land s \in R)
-  \;\lor\; (c = \mathsf{strIn}\ S \land S \cap R \neq \varnothing)
-```
-
-```math
-\mathrm{protoFree}(T) \iff \forall c \in \mathrm{cl}(T).\;
-  \mathrm{primitive}(c) \;\lor\; \mathrm{indexedDict}(c)
-  \;\lor\; \bigl(c \in \{\mathsf{refs}, \mathsf{dict}\} \land \exists b \in \mathrm{bounds}(c).\ \lnot\, b.\mathrm{admits}(\texttt{[[proto]]})\bigr)
-```
-
-```math
-\frac{\Gamma \vdash r : T \qquad \kappa = f \ \text{or}\ \Gamma \vdash k : K \qquad
-  \mathrm{reserved}(\kappa) \Rightarrow \mathrm{protoFree}(T)}
-  {r[\kappa] \mathrel{=} e \ \text{is lowered}}\ (\textsf{Write-Reserved})
-```
-
-with $`\mathrm{reserved}(f) \iff f \in R`$ for a key the source spells and
-$`\mathrm{reserved}(k) \iff \mathrm{reservedKey}(K)`$ for a computed one; a
-write failing the premise is a located refusal. $`T`$ and $`K`$ are the
-claims at the receiver's and the key's spans, each an expression obligation
-evidence must establish, so the premise is decided on certified facts, with
-no reading of TypeScript's types or its narrowing.
-
-- **Where.** In `comparisonsExpr` (`Lowering/Types.lean`), the pass that
-  resolves a computed key from its claim: at `.write`, at `.indexWrite` once
-  its key is resolved (a singleton field or a run-time key), and at the
-  targets of `.update`, `.logicalAssign` and `.arrayAssign`, which are reads
-  of the same references. `.elemWrite` keys are numbers, never reserved.
-  `Object.assign` is the native call's contract check, in the same place:
-  each source $`S`$ is a write at every key it may own, reserved unless every
-  clause of $`\mathrm{cl}(S)`$ is a primitive or a `refs` or `dict` with a
-  bound admitting neither key and no string index; the parser's syntactic
-  rule for it is then deleted.
-- **Decidability.** Both predicates are Boolean functions of finite clause
-  lists and of finite key bounds. Their meaning: $`\mathrm{protoFree}(T)`$
-  implies that no value of $`T`$ is an object owning `[[proto]]`: a
-  primitive family holds no object, `dictViewT` and `dictCellT` require the
-  key absent, and `ownKeysT` of a bound not admitting it gives
-  `lookup [[proto]] = none` (`ownKeysT_lookup`). This lemma is to be proved
-  with the rule; acceptance soundness does not depend on it, since the rule
-  only refuses.
-- **Why the premise excludes every instance of the family.** An instance is,
-  in the model, an object owning `[[proto]]`: one the lowering constructs
-  (its first link), the overlay's `new Error` (its prototype record), and one
-  a unit receives at a class or `Error` type (each holds `[[proto]]`). A
-  value received at a dictionary or a key-bounded record is a plain object
-  by the caller contract ([trust](DESIGN.md)). So a receiver whose checked
-  claim is proto-free is no instance, also of a class other than `Error`,
-  which the rule refuses alike: it is chosen by the behaviour it excludes, a
-  write that may change a non-enumerable own property the model does not
-  state.
-- **What stays the parser's.** A field of an allocation is no write: an
-  instance member, a parameter property, and a `this.k = e` of a constructor,
-  which the lowering makes a field of the instance's allocation, stay
-  reserved by the parser for a class extending `Error`. The forged-fragment
-  pin keeps that part; a forged claim placing a `.stack` write's receiver at
-  a proto-free type becomes a control refused in search and check.
-- **Expected effect.** The parser's type-based write check (`reservedWrites`,
-  `admitsError`, `carriesReserved`, the declared-type reading) is deleted.
-  The 33 cases the syntactic rule of the review refused all keep their
-  outcomes (array index keys are numbers; the dictionary writes have indexed
-  receivers; the other keys are literals other than the two), except
-  `reserved-write-excluded`, whose receiver `{ name: number; message: string }`
-  bounds no keys and becomes a refused control. The `invalid-error-subclass-*`
-  write controls stay refused, at the Lean refusal, located at the write. The
-  census of `tools/` is expected to change by nothing: no function writes
-  `message` or `stack`, and a computed string key reaches no receiver whose
-  claim is an open record or a class instance; to be measured.
-
-**Trusted boundary.** The member and parameter-property reservations and the
-write refusals are the parser's: Lean reads no class declaration and no
-TypeScript type, and accepts a fragment, claims and evidence with a member
-renamed `stack` throughout (`pipeline/test.mts`, "forged stack member").
 
 The pipeline cases `error-subclass` and `error-subclass-methods` (run under
 Node) and `invalid-error-subclass-*` hold each row, and forged claims of a
