@@ -173,6 +173,12 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     const redelivered = runNode("node-process-listeners",
       "process.once(\"SIGTERM\", (s) => { console.log(\"got\", s); process.kill(process.pid, s); }); stop(); setTimeout(() => console.log(\"alive\"), 500);");
     assert.deepEqual([redelivered.stdout, redelivered.signal], ["got SIGTERM", "SIGTERM"], "node-process-listeners: re-delivery");
+    // `beforeExit` again after its listener scheduled another job: two
+    // invocations, each with the code and the process as `this`.
+    const idle = runNode("node-process-listeners",
+      "let n = 0; whenIdle(function (code) { n++; console.log(\"beforeExit\", code, this === process, n); if (n === 1) setTimeout(() => {}, 1); });");
+    assert.deepEqual(idle.stdout.split("\n"), ["beforeExit 0 true 1", "beforeExit 0 true 2"],
+      "node-process-listeners: beforeExit repeated, its arguments and receiver");
     // A narrowing made at registration is stale when the listener runs.
     const stale = runNode("invalid-node-process-listener-stale", "const box = { v: 1 }; register(box); box.v = undefined;");
     assert.equal(stale.status, 1, "invalid-node-process-listener-stale: the listener reads undefined and throws at exit");

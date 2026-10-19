@@ -239,7 +239,11 @@ Every global variable is read through the reviewed overlay
 ([Library globals](#library-globals)), wherever it is declared (the standard
 library, an installed package such as Node's `process`, a declaration file of
 the project): each member, call, construct or value reading it selects is one
-an entry lists with its exact text, or it is refused; a mixed declaration
+an entry lists with its exact text and its origin, or it is refused. An
+origin is the standard library or an installed package, the directory under
+`node_modules` whose `package.json` names it; every declaration of the
+variable comes from an origin its entries admit, so an identically spelled
+declaration of the project is refused (`invalid-fake-process-argv`); a mixed declaration
 (`console` of the DOM's library and of `@types/node`) is no exception
 ([Node's `process`](#nodes-process); `invalid-host-global-variable`,
 `invalid-node-console-unreviewed`). So is every global function: its implementation is outside what is verified,
@@ -2035,8 +2039,11 @@ types each constant a distinct `unique symbol`.
 
 Node's `process` and `console` are read through the overlay at the members
 the repository's code uses, each pinned to its declaration in the pinned
-`@types/node` installations, observed under Node 25.2.1 (2026-10-19). A member
-read at a stated contract is a readonly view: no write of it is admitted.
+`@types/node` installations, their origin the package `@types/node`,
+observed under Node 25.2.1 (2026-10-19). A member read at a stated contract,
+and every reviewed method, is a readonly view: no write of it is admitted,
+through `process` or through the process a registration returns
+(`invalid-node-process-replace-result`, `invalid-node-process-replace-alias`).
 
 - `process.argv`: an array of strings Node builds at start-up, read as
   $`\mathtt{readonly\ string}[\,]`$. The property is writable: no code
@@ -2063,7 +2070,8 @@ read at a stated contract is a readonly view: no write of it is admitted.
   `beforeExit`, whose listener is called with the exit code, a number, and
   $`\mathsf{Sig}=\texttt{"SIGINT"}\mid\texttt{"SIGTERM"}\mid\texttt{"SIGHUP"}\mid\texttt{"SIGUSR1"}\mid\texttt{"SIGUSR2"}`$,
   whose listener is called with the signal's name, each with the process as
-  `this` (`node-process-listeners`, run under Node). The listener is a value of
+  `this` (`node-process-listeners`, run under Node, `beforeExit` emitted again
+  after its listener scheduled another job). The listener is a value of
   the checked callable type $`(\mathtt{number})\Rightarrow\mathtt{unknown}`$ or
   $`(\mathtt{string})\Rightarrow\mathtt{unknown}`$, stating no effect; a
   listener of another parameter type is refused
@@ -2076,7 +2084,10 @@ read at a stated contract is a readonly view: no write of it is admitted.
   `invalid-node-process-message-event`); so are `emit`, reading listeners back
   and replacing a method, which no entry lists.
 - `console.log` and `console.error`, of the DOM's library and Node's, at
-  primitive arguments, stating no effect (`node-console`).
+  primitive arguments, stating no effect (`node-console`). Writing the text
+  calls the output stream's `write`, a property other code may replace while
+  `console.log` keeps its identity, and a stream calls listeners other code
+  registered: no effect is stated, which covers that code.
 
 A listener runs after the unit that registered it, between synchronous jobs,
 or inside an operation stating no effect (`process.exit`, `kill`, a

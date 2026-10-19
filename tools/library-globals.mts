@@ -83,6 +83,10 @@ export type GlobalEntry = {
   /** The entry's classification against restricted values
    * (`host-operations.mts`). */
   host: HostClass;
+  /** Where the reviewed declaration comes from: the standard library
+   * (`library`, the default) or the installed package of that name
+   * (`@types/node`), as `declarationOrigin` resolves it. */
+  origin?: string;
 };
 
 const at: [number, number] = [0, 0];
@@ -170,6 +174,8 @@ const signal: TypeTerm = { k: "union", span: at, parts: ["SIGINT", "SIGTERM", "S
  * `this`, whatever it runs. */
 const listener = (argument: TypeTerm): TypeTerm => ({ k: "function", effect: ordinaryEffect, receiver: null,
   params: [argument], rest: null, result: atom("unknown"), span: at });
+/** Node's declarations' package. */
+const node = "@types/node";
 /** Node's `process` (SOURCE-CONTRACTS.md, "Node's process"): the members the
  * repository's code reads, each pinned to its declaration in `@types/node`.
  * A read member is readonly: no write of `process.argv` or `process.env`
@@ -178,29 +184,29 @@ const processEntries: GlobalEntry[] = [
   // `process.argv`: an array of strings Node builds at start-up, read as a
   // readonly view; code replacing it or writing a non-string into it is
   // outside the assumption.
-  { host: contract, global: "process", member: "argv", signature: "argv: string[];",
+  { host: contract, origin: node, global: "process", member: "argv", signature: "argv: string[];",
     stated: { binders: [], params: [], result: readonlyArray(atom("string")) } },
-  { host: contract, global: "process", member: "execPath", signature: "execPath: string;",
+  { host: contract, origin: node, global: "process", member: "execPath", signature: "execPath: string;",
     stated: { binders: [], params: [], result: atom("string") } },
-  { host: contract, global: "process", member: "pid", signature: "readonly pid: number;",
+  { host: contract, origin: node, global: "process", member: "pid", signature: "readonly pid: number;",
     stated: { binders: [], params: [], result: atom("number") } },
   // `process.env`: an object of the environment whose own entries hold
   // strings, its chain a prototype holding `constructor` and then
   // `Object.prototype`, which no accessor can be defined on: a readonly
   // dictionary of `string | undefined`, read at no key a prototype may
   // provide (the dictionary rule).
-  { host: contract, global: "process", member: "env", signature: "env: ProcessEnv;",
+  { host: contract, origin: node, global: "process", member: "env", signature: "env: ProcessEnv;",
     stated: { binders: [], params: [], result: { k: "object", fields: [], calls: [], span: at,
       stringIndex: { readonly: true, value: optional(atom("string")), span: at } } } },
   // `process.exit(code)` runs the `exit` listeners synchronously, any of
   // which may throw into the caller, and otherwise ends the process: no
   // effect stated, the result `never`.
   ...["exit(code?: number | string | null): never;", "exit(code?: number | string | null | undefined): never;"].map(
-    (signature): GlobalEntry => ({ host: contract, global: "process", member: "exit", signature,
+    (signature): GlobalEntry => ({ host: contract, origin: node, global: "process", member: "exit", signature,
       stated: { binders: [], params: [optional(atom("number"))], result: atom("never") } })),
   // `process.kill(pid, signal)` sends the signal: `true`, a throw, or the
   // process ending; neither delivery nor termination is promised.
-  { host: contract, global: "process", member: "kill", signature: "kill(pid: number, signal?: string | number): true;",
+  { host: contract, origin: node, global: "process", member: "kill", signature: "kill(pid: number, signal?: string | number): true;",
     stated: { binders: [], params: [atom("number"), signal], result: { k: "literal", name: "true", text: "true", span: at } } },
   // Listener registration at a named event: `exit` and `beforeExit` call
   // the listener with the exit code, a signal with the signal's name, each
@@ -209,14 +215,14 @@ const processEntries: GlobalEntry[] = [
   // `newListener` and `once`'s removal `removeListener` synchronously, so the
   // call states no effect. The result is the process.
   ...["on", "once"].flatMap((method): GlobalEntry[] => [
-    ...(["beforeExit", "exit"] as const).map((event): GlobalEntry => ({ host: contract, global: "process", member: method,
+    ...(["beforeExit", "exit"] as const).map((event): GlobalEntry => ({ host: contract, origin: node, global: "process", member: method,
       signature: `${method}(event: "${event}", listener: ${event === "exit" ? "ExitListener" : "BeforeExitListener"}): this;`,
       stated: { binders: [], params: [text(event), listener(atom("number"))], result: { k: "self", span: at } } })),
     // A signal name, or a string the call proves to be one: the listener
     // takes the name.
     ...[`${method}(event: Signals, listener: SignalsListener): this;`,
       `${method}(event: string | symbol, listener: (...args: any[]) => void): this;`].map((signature): GlobalEntry => (
-      { host: contract, global: "process", member: method, signature,
+      { host: contract, origin: node, global: "process", member: method, signature,
         stated: { binders: [], params: [signal, listener(atom("string"))], result: { k: "self", span: at } } }))]),
 ];
 
@@ -226,15 +232,18 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // as `console.log` below: each argument at a primitive, no effect stated.
   ...["log(message?: any, ...optionalParams: any[]): void;", "error(message?: any, ...optionalParams: any[]): void;",
     "error(...data: any[]): void;"].map((signature): GlobalEntry => ({
+    ...(signature.includes("message") ? { origin: node } : {}),
     host: obligated("each argument", "the host formats every reachable key of an object argument"), global: "console",
     member: signature.startsWith("log") ? "log" : "error", signature,
     stated: signature.includes("message")
       ? { binders: [], params: [optional(primitive)], rest: primitive, result: atom("undefined") }
       : { binders: [], params: [], rest: primitive, result: atom("undefined") } })),
-  // Output, which the model does not observe. The host formats each argument
-  // without running client code the fragment can write (no getters, no
-  // symbol-keyed methods such as a custom inspection), and returns
-  // `undefined`. `any` is read as `unknown`, so any argument is admitted.
+  // Output, which the model does not observe. Each argument is stated at a
+  // primitive, which the host formats without calling a method of it, and
+  // the call returns `undefined`. Writing the text calls the output
+  // stream's `write`, a property other code may replace (`console.log`
+  // keeping its identity), and a stream may call listeners other code
+  // registered: no effect is stated, which covers that code.
   { host: obligated("each argument", "the host formats every reachable key of an object argument"), global: "console", member: "log", signature: "log(...data: any[]): void;",
     stated: { binders: [], params: [], rest: primitive, result: atom("undefined") } },
   // `BigInt(v)` throws a RangeError for a number that is not an integer and
@@ -421,7 +430,7 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // `library-project`'s).
   ...["function clearTimeout(timeout: NodeJS.Timeout | string | number | undefined): void;",
     "function clearTimeout(timeoutId: NodeJS.Timeout | string | number | undefined): void;"].map(
-    (signature): GlobalEntry => ({ host: contract, global: "clearTimeout", signature,
+    (signature): GlobalEntry => ({ host: contract, origin: node, global: "clearTimeout", signature,
       stated: { binders: [], params: [atom("unknown")], result: atom("undefined") } })),
   // `Math.ceil(x)` of a number, a primitive: no conversion code runs.
   { host: contract, global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },
@@ -593,6 +602,13 @@ export const globalsOverlay: readonly GlobalEntry[] = [
 
 /** The entry for `global`'s `member` (absent: its call) declared as `text`. */
 export function globalEntry(entries: readonly GlobalEntry[], global: string, member: string | undefined,
-    text: string): GlobalEntry | undefined {
-  return entries.find(e => e.global === global && e.member === member && e.signature === text);
+    text: string, origin: string): GlobalEntry | undefined {
+  return entries.find(e => e.global === global && e.member === member && e.signature === text &&
+    (e.origin ?? "library") === origin);
+}
+
+/** The origins a global's entries admit: a declaration of it from any other
+ * is no declaration the overlay reviews. */
+export function globalOrigins(entries: readonly GlobalEntry[], global: string): Set<string> {
+  return new Set(entries.filter(e => e.global === global).map(e => e.origin ?? "library"));
 }

@@ -15,6 +15,10 @@ export function register(
   process.on("exit", () => {});
   process.on("SIGHUP", onSignal).on("SIGUSR2", onSignal);
 }
+// `beforeExit` is emitted again whenever its listeners scheduled more work.
+export function whenIdle(listener: (code: number) => void): void {
+  process.on("beforeExit", listener);
+}
 export function stop(): true {
   return process.kill(process.pid, "SIGTERM");
 }
