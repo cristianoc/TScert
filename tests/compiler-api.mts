@@ -91,11 +91,19 @@ for (const { name, file } of hostEnums) {
   const expected = new Set(declared.map((d) => d.member));
   for (const { value } of declared) expected.add(String(value));
   assert.deepEqual(new Set(values.keys()), expected, `${name}: the runtime object's keys are its members and reverse mappings`);
+  // Each key an own data property holding a primitive: a read of it runs no
+  // code. The object is mutable; that it is never written is F5.
+  for (const key of Reflect.ownKeys(runtime)) {
+    const descriptor = Reflect.getOwnPropertyDescriptor(runtime, key);
+    assert.ok(descriptor && "value" in descriptor && !descriptor.get && !descriptor.set &&
+      (typeof descriptor.value === "number" || typeof descriptor.value === "string"),
+      `${name}.${String(key)}: an own data property holding a primitive`);
+  }
   for (const exported of [ast, sync])
     if (name in exported) assert.equal(exported[name], runtime, `${name}: an entry point exports the object #enums loads`);
   members += declared.length;
 }
-console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the runtime value`);
+console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the runtime value, an own data property holding a primitive`);
 
 // C4 for node lists (COMPILER-API.md, "Node lists"; T4): on lists of lengths
 // around 16, where index getters move from the prototype to the instance,

@@ -28,6 +28,39 @@ export type FamilyRule =
  * `text` the member's declaration as reviewed. */
 export type FamilyCorrection = { kind: string; owner: string; member: string; text: string };
 
+/** An entry of a guard table (HOST-FAMILIES.md, "The guard table"): the
+ * export's name, a node guard or a tag guard, its declared domain, its exact
+ * tag set by constant name; its resolution, the module declaring it and the
+ * re-export chain from the entry point, every module by its path in the
+ * package; the helpers its function reads, by `module#name`, and its
+ * dependency edges, each binding with the module it resolves to; and its
+ * function's text as reviewed. */
+export type GuardEntry = {
+  name: string;
+  kind: "node" | "tag";
+  domain: string;
+  tags: readonly string[];
+  module: string;
+  chain: readonly string[];
+  helpers: readonly string[];
+  edges: readonly (readonly [string, string])[];
+  text: string;
+};
+/** A family's guard table: the entry point and the resolution conditions
+ * its entries were resolved under, the entry point's module and the
+ * `imports` mappings their edges use, the helpers' texts, the entries, and
+ * the guards the package declares that the recognition contract excludes,
+ * each with its reason. */
+export type GuardTable = {
+  entryPoint: string;
+  conditions: readonly string[];
+  entryModule: string;
+  imports: Readonly<Record<string, string | Readonly<Record<string, string>>>>;
+  helpers: Readonly<Record<string, string>>;
+  guards: readonly GuardEntry[];
+  excluded: readonly (readonly [string, string])[];
+};
+
 /** A family description (HOST-FAMILIES.md, "The family description"). The
  * package's identity and the digest of its audited installation are its
  * contract file's binding check; the description names the package. */
