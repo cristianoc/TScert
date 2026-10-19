@@ -9,6 +9,10 @@ export function one(x: { readonly length: 1 }): 1 {
   return x.length;
 }
 
+export function two(x: { readonly length: 1 | 2 }): 1 | 2 {
+  return x.length;
+}
+
 export function count(x: { readonly length: number }): number {
   return x.length;
 }

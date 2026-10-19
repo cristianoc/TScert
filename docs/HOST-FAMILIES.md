@@ -120,7 +120,11 @@ union of literals does, in a read and in a key-adding allocation
 
 **Wire.** A tag set is `{"numIn": {"bits": [b, …]}}` or
 `{"strIn": {"values": [s, …]}}`, sorted and distinct, at least two; a
-decoder refuses any other list (`RequestJson`, `type-graph.mts`).
+decoder refuses any other list (`RequestJson`, `type-graph.mts`). Numbers
+are ordered by their bit patterns as unsigned integers, strings
+lexicographically by Unicode code point: Lean's `String` order, OCaml's byte
+order of UTF-8 and `codePointLess` in TypeScript, whose own `<` compares UTF-16
+code units and would order U+10000 below U+E000.
 
 **Cost.** The demonstrated cost is a residual arm's tag
 ([residuals](#residuals)): 20 record arms beside one arm whose tag was a

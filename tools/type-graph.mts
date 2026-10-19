@@ -7,6 +7,19 @@ import type { CallEffect, CallPromise, ClosedFootprint, PropertyKey } from "./de
 export type { CallEffect, CallPromise, ClosedFootprint } from "./declaration-types.mts";
 /** Physical density and a safe in-bounds read are distinct guarantees. */
 export type ArrayPresence = "dense" | "readable" | "sparse";
+
+/** The wire's order of strings, a string set's (HOST-FAMILIES.md, "Tag
+ * sets"): lexicographic by Unicode code point, as Lean's `String` order and
+ * OCaml's byte order of UTF-8 are. JavaScript's `<` compares UTF-16 code
+ * units, which orders a code point past U+FFFF below one in U+E000–U+FFFF. */
+export function codePointLess(a: string, b: string): boolean {
+  const xs = [...a], ys = [...b];
+  for (let i = 0; i < Math.min(xs.length, ys.length); i++) {
+    const x = xs[i]?.codePointAt(0) ?? 0, y = ys[i]?.codePointAt(0) ?? 0;
+    if (x !== y) return x < y;
+  }
+  return xs.length < ys.length;
+}
 export function isArrayPresence(value: unknown): value is ArrayPresence {
   return value === "dense" || value === "readable" || value === "sparse";
 }
@@ -412,7 +425,7 @@ export function decodeGraph(value: unknown): TypeGraph {
         if (typeof x !== "string") throw Error("invalid string set");
         return x;
       });
-      if (values.length < 2 || values.some((x, i) => i > 0 && !((values[i - 1] ?? x) < x)))
+      if (values.length < 2 || values.some((x, i) => i > 0 && !codePointLess(values[i - 1] ?? x, x)))
         throw Error("invalid string set");
     },
     bigintLit: (b) => {

@@ -14,7 +14,7 @@ import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
-import { emptyEffect, emptyFootprint, footprintEffect, ordinaryEffect, type ClosedFootprint } from "../tools/type-graph.mts";
+import { decodeGraph, emptyEffect, emptyFootprint, footprintEffect, ordinaryEffect, type ClosedFootprint } from "../tools/type-graph.mts";
 // Forged-claim controls on single cases, each in a file of its own:
 // generic-rest.mts, a universal rest claim past collection, substitution and binding;
 // rest-pack-instance.mts, a forged non-array instance of a type parameter typing a value and a rest, at a call and at a `new`;
@@ -2771,4 +2771,28 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     assert.match(searched.stdout + searched.stderr, refusal);
   }
   process.stdout.write("forged tag sets: unsorted, duplicated and single-element sets refused\n");
+}
+{
+  // The wire orders a string set by Unicode code point, in every decoder:
+  // U+E000 before U+10000, which UTF-16 code units would order first. The
+  // producer's set is accepted by Lean and by the TypeScript decoder, and the
+  // reverse is refused by both.
+  const artifacts = run("tag-set-code-points");
+  const original = readClaims(artifacts);
+  const row = original.types.findIndex((r) => r.length === 1 && typeof r[0] === "object" && "strIn" in r[0] &&
+    r[0].strIn.values.includes("\uE000") && r[0].strIn.values.includes("\u{10000}"));
+  const clause = original.types[row]?.[0];
+  assert.ok(typeof clause === "object" && "strIn" in clause, "the claims state the set of U+E000 and U+10000");
+  const values = clause.strIn.values;
+  assert.ok(values.indexOf("\uE000") < values.indexOf("\u{10000}"), "the producer orders by code point");
+  decodeGraph([[clause]]);
+  const reversed = { strIn: { values: [...values].reverse() } };
+  assert.throws(() => decodeGraph([[reversed]]), /invalid string set/);
+  const claims = readClaims(artifacts);
+  claims.types[row] = [reversed];
+  const forged = writeClaims(artifacts, "forged-code-point-order", claims);
+  const searched = produceWith(artifacts, forged, "forged-code-point-order");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /a string set lists two or more strings, sorted and distinct/);
+  process.stdout.write("string sets: ordered by code point in the producer, Lean and TypeScript\n");
 }

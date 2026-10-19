@@ -1076,6 +1076,7 @@ def lengthRead (i : Nat) : Tm :=
 def rejectsNum (w : UInt64) (c : Clause α) : Bool :=
   match c with
   | .numLit b => b != w
+  | .numIn bs => !bs.contains w
   | c => tagClause .isNum c == some false
 
 theorem rejectsNum_sound {Ξ : Fam} {S : α → Fam} {P : α → ArgFam} {w : UInt64} {c : Clause α}
@@ -1086,14 +1087,17 @@ theorem rejectsNum_sound {Ξ : Fam} {S : α → Fam} {P : α → ArgFam} {w : UI
   · simp only [bne_iff_ne, ne_eq] at h
     simp only [semWithArgs, Tm.num.injEq] at hv
     exact h hv.symm
+  · obtain ⟨b, hb, he⟩ := hv
+    cases he
+    simp [hb] at h
   · have := tagClause_sound (beq_iff_eq.mp h) hv
     simp [tagHolds] at this
 
 /-- A number no value of the type is, where one is found among the first
-few: one more than its numeric singletons. -/
+few: one more than its numeric singletons, a tag set's elements counted. -/
 @[nospecialize] def numWitness (G : NormalGraph ι) (A : Ty ι) : Option UInt64 :=
   if G.plainTy A then
-    ((List.range ((expand G A).length + 1)).map Nat.toUInt64).find? fun w =>
+    ((List.range ((splitSets (expand G A)).length + 1)).map Nat.toUInt64).find? fun w =>
       (expand G A).all (rejectsNum w)
   else none
 
