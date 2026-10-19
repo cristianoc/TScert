@@ -2583,7 +2583,38 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   const refusal = "a guard closure's claim must offer its written promise over its annotated parameters";
   refusedAt(artifacts, input, "forged-guard-closure-promise", refusal);
   assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
-  process.stdout.write("guard closure callback: a claim without the promise refused in search and in checking\n");
+  // The callback's longer signature, a row of its own, claimed at a result
+  // the body does not return, and the rows of interior claims one short of
+  // the signatures: each refused where evidence is produced and where the
+  // honest evidence is checked.
+  type ClosureArrows = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"];
+  type ClosureRows = NonNullable<SourceClaims["functions"][number]["arrows"]>[number]["rows"];
+  const forgeLonger = (name: string, edit: (forgedArrows: ClosureArrows, forgedRows: ClosureRows) => void): string => {
+    const forged = readClaims(artifacts);
+    const forgedFn = must(forged.functions.find(f => f.name === "allPresent"), "allPresent's claims");
+    const forgedClosure = must(forgedFn.expressions.find(e => e.pos[0] === at), "the closure's claim");
+    const forgedLabel = Array.isArray(forgedClosure.type) ? forgedClosure.type[0] : undefined;
+    assert.ok(typeof forgedLabel === "number", "the closure's claim is a row");
+    const forgedClause = must(forged.types[forgedLabel], "the closure's row")[0];
+    assert.ok(forgedClause !== undefined && typeof forgedClause === "object" && "arrs" in forgedClause, "an arrow clause");
+    edit(forgedClause.arrs.arrows, must((forgedFn.arrows ?? []).find(a => a.pos[0] === at), "the closure's rows").rows);
+    return writeClaims(artifacts, name, forged);
+  };
+  const longerResult = forgeLonger("forged-guard-closure-longer-result", (arrows) => {
+    const longer = must(arrows.find(a => a.arguments.length > 1), "the callback's longer signature");
+    longer.result = [rowOf(claims, "nul")];
+  });
+  const shortRows = forgeLonger("forged-guard-closure-short-rows", (_, rows) => { rows.pop(); });
+  for (const [input, name, refusal] of [
+    [longerResult, "forged-guard-closure-longer-result", "reject: "],
+    [shortRows, "forged-guard-closure-short-rows", "per-arrow interior claims do not match the claimed arrows"],
+  ] as const) {
+    const searched = produceWith(artifacts, input, name);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes(refusal), searched.stdout + searched.stderr);
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  }
+  process.stdout.write("guard closure callback: a claim without the promise, a longer row at an unjustified result and rows short of the signatures refused in search and in checking\n");
 }
 
 {
