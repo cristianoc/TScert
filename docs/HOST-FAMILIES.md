@@ -336,9 +336,9 @@ code, throws nothing, and returns the same answer whatever it receives
 beyond its one parameter (further arguments, a receiver).
 
 Before the table is activated, the front end resolves each entry again
-over the audited installation, with Node's resolution algorithm on the
-package's own manifest, and compares every recorded mapping, chain module,
-binding and edge; a mismatch, like a digest mismatch, leaves the family
+over the installation the run admits, under the resolution conditions the
+run uses, with Node's resolution algorithm on the package's own manifest,
+and compares every recorded mapping, chain module, binding and edge; a mismatch, like a digest mismatch, leaves the family
 without guards, each read without predicate. File digests alone do not pin
 resolution, since a manifest or a re-export can select other code among
 files already hashed.
@@ -380,7 +380,7 @@ constant. The contract, every condition checked on the resolved files:
   own domain: a node guard's helper on $`x.\tau`$ is a family helper or a
   tag guard, on $`x`$ a node guard; the helper graph is acyclic; a helper's
   binding is stable: a function declaration no statement of its module
-  assigns, or an import binding, which no module can assign;
+  assigns, or an import binding whose exporting binding is stable under F5;
 - every constant $`\kappa`$ is a literal or a member of the tag enum read
   through an import binding the entry's edges record, resolving to the
   enum's audited runtime object, each member of which C1 checks is an own
@@ -403,7 +403,9 @@ same-named local function, a re-bound name, or a function wrapping a guard
 is an ordinary call, the wrapper an ordinary verified function. A call with
 a spread or more than one argument is refused.
 
-**A call on an immutable name** $`x`$, a parameter or a `const`, is written
+**A call on an immutable name** $`x`$, a binding the existing
+classification calls immutable (a `const`, or a parameter no statement
+assigns), is written
 in the Fragment's existing forms, a `comma` whose left operand is a
 `satisfies` cast of $`x`$ at the guard's declared parameter type $`P`$ and
 whose right operand is the tests of its tag:
@@ -432,15 +434,11 @@ propagates its exception, Lean's call rule checks the argument at the
 domain, and the promise narrows no binding, since no name holds the
 argument. A member path narrows with [stable members](#stable-members).
 
-**The one change to extraction.** A `comma` in a test position does not
-pass its right operand's refinement on today: `(x satisfies T, x.kind === 1)
-? x.a : …` is refused by the producer where `x.kind === 1 ? x.a : …`
-verifies (checked on 2026-10-19), and a `satisfies` cast around the tested
-name is refused the same way. Step 3 lowers a `comma` in a test position, in the producer and
-in Lean, as its left operand for its effects followed by its right operand
-as the test, with the right operand's refinement on both edges. That is
-JavaScript's own meaning of the comma, for every source, not a form of the
-guard's.
+**The comma.** A `comma` in a test position runs its left operand, then
+its right operand is the test, refining on both edges in the state the left
+operand leaves ([`if-comma`](SOURCE-ELABORATION.md#derived-source-forms)),
+JavaScript's own meaning of the comma for every source; the cast and the
+tag tests above are its operands.
 
 On the guard's admitted domain the test is exactly the guard: `true` on an
 argument whose tag is in $`K_g`$, `false` otherwise, by the entry. So the
@@ -497,8 +495,9 @@ shapes a guard tests are arms of the union it narrows.
 The table keeps, for each entry, the statement above (exact $`K_g`$, the
 tag the only member read, no other effect, independence of further
 arguments and of the receiver), under F2 and F4 of the family, F3 of the
-binding, and F5: the package's enum objects and the module bindings of its
-guards and helpers are never written, by the program or by external code
+binding, and F5: the enum objects and the module bindings in the table's
+recorded dependency closure are never written, by the program or by
+external code
 (the package builds its enums as ordinary mutable objects and freezes
 nothing). A source write to them is refused by the existing rules: a write
 through a record or dictionary view of an enum object, `Object.assign` onto
@@ -692,9 +691,9 @@ bind them to the reviewed files.
 - **F3 (guard identity).** Each guard table entry's statement holds of the
   function Node runs for its export identity, resolved as the entry
   records, under the audited digest.
-- **F5 (unwritten constants).** The package's enum objects and the module
-  bindings of its guards and helpers are never written after the package
-  loads, by the program or by external code.
+- **F5 (unwritten constants).** The enum objects and the module bindings in
+  the guard table's recorded dependency closure are never written after the
+  package loads, by the program or by external code.
 - **F4 (transparent tag reads).** A read of the tag runs no code and throws
   nothing.
 

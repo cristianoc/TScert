@@ -772,6 +772,7 @@ export const cases: Case[] = [
     project: "pipeline/compiler-api-project" },
   { ...positive("compiler-api-lookalike", "a look-alike the program declares is an ordinary record, narrowed by the ordinary rules; a node is one of a record's values that states members every node has"),
     project: "pipeline/compiler-api-project" },
+  positive("comma-test-refinement", "a comma in a test position: its left operand runs for its effects, then its right operand is the test, refining in the state the left leaves on both edges, beside `&&`, `||` and `!`; a left operand that writes what the test reads, and one that throws (run under Node)"),
   gap("switch-enum-case-narrowing", "a `switch` whose `case` labels are enum members narrows nothing, where an `===` test of the same constant narrows (WORK.md, enum-member case labels)", "unsupported", "proposal",
     /missing field a at/),
   { ...gap("compiler-api-guard-false-branch", "a host guard answering `false` narrows nothing while it is read at its declared `x is T` signature: the host-guard rule, which reads the call as the test of the node's kind, waits on the node invariant", "unsupported", "proposal",

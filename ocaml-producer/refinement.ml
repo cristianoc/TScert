@@ -321,6 +321,8 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
   let refine_field ?answer = refine_field ?answer bounds declarations in
   match cond.node with
   | Not e -> branch env e (not truth)
+  (* `a, b` as a condition: `a` runs, then `b` is the test. *)
+  | Comma (_,b) -> branch env b truth
   (* A name as a condition is tested for truthiness; a Boolean's slice is
      its literal. *)
   (* An immutable binding's falsy outcome drops a named union of records,
