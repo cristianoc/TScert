@@ -3,12 +3,9 @@
 // tag against the entry's exact tag set, which narrows both edges, through a
 // namespace import or a named one, under `!`, `&&` and a conditional, for a
 // set of one tag or of 167, in a chain of several, of a name and of a
-// constant holding a node's parent; a tag guard narrows the tag itself. A
-// guard of the sync API's types, no member of the family, keeps its
-// declared predicate.
+// constant holding a node's parent; a tag guard narrows the tag itself.
 import * as ts from "typescript/unstable/ast";
 import { isIdentifier, isStringLiteral } from "typescript/unstable/ast";
-import { isUnionType, type Type } from "typescript/unstable/sync";
 
 export function nameLength(node: ts.Node): number {
   if (ts.isIdentifier(node)) return node.text.length;
@@ -56,8 +53,4 @@ export function isBody(node: ts.Node): boolean {
       ts.isArrowFunction(owner)) &&
     owner.body === node
   );
-}
-
-export function parts(type: Type): readonly Type[] {
-  return isUnionType(type) ? type.getTypes() : [type];
 }

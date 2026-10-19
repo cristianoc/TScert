@@ -24,7 +24,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { compareTags, familyTable, type FamilyArm, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { allocatingMembers, guardEntry, guardModule, hostFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
+import { allocatingMembers, guardEntry, hostFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -1409,9 +1409,9 @@ export function collectDeclarations(file: string, options: {
     // arguments, beside the promise
     // signature of its tag set, the union of the family's shapes at those
     // tags (a node guard's, `guard.<name>` of the family's definitions) or
-    // of the tags themselves (a tag guard's); an unlisted guard of the
-    // family at its plain signature, without its declared predicate. Any
-    // other function is as read.
+    // of the tags themselves (a tag guard's); any other host function
+    // declaring a predicate at its plain signature, without it. A function
+    // no predicate declares is as read.
     const guardReading = (declared: readonly Node[], type: TypeTerm): TypeTerm => {
       const [node] = declared;
       if (!node || declared.length !== 1 || !ts.isFunctionDeclaration(node) || !node.name || !node.type ||
@@ -1421,21 +1421,7 @@ export function collectDeclarations(file: string, options: {
       const [one] = plain;
       if (!one || plain.length !== 1) throw Error(`the guard ${node.name.text} has no one plain signature`);
       const entry = guardEntry(node.getSourceFile().fileName, node.name.text);
-      if (!entry) {
-        // A guard of the family, declared in a module of the guard table or
-        // of a parameter a member or the tag enum, is read without its
-        // declared predicate; any other is as declared.
-        if (guardModule(node.getSourceFile().fileName)) return one;
-        const declaredType = node.parameters[0]?.type;
-        const named = declaredType && ts.isTypeReferenceNode(declaredType) && !declaredType.typeArguments?.length
-          ? memberName(declaredType.typeName) : null;
-        const ofFamily = named !== null && ((named.text === familyDescription.tag.constants.enum && enumsOf(named) !== null) ||
-          (targetOf(checker, named)?.declarations ?? []).some(x => {
-            const r = x.resolve();
-            return !!r && ts.isInterfaceDeclaration(r) && familyFrom(r) !== null;
-          }));
-        return ofFamily ? one : type;
-      }
+      if (!entry) return one;
       const constants = guardConstants(node, entry);
       const values = entry.tags.map(name => {
         const value = constants.find(c => c.name === name)?.value;

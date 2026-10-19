@@ -589,15 +589,6 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   return entries;
 }
 
-/** Whether a declaration file is a module the family's guard table records
- * an entry of: a function declaring a predicate there is a guard of the
- * family, read from its entry or without its predicate. */
-export function guardModule(file: string): boolean {
-  if (!isHostFile(file)) return false;
-  const declared = relative(installation().root, realPath(file)).split(sep).join("/");
-  return hostFamily().guards.guards.some(e => declared === e.module.replace(/\.js$/, ".d.ts"));
-}
-
 /** The entry of the compiler API's family guarding a declaration: the
  * function `name` of the declaration file `file`, which the entry's module
  * declares. */
