@@ -7,6 +7,14 @@ checking reconstructs each unit's request from the fragment and its claims. -/
 namespace Verification.RequestCli
 open Lean RequestJson
 
+/-- A refusal record: its reason after `reject: `, then the line that ends
+it, so a reader can tell a complete record from one cut short. Its exit
+status is 1; an operational failure is the command's other exit (`main`). -/
+def refuse (reason : String) : IO UInt32 := do
+  IO.eprintln s!"reject: {reason}"
+  IO.eprintln "end of refusal"
+  return 1
+
 /-- Four hexadecimal digits' value. -/
 def hex4 (cs : List Char) : Option Nat :=
   cs.foldlM (fun v c =>
@@ -56,7 +64,7 @@ def flowFile (astPath : String) : IO UInt32 := do
   let ast ← readJson astPath
   match ast >>= SourceFlow.document with
   | .ok graph => IO.println graph.compress; return 0
-  | .error reason => IO.eprintln s!"reject: {reason}"; return 1
+  | .error reason => refuse reason
 
 /-- Print the program graph each unit lowers to (`SourceClaimJson.lowerJson`). -/
 def lowerFile (astPath claimsPath fileKey : String) : IO UInt32 := do
@@ -64,14 +72,13 @@ def lowerFile (astPath claimsPath fileKey : String) : IO UInt32 := do
   let claims ← readJson claimsPath
   match do SourceClaimJson.lowerJson (← ast) (← claims) fileKey with
   | .ok j => IO.println j.compress; return 0
-  | .error e => IO.eprintln s!"reject: {e}"; return 1
+  | .error e => refuse e
 
 def sourceFiles (astPath claimsPath fileKey evidencePath : String)
     (fuel : Option Nat)
     (budget : PositiveCertificates.SearchBudget := {}) : IO UInt32 := do
   if fuel.isSome && (evidencePath == astPath || evidencePath == claimsPath) then
-    IO.eprintln "reject: evidence output must differ from the input files"
-    return 1
+    return ← refuse "evidence output must differ from the input files"
   let ast ← readJson astPath
   let claims ← readJson claimsPath
   match fuel with
@@ -81,12 +88,12 @@ def sourceFiles (astPath claimsPath fileKey evidencePath : String)
       SourceClaimJson.checkJson (← ast) (← claims) fileKey (← evidence) budget
     match checked with
     | .ok () => IO.println s!"accept: stateful source {fileKey}"; return 0
-    | .error e => IO.eprintln s!"reject: {e}"; return 1
+    | .error e => refuse e
   | some depth =>
     let produced := do
       SourceClaimJson.produceJson (← ast) (← claims) fileKey depth budget
     match produced with
-    | .error e => IO.eprintln s!"reject: {e}"; return 1
+    | .error e => refuse e
     | .ok evidence =>
       -- A file that cannot be written is no refusal: its error is thrown.
       IO.FS.writeFile evidencePath (evidence.compress ++ "\n")

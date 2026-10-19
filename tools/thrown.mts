@@ -42,13 +42,16 @@ export class CompilerFailure extends Error {
  * - `panic`: the compiler process panicked on a query and replied so;
  * - `api`: any other failure of a request to the compiler (`CompilerFailure`),
  *   or an error raised in the compiler's package before the front end's code;
- * - `stack`: the front end exhausted the call stack, also inside a request.
+ * - `stack`: the front end exhausted the call stack, also inside a request;
+ * - `io`: the operating system failed a call Node made for the front end, a
+ *   file read or a path resolved (an error Node gives a `syscall`), where no
+ *   absence was asked for (`orAbsent`).
  * `readable` is whether the channel's later replies may be read: only after
  * a replied panic. The query is the outermost API frame (the request's name
  * where there is none), the caller the first frame of the front end's own
  * code; the reason is the first line of the message. An error carrying a tool
  * failure as its `cause` is that failure. */
-export type ToolFailure = { kind: "panic" | "api" | "stack"; readable: boolean; query: string; caller: string; reason: string };
+export type ToolFailure = { kind: "panic" | "api" | "stack" | "io"; readable: boolean; query: string; caller: string; reason: string };
 export const toolFailureOf = (thrown: unknown): ToolFailure | null => {
   if (!(thrown instanceof Error)) return null;
   const request = thrown instanceof CompilerFailure ? thrown : null;
@@ -63,14 +66,33 @@ export const toolFailureOf = (thrown: unknown): ToolFailure | null => {
   const firstOwn = frames.findIndex(own);
   const stack = stackExhaustion(thrown) || (request !== null && stackExhaustion(request.cause));
   const panic = thrown.message.startsWith("panic:");
-  if (!request && !stack && !panic && !inCompiler.slice(0, firstOwn < 0 ? frames.length : firstOwn).some(b => b))
+  const io = !request && systemError(thrown);
+  if (!request && !stack && !panic && !io && !inCompiler.slice(0, firstOwn < 0 ? frames.length : firstOwn).some(b => b))
     return null;
   const outer = inCompiler.lastIndexOf(true);
   const query = outer >= 0 ? (/^at (\S+)/.exec(frames[outer] ?? "")?.[1] ?? "?") : request?.request ?? "?";
   const caller = /\/([^/]+:\d+):\d+\)?$/.exec(frames.find((f, i) => i > outer && own(f)) ?? "")?.[1] ?? "?";
-  return { kind: stack ? "stack" : panic ? "panic" : "api", readable: request ? request.readable : panic,
+  return { kind: stack ? "stack" : panic ? "panic" : io ? "io" : "api", readable: request ? request.readable : panic || io,
     query, caller, reason: thrown.message.split("\n")[0] ?? "" };
 };
+/** Whether what was thrown is a failure the operating system reported for a
+ * call Node made (Node gives it the `syscall` it failed). */
+const systemError = (thrown: unknown): boolean => thrown instanceof Error && typeof fieldOf(thrown, "syscall") === "string";
+/** Whether what was thrown says a path names nothing: `ENOENT`, or `ENOTDIR`
+ * for a path through a file. */
+const absence = (thrown: unknown): boolean =>
+  systemError(thrown) && (fieldOf(thrown, "code") === "ENOENT" || fieldOf(thrown, "code") === "ENOTDIR");
+/** What `read` gives, or null where the path it reads names nothing: the one
+ * absence a caller of the file system gives a meaning. Every other failure of
+ * the file system is the tool's (`io`), thrown on. */
+export function orAbsent<T>(read: () => T): T | null {
+  try {
+    return read();
+  } catch (error) {
+    if (absence(error)) return null;
+    throw error;
+  }
+}
 /** A catch that makes a refusal, an absence or an unknown of what it caught
  * calls this first: a tool failure is none of them, and is thrown on. */
 export const passToolFailure = (thrown: unknown): void => {
@@ -85,6 +107,7 @@ const emptyTuplePanic = "panic: interface conversion: checker.TypeData is *check
 /** The report of a tool failure: no verdict on the source, located. */
 export const toolFailureText = (failure: ToolFailure, at: string): string => failure.kind === "stack"
   ? `tool failure: the front end exhausted the call stack (at ${failure.caller}${failure.query === "?" ? "" : `, in ${failure.query}`}) ${at}`
+  : failure.kind === "io" ? `tool failure: the file system failed (called from ${failure.caller}): ${failure.reason} ${at}`
   : failure.reason.startsWith(emptyTuplePanic)
     ? `tool failure: the compiler's API failed in ${failure.query} (called from ${failure.caller}): a type ` +
       "TypeScript gives here holds an empty array literal's tuple type (`[] as const`, or `[]` where a " +

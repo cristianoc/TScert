@@ -36,7 +36,7 @@ import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, 
 import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
-import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
+import { messageOf, orAbsent, passToolFailure, toolFailureOf } from "./thrown.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
 
@@ -3062,10 +3062,11 @@ function declarationOrigin(file: SourceFile, libraryFile: (file: SourceFile) => 
   let origin = "project";
   if (at >= 0 && name) {
     const directory = parts.slice(0, at + 1 + name.split("/").length).join(sep);
-    try {
-      const manifest: unknown = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
-      if (manifest && typeof manifest === "object" && "name" in manifest && manifest.name === name) origin = name;
-    } catch (error) { passToolFailure(error); origin = "project"; }
+    // A directory without a manifest is the project's; a manifest that
+    // cannot be read or parsed is no absence.
+    const text = orAbsent(() => readFileSync(join(directory, "package.json"), "utf8"));
+    const manifest: unknown = text === null ? null : JSON.parse(text);
+    if (manifest && typeof manifest === "object" && "name" in manifest && manifest.name === name) origin = name;
   }
   origins.set(path, origin);
   return origin;

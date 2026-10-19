@@ -211,12 +211,15 @@ The outcome is one of:
 - **exhausted**: a verification resource budget was reached before the
   obligation could be decided;
 - **error**: a `tool failure`, which certifies nothing: a subprocess
-  killed by a signal, past its time limit, or exiting without its refusal
-  (the verifier's is exit status 1 with a first line `reject: …`, the
-  producer's exit status 2 with a first line `unsupported: …`; a file the
-  verifier cannot read or write is no refusal); or a failed request to the
-  compiler's API, which names the query, the front end's call site and the
-  compiler's reason. Every request goes through one guard
+  killed by a signal, past its time limit, or exiting without its complete
+  refusal record (the verifier's exit status 1, the producer's 2, a first
+  line `reject: …` or `unsupported: …` and a last line `end of refusal`;
+  each exits 3 with a first line `error: …` on an operational failure, a
+  file it cannot read or write among them); the producer's `--explain`
+  failing or printing no explanations; the file system failing a read or a
+  path the front end resolves, other than a path naming nothing where that
+  absence has a meaning; or a failed request to the compiler's API, which
+  names the query, the front end's call site and the compiler's reason. Every request goes through one guard
   (`tools/compiler-channel.mts`), which makes whatever it throws a
   `CompilerFailure`: a reply the compiler sent as an error, a transport or
   native I/O failure, before or after the request was written, or the front

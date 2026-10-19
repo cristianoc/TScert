@@ -15,7 +15,7 @@ import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { nameOf } from "./syntax.mts";
-import { passToolFailure } from "./thrown.mts";
+import { orAbsent } from "./thrown.mts";
 
 /** Reading rule 2: a property of a host declaration declared `any` states
  * nothing, and is read as an optional member of type `unknown`, as the
@@ -281,13 +281,10 @@ export function useHostInstallationForTests(root: string | null): void {
  * audited installation, whose declarations have the reviewed digest. A
  * package elsewhere, whatever its manifest names, is no host. */
 export function isHostFile(file: string): boolean {
-  let real: string;
-  try {
-    real = realpathSync(file);
-  } catch (error) {
-    passToolFailure(error);
-    return false;
-  }
+  // A path that names nothing is no host file; any other failure resolving
+  // it is the tool's.
+  const real = orAbsent(() => realpathSync(file));
+  if (real === null) return false;
   const host = installation();
   if (!real.startsWith(host.root + sep)) return false;
   if (host.checked && !digestChecked) {

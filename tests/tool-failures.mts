@@ -5,7 +5,9 @@
 import "./force-tool-failure.mts";
 import assert from "node:assert/strict";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { isHostFile } from "../tools/compiler-api.mts";
 import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { messageOf } from "../tools/thrown.mts";
@@ -80,6 +82,44 @@ for (const [site, frame] of [["the parser's compiler", "at openFile \\("], ["the
   const fresh = parseFile(join(dir, "sent.ts"), false, config);
   assert.ok(fresh.functions.length === 1, `a parse after ${site} failed lowers its function`);
   process.stdout.write(`${site}, failing after a request was sent: a tool failure, and the next parse as without it\n`);
+}
+
+// The file system failing where the front end reads a file (EIO reading an
+// imported module, EACCES resolving a path) is a tool failure; a path that
+// names nothing is the absence its reader gives a meaning.
+{
+  const failing = (call: string, path: string, code: string) => (...args: unknown[]): unknown => {
+    if (args[0] === path) throw Object.assign(new Error(`${code}: forced by tests/tool-failures.mts, ${call} '${path}'`), { code, syscall: call });
+    return undefined;
+  };
+  const read = fs.readFileSync, resolveReal = fs.realpathSync;
+  const lib = join(dir, "lib.ts");
+  const readFailure = failing("open", lib, "EIO");
+  fs.readFileSync = Object.assign((...args: Parameters<typeof read>) => (readFailure(...args), read(...args)), read);
+  syncBuiltinESMExports();
+  let report = "";
+  try {
+    parseFile(join(dir, "importer.ts"), false, config);
+  } catch (error) {
+    report = messageOf(error);
+  } finally {
+    fs.readFileSync = read;
+    syncBuiltinESMExports();
+  }
+  assert.match(report, /^tool failure: the file system failed \(called from [^)]+\): EIO: forced .*\(lowering the imported module \.\/lib\.ts\)$/, report);
+  const denied = join(dir, "denied.d.ts");
+  const resolveFailure = failing("realpath", denied, "EACCES");
+  fs.realpathSync = Object.assign((...args: Parameters<typeof resolveReal>) => (resolveFailure(...args), resolveReal(...args)), resolveReal);
+  syncBuiltinESMExports();
+  try {
+    assert.throws(() => isHostFile(denied), /EACCES: forced/);
+    assert.equal(isHostFile(join(dir, "absent.d.ts")), false, "a path naming nothing is no host file");
+  } finally {
+    fs.realpathSync = resolveReal;
+    syncBuiltinESMExports();
+  }
+  closeParser();
+  process.stdout.write("the file system failing under the front end: a tool failure; a path naming nothing, an absence\n");
 }
 
 // A native read failure, before or after the request was sent, is a tool

@@ -1,8 +1,8 @@
 /* Part of the trusted front end: the compiler's synchronous API, opened and
  * released in one place, and the one place that reads the pinned package's
  * private shape (typescript 7.0.2, `dist/api/sync/client.js`): an `API`'s
- * `client`, whose `apiRequest` and `apiRequestBinary` carry every request to
- * the compiler process, whose `close` ends that process without a request,
+ * `client`, whose members `requestMembers` lists carry every request to the
+ * compiler process, whose `close` ends that process without a request,
  * and whose `channel.child` is the process. A package that renames one of
  * them fails here, by name (`tests/tool-failures.mts` opens one).
  *
@@ -26,11 +26,16 @@ interface PrivateClient {
   close(): void;
   readonly channel: { readonly child: CompilerProcess };
 }
-type Request = (this: unknown, method: unknown, params: unknown) => unknown;
+type Request = (this: unknown, ...args: unknown[]) => unknown;
 const isRequest = (f: unknown): f is Request => typeof f === "function";
 const isProcedure = (f: unknown): f is () => unknown => typeof f === "function";
 /** A value's prototype, where its methods are own members. */
 const prototypeOf = (value: object): unknown => Object.getPrototypeOf(value);
+
+/** The client's members that send a request on its channel: every one of
+ * them, the API's requests through the first two, and an echo and the
+ * timing queries through the others. */
+const requestMembers = ["apiRequest", "apiRequestBinary", "echo", "echoBinary", "getTimingInfo", "resetTimingInfo"] as const;
 
 /** An `API`'s private client, its members checked by name. */
 export function privateClient(api: API): PrivateClient {
@@ -39,8 +44,8 @@ export function privateClient(api: API): PrivateClient {
     Error(`the compiler package's private shape changed: API.client${member} is missing (compiler-channel.mts)`);
   if (!client || typeof client !== "object") throw missing("");
   if (!("close" in client) || !isProcedure(client.close)) throw missing(".close");
-  if (!isRequest(fieldOf(prototypeOf(client), "apiRequest"))) throw missing(".apiRequest");
-  if (!isRequest(fieldOf(prototypeOf(client), "apiRequestBinary"))) throw missing(".apiRequestBinary");
+  for (const member of requestMembers)
+    if (!isRequest(fieldOf(prototypeOf(client), member))) throw missing(`.${member}`);
   const child = fieldOf(fieldOf(client, "channel"), "child");
   if (!child || typeof child !== "object" || !("kill" in child) || !isProcedure(child.kill) ||
       !("once" in child) || !isProcedure(child.once) || !("exitCode" in child) || !("signalCode" in child))
@@ -54,20 +59,21 @@ const guarded = new WeakSet<object>();
 function guard(client: PrivateClient): void {
   const prototype = prototypeOf(client);
   if (!prototype || typeof prototype !== "object" || guarded.has(prototype)) return;
-  const wrap = (original: unknown): Request => {
-    if (!isRequest(original)) throw Error("the compiler package's private shape changed (compiler-channel.mts)");
-    return function (this: unknown, method: unknown, params: unknown): unknown {
+  // A request is named by its method, the first argument of the API's two;
+  // the others by their member.
+  const wrap = (member: string, original: unknown): Request => {
+    if (!isRequest(original)) throw Error(`the compiler package's private shape changed: API.client.${member} (compiler-channel.mts)`);
+    const named = member === "apiRequest" || member === "apiRequestBinary";
+    return function (this: unknown, ...args: unknown[]): unknown {
       try {
-        return original.call(this, method, params);
+        return original.call(this, ...args);
       } catch (error) {
-        throw error instanceof CompilerFailure ? error : new CompilerFailure(String(method), error);
+        throw error instanceof CompilerFailure ? error : new CompilerFailure(named ? String(args[0]) : member, error);
       }
     };
   };
-  Object.assign(prototype, {
-    apiRequest: wrap(fieldOf(prototypeOf(client), "apiRequest")),
-    apiRequestBinary: wrap(fieldOf(prototypeOf(client), "apiRequestBinary")),
-  });
+  Object.assign(prototype, Object.fromEntries(requestMembers.map((member) =>
+    [member, wrap(member, fieldOf(prototype, member))])));
   guarded.add(prototype);
 }
 
