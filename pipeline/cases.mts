@@ -1758,7 +1758,7 @@ export const cases: Case[] = [
     /source expression obligation at \[230,254\)/),
   positive("spread-function", "a spread of a function copies the fields its type states and leaves the rest open; a function the program creates owns none"),
   positive("spread-bounded-binder", "a spread of a value of a binder bounded by a record, and of an intersection of records, copies the fields the bound or the records state, as does an object rest; a field of the union arm the literal builds is built at that arm's type"),
-  negative("invalid-spread-binder-result", "the copy of a bounded binder's value is a record of its bound's fields, no value of the binder: a class instance's getter is on its prototype (run under Node: undefined)",
+  negative("invalid-spread-binder-result", "the copy of a bounded binder's value is a record of its bound's fields, no value of the binder: at `B := { name: \"a\"; size: number }` the copy's `name` is \"x\" (run under Node)",
     /The available claim for \{ \.\.\.b, name: "x" \} is \{ name: string, size: number \}\. This return requires literal object at \[\d+,\d+\] & B/),
   negative("invalid-spread-function-length", "a function's `length` is not enumerable, so its copy does not state it",
     /The available claim for \{ \.\.\.fn \} is \{  \}\. This obligation requires \{ length: number \}/),

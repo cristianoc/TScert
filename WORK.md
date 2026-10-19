@@ -496,8 +496,8 @@ in search; of the drivers' 48, 4 and 8. By the judgment that fails:
   [proposal](docs/PROGRAM-TYPING.md) under review;
 - past their spreads of a bounded binder and of an intersection of records
   (5, 2026-10-19): `promisedBinders` returns the copy at its binder `B`,
-  refused on principle, a class instance's getter being its prototype's
-  (`invalid-spread-binder-result`), and `promisedMethods` calls it; the
+  refused on principle, a binder narrower than its bound fixing a field the
+  copy replaces (`invalid-spread-binder-result`), and `promisedMethods` calls it; the
   `hostBrands` family reads `b.bound` through the intersection
   `SourceTypeParameter<TypeTerm> & { default; span }` after `b.bound &&`,
   and maps through callbacks calling its `brand` and `fail` parameters,

@@ -16,11 +16,13 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-for-in-entry-rebound", "wrong({ a: 1, b: 2 }, {})"],
     // A function's `length` is not enumerable: its copy lacks it.
     ["invalid-spread-function-length", "arity((a, b) => a + b)"],
-    // A class instance's getter is on its prototype: the copy lacks it.
-    ["invalid-spread-binder-result", `relabel(new (class { name = "a"; get size() { return 1; } })()).size`],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // At `B := { name: "a"; size: number }`, a value meeting the binder: the
+  // copy's `name` is "x", which the binder excludes.
+  assert.equal(runExample("invalid-spread-binder-result", `relabel({ name: "a", size: 1 }).name`), "x",
+    "invalid-spread-binder-result: the copy returned as B holds a name outside B");
   // The pattern steps a string by code point: the first is the whole emoji.
   assert.equal(runExample("invalid-for-of-pattern-string", `firsts(["\\u{1F600}b"])`), "\u{1F600}",
     "invalid-for-of-pattern-string: the pattern binds a code point, not the first code unit");
