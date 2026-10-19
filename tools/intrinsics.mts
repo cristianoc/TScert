@@ -108,6 +108,9 @@ export const promiseRejectName = "%PromiseReject%";
 export const newPromiseName = "%NewPromise%";
 export const symbolForName = "%SymbolFor%";
 export const symbolKeyForName = "%SymbolKeyFor%";
+/** `e instanceof Error`: whether `Error.prototype` is on `e`'s prototype
+ * chain, a Boolean that states nothing of `e`. */
+export const instanceOfErrorName = "%InstanceOf:Error%";
 /** A checked access of an early binding that finds it uninitialized
  * (SOURCE-MODEL.md, "Lexical bindings before initialization"): allocates a
  * `ReferenceError` by the realm's intrinsic constructor, whatever a source
@@ -336,6 +339,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     [throwUninitializedName]: () => ({ typeParams: [],
       type: { ...fn([], atom("never")), effect: { ...emptyEffect, onThrow: true } } }),
     [symbolForName]: () => ({ typeParams: [], type: fn([atom("string")], atom("symbol")) }),
+    // OrdinaryHasInstance walks the operand's prototype chain, which runs no
+    // code, no object being a proxy, and writes nothing.
+    [instanceOfErrorName]: () => ({ typeParams: [],
+      type: { ...fn([atom("unknown")], atom("boolean")), effect: emptyEffect } }),
     [symbolKeyForName]: () => ({ typeParams: [], type: fn([atom("symbol")], either(atom("string"), atom("undefined"))) }),
     // The read runs no code and writes nothing: an own numeric key of an
     // array holds a data property (`numericOwn`), and neither

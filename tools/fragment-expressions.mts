@@ -1384,6 +1384,13 @@ export function binary(this: Gate, node: BinaryExpression): Expr {
   if (node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword &&
       gate.globalTests.has(gate.span(node).join(":")))
     return { k: "arrayTest", pos: gate.span(node), e: gate.expr(node.left) };
+  // `e instanceof Error`, which the overlay reads as a call of the intrinsic
+  // stating the Boolean (`%InstanceOf:Error%`): the operand, then the
+  // global's read, which runs nothing, then the walk.
+  const instanceIntrinsic = node.operatorToken.kind === ts.SyntaxKind.InstanceOfKeyword
+    ? gate.globalIntrinsics.get(gate.span(node).join(":")) : undefined;
+  if (instanceIntrinsic)
+    return gate.intrinsic(instanceIntrinsic, gate.span(node), gate.span(node.right), [gate.expr(node.left)]);
   // Any other `instanceof` looks for a constructor's prototype along the
   // operand's prototype chain, or calls the constructor's static
   // `[Symbol.hasInstance]`. For a class of this file, which TypeScript binds

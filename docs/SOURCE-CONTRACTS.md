@@ -224,8 +224,21 @@ says nothing of keys it does not name, a method's receiver is its host, and a
 global both called and read through a method, or both constructed and read
 through members, has no clause and is refused, unless the overlay reads those
 members as intrinsics. A global both read as a value and constructed is
-refused too. A standard library global is
-read through the reviewed overlay ([Library globals](#library-globals)), and
+refused too. A global declared as a function, its overloads without
+bodies (`declare function parseInt(…)`), is only called, at the overloads
+TypeScript resolves its calls to:
+
+```math
+\frac{x\ \text{a global function of overloads}\ F\qquad
+      \text{every occurrence of}\ x\ \text{is a callee}\qquad
+      C\subseteq F}
+     {\Gamma(x)=⟦\mathsf{calls}(C)⟧}\ \textsf{global-function}
+```
+
+A standard library global is
+read through the reviewed overlay ([Library globals](#library-globals)), a
+global function declared elsewhere through it where an entry lists its text
+(Node's `clearTimeout`, `node-clear-timeout`) and else as declared, and
 a function of Node's modules an overlay entry lists, through the overlay of
 library modules ([Library modules](#library-modules)).
 
@@ -1783,6 +1796,42 @@ The entries, each with the code its restriction keeps from running:
   stated at a primitive, defined below: $`(\mathsf{Prim},\ \ldots\mathtt{unknown})\Rightarrow\mathtt{number}`$,
   a value too (`texts.map(Number)`; `number-value`; `invalid-number-value-object`,
   run under Node).
+- `parseInt(s, r)` and `Math.ceil(x)` convert a string and numbers, primitives
+  no conversion code runs on, and write nothing: as declared, within the empty
+  footprint (`library-parse-int`, `library-math-ceil`). No argument of their
+  parameter types converts by code.
+- `Object.fromEntries(entries)` steps its argument's iterator, reads each
+  element's 0 and 1, converts the key and defines it on a fresh object. Over
+  an array the iterator is the host's and a pair an array of data, so it runs
+  no code and writes nothing it did not allocate:
+  $`\forall T.\ (\mathtt{readonly}\ (\mathtt{readonly}\ [\mathtt{string},\ T])[\,])\Rightarrow\{[k:\mathtt{string}]:T\}`$,
+  within the empty footprint (`object-from-entries`). A program's iterable
+  runs its iterator (`invalid-from-entries-iterable`, run under Node).
+- `Array.from(xs)` of an array copies it through the host's iterator,
+  a hole read as `undefined`: $`\forall T.\ (\mathtt{readonly}\ T[\,])\Rightarrow T[\,]`$
+  within the empty footprint (`array-from-copy`). `Array.from(items, f)` of a
+  length record steps the record's own iterator where it holds one, client
+  code yielding any value, and else reads its length and indices; it calls
+  `f` with each value and index:
+  $`\forall U.\ (\{\mathtt{readonly}\ \mathit{length}:\mathtt{number}\},\ (\mathtt{unknown},\ \mathtt{number})\Rightarrow U)\Rightarrow U[\,]`$,
+  stating no effect (`array-from-length`; `invalid-array-from-iterator`, run
+  under Node).
+- `new RegExp(p, flags)` of strings compiles a pattern known only at run
+  time, a SyntaxError where it or the flags are invalid: the structural regex
+  $`⟦\mathtt{RegExp}⟧=P(\Sigma_\top)`$ ([regular expressions](#regular-expressions)),
+  no native mark stated, within the empty footprint on its throw too
+  (`regexp-dynamic`). A regex pattern would be read by its `Symbol.match`,
+  `source` and `flags` (`invalid-regexp-object-pattern`, run under Node).
+- `e instanceof Error` walks `e`'s prototype chain for `Error.prototype`,
+  which runs no code, `Error` owning no `[Symbol.hasInstance]`:
+  `%InstanceOf:Error%`, $`(\mathtt{unknown})\Rightarrow\mathtt{boolean}`$ within
+  the empty footprint (`instanceof-error`, run under Node). It narrows
+  nothing: an object gets `Error.prototype` without `Error` constructing it,
+  its `message` any value (`invalid-instanceof-error-message`, run under
+  Node; [source fragment](SOURCE-FRAGMENT.md)).
+- Node's `clearTimeout(t)` of any value cancels a timer by id or by object,
+  reading and writing an object's `_onTimeout`, which may be an accessor:
+  $`(\mathtt{unknown})\Rightarrow\mathtt{undefined}`$, stating no effect.
 - `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
   `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
   object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,

@@ -2859,6 +2859,62 @@ function typesOnly(node: Node): boolean {
     : typesOnly(body);
 }
 
+/** A global function, its overloads declared without bodies: its value's
+ * call signatures, each overload a call resolves to. A standard library
+ * function is read through the reviewed overlay, an overload it does not
+ * list with exactly the text reviewed refused, as a global variable's call
+ * signature is; one declared elsewhere, as Node's `clearTimeout`, through
+ * the overlay where an entry lists its text, and otherwise as its
+ * declaration states. The function is only called. */
+function globalFunction(checker: Checker, name: string, uses: readonly Identifier[],
+    overloads: readonly ts.FunctionDeclaration[], context: SelectionContext): { definition: TypeDefinition } {
+  const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
+  const where = (node: Node) => `${context.identityOf(node.getSourceFile())}#${name}`;
+  const library = overloads.every(o => context.libraryFile(o.getSourceFile()));
+  const what = `${name}(…)`;
+  const chosen = new Map<ts.FunctionDeclaration, ts.CallExpression[]>();
+  for (const use of uses) {
+    const call = use.parent;
+    if (!ts.isCallExpression(call) || call.expression !== use || call.questionDotToken)
+      throw Error(`the global function ${name} is only called`);
+    const resolved = checker.getResolvedSignature(call)?.declaration?.resolve();
+    const overload = overloads.find(o => resolved && o.pos === resolved.pos && o.end === resolved.end &&
+      o.getSourceFile().fileName === resolved.getSourceFile().fileName);
+    if (!overload) throw Error(`TypeScript resolves the call of ${name} to no overload it declares`);
+    chosen.set(overload, [...chosen.get(overload) ?? [], call]);
+  }
+  const calls = [...chosen].flatMap(([overload, calls]): FunctionTerm[] => {
+    if (overload.typeParameters?.length) throw Error(`${what} is generic`);
+    const at = spanOf(overload);
+    const entry = globalEntry(context.overlay, name, undefined, overload.getText(overload.getSourceFile()).trim());
+    if (library && !entry)
+      throw Error(`${what} is not in the reviewed overlay of library globals: ${overload.getText(overload.getSourceFile()).trim()}`);
+    if (entry && (entry.test || entry.intrinsic || entry.construct || entry.value || entry.admit))
+      throw Error(`${what} is reviewed in a form a global function does not take`);
+    const written = entry?.stated;
+    const stated = typeof written === "function" ? written(context.library) : written;
+    if (Array.isArray(stated)) throw Error(`${what} states several forms`);
+    if (stated) {
+      if (stated.binders.length) throw Error(`${what} is stated with binders`);
+      for (const call of calls) boundedArguments(call, stated, what);
+      return [{ k: "function", effect: entry?.effect ?? ordinaryEffect, receiver: null, params: stated.params,
+        rest: stated.rest ?? null, result: stated.result, span: at }];
+    }
+    context.clean(overload, where(overload));
+    return signatures(context.valueScope(overload, what), overload.parameters, overload.type, overload, at)
+      .map(form => {
+        if (form.receiver) throw Error(`${what} states its receiver`);
+        return { ...form, effect: entry?.effect ?? form.effect };
+      });
+  });
+  const [declaration] = overloads;
+  if (!declaration) throw Error(`the global function ${name} has no declaration`);
+  const source = declaration.getSourceFile();
+  return { definition: { declaration: { module: context.identityOf(source), name,
+    span: [declaration.getStart(source), declaration.end] }, parameters: [], bases: [],
+    expression: { k: "object", fields: [], stringIndex: null, calls, span: spanOf(uses[0] ?? declaration) } } };
+}
+
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
     { definition: TypeDefinition } |
     { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm } } |
@@ -2867,6 +2923,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   if (!first) throw Error("a global value without a reference");
   const name = first.text;
   const declarations = (checker.getSymbolAtLocation(first)?.declarations ?? []).map(d => d.resolve());
+  // A global declared as a function, `declare function parseInt(…)`.
+  const functions = declarations.filter((d): d is ts.FunctionDeclaration => !!d && ts.isFunctionDeclaration(d) && !d.body);
+  if (functions.length && functions.length === declarations.length)
+    return globalFunction(checker, name, uses, functions, context);
   const variables = declarations.filter((d): d is ts.VariableDeclaration =>
     !!d && ts.isVariableDeclaration(d) && !!d.type && ts.isIdentifier(d.name));
   const [declaration] = variables;
@@ -2978,8 +3038,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       // `e instanceof X`, read only where the overlay states it as a test of
       // the calculus, against the variable's declaration as reviewed.
       const entry = reviewed(undefined, declaration, `${name} as the right operand of instanceof`);
-      if (!entry?.test) throw Error(`${name} is not read as an instanceof test`);
-      context.test(spanOf(parent), entry.test);
+      // A test of the calculus, or an intrinsic stating the Boolean alone.
+      if (entry?.intrinsic) context.intrinsic(spanOf(parent), entry.intrinsic);
+      else if (entry?.test) context.test(spanOf(parent), entry.test);
+      else throw Error(`${name} is not read as an instanceof test`);
     }
     else if (isWritten(use)) throw Error(`the global ${name} is written, which the module may not do`);
     else valueUses.push(use);

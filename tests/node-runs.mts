@@ -157,6 +157,20 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     `[roundTrip('{"a":{"toJSON":1},"b":[{"toJSON":"x"}]}'), wrapped('{"toJSON":[1]}')].join(" ")`),
     '{"a":{"toJSON":1},"b":[{"toJSON":"x"}]} [{"toJSON":[1]},{"toJSON":{"toJSON":[1]}}]',
     "json-parse-stringify-tojson-member: noncallable toJSON members round-trip");
+  assert.equal(runExample("invalid-from-entries-iterable",
+    "(() => { let ran = 0; build({ *[Symbol.iterator]() { ran++; yield [\"a\", 1]; } }); return ran; })()"),
+    1, "invalid-from-entries-iterable: Object.fromEntries steps a program's iterator");
+  assert.equal(runExample("invalid-array-from-iterator",
+    "(() => { const xs = [1, 2]; const items = { length: 1, *[Symbol.iterator]() { xs.pop(); yield 0; } }; return 1 in grow(xs, items); })()"),
+    false, "invalid-array-from-iterator: a length record's own iterator shrinks the mapped array, leaving a hole");
+  assert.equal(runExample("invalid-regexp-object-pattern",
+    "(() => { let read = 0; copied({ get [Symbol.match]() { read++; return true; }, source: \"a\", flags: \"\" }); return read; })()"),
+    1, "invalid-regexp-object-pattern: new RegExp reads an object pattern's Symbol.match getter");
+  assert.equal(runExample("invalid-instanceof-error-message",
+    "typeof text(Object.create(Error.prototype, { message: { value: 5 } }))"),
+    "number", "invalid-instanceof-error-message: an object holding Error.prototype has a numeric message");
+  assert.equal(runExample("instanceof-error", "[isError(new Error(\"x\")), isError({ message: \"x\" })].join()"),
+    "true,false", "instanceof-error: the walk");
   assert.equal(runExample("invalid-number-value-object",
     "(() => { const xs = [{}, {}]; xs[0] = { valueOf() { xs.pop(); return 1; } }; return 1 in values(xs); })()"),
     false, "invalid-number-value-object: an object's valueOf shrinks the mapped array, leaving a hole");
