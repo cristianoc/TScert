@@ -2514,6 +2514,26 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A guard's Boolean return is a condition returning the literal `true` at
+  // the first code unit of its `return` and `false` at the second. Claimed
+  // `false` where it returns `true`, the claims are refused where evidence
+  // is produced and where the honest evidence is checked.
+  const artifacts = run("guard-boolean-return");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "isFields"), "isFields' claims");
+  const at = source.indexOf("return typeof v");
+  const truth = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + 1), "the true return's claim");
+  assert.deepEqual(truth.type, [1], "the true return is true");
+  truth.type = [2];
+  const input = writeClaims(artifacts, "forged-boolean-return", claims);
+  refusedAt(artifacts, input, "forged-boolean-return", `obligation at [${at},${at + 1})`);
+  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts),
+    /reject: source evidence does not justify the extracted program and exact claims/);
+  process.stdout.write("guard Boolean return: the true return claimed false refused in search and in checking\n");
+}
+
+{
   // A guard closure passed as a callback is claimed at its own signature,
   // its promise and the callback's longer signature. Claimed without the
   // promise, the closure is refused where evidence is produced and where the
@@ -2816,8 +2836,14 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const str = rowOf(claims, "str");
   const tru = rowOf(claims, { boolLit: { value: true } });
   for (const entry of guard.entries) for (const b of entry.bindings) if (b.name === x.name) b.type = [str];
-  const read = must(guard.expressions.find((e) => e.pos[1] - e.pos[0] === x.name.length), "the read of the argument");
-  for (const e of guard.expressions) e.type = e === read ? [str] : [tru];
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  // The answers' literals at the first two code units of the `return`
+  // (`booleanReturn`) keep their claims.
+  const answer = (e: { pos: [number, number] }): boolean =>
+    source.startsWith("return", e.pos[0]) || source.startsWith("eturn", e.pos[0]);
+  const read = must(guard.expressions.find((e) => !answer(e) && source.slice(e.pos[0], e.pos[1]) === x.name),
+    "the read of the argument");
+  for (const e of guard.expressions) if (!answer(e)) e.type = e === read ? [str] : [tru];
   const forged = writeClaims(artifacts, "forged-guard-promise", claims);
   const searched = produceWith(artifacts, forged, "forged-guard-promise");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);

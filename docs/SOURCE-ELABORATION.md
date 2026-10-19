@@ -604,6 +604,25 @@ it carries no obligation about the operator's value, whose claim is checked
 where the operator is read as a value, and each operand keeps its own
 (`logical-string-values`: `s && s` of a string in a condition).
 
+In a type guard or an assertion function, a `return` of a Boolean by its
+form (a shape, key, instance or equality test, a negation, a comparison, or
+`&&` and `||` of such) returns its truth's Boolean, a condition:
+
+```math
+\mathsf{return}\ e\;\equiv\;\mathsf{if}\ (e)\ \mathsf{return}\ \mathsf{true};\ \mathsf{else}\ \mathsf{return}\ \mathsf{false}
+\qquad (e\ \text{Boolean by its form}).
+```
+
+The equation holds of JavaScript's evaluation: such an `e` evaluates once to
+`true` or `false`, which is its truth. The guard's promise is then checked
+where it returns `true`, in the context the test's answer leaves, as a
+statement `if` narrows; returning the joined value would check it where the
+test's answers have joined. An arrow's expression body is such a `return`.
+The parser writes the literals at the first two code units of the `return`
+keyword (an arrow's `=>`), which no expression has, each the span of its own
+`return` (`booleanReturn`), and the producer claims them as it claims any
+literal (`guard-boolean-return`, `invalid-guard-boolean-return`).
+
 A negated left operand that is no test, `!a`, is a dispatch on `a` itself,
 its arms exchanged, and a left operand that is the same operator's
 application is regrouped:

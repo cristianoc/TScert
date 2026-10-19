@@ -316,6 +316,9 @@ export class Gate {
   /* Whether the function whose body is being read is async: its returns
      settle the promise its call returned (`intrinsics.mts`). */
   asyncBody: boolean = false;
+  /* Whether that function is a type guard or an assertion function: a
+     return of a Boolean by its form is then a condition (`booleanReturn`). */
+  guardBody: boolean = false;
   /** Each occurrence of a namespace member (`namespace-members.mts`), a
    * member read or a qualified type name, by its span: the binding it reads. */
   namespaceUses: Map<string, { member: NamespaceMember; use: MemberUse }> = new Map();

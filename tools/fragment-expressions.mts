@@ -12,7 +12,7 @@ import type { Span } from "./span.mts";
 import { nameOf } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName, literalTerm } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
-import { GENERATOR, HAS_INSTANCE, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
+import { GENERATOR, HAS_INSTANCE, booleanForm, booleanReturn, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 
 export function expr(this: Gate, node: Expression): Expr {
@@ -1823,6 +1823,7 @@ export function lambda(this: Gate,
   const outerStrict = gate.strict;
   const outerReceiverMode = gate.receiverMode;
   const outerAsync = gate.asyncBody;
+  const outerGuard = gate.guardBody;
   gate.strict = outerStrict || prologue.strict;
   if (ordinary) {
     gate.receiverMode = gate.strict ? "strict" : "sloppy";
@@ -1884,6 +1885,7 @@ export function lambda(this: Gate,
     // member, which states it, so a method still needs the annotation.
     // A guard closure's annotation is its plain result and its promise.
     const guard = gate.guardOf(node);
+    gate.guardBody = guard !== null;
     const declaredResult: TypeTerm | null = guard ? guardResult(guard)
       : node.type || instance ? gate.typeOf(node.type, node) : null;
     const arrow = ts.isArrowFunction(node) ? gate.span(node.equalsGreaterThanToken) : null;
@@ -1956,9 +1958,14 @@ export function lambda(this: Gate,
         body: { k: "blockBody", pos: gate.span(body), body: [...bindings, ...statements] },
       };
     }
-    const inner = isAsync && arrow && keyword
+    const value = isAsync && arrow && keyword
       ? gate.intrinsic(asyncReturnName, arrow, gate.span(keyword), [gate.expr(body)])
       : gate.expr(body);
+    // A guard's Boolean by its form returns its truth's Boolean
+    // (`booleanReturn`), the literals at the arrow's `=>`.
+    const inner: Expr = guard && !isAsync && arrow && booleanForm(value)
+      ? { k: "blockBody", pos: gate.span(body), body: [booleanReturn(gate.span(body), value, arrow[0])] }
+      : value;
     const defaults = parameters.map((p) => p.initializer ? gate.expr(p.initializer) : null);
     // A parameter default's own schedule is Lean's (`parameterOrder`).
     gate.initializedBefore(node, parameters.map((p): [PatternAst, Expr | null] =>
@@ -1986,5 +1993,6 @@ export function lambda(this: Gate,
     gate.strict = outerStrict;
     gate.receiverMode = outerReceiverMode;
     gate.asyncBody = outerAsync;
+    gate.guardBody = outerGuard;
   }
 }
