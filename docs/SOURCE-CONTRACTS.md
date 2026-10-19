@@ -2660,12 +2660,16 @@ any other; the close's statement entries state each cell at its contract.
 A spread of a program's iterable (`collect`) that is the first evaluation
 able to run code of the statement's value (an expression statement's, a
 `return`'s or a declaration's one initializer), every evaluation before it
-a literal or a name the file never assigns whose read cannot throw (a
-parameter, a function declaration, a library global, or a function body's
-`let` or `const` the early-binding analysis finds initialized at every
-read; a module binding, an import or a class is not one,
-`spread-program-iterable-uninitialized-refused`), is collected before the
-statement, where nothing the statement evaluates before the spread can be
+a literal or a name the file never assigns whose read cannot throw nor run
+code: a parameter, a function declaration, a function body's `let` or
+`const` the early-binding analysis finds initialized at every read, or a
+name the file declares nowhere that TypeScript binds to the standard
+library's `var`s or functions alone. A module binding, an import, a class,
+an ambient declaration or an unresolved name is none
+(`spread-program-iterable-uninitialized-refused`,
+`spread-program-iterable-global-getter-refused`,
+`spread-program-iterable-global-tdz-refused`, each run under Node). Such a
+spread is collected before the statement, where nothing the statement evaluates before the spread can be
 changed by the iterator's code. Evaluation is followed in JavaScript's
 order: an array literal's elements, a call's or a construction's callee then
 arguments (a callee that is such a name, or a method read off a value whose

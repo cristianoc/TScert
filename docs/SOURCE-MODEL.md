@@ -414,7 +414,9 @@ string or a number runs no code, so the field is
 the key expression evaluated where it is written, checked at $`\ell`$, then
 the value (`object-computed-literal-key`). The Fragment marks the field
 computed, and Lean refuses one whose key is not the key $`\ell`$ converts to
-(`computedGate` in `Claims/Preparation.lean`). A key at a union of
+(`computedGate` in `Claims/Preparation.lean`). The check holds of the fields
+the parser marks: that every computed key is marked is the parser's, a
+trusted extraction obligation. A key at a union of
 literals, at `string` or `number`, or written as any other expression is
 refused, as the allocation's keys are then known only at run time;
 `__proto__`, a key whose possible values include `Symbol.toStringTag`, and

@@ -1046,3 +1046,14 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "(() => { const log = []; const n = early(log); return JSON.stringify([log, n]); })()"),
   '[["thrown","iterator"],1]', "spread-program-iterable-uninitialized-refused: the read throws before the iterator runs");
 }
+{
+  // A global getter read as a callee runs before the iterator; a global
+  // lexical binding read before its initialization throws before it.
+  assert.equal(runExample("spread-program-iterable-global-getter-refused",
+    "(() => { const log = []; Object.defineProperty(globalThis, \"counted\", { get() { log.push(\"getter\"); " +
+    "return (...xs) => xs.length; } }); call(log); return JSON.stringify(log); })()"),
+  '["getter","iterator"]', "spread-program-iterable-global-getter-refused: the getter runs before the iterator");
+  assert.equal(runExample("spread-program-iterable-global-tdz-refused",
+    "(() => { const log = []; try { read(log); } catch { log.push(\"thrown\"); } return JSON.stringify(log); })();\nlet late = 1;"),
+  '["thrown"]', "spread-program-iterable-global-tdz-refused: the read throws before the iterator runs");
+}

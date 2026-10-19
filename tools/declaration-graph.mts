@@ -477,6 +477,11 @@ export function collectDeclarations(file: string, options: {
    * standard library alone is reported to `libraryName`. */
   libraryNames?: readonly Span[];
   libraryName?: (span: Span) => void;
+  /** Names the file declares nowhere: each TypeScript binds to the standard
+   * library's `var` or function declarations alone, whose read runs no code
+   * and cannot throw, is reported to `libraryValue`. */
+  libraryValues?: readonly Span[];
+  libraryValue?: (span: Span) => void;
   /** The client's element reads `e[k]`: each whose object TypeScript types
    * as arrays and tuples only and whose key as `number`, no literal, is
    * reported to `hostElement`, and the intrinsics, among them
@@ -1893,6 +1898,21 @@ export function collectDeclarations(file: string, options: {
         const node = d.resolve();
         return !!node && libraryFile(node.getSourceFile());
       })) options.libraryName?.(span);
+    }
+    for (const span of options.libraryValues ?? []) {
+      const name = identifierAt(client, span);
+      const symbol = name && checker.getSymbolAtLocation(name);
+      if (!symbol || symbol.flags & SymbolFlags.Alias || !symbol.declarations.length) continue;
+      // An interface or a type merged with the value declares no value.
+      const values = symbol.declarations.map(d => d.resolve())
+        .filter(node => !node || !(ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)));
+      if (values.length && values.every(node => {
+        if (!node || !libraryFile(node.getSourceFile())) return false;
+        if (ts.isFunctionDeclaration(node)) return true;
+        const list = node.parent;
+        return ts.isVariableDeclaration(node) && !!list && ts.isVariableDeclarationList(list) &&
+          !(list.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const));
+      })) options.libraryValue?.(span);
     }
     for (const span of options.receiverTargets ?? []) {
       const name = identifierAt(client, span);
