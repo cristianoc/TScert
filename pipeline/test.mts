@@ -3237,6 +3237,23 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   process.stdout.write("forged guard domains: a domain the argument is not within refused at the call by the search and by the checker against the case's evidence, and a call without its domain by the decoder\n");
 }
 {
+  // F5 (HOST-FAMILIES.md, "Trust"): the package's enum objects are never
+  // written. Claims bypassing the producer that read `ts.SyntaxKind` at the
+  // writable record its alias is bound to are refused by the search at that
+  // read: the enum object's type is its declaration's, whatever is claimed.
+  const artifacts = run("invalid-compiler-api-enum-field-write");
+  const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const expressions = must(claims.functions[0], "rewrite's claims").expressions;
+  const at = (start: number, length: number) =>
+    must(expressions.find((e) => e.pos[0] === start && e.pos[1] === start + length), `the claim at ${start}`);
+  const read = text.indexOf("ts.SyntaxKind;");
+  at(read, "ts.SyntaxKind".length).type = at(text.indexOf("kinds.Identifier"), "kinds".length).type;
+  const forged = writeClaims(artifacts, "forged-enum-writable-alias", claims);
+  refusedAt(artifacts, forged, "forged-enum-writable-alias", `at [${read},${read + "ts.SyntaxKind".length})`);
+  process.stdout.write("forged enum claims: the tag enum read at a writable record, refused at the read\n");
+}
+{
   // A correction of a method to absent (HOST-FAMILIES.md, "The family
   // contract"): under a description correcting `getText` at one tag, the
   // method is an optional member of every reading covering that tag, the

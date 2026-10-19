@@ -369,7 +369,9 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
 // `invalid-compiler-api-js-alias` returns 345 on a JSDoc `@typedef`, which
 // `isTypeAliasDeclaration` accepts; `compiler-api-guard-argument` evaluates
 // a guard's argument once; and the write `invalid-compiler-api-enum-record-write`
-// makes, which F5 excludes, turns `isIdentifier` false on an identifier.
+// makes, which F5 excludes, turns `isIdentifier` false on an identifier;
+// `invalid-compiler-api-guard-domain-object`'s program object, outside the
+// guard's domain, answers `true`.
 {
   const dir = runDirectory("tscert-guards-");
   mkdirSync(join(dir, "node_modules"));
@@ -420,6 +422,9 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   } finally {
     Reflect.set(syntaxKind, "Identifier", before);
   }
+  const domain = await fixture("invalid-compiler-api-guard-domain-object");
+  assert.ok(nullary(domain.identifier), "the fixture exports identifier");
+  assert.equal(domain.identifier(), true, "isIdentifier answers true of a program object holding an identifier's kind");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, and a write to SyntaxKind turns isIdentifier false");
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, and isIdentifier answers true of a program object");
 }

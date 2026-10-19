@@ -2,10 +2,14 @@
 // read at its entry's signature, which changes no value and no store and
 // promises the family's shapes at its tag set, so it meets a parameter of
 // the guard type its declaration states, and a call of a name holding it
-// narrows the argument on its `true` edge.
+// narrows the argument on its `true` edge. A tag guard's value promises
+// the union of its tags.
 import * as ts from "typescript/unstable/ast";
 
-function count(nodes: readonly ts.Node[], test: (n: ts.Node) => n is ts.Identifier): number {
+function count(
+  nodes: readonly ts.Node[],
+  test: (n: ts.Node) => n is ts.Identifier,
+): number {
   let total = 0;
   for (const n of nodes) if (test(n)) total += n.text.length;
   return total;
@@ -27,4 +31,15 @@ export function anyName(nodes: readonly ts.Node[]): boolean {
 
 export function identifiers(nodes: readonly ts.Node[]): number {
   return nodes.filter(ts.isIdentifier).length;
+}
+
+function modifierOr(
+  kind: ts.SyntaxKind,
+  test: (k: ts.SyntaxKind) => k is ts.ModifierSyntaxKind,
+): ts.ModifierSyntaxKind | null {
+  return test(kind) ? kind : null;
+}
+
+export function modifierOf(kind: ts.SyntaxKind): ts.ModifierSyntaxKind | null {
+  return modifierOr(kind, ts.isModifierKind);
 }
