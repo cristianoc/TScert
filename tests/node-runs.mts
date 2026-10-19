@@ -19,6 +19,10 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // At `B := { name: "a"; size: number }`, a value meeting the binder: the
+  // copy's `name` is "x", which the binder excludes.
+  assert.equal(runExample("invalid-spread-binder-result", `relabel({ name: "a", size: 1 }).name`), "x",
+    "invalid-spread-binder-result: the copy returned as B holds a name outside B");
   // The pattern steps a string by code point: the first is the whole emoji.
   assert.equal(runExample("invalid-for-of-pattern-string", `firsts(["\\u{1F600}b"])`), "\u{1F600}",
     "invalid-for-of-pattern-string: the pattern binds a code point, not the first code unit");
@@ -43,6 +47,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["map-stable-collection-write", `seen(["a", "b"], new Map())`, '["a","b"]'],
     ["map-stable-set", `distinct([["a", "b", "a"], []])`, "[2,0]"],
     ["map-stable-spread", "padded([[1], [2, 3]])", "[[0,1,0],[0,2,3,0]]"],
+    ["map-stable-object-spread", `bounded([{ name: "a", bound: null }])`, '[{"name":"a","bound":1}]'],
+    ["map-stable-object-spread", `renamed([{ name: "a", bound: 2 }], "p")`, '[{"name":"pa","bound":2}]'],
     ["map-stable-named-callback", `[escapedAll(["a&b", "c"])]`, '["a&amp;b,c"]'],
     ["map-stable-named-declaration", `escapedAll(["a&b", "c"])`, '["a&amp;b","c"]'],
     ["map-stable-named-declaration", `widths(["ab", ""])`, "[2,0]"],

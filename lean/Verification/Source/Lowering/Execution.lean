@@ -180,7 +180,8 @@ held in a slot. -/
     else mergeType L F
   | .mergeObjects source left right final assign =>
     let L := (← executionSaved scope Γ left).2
-    let R := (← executionSaved scope Γ right).2
+    -- A bounded binder's value is copied at its bound.
+    let R ← boundOf (← executionSaved scope Γ right).2
     if assign && !ownsNoProto (SourceTypes.graph (← table)) R then
       throw (locatedRefusal (← table) right.source .expressionClaim
         "Object.assign from a source that may own `__proto__`: it sets that key through the prototype's setter, which replaces the target's prototype rather than adds a key")
