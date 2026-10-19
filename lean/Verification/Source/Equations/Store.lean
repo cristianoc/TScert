@@ -773,7 +773,8 @@ private partial def prototypeHeads : Tree → Option (List Nat)
 
 /-- **The prototype tag.** Every prototype a lowered head's row states under
 `[[proto]]`, through its bases, intersections and instances as lowering
-resolved them, is a head's application, and the only heads holding
+resolved them, is a head's application whose row is records (`refs` or
+`dict` clauses), and the only heads holding
 `Symbol.toStringTag` among them are the native `Promise`'s prototype records:
 no other contract states a prototype holding the tag. -/
 def tagPrototypes (s : State) : Except String Unit := do
@@ -791,6 +792,13 @@ def tagPrototypes (s : State) : Except String Unit := do
     | _ => false
   for h in List.range s.heads.size do
     for g in ← heads h do
+      -- A prototype is a record: its row's clauses are records, whose keys
+      -- `clauseKeys` reads, never a callable object or another shape.
+      let record := match (s.heads[g]?).bind (·.body) with
+        | some (.clauses cs@(_ :: _)) => cs.all fun c => match c with | .refs .. | .dict .. => true | _ => false
+        | _ => false
+      if !record then
+        throw s!"{(s.heads[h]?).map (·.name) |>.getD "a head"}: a prototype is stated as no record"
       if tagged g && !nativeProtos.contains g then
         throw s!"{(s.heads[h]?).map (·.name) |>.getD "a head"}: a prototype holding `Symbol.toStringTag` other than the native Promise's"
 

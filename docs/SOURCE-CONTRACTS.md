@@ -2387,16 +2387,20 @@ object owning $`\sigma_{\mathit{tag}}`$. Lean checks:
   its prototype as a readonly `string`; a document lacking either is refused
   (`tagDeclarations` in `Claims/Preparation.lean`);
 - every prototype a lowered head's row states under `[[proto]]`, through its
-  bases, intersections and instances as lowering resolves them, is a head's
-  record, and the only such records holding $`\sigma_{\mathit{tag}}`$ are the
-  native `Promise`'s (`tagPrototypes` in `Equations/Store.lean`). A copy of
+  bases, intersections and instances as lowering resolves them, is a head
+  whose row is records (`refs` or `dict` clauses; a callable object or any
+  other shape is refused), and the only such records holding
+  $`\sigma_{\mathit{tag}}`$ are the native `Promise`'s (`tagPrototypes` in
+  `Equations/Store.lean`). A copy of
   that record is the same record, so a declaration extending `Promise` holds
   it (`tag-fake-holder`);
 - no allocation of the source's code (a literal, a class's prototype or
   instance), no class value's static and no named write is keyed by it
-  (`tagGate`), and a key-adding write refuses a key that may be it: one typed
-  `symbol`, listed or not, or the tag's literal (`executionGrowth` in
-  `Lowering/Execution.lean`; `invalid-tag-computed-write`). The parser
+  (`tagGate`), and a key-adding write refuses a key whose possible values
+  include it: one typed `symbol`, listed or not, or the tag's literal
+  (`executionGrowth` in `Lowering/Execution.lean`;
+  `invalid-tag-computed-write`, `symbol-key-growth-refused`); a `unique
+  symbol` key other than the tag is admitted (`symbol-key-write`). The parser
   refuses the keys the source writes (`writtenSymbol`, the write at
   `Symbol.toStringTag`).
 

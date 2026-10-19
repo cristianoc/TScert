@@ -282,7 +282,12 @@ the compiler's synchronous API gives the instance's members but no
 instantiation of `T`, and `v`'s type carries the `undefined` optionality
 adds, so `v?: number` is not told from `v?: number | undefined`. Reading it
 needs the instantiation from the compiler (an API extension) or a checked
-elaboration of the contextual type.
+elaboration of the contextual type. A key-adding write at a symbol known only at run time
+(`symbol-key-growth-refused`: `d[fresh()] = 1` with `fresh(): symbol`
+returning `Symbol("k")`) is refused, as the key may be `Symbol.toStringTag`;
+admitting it needs a fact that the key is no tag, such as a type of the
+program's own fresh symbols, and the copy rule then refuses it too, the
+object's type listing no keys.
 
 <a id="a-semantics-of-the-fragment"></a>
 **A semantics of the Fragment.** The parser's rewrites and extraction rest
