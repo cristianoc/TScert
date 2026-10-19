@@ -323,7 +323,16 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
   | Not e -> branch env e (not truth)
   (* A name as a condition is tested for truthiness; a Boolean's slice is
      its literal. *)
-  | Id name -> refine_value env name (truthy_refine declarations truth)
+  (* An immutable binding's falsy outcome drops a named union of records,
+     all of whose values are truthy. A mutable local's or a cell's keeps it:
+     its outcomes join other edges into it, a loop's exit those of the
+     guards after it, along which Lean keeps the named union, so the join's
+     proposal holds the named union where an incoming edge does. *)
+  | Id name ->
+    let refine = match List.assoc_opt name env with
+      | Some (Storage _ | Local _) -> truthy_slice truth
+      | _ -> truthy_refine declarations truth in
+    refine_value env name refine
   (* Where some arm leaves the field optional or unnamed, so that nothing is
      known of what it holds, the test keeps the arms whose field may answer
      so (Lean's `fieldSlice` through the read's link): `IteratorResult` by
