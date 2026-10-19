@@ -2206,9 +2206,9 @@ of any call reaching a handler. A message is stated at `string`.
   the value $`e`$, of type $`T`$. `notEqual`: $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{undefined}`$,
   the empty footprint on normal return.
 - `assert.deepEqual(a, e, m)` (`deepStrictEqual`) and `notDeepEqual` compare
-  by traversal, which reads every own property, enumerable symbol-keyed ones
-  and an array's properties beyond its elements included, accessors among
-  them (observed: a passing comparison calls an enumerable symbol getter and
+  by traversal, which can traverse enumerable own string and symbol
+  properties, including extra array properties, accessors among them
+  (observed: a passing comparison calls an enumerable symbol getter and
   an extra array property's getter). No type the fragment states bounds all
   of these, `JsonValue` included:
   $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{undefined}`$,
@@ -2242,8 +2242,15 @@ each run under Node:
   failing call whose hook mutates an alias of an array the code reads after
   the handler, refused where it relies on a fact the call's normal-return
   footprint would have kept (a `map` result's density, an element's type);
-- the same program with a passing call, verified, showing the normal-return
-  footprint is used only on that edge;
+- the same program with a passing call, verified, for the entries that state
+  a preservation guarantee on normal return (`ok`, `equal`, `notEqual`,
+  `ifError`, `match` at a native regex), showing the footprint is used only
+  on that edge; a passing deep comparison and a callback-running assertion
+  (`throws`, `doesNotThrow`) keep unrestricted effects, and the program
+  relying on a fact across them is refused;
+- a handler catching whatever a hook throws (an accessor of a compared value,
+  `Error.prepareStackTrace`, a thrown object's `toString`) rather than the
+  `AssertionError`, typed at `unknown`, the fact relied on refused there too;
 - a passing `deepEqual` whose compared value holds an enumerable symbol
   getter or an extra array property's getter that mutates an alias, refused
   where a fact across the call is relied on.
