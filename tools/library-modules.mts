@@ -191,6 +191,51 @@ export const modulesOverlay: readonly ModuleEntry[] = [
         field("stdio", union(stdio, atom("undefined")), true),
         field("env", union(strings, atom("undefined")), true)] }],
       result: atom("string") } },
+  // `spawnSync(command, args, options)` runs the command and waits for it.
+  // Stated at options naming `encoding: "utf8"` and `stdio` and `env` absent
+  // (Node 25.2.1): both streams are piped, so `stdout` and `stderr` are its
+  // decoded output, a string, where the child ran, and absent where it could
+  // not be spawned (`error` then set, `status` null); a timeout kills it
+  // (`signal` set, `status` null). The host reads the options' other
+  // properties, which an object of another type may hold as accessors, and
+  // runs no other code of the client's: no effect is stated. The result is a
+  // fresh record of what it ran, `error` an `Error` or absent.
+  { module: "child_process", name: "spawnSync",
+    signature: "function spawnSync(command: string, args: readonly string[], options: SpawnSyncOptionsWithStringEncoding): SpawnSyncReturns<string>;",
+    stated: { binders: [], params: [atom("string"),
+      { k: "array", presence: "readable", readonly: true, element: atom("string"), span: at },
+      { k: "object", stringIndex: null, calls: [], span: at, fields: [
+        field("encoding", text("utf8"), false), field("stdio", atom("undefined"), true),
+        field("env", atom("undefined"), true),
+        field("timeout", union(atom("number"), atom("undefined")), true),
+        field("cwd", union(atom("string"), atom("undefined")), true),
+        field("maxBuffer", union(atom("number"), atom("undefined")), true),
+        field("input", union(atom("string"), atom("undefined")), true)] }],
+      result: { k: "object", stringIndex: null, calls: [], span: at, fields: [
+        field("pid", atom("number"), false),
+        field("status", union(atom("number"), atom("null")), false),
+        field("signal", union(atom("string"), atom("null")), false),
+        field("stdout", union(atom("string"), atom("undefined")), false),
+        field("stderr", union(atom("string"), atom("undefined")), false),
+        field("error", atom("unknown"), true)] } } },
+  // `readdirSync(path, { withFileTypes: true })` with a string path reads the
+  // directory and returns a fresh array of `Dirent`s, one per entry, each
+  // owning its `name` and `parentPath`, writable strings, its seven `is…`
+  // tests on `Dirent.prototype`, which answer from the entry's own type
+  // without running code: the empty footprint. The declared `path` is absent
+  // (Node 25.2.1: `"path" in entry` is false), so the element states none
+  // and a value read at the declared `Dirent` is refused. A path it cannot read
+  // throws. The options' other properties are read, which an object of
+  // another type may hold as accessors: the call states no effect.
+  { module: "fs", name: "readdirSync",
+    signature: "export function readdirSync(path: PathLike, options: ObjectEncodingOptions & { withFileTypes: true; recursive?: boolean | undefined; }): Dirent[];",
+    stated: { binders: [], params: [atom("string"),
+      { k: "object", stringIndex: null, calls: [], span: at, fields: [field("withFileTypes", yes(), false)] }],
+      result: { k: "array", presence: "readable", readonly: false, span: at, element: { k: "object", stringIndex: null,
+        calls: [], span: at, fields: [{ ...field("name", atom("string"), false), readonly: false },
+          { ...field("parentPath", atom("string"), false), readonly: false },
+          ...["isFile", "isDirectory", "isBlockDevice", "isCharacterDevice", "isSymbolicLink", "isFIFO", "isSocket"].map(name => field(name, { k: "function", effect: emptyEffect, receiver: { k: "self", span: at },
+            params: [], rest: null, result: atom("boolean"), span: at }, false))] } } } },
   // `writeFileSync(file, data)` with a path and a string writes the string,
   // encoded as UTF-8, to the file, replacing it, and returns `undefined`. A
   // path it cannot open or write, or one holding a NUL character, throws.

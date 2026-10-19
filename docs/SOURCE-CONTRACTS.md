@@ -966,7 +966,8 @@ mapped type is that type at the reference's arguments:
 ```
 
 so `Record<"a" | "b", V>` has both fields required and `Record<string, V>` is
-the writable string index. An interface's `extends` clauses are the meet of
+the writable string index. One whose value names its key, as `Pick`'s and
+`Readonly`'s $`T[P]`$, is refused. An interface's `extends` clauses are the meet of
 its own clauses with each base's, its own members first (`inheritRows`,
 [conjunction](POSITIVE-TYPES.md#conjunction-and-normalization)); a source
 intersection has the same meaning (`meetRow`).
@@ -1847,6 +1848,22 @@ The entries, each with the code its restriction keeps from running:
 - Node's `clearTimeout(t)` of any value cancels a timer by id or by object,
   reading and writing an object's `_onTimeout`, which may be an accessor:
   $`(\mathtt{unknown})\Rightarrow\mathtt{undefined}`$, stating no effect.
+- Node's `setTimeout(f, ms)`, a function merged with a namespace, schedules
+  `f`, which the host calls with no argument between synchronous jobs, as it
+  calls a listener ([Node's process](#nodes-process)), and returns a timer
+  read at no member:
+  $`(()\Rightarrow\mathtt{unknown},\ \mathtt{number}^?)\Rightarrow\mathtt{unknown}`$,
+  stating no effect, scheduling running the asynchronous-resource hooks other
+  code installed (`node-set-timeout`). Arguments after the delay reach the
+  callback and are refused (`invalid-node-set-timeout-parameter`, run under
+  Node).
+- Node's `structuredClone(v)` reads every own enumerable property of `v` by
+  [[Get]], so a getter runs, and builds a copy of data properties whose
+  prototypes are `Object.prototype`. At a `JsonValue`, whose members are
+  data, no code runs: $`(\mathsf{JsonValue})\Rightarrow\mathsf{JsonValue}`$
+  within the empty footprint (`node-structured-clone`). A record typed by its
+  fields is no `JsonValue` and is refused (`invalid-node-structured-clone-record`,
+  run under Node: the getter runs, the copy holds a data property).
 - `Math.max(…)`, `Math.min(…)`, `String.fromCodePoint(…)` and
   `String.fromCharCode(…)` convert each argument by ToNumber, which runs an
   object's `Symbol.toPrimitive`, `valueOf` or `toString`. Every argument is stated at the primitives,
@@ -2214,6 +2231,25 @@ unrestricted in its effect unless its entry states one. The entries:
   $`(\mathtt{string})\Rightarrow\mathtt{string}`$; an encoding option, which
   may select a `Buffer`, is outside the stated call
   (`invalid-node-realpath-options`).
+- `spawnSync(command, args, options)` at options $`O`$ stating
+  `encoding: "utf8"`, `stdio` and `env` absent, and an optional `timeout`,
+  `cwd`, `maxBuffer` and `input`, runs the command and returns a fresh
+  record (Node 25.2.1):
+  $`(\mathtt{string},\ \mathsf{readonly}\ \mathtt{string}[\,],\ O)\Rightarrow\{\mathtt{pid}\colon\mathtt{number};\ \mathtt{status}\colon\mathtt{number}\mid\mathtt{null};\ \mathtt{signal}\colon\mathtt{string}\mid\mathtt{null};\ \mathtt{stdout},\mathtt{stderr}\colon\mathtt{string}\mid\mathtt{undefined};\ \mathtt{error}^?\colon\mathtt{unknown}\}`$,
+  stating no effect: the host reads the options' properties
+  (`node-spawn-sync`). Both streams are piped, so each output is a string
+  where the child ran and absent where it could not be spawned, which the
+  declared `string` omits (`invalid-node-spawn-sync-stdout`, run under
+  Node); `stdio` naming no pipe leaves it `null` and is outside the stated
+  call (`invalid-node-spawn-sync-stdio`, run under Node).
+- `readdirSync(path, { withFileTypes: true })` with a string path returns a
+  fresh array of entries, each owning its `name` and `parentPath`, writable
+  strings, its seven `is…` tests on `Dirent.prototype`, each
+  $`()\Rightarrow\mathtt{boolean}`$ within the empty footprint; a path it
+  cannot read throws, and the call states no effect (`node-readdir-dirents`).
+  The declared `Dirent.path` is absent under Node 25.2.1, so the entry states
+  none (`invalid-node-readdir-dirent-path`, run under Node), and a closure
+  whose parameter TypeScript types as `Dirent` is refused.
 - `node:path`'s `dirname` and `basename` with an optional suffix compute a
   string from their strings alone, within the empty footprint on their throw
   too (Node 25.2.1's `lib/path.js`). `join` of any number of strings,

@@ -2988,12 +2988,15 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
     chosen.set(overload, [...chosen.get(overload) ?? [], call]);
   }
   const calls = [...chosen].flatMap(([overload, calls]): FunctionTerm[] => {
-    if (overload.typeParameters?.length) throw Error(`${what} is generic`);
     const at = spanOf(overload);
-    const entry = globalEntry(context.overlay, name, undefined, overload.getText(overload.getSourceFile()).trim(),
+    // The declaration's text with its white space collapsed, as an entry
+    // spells it.
+    const text = reviewedText(overload.getText(overload.getSourceFile()));
+    const entry = globalEntry(context.overlay, name, undefined, text,
       declarationOrigin(overload.getSourceFile(), context.libraryFile));
-    if (!entry)
-      throw Error(`${what} is not in the reviewed overlay of library globals: ${overload.getText(overload.getSourceFile()).trim()}`);
+    if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
+    for (const definition of entry.definitions ?? []) context.define(definition);
+    if (overload.typeParameters?.length && !entry.stated) throw Error(`${what} is generic`);
     if (entry && (entry.test || entry.intrinsic || entry.construct || entry.value || entry.admit))
       throw Error(`${what} is reviewed in a form a global function does not take`);
     const written = entry?.stated;
@@ -3055,9 +3058,11 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   if (!first) throw Error("a global value without a reference");
   const name = first.text;
   const declarations = (checker.getSymbolAtLocation(first)?.declarations ?? []).map(d => d.resolve());
-  // A global declared as a function, `declare function parseInt(…)`.
+  // A global declared as a function, `declare function parseInt(…)`, or a
+  // function merged with a namespace (`setTimeout` and its `__promisify__`),
+  // which is only called: the namespace's members are not read.
   const functions = declarations.filter((d): d is ts.FunctionDeclaration => !!d && ts.isFunctionDeclaration(d) && !d.body);
-  if (functions.length && functions.length === declarations.length)
+  if (functions.length && declarations.every(d => !!d && (ts.isFunctionDeclaration(d) || ts.isModuleDeclaration(d))))
     return globalFunction(checker, name, uses, functions, context);
   const variables = declarations.filter((d): d is ts.VariableDeclaration =>
     !!d && ts.isVariableDeclaration(d) && !!d.type && ts.isIdentifier(d.name));

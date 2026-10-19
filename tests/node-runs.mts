@@ -195,6 +195,20 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
       "const xs = [1, 2]; process.on(\"exit\", () => { if (xs.length === 2) { xs.pop(); throw new Error(\"listener\"); } }); console.log(1 in rows(xs)); process.exitCode = 0;");
     assert.equal(handled.stdout, "false", "invalid-node-process-exit-handler: the handler goes on and the result has a hole");
   }
+  {
+    // A timer's extra arguments reach its callback.
+    const ticked = runNode("invalid-node-set-timeout-parameter", "later((n) => console.log(typeof n));");
+    assert.equal(ticked.stdout, "number", "invalid-node-set-timeout-parameter: the callback receives the argument after the delay");
+  }
+  assert.equal(runImporting("invalid-node-structured-clone-record",
+    "(() => { let ran = 0; const o = { get a() { ran++; return 1; } }; const c = copy(o); return [ran, typeof Object.getOwnPropertyDescriptor(c, \"a\").get].join(); })()"),
+    "1,undefined", "invalid-node-structured-clone-record: the getter runs and the copy holds a data property");
+  assert.equal(runImporting("invalid-node-spawn-sync-stdout", "output(\"tscert-no-such-command\") === undefined"), true,
+    "invalid-node-spawn-sync-stdout: a command that cannot be spawned leaves stdout undefined");
+  assert.equal(runImporting("invalid-node-spawn-sync-stdio", "output(\"true\") === null"), true,
+    "invalid-node-spawn-sync-stdio: an ignored stream leaves stdout null");
+  assert.equal(runImporting("invalid-node-readdir-dirent-path", "paths(\".\").every((p) => p === undefined)"), true,
+    "invalid-node-readdir-dirent-path: an entry has no path");
   assert.equal(runImporting("invalid-node-assert-deep-preserving",
     "(() => { const s = Symbol(\"k\"); const xs = []; const hooked = (pop) => { const o = { a: 1 }; Object.defineProperty(o, s, { enumerable: true, get() { if (pop) xs.pop(); return 1; } }); return o; }; xs.push(hooked(true), hooked(false)); return 1 in checked(xs, hooked(false)); })()"),
     false, "invalid-node-assert-deep-preserving: a symbol getter a passing deepEqual reads shrinks the mapped array");
