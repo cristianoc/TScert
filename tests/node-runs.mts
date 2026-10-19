@@ -1065,3 +1065,23 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "(() => { const log = []; try { read(log); } catch { log.push(\"thrown\"); } return JSON.stringify(log); })();\nlet late = 1;"),
   '["thrown"]', "spread-program-iterable-global-tdz-refused: the read throws before the iterator runs");
 }
+{
+  // Behaviour the host assumption on standard-library global bindings
+  // excludes, and the parser cannot detect: a getter on `globalThis.Set`
+  // returning the genuine `Set`. The source reads `Set` before the spread's
+  // iterator; the collection hoisted before the statement runs the iterator
+  // first. With a throwing iterator the source logs the getter and the
+  // iterator, the hoisted order the iterator alone.
+  const getter = "const real = Set; Object.defineProperty(globalThis, \"Set\", { get() { log.push(\"getter\"); return real; } });";
+  const throwing = "{ [Symbol.iterator]() { return { next() { log.push(\"iterator\"); throw 0; } }; } }";
+  const run = (body: string): unknown => runExample("spread-program-iterable-first",
+    `(() => { const log = []; ${getter} try { ${body} } catch {} return JSON.stringify(log); })()`);
+  assert.equal(run("distinct(new Counter(log, 1), []);"), '["getter","step","step"]',
+    "the source reads Set before the iterator steps");
+  assert.equal(run("const items = [...new Counter(log, 1)]; new Set([...items]);"), '["step","step","getter"]',
+    "the hoisted collection steps the iterator before reading Set");
+  assert.equal(run(`distinct(${throwing}, []);`), '["getter","iterator"]',
+    "the source reads Set before a throwing iterator");
+  assert.equal(run(`const items = [...${throwing}]; new Set([...items]);`), '["iterator"]',
+    "the hoisted collection throws before reading Set");
+}
