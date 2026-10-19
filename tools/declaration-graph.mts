@@ -2860,19 +2860,16 @@ function typesOnly(node: Node): boolean {
 }
 
 /** A global function, its overloads declared without bodies: its value's
- * call signatures, each overload a call resolves to. A native function, one
- * of whose overloads the standard library or an installed package declares
- * (Node's `clearTimeout`), is read through the reviewed overlay: an overload
- * a call resolves to that no entry lists with exactly the text reviewed is
- * refused, an augmentation's included. A function the program alone
- * declares is an assumption at its declaration (`AMBIENT`). The function is
- * only called. */
+ * call signatures, each overload a call resolves to. Its implementation is
+ * outside what is verified, wherever the declaration lies (the standard
+ * library, an installed package, a declaration file of the project): each
+ * overload a call resolves to is read through the reviewed overlay, an
+ * entry listing it with exactly the text reviewed, an augmentation's
+ * included; any other is refused. The function is only called. */
 function globalFunction(checker: Checker, name: string, uses: readonly Identifier[],
     overloads: readonly ts.FunctionDeclaration[], context: SelectionContext): { definition: TypeDefinition } {
   const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
   const where = (node: Node) => `${context.identityOf(node.getSourceFile())}#${name}`;
-  const native = overloads.some(o => context.libraryFile(o.getSourceFile()) ||
-    o.getSourceFile().fileName.split("/").includes("node_modules"));
   const what = `${name}(…)`;
   const chosen = new Map<ts.FunctionDeclaration, ts.CallExpression[]>();
   for (const use of uses) {
@@ -2888,9 +2885,8 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
   const calls = [...chosen].flatMap(([overload, calls]): FunctionTerm[] => {
     if (overload.typeParameters?.length) throw Error(`${what} is generic`);
     const at = spanOf(overload);
-    const entry = native ? globalEntry(context.overlay, name, undefined, overload.getText(overload.getSourceFile()).trim())
-      : undefined;
-    if (native && !entry)
+    const entry = globalEntry(context.overlay, name, undefined, overload.getText(overload.getSourceFile()).trim());
+    if (!entry)
       throw Error(`${what} is not in the reviewed overlay of library globals: ${overload.getText(overload.getSourceFile()).trim()}`);
     if (entry && (entry.test || entry.intrinsic || entry.construct || entry.value || entry.admit))
       throw Error(`${what} is reviewed in a form a global function does not take`);

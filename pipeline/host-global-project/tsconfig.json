@@ -1,0 +1,12 @@
+{
+  // A project declaring global functions in a declaration file of its own:
+  // the `*host-global*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["./host.d.ts", "../examples/*host-global*.ts"]
+}

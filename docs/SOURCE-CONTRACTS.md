@@ -237,13 +237,14 @@ TypeScript resolves its calls to:
 
 A standard library global is
 read through the reviewed overlay ([Library globals](#library-globals)). So
-is a native global function, one of whose overloads the standard library or
-an installed package declares (Node's `clearTimeout`, `node-clear-timeout`):
-each overload a call resolves to is one an entry lists with its exact text,
-an augmentation's overload included, or the call is refused
-(`invalid-parse-int-overload`, run under Node; `invalid-node-global-unreviewed`).
-A global function the program alone declares is an assumption at its
-declaration, as an ambient declaration is. A
+is every global function: its implementation is outside what is verified,
+wherever its declaration lies (the standard library, an installed package,
+a declaration file of the project), so each overload a call resolves to is
+one an entry lists with its exact text, an augmentation's included, or the
+call is refused (`node-clear-timeout`; `invalid-parse-int-overload`, run
+under Node; `invalid-node-global-unreviewed`, `invalid-host-global-unreviewed`,
+`invalid-host-global-changed`). The checked file's own ambient declarations
+are the [ambient assumption](DESIGN.md#trust-surface). A
 a function of Node's modules an overlay entry lists, through the overlay of
 library modules ([Library modules](#library-modules)).
 
