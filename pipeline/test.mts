@@ -255,6 +255,108 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.match(exhausted.detail, /source direct obligation at \[202,212\): subtype search exhausted/);
 }
 {
+  // `Symbol.toStringTag` is the native `Promise` contract's: the declaration
+  // document lists it by its identity, only that contract's prototype holds
+  // it, its `then` names no `PromiseLike`, and no object the source makes is
+  // keyed by it. A document tampered with in any of these is refused where
+  // evidence is produced and where it is checked.
+  const tagged = (good: string, name: string, edit: (ast: Ast) => string, refusal: RegExp): void => {
+    const path = join(good, `${name}.fragment.json`);
+    writeFileSync(path, edit(readFragmentFile(join(good, "fragment.json"))));
+    for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+      const result = spawnSync(verifier, [mode, path, join(good, "claims.json"), join(good, "source.ts"),
+        join(good, mode === "--produce-source-claims" ? `${name}-evidence.json` : "evidence.json"),
+        ...(mode === "--produce-source-claims" ? ["12"] : [])], { encoding: "utf8", timeout: 30_000 });
+      assert.ifError(result.error);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stdout + result.stderr, refusal);
+    }
+  };
+  const wellKnown = '"module":"typescript/lib/lib.es2015.symbol.wellknown.d.ts","name":"toStringTag"';
+  const promises = run("async-await");
+  const native = (ast: Ast) => must(ast.declarations.definitions.find(d =>
+    d.declaration.name === "Promise" && d.declaration.module.startsWith("typescript/lib/")), "the native Promise");
+  const untagged = /the native Promise contract states no readonly `Symbol.toStringTag` of type string/;
+  tagged(promises, "tag-renamed", ast => {
+    const text = JSON.stringify(ast);
+    assert.ok(text.includes(wellKnown), "the tag's listed identity");
+    return text.replace(wellKnown, wellKnown.replace('"toStringTag"', '"toStringTagX"'));
+  }, untagged);
+  tagged(promises, "tag-dropped", ast => {
+    const index = ast.declarations.symbols.findIndex(s => JSON.stringify(s).includes(wellKnown));
+    const text = JSON.stringify(native(ast));
+    assert.ok(index >= 0 && text.includes(`"name":{"symbol":${index}}`), "the native prototype's tag");
+    return JSON.stringify(ast).replace(text, text.replaceAll(`"name":{"symbol":${index}}`, '"name":"tag"'));
+  }, untagged);
+  tagged(promises, "tag-other-prototype", ast => {
+    const promise = native(ast);
+    ast.declarations.definitions.push({ ...promise, declaration: { ...promise.declaration, name: "Fake" } });
+    return JSON.stringify(ast);
+  }, /a declaration other than the native Promise states a prototype holding `Symbol.toStringTag`/);
+  tagged(promises, "tag-promise-like", ast => {
+    const text = JSON.stringify(native(ast));
+    const reference = '"reference":{"name":"Promise","span"';
+    assert.ok(text.includes(reference), "a Promise the native then's callbacks return");
+    return JSON.stringify(ast).replace(text, text.replace(reference, '"reference":{"name":"PromiseLike","span"'));
+  }, /the native Promise contract names PromiseLike/);
+  const fields = run("then-member-fields");
+  tagged(fields, "tag-allocation", ast => {
+    const index = ast.declarations.symbols.length;
+    ast.declarations.symbols.push({ module: "typescript/lib/lib.es2015.symbol.wellknown.d.ts", name: "toStringTag",
+      span: [0, 0] });
+    const text = JSON.stringify(ast);
+    assert.ok(text.includes('{"name":"then","e":'), "an allocation's then field");
+    return text.replace('{"name":"then","e":', `{"name":{"symbol":${index}},"e":`);
+  }, /an object the source makes is keyed by `Symbol.toStringTag`/);
+  process.stdout.write("forged tag documents: the tag renamed, dropped, stated of another prototype, PromiseLike in the native then, an allocation keyed by the tag: refused\n");
+}
+{
+  // A resolving operation's instance claimed at a record with a callable
+  // `then` (the fixture's `thenable`) in place of its stable operand: `await`,
+  // an async return and `Promise.resolve` at a resolution-qualified binder,
+  // `new Promise` at its primitive-bounded one. Each is refused at the
+  // operation where evidence is produced and where it is checked; so is an
+  // allocation with a callable `then` claimed as a promise.
+  const artifacts = run("then-member-resolution");
+  for (const functionName of ["awaited", "returned", "resolved", "made"]) {
+    const claims = readClaims(artifacts);
+    const thenable = claims.types.findIndex(row => JSON.stringify(row).startsWith('[{"refs":{"first":[["then",'));
+    assert.ok(thenable >= 0, "the thenable's row");
+    const fn = must(claims.functions.find(f => f.name === functionName), `${functionName}'s claims`);
+    const site = must(fn.expressions.find(e => e.instantiate?.length), "the resolving operation's instance");
+    for (const image of site.instantiate ?? []) image.type = [thenable];
+    const name = `forged-thenable-${functionName}`;
+    const forged = writeClaims(artifacts, name, claims);
+    const at = `at [${site.pos[0]},${site.pos[1]})`;
+    const searched = produceWith(artifacts, forged, name);
+    const detail = searched.stdout + searched.stderr;
+    assert.equal(searched.status, 1, detail);
+    assert.ok(detail.includes(at), detail);
+    const checked = invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    assert.ok(checked.includes(at), checked);
+  }
+  {
+    // `local`'s allocation, a record with a callable `then`, claimed as the
+    // `Promise<number>` `returned`'s result is claimed at.
+    const claims = readClaims(artifacts);
+    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const start = source.indexOf("{ then: (x: number): number => x + 1 }");
+    const fn = must(claims.functions.find(f => f.name === "local"), "local's claims");
+    const allocation = must(fn.expressions.find(e => e.pos[0] === start), "the allocation's claim");
+    allocation.type = must(claims.functions.find(f => f.name === "returned"), "returned's claims").result;
+    const forged = writeClaims(artifacts, "forged-thenable-allocation", claims);
+    const at = `at [${allocation.pos[0]},${allocation.pos[1]})`;
+    const searched = produceWith(artifacts, forged, "forged-thenable-allocation");
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes(at), searched.stdout + searched.stderr);
+    // The evidence for the allocation's own claim does not justify the
+    // forged one.
+    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
+      /source evidence does not justify the extracted program and exact claims/);
+  }
+  process.stdout.write("forged thenable instances: await, async return, Promise.resolve and new Promise at a callable then, and an allocation claimed as a promise, refused\n");
+}
+{
   // A parameter's entry claim in an `&&` operand is its first read before a
   // call, which the incoming edge checks: a read claimed narrower than any
   // test establishes is refused where evidence is produced and where it is

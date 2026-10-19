@@ -1,6 +1,6 @@
-// A value typed `Promise<T>` is assumed to be a built-in promise, never
-// fulfilled with a thenable. An object literal the source builds with a
-// `then` could pass for one, so it is refused.
+// An object literal with a `then` method asserted to be a `Promise<number>`:
+// the native contract requires a prototype holding `Symbol.toStringTag`,
+// which no object the program makes owns, so the assertion is refused.
 export function forged(inner: Promise<number>): Promise<number> {
   const p: Promise<number> = {
     then(onfulfilled?: (value: number) => unknown) {

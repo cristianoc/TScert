@@ -3544,7 +3544,26 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // promise. The receiver's payload must therefore stay non-thenable.
       // The payload binder belongs to the callable, preserving covariance of
       // Promise itself and requiring the bound at every actual receiver.
-      const nativeFields = expression.fields.map(field => {
+      // `then` and `catch` resolve their callbacks' results: a native
+      // promise is adopted through its standard `then`, and any other value
+      // fulfills the result. A `PromiseLike` there is read as the native
+      // promise, which a source thenable is not; elsewhere it stays the
+      // structural record it is declared.
+      const assimilated = (type: TypeTerm): TypeTerm =>
+        type.k === "union" ? { ...type, parts: type.parts.map(assimilated) }
+        : type.k === "reference" && type.reference.name === "PromiseLike" &&
+            /typescript\/lib\//.test(type.reference.target.module) && type.args.length === 1 && type.args[0]
+          ? promiseAt(type.args[0]) : type;
+      const callbackResults = (type: TypeTerm): TypeTerm =>
+        type.k === "union" ? { ...type, parts: type.parts.map(callbackResults) }
+        : type.k === "function" ? { ...type, result: assimilated(type.result) } : type;
+      const resolving = (type: TypeTerm): TypeTerm =>
+        type.k === "scheme" ? { ...type, signatures: type.signatures.map(signature => signature.k === "function"
+          ? { ...signature, params: signature.params.map(callbackResults) } : signature) }
+        : type.k === "function" ? { ...type, params: type.params.map(callbackResults) } : type;
+      const nativeFields = expression.fields.map(declared => {
+        const field = declared.name === "then" || declared.name === "catch"
+          ? { ...declared, type: resolving(declared.type) } : declared;
         if (field.name !== "catch" && field.name !== "finally") return field;
         const type = field.type;
         const binders = type.k === "scheme" ? type.binders : [];

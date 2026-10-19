@@ -981,3 +981,33 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   global.lastIndex = 2;
   assert.deepEqual(["a&b&".replace(global, "+"), global.lastIndex], ["a+b+", 0], "replace writes lastIndex");
 }
+{
+  // A callable `then` reaching a resolution is called: each operation the
+  // pipeline refuses at a thenable settles to what that `then` passes, 42,
+  // not to the object (`invalid-*-thenable*`, `invalid-await-*`).
+  for (const [file, call] of [
+    ["invalid-await-thenable-literal", "settle()"],
+    ["invalid-async-return-thenable", "adopt()"],
+    ["invalid-promise-resolve-thenable", "wrap()"],
+    ["invalid-then-callback-thenable", "chain(Promise.resolve(1))"],
+    ["invalid-catch-callback-thenable", "recover(Promise.reject(0))"],
+    ["invalid-new-promise-thenable", "make()"],
+    ["invalid-await-thenable-width", "widened()"],
+    ["invalid-await-inherited-then", "inherited()"],
+    ["invalid-await-promise-like", "awaited({ then(resolve) { resolve(42); } })"],
+    ["invalid-awaited-alias-thenable", "adopted()"],
+  ] as const) {
+    const settled: unknown = await runExample(file, call);
+    assert.equal(settled, 42, `${file}: the thenable's then is called and settles the result`);
+  }
+  // `finally` resolves its cleanup result: the thenable's `then` runs.
+  const cleaned: unknown = await runExample("invalid-finally-thenable",
+    "(async () => { const log = []; await cleanup(Promise.resolve(1), log); return log.length; })()");
+  assert.equal(cleaned, 1, "invalid-finally-thenable: the cleanup result's then is called");
+  // An object given the tag beside `then`, `catch` and `finally` has a
+  // promise's shape, yet `Promise.resolve` takes it for no native promise.
+  assert.equal(runExample("invalid-tag-write",
+    "(() => { const o = { then() {}, catch() {}, finally() {} }; forge(o); " +
+    "return JSON.stringify([Object.prototype.toString.call(o), Promise.resolve(o) === o]); })()"),
+  '["[object Promise]",false]', "invalid-tag-write: the tagged object is no native promise");
+}

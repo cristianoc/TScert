@@ -11,7 +11,13 @@ import { numberText } from "./intrinsics.mts";
 /** A value typed `Promise<T>` is assumed to be a built-in promise, which is
  * never fulfilled with a thenable (PROGRAM-TYPING.md, "Async functions and await"):
  * so the source builds no object with a `then`, which could pass for one. */
-export const FORGED_PROMISE = "an object the source builds with a `then` member could pass for a promise, and a value typed `Promise` is assumed to be a built-in promise";
+/** A write at `Symbol.toStringTag`: no object the program makes holds the
+ * tag the native `Promise` contract requires of its prototype
+ * (SOURCE-CONTRACTS.md, "Async functions and await"). */
+/** The standard library's `Symbol.toStringTag`, by its declaration identity. */
+export const isTagSymbol = (s: { module: string; name: string }): boolean =>
+  s.module === "typescript/lib/lib.es2015.symbol.wellknown.d.ts" && s.name === "toStringTag";
+export const TAG_WRITE = "a write at `Symbol.toStringTag` is outside the fragment: no object the program makes holds the tag the native `Promise`, `Set` and `Map` contracts require";
 /** An expression inside its parentheses. */
 export const skipParentheses = (e: Node): Node => ts.isParenthesizedExpression(e) ? skipParentheses(e.expression) : e;
 
