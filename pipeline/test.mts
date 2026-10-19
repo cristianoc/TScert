@@ -409,9 +409,9 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     assert.ok((searched.stdout + searched.stderr).includes(at), searched.stdout + searched.stderr);
     // The evidence for the allocation's own claim does not justify the
-    // forged one.
-    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
-      /source evidence does not justify the extracted program and exact claims/);
+    // forged one, at the allocation.
+    const checked = invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    assert.ok(checked.includes(`source evidence refusal ${at}`), checked);
   }
   process.stdout.write("forged thenable instances: await, async return, Promise.resolve and new Promise at a callable then, and an allocation claimed as a promise, refused\n");
 }
@@ -1589,12 +1589,12 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   const term = failure?.sequent?.term;
   assert.ok(term?.kind === "writeAt");
   assert.equal(term.field, "toJSON");
-  // The check states no node for this refusal: the evidence's equations
-  // read `Hooked` as the weakened record. The weakened program differs from
-  // this one only there, and its check accepts the same evidence, so the
-  // refusal is the array's.
+  // The evidence's equations read `Hooked` as the weakened record. The
+  // weakened program differs from this one only there, and its check accepts
+  // the same evidence, so the refusal is the array's: at the write, whose
+  // node the evidence claims otherwise.
   assert.match(invoke(direct.claims, direct.evidence, direct.artifacts),
-    /^reject: source evidence does not justify the extracted program and exact claims$/m);
+    new RegExp(`^reject: source evidence refusal at \\[${at},${at + "xs.toJSON = f;".length}\\)`, "m"));
   const view = borrow("invalid-array-tojson-view");
   const viewSource = readFileSync(join(view.artifacts, "source.ts"), "utf8");
   const viewAt = viewSource.indexOf("alias.toJSON = f");
@@ -1990,14 +1990,15 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 
 {
   // A footprint claim forged onto classes' construct signatures is checked
-  // against their constructors' code: constructors writing their instances'
-  // fields are refused within the empty footprint, at their own typing,
-  // located in a class; the honest evidence checked against the forged claim
-  // is a footprint refusal located there too.
-  const artifacts = run("class-constructor-default");
+  // against their constructors' code: a constructor writing a module cell is
+  // refused within the empty footprint, at its own typing, located in its
+  // class, while one adding keys to its instance, an allocation, is within
+  // it; the honest evidence checked against the forged claim is a footprint
+  // refusal located there too.
+  const artifacts = run("class-constructor-effect");
   const claims = readClaims(artifacts);
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-  const classes: [number, number] = [source.indexOf("class Counter"), source.indexOf("export function")];
+  const classes: [number, number] = [source.indexOf("class Counted"), source.indexOf("class Plain")];
   const within = (at: [number, number]) => classes[0] <= at[0] && at[1] <= classes[1];
   const signatures = claims.types.flatMap(row => row.flatMap(clause =>
     typeof clause === "object" && "ctors" in clause ? clause.ctors.signatures : []));
@@ -2014,7 +2015,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
   const refused = must(/source effect refusal at \[(\d+),(\d+)\)/.exec(checked), checked);
   assert.ok(within([Number(refused[1]), Number(refused[2])]), checked);
-  process.stdout.write("construct footprint claim {keep, keep}, class-constructor-default: refused\n");
+  process.stdout.write("construct footprint claim {keep, keep}, class-constructor-effect: refused at the cell write\n");
 }
 
 {
@@ -2509,7 +2510,11 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     [decided, "forged-negated-decided", `source expression obligation at [${bang},${bang + 1}): evidence search failed: no derivation of its node-typing claim`],
     [thrown, "forged-negated-throw", "the edge from node"]] as const) {
     refusedAt(artifacts, input, name, refusal);
-    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject: source evidence does not justify the extracted program and exact claims/);
+    // Checking the honest evidence refuses at a node of `bounded`, whose
+    // claim the evidence states otherwise.
+    const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
+    const located = must(/source evidence refusal at \[(\d+),(\d+)\)/.exec(checked), checked);
+    assert.ok(Number(located[1]) >= from, checked);
   }
   process.stdout.write("negated guard dispatch: a decided outcome claimed false and a narrowed claim where the guard answered false refused in search and in checking\n");
 }

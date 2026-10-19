@@ -83,10 +83,23 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let contract = Option.bind expected (object_hint declarations []) in
       (* A field is built at the type the contract names for it, else at its
          own, widened, as a literal's field is. *)
+      (* Expected at a union of records, a field is built at the type every
+         arm stating it gives it, where they agree, as TypeScript types it
+         from the contextual union. *)
+      let arms = match expected,contract with
+        | Some t,None -> (try record_arms declarations [] t with Json.Error _ -> [])
+        | _ -> [] in
       let field_of (name,e) =
         let hint = Option.bind contract (fun s ->
           List.find_opt (fun (f:Semantic.field) -> f.name=Name name) s.fields) in
-        let expected = Option.map (fun (f:Semantic.field) -> f.read) hint in
+        let expected = match Option.map (fun (f:Semantic.field) -> f.read) hint with
+          | Some t -> Some t
+          | None ->
+            (match List.sort_uniq compare (List.filter_map (fun (s:shape) ->
+                Option.map (fun (f:Semantic.field) -> f.read)
+                  (List.find_opt (fun (f:Semantic.field) -> f.name=Name name) s.fields)) arms) with
+             | [t] -> Some t
+             | _ -> None) in
         let inferred = expr ?expected env e in
         let t = Option.value expected ~default:(widen inferred) in
         ({name=Name name;optional=false;read=t;write=Some t;host=false;receivers=[]} : Semantic.field) in
@@ -99,7 +112,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | None -> [group fields]
             | Some alts -> if fields = [] then alts else merge alts [group fields] in
           mark_exact e;
-          Some (merge alts (source_alternatives declarations [] (expr env e))),[]) (None,[]) parts in
+          Some (merge alts (source_alternatives ~bound:S.rigid_bound declarations [] (expr env e))),[]) (None,[]) parts in
       let alts = match alts with
         | None -> [group fields]
         | Some alts -> if fields = [] then alts else merge alts [group fields] in
@@ -143,8 +156,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let merge alts b = List.concat_map (fun a -> List.map (merge_alternative a) b) alts in
       let alts = List.fold_left (fun alts (s:expr) ->
         mark_exact s;
-        merge alts (source_alternatives declarations [] (expr env s)))
-        (source_alternatives ~target:true declarations [] (expr env target)) sources in
+        merge alts (source_alternatives ~bound:S.rigid_bound declarations [] (expr env s)))
+        (source_alternatives ~target:true ~bound:S.rigid_bound declarations [] (expr env target)) sources in
       combine (List.map alternative_type alts)
     | ArrayLiteral (es,spreads) ->
       (* One array arm of the expected type is the literal's contract: an

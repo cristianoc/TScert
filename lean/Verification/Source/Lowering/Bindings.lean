@@ -132,7 +132,7 @@ set_option maxHeartbeats 1000000
   | .objectRest source receiver drop value next =>
     let (i,T) ← LoweringExecution.executionSaved scope Γ receiver
     let E ← groupType [] []
-    let _ ← mergeType E T (drop.map PropKey.str)
+    let _ ← mergeType E (← boundOf T) (drop.map PropKey.str)
     let R ← claimAt fc source
     save source value R (.merge (drop.map PropKey.str) (.makeAt .absent [] []) (.var i)) next
   | .arrayRest source array start slice value next =>
