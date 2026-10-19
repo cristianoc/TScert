@@ -2521,6 +2521,110 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A guard's Boolean return is a condition returning the literal `true` at
+  // the first code unit of its `return` and `false` at the second. Claimed
+  // `false` where it returns `true`, the claims are refused where evidence
+  // is produced and where the honest evidence is checked.
+  const artifacts = run("guard-boolean-return");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "isFields"), "isFields' claims");
+  const at = source.indexOf("return typeof v");
+  const truth = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + 1), "the true return's claim");
+  assert.deepEqual(truth.type, [1], "the true return is true");
+  truth.type = [2];
+  const input = writeClaims(artifacts, "forged-boolean-return", claims);
+  refusedAt(artifacts, input, "forged-boolean-return", `obligation at [${at},${at + 1})`);
+  assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts)
+    .includes(`reject: source evidence refusal at [${at},${at + 1}): the evidence does not establish this node's claim`));
+  // The false return claimed `true`, and an arrow guard's true return, at
+  // its `=>`, claimed `false`: each refused the same way.
+  for (const [file, name, from, text, before, after] of [
+    ["guard-boolean-return", "isFields", "function isFields", "return typeof v", 2, 1],
+    ["guard-boolean-return-boundaries", "guardOf", "function guardOf", "=> typeof v", 1, 2],
+  ] as const) {
+    const where = run(file);
+    const text0 = readFileSync(join(where, "source.ts"), "utf8");
+    const forgedClaims = readClaims(where);
+    const fnClaims = must(forgedClaims.functions.find(f => f.name === name), `${name}'s claims`);
+    const offset = text0.indexOf(text, text0.indexOf(from)) + (before === 2 ? 1 : 0);
+    // A closure's interior claims are stated per signature row as well.
+    const literals = [...fnClaims.expressions, ...(fnClaims.arrows ?? []).flatMap(a => a.rows.flatMap(r => r.expressions))]
+      .filter(e => e.pos[0] === offset && e.pos[1] === offset + 1);
+    assert.ok(literals.length > 0, `${name}'s literal at ${offset}`);
+    for (const literal of literals) {
+      assert.deepEqual(literal.type, [before], `${name}'s literal`);
+      literal.type = [after];
+    }
+    const forgedInput = writeClaims(where, `forged-boolean-return-${name}`, forgedClaims);
+    refusedAt(where, forgedInput, `forged-boolean-return-${name}`, "evidence search failed");
+    assert.match(invoke(forgedInput, join(where, "evidence.json"), where),
+      /reject: source evidence (does not justify the extracted program and exact claims|refusal at \[\d+,\d+\): the evidence does not establish this (node|obligation)'s claim)/);
+  }
+  process.stdout.write("guard Boolean return: the true return claimed false, the false one claimed true and an arrow's true one claimed false refused in search and in checking\n");
+}
+
+{
+  // A guard closure passed as a callback is claimed at its own signature,
+  // its promise and the callback's longer signature. Claimed without the
+  // promise, the closure is refused where evidence is produced and where the
+  // honest evidence is checked.
+  const artifacts = run("guard-closure-callback");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "allPresent"), "allPresent's claims");
+  const at = source.indexOf("(x): x is string");
+  const closure = must(fn.expressions.find(e => e.pos[0] === at), "the closure's claim");
+  const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
+  assert.ok(typeof label === "number", "the closure's claim is a row");
+  const row = must(claims.types[label], "the closure's row");
+  const clause = row[0];
+  assert.ok(clause !== undefined && typeof clause === "object" && "arrs" in clause, "an arrow clause");
+  const arrows = clause.arrs.arrows;
+  const promised = arrows.findIndex(a => a.effect.promise !== null);
+  assert.ok(promised >= 0, "the claim offers the promise");
+  arrows.splice(promised, 1);
+  const rows = must((fn.arrows ?? []).find(a => a.pos[0] === at), "the closure's arrow rows");
+  rows.rows.splice(promised, 1);
+  const input = writeClaims(artifacts, "forged-guard-closure-promise", claims);
+  const refusal = "a guard closure's claim must offer its written promise over its annotated parameters";
+  refusedAt(artifacts, input, "forged-guard-closure-promise", refusal);
+  assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  // The callback's longer signature, a row of its own, claimed at a result
+  // the body does not return, and the rows of interior claims one short of
+  // the signatures: each refused where evidence is produced and where the
+  // honest evidence is checked.
+  type ClosureArrows = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"];
+  type ClosureRows = NonNullable<SourceClaims["functions"][number]["arrows"]>[number]["rows"];
+  const forgeLonger = (name: string, edit: (forgedArrows: ClosureArrows, forgedRows: ClosureRows) => void): string => {
+    const forged = readClaims(artifacts);
+    const forgedFn = must(forged.functions.find(f => f.name === "allPresent"), "allPresent's claims");
+    const forgedClosure = must(forgedFn.expressions.find(e => e.pos[0] === at), "the closure's claim");
+    const forgedLabel = Array.isArray(forgedClosure.type) ? forgedClosure.type[0] : undefined;
+    assert.ok(typeof forgedLabel === "number", "the closure's claim is a row");
+    const forgedClause = must(forged.types[forgedLabel], "the closure's row")[0];
+    assert.ok(forgedClause !== undefined && typeof forgedClause === "object" && "arrs" in forgedClause, "an arrow clause");
+    edit(forgedClause.arrs.arrows, must((forgedFn.arrows ?? []).find(a => a.pos[0] === at), "the closure's rows").rows);
+    return writeClaims(artifacts, name, forged);
+  };
+  const longerResult = forgeLonger("forged-guard-closure-longer-result", (arrows) => {
+    const longer = must(arrows.find(a => a.arguments.length > 1), "the callback's longer signature");
+    longer.result = [rowOf(claims, "nul")];
+  });
+  const shortRows = forgeLonger("forged-guard-closure-short-rows", (_, rows) => { rows.pop(); });
+  for (const [input, name, refusal] of [
+    [longerResult, "forged-guard-closure-longer-result", "reject: "],
+    [shortRows, "forged-guard-closure-short-rows", "per-arrow interior claims do not match the claimed arrows"],
+  ] as const) {
+    const searched = produceWith(artifacts, input, name);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes(refusal), searched.stdout + searched.stderr);
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  }
+  process.stdout.write("guard closure callback: a claim without the promise, a longer row at an unjustified result and rows short of the signatures refused in search and in checking\n");
+}
+
+{
   // A footprint check that runs out of subtype rounds is inconclusive, not a
   // refusal: `marks` claims the empty footprint, and with one round the
   // checks of its graph exhaust. Search and checking report exhaustion, never
@@ -2794,8 +2898,14 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const str = rowOf(claims, "str");
   const tru = rowOf(claims, { boolLit: { value: true } });
   for (const entry of guard.entries) for (const b of entry.bindings) if (b.name === x.name) b.type = [str];
-  const read = must(guard.expressions.find((e) => e.pos[1] - e.pos[0] === x.name.length), "the read of the argument");
-  for (const e of guard.expressions) e.type = e === read ? [str] : [tru];
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  // The answers' literals at the first two code units of the `return`
+  // (`booleanReturn`) keep their claims.
+  const answer = (e: { pos: [number, number] }): boolean =>
+    source.startsWith("return", e.pos[0]) || source.startsWith("eturn", e.pos[0]);
+  const read = must(guard.expressions.find((e) => !answer(e) && source.slice(e.pos[0], e.pos[1]) === x.name),
+    "the read of the argument");
+  for (const e of guard.expressions) if (!answer(e)) e.type = e === read ? [str] : [tru];
   const forged = writeClaims(artifacts, "forged-guard-promise", claims);
   const searched = produceWith(artifacts, forged, "forged-guard-promise");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);

@@ -24,9 +24,9 @@ function isObject(v: unknown): v is Record<string, unknown> {
 }
 /** An ordinary arrow's effect, the one a structural function atom states. */
 const isOrdinary = (effect: unknown): boolean => isCallEffect(effect) && sameEffect(effect, ordinaryEffect);
-/** A list of records where the producer sends one: what arrives may not be one,
- * and a nullish element reaches the field read and throws there, as before. */
-function isRecordList(v: unknown): v is Record<string, unknown>[] {
+/** A list where the producer sends one of records: an array of any
+ * elements, each checked where it is read. */
+function isList(v: unknown): v is readonly unknown[] {
   return Array.isArray(v);
 }
 /** The atoms whose kind is all there is to them, read off `Atom` rather than
@@ -120,7 +120,7 @@ function bareAtomText(atom: unknown, state: PrintState): string {
   )
     return String(atom.v);
   if (atom.a === "bigintlit" && typeof atom.v === "string") return atom.v + "n";
-  if (atom.a === "record" && isRecordList(atom.fields)) {
+  if (atom.a === "record" && isList(atom.fields)) {
     const index = isObject(atom.indexSignature) ? atom.indexSignature : null;
     const never = (t: unknown) =>
       isObject(t) &&
@@ -131,7 +131,9 @@ function bareAtomText(atom: unknown, state: PrintState): string {
     return (
       "{ " +
       [
-        ...atom.fields.map((field) => {
+        ...atom.fields.map((field: unknown) => {
+          // A field the producer sent malformed is shown as it is.
+          if (!isObject(field)) return "(invalid field " + JSON.stringify(field) + ")";
           // A name the surface can write is written, anything else quoted,
           // and a symbol key is shown by its index.
           const key = field.name;

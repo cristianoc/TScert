@@ -266,6 +266,9 @@ scheme row's variadic signatures. -/
   -- within the written one.
   if let some g := guard then
     let promised ← lower (Fragment.translate g.type)
+    -- Lowering the promise may add labels (an array's): it is compared in
+    -- the table that holds them.
+    let T ← table
     let promise : CallEffects.TypePromise := if g.asserts then .asserts g.param else .guards g.param
     let reason := "a guard closure's claim must offer its written promise over its annotated parameters"
     let some row := rows.find? (fun r => r.effect.promise == some promise && r.arguments.length == arity)

@@ -58,6 +58,122 @@ The calculus clause `source` denotes $`J`$ independently of the built-ins'
 record invariants; calculus `top` also includes internal stores. The
 [clause semantics](POSITIVE-TYPES.md#types-and-clauses) owns this distinction.
 
+#### Slices of the value universe by tag tests (design)
+
+A tag test splits $`J`$ by the kind of a value, which no heap write changes.
+Every source value (`isSourceVal`) is of exactly one kind: `null`,
+`undefined`, a Boolean, a number, a string, a bigint, a symbol, an object
+without call code ($`\mathsf{isRef}`$, `typeof` `"object"`), or an object
+with call code ($`\mathsf{isFun}`$, `typeof` `"function"`), so
+
+```math
+J = \mathsf{nul}\cup\mathsf{undef}\cup\mathsf{bool}\cup\mathsf{num}\cup\mathsf{str}\cup\mathsf{bigint}\cup\mathsf{sym}\cup J_{\mathrm{ref}}\cup J_{\mathrm{fun}},
+```
+
+a disjoint union, and `tagHolds` of each shape tag is decided by the kind
+alone. The rule: where a test of a tag $`t`$ answers $`q`$ on a value at the
+`source` clause, the value is at the union of the kinds whose members answer
+$`q`$; a primitive kind is its existing clause, and $`J_{\mathrm{ref}}`$ and
+$`J_{\mathrm{fun}}`$ are the `source` clause restricted to the kind, new
+clauses whose meaning is $`\{v \in J \mid \mathsf{tagHolds}\ \mathsf{isRef}\ v\}`$
+and its `isFun` analogue:
+
+```math
+\frac{\Gamma\vdash x:J\qquad \mathsf{typeof}\ x = \texttt{"object"}\ \text{answers}\ \mathsf{true}\qquad x\neq\mathsf{null}\ \text{answers}\ \mathsf{true}}
+     {\Gamma\vdash x:J_{\mathrm{ref}}}\ \textsf{slice-object}
+\qquad
+\frac{\Gamma\vdash x:J_{\mathrm{ref}}\qquad \mathsf{Array.isArray}(x)\ \text{answers}\ \mathsf{false}}
+     {\Gamma\vdash x:J_{\mathrm{ref}}\setminus\mathsf{arrays}}\ \textsf{slice-non-array}
+```
+
+$`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$ is $`J_{\mathrm{ref}}`$ with an
+own-key bound excluding the store key `[]`, the key `Array.isArray` reads.
+A `true` answer of `Array.isArray` is the built-ins' `readonly unknown[]`,
+as `arraySlice` gives it today. The partition is a lemma of `isSourceVal`
+and `tagHolds` by cases. A test's answer on a slot is a value fact, held by
+the slot's value, so a call does not end it.
+
+**What the slices do not give: the dictionary view.**
+`{ readonly [key: string]: unknown }` is `dictViewT` at the string keys and
+$`J`$: an object without call code, owning no `[[proto]]` and no
+`[[host]]`, every present string-keyed field's contract within $`J`$. A
+member of $`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$ may own a prototype
+(a class instance, an object `Object.create` made) or be a host object (a
+`Map`, a `Date`), which pass `typeof v === "object"`, `v !== null` and
+`!Array.isArray(v)` alike. So the guards over `unknown` that test exactly
+those (`isObject`, `isRecord` and their kind in `claim-text.mts`,
+`claim.mts`, `type-graph.mts`, `diagnostic-view.mts`) promise more than
+the model proves, and stay refused under the rule.
+
+**Reading keys of a value of $`J_{\mathrm{ref}}`$ (design A, its
+limits).** Design A promises what the tests give, `isObject(v: unknown): v
+is object` and `isList(v: unknown): v is readonly unknown[]`, and reads keys
+after an `in` test, `isObject(v) && "kind" in v && typeof v.kind ===
+"string"`. Three facts of the model bound it:
+
+1. Source `object` denotes $`J_{\mathrm{ref}}\cup J_{\mathrm{fun}}`$, which
+   holds classes, and `k in C` of a class is refused: the model binds a
+   class's static members apart from the class value, so the test has no
+   answer there (`` `in` on a class value ``, measured 2026-10-19 on
+   `function f(v: object) { return "k" in v; }`). A guard promising
+   `object` loses the `typeof` slice its body tested; `in` after it is
+   refused.
+2. Presence alone gives a read no contract: `key_slice` and key promotion
+   (`BranchRefinement`) promote a contract the value's type states. A read
+   of `v.k` after `"k" in v` on $`J_{\mathrm{ref}}`$ needs a rule of its
+   own:
+
+   ```math
+   \frac{\Gamma\vdash v:J_{\mathrm{ref}}\qquad \texttt{"k" in } v\ \text{answers}\ \mathsf{true}\qquad v\ \text{no host object}}
+        {\Gamma\vdash v.\mathtt{k} : J}\ \textsf{read-present}
+   ```
+
+   It is sound where the calculus's read, own field or prototype chain,
+   finds what JavaScript's does and every source-keyed field of an object
+   of $`J`$ holds a value of $`J`$, the built-ins' invariant of the
+   `source` row (`sourceTy_exc`), to be stated for this read. The premise
+   "no host object" is its limit: a host object's prototype holds
+   accessors (`Map.prototype.size`), which JavaScript runs and the
+   calculus's read does not, and $`J_{\mathrm{ref}}`$ holds host objects,
+   so no test the guards write establishes it. A read after `in` on a value
+   that may be a host object is refused, located.
+3. Enumeration is its own contract: `Object.keys(v)` of $`v\in J_{\mathrm{ref}}`$
+   lists its own enumerable string keys, whatever their values, which the
+   reviewed overlay admits today (`Object.keys(v)` of `v: object`
+   verifies, measured 2026-10-19).
+
+So design A verifies a caller over `unknown` only where its reads are of
+values the model knows to be no host object. The front end's readers of
+these guards read documents that `JSON.parse` produced (claims, type
+graphs, diagnostics): their inputs are `JsonValue`s
+([the contract](SOURCE-CONTRACTS.md#library-globals)), which hold no host
+object, no class and no prototype, and over which the tests the guards
+write already decide the arms: `isRecord(v: Json): v is { [key: string]:
+Json }` verifies today (`diagnostic.mts`). The concrete rewrite:
+
+- `claim-text.mts`, `claim.mts`, `type-graph.mts`, `diagnostic-view.mts`:
+  the decoders' inputs typed `JsonValue`, a structural contract: a value of
+  `JsonValue`'s shape, whatever built it. Their guards are over it:
+  `isObject(v: JsonValue): v is { readonly [key: string]: JsonValue }` with
+  `typeof v === "object" && v !== null && !Array.isArray(v)`, and
+  `isList(v: JsonValue): v is readonly JsonValue[]` with
+  `Array.isArray(v)`; their field reads are at a dictionary's
+  `JsonValue | undefined`. A malformed input keeps its diagnostic, without
+  a cast.
+- The values these readers are given are built at checked `JsonValue`
+  types where they are not parsed: `diagnostic.mts` builds graph wrappers
+  for `decodeGraph` (`[[{ strLit: … }]]`, `[[{ numLit: … }]]`);
+  `pipeline/test.mts` supplies in-memory graphs to `decodeGraph`;
+  `diagnostic-view.mts` passes `surface.lift(…)`'s result to `printType`,
+  which calls `decodeClaimType`, and the lifting builds fields that may
+  hold `undefined` (`claim-text.mts`'s defensive lift), which `JsonValue`
+  does not admit: the lift states its result at a `JsonValue` type, an
+  absent value omitted or written as `null`. `pipeline/verify-source.mts`
+  passes a parsed diagnostic to `presentObligation`.
+- The slices of $`J`$ above stay the general rule for a test on `unknown`;
+  `read-present` waits on a stance on host objects, which this rewrite does
+  not need.
+
 ### Void
 
 The source type `void` denotes the same JavaScript-value universe as `unknown`.
