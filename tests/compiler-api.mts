@@ -371,7 +371,8 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
 // a guard's argument once; and the write `invalid-compiler-api-enum-record-write`
 // makes, which F5 excludes, turns `isIdentifier` false on an identifier;
 // `invalid-compiler-api-guard-domain-object`'s program object, outside the
-// guard's domain, answers `true`.
+// guard's domain, answers `true`; `invalid-compiler-api-type-node` returns
+// an `ExpressionWithTypeArguments`, which `TypeNode` does not declare.
 {
   const dir = runDirectory("tscert-guards-");
   mkdirSync(join(dir, "node_modules"));
@@ -425,6 +426,10 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const domain = await fixture("invalid-compiler-api-guard-domain-object");
   assert.ok(nullary(domain.identifier), "the fixture exports identifier");
   assert.equal(domain.identifier(), true, "isIdentifier answers true of a program object holding an identifier's kind");
+  const typeNode = await fixture("invalid-compiler-api-type-node");
+  assert.ok(unary(typeNode.asTypeNode), "the fixture exports asTypeNode");
+  const heritage = first(join(dir, "heritage.ts"), "class A extends B<C> {}\n", 234);
+  assert.equal(typeNode.asTypeNode(heritage), heritage, "asTypeNode returns the ExpressionWithTypeArguments");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, and isIdentifier answers true of a program object");
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, and asTypeNode returns a node of kind 234");
 }

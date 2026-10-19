@@ -668,12 +668,19 @@ no worker failure on either. The branch adds 4 slices
 
 - verified on the branch only (1): `declaration-graph.mts#boundedArguments`,
   `call.arguments.some(ts.isSpreadElement)`, a guard passed as a value;
-- verified on main only (2), each an acceptance of a program that is not
-  safe: `declaration-graph.mts#typeNodeAt` and `#computedAt` return a node
-  `ts.isTypeNode` accepted at `TypeNode`, and `isTypeNode` also accepts
-  `ExpressionWithTypeArguments` (kind 234), which `TypeNode` does not
-  declare; main read the declared predicate, the branch refuses the return.
-  The sources repair it by excluding kind 234 before returning;
+- verified on main only (2), at `ts.isTypeNode`'s declared predicate,
+  where its entry also accepts `ExpressionWithTypeArguments` (kind 234),
+  which `TypeNode` does not declare:
+  `declaration-graph.mts#typeNodeAt` returns a node `isTypeNode` accepted
+  at `TypeNode`, an acceptance of a program that is not safe, refused at
+  its return (`invalid-compiler-api-type-node`, run under Node, returns
+  the node of kind 234); `#computedAt` passes such a node to
+  `computedForm`, whose parameter is a `TypeNode`, and that argument
+  obligation fails; it returns the node only where `computedForm` answers
+  or `isTypeReferenceNode` holds, both `null` or `false` under Node on kind
+  234, so no return outside `TypeNode` is shown, and the census reports its
+  return, whose claim keeps the arm of kind 234. Each source repairs its
+  refusal by excluding kind 234 first;
 - a changed failure (2): `declaration-graph.mts#statementsOnPath`, refused
   in search on main, refused in the producer on the branch at
   `moduleSpecifier` after `isImportDeclaration`, which also accepts
