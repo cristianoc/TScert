@@ -23,13 +23,15 @@ structure Implication (ι : Type) where
   deriving DecidableEq, Repr
 
 /-- What a node's result promises of a slot of the node's entry: its type,
-where the result is `true` (`conditional`), or wherever the expression returns.
-A tag test's yield carries the evidence that the test's slice is within it. -/
+where the result is `true` (`conditional`), where it is `false` (`onFalse`),
+or wherever the expression returns. A tag test's yield carries the evidence
+that the test's slice is within it. -/
 structure Yield (ι : Type) where
   conditional : Bool
   target : Nat
   type : Ty ι
   evidence : Option (PositiveCertificates.SubtypeChoices ι) := none
+  onFalse : Bool := false
 
 section
 variable {ι : Type}
@@ -39,7 +41,8 @@ def ImpliesOk (G : NormalGraph ι) (xs : List (Implication ι)) (ρ : Env) (n : 
 
 /-- The yields of a result `u`, over the entry environment `ρ`. -/
 def YieldsOk (G : NormalGraph ι) (ys : List (Yield ι)) (ρ : Env) : Fam := fun n W u =>
-  ∀ y ∈ ys, (y.conditional = true → u = .tru) → meaning G y.type n W (ρ y.target)
+  ∀ y ∈ ys, (y.conditional = true → u = .tru) → (y.onFalse = true → u = .fls) →
+    meaning G y.type n W (ρ y.target)
 
 theorem meaning_within [DecidableEq ι] {G : NormalGraph ι} {A B : Ty ι} (h : within A B = true) {n W v}
     (hv : meaning G A n W v) : meaning G B n W v := by
@@ -53,28 +56,34 @@ theorem ImpliesOk.transfer {G : NormalGraph ι} {xs ρ n W} (h : ImpliesOk G xs 
 
 theorem YieldsOk.transfer {G : NormalGraph ι} {ys ρ n W u} (h : YieldsOk G ys ρ n W u)
     (j : Nat) (hj : j ≤ n) (U : WorldT j) (hx : WExt (trunc j hj W) U) : YieldsOk G ys ρ j U u :=
-  fun y hy hc => (meaning_adm G y.type).mono j _ U hx _
-    ((meaning_adm G y.type).down_le n j hj W _ (h y hy hc))
+  fun y hy hc hf => (meaning_adm G y.type).mono j _ U hx _
+    ((meaning_adm G y.type).down_le n j hj W _ (h y hy hc hf))
 
 theorem ImpliesOk.nil (G : NormalGraph ι) (ρ : Env) (n : Nat) (W : WorldT n) : ImpliesOk G [] ρ n W := by
   intro x hx; cases hx
 
 /-- The facts a result's yields establish: every yield where the result
-answered `true`, else the unconditional ones. -/
-def yieldFacts (ys : List (Yield ι)) (answered : Bool) : List (Nat × Ty ι) :=
-  ys.filterMap fun y => if !y.conditional || answered then some (y.target, y.type) else none
+answered `true`, else the unconditional ones; where it answered `false`
+(`falsified`), also those stated of that answer. -/
+def yieldFacts (ys : List (Yield ι)) (answered : Bool) (falsified : Bool := false) : List (Nat × Ty ι) :=
+  ys.filterMap fun y => if (!y.onFalse || falsified) && (!y.conditional || answered) then some (y.target, y.type) else none
 
-theorem yieldFacts_holds {G : NormalGraph ι} {ys : List (Yield ι)} {ρ n W u} {answered : Bool}
-    (hy : YieldsOk G ys ρ n W u) (ha : answered = true → u = .tru) :
-    ∀ f ∈ yieldFacts ys answered, meaning G f.2 n W (ρ f.1) := by
+theorem yieldFacts_holds {G : NormalGraph ι} {ys : List (Yield ι)} {ρ n W u} {answered falsified : Bool}
+    (hy : YieldsOk G ys ρ n W u) (ha : answered = true → u = .tru) (hfl : falsified = true → u = .fls) :
+    ∀ f ∈ yieldFacts ys answered falsified, meaning G f.2 n W (ρ f.1) := by
   intro f hf
   obtain ⟨y, hy', he⟩ := List.mem_filterMap.mp hf
   split at he
   · rename_i hc
     cases he
-    refine hy y hy' fun hcond => ?_
-    simp only [hcond, Bool.not_true, Bool.false_or] at hc
-    exact ha hc
+    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hc
+    refine hy y hy' (fun hcond => ?_) (fun hneg => ?_)
+    · rcases hc.2 with h | h
+      · rw [hcond] at h; cases h
+      · exact ha h
+    · rcases hc.1 with h | h
+      · rw [hneg] at h; cases h
+      · exact hfl h
   · cases he
 
 /-- A context with the slots of `facts`, past `shift` slots, at their types. -/
@@ -107,7 +116,7 @@ conditional yields as implications on it. -/
 def edgeImplications (xs : List (Implication ι)) (ys : List (Yield ι)) (pushed : Bool) : List (Implication ι) :=
   if pushed then
     xs.map (fun x => ⟨x.test + 1, x.target + 1, x.type⟩) ++
-      ys.filterMap (fun y => if y.conditional then some ⟨0, y.target + 1, y.type⟩ else none)
+      ys.filterMap (fun y => if y.conditional && !y.onFalse then some ⟨0, y.target + 1, y.type⟩ else none)
   else xs
 
 theorem edgeImplications_holds {G : NormalGraph ι} {xs : List (Implication ι)} {ys ρ n W u}
@@ -120,7 +129,8 @@ theorem edgeImplications_holds {G : NormalGraph ι} {xs : List (Implication ι)}
   · split at he
     · rename_i hc
       cases he
-      exact hy y hy' fun _ => ht
+      simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hc
+      exact hy y hy' (fun _ => ht) (fun hf => by rw [hc.2] at hf; cases hf)
     · cases he
 
 variable [DecidableEq ι]
@@ -307,6 +317,86 @@ theorem fieldYield_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {�
     exact PositiveCertificates.acceptedUsing hp _ _ _ hs
   · cases hp
 
+/-! ### Yields of a membership test -/
+
+/-- The test of a value against a finite list of tags, in order: `true`
+where one of them holds of it, else `false` (`member_run`). -/
+def memberOn (tags : List Tag) (x : Tm) : Tm :=
+  tags.foldr (fun t rest => .ite (.test t x) .tru rest) .fls
+
+/-- The tags and the slot of a membership test of a slot's value, of one tag
+or more. -/
+def memberParts : Tm → Option (List Tag × Nat)
+  | .ite (.test t (.var i)) .tru rest =>
+    match rest with
+    | .fls => some ([t], i)
+    | _ => match memberParts rest with
+      | some (ts, j) => if i == j then some (t :: ts, i) else none
+      | none => none
+  | _ => none
+
+/-- Whether a term is the membership test of the slot `i`'s value against
+the tags `ts`, in order (`memberOn`). -/
+def isMemberOn : List Tag → Nat → Tm → Bool
+  | [], _, .fls => true
+  | t :: ts, i, .ite (.test t' (.var j)) .tru rest => t == t' && i == j && isMemberOn ts i rest
+  | _, _, _ => false
+
+theorem isMemberOn_sound : ∀ {ts : List Tag} {i : Nat} {t : Tm}, isMemberOn ts i t = true →
+    t = memberOn ts (.var i) := by
+  intro ts
+  induction ts with
+  | nil =>
+    intro i t h
+    unfold isMemberOn at h
+    split at h <;> first | rfl | simp_all
+  | cons t ts ih =>
+    intro i e h
+    unfold isMemberOn at h
+    split at h
+    · simp_all
+    · rename_i t' j rest heq
+      simp only [List.cons.injEq] at heq
+      obtain ⟨rfl, rfl⟩ := heq
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      obtain ⟨⟨rfl, rfl⟩, h⟩ := h
+      rw [ih h]
+      rfl
+    · simp_all
+
+/-- What a membership test's answer `q` leaves of a type, by a slice of one
+tag: where it answered `true`, the labels one tag's passing slice keeps;
+where `false`, those every tag's failing slice keeps, one after another. -/
+def memberSlice (slice : Ty ι → Tag → Bool → Ty ι) (A : Ty ι) (ts : List Tag) (q : Bool) : Ty ι :=
+  if q then (ts.flatMap fun t => slice A t true).eraseDups else ts.foldl (fun B t => slice B t false) A
+
+/-- A membership test's yield (`memberOn`) about the tested slot, or about
+the object a current read link says its value was read from: where the test
+answered `q`, the labels `memberSlice` keeps of the slot's or the object's
+type are within the yield's type, by the yield's evidence. A yield of `true`
+is conditional; one of `false` is stated of that answer (`onFalse`). -/
+@[nospecialize] def memberYield (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
+    (links : HeapLinks.Links) (y : Yield ι) (ts : List Tag) (i : Nat) : Bool :=
+  y.conditional == !y.onFalse && (Γ[i]?).isSome &&
+  match y.evidence with
+  | none => false
+  | some p =>
+    (y.target == i && match Γ[i]? with
+      | some A => PositiveCertificates.checkUsing G images (memberSlice (tagSlice G) A ts !y.onFalse) y.type p
+      | none => false) ||
+    links.any fun g => !g.distinct && !g.alias && !g.optional && g.value == i && g.cell == y.target &&
+      match Γ[g.cell]? with
+      | some A => PositiveCertificates.checkUsing G images
+          (memberSlice (fun B t q => fieldSlice G B g.field t q) A ts !y.onFalse) y.type p
+      | none => false
+
+/-- Whether a yield follows from a node's membership test (`memberYield`). -/
+@[nospecialize] def memberFollows (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
+    (links : HeapLinks.Links) (t : Tm) (y : Yield ι) : Bool :=
+  match memberParts t with
+  | some (ts, i) => isMemberOn ts i t && memberYield G images Γ links y ts i
+  | none => false
+
 /-- One yield of a node's expression, without a call: a slot read, whose value
 is the slot's, yields what an implication on the slot states; a tag test of a
 slot, read as a Boolean, yields where it answers `true` what its observation
@@ -314,7 +404,7 @@ leaves of the slot, or of the object the slot's value was read from
 (`fieldYield`). -/
 @[nospecialize] def yieldFollows (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι))
     (xs : List (Implication ι)) (links : HeapLinks.Links) (t : Tm) (y : Yield ι) : Bool :=
-  match t with
+  memberFollows G images Γ links t y || match t with
   | .var i => y.conditional && (Γ[i]?).isSome &&
       xs.any fun x => x.test == i && x.target == y.target && within x.type y.type
   | .ite (.test tag (.var i)) .tru .fls => y.conditional &&
@@ -384,6 +474,131 @@ theorem steps_value {h v h' u m} (hv : isVal v = true) (run : Steps m h v h' u) 
   | refl => rfl
   | next st _ => exact absurd st (value_no_step hv)
 
+theorem instantiate_memberOn (ρ : Env) (i : Nat) :
+    ∀ ts : List Tag, instantiate 0 ρ (memberOn ts (.var i)) = memberOn ts (ρ i)
+  | [] => rfl
+  | t :: ts => by
+    simp only [memberOn, List.foldr_cons] at *
+    have := instantiate_memberOn ρ i ts
+    simp only [memberOn] at this
+    simp [instantiate, this]
+
+/-- A membership test of a value returns at once, in its heap: `true` where
+one of its tags holds of the value there, `false` where none does. -/
+theorem member_run {h : Heap} {v : Tm} (hv : isVal v = true) : ∀ {ts : List Tag} {m h' u},
+    Steps m h (memberOn ts v) h' u → isVal u = true →
+    (u = .tru ∧ ∃ t ∈ ts, tagHoldsIn h t v = true) ∨ (u = .fls ∧ ∀ t ∈ ts, tagHoldsIn h t v = false)
+  | [], _, _, _, run, _ => by
+    have := steps_value (v := .fls) rfl run
+    exact .inr ⟨this, by simp⟩
+  | t :: ts, _, _, _, run, hu => by
+    simp only [memberOn, List.foldr_cons] at run
+    cases run with
+    | refl => simp [isVal] at hu
+    | next st run =>
+      cases st with
+      | iteC st =>
+        cases st with
+        | testC st => exact absurd st (value_no_step hv)
+        | testV _ =>
+          cases run with
+          | refl => split at hu <;> simp [isVal] at hu
+          | next st run =>
+            split at st
+            · rename_i hq
+              cases st with
+              | iteC st => exact absurd st (value_no_step rfl)
+              | iteT => exact .inl ⟨steps_value rfl run, t, by simp, hq⟩
+            · rename_i hq
+              cases st with
+              | iteC st => exact absurd st (value_no_step rfl)
+              | iteF =>
+                rcases member_run hv (ts := ts) run hu with ⟨hu', t', ht', hq'⟩ | ⟨hu', hall⟩
+                · exact .inl ⟨hu', t', by simp [ht'], hq'⟩
+                · refine .inr ⟨hu', fun t' ht' => ?_⟩
+                  rcases List.mem_cons.mp ht' with rfl | ht'
+                  · simpa using hq
+                  · exact hall t' ht'
+
+omit [DecidableEq ι] in
+theorem memberSlice_sound [DecidableEq ι] {slice : Ty ι → Tag → Bool → Ty ι} {M : Ty ι → Prop}
+    {Q : Tag → Bool → Prop} (hmono : ∀ {A B : Ty ι}, (∀ a ∈ A, a ∈ B) → M A → M B)
+    (hs : ∀ {B t q}, M B → Q t q → M (slice B t q)) {q : Bool} :
+    ∀ {A : Ty ι} {ts : List Tag}, M A →
+      (q = true → ∃ t ∈ ts, Q t true) → (q = false → ∀ t ∈ ts, Q t false) → M (memberSlice slice A ts q) := by
+  intro A ts hA hyes hno
+  cases q with
+  | true =>
+    obtain ⟨t, ht, hQ⟩ := hyes rfl
+    simp only [memberSlice, ↓reduceIte]
+    exact hmono (fun a ha => List.mem_eraseDups.mpr (List.mem_flatMap.mpr ⟨t, ht, ha⟩)) (hs hA hQ)
+  | false =>
+    have hall := hno rfl
+    simp only [memberSlice, Bool.false_eq_true, ↓reduceIte]
+    clear hyes hno
+    induction ts generalizing A with
+    | nil => exact hA
+    | cons t ts ih =>
+      simp only [List.foldl_cons]
+      exact ih (hs hA (hall t (by simp))) (fun t' ht' => hall t' (by simp [ht']))
+
+theorem memberYield_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ links y ts i}
+    (hf : memberYield G images Γ links y ts i = true) {ρ m W h} {u : Tm}
+    (he : EnvOk G Γ ρ (m+1) W) (hh : HeapOk (m+1) W h) (hl : HeapLinks.Holds links ρ h)
+    (hrun : (u = .tru ∧ ∃ t ∈ ts, tagHoldsIn h t (ρ i) = true) ∨ (u = .fls ∧ ∀ t ∈ ts, tagHoldsIn h t (ρ i) = false))
+    (hcond : y.conditional = true → u = .tru) (hneg : y.onFalse = true → u = .fls) :
+    meaning G y.type (m+1) W (ρ y.target) := by
+  unfold memberYield at hf
+  simp only [Bool.and_eq_true, beq_iff_eq] at hf
+  obtain ⟨⟨hq, -⟩, hp⟩ := hf
+  -- The answer the yield is about, and what the run says of it.
+  have hyes : (!y.onFalse) = true → ∃ t ∈ ts, tagHoldsIn h t (ρ i) = true := by
+    intro ho
+    have hu : u = .tru := hcond (by rw [hq]; exact ho)
+    rcases hrun with ⟨_, h1⟩ | ⟨hf', _⟩
+    · exact h1
+    · rw [hu] at hf'; cases hf'
+  have hno : (!y.onFalse) = false → ∀ t ∈ ts, tagHoldsIn h t (ρ i) = false := by
+    intro ho
+    have hu : u = .fls := hneg (by simpa using ho)
+    rcases hrun with ⟨ht', _⟩ | ⟨_, h1⟩
+    · rw [hu] at ht'; cases ht'
+    · exact h1
+  split at hp
+  · cases hp
+  · rename_i p _
+    simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hp
+    rcases hp with ⟨rfl, hc⟩ | hc
+    · split at hc
+      · rename_i A hA
+        have hs := memberSlice_sound (slice := tagSlice G) (M := fun B => meaning G B (m+1) W (ρ y.target))
+          (Q := fun t q => tagHolds t (ρ y.target) = q ∨ protoFree t (ρ y.target) = false)
+          (fun hsub ⟨a, ha, hv⟩ => ⟨a, hsub a ha, hv⟩) (fun hB hQ => tagSlice_sound hB hQ)
+          (q := !y.onFalse) (ts := ts) (he.2 _ A hA)
+          (fun ho => (hyes ho).imp fun t ⟨ht, hq'⟩ => ⟨ht, tagHolds_of_heap hq'⟩)
+          (fun ho t ht => tagHolds_of_heap (hno ho t ht))
+        exact PositiveCertificates.acceptedUsing hc _ _ _ hs
+      · cases hc
+    · obtain ⟨g, hg, hc⟩ := List.any_eq_true.mp hc
+      simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, beq_iff_eq] at hc
+      obtain ⟨⟨⟨⟨⟨hd, ha⟩, ho⟩, hv⟩, hcell⟩, hp'⟩ := hc
+      split at hp'
+      · rename_i A hA
+        have hlink := hl g hg
+        simp only [hd, ha, ho, Bool.false_eq_true, ite_false] at hlink
+        obtain ⟨flds, c, oid, l, hobj, hlk, hu⟩ := hlink
+        have hs := memberSlice_sound (slice := fun B t q => fieldSlice G B g.field t q)
+          (M := fun B => meaning G B (m+1) W (ρ g.cell))
+          (Q := fun t q => tagHolds t (ρ g.value) = q ∨ protoFree t (ρ g.value) = false)
+          (fun hsub ⟨a, ha, hv⟩ => ⟨a, hsub a ha, hv⟩) (fun hB hQ => fieldSlice_sound hB hh hobj hlk hu hQ)
+          (q := !y.onFalse) (ts := ts) (he.2 _ A hA)
+          (fun ho => (hyes ho).imp fun t ⟨ht, hq'⟩ => ⟨ht, tagHolds_of_heap (hv ▸ hq')⟩)
+          (fun ho t ht => tagHolds_of_heap (hv ▸ hno ho t ht))
+        rw [← hcell]
+        exact PositiveCertificates.acceptedUsing hp' _ _ _ hs
+      · cases hp'
+
+
 theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ xs links t} {ys : List (Yield ι)}
     (hc : ys.all (yieldFollows G images Γ xs links t) = true) {ρ n W h} {T : Fam} {Q : Post}
     (he : EnvOk G Γ ρ n W) (hx : ImpliesOk G xs ρ n W) (hh : HeapOk n W h)
@@ -394,7 +609,7 @@ theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
   | zero => trivial
   | succ m =>
   apply conj_reached hs
-  intro k hk U hU r h' u run hu y hy hcond
+  intro k hk U hU r h' u run hu y hy hcond _hneg
   have he' := he.transfer k hk U hU
   have hx' := hx.transfer k hk U hU
   have hf := List.all_eq_true.mp hc y hy
@@ -402,6 +617,23 @@ theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
   have later : ∀ {B : Ty ι} {v}, meaning G B (m+1) W v → meaning G B k U v := fun hv =>
     (meaning_adm G _).mono k _ U hU _ ((meaning_adm G _).down_le (m+1) k hk W _ hv)
   unfold yieldFollows at hf
+  simp only [Bool.or_eq_true] at hf
+  rcases hf with hm | hf
+  · unfold memberFollows at hm
+    split at hm
+    · rename_i ts i _
+      simp only [Bool.and_eq_true] at hm
+      obtain ⟨hshape, hm⟩ := hm
+      have hval : isVal (ρ i) = true := by
+        unfold memberYield at hm
+        simp only [Bool.and_eq_true, Option.isSome_iff_exists] at hm
+        obtain ⟨⟨_, A, hA⟩, -⟩ := hm
+        exact (meaning_value (he.2 i A hA)).1
+      have run' : Steps r h (memberOn ts (ρ i)) h' u := by
+        rw [← instantiate_memberOn, ← isMemberOn_sound hshape]
+        simpa using run
+      exact later (memberYield_sound hm he hh hl (member_run hval run' hu) hcond _hneg)
+    · cases hm
   split at hf
   · rename_i i
     simp only [Bool.and_eq_true, List.any_eq_true, beq_iff_eq, Option.isSome_iff_exists] at hf
@@ -639,7 +871,7 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
         simp only [CallEffects.Effect.result, heff, CallEffects.TypePromise.result] at hu
         simp only [promiseYields, heff, Bool.and_eq_true, List.all_eq_true] at hy
         obtain ⟨⟨hbt, hbf⟩, hall⟩ := hy
-        refine ⟨?_, fun y hym hcond => ?_⟩
+        refine ⟨?_, fun y hym hcond _ => ?_⟩
         · rcases hu with ⟨rfl, _⟩ | rfl
           · exact booleanMember_sound (q := true) hbt m U
           · exact booleanMember_sound (q := false) hbf m U
@@ -663,7 +895,7 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
         simp only [promiseYields, heff, Bool.and_eq_true, List.all_eq_true] at hy
         obtain ⟨hundefA, hall⟩ := hy
         obtain ⟨rfl, hT⟩ := hu
-        refine ⟨admitsUndef_sound hundefA m U, fun y hym _ => ?_⟩
+        refine ⟨admitsUndef_sound hundefA m U, fun y hym _ _ => ?_⟩
         obtain ⟨⟨htarget, hw⟩, _⟩ := hall y hym
         rw [beq_iff_eq.mp htarget]
         exact meaning_within hw hT

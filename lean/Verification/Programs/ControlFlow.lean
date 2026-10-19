@@ -375,7 +375,7 @@ theorem checkHandlerUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Ins
       (checkBranchTargetResult G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields true) 1) 0)
         (.boolean true) y py c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression))).bind fun _ =>
-      checkBranchTargetResult G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
+      checkBranchTargetResult G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false true) 1) 0)
         (.boolean false) n pn c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression))
   | .tagBind t y n, [py,pn] =>
@@ -421,7 +421,7 @@ theorem checkNodeUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
       checkBranchTargetUsing G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields true) 1) 0)
         (.boolean true) y py c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression)) &&
-      checkBranchTargetUsing G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false) 1) 0)
+      checkBranchTargetUsing G images P C (refineBy (result c :: entry c) (PromiseCalls.aliasFacts c.output.links (yieldFacts c.yields false true) 1) 0)
         (.boolean false) n pn c.output (edgeImplications c.implies c.yields true)
         (pushedSources c.arguments (aliasedRead c.arguments node.expression))
   | .tagBind t y n, [py,pn] =>
@@ -522,7 +522,7 @@ def ContinuationOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Goal ι) (C : Ce
   | .branchBind y n => onlyBoolean G A = true ∧
       BranchTargetOk G C (refineBy (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys true) 1) 0) (.boolean true) y facts
         (edgeImplications xs ys true) (pushedSources arg aliased) ∧
-      BranchTargetOk G C (refineBy (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys false) 1) 0) (.boolean false) n facts
+      BranchTargetOk G C (refineBy (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys false true) 1) 0) (.boolean false) n facts
         (edgeImplications xs ys true) (pushedSources arg aliased)
   | .tagBind t y n =>
       BranchTargetOk G C (refineBy (A::Γ) (PromiseCalls.aliasFacts facts.links (yieldFacts ys (truthyBoolean G t A)) 1) 0) (.tag t true) y facts
@@ -695,33 +695,35 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
 
 /-- A context refined by facts its values meet. -/
 theorem refined_env [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} {ys : List (Yield ι)}
-    {u : Tm} {answered : Bool} (he : EnvOk G Γ ρ n W) (hy : YieldsOk G ys ρ n W u)
-    (ha : answered = true → u = .tru) : EnvOk G (refineBy Γ (yieldFacts ys answered) 0) ρ n W :=
+    {u : Tm} {answered falsified : Bool} (he : EnvOk G Γ ρ n W) (hy : YieldsOk G ys ρ n W u)
+    (ha : answered = true → u = .tru) (hfl : falsified = true → u = .fls) :
+    EnvOk G (refineBy Γ (yieldFacts ys answered falsified) 0) ρ n W :=
   PromiseCalls.envOk_refineBy he fun f hf => by
-    simpa using PromiseCalls.yieldFacts_holds hy ha f hf
+    simpa using PromiseCalls.yieldFacts_holds hy ha hfl f hf
 
 theorem refined_push [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} {ys : List (Yield ι)}
-    {A : Ty ι} {u : Tm} {answered : Bool} (he : EnvOk G Γ ρ n W) (hu : meaning G A n W u)
-    (hy : YieldsOk G ys ρ n W u) (ha : answered = true → u = .tru) :
-    EnvOk G (refineBy (A :: Γ) (yieldFacts ys answered) 1) (push u ρ) n W :=
+    {A : Ty ι} {u : Tm} {answered falsified : Bool} (he : EnvOk G Γ ρ n W) (hu : meaning G A n W u)
+    (hy : YieldsOk G ys ρ n W u) (ha : answered = true → u = .tru) (hfl : falsified = true → u = .fls) :
+    EnvOk G (refineBy (A :: Γ) (yieldFacts ys answered falsified) 1) (push u ρ) n W :=
   PromiseCalls.envOk_refineBy (he.push hu) fun f hf => by
-    simpa [push] using PromiseCalls.yieldFacts_holds hy ha f hf
+    simpa [push] using PromiseCalls.yieldFacts_holds hy ha hfl f hf
 
 /-- The same, at the slots alias links relate too. -/
 theorem refined_env_aliased [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} {ys : List (Yield ι)}
-    {u : Tm} {answered : Bool} {links : HeapLinks.Links} {h : Heap} (he : EnvOk G Γ ρ n W)
-    (hy : YieldsOk G ys ρ n W u) (ha : answered = true → u = .tru) (hl : HeapLinks.Holds links ρ h) :
-    EnvOk G (refineBy Γ (PromiseCalls.aliasFacts links (yieldFacts ys answered) 0) 0) ρ n W :=
+    {u : Tm} {answered falsified : Bool} {links : HeapLinks.Links} {h : Heap} (he : EnvOk G Γ ρ n W)
+    (hy : YieldsOk G ys ρ n W u) (ha : answered = true → u = .tru) (hfl : falsified = true → u = .fls)
+    (hl : HeapLinks.Holds links ρ h) :
+    EnvOk G (refineBy Γ (PromiseCalls.aliasFacts links (yieldFacts ys answered falsified) 0) 0) ρ n W :=
   PromiseCalls.envOk_refineBy he (PromiseCalls.aliasFacts_holds hl fun f hf => by
-    simpa using PromiseCalls.yieldFacts_holds hy ha f hf)
+    simpa using PromiseCalls.yieldFacts_holds hy ha hfl f hf)
 
 theorem refined_push_aliased [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} {ys : List (Yield ι)}
-    {A : Ty ι} {u : Tm} {answered : Bool} {links : HeapLinks.Links} {h : Heap} (he : EnvOk G Γ ρ n W)
+    {A : Ty ι} {u : Tm} {answered falsified : Bool} {links : HeapLinks.Links} {h : Heap} (he : EnvOk G Γ ρ n W)
     (hu : meaning G A n W u) (hy : YieldsOk G ys ρ n W u) (ha : answered = true → u = .tru)
-    (hl : HeapLinks.Holds links (push u ρ) h) :
-    EnvOk G (refineBy (A :: Γ) (PromiseCalls.aliasFacts links (yieldFacts ys answered) 1) 0) (push u ρ) n W :=
+    (hfl : falsified = true → u = .fls) (hl : HeapLinks.Holds links (push u ρ) h) :
+    EnvOk G (refineBy (A :: Γ) (PromiseCalls.aliasFacts links (yieldFacts ys answered falsified) 1) 0) (push u ρ) n W :=
   PromiseCalls.envOk_refineBy (he.push hu) (PromiseCalls.aliasFacts_holds hl fun f hf => by
-    simpa [push] using PromiseCalls.yieldFacts_holds hy ha f hf)
+    simpa [push] using PromiseCalls.yieldFacts_holds hy ha hfl f hf)
 
 theorem pushed_arguments {arg : List Nat} {aliased : Bool} {ρ v0 u}
     (ha : ArgumentsOk arg ρ v0) (hal : aliased = true → u = v0) :
@@ -745,7 +747,7 @@ theorem goal_return [DecidableEq ι] {G : NormalGraph ι} {goal : Goal ι} {Γ A
       (refineBy Γ (yieldFacts ys answered) 0)[p]? = some B → FamLe (meaning G B) (meaning G T) →
       meaning G T n (trunc n (Nat.le_succ n) W) v0 := by
     intro answered p B T hans hp hB hle
-    have henv := refined_env he hy hans
+    have henv := refined_env (falsified := false) he hy hans (fun h => by cases h)
     have hv0 : ρ p = v0 := ha p hp
     rw [← hv0]
     exact (meaning_adm G T).down n W _ (hle _ _ _ (henv.2 p B hB))
@@ -819,29 +821,29 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
           ⟨hv, goal_return hk he hA hy ha⟩⟩
       | bind l =>
         exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping (push t ρ)), WExt_refl _, hw', .bind hv, hh',
-          (target_state hk (refined_push_aliased he' ha' hy' (answered := false) (fun h => by cases h) hf.2.2)
+          (target_state hk (refined_push_aliased he' ha' hy' (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2)
             (PromiseCalls.edgeImplications_holds hi' hy') (pushed_arguments ha hal) hf)⟩
       | effect l =>
         exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping ρ), WExt_refl _, hw', .effect hv, hh',
-          (target_state hk (refined_env_aliased he' hy' (answered := false) (fun h => by cases h)
+          (target_state hk (refined_env_aliased he' hy' (answered := false) (fun h => by cases h) (fun h => by cases h)
             (HeapKnowledge.dropResult_holds hf).2.2) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
       | branch y no =>
         have hb := represents_raw hk.1 (n+1) W t hA
         rcases hb with rfl | rfl
         · exact Or.inr ⟨U, h, .at y.label (mapEnv y.mapping ρ), WExt_refl _, hw', .yes, hh',
-            (target_state hk.2.1 (refined_env_aliased he' hy' (answered := true) (fun _ => rfl)
+            (target_state hk.2.1 (refined_env_aliased he' hy' (answered := true) (fun _ => rfl) (fun h => by cases h)
               (HeapKnowledge.dropResult_holds hf).2.2) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
         · exact Or.inr ⟨U, h, .at no.label (mapEnv no.mapping ρ), WExt_refl _, hw', .no, hh',
-            (target_state hk.2.2 (refined_env_aliased he' hy' (answered := false) (fun h => by cases h)
+            (target_state hk.2.2 (refined_env_aliased he' hy' (answered := false) (fun h => by cases h) (fun h => by cases h)
               (HeapKnowledge.dropResult_holds hf).2.2) hi' ha (HeapKnowledge.dropResult_holds hf))⟩
       | branchBind y no =>
         have hb := onlyBoolean_sound hk.1 hA
         rcases hb with rfl | rfl
         · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .yesBind, hh',
-            (branch_target_state hk.2.1 (refined_push_aliased he hA hy (answered := true) (fun _ => rfl) hf.2.2) hh rfl
+            (branch_target_state hk.2.1 (refined_push_aliased he hA hy (answered := true) (fun _ => rfl) (fun h => by cases h) hf.2.2) hh rfl
               (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf)⟩
         · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .noBind, hh',
-            (branch_target_state hk.2.2 (refined_push_aliased he hA hy (answered := false) (fun h => by cases h) hf.2.2) hh rfl
+            (branch_target_state hk.2.2 (refined_push_aliased he hA hy (answered := false) (falsified := true) (fun h => by cases h) (fun _ => rfl) hf.2.2) hh rfl
               (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf)⟩
       | tagBind tag y no =>
         cases htag : tagHoldsIn h tag t with
@@ -850,13 +852,13 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
             (by
               simpa [htag] using (branch_target_state hk.1
                 (refined_push_aliased he hA hy (answered := truthyBoolean G tag A)
-                  (fun hb => truthyBoolean_sound hb hA htag) hf.2.2) hh (tagHolds_of_heap htag)
+                  (fun hb => truthyBoolean_sound hb hA htag) (fun h => by cases h) hf.2.2) hh (tagHolds_of_heap htag)
                 (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf))⟩
         | false =>
           exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
             (by
               simpa [htag] using (branch_target_state hk.2
-                (refined_push_aliased he hA hy (answered := false) (fun h => by cases h) hf.2.2) hh (tagHolds_of_heap htag)
+                (refined_push_aliased he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2) hh (tagHolds_of_heap htag)
                 (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf))⟩
     · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
       have hi' := hi.transfer n (Nat.le_succ n) U (WExt_refl _)
