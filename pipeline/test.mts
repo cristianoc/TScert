@@ -453,7 +453,26 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   assert.ok((searched.stdout + searched.stderr).includes(`[${start - 1},${start + "awaitName".length + 1})`),
     searched.stdout + searched.stderr);
   invoke(forged, join(keyed, "evidence.json"), keyed);
-  process.stdout.write("forged computed key: a key's read claimed at another literal refused\n");
+  // A computed field's key is the one its checked literal converts to: with
+  // the key claim unchanged, a field renamed (`"x"` for `"%Await%"`) or
+  // spelled otherwise than the number's `ToString` (`"1.0"` for `1`) is
+  // refused where evidence is produced and where it is checked.
+  for (const [name, from, to] of [["computed-key-renamed", '"%Await%"', '"x"'],
+      ["computed-key-numeric", '"1"', '"1.0"']] as const) {
+    const text = readFileSync(join(keyed, "fragment.json"), "utf8");
+    const field = `{"name":${from},"e":{"k":"comma"`;
+    assert.ok(text.includes(field), `the computed field ${from}`);
+    const path = join(keyed, `${name}.fragment.json`);
+    writeFileSync(path, text.replace(field, `{"name":${to},"e":{"k":"comma"`));
+    for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+      const result = spawnSync(verifier, [mode, path, join(keyed, "claims.json"), join(keyed, "source.ts"),
+        join(keyed, mode === "--produce-source-claims" ? `${name}-evidence.json` : "evidence.json"),
+        ...(mode === "--produce-source-claims" ? ["12"] : [])], { encoding: "utf8", timeout: 30_000 });
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stdout + result.stderr, /is not the key .* its literal converts to/);
+    }
+  }
+  process.stdout.write("forged computed key: a key's read claimed at another literal, a field renamed or spelled otherwise than its number's ToString: refused\n");
 }
 {
   // A parameter's entry claim in an `&&` operand is its first read before a

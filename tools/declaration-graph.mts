@@ -1655,9 +1655,11 @@ export function collectDeclarations(file: string, options: {
       // `RegExpMatchArray` as tuple views), which the host builds with
       // `ArrayCreate`: iterated as one.
       if (library && (symbol?.name === "RegExpExecArray" || symbol?.name === "RegExpMatchArray")) return "array";
-      // A compiler-API node list is a subclass of `Array` iterated by
-      // `Array.prototype`'s iterator over its store (COMPILER-API.md, "Node
-      // lists"): iterated as an array.
+      // A compiler-API node list is read as a dense readonly array of its
+      // elements (COMPILER-API.md, "Node lists in the model"): its own
+      // `Symbol.iterator`, indexing and `Array.from` agree (T4, run by C4),
+      // so it is iterated as that array is, a host assumption about the
+      // package's values.
       if (symbol?.name === hostNodeList && !!symbol.declarations.length &&
           symbol.declarations.every(d => isHostFile(d.resolve()?.getSourceFile().fileName ?? "")))
         return "array";

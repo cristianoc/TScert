@@ -1039,3 +1039,10 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "(() => { const log = []; before(new Counter(log, 2)); return JSON.stringify(log); })()"),
   '["step","step","step","later"]', "spread-program-iterable-first: the iterator steps before the later element");
 }
+{
+  // A read that throws before a spread's iterator runs: the first call logs
+  // the throw alone, the iterator runs at the second.
+  assert.equal(runExample("spread-program-iterable-uninitialized-refused",
+    "(() => { const log = []; const n = early(log); return JSON.stringify([log, n]); })()"),
+  '[["thrown","iterator"],1]', "spread-program-iterable-uninitialized-refused: the read throws before the iterator runs");
+}

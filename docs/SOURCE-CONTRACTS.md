@@ -2585,8 +2585,11 @@ producer claims a tuple expected at an iterable other than an array at
 $`\mathsf{readonly}\ (A_0\cup\ldots\cup A_{n-1})[\,]`$, which Lean derives from
 the tuple ($`\mathsf{list}`$ inclusion) and relates to the iterable through
 `Array.prototype[Symbol.iterator]`, as for any array. A compiler-API node
-list, a subclass of `Array` ([node lists](COMPILER-API.md#node-lists)), is
-iterated as an array in every position (`compiler-api-node-list-spread`).
+list is read as a dense readonly array of its elements
+([node lists in the model](COMPILER-API.md#node-lists-in-the-model)): its own
+`Symbol.iterator` yields what indexing reads, which T4 states and C4 runs, so
+it is iterated as that array in every position, under the host assumption on
+the package's values (`compiler-api-node-list-spread`).
 
 ## The iterator protocol
 
@@ -2657,7 +2660,11 @@ any other; the close's statement entries state each cell at its contract.
 A spread of a program's iterable (`collect`) that is the first evaluation
 able to run code of the statement's value (an expression statement's, a
 `return`'s or a declaration's one initializer), every evaluation before it
-a literal or a name the file never assigns, is collected before the
+a literal or a name the file never assigns whose read cannot throw (a
+parameter, a function declaration, a library global, or a function body's
+`let` or `const` the early-binding analysis finds initialized at every
+read; a module binding, an import or a class is not one,
+`spread-program-iterable-uninitialized-refused`), is collected before the
 statement, where nothing the statement evaluates before the spread can be
 changed by the iterator's code. Evaluation is followed in JavaScript's
 order: an array literal's elements, a call's or a construction's callee then

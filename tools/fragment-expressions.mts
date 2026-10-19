@@ -234,6 +234,7 @@ export function expr(this: Gate, node: Expression): Expr {
     // Beside a spread, a key is a string: the copy's keys are compared with
     // the written ones by name.
     return { k: "build", pos: gate.span(node), parts: parts.map((p) => "spread" in p ? p
+      : p.computed ? gate.fail(node, "a computed key in an object literal with a spread is outside the fragment")
       : typeof p.name === "string" ? { name: p.name, e: p.e }
       : gate.fail(node, "a symbol key in an object literal with a spread is outside the fragment")) };
   }
@@ -738,12 +739,16 @@ export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen:
     return text;
   };
   return node.properties.flatMap((f) => {
-    if (ts.isMethodDeclaration(f)) return [{ name: key(f, f.name), e: valued(f.name, () => gate.lambda(f)) }];
+    // A field whose key a literal-typed computed key spells is marked, for
+    // Lean to compare the key with the literal it checks.
+    const field = (name: Node, part: ObjectPart & { name: PropertyKey }): ObjectPart[] =>
+      [literalKey(name) ? { ...part, computed: true } : part];
+    if (ts.isMethodDeclaration(f)) return field(f.name, { name: key(f, f.name), e: valued(f.name, () => gate.lambda(f)) });
     if (ts.isShorthandPropertyAssignment(f) && !f.objectAssignmentInitializer && ts.isIdentifier(f.name))
       return [{ name: key(f, f.name), e: gate.expr(f.name) }];
     if (ts.isPropertyAssignment(f)) {
       const name = key(f, f.name);
-      return [{ name, e: valued(f.name, () => gate.expr(f.initializer)) }];
+      return field(f.name, { name, e: valued(f.name, () => gate.expr(f.initializer)) });
     }
     if (ts.isSpreadAssignment(f)) {
       let operand: Expression = f.expression;

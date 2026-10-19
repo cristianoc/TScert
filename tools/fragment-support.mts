@@ -78,7 +78,7 @@ export const UNCLOSABLE = "an iterable whose iterator's type states no `return` 
  * runs the iterator's code, which the lowering runs before the statement the
  * spread is in, and that is its place only where nothing the statement
  * evaluates before the spread can be changed by it. */
-export const SPREAD_POSITION = "a spread of a program's iterable is outside the fragment here: its iterator's code runs where the spread is, which the lowering places before the statement, and that is only its place for the one element of an array literal, or an argument of a call of a name after names and literals nothing assigns, as a statement's value";
+export const SPREAD_POSITION = "a spread of a program's iterable is outside the fragment here: its iterator's code runs where the spread is, which the lowering places before the statement, and that is its place only where the spread is the first evaluation of the statement's value able to run code, after literals and names that hold the same initialized value then";
 
 /** A question-mark parameter requires an optional suffix. A default may
  * precede a required parameter: callers supply undefined in that position. */
@@ -198,7 +198,7 @@ export const selfName = (cls: string): string => `${cls}.[[self]]`;
 export const baseName = (cls: string): string => `${cls}.[[base]]`;
 
 /** A part of an object literal: a named field, or a spread of a value. */
-export type ObjectPart = { name: PropertyKey; e: Expr } | { spread: Expr };
+export type ObjectPart = { name: PropertyKey; e: Expr; computed?: true } | { spread: Expr };
 
 /** The hidden name a parameter written as a pattern or with a default
  * binds: a name no source binding can spell. The body's first statements

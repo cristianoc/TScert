@@ -102,6 +102,29 @@ partial def tagGate (tags : List Nat) : Json → Except String Unit
     kvs.toList.forM fun (_, v) => tagGate tags v
   | _ => pure ()
 
+/-- **Computed keys.** A field marked `computed` is `(k satisfies ℓ, v)`, ℓ
+a string or number literal type, and its key is the one ℓ converts to
+(`ToPropertyKey`, a number's by its `ToString`): the key expression's check
+at ℓ is what makes the field's key the key's value. -/
+partial def computedGate : Json → Except String Unit
+  | .arr xs => xs.forM computedGate
+  | j@(.obj kvs) => do
+    if (j.getObjValAs? String "k").toOption == some "alloc" then
+      for f in (j.getObjValAs? (Array Json) "fields").toOption.getD #[] do
+        if (f.getObjVal? "computed").toOption.isSome then
+          let e := f.getObjValD "e"
+          let left := e.getObjValD "left"
+          if (e.getObjValAs? String "k").toOption != some "comma" ||
+              (left.getObjValAs? String "k").toOption != some "cast" ||
+              (left.getObjValAs? String "cast").toOption != some "satisfies" then
+            throw "a computed key's field is its key's check at a literal, then its value"
+          let spelled ← Fragment.computedKey (left.getObjValD "annot")
+          let name := f.getObjValD "name"
+          if name != Json.str spelled then
+            throw s!"a computed key's field {name.compress} is not the key {(Json.str spelled).compress} its literal converts to"
+    kvs.toList.forM fun (_, v) => computedGate v
+  | _ => pure ()
+
 /-- Whether a type term names the standard library's `PromiseLike`. -/
 partial def namesPromiseLike : Json → Bool
   | .arr xs => xs.any namesPromiseLike
@@ -218,6 +241,8 @@ def equationFront (ast claims : Json) (fileKey : String)
   let tags := EquationLowering.tagSymbols document
   tagGate tags (ast.getObjValD "functions")
   tagGate tags (ast.getObjValD "init")
+  computedGate (ast.getObjValD "functions")
+  computedGate (ast.getObjValD "init")
   tagDeclarations document tags
   let roots ← (← jArr document "roots").mapM fun root => do jStr (← jField (← jField root "binding") "local")
   if roots.eraseDups.length != roots.length then throw "duplicate declaration root name"
