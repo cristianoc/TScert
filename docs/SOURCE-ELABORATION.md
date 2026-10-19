@@ -604,6 +604,34 @@ it carries no obligation about the operator's value, whose claim is checked
 where the operator is read as a value, and each operand keeps its own
 (`logical-string-values`: `s && s` of a string in a condition).
 
+A negated left operand that is no test, `!a`, is a dispatch on `a` itself,
+its arms exchanged, and a left operand that is the same operator's
+application is regrouped:
+
+```math
+\begin{aligned}
+\mathsf{truth}(!a\mathbin{\Vert}b)&=\mathsf{if}\ \mathsf{truthy}(a)\ \mathsf{then}\ \mathsf{truth}(b)\ \mathsf{else}\ \mathsf{true},\\
+\mathsf{truth}(!a\mathbin{\&\&}b)&=\mathsf{if}\ \mathsf{truthy}(a)\ \mathsf{then}\ \mathsf{false}\ \mathsf{else}\ \mathsf{truth}(b),\\
+\mathsf{truth}((a\mathbin{op}b)\mathbin{op}c)&=\mathsf{truth}(a\mathbin{op}(b\mathbin{op}c)).
+\end{aligned}
+```
+
+Each equation holds of JavaScript's evaluation: `!a` is `true` exactly where
+`a` is falsy, `||` evaluates its right operand exactly where its left is
+falsy and `&&` where it is truthy, and grouping the same operator either way
+evaluates the operands once each, left to right, and stops at the same one.
+So `a` is evaluated once, then `b` exactly where `!a` does not decide, and
+the truth is the operator's. The decided outcome is a literal, `true` for
+`||` and `false` for `&&`, at the span of the `!` (`negationMark`), which no
+source expression has: the producer claims it there for every negated
+operand of `||` or `&&` that is no test, a right one's included, which
+regrouping makes a left one (`ExpressionPlan.truthOf`, `Claims.Sites`). The
+arm where `a` answered `true` is the arm a guard call narrows on, so
+`if (!isRecord(v) || n > 3) throw …; return v` reads `v` at the promised
+type, a closure in the right operand included
+(`guard-negated-short-circuit`); the outcome `!g(v) && b` false promises
+nothing (`invalid-guard-negated-and`).
+
 A slice of the labels cannot refine `unknown`, which no label
 decomposes. An arm's entry therefore takes, for each binding its operand
 reads, the producer's claim at that read as a candidate, which the incoming

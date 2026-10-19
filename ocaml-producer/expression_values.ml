@@ -16,6 +16,14 @@ module Make (S : Inputs) = struct
 open S
 module Support = Expression_support.Make(S)
 open Support
+(* A test form, as `ExpressionPlan.testForm` reads one: a test of a shape,
+   a key, an instance or an equality, a negation, a comparison, or `&&` and
+   `||` of tests. *)
+let rec test_form (e:Source.expr) = match e.node with
+  | TypeofTest _ | HasKey _ | InstanceTest _ | Equality _ | Not _ -> true
+  | Arith (op,_,_) -> relational op
+  | Logical (_,a,b) -> test_form a && test_form b
+  | _ -> false
 let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysis_state.body_infer) ?expected env (e:Source.expr) =
   let target_contract = Support.target_contract expr in
   let const_type = Support.const_type expr in
@@ -408,6 +416,17 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
        right operand runs where the left answered the other way. *)
     | Logical (conjunction,a,b) -> let left=expr env a in
       let right=expr ?expected env b in
+      (* As a condition, `!a || b` and `!a && b` with `a` no test dispatch on
+         `a`; where `!a` decides, the outcome is the literal `true` for `||`,
+         `false` for `&&`, which Lean evaluates at the span of the `!`
+         (`ExpressionPlan.negationMark`). A right operand's is claimed too:
+         regrouping `(x || !a) || b` makes it a left one. A value context
+         reads no claim there. *)
+      List.iter (fun (operand:Source.expr) -> match operand.node,operand.pos with
+       | Not inner,Json.Array [Json.Number start;_] when not (test_form inner) ->
+         let mark=Json.Array [Json.Number start;Json.Number (string_of_int (int_of_string start + 1))] in
+         publish_expression mark (literal_type (LBool (not conjunction))) None
+       | _ -> ()) [a;b];
       union (truthy_slice (not conjunction) left) right
     (* The operand is built at its const type, which is the cast's. *)
     | Cast ("const",None,e) ->

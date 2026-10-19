@@ -102,6 +102,14 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "json-parse-own-proto: the own __proto__ member set no prototype");
   assert.equal(runExample("invalid-field-equality-call", `(() => { const c = { kind: "a" }; return wrong(c, () => { c.kind = "b"; }); })()`), "b",
     "invalid-field-equality-call: the call's \"b\" where \"a\" is promised");
+  // `!v` decides `||` where the guard answered `false`; the right operand
+  // runs only where it answered `true`, after the guard's own effects.
+  assert.equal(runExample("guard-negated-short-circuit", "JSON.stringify([ordered([], {}), ordered([], 5)])"),
+    '[["a","b","c"],["a","c"]]', "guard-negated-short-circuit: the guard runs once, the right operand after it");
+  assert.equal(runExample("guard-negated-short-circuit", "JSON.stringify([bounded({ a: 1 }, 0), both({}, {}), neither(5, 4)])"),
+    '[{"a":1},[{},{}],0]', "guard-negated-short-circuit: the guarded values");
+  assert.equal(runExample("invalid-guard-negated-and", "wrong(5, 0)"), 5,
+    "invalid-guard-negated-and: 5 returned where a record is promised");
   assert.equal(runExample("invalid-guard-ternary-false-arm", `wrong("a")`), "a",
     "invalid-guard-ternary-false-arm: \"a\" where \"b\" is promised");
   assert.equal(runExample("invalid-guard-footprint", `(() => { const a = ["x", "y", "z"]; return 2 in wrong(a, a); })()`), false,
