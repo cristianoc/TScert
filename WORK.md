@@ -657,6 +657,30 @@ the gate on a `TransformOptions` declaration. Of the 350 common slices:
   0x69"), seen once; two runs of the slice alone on 0337c3f exceeded the
   call stack, and the failing query's arguments and stack were not kept.
 
+<a id="census-guard-recognition"></a>
+The `tools/` census of ed81b46 (main) and of b7787b9 (guard recognition),
+run back to back on one machine (2026-10-20, load averages 3 to 18): 127 of
+365 slices verify on main, 126 of 369 on the branch, with no timeout and
+no worker failure on either. The branch adds 4 slices
+(`compiler-api.mts#activeGuards`, `#checkedGuards`, `#guardEntry`,
+`#guardModule`), each refused at the gate on `node:path`'s `sep`. Of the
+365 common slices:
+
+- verified on the branch only (1): `declaration-graph.mts#boundedArguments`,
+  `call.arguments.some(ts.isSpreadElement)`, a guard passed as a value;
+- verified on main only (2), each an acceptance of a program that is not
+  safe: `declaration-graph.mts#typeNodeAt` and `#computedAt` return a node
+  `ts.isTypeNode` accepted at `TypeNode`, and `isTypeNode` also accepts
+  `ExpressionWithTypeArguments` (kind 234), which `TypeNode` does not
+  declare; main read the declared predicate, the branch refuses the return.
+  The sources repair it by excluding kind 234 before returning;
+- a changed failure (2): `declaration-graph.mts#statementsOnPath`, refused
+  in search on main, refused in the producer on the branch at
+  `moduleSpecifier` after `isImportDeclaration`, which also accepts
+  `JSImportDeclaration`, a node without it; `fragment-statements.mts#patternDefaults`,
+  past "missing field elements" (the guard's `false` edge on a
+  `BindingName`), now refused in search inside its `flatMap` callback.
+
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:
 
