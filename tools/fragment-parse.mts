@@ -857,6 +857,7 @@ export class Gate {
   collect: typeof statements.collect = statements.collect;
 
   hoistTarget: typeof statements.hoistTarget = statements.hoistTarget;
+  readCannotThrow: typeof statements.readCannotThrow = statements.readCannotThrow;
 
   assignedNames: typeof statements.assignedNames = statements.assignedNames;
 

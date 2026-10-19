@@ -475,6 +475,27 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged computed key: a key's read claimed at another literal, a field renamed or spelled otherwise than its number's ToString: refused\n");
 }
 {
+  // An optional call of a method reads its object again as the call's
+  // receiver, claimed at the method's name: claimed at `undefined`, it is
+  // refused there where evidence is produced, and checking refuses the
+  // evidence of the original claim for it.
+  const optional = run("optional-method-call");
+  const claims = readClaims(optional);
+  const source = readFileSync(join(optional, "source.ts"), "utf8");
+  const start = source.indexOf("equation?.(x) ??");
+  const fn = must(claims.functions.find(f => f.name === "withDefault"), "withDefault's claims");
+  const receiver = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + "equation".length),
+    "the receiver read again");
+  receiver.type = [rowOf(claims, "undef")];
+  const forged = writeClaims(optional, "forged-optional-receiver", claims);
+  const searched = produceWith(optional, forged, "forged-optional-receiver");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.ok((searched.stdout + searched.stderr).includes(`[${start},${start + "equation".length})`),
+    searched.stdout + searched.stderr);
+  invoke(forged, join(optional, "evidence.json"), optional);
+  process.stdout.write("forged optional method call: the receiver read again claimed at undefined refused\n");
+}
+{
   // A parameter's entry claim in an `&&` operand is its first read before a
   // call, which the incoming edge checks: a read claimed narrower than any
   // test establishes is refused where evidence is produced and where it is

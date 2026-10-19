@@ -1085,3 +1085,11 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(run(`const items = [...${throwing}]; new Set([...items]);`), '["iterator"]',
     "the hoisted collection throws before reading Set");
 }
+{
+  // `o.m?.(a)`: called with `o` as its receiver, the argument evaluated;
+  // absent, `undefined` and the argument not evaluated.
+  assert.equal(runExample("optional-method-call",
+    "(() => { const log = []; const r = apply({ base: 2, equation(x) { return this.base + x; } }, 1, log); " +
+    "const s = apply({ base: 0 }, 1, log); return JSON.stringify([r, s === undefined, log]); })()"),
+  '[3,true,["argument"]]', "optional-method-call: the receiver bound, the arguments skipped where the method is absent");
+}

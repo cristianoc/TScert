@@ -813,10 +813,29 @@ export function chainLink(this: Gate,
   }
   let target: Expression = node.expression;
   while (ts.isParenthesizedExpression(target)) target = target.expression;
-  // `o.m?.()` tests the method, but calls it with `o` as its receiver: the
-  // chain would have to save the object apart from the tested value.
-  if (node.questionDotToken && (ts.isPropertyAccessExpression(target) || ts.isElementAccessExpression(target)))
-    gate.fail(node, "an optional call of a method is outside the fragment");
+  // `o.m?.(a)` reads `o.m` once, the chain's tested value, and calls it with
+  // `o` as its receiver (ECMA-262, OptionalChain: the reference's base is the
+  // call's `this`): the call of the tested value with the receiver read
+  // again, which is the value read before where `o` is `this` or a name
+  // whose read cannot throw nor run code and that the file assigns nowhere.
+  if (node.questionDotToken && ts.isElementAccessExpression(target))
+    gate.fail(node, "an optional call of a method read at a computed key is outside the fragment");
+  if (node.questionDotToken && ts.isPropertyAccessExpression(target)) {
+    let base: Expression = target.expression;
+    while (ts.isParenthesizedExpression(base)) base = base.expression;
+    // The receiver read again is claimed at the method's name, a site of
+    // its own.
+    const at = gate.span(target.name);
+    const receiver: Expr | null = base.kind === ts.SyntaxKind.ThisKeyword ? { k: "this", pos: at }
+      : ts.isIdentifier(base) && !gate.assignedNames().has(base.text) && gate.readCannotThrow(base) &&
+        !gate.libraryValues.has(gate.span(base).join(":")) ? { k: "id", pos: at, name: gate.local(base) }
+      : null;
+    if (!receiver)
+      gate.fail(node, "an optional call of a method whose object is other than `this` or a name read without effect and never assigned is outside the fragment: the object is read once, and again as the call's receiver");
+    if (node.arguments.some(ts.isSpreadElement) || node.typeArguments?.length)
+      gate.fail(node, "an optional call of a method takes ordinary arguments");
+    return { k: "callWithReceiver", pos, callee: object, receiver, args: node.arguments.map((arg) => gate.expr(arg)) };
+  }
   const spreads: number[] = [];
   const args = node.arguments.map((arg, i) => {
     if (!ts.isSpreadElement(arg)) return gate.expr(arg);
