@@ -103,25 +103,70 @@ member of $`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$ may own a prototype
 `!Array.isArray(v)` alike. So the guards over `unknown` that test exactly
 those (`isObject`, `isRecord` and their kind in `claim-text.mts`,
 `claim.mts`, `type-graph.mts`, `diagnostic-view.mts`) promise more than
-the model proves, and stay refused under the rule. Two ways close them:
+the model proves, and stay refused under the rule.
 
-- **The program promises what the tests give** (the repository's code
-  rewritten): a guard promising a source type for $`J_{\mathrm{ref}}`$, its
-  callers reading keys after an `in` test, which narrows to the key's
-  presence (`key_slice`), or through `Object.keys` and `Object.entries`,
-  which read own keys only. No model change beyond the slices.
-- **The view admits more objects** (a model change): the readonly view of
-  $`J`$ at the string keys admits an object with a prototype, every read
-  at a string key, own or through the chain, being a value of $`J`$ or
-  `undefined`; a host object needs, beside it, the assumption that a read
-  at any string key of a host object yields a value of $`J`$, which its
-  accessors (`Map.prototype.size`) make a statement about native code, an
-  audited host assumption. Without that assumption the tests still do not
-  establish the view, a `Map` passing them.
+**Reading keys of a value of $`J_{\mathrm{ref}}`$ (design A, its
+limits).** Design A promises what the tests give, `isObject(v: unknown): v
+is object` and `isList(v: unknown): v is readonly unknown[]`, and reads keys
+after an `in` test, `isObject(v) && "kind" in v && typeof v.kind ===
+"string"`. Three facts of the model bound it:
 
-The slices are proposed as the general rule; for the dictionary view, the
-first way, which needs no new assumption, is recommended.
+1. Source `object` denotes $`J_{\mathrm{ref}}\cup J_{\mathrm{fun}}`$, which
+   holds classes, and `k in C` of a class is refused: the model binds a
+   class's static members apart from the class value, so the test has no
+   answer there (`` `in` on a class value ``, measured 2026-10-19 on
+   `function f(v: object) { return "k" in v; }`). A guard promising
+   `object` loses the `typeof` slice its body tested; `in` after it is
+   refused.
+2. Presence alone gives a read no contract: `key_slice` and key promotion
+   (`BranchRefinement`) promote a contract the value's type states. A read
+   of `v.k` after `"k" in v` on $`J_{\mathrm{ref}}`$ needs a rule of its
+   own:
 
+   ```math
+   \frac{\Gamma\vdash v:J_{\mathrm{ref}}\qquad \texttt{"k" in } v\ \text{answers}\ \mathsf{true}\qquad v\ \text{no host object}}
+        {\Gamma\vdash v.\mathtt{k} : J}\ \textsf{read-present}
+   ```
+
+   It is sound where the calculus's read, own field or prototype chain,
+   finds what JavaScript's does and every source-keyed field of an object
+   of $`J`$ holds a value of $`J`$, the built-ins' invariant of the
+   `source` row (`sourceTy_exc`), to be stated for this read. The premise
+   "no host object" is its limit: a host object's prototype holds
+   accessors (`Map.prototype.size`), which JavaScript runs and the
+   calculus's read does not, and $`J_{\mathrm{ref}}`$ holds host objects,
+   so no test the guards write establishes it. A read after `in` on a value
+   that may be a host object is refused, located.
+3. Enumeration is its own contract: `Object.keys(v)` of $`v\in J_{\mathrm{ref}}`$
+   lists its own enumerable string keys, whatever their values, which the
+   reviewed overlay admits today (`Object.keys(v)` of `v: object`
+   verifies, measured 2026-10-19).
+
+So design A verifies a caller over `unknown` only where its reads are of
+values the model knows to be no host object. The front end's readers of
+these guards read documents that `JSON.parse` produced (claims, type
+graphs, diagnostics): their inputs are `JsonValue`s
+([the contract](SOURCE-CONTRACTS.md#library-globals)), which hold no host
+object, no class and no prototype, and over which the tests the guards
+write already decide the arms: `isRecord(v: Json): v is { [key: string]:
+Json }` verifies today (`diagnostic.mts`). The concrete rewrite:
+
+- `claim-text.mts`, `claim.mts`, `type-graph.mts`, `diagnostic-view.mts`:
+  the decoders' inputs typed `JsonValue` (a parsed document, read only),
+  their guards over it: `isObject(v: JsonValue): v is { readonly [key:
+  string]: JsonValue }` with `typeof v === "object" && v !== null &&
+  !Array.isArray(v)`, `isList(v: JsonValue): v is readonly JsonValue[]`
+  with `Array.isArray(v)`; callers unchanged but for the parameter types,
+  their field reads at a dictionary's `JsonValue | undefined`.
+- Callers that pass these readers a value: `pipeline/verify-source.mts`
+  (`presentObligation` of a parsed diagnostic), `diagnostic.mts`
+  (`decodeGraph` of a parsed document), `pipeline/test.mts` (`decodeGraph`
+  of object literals, `JsonValue`s by their form).
+- The slices of $`J`$ above stay the general rule for a test on `unknown`;
+  `read-present` waits on a stance on host objects, which this rewrite does
+  not need.
+
+### Void
 ### Void
 
 The source type `void` denotes the same JavaScript-value universe as `unknown`.
