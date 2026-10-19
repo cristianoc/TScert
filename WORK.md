@@ -413,8 +413,8 @@ first two items 2026-10-19):
   `staticMethodOf`, `hasInstanceClass`, `hasInstanceAlong`, `localArrow`,
   `memberOf`, and `moduleFunction` through `memberMayBeWritten`;
   2026-10-19, 829513e): a promise refines a name alone; the
-  [stable-path rule](docs/COMPILER-API.md#stable-paths), a design, refines
-  the path;
+  [read-equality rule](docs/HOST-FAMILIES.md#stable-members), a design,
+  refines the path;
 - a spread of a program's iterable where its iterator's code would run out
   of place (18);
 - a computed key in an object literal other than a `unique symbol` constant

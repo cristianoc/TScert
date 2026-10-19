@@ -277,7 +277,7 @@ empty parts dropped and a one-element part read as its literal.
 
 ### R7. Compact cell sets
 
-A [kind set](COMPILER-API.md#compact-kind-sets) $`\mathsf{numIn}(S)`$ is a
+A [kind set](HOST-FAMILIES.md#tag-sets) $`\mathsf{numIn}(S)`$ is a
 cell set within the number shape as one atom, and serves three purposes:
 
 - **types:** a union of number literals is one atom, and inclusion is set
@@ -359,7 +359,7 @@ A compiler node type is the union of the shapes $`S_k`$ of its member kinds
   need no host assumption.
 - Lemma 7 applies to a host node only through T4, which makes a host object
   behave as the record of its stated members, and the union is the node
-  type's meaning only in host-admissible worlds, which T1 defines
+  type's meaning only for the values T1 and T1′ describe
   ([trust](COMPILER-API.md#trust)). Refinement of a node union by its `kind`
   is sound relative to T1 and T4; neither is proved.
 
