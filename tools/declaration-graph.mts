@@ -1530,14 +1530,19 @@ export function collectDeclarations(file: string, options: {
       libraryFile,
       // The reviewed text as an interface appended to the client, in a probe
       // program of its own, at a name the client does not spell.
+      // The declaration read is the one at the appended text's exact start
+      // and end, whatever the client declares under any name; only its own
+      // syntax is read, so a client declaration merging with it adds nothing.
       reviewed: (body, read) => {
         let index = 0;
         while (client.text.includes(`__TScertReviewed${index}`)) index++;
-        const name = `__TScertReviewed${index}`;
-        return probeProgram(new Map([[client.fileName, `${client.text}\ninterface ${name}${body}\n`]]), program => {
-          const declaration = program.getSourceFile(client.fileName)?.statements
-            .find((n): n is InterfaceDeclaration => ts.isInterfaceDeclaration(n) && n.name.text === name);
-          if (!declaration) throw Error("the reviewed signatures do not parse as an interface");
+        const appended = `interface __TScertReviewed${index}${body}`;
+        const start = client.text.length + 1;
+        return probeProgram(new Map([[client.fileName, `${client.text}\n${appended}\n`]]), program => {
+          const file = program.getSourceFile(client.fileName);
+          const declaration = file?.statements.find((n): n is InterfaceDeclaration => ts.isInterfaceDeclaration(n) &&
+            n.getStart(file) === start && n.end === start + appended.length);
+          if (!declaration) throw Error("the reviewed signatures do not parse as the appended interface");
           return read(declaration);
         });
       },
