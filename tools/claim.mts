@@ -6,18 +6,19 @@ import { isArrayPresence, type ArrayPresence } from "./type-graph.mts";
  * their raw JSON. Its surface text is in claim-text.mts.
  */
 import type { PropertyKey } from "./declaration-types.mts";
-interface ClaimType {
+import type { JsonObject, JsonRead, JsonValue } from "./calculus.mts";
+type ClaimType = {
   top: boolean;
   atoms: Atom[];
-}
-interface Field {
+};
+type Field = {
   /** A string key, or `{ symbol: i }`: the declaration document's i-th symbol. */
   name: PropertyKey;
   optional: boolean;
   read: ClaimType;
   write: ClaimType;
-}
-interface RecordAtom {
+};
+type RecordAtom = {
   a: "record";
   fields: Field[];
   indexes: { string: string; number: string; symbol: string };
@@ -28,8 +29,8 @@ interface RecordAtom {
   construct: string;
   array: string;
   and?: Atom[];
-}
-interface FunctionAtom {
+};
+type FunctionAtom = {
   a: "function";
   /* The receiver a call may pass: `unknown` for a signature indifferent to
      it, the declared `this` type otherwise. Every signature states it. */
@@ -42,7 +43,7 @@ interface FunctionAtom {
   construct: string;
   array: string;
   and?: Atom[];
-}
+};
 export type Atom =
   | { a: "null" | "undefined" | "boolean" | "string" | "number" | "bigint" | "symbol" }
   /* A construct signature, `new (params) => result`: what a class meets. */
@@ -69,14 +70,14 @@ export type Atom =
   | FunctionAtom
   | { a: "callable"; function: FunctionAtom; bag: RecordAtom };
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === "object" && !Array.isArray(v);
-function object(v: unknown): Record<string, unknown> {
+const isRecord = (v: JsonRead): v is JsonObject =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+function object(v: JsonRead): JsonObject {
   if (!isRecord(v)) throw Error("expected an object");
   return v;
 }
 function keys(
-  v: Record<string, unknown>,
+  v: JsonObject,
   required: string[],
   optional: string[] = [],
 ): void {
@@ -86,19 +87,20 @@ function keys(
   )
     throw Error("unexpected or missing claim field");
 }
-function list(v: unknown): unknown[] {
-  if (!Array.isArray(v)) throw Error("expected a list");
+const isList = (v: JsonRead): v is readonly JsonValue[] => Array.isArray(v);
+function list(v: JsonRead): readonly JsonValue[] {
+  if (!isList(v)) throw Error("expected a list");
   return v;
 }
 /** Checks and narrows, so a caller that goes on to read the string needs no
  * second word for it. */
-function str(v: unknown): asserts v is string {
+function str(v: JsonRead): asserts v is string {
   if (typeof v !== "string") throw Error("expected a string");
 }
-function bool(v: unknown): void {
+function bool(v: JsonRead): void {
   if (typeof v !== "boolean") throw Error("expected a boolean");
 }
-function atom(v: unknown): void {
+function atom(v: JsonRead): void {
   const o = object(v);
   switch (o.a) {
     case "null":
@@ -201,7 +203,7 @@ function atom(v: unknown): void {
       throw Error("unknown claim atom");
   }
 }
-export function decodeClaimType(v: unknown): ClaimType {
+export function decodeClaimType(v: JsonValue): ClaimType {
   const o = object(v);
   keys(o, ["top", "atoms"]);
   bool(o.top);
@@ -209,5 +211,5 @@ export function decodeClaimType(v: unknown): ClaimType {
   if (o.top && list(o.atoms).length)
     throw Error("unknown cannot also carry atoms");
   // asserted: the decoder's result, checked field by field above
-  return v as ClaimType;
+  return o as ClaimType;
 }

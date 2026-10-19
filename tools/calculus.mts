@@ -110,6 +110,16 @@ export type Term =
  * of a parsed object finds a `Json`, or `undefined` where the object lacks
  * the key. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+/** A value of the shape of `JsonValue` (library-globals.mts), whatever built
+ * it: `null`, a Boolean, a number, a string, or a read-only array or
+ * dictionary of such values. A `Json` is one. The readers of the claims, the
+ * type graphs and the diagnostics take their input at it. */
+export type JsonValue = null | boolean | number | string | readonly JsonValue[] | JsonObject;
+/** `JsonValue`'s dictionary arm. */
+export type JsonObject = { readonly [key: string]: JsonValue };
+/** A read of a key of a `JsonObject`: its value, or `undefined` where the
+ * object lacks the key. */
+export type JsonRead = JsonValue | undefined;
 /* JSON shape checks, shared with the program graph in control-flow.mts. They
  * belong to neither language, so they name neither: a malformed target is not
  * a malformed term. */

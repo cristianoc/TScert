@@ -5,6 +5,7 @@
  */
 import type { CallEffect, CallPromise, ClosedFootprint, PropertyKey } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
+import type { JsonObject, JsonRead, JsonValue } from "./calculus.mts";
 export type { CallEffect, CallPromise, ClosedFootprint } from "./declaration-types.mts";
 /** Physical density and a safe in-bounds read are distinct guarantees. */
 export type ArrayPresence = "dense" | "readable" | "sparse";
@@ -64,23 +65,23 @@ const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
 export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
   sameFootprint(a.footprint, b.footprint) && samePromise(a.promise, b.promise) && a.fresh === b.fresh &&
     a.receiverStore === b.receiverStore && a.onThrow === b.onThrow;
-const isObject = (v: unknown): v is Record<string, unknown> =>
+const isObject = (v: JsonRead): v is JsonObject =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 /** Whether a value is a closed footprint, as the wire states one. */
-export function isClosedFootprint(value: unknown): value is ClosedFootprint {
+export function isClosedFootprint(value: JsonRead): value is ClosedFootprint {
   return isObject(value) && Object.keys(value).length === 2 &&
     (value.value === "keep" || value.value === "any") &&
     (value.store === "keep" || value.store === "grow" || value.store === "any");
 }
 /** Whether a value is a call effect, as the wire states one. */
-export function isCallEffect(value: unknown): value is CallEffect {
+export function isCallEffect(value: JsonRead): value is CallEffect {
   if (!isObject(value) || Object.keys(value).length !== 5 || !isClosedFootprint(value.footprint) ||
       typeof value.fresh !== "boolean" || typeof value.receiverStore !== "boolean" ||
       typeof value.onThrow !== "boolean") return false;
   const promise = value.promise;
   if (promise === null) return true;
   if (!isObject(promise) || Object.keys(promise).length !== 1) return false;
-  const about: unknown = "guards" in promise ? promise.guards : "asserts" in promise ? promise.asserts : undefined;
+  const about: JsonRead = "guards" in promise ? promise.guards : "asserts" in promise ? promise.asserts : undefined;
   return isObject(about) && Object.keys(about).length === 1 && typeof about.param === "number" &&
     Number.isInteger(about.param) && about.param >= 0;
 }
@@ -251,9 +252,9 @@ export const numberOfBits = (bits: string): number => {
 };
 
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === "object" && !Array.isArray(v);
-function obj(v: unknown, keys: string[]): Record<string, unknown> {
+const isRecord = (v: JsonRead): v is JsonObject =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+function obj(v: JsonRead, keys: string[]): JsonObject {
   if (
     !isRecord(v) ||
     Object.keys(v).length !== keys.length ||
@@ -263,10 +264,10 @@ function obj(v: unknown, keys: string[]): Record<string, unknown> {
   return v;
 }
 function objOptional(
-  v: unknown,
+  v: JsonRead,
   keys: string[],
   optional: string[],
-): Record<string, unknown> {
+): JsonObject {
   if (
     !isRecord(v) ||
     keys.some((k) => !(k in v)) ||
@@ -275,11 +276,12 @@ function objOptional(
     throw Error("unexpected type graph fields");
   return v;
 }
-function array(v: unknown): unknown[] {
-  if (!Array.isArray(v)) throw Error("expected graph list");
+const isList = (v: JsonRead): v is readonly JsonValue[] => Array.isArray(v);
+function array(v: JsonRead): readonly JsonValue[] {
+  if (!isList(v)) throw Error("expected graph list");
   return v;
 }
-export function decodeLabels(v: unknown, size: number): Labels {
+export function decodeLabels(v: JsonRead, size: number): Labels {
   if (
     array(v).some(
       (i) =>
@@ -301,17 +303,17 @@ function isIndexClass(v: unknown): v is IndexClass {
 /** A key as TypeScript writes it: a string plainly, a symbol by its index. */
 const keyText = (name: PropertyKey): string =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
-export function decodeGraph(value: unknown): TypeGraph {
+export function decodeGraph(value: JsonRead): TypeGraph {
   requireWellFormed(value, "type graph");
   const rows = array(value);
-  const labels = (v: unknown) => decodeLabels(v, rows.length);
-  const indexEntry = (v: unknown) => {
+  const labels = (v: JsonRead) => decodeLabels(v, rows.length);
+  const indexEntry = (v: JsonRead) => {
     const pair = array(v);
     if (pair.length !== 2 || !isIndexClass(pair[0]))
       throw Error("expected an index key class and its type");
     labels(pair[1]);
   };
-  const contract = (v: unknown, hosted: boolean, rest: boolean) => {
+  const contract = (v: JsonRead, hosted: boolean, rest: boolean) => {
     const sig = obj(v, ["receiver", "arguments", "result", "effect"]);
     if (hosted) obj(sig.receiver, []); else labels(sig.receiver);
     if (!isCallEffect(sig.effect)) throw Error("invalid callable effect");
@@ -323,23 +325,23 @@ export function decodeGraph(value: unknown): TypeGraph {
       labels(args[1]);
     } else array(sig.arguments).forEach(labels);
   };
-  const arrows = (v: unknown) => array(v).forEach((s) => contract(s, false, false));
+  const arrows = (v: JsonRead) => array(v).forEach((s) => contract(s, false, false));
   // Left out when empty: an explicit empty list is not the canonical form.
-  const variadic = (v: unknown) => {
+  const variadic = (v: JsonRead) => {
     const sigs = array(v);
     if (!sigs.length) throw Error("an empty variadic list is written by omitting it");
     sigs.forEach((s) => contract(s, false, true));
   };
   // A key: a string, or `{"symbol": i}` for the declaration document's i-th
   // symbol.
-  const key = (v: unknown, what: string): PropertyKey => {
+  const key = (v: JsonRead, what: string): PropertyKey => {
     if (typeof v === "string") return v;
     const r = obj(v, ["symbol"]);
     if (typeof r.symbol !== "number" || !Number.isSafeInteger(r.symbol) || r.symbol < 0)
       throw Error(`expected ${what}`);
     return { symbol: r.symbol };
   };
-  const fields = (v: unknown, repeated = false) => {
+  const fields = (v: JsonRead, repeated = false) => {
     const names = new Set<string>();
     array(v).forEach((f) => {
       const pair = array(f);
@@ -352,7 +354,7 @@ export function decodeGraph(value: unknown): TypeGraph {
       labels(pair[1]);
     });
   };
-  const optionalFields = (v: unknown) => {
+  const optionalFields = (v: JsonRead) => {
     const names = new Set<string>();
     array(v).forEach((f) => {
       const r = obj(f, ["key", "readonly", "type"]);
@@ -363,7 +365,7 @@ export function decodeGraph(value: unknown): TypeGraph {
       labels(r.type);
     });
   };
-  const methods = (v: unknown) =>
+  const methods = (v: JsonRead) =>
     array(v).forEach((m) => {
       const r = obj(m, ["key", "calls", "rests", "schemes", "receivers"]);
       key(r.key, "a method key");
@@ -372,13 +374,13 @@ export function decodeGraph(value: unknown): TypeGraph {
       array(r.calls).forEach((c) => contract(c, true, false));
       array(r.rests).forEach((c) => contract(c, true, true));
     });
-  const bounds = (v: unknown) =>
+  const bounds = (v: JsonRead) =>
     array(v).forEach((b) => {
       const r = obj(b, ["among", "keys"]);
       if (typeof r.among !== "boolean") throw Error("invalid key bound");
       array(r.keys).forEach((k) => key(k, "a key in a bound"));
     });
-  const tuple = (v: unknown) => {
+  const tuple = (v: JsonRead) => {
     const t = obj(v, ["required", "optional", "rest", "readonly", "presence"]);
     if (!isArrayPresence(t.presence)) throw Error("invalid tuple density flag");
     if (typeof t.readonly !== "boolean")
@@ -392,8 +394,8 @@ export function decodeGraph(value: unknown): TypeGraph {
   // Keyed by the language's own union, so a clause added there and not here is
   // a type error; read by a key that may be none of them, so a clause this does
   // not know is a refusal rather than a silent pass.
-  const check: Record<ClauseKey, (body: unknown) => void> &
-    Record<string, ((body: unknown) => void) | undefined> = {
+  const check: Record<ClauseKey, (body: JsonRead) => void> &
+    Record<string, ((body: JsonRead) => void) | undefined> = {
     boolLit: (b) => {
       if (typeof obj(b, ["value"]).value !== "boolean")
         throw Error("invalid Boolean literal");
@@ -501,7 +503,7 @@ export function decodeGraph(value: unknown): TypeGraph {
     },
   };
 
-  const clauses = (row: unknown) =>
+  const clauses = (row: JsonRead) =>
     array(row).forEach((c) => {
       if (typeof c === "string") {
         if (!(c in STRING_CLAUSE_TEXT)) throw Error("unknown graph clause");

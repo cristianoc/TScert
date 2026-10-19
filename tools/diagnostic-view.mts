@@ -6,20 +6,18 @@
  * See ../OBLIGATION-DIAGNOSTICS.md.
  */
 
+import type { JsonRead, JsonValue } from "./calculus.mts";
 import surface from "./claim-text.mts";
 import type { DiagnosticOutcome, HeapKnowledge, ObligationDiagnostic, SourceMapEntry } from "./diagnostic.mts";
 
+/** How a context binding is named in the source, as a source map states it. */
+type Descriptor = SourceMapEntry["context"][number];
+
 /* A record reaches `presentObligation` decoded: diagnostic.mts checks one field
  * by field and refuses what does not fit, so the shapes below are the ones that
- * arrive. The descriptors and label lists are the exception — they arrive as a
- * producer wrote them — so reading one narrows what arrived instead of assuming
- * it. `Array.isArray` alone would widen `unknown` to `any[]`, which is how
- * elements stop being checked; `isList` keeps them unknown. */
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === "object";
-// `Array.isArray` finds an array of any elements, which a reader may read but
-// not write at `unknown`.
-const isList = (v: unknown): v is readonly unknown[] => Array.isArray(v);
+ * arrive. A label list read from it is a `JsonValue`, and reading one narrows
+ * what arrived instead of assuming it. */
+const isList = (v: JsonRead): v is readonly JsonValue[] => Array.isArray(v);
 
 /**
  * What the verifier had and what had to follow from it, in source names.
@@ -50,10 +48,10 @@ function searchOutcome(outcome: DiagnosticOutcome, fuel: number): string {
 // diagnostic's `names`) is shown by its name.
 /** A type a record mentions, through the record's table and names. */
 interface Table {
-  types: unknown;
+  types: JsonValue;
   names?: readonly (readonly [number, string])[];
 }
-function recordType(table: Table, labels: unknown): string {
+function recordType(table: Table, labels: JsonRead): string {
   if (!isList(labels)) return "(no type recorded)";
   return surface.printType(surface.lift(table.types, labels, 3, table.names ?? [])).text;
 }
@@ -65,26 +63,24 @@ function recordType(table: Table, labels: unknown): string {
 // so a position should never reach a reader. The `slot N` fallback below is for
 // a record that arrives without a source map at all; seeing one means the
 // producer broke that invariant.
-function bindingText(descriptor: unknown, source: string): string {
-  if (!isRecord(descriptor)) return "";
-  if (descriptor.name) return String(descriptor.name);
+function bindingText(descriptor: Descriptor, source: string): string {
+  if (descriptor.name) return descriptor.name;
   const span = descriptor.span;
-  if (!isList(span) || typeof span[0] !== "number" || typeof span[1] !== "number")
-    return "";
+  if (span === null) return "";
   return source
     .slice(span[0], span[1])
     .replace(/\s+/g, " ")
     .trim();
 }
 
-const bindingsOf = (map: { context?: unknown } | null, source: string): string[] =>
-  (isList(map?.context) ? map.context : []).map((d) => bindingText(d, source));
+const bindingsOf = (map: SourceMapEntry | null, source: string): string[] =>
+  (map === null ? [] : map.context).map((d) => bindingText(d, source));
 
 /** Whether a node or edge end required any fact of the heap as it is. */
 const requiresKnowledge = (knowledge: HeapKnowledge | null): boolean =>
   !!knowledge && knowledge.cells.length + knowledge.values.length + knowledge.links.length > 0;
 
-const sameType = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+const sameType = (a: JsonRead, b: JsonRead): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 /** Uniform report contract: the source-named summary of a failed obligation and
  * how its search ended, as strings a report shows without decoding the

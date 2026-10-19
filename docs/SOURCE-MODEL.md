@@ -100,10 +100,9 @@ $`J`$: an object without call code, owning no `[[proto]]` and no
 member of $`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$ may own a prototype
 (a class instance, an object `Object.create` made) or be a host object (a
 `Map`, a `Date`), which pass `typeof v === "object"`, `v !== null` and
-`!Array.isArray(v)` alike. So the guards over `unknown` that test exactly
-those (`isObject`, `isRecord` and their kind in `claim-text.mts`,
-`claim.mts`, `type-graph.mts`, `diagnostic-view.mts`) promise more than
-the model proves, and stay refused under the rule.
+`!Array.isArray(v)` alike. So a guard over `unknown` that tests exactly
+those promises more than the model proves, and stays refused under the
+rule; the front end's readers test them over `JsonValue` instead (below).
 
 **Reading keys of a value of $`J_{\mathrm{ref}}`$ (design A, its
 limits).** Design A promises what the tests give, `isObject(v: unknown): v
@@ -144,34 +143,33 @@ after an `in` test, `isObject(v) && "kind" in v && typeof v.kind ===
 
 So design A verifies a caller over `unknown` only where its reads are of
 values the model knows to be no host object. The front end's readers of
-these guards read documents that `JSON.parse` produced (claims, type
-graphs, diagnostics): their inputs are `JsonValue`s
-([the contract](SOURCE-CONTRACTS.md#library-globals)), which hold no host
-object, no class and no prototype, and over which the tests the guards
-write already decide the arms: `isRecord(v: Json): v is { [key: string]:
-Json }` verifies today (`diagnostic.mts`). The concrete rewrite:
+the claims, the type graphs and the diagnostics take their input at
+`JsonValue` ([the contract](SOURCE-CONTRACTS.md#library-globals)), a
+structural contract: a value of `JsonValue`'s shape, whatever built it. It
+holds no host object, no class and no prototype, and over it the tests the
+guards write decide the arms:
 
-- `claim-text.mts`, `claim.mts`, `type-graph.mts`, `diagnostic-view.mts`:
-  the decoders' inputs typed `JsonValue`, a structural contract: a value of
-  `JsonValue`'s shape, whatever built it. Their guards are over it:
-  `isObject(v: JsonValue): v is { readonly [key: string]: JsonValue }` with
-  `typeof v === "object" && v !== null && !Array.isArray(v)`, and
-  `isList(v: JsonValue): v is readonly JsonValue[]` with
-  `Array.isArray(v)`; their field reads are at a dictionary's
-  `JsonValue | undefined`. A malformed input keeps its diagnostic, without
-  a cast.
-- The values these readers are given are built at checked `JsonValue`
-  types where they are not parsed: `diagnostic.mts` builds graph wrappers
-  for `decodeGraph` (`[[{ strLit: … }]]`, `[[{ numLit: … }]]`);
-  `pipeline/test.mts` supplies in-memory graphs to `decodeGraph`;
-  `diagnostic-view.mts` passes `surface.lift(…)`'s result to `printType`,
-  which calls `decodeClaimType`, and the lifting builds fields that may
-  hold `undefined` (`claim-text.mts`'s defensive lift), which `JsonValue`
-  does not admit: the lift states its result at a `JsonValue` type, an
-  absent value omitted or written as `null`. `pipeline/verify-source.mts`
-  passes a parsed diagnostic to `presentObligation`.
+- `claim-text.mts`, `claim.mts`, `type-graph.mts`, `diagnostic-view.mts`
+  (`JsonValue`, `JsonObject` and `JsonRead` in `calculus.mts`): the guards
+  are `isObject(v: JsonRead): v is JsonObject`, with `typeof v ===
+  "object" && v !== null && !Array.isArray(v)`, and `isList(v: JsonRead):
+  v is readonly JsonValue[]`, with `Array.isArray(v)`, where `JsonObject`
+  is `{ readonly [key: string]: JsonValue }` and `JsonRead` is `JsonValue |
+  undefined`, a read of a key of a `JsonObject`. A field is read at
+  `JsonRead`, and a malformed input keeps its diagnostic. A guard of
+  literals (`isArrayPresence`, `isIndexClass`) takes `unknown`, which a
+  `JsonRead` meets.
+- The values given to these readers that are not parsed are built at
+  `JsonValue`: `diagnostic.mts` passes `decodeGraph` a decoded singleton
+  clause in a fresh row (`[[record(v, ["strLit"])]]`), `pipeline/test.mts`
+  passes it in-memory graphs, and `diagnostic-view.mts` passes `printType`
+  (which calls `decodeClaimType`) the result of `surface.lift(…)`, which
+  `lift` states at `JsonValue`. The lifter builds records whose absent
+  parts are left out or written as `null`; a record is no `JsonValue` in
+  the model (an open record meets no index), so the lifter's own
+  functions stay refused at that conversion.
 - The slices of $`J`$ above stay the general rule for a test on `unknown`;
-  `read-present` waits on a stance on host objects, which this rewrite does
+  `read-present` waits on a stance on host objects, which these readers do
   not need.
 
 ### Void
