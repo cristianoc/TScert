@@ -30,6 +30,7 @@ design, not its progress.
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
+| [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
@@ -244,14 +245,26 @@ compiler API's code switches on `node.kind` this way.
 the cases cover a program alias and a re-export of `Node`, a generic
 identity at `Identifier` and at `Node`, a verified wrapper, a record's
 field holding a node (`compiler-api-family-identity`), a program literal
-annotated as a node (`invalid-compiler-api-forged-node`) and forged claims
-of a program allocation at a family type (`pipeline/test.mts`). Left: a
-callback of `forEachChild` reading its argument and one whose result is
-claimed at a node type it did not receive, which wait on a generic method
-called on a node (`compiler-api-node-callback`, a gap); `{ node }` passed
-where a node is expected and `{ ...node }`, each refused by its own rule
-but no case; a re-exported guard and a guard's wrapper, which wait on
-guard recognition.
+annotated as a node (`invalid-compiler-api-forged-node`), `{ node }` passed
+where a node is expected (`invalid-compiler-api-boxed-node`), `{ ...node }`
+(`invalid-compiler-api-node-spread`) and forged claims of a program
+allocation at a family type (`pipeline/test.mts`). Left: a callback of
+`forEachChild` reading its argument and one whose result is claimed at a
+node type it did not receive, which wait on a generic method called on a
+node (`compiler-api-node-callback`, a gap); a re-exported guard and a
+guard's wrapper, which wait on guard recognition.
+
+<a id="effects-of-dispatched-calls"></a>
+**Effects of dispatched calls.** A method call on a union receiver is
+dispatched on the receiver only where no alternative has a primitive's
+shape or the alternatives read different members
+([PROGRAM-TYPING](docs/PROGRAM-TYPING.md)). A dispatched call is an outer
+conditional whose callee is a wrapper allocation and a member lookup, and
+effect selection admits only a direct call, with evaluated operands, so a
+dispatched call's effect is not established (`split-non-empty`, dispatched,
+leaves `{value: keep, store: keep}` unestablished). Either the dispatch
+lowers into branch nodes whose callees are evaluated values, or effects are
+checked compositionally for these terms.
 
 <a id="remaining-source-forms"></a>
 **Remaining source forms.** A method call on a union of primitives,

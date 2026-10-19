@@ -88,6 +88,18 @@ export const compilerApiFamily: FamilyDescription = {
   ],
 };
 
+let familyStandIn: FamilyDescription | null = null;
+/** Tests only: read the compiler API's family through `description` until
+ * called again with null. */
+export function useFamilyDescriptionForTests(description: FamilyDescription | null): void {
+  familyStandIn = description;
+}
+/** The description the declaration reader reads the compiler API's family
+ * through: `compilerApiFamily`, or a test's stand-in. */
+export function hostFamily(): FamilyDescription {
+  return familyStandIn ?? compilerApiFamily;
+}
+
 /** The interfaces of the host package that are host types by themselves
  * (reading rule 1): `Node`, every node shape reaching it through `extends`,
  * `NodeArray`, and the sync API's `Type`, its sub-interfaces reaching it.

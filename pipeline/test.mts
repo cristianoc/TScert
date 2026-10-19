@@ -9,7 +9,7 @@ import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, readClaimsFile, readFragmentFile, verifier } from "./verify-source.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
-import { useHostInstallationForTests } from "../tools/compiler-api.mts";
+import { compilerApiFamily, useFamilyDescriptionForTests, useHostInstallationForTests } from "../tools/compiler-api.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
@@ -2905,30 +2905,73 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // and a program allocation claimed at a family type, which it cannot meet
   // since no program allocation owns the marker (HOST-FAMILIES.md, "The
   // family contract", "Activation").
-  const forgeries: [string, string, string, (text: string, function_: SourceClaims["functions"][number]) => void][] = [
+  // Each forgery returns the position of the claim it forges; the refusal
+  // names an obligation whose span holds it.
+  const forgeries: [string, string, string, (text: string, function_: SourceClaims["functions"][number]) => number][] = [
     ["forged-excluded-arm", "compiler-api-kind-narrowing", "fileName", (text, f) => {
       const at = (start: number) => must(f.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + 1), `the claim at ${start}`);
       const excluded = text.indexOf("n.fileName");
       const read = text.lastIndexOf("n.text");
       at(read).type = at(excluded).type;
+      return read;
     }],
     ["forged-family-member", "compiler-api-family-identity", "held", (text, f) => {
       const literal = text.indexOf("{ node: n }");
       const node = text.indexOf("n }", literal);
       const claim = must(f.expressions.find((e) => e.pos[0] === literal && e.pos[1] === literal + "{ node: n }".length), "the literal's claim");
       claim.type = must(f.expressions.find((e) => e.pos[0] === node && e.pos[1] === node + 1), "the node's claim").type;
+      return literal;
     }],
   ];
+  const locatedAt = (detail: string, position: number): boolean =>
+    [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= position && position < Number(m[2]));
   for (const [name, file, function_, forge] of forgeries) {
     const artifacts = run(file);
     const text = readFileSync(join(artifacts, "source.ts"), "utf8");
     const claims = readClaims(artifacts);
-    forge(text, must(claims.functions.find((f) => f.name === function_), `${function_}'s claims`));
+    const position = forge(text, must(claims.functions.find((f) => f.name === function_), `${function_}'s claims`));
     const forged = writeClaims(artifacts, name, claims);
-    refusedAt(artifacts, forged, name, "evidence search failed");
-    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+    const searched = produceWith(artifacts, forged, name);
+    const detail = searched.stdout + searched.stderr;
+    assert.equal(searched.status, 1, detail);
+    assert.ok(/evidence search failed/.test(detail) && locatedAt(detail, position), `${name}: refused at the forged claim: ${detail}`);
+    // The case's evidence, offered for the forged claims, is refused: the
+    // checker names the first node whose evidence does not establish its
+    // claim, or the evidence as a whole, not the forged claim.
+    assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
+      /evidence does not justify the extracted program and exact claims|evidence refusal at \[\d+,\d+\)/);
   }
-  process.stdout.write("forged family claims: the excluded arm on a false edge and a program allocation at a family type, refused in search and in checking\n");
+  process.stdout.write("forged family claims: the excluded arm on a false edge and a program allocation at a family type, refused by the search at the forged claim and by the checker against the case's evidence\n");
+}
+{
+  // A correction of a method to absent (HOST-FAMILIES.md, "The family
+  // contract"): under a description correcting `getText` on a source file,
+  // the method is an optional member of the source file's shape and of the
+  // residual holding it, so each call is refused at its read; under the
+  // compiler API's own description both verify.
+  const project = tsconfigOf(join(import.meta.dirname, "compiler-api-project"));
+  const files = [["compiler-api-corrected-method", "f.getText"], ["compiler-api-corrected-residual", "n.getText"]] as const;
+  for (const [name] of files) {
+    const plain = check(join(import.meta.dirname, "examples", `${name}.ts`), project);
+    assert.equal(plain.status, "verified", JSON.stringify(plain));
+  }
+  useFamilyDescriptionForTests({ ...compilerApiFamily, corrections: [...compilerApiFamily.corrections,
+    { kind: "SourceFile", owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;" }] });
+  try {
+    for (const [name, read] of files) {
+      const file = join(import.meta.dirname, "examples", `${name}.ts`);
+      const corrected = check(file, project);
+      const at = readFileSync(file, "utf8").indexOf(read);
+      // The producer finds no arrow to call in a possibly absent member, or
+      // the search no derivation at the read.
+      assert.ok((corrected.status === "unsupported" && /call requires a single arrow the arguments can call/.test(corrected.detail)) ||
+        (corrected.status === "unverified" && corrected.detail.includes(`at [${at},`)),
+        `${name}: refused at ${read}: ${JSON.stringify(corrected)}`);
+    }
+  } finally {
+    useFamilyDescriptionForTests(null);
+  }
+  process.stdout.write("corrected method: a method a correction makes absent is an optional member of its shape and of a residual, each call refused\n");
 }
 {
   // One tag selection per run (HOST-FAMILIES.md, "Residuals"): the importer

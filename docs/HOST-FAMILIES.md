@@ -206,9 +206,11 @@ the optional `host` field of an object type term, which only a family's
 reading writes and which Lean lowers to the required readonly view of
 `hostKey` at the marker's string (`objectClause`); a declared member's key is
 never a reserved key. A shape is a definition whose bases are one per
-method it states, a definition of that method alone, so that every shape
-stating a generic method shares its one method head whatever other methods
-it overrides. The base shapes, the residuals and the method definitions are
+method it states required, a definition of that method alone, so that every
+shape stating a generic method shares its one method head whatever other
+methods it overrides; a method a shape states optional, by its declaration
+or by a correction at the shape's tag, is the shape's own optional member,
+and a residual holds it optional where any replaced shape does. The base shapes, the residuals and the method definitions are
 definitions of the module `tscert/family/<marker>`, named by what they read:
 the declaration and method, or the declaration, the number of tags and a
 digest of the tag set.

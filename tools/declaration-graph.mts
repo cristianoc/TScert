@@ -25,7 +25,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { familyTable, type FamilyArm, type FamilyGraph, type FamilyTable, type FlatMember } from "./host-families.mts";
-import { allocatingMembers, compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
+import { allocatingMembers, hostFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -732,7 +732,7 @@ export function collectDeclarations(file: string, options: {
     // its description by `familyTable`, from the package's declarations as
     // TypeScript resolves them. The table is built once, from the first
     // declaration of the package that reaches the description's root.
-    const familyDescription = compilerApiFamily;
+    const familyDescription = hostFamily();
     const baseDeclarations = (d: InterfaceDeclaration): InterfaceDeclaration[] =>
       (d.heritageClauses ?? []).flatMap(clause => clause.types.map(base => {
         if (!ts.isIdentifier(base.expression) || base.typeArguments?.length)
@@ -4027,12 +4027,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         seen.add(key);
         return { id, fresh, term: { k: "reference", span, args: [], reference: { name, span, arguments: [], target: id } } };
       };
-      // A declaration's methods are one definition, which every shape
-      // stating them names as a base: one method head, shared by the shapes.
-      const isMethod = (f: FlatMember): boolean => f.members.every(ts.isMethodSignatureDeclaration);
       // Each method a declaration states is one definition, which every
-      // shape stating it names as a base: one method head, shared by the
-      // shapes, whatever other methods a shape overrides.
+      // shape stating it required names as a base: one method head, shared
+      // by the shapes, whatever other methods a shape overrides. A method a
+      // shape states optional, by its declaration or by a correction of the
+      // shape's tag, is that shape's own optional member.
+      const isMethod = (f: FlatMember): boolean => f.members.every(ts.isMethodSignatureDeclaration);
+      const shared = (f: FlatMember, value: number | null): boolean => isMethod(f) && !table.optional(f, value);
       const methodBase = (f: FlatMember): TypeTerm => {
         const made = synthetic(`${f.owner.name.text}.${f.name}`);
         if (made.fresh) {
@@ -4059,7 +4060,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           const methods: FlatMember[] = [];
           for (const s of a.fields) {
             const [first] = s.sources;
-            if (first && isMethod(first.member) && s.sources.every(x => x.member.owner === first.member.owner)) {
+            if (first && !s.optional && shared(first.member, null) &&
+                s.sources.every(x => x.member.owner === first.member.owner)) {
               methods.push(first.member);
               continue;
             }
@@ -4084,8 +4086,9 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       } else {
         const [value] = tag.k === "literal" && tag.values.length === 1 ? tag.values : [];
         const flat = table.flatten(node);
-        definitions.push({ declaration: identity, parameters, bases: methodOwners(flat.filter(isMethod)),
-          expression: shape(flat.filter(f => !isMethod(f)).map(f => readMember(f, value ?? null, true))) });
+        const at = value ?? null;
+        definitions.push({ declaration: identity, parameters, bases: methodOwners(flat.filter(f => shared(f, at))),
+          expression: shape(flat.filter(f => !shared(f, at)).map(f => readMember(f, at, true))) });
       }
       continue;
     }
