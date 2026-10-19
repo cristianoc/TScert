@@ -2479,6 +2479,41 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A negated guard as `||`'s left operand: where `!isRecord(v)` decides,
+  // the outcome is the literal `true` at the span of the `!`, and there the
+  // guard answered `false`. Claimed `false` at that span, or `v` claimed at
+  // the guarded type where the condition throws, the claims are refused
+  // where evidence is produced and where the honest evidence is checked.
+  const artifacts = run("guard-negated-short-circuit");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const from = source.indexOf("function bounded");
+  const bang = source.indexOf("!isRecord(v) || n > 3", from);
+  const forge = (name: string, edit: (fn: SourceClaims["functions"][number]) => void): string => {
+    const claims = readClaims(artifacts);
+    edit(must(claims.functions.find(f => f.name === "bounded"), "bounded's claims"));
+    return writeClaims(artifacts, name, claims);
+  };
+  const decided = forge("forged-negated-decided", fn => {
+    const mark = must(fn.expressions.find(e => e.pos[0] === bang && e.pos[1] === bang + 1), "the decided outcome's claim");
+    assert.deepEqual(mark.type, [1], "the decided outcome is true");
+    mark.type = [2];
+  });
+  const thrown = forge("forged-negated-throw", fn => {
+    const ret = must(fn.entries.find(e => e.start === source.indexOf("return v", from)), "the return's entry");
+    const throwing = must(fn.entries.find(e => e.start === source.indexOf("throw Error", from)), "the throw's entry");
+    must(throwing.bindings.find(b => b.name === "v"), "v at the throw").type =
+      must(ret.bindings.find(b => b.name === "v"), "v at the return").type;
+  });
+  for (const [input, name, refusal] of [
+    [decided, "forged-negated-decided", `source expression obligation at [${bang},${bang + 1}): evidence search failed: no derivation of its node-typing claim`],
+    [thrown, "forged-negated-throw", "the edge from node"]] as const) {
+    refusedAt(artifacts, input, name, refusal);
+    assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts), /reject: source evidence does not justify the extracted program and exact claims/);
+  }
+  process.stdout.write("negated guard dispatch: a decided outcome claimed false and a narrowed claim where the guard answered false refused in search and in checking\n");
+}
+
+{
   // A footprint check that runs out of subtype rounds is inconclusive, not a
   // refusal: `marks` claims the empty footprint, and with one round the
   // checks of its graph exhaust. Search and checking report exhaustion, never
