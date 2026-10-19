@@ -16,6 +16,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-for-in-entry-rebound", "wrong({ a: 1, b: 2 }, {})"],
     // A function's `length` is not enumerable: its copy lacks it.
     ["invalid-spread-function-length", "arity((a, b) => a + b)"],
+    // A class instance's getter is on its prototype: the copy lacks it.
+    ["invalid-spread-binder-result", `relabel(new (class { name = "a"; get size() { return 1; } })()).size`],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
@@ -43,6 +45,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["map-stable-collection-write", `seen(["a", "b"], new Map())`, '["a","b"]'],
     ["map-stable-set", `distinct([["a", "b", "a"], []])`, "[2,0]"],
     ["map-stable-spread", "padded([[1], [2, 3]])", "[[0,1,0],[0,2,3,0]]"],
+    ["map-stable-object-spread", `bounded([{ name: "a", bound: null }])`, '[{"name":"a","bound":1}]'],
+    ["map-stable-object-spread", `renamed([{ name: "a", bound: 2 }], "p")`, '[{"name":"pa","bound":2}]'],
     ["map-stable-named-callback", `[escapedAll(["a&b", "c"])]`, '["a&amp;b,c"]'],
     ["map-stable-named-declaration", `escapedAll(["a&b", "c"])`, '["a&amp;b","c"]'],
     ["map-stable-named-declaration", `widths(["ab", ""])`, "[2,0]"],

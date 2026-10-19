@@ -494,11 +494,21 @@ in search; of the drivers' 48, 4 and 8. By the judgment that fails:
   recognition;
 - a read of a key `in` found on an open object (4, and 2 drivers): the
   [proposal](docs/PROGRAM-TYPING.md) under review;
-- a spread of a narrowed union member or a type parameter (5);
+- past their spreads of a bounded binder and of an intersection of records
+  (5, 2026-10-19): `promisedBinders` returns the copy at its binder `B`,
+  refused on principle, a class instance's getter being its prototype's
+  (`invalid-spread-binder-result`), and `promisedMethods` calls it; the
+  `hostBrands` family reads `b.bound` through the intersection
+  `SourceTypeParameter<TypeTerm> & { default; span }` after `b.bound &&`,
+  and maps through callbacks calling its `brand` and `fail` parameters,
+  whose effects no claim states, so `map`'s results admit holes;
 - `Number` both called and read through its members, a callable with
   readonly members no clause states (4), and the enum helpers past it (3);
-- a call through a union of arrows none of which all arguments call (2, and
-  2 drivers); key-adding writes through a parameter (`gate.bindings`,
+- `reduce` without an initial value (2 drivers, `refusedByName` and
+  `refusedByTypeScript`): the prototype contract states one signature per
+  member, `reduce<U>(callback, initial)`; `runsCode` and `selfConstructs`,
+  past their parameter's closure default, stop at `forEachChild` and a
+  guarded node's `text` (2026-10-19); key-adding writes through a parameter (`gate.bindings`,
   `process.env`: 2, and 2 drivers); reads at keys an inherited member may
   name (2); singletons.
 

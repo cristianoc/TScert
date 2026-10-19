@@ -387,17 +387,25 @@ the call's typing. -/
           (X.map Subtype.val) (Y.map Subtype.val)
           (.exhausted T.subtypeBudget.rounds rounds visited) "subtype search exhausted while checking the explicit type argument")
 
+/-- The type a meet row, a bounded binder read as its row met with its
+bound, is read at: the row holding exactly the meet's clauses, which the meet
+is below (`PositiveRules.meetSources`), stated as a hint for the search. Any
+other type is itself. -/
+@[nospecialize] def boundOf (A : Ty Tree) : Compiler (Ty Tree) := do
+  let T ← table
+  let [l] := A | return A
+  let .meet _ cs _ := StoreView.row T l | return A
+  let m ← lower (SourceTypes.useRow cs)
+  recordHints [m]
+  return [m]
+
 /-- A plan at a meet row, a bounded binder read as its row met with its bound,
 cast to the bound: the row holding exactly the meet's clauses, which the meet
 is below (`PositiveRules.meetSources`). A member read through the binder reads
 the bound's member. Any other plan is itself. -/
 @[nospecialize] def throughBound (Γ : List (Ty Tree)) (a : DirectProof.Plan Tree) : Compiler (DirectProof.Plan Tree) := do
-  let T ← table
-  let [l] := a.type | return a
-  let .meet _ cs _ := StoreView.row T l | return a
-  let m ← lower (SourceTypes.useRow cs)
-  recordHints [m]
-  return DirectProof.cast Γ [m] a
+  let B ← boundOf a.type
+  return if B == a.type then a else DirectProof.cast Γ B a
 
 /-- `length` through a view (`lenView`): the view admits an array, whose
 `length` is its store's, so the read tests the receiver, held in a slot. -/
