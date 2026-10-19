@@ -2,7 +2,8 @@
 // documents and claims no case can make. The controls needing no build are
 // node-runs.mts and trusted-inputs.mts, among the fast checks.
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { present } from "../tools/files.mts";
 import { join } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
@@ -1877,7 +1878,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     // search named, or of a unit whose call of it the forged type no longer
     // admits at the signature the evidence selected.
     const callable = must(failure.source?.sourceMap?.pos, "the failed callable's source location");
-    assert.equal(existsSync(join(artifacts, "evidence.json")), consumed,
+    assert.equal(present(join(artifacts, "evidence.json")), consumed,
       `${file}: a consumed control needs the fixture's honest evidence, a production-only one has none`);
     if (consumed) {
       const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
@@ -2120,7 +2121,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   const failure = readDiagnostic(produce.stdout + produce.stderr);
   assert.ok(failure && failure.kind === "node-typing", "a forged dispatch effect must fail at a node's typing");
-  assert.ok(existsSync(join(artifacts, "evidence.json")), "the fixture's honest evidence");
+  assert.ok(present(join(artifacts, "evidence.json")), "the fixture's honest evidence");
   assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts),
     /source effect refusal at \[\d+,\d+\): the footprint claimed for/);
   process.stdout.write("forged dispatch effect: a global regex's replacement refused in search and in checking\n");

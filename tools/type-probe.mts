@@ -31,7 +31,7 @@
  * back to their original declarations; anything else is refused.
  */
 // files.mts makes every file-system failure a tool failure.
-import { orAbsent, status } from "./files.mts";
+import { present } from "./files.mts";
 
 import { TypeFlags, type Checker, type Program, type Symbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
@@ -41,9 +41,6 @@ import type { TypeTerm } from "./declaration-types.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
 
-/** Whether a path names a file: an absence, or a failure of the file system
- * thrown on (`orAbsent`). */
-const present = (path: string): boolean => orAbsent(status, path) !== null;
 
 /** A symbol of the checker. */
 type Symbolic = Symbol;

@@ -2,7 +2,8 @@
 // checks, for the controls that compare a case's outcome with its execution.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { present } from "../tools/files.mts";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 // ../tools/strip-types.mts erases the annotations of an example run as JavaScript.
@@ -22,7 +23,7 @@ export const runImporting = (file: string, expression: string): unknown => {
   const relink = (text: string): string => stripTypes(text).replace(/from "@fixture\/([\w-]+)"/g, 'from "./$1.mjs"');
   for (const name of ["lib", "relay", "certified", "scaled", "outer", "ping", "pong", "cell-left", "cell-right"]) {
     const ts = join(project, `${name}.ts`);
-    writeFileSync(join(out, `${name}.mjs`), relink(readFileSync(existsSync(ts) ? ts : join(project, `${name}.mts`), "utf8")));
+    writeFileSync(join(out, `${name}.mjs`), relink(readFileSync(present(ts) ? ts : join(project, `${name}.mts`), "utf8")));
   }
   writeFileSync(join(out, "main.mjs"), `${relink(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))}
 console.log(JSON.stringify(${expression}));

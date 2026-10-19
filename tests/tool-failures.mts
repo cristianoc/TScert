@@ -5,7 +5,7 @@
 import "./force-tool-failure.mts";
 import assert from "node:assert/strict";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import fs, { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import fs, { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { isHostFile } from "../tools/compiler-api.mts";
 import { join, resolve } from "node:path";
@@ -13,6 +13,7 @@ import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { messageOf } from "../tools/thrown.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { abandonCompiler, compilerProcess, openCompiler } from "../tools/compiler-channel.mts";
+import { present } from "../tools/files.mts";
 import { run as runStep } from "../pipeline/verify-source.mts";
 
 const dir = runDirectory("tscert-tool-failures-");
@@ -120,6 +121,18 @@ for (const [site, frame] of [["the parser's compiler", "at openFile \\("], ["the
     fs.realpathSync = resolveReal;
     syncBuiltinESMExports();
   }
+  // A path behind a directory the process may not search: the operating
+  // system's EACCES, which `existsSync` reads as false, is no absence.
+  const locked = join(dir, "locked");
+  mkdirSync(locked);
+  writeFileSync(join(locked, "claims.json"), "{}");
+  chmodSync(locked, 0o000);
+  try {
+    assert.throws(() => present(join(locked, "claims.json")), /^Error: stat .*claims\.json: EACCES/);
+  } finally {
+    chmodSync(locked, 0o755);
+  }
+  assert.equal(present(join(locked, "absent.json")), false, "a path naming nothing is absent");
   closeParser();
   process.stdout.write("the file system failing under the front end: a tool failure; a path naming nothing, an absence\n");
 }
@@ -182,7 +195,7 @@ const run = (kind: string, limit: string = ""): SpawnSyncReturns<string> => {
   const ran = spawnSync(process.execPath, [unchecked, "--project", project], { encoding: "utf8",
     env: { ...process.env, NODE_OPTIONS: `--import ${new URL("./force-tool-failure.mts", import.meta.url).href}`,
       TSCERT_FORCE_FRAME: "at typesOf \\(", TSCERT_FORCE_KIND: kind, TSCERT_FORCE_LIMIT: limit } });
-  assert.ok(existsSync(fired) && readFileSync(fired, "utf8").length > 0, `unchecked.mts (${kind}): the failure was not forced`);
+  assert.ok(present(fired) && readFileSync(fired, "utf8").length > 0, `unchecked.mts (${kind}): the failure was not forced`);
   return ran;
 };
 const exhausted = run("stack");

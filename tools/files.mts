@@ -44,3 +44,6 @@ export function orAbsent<T>(operation: (path: string) => T, path: string): T | n
 }
 /** A path's status. */
 export const status = (path: string): Stats => io("stat", path, () => statSync(path));
+/** Whether a path names a file or directory: false only where it names
+ * nothing, any other failure of the file system thrown on. */
+export const present = (path: string): boolean => orAbsent(status, path) !== null;
