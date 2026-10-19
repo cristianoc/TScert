@@ -23,7 +23,7 @@ design, not its progress.
 | [Slices of the value universe](#universe-slices) | open: a design, under review (2026-10-19) | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
 | [A guard's promise on a field](#guard-promise-field) | open | `str(o.name); o.name.length` verifies: an assertion or a guard on a field narrows the field's current content |
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
-| [Generic equality in a condition](#generic-equality-condition) | open | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
+| [Generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
 | [Guard overloads of `every` and `filter`](#guard-overloads) | open | a reviewed `every<S>` and `filter<S>` narrow their receiver and their result where a guard is passed, and `shadow-contracts.mts`'s `print` verifies |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
@@ -169,17 +169,18 @@ and a narrowed claim there is refused at the edge. Carrying implications in
 entry claims is a fact kind of its own.
 
 <a id="generic-equality-condition"></a>
-**Generic equality in a condition.** A strict or loose comparison of two
-values of a type parameter verifies as a returned value and is refused as a
-statement's condition: `if (left !== right) return 1;` with `left, right: T`
-fails at the comparison ("strict equality with a value of a type parameter:
-neither operand is known to be a primitive or an object"), in search and not
-in lowering, so a condition taking the evaluated Boolean where no test
-refines (an `undecidedComparison` check before the dispatch) does not make
-it pass (2026-10-19). The Boolean-return lowering, which turns a return into
-a condition, is scoped to type guards and assertion functions until this
-holds: applied to every return, it refuses `loose-equality` and
-`generic-unknown-arguments`, which keep their outcomes.
+**Generic equality in a condition**, an investigation: a strict or loose
+comparison of two values of a type parameter verifies as a returned value,
+`return left !== right`, and is refused as a statement's condition, `if
+(left !== right) return 1;`, with `left, right: T` (2026-10-19). The search
+fails; the message it reports ("strict equality with a value of a type
+parameter: neither operand is known to be a primitive or an object") is the
+producer's diagnostic of the comparison (`expression_values.ml`), not a
+located obligation, and which judgment fails is unknown. The Boolean-return
+lowering, which turns a return into a condition, is scoped to type guards
+and assertion functions until this holds: applied to every return, it
+refuses `loose-equality` and `generic-unknown-arguments`, which keep their
+outcomes.
 
 <a id="guard-overloads"></a>
 **Guard overloads of `every` and `filter`.** TypeScript's `every` and

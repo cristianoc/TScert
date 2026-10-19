@@ -152,21 +152,28 @@ write already decide the arms: `isRecord(v: Json): v is { [key: string]:
 Json }` verifies today (`diagnostic.mts`). The concrete rewrite:
 
 - `claim-text.mts`, `claim.mts`, `type-graph.mts`, `diagnostic-view.mts`:
-  the decoders' inputs typed `JsonValue` (a parsed document, read only),
-  their guards over it: `isObject(v: JsonValue): v is { readonly [key:
-  string]: JsonValue }` with `typeof v === "object" && v !== null &&
-  !Array.isArray(v)`, `isList(v: JsonValue): v is readonly JsonValue[]`
-  with `Array.isArray(v)`; callers unchanged but for the parameter types,
-  their field reads at a dictionary's `JsonValue | undefined`.
-- Callers that pass these readers a value: `pipeline/verify-source.mts`
-  (`presentObligation` of a parsed diagnostic), `diagnostic.mts`
-  (`decodeGraph` of a parsed document), `pipeline/test.mts` (`decodeGraph`
-  of object literals, `JsonValue`s by their form).
+  the decoders' inputs typed `JsonValue`, a structural contract: a value of
+  `JsonValue`'s shape, whatever built it. Their guards are over it:
+  `isObject(v: JsonValue): v is { readonly [key: string]: JsonValue }` with
+  `typeof v === "object" && v !== null && !Array.isArray(v)`, and
+  `isList(v: JsonValue): v is readonly JsonValue[]` with
+  `Array.isArray(v)`; their field reads are at a dictionary's
+  `JsonValue | undefined`. A malformed input keeps its diagnostic, without
+  a cast.
+- The values these readers are given are built at checked `JsonValue`
+  types where they are not parsed: `diagnostic.mts` builds graph wrappers
+  for `decodeGraph` (`[[{ strLit: … }]]`, `[[{ numLit: … }]]`);
+  `pipeline/test.mts` supplies in-memory graphs to `decodeGraph`;
+  `diagnostic-view.mts` passes `surface.lift(…)`'s result to `printType`,
+  which calls `decodeClaimType`, and the lifting builds fields that may
+  hold `undefined` (`claim-text.mts`'s defensive lift), which `JsonValue`
+  does not admit: the lift states its result at a `JsonValue` type, an
+  absent value omitted or written as `null`. `pipeline/verify-source.mts`
+  passes a parsed diagnostic to `presentObligation`.
 - The slices of $`J`$ above stay the general rule for a test on `unknown`;
   `read-present` waits on a stance on host objects, which this rewrite does
   not need.
 
-### Void
 ### Void
 
 The source type `void` denotes the same JavaScript-value universe as `unknown`.
