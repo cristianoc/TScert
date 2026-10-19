@@ -96,7 +96,7 @@ assert.deepEqual(table.membersOf(node), [0, 1, 2, 3, 4, 5]);
 const every = table.arms(node, new Set([0, 1, 2, 3, 4, 5]));
 assert.deepEqual(every.map(a => a.k === "declaration" ? a.declaration.name.text
   : a.k === "generic" ? `${a.declarations.map(g => g.name.text).join("&")}<${a.values.join("|")}>` : a.name.split(" ")[0]),
-  ["Lit", "Tok<0|1>", "Tagged<2>", "Tagged<3>", "Base"]);
+  ["Tok<0|1>", "Tagged<2>", "Tagged<3>", "Lit", "Base"], "the arms in tag order");
 
 // No tag selected: one residual, its members those every shape has.
 const [residual, ...others] = table.arms(node, new Set());
@@ -104,6 +104,31 @@ assert.ok(residual?.k === "synthetic" && !others.length, "one residual arm");
 assert.deepEqual(residual.values, [0, 1, 2, 3, 4, 5]);
 assert.deepEqual(residual.fields.map(f => `${f.name}${f.optional ? "?" : ""}`), ["note?", "parent"]);
 closeParser();
+
+// A generic shape with a parameter beside its tag parameter, which the
+// reading would apply at its tag as its first argument.
+{
+  const text = `
+declare enum K { A = 0, B = 1 }
+export interface Node { readonly kind: K; }
+export interface Pair<U = string, T extends K.A | K.B = K.A | K.B> extends Node { readonly kind: T; readonly other: U; }
+`;
+  const other = join(runDirectory("tscert-families-"), "pair.d.ts");
+  writeFileSync(other, text);
+  const paired = openText(other, text);
+  const declarations = paired.statements.filter(ts.isInterfaceDeclaration);
+  const g = { ...graph(declarations), values: [0, 1],
+    bases: (d: ts.InterfaceDeclaration): ts.InterfaceDeclaration[] => (d.heritageClauses ?? []).flatMap(c => c.types.map(t => {
+      const found = declarations.find(x => x.name.text === t.expression.getText(paired));
+      assert.ok(found);
+      return found;
+    })),
+    tagParameter: (d: ts.InterfaceDeclaration): string | null => d.name.text === "Pair" ? "T" : null,
+    text: (m: ts.Node): string => m.getText(paired).trim() };
+  assert.throws(() => familyTable({ ...description, table: [{ rule: "generic", declarations: ["Pair"] }] }, g),
+    /Pair has parameters beside its tag parameter/);
+  closeParser();
+}
 
 // A name two bases state through declarations neither extending the other.
 {
@@ -130,4 +155,4 @@ export interface Both extends Left, Right { readonly kind: K.A; }
   closeParser();
 }
 console.log("family interpreter: a tag-only generic merged at its tag set, a tag-dependent one kept per tag; " +
-  "a residual's common members; a refinement no shape; an unrelated inherited name refused");
+  "a residual's common members; a refinement no shape; a generic with a parameter beside its tag, and an unrelated inherited name, refused");

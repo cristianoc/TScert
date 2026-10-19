@@ -25,6 +25,10 @@ export function generic(n: ts.Identifier): ts.Identifier {
   return same(n);
 }
 
+export function genericNode(n: ts.Node): ts.Node {
+  return same(n);
+}
+
 export function wrapped(n: ts.Node): number {
   return wrap(n).pos;
 }

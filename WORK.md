@@ -29,6 +29,7 @@ design, not its progress.
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
+| [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
@@ -236,6 +237,21 @@ members (`case K.One:`, `case ts.SyntaxKind.SourceFile:`) narrows nothing in
 the producer, where the same constants narrow in an `===` test and literal
 labels narrow in a `switch` (`switch-enum-case-narrowing`, a gap). The
 compiler API's code switches on `node.kind` this way.
+
+<a id="family-identity-controls"></a>
+**Family identity controls.** Of the
+[identity controls](docs/HOST-FAMILIES.md#identity-through-program-code),
+the cases cover a program alias and a re-export of `Node`, a generic
+identity at `Identifier` and at `Node`, a verified wrapper, a record's
+field holding a node (`compiler-api-family-identity`), a program literal
+annotated as a node (`invalid-compiler-api-forged-node`) and forged claims
+of a program allocation at a family type (`pipeline/test.mts`). Left: a
+callback of `forEachChild` reading its argument and one whose result is
+claimed at a node type it did not receive, which wait on a generic method
+called on a node (`compiler-api-node-callback`, a gap); `{ node }` passed
+where a node is expected and `{ ...node }`, each refused by its own rule
+but no case; a re-exported guard and a guard's wrapper, which wait on
+guard recognition.
 
 <a id="remaining-source-forms"></a>
 **Remaining source forms.** A method call on a union of primitives,

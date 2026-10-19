@@ -193,7 +193,8 @@ the selected shape, never a refinement sharing its tag. A family type keeps
 its declaration's identity, its equation the union; the identity alone
 relates nothing.
 
-A generic shape source is read as its application at the tag. The arms of
+A generic shape source is read as its application at the tag, its one type
+parameter; a generic declaration with another parameter is refused. The arms of
 one generic declaration at several selected tags are one application at
 their tag set where the declaration's other members do not mention its tag
 parameter, so that the application at the set is the union of the
@@ -204,12 +205,13 @@ description, `tools/declaration-graph.mts` writes the readings) the marker is
 the optional `host` field of an object type term, which only a family's
 reading writes and which Lean lowers to the required readonly view of
 `hostKey` at the marker's string (`objectClause`); a declared member's key is
-never a reserved key. A shape is a definition without bases but one per
-declaration whose methods it states, a definition of those methods alone, so
-that every shape stating a generic method shares its one method head. The
-base shapes, the residuals and the method definitions are definitions of the
-module `tscert/family/<marker>`, named by what they read: the declaration,
-the number of tags and a digest of the tag set.
+never a reserved key. A shape is a definition whose bases are one per
+method it states, a definition of that method alone, so that every shape
+stating a generic method shares its one method head whatever other methods
+it overrides. The base shapes, the residuals and the method definitions are
+definitions of the module `tscert/family/<marker>`, named by what they read:
+the declaration and method, or the declaration, the number of tags and a
+digest of the tag set.
 
 #### Residuals
 
@@ -249,8 +251,12 @@ the run may lower; a candidate the run leaves unlowered, or a qualified
 read that falls back to its ordinary signature, keeps $`K`$. A module names
 the tag constants it compares by equality and its `case` labels, the tag
 sets of the guards it calls, and the tags of the family types it names whose
-tag is a set of literals, through aliases. Its arms are in tag order, the
-residual last.
+tag is a set of literals, through the package's aliases. Its arms are in
+tag order, each at the least tag it holds, the residual last. A family type
+named only through a program alias of another module, outside the
+candidates, and a program alias written as a generic shape's tag argument,
+name no tag: those tags stay in the residual, a loss of precision only, since
+the residual admits every shape it replaces.
 
 One selection per run makes two modules' readings of a family declaration
 the same definitions, which the structural comparison of a

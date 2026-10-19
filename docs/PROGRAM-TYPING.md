@@ -1565,8 +1565,15 @@ Proof search uses the rule for tag tests over explicit unions of labels. It does
 not repeatedly split a singleton label whose graph definition itself contains
 mixed shapes; that representation needs additional decomposition rules.
 
-A method call on a union receiver is split on its receiver the same way,
-whether its alternatives read different members or one member each holds. With the object $`x`$ and the actuals
+A method call on a union receiver is split on its receiver the same way
+where its alternatives read different members, or where every alternative
+is an object, holding one member each reads. A union with a primitive's
+shape whose alternatives read one member keeps the plain call: this is an
+eligibility choice, not a semantic limit, since `dispatchCallTerm` reads a
+primitive's member through its wrapper. It keeps what verifies there:
+dispatched, `ps[ps.length - 1].split("\n")` at `undefined | string`
+(`split-non-empty`) left its function's claimed footprint, which keeps
+every existing value and store, unestablished. With the object $`x`$ and the actuals
 $`\vec y`$ already in slots, the source call `x.k(y…)` lowers to one term that
 reads the member and invokes it, dispatched as a member read is
 (`dispatchCallTerm`, over `dispatchTerm`'s tests):

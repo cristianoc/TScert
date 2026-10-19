@@ -227,6 +227,9 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
         const declarations = rule.declarations.map(named).filter(g => {
           const tag = tagOf(g);
           if (tag.k !== "parameter") graph.fail(`${g.name.text} has no tag parameter`);
+          // The reading applies a generic shape at its tag as its one argument.
+          if ((g.typeParameters ?? []).length !== 1)
+            graph.fail(`${g.name.text} has parameters beside its tag parameter, which the table reads as its only one`);
           const parameter = g.typeParameters?.find(p => p.name.text === tag.parameter);
           const bound = parameter?.constraint ? graph.literals(parameter.constraint) : null;
           if (!bound) return graph.fail(`${g.name.text}'s tag parameter has no bound of literals`);
@@ -307,24 +310,29 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
   };
   const arms = (a: InterfaceDeclaration, selection: ReadonlySet<number>): FamilyArm[] => {
     const members = membersOf(a);
-    const result: FamilyArm[] = [];
-    const generic = new Map<string, { declarations: readonly InterfaceDeclaration[]; values: number[] }>();
-    const bases = new Map<InterfaceDeclaration, number[]>();
+    // Each arm at the least tag it holds, the arms in tag order: a literal
+    // declaration's tag, a generic application's or a base shape's first.
+    const groups = new Map<string, { first: number; arm: () => FamilyArm; values: number[] }>();
     for (const t of members) {
       if (!selection.has(t)) continue;
       const source = shapes.get(t);
       if (!source) continue;
-      if (source.rule === "literal") result.push({ k: "declaration", declaration: source.declaration });
-      else if (source.rule === "generic") {
-        const merge = source.declarations.every(tagOnly);
-        const key = source.declarations.map(g => g.name.text).join("&") + (merge ? "" : `@${t}`);
-        const entry = generic.get(key) ?? { declarations: source.declarations, values: [] };
-        entry.values.push(t);
-        generic.set(key, entry);
-      } else bases.set(source.declaration, [...(bases.get(source.declaration) ?? []), t]);
+      if (source.rule === "literal") {
+        const declaration = source.declaration;
+        groups.set(`literal@${t}`, { first: t, values: [t], arm: () => ({ k: "declaration", declaration }) });
+        continue;
+      }
+      const key = source.rule === "generic"
+        ? source.declarations.map(g => g.name.text).join("&") + (source.declarations.every(tagOnly) ? "" : `@${t}`)
+        : `base:${source.declaration.name.text}`;
+      const known = groups.get(key);
+      if (known) { known.values.push(t); continue; }
+      const values = [t];
+      groups.set(key, { first: t, values, arm: source.rule === "generic"
+        ? () => ({ k: "generic", declarations: source.declarations, values })
+        : () => synthetic(source.declaration.name.text, values) });
     }
-    for (const entry of generic.values()) result.push({ k: "generic", ...entry });
-    for (const [base, values] of bases) result.push(synthetic(base.name.text, values));
+    const result = [...groups.values()].sort((x, y) => x.first - y.first).map(g => g.arm());
     const rest = members.filter(t => !selection.has(t));
     if (rest.length) result.push(synthetic(`${a.name.text} residual`, rest));
     return result;

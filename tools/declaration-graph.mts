@@ -4030,25 +4030,19 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // A declaration's methods are one definition, which every shape
       // stating them names as a base: one method head, shared by the shapes.
       const isMethod = (f: FlatMember): boolean => f.members.every(ts.isMethodSignatureDeclaration);
-      const ownMethods = (owner: InterfaceDeclaration): readonly FlatMember[] =>
-        table.flatten(owner).filter(f => f.owner === owner && isMethod(f));
-      const methodBase = (owner: InterfaceDeclaration): TypeTerm => {
-        const made = synthetic(`${owner.name.text} methods`);
+      // Each method a declaration states is one definition, which every
+      // shape stating it names as a base: one method head, shared by the
+      // shapes, whatever other methods a shape overrides.
+      const methodBase = (f: FlatMember): TypeTerm => {
+        const made = synthetic(`${f.owner.name.text}.${f.name}`);
         if (made.fresh) {
-          if (owner.typeParameters?.length) throw Error(`the family ${marker} reads no methods of the generic ${owner.name.text}`);
+          if (f.owner.typeParameters?.length) throw Error(`the family ${marker} reads no methods of the generic ${f.owner.name.text}`);
           definitions.push({ declaration: made.id, parameters: [], bases: [], expression: { k: "object",
-            fields: ownMethods(owner).map(f => readMember(f, null, true)), stringIndex: null, calls: [], span } });
+            fields: [readMember(f, null, true)], stringIndex: null, calls: [], span } });
         }
         return made.term;
       };
-      const methodOwners = (methods: readonly FlatMember[]): TypeTerm[] => {
-        const owners: InterfaceDeclaration[] = [];
-        for (const f of methods) if (!owners.includes(f.owner)) owners.push(f.owner);
-        for (const o of owners)
-          if (!ownMethods(o).every(g => methods.some(f => f.owner === o && f.name === g.name)))
-            throw Error(`the family ${marker} reads a shape stating some of ${o.name.text}'s methods only`);
-        return owners.map(methodBase);
-      };
+      const methodOwners = (methods: readonly FlatMember[]): TypeTerm[] => methods.map(methodBase);
       // A term without its spans, which two readings of one member share.
       const unspanned = (t: TypeTerm): string =>
         JSON.stringify(t, (key: string, v: unknown): unknown => key === "span" || key === "arguments" ? undefined : v) ?? "";

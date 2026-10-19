@@ -2899,6 +2899,38 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   process.stdout.write("forged residual claims: the node a kind test's false edge leaves claimed at the excluded shape, refused\n");
 }
 {
+  // Forged claims of family readings bypassing the producer, refused in
+  // search and in checking against the case's own evidence: the node a
+  // kind test's false edge leaves claimed at the shape that test excluded,
+  // and a program allocation claimed at a family type, which it cannot meet
+  // since no program allocation owns the marker (HOST-FAMILIES.md, "The
+  // family contract", "Activation").
+  const forgeries: [string, string, string, (text: string, function_: SourceClaims["functions"][number]) => void][] = [
+    ["forged-excluded-arm", "compiler-api-kind-narrowing", "fileName", (text, f) => {
+      const at = (start: number) => must(f.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + 1), `the claim at ${start}`);
+      const excluded = text.indexOf("n.fileName");
+      const read = text.lastIndexOf("n.text");
+      at(read).type = at(excluded).type;
+    }],
+    ["forged-family-member", "compiler-api-family-identity", "held", (text, f) => {
+      const literal = text.indexOf("{ node: n }");
+      const node = text.indexOf("n }", literal);
+      const claim = must(f.expressions.find((e) => e.pos[0] === literal && e.pos[1] === literal + "{ node: n }".length), "the literal's claim");
+      claim.type = must(f.expressions.find((e) => e.pos[0] === node && e.pos[1] === node + 1), "the node's claim").type;
+    }],
+  ];
+  for (const [name, file, function_, forge] of forgeries) {
+    const artifacts = run(file);
+    const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const claims = readClaims(artifacts);
+    forge(text, must(claims.functions.find((f) => f.name === function_), `${function_}'s claims`));
+    const forged = writeClaims(artifacts, name, claims);
+    refusedAt(artifacts, forged, name, "evidence search failed");
+    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  }
+  process.stdout.write("forged family claims: the excluded arm on a false edge and a program allocation at a family type, refused in search and in checking\n");
+}
+{
   // One tag selection per run (HOST-FAMILIES.md, "Residuals"): the importer
   // and the module it imports a function from name different kinds, and the
   // run reads every family declaration alike in both modules' documents,
