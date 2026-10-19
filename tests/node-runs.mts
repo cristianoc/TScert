@@ -112,6 +112,15 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "invalid-guard-negated-and: 5 returned where a record is promised");
   assert.equal(runExample("invalid-guard-boolean-return", "isText(null)"), true,
     "invalid-guard-boolean-return: the guard answers true of null, which is no string");
+  assert.equal(runExample("guard-boolean-return-boundaries", `(() => {
+    const log = [];
+    const answers = [counted("a", log), counted(1, log), finished("a", log), overridden("a"), nested("ab"), nested(""),
+      guardOf()(1), atLeast(1, 2), atLeast(3)];
+    let thrown = false;
+    try { nonEmpty(""); } catch { thrown = true; }
+    return JSON.stringify([answers, log, thrown]);
+  })()`), '[[true,false,true,false,true,false,true,false,true],["tested","finally"],true]',
+    "guard-boolean-return-boundaries: each test runs once, its effect and its throw as written, the finally after the answer");
   assert.equal(runExample("guard-boolean-return", `JSON.stringify([size({ a: 1 }), size([1, 2]), size(3), size(null), isMode("read")])`),
     "[1,2,3,0,true]", "guard-boolean-return: the guards' answers");
   assert.equal(runExample("invalid-guard-closure-callback", "allPresent([null])"), true,

@@ -2530,7 +2530,31 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   refusedAt(artifacts, input, "forged-boolean-return", `obligation at [${at},${at + 1})`);
   assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts),
     /reject: source evidence does not justify the extracted program and exact claims/);
-  process.stdout.write("guard Boolean return: the true return claimed false refused in search and in checking\n");
+  // The false return claimed `true`, and an arrow guard's true return, at
+  // its `=>`, claimed `false`: each refused the same way.
+  for (const [file, name, from, text, before, after] of [
+    ["guard-boolean-return", "isFields", "function isFields", "return typeof v", 2, 1],
+    ["guard-boolean-return-boundaries", "guardOf", "function guardOf", "=> typeof v", 1, 2],
+  ] as const) {
+    const where = run(file);
+    const text0 = readFileSync(join(where, "source.ts"), "utf8");
+    const forgedClaims = readClaims(where);
+    const fnClaims = must(forgedClaims.functions.find(f => f.name === name), `${name}'s claims`);
+    const offset = text0.indexOf(text, text0.indexOf(from)) + (before === 2 ? 1 : 0);
+    // A closure's interior claims are stated per signature row as well.
+    const literals = [...fnClaims.expressions, ...(fnClaims.arrows ?? []).flatMap(a => a.rows.flatMap(r => r.expressions))]
+      .filter(e => e.pos[0] === offset && e.pos[1] === offset + 1);
+    assert.ok(literals.length > 0, `${name}'s literal at ${offset}`);
+    for (const literal of literals) {
+      assert.deepEqual(literal.type, [before], `${name}'s literal`);
+      literal.type = [after];
+    }
+    const forgedInput = writeClaims(where, `forged-boolean-return-${name}`, forgedClaims);
+    refusedAt(where, forgedInput, `forged-boolean-return-${name}`, "evidence search failed");
+    assert.match(invoke(forgedInput, join(where, "evidence.json"), where),
+      /reject: source evidence (does not justify the extracted program and exact claims|refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/);
+  }
+  process.stdout.write("guard Boolean return: the true return claimed false, the false one claimed true and an arrow's true one claimed false refused in search and in checking\n");
 }
 
 {

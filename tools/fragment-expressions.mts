@@ -1900,7 +1900,10 @@ export function lambda(this: Gate,
     // argument initializes, and a `destructure` over it, first in the body
     // in parameter order, binds the source's names, the default replacing
     // an undefined argument, as JavaScript initializes parameters.
-    if (ts.isBlock(body) || patterns.some((t) => t !== null)) {
+    // A guard arrow's expression body with a defaulted parameter is a block
+    // too, its return the one `booleanReturn` rewrites.
+    if (ts.isBlock(body) || patterns.some((t) => t !== null) ||
+        (guard !== null && parameters.some((p) => p.initializer))) {
       const bindings: Stmt[] = [];
       const params = parameters.map((p, i) => {
         if (ts.isIdentifier(p.name) && !p.initializer)
@@ -1945,7 +1948,9 @@ export function lambda(this: Gate,
         const e = isAsync && arrow && keyword
           ? gate.intrinsic(asyncReturnName, arrow, gate.span(keyword), [gate.expr(body)])
           : gate.expr(body);
-        statements = [{ k: "return", pos: gate.span(body), e }];
+        statements = [guard && !isAsync && arrow && booleanForm(e)
+          ? booleanReturn(gate.span(body), e, arrow[0])
+          : { k: "return", pos: gate.span(body), e }];
       }
       return {
         k: "lambda",
