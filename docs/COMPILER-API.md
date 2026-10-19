@@ -920,7 +920,9 @@ the corpus runs are regression evidence, not proofs.
   of `WorldAdm`.
 - **T2 (guards).** The guard bodies the guard check reads are the functions
   Node runs for the package's exports, under the bindings the check resolved
-  (F3); the check itself is a trusted part of the front end.
+  (F3); the check itself is a trusted part of the front end. No guard's
+  declared predicate is trusted: a recognized guard narrows by its body's
+  tag set, and a guard outside the syntax narrows nothing.
 - **T3 (node methods).** The node methods make no server request, run no
   client code but `forEachChild`'s visitors, which they call synchronously,
   only with children of the receiver, in a fixed order, and propagate a

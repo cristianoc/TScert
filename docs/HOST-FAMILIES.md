@@ -286,6 +286,27 @@ keeps its statement.
 
 ### Guard recognition
 
+A guard of a family is read from its code, never from its name or its
+declared predicate. A declaration such as `isTypeAliasDeclaration(node:
+Node): node is TypeAliasDeclaration` is the package author's statement, and
+it is false: the function also accepts `JSTypeAliasDeclaration`, a JSDoc
+`@typedef`, whose kind is 345 where `TypeAliasDeclaration`'s is 266. Read at
+that predicate, as an imported guard's declared type is
+([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)), the program
+`isTypeAliasDeclaration(n) ? n.kind : undefined` typed
+`SyntaxKind.TypeAliasDeclaration | undefined` verifies and returns 345 under
+Node. Guard recognition replaces the declared predicate of every guard of
+the family by the tag set its body tests, and keeps no predicate of a guard
+whose body it does not read.
+
+It is an instance of the [effects vision](#stable-members): an operation
+proved stable for a structure makes the effect-free rule sound for code
+using only it. A recognized guard reads one member of its argument, the
+tag, which is stable (F2) and whose read runs no code (F4); so the guard's
+call has no effect but that read, and code that calls only guards and reads
+stable members, a callback among it, is checked by the rules for code
+without calls.
+
 A guard of $`F`$ is an export of the family's package whose whole function,
 parameter initialization included, the **guard check** reads with the front
 end's parser from the module the package's `exports` map resolves, and
@@ -334,9 +355,37 @@ $`\tau`$ in every description; a family whose tag may change has no guard
 recognition) and a read of it runs no code and throws nothing (F4), so the
 chain has the call's result, effects and exceptions. The fragment gains no
 form: Lean sees reads and tests, and narrows both edges by `if-field`
-through the family union, since the test is the guard's body. A guard of
-another argument type keeps its declared signature
-([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)).
+through the family union, since the test is the guard's body. On the
+`false` edge the binding keeps the arms whose tag is outside $`K_g`$, which a
+declared predicate never gives (`compiler-api-guard-false-branch`). A guard
+taking a tag value (`isAssignmentOperator(op)`) is written the same way over
+its argument, `op` refined by `if-singleton` on both edges.
+
+A recognized guard **used as a value** (`statements.filter(ts.isImportDeclaration)`,
+`ts.isIdentifier` passed to a function) is read at the signature its check
+gives, in place of its declared type:
+
+```math
+\frac{g\ \text{a checked guard of}\ F,\quad K_g,\quad A\ \text{the reading of its declared parameter type}}
+     {g : (A)\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}\ \land\ (A)\to\textstyle\bigcup_{t\in K_g} S_t\,[\mathsf{guards}\ 0]}\ \textsf{guard-value}
+```
+
+with $`\{\mathsf{keep},\mathsf{keep}\}`$ the footprint that changes no value
+and no store, and the promise signature of
+[user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards) at the shapes
+of $`K_g`$. The declaration document states this signature for the guard's
+import, so Lean reads it as any import's declared type; what it rests on is
+the guard check, not the package's declaration.
+
+A guard **outside the syntax** (`isLeftHandSideExpression`,
+`isUnaryExpression`, which read `expression`) has no tag set: it is read at
+its declared parameters and result, `boolean`, without its predicate, and
+narrows nothing. No guard of the family is read at a predicate its code was
+not checked against.
+
+The run's [selection](#the-runs-selection) includes $`K_g`$ for every
+recognized guard its candidate modules call or use as a value, so the
+shapes a guard tests are arms of the union it narrows.
 
 ### Stable members
 
@@ -608,12 +657,57 @@ the compiler API the first instance throughout.
    (`parent` of a source file), separate units, the JavaScript typedef, a
    look-alike interface, a forged claim stating a node at an arm its kind
    excludes, and the controls of [identity](#identity-through-program-code).
-3. **Guard recognition**: the guard check C2 over the description's modules,
-   recognition by resolution, the `host-guard` writing. Controls: one
-   evaluation of the argument (`invalid-compiler-api-guard-argument`, under
-   Node), a guard outside the syntax, a local function named as a guard, a
-   spread argument, `compiler-api-guard-false-branch` from gap to positive,
-   and forged claims. Measured: a long guard chain (`isExpression`, 46 kinds).
+3. **Guard recognition**: the guard check C2 over the description's modules
+   (the description's `guards` field: the modules and the guards outside the
+   syntax, each with its text), recognition by resolution, the `host-guard`
+   writing of a call, `guard-value` for a guard used as a value, guards
+   outside the syntax without predicate, and $`K_g`$ in the run's selection.
+   Controls, each pipeline negative run under Node and each refusal also
+   reached by forged claims bypassing the producer, in search and in
+   checking, at the forged claim:
+   - `invalid-compiler-api-js-alias`: `isTypeAliasDeclaration(n) ? n.kind :
+     undefined` at `SyntaxKind.TypeAliasDeclaration | undefined`, verified at
+     the declared predicate, refused; under Node, on a `@typedef`, 345;
+   - one evaluation of the argument: `isIdentifier(next())` with `next`
+     counting its calls, the count asserted 1 after the guard (positive),
+     and a forged claim reading the argument twice (refused);
+   - `compiler-api-guard-false-branch` from gap to positive, and a guard on a
+     binding of a tag value (`isAssignmentOperator(op)`) on both edges;
+   - a guard used as a value: `filter(ts.isImportDeclaration)` and `some(n =>
+     ts.isIdentifier(n))` within a callback's effect-free footprint
+     (positive); a forged claim stating the guard value's promise at a
+     shape outside $`K_g`$ (refused);
+   - recognition by resolution: a re-exported guard narrows; a local function
+     named `isIdentifier`, a guard re-bound to a `let`, and a wrapper of a
+     guard are ordinary calls, the wrapper read at its own signature; a
+     spread argument and an extra argument, refused;
+   - a guard outside the syntax: `isUnaryExpression(n) && n.operand`, refused
+     (no predicate);
+   - forged claims giving a guard call's edges a narrowing to a kind outside
+     $`K_g`$ (refused on the `true` edge) or keeping a kind of $`K_g`$ on the
+     `false` edge (refused);
+   - C2 under Node: every recognized guard run on an object of each tag
+     value, its answers exactly $`K_g`$; and the guards outside the syntax
+     exactly the description's list.
+
+   Measured: a long guard chain (`isExpression`, 46 kinds) through
+   `verify-source.mts`, and the `tools/` census before and after. Expected
+   in the census: the 21 slices of `fragment-statements.mts` refused with
+   "missing field elements" read a `BindingName` after `if
+   (ts.isIdentifier(node)) return …`, a guard's `false` edge on a binding,
+   which this step narrows; they pass that refusal and stop at their next
+   blocker. The "missing field text" (18) and "missing field name" (6)
+   groups read a member path after a guard of it (`ts.isIdentifier(m.name)
+   && m.name.text`, `node.operand.text` after a guard of `node.operand`),
+   which waits on [stable members](#stable-members). `interfacesOf`, a
+   guard closure `(n): n is InterfaceDeclaration => !!n &&
+   ts.isInterfaceDeclaration(n)` passed to `filter`, is refused as a guard
+   closure with binders, for `filter<S>`'s overload, which no review states;
+   this step makes its body's promise provable, and its refusal stays. The
+   uses of `isTypeAliasDeclaration` and `isImportDeclaration` that read
+   `name` or `moduleSpecifier` after the guard are refused, since
+   `JSTypeAliasDeclaration` and `JSImportDeclaration` hold neither; each is
+   a coverage loss the source repairs with a test of the kind.
 4. **Stable members**: the stable flag, its decoder restriction, `read-eq`.
    Controls: a readonly program-object path, mutation through an alias and
    by a call, a root written directly and from a closure, a mixed path, a

@@ -3300,7 +3300,10 @@ its receiver nor its result.
 
 An imported guard is read at its declared type, both signatures; its promise
 is the import assumption of [the trust surface](DESIGN.md#trust-surface),
-discharged where the imported module's own run verifies the guard.
+discharged where the imported module's own run verifies the guard. A guard
+of a host family is read instead from its checked body
+([guard recognition](HOST-FAMILIES.md#guard-recognition)), never at its
+declared predicate.
 
 Implementation: `CallEffects.Effect` (`guards p`, `asserts p`) gives the
 contract; `ControlFlow.Goal` states a body's goal and `checkReturnResult` its
