@@ -52,12 +52,14 @@ omit [CertificateProducer.Instantiates ι] in
 diagnostic mentioning some of them shows of it (`StoreView.project`). -/
 @[nospecialize] def produceUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι)
     (valid : ι → Bool) (project : List ι → LabelStore.Projection ι) (fuel : Nat)
-    (rs : List (Required ι)) : Except String (List (Evidence ι)) := do
+    (rs : List (Required ι)) (answers : CertificateProducer.Answered ι := {}) :
+    Except String (List (Evidence ι) × CertificateProducer.Answered ι) := do
   let pool := CertificateProducer.vocabulary G labels []
     (rs.flatMap (fun r => r.sequent.type :: r.sequent.context))
   -- Nested obligations render the same coercions again: one search cache
-  -- serves them all, the graph and the pool being fixed here.
-  let mut cache : DirectProof.SubtypeCache ι := {}
+  -- serves them all, the graph being fixed here; its answered requests are
+  -- the caller's, for the same graph and image check.
+  let mut cache : DirectProof.SubtypeCache ι := { answers }
   let mut es := #[]
   for (r,index) in rs.zipIdx do
     let j := r.sequent
@@ -66,7 +68,11 @@ diagnostic mentioning some of them shows of it (`StoreView.project`). -/
         let (e, next) := DirectProof.renderWith G images pool j.context plan cache
         cache := next
         pure e
-      | none => pure (CertificateProducer.expressionWithUsing G images pool (rs.map Required.sequent) [] fuel j.context j.term j.type)
+      | none => do
+        let (e, answers) := CertificateProducer.expressionWithUsing G images pool (rs.map Required.sequent) []
+          fuel j.context j.term j.type cache.answers
+        cache := { cache with answers }
+        pure e
     -- Attribute an invalid suggested proof to its own obligation, rather than
     -- losing the source location in the final aggregate check.
     -- The graph code a unit creates is checked after its obligations are
@@ -98,20 +104,21 @@ diagnostic mentioning some of them shows of it (`StoreView.project`). -/
   -- Each item passed `check` against its own obligation above, so no final
   -- aggregate check is repeated here; acceptance (`checkRequests`) checks
   -- the evidence independently.
-  return es.toList
+  return (es.toList, cache.answers)
 
 /-- Node plans rendered where they can be: search hints, never obligations.
 A plan that does not render is dropped; its node is searched as any other. -/
 @[nospecialize] def renderKnownUsing [Hashable ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (labels : List ι) (valid : ι → Bool)
-    (plans : List (DirectProof.Plan ι)) : List (Evidence ι) := Id.run do
+    (plans : List (DirectProof.Plan ι)) (answers : CertificateProducer.Answered ι := {}) :
+    List (Evidence ι) × CertificateProducer.Answered ι := Id.run do
   let pool := CertificateProducer.vocabulary G labels [] (plans.flatMap fun p => p.goal.type :: p.goal.context)
-  let mut cache : DirectProof.SubtypeCache ι := {}
+  let mut cache : DirectProof.SubtypeCache ι := { answers }
   let mut es := #[]
   for plan in plans do
     let (e, next) := DirectProof.renderWith G images pool plan.goal.context plan cache
     cache := next
     if let some e := e.value.filter (fun e => checkUsing G images valid plan.goal e (fun _ => true)) then es := es.push e
-  return es.toList
+  return (es.toList, cache.answers)
 
 end
 

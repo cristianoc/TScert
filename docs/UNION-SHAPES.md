@@ -744,7 +744,7 @@ The reruns sit mostly inside repeated requests: on `termsOf`, 6,017 reruns
 checker the requests do not repeat (`termsOf`: 220 requests, 219 distinct).
 
 **What this says.** Removing the reruns (the dependency representation of
-§9.5, step 2) would remove at most their 12.1 s on `termsOf` and 18.4 s on
+§9.6, step 1) would remove at most their 12.1 s on `termsOf` and 18.4 s on
 `printGraph`. Answering a request already answered in the same graph would
 remove the repeats, 14.7 s and 22.8 s, which include most of the reruns'
 time: the same refused comparisons are asked again, and each time they run
@@ -787,27 +787,12 @@ the repeats within a state (`termsOf` 103,795, 13.5 s of profiled time;
 `printGraph` (11.5 s) are first in their state but were asked in an earlier
 one: what reuse across states, with a transport of answers, would add.
 
-**The reuse.** The compiled producer answers a request asked again in the
-same search context from its first answer (`CertificateProducer.subtypeReused`,
-the implementation of `subtypeUsing`, whose meaning is `subtypeSearch`). The
-context is the graph, the image check and the label type's three class
-dictionaries, `Instantiates` (which proposes instance candidates), `Hashable`
-and `DecidableEq`, compared by address and kept alive by the store; the
-source and target are compared by equality. `subtypeSearch` is a function of
-exactly these, so a stored answer is the one recomputation gives. The store
-is process-global and type-erased, read back only in the context it was
-written in. It is unsafe code because a pure store would have to be threaded
-through every caller of `subtypeUsing`, the producer's whole expression
-search; the producer is untrusted, its results are checked, and the CLI's
-check mode never reaches it: `checkJson` runs the reference search, and the
-check mode sets a flag (`CertificateProducer.checkingRef`) on which reaching
-the reuse ends the process with a fault, which no pipeline case triggers
-(`make suite`, 2026-10-19). Check mode constructs lowering recipes; only
-evidence production renders them (`DirectProof.renderWith`), which reaches
-the reuse. Of
-`termsOf`'s requests through it, 101,503 are answered from the store and
-3,497 searched (32 changes of state); `pageBody` 323,824 and 6,176;
-`statementsOnPath` 14,689 and 311.
+**The reuse.** The producer answers a request asked again in the same
+search context from its first answer, threading the answered requests
+through the search (§9.5). Measured with an address-keyed store, the first
+form of the reuse, at 09ddb9b: of `termsOf`'s requests, 101,503 answered from
+the store and 3,497 searched (32 changes of state); `pageBody` 323,824 and
+6,176; `statementsOnPath` 14,689 and 311.
 
 Measured at 09ddb9b (the context then without its dictionaries) against
 8780e6e on 2026-10-19, user time, median of 3, on
@@ -824,10 +809,6 @@ on all seven units:
 | `card` | 11.5 s | 11.8 s | 4.4 s | 4.3 s |
 | `statementsOnPath` | 11.7 s | 12.9 s | 6.4 s | 6.2 s |
 
-With the dictionaries in the context, at the following commit, the seven
-units measure within the noise of the after column (`termsOf` 14.8 s,
-`printGraph` 30.4 s, `statementsOnPath` 12.3 s of search), evidence again
-byte-identical.
 
 Where the repeats were cheap (`pageBody`, `card`, `statementsOnPath`) the
 reuse saves nothing measurable; the profile's per-request lines had inflated
@@ -844,14 +825,102 @@ The limit stays 60 s. That run is a stress measurement; a decision on the
 limit needs per-step wall and CPU time at the suite's own concurrency on an
 otherwise idle machine.
 
-### 9.5 Next steps
+### 9.5 Reuse across graph objects: a design
+
+**What a "graph state" is.** Evidence search runs after the equations are
+frozen: `freezePlans` turns the lowering's growing store into one `Frozen`
+value, and every request it yields has the frozen store as its types
+(`SourceRequest.over`: `types := F.store`). That store's graph reads only
+the equations, `graph _ := E.graph`, the row map of their signature, bodies,
+built-ins and domain; its image check reads the equations, the store's
+variances and its budget (`images c := eitherImages (finiteInstanceImages
+E.graph) (imagesUpTo E c.variances c.heads.subtypeBudget)`). Each call of
+`RequestJson.graph` and `StoreView.images` builds these objects afresh.
+Logging the equations behind each graph built (a scratch patch, 2026-10-19,
+at b484bee): `termsOf`'s search builds 358 graphs, 333 distinct objects, from
+one equation set; `pageBody`'s 852 (573 objects) from one; `printGraph`'s 664
+(564 objects) from three, its own and those its certified imports bring. The
+"graph states" of §9.4 are rebuilt objects of one frozen equation set, not a
+graph that grows: no head, row or hypothesis is added between them.
+
+**The transport lemma.** For stores `c` and `c'` of one frozen equation set
+`E`,
+
+```math
+\mathrm{graph}(c)=\mathrm{graph}(c')=E.\mathrm{graph},\qquad
+c.\mathrm{variances}=c'.\mathrm{variances}\land c.\mathrm{budget}=c'.\mathrm{budget}
+\Rightarrow \mathrm{images}(c)=\mathrm{images}(c'),
+```
+
+both by the definitions (proved: `Checked.graph_eq`, by `rfl`, and
+`Checked.images_eq`, a congruence). `subtypeSearch` is a function of the graph, the image
+check, the three dictionaries, the source and the target, so its answer in
+one object is its answer in the other: its whole result transports, an
+exhaustion included, and no monotonicity question arises, since nothing
+grows. The
+document's requests share one store (`types := F.store`), so the condition
+holds between all of them.
+
+**The key.** An answer depends on the equation set (its signature, bodies,
+built-ins and domain), the store's variances and budget, the dictionaries, the
+source and the target; never on the store's head table, which the frozen
+graph does not read. Answers do not transport between different equation
+sets: `printGraph`'s three are separate, a domain change (`withDomain`, which
+builds `{ E with domain := D }`) makes another, and so would a store whose
+variances or budget differ.
+
+**How the producer carries answers.** `produceDocument` builds the graph and
+the image check once, from the frozen store, and passes them to every
+producer step of every request (`ExpressionClaims.produceUsing`,
+`renderKnownUsing`, `RequestJson.produceResponseUsing`, `produceGraphUsing`
+and what they call), in place of the per-call `RequestJson.graph` and
+`StoreView.images`. The checker keeps calling them as it does, and
+acceptance is unchanged. A request with a qualified body keeps its own graph
+and image check, over which its body checker is stated.
+
+The answered requests are a pure table (`CertificateProducer.Answered`,
+source and target to `subtypeSearch`'s whole result, an exhaustion
+included), created by `produceDocument` for its graph and image check and
+threaded through every search in them: `subtypeUsing` reads and extends it,
+every caller of `subtypeUsing` passes it on (`expressionWithUsing`,
+`memberProofsUsing`, `coerce`, `edgeUsing`, `expressionEffectUsing`,
+`nodeYields`, the node and graph production, the rendered plans of
+`DirectProof`), and a qualified body's search starts its own. A search step is
+a `CheckResult` computation over the table (`SearchM`) whose failed
+alternatives keep the answers they found, while their failures stay theirs;
+node production (`ProduceM`) keeps them across its retry. The table's key is
+the source and the target: the graph, the image check and the class
+dictionaries are fixed for its life by the function that holds it, so no
+address is compared. `DirectProof.SubtypeCache` holds the table beside the
+current render's exhaustion (`active`), which stays the render's own.
+
+Measured on 2026-10-19, user time, median of 3, the machine quiet (load
+averages 1 to 3); evidence byte-identical to the search without any reuse on
+all seven units, and every pipeline case keeps its outcome; peak resident
+memory unchanged to the megabyte:
+
+| Unit | Search, one graph per document (a7d3bda) | Search, threaded answers | Peak memory |
+| --- | --- | --- | --- |
+| `termsOf` | 13.5 s | 10.0 s | 460 MB |
+| `decodeTerm` | 13.5 s | 10.5 s | 460 MB |
+| `decodeCode` | 13.5 s | 9.9 s | 460 MB |
+| `printGraph` | 28.6 s | 19.5 s | 1,004 MB |
+| `pageBody` | 13.9 s | 10.3 s | 1,715 MB |
+| `card` | 11.3 s | 8.4 s | 1,422 MB |
+| `statementsOnPath` | 12.5 s | 9.7 s | 4,133 MB |
+
+The checks are unchanged (`termsOf` 3.1 s and 3.2 s, `printGraph` 6.2 s and
+6.2 s). One graph per document alone left the address-keyed store's hits
+nearly as they were (`termsOf`: 102,468 answered, 3,532 searched), every
+change of its context a rebuilt class dictionary (the label type's
+`DecidableEq` in all 34, `Instantiates` in 25, `Hashable` in 13); the threaded
+table, whose dictionaries the holder fixes, does not forget at those.
+
+### 9.6 Next steps
 
 The steps are for the owner to choose. In order:
 
-1. **Reuse across graph states**, with a transport of answers across the
-   graph's growth: 6.4 s of `termsOf`'s and 11.5 s of `printGraph`'s profiled
-   search time.
-2. **Discovery of the selected certificate.** `valid_selected` keeps a
+1. **Discovery of the selected certificate.** `valid_selected` keeps a
    completed certificate valid under selection. That the selected search
    finds it needs, beyond it: the certificate restricted to the root and the
    dependencies of its coverings, with every premise and every piece of
@@ -866,9 +935,9 @@ The steps are for the owner to choose. In order:
    discovery produces and coverage, arrow evidence and member discovery
    read: each covering naming the pairs and the evidence it uses. That
    changes the engine's interface, and waits for the owner.
-3. **The rerun.** Removed exactly where the preservation theorem applies,
+2. **The rerun.** Removed exactly where the preservation theorem applies,
    once it covers discovery; kept elsewhere.
-4. **R7, R6 and evidence sharing for `statementsOnPath`**, ranked by what
+3. **R7, R6 and evidence sharing for `statementsOnPath`**, ranked by what
    remains of its run after the scope check.
 
 ## Lean
