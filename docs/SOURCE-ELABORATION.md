@@ -433,7 +433,13 @@ r\,?.\,b\;\equiv\;\mathsf{let}\ \mathsf{chain}=r\ \mathsf{in}\ \mathsf{if}\ \mat
      {\Gamma\vdash r\,?.\,b:\{\mathsf{undefined}\mid T_{\mathsf{true}}(A)\neq\emptyset\}\cup B}
 ```
 
-with $`T_q`$ the nullish tag's slices. The body is checked where the saved
+with $`T_q`$ the nullish tag's slices. Every chain binds the one variable
+$`\mathsf{chain}`$, so in `a?.b?.c` the outer chain's binding shadows the
+inner's. A test's lowering reads a saved value through the expression it was
+saved from (its origin) only where every name that expression mentions
+still denotes the binding it was recorded with; a mention of the inner
+$`\mathsf{chain}`$ is not read as the outer one, and is left as the saved
+value itself (`optional-chain-element-receiver`). The body is checked where the saved
 receiver holds its present slice, so a method called through the chain
 (`o?.m()`) has the present `o` as its receiver. `o.m?.(a)` tests the member
 read once, `o.m`, and calls it with `o` as its receiver (ECMA-262's
@@ -1098,7 +1104,11 @@ named declaration's instance is the reference at the instance's arguments,
 the declaration read as written with each binder at its argument, so
 `Box<T>`'s `v?: T` is `v?: number`, `v?: number | undefined` and `v?: never`
 (absent only) at `number`, `number | undefined` and `never`
-(`closure-contextual-optional-instances`). A type literal or mapped type the
+(`closure-contextual-optional-instances`). A type TypeScript gives with the
+name of a program's declaration, an alias of a union included, is read as
+that reference, before its structure: a recursive alias such as `Json`
+closes at its name (`closure-contextual-recursive-alias`), and a type reached
+again within its own structure through no declaration's name is refused. A type literal or mapped type the
 program writes is read as written, by the annotation reader, where
 TypeScript gives it outside any generic declaration or at its declaration's
 own binders. Any other record (an object literal's type, a library mapped

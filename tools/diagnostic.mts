@@ -5,6 +5,7 @@ import { decodeTag, decodeTerm, type Json, type Tag, type Term } from "./calculu
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
 import type { Span } from "./span.mts";
 import { illFormedString } from "./wire-strings.mts";
+import { passToolFailure } from "./thrown.mts";
 
 // Optional explanatory metadata, never evidence. A record this reader cannot
 // decode field by field is left in the human diagnostic; it must not change the
@@ -410,7 +411,8 @@ export function readDiagnostic(
       return undefined;
     if ((kind === "node-typing" || kind === "expression-claim") && !d.sequent)
       return undefined;
-  } catch {
+  } catch (error) {
+    passToolFailure(error);
     return undefined;
   }
   // asserted: the decoder's result, checked field by field and variant by variant above

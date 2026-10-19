@@ -298,7 +298,10 @@ value itself passed on keeps `undefined`
 (`guarded-element-read-refused`): `xs[0] !== undefined && known.has(xs[0])`
 needs a current-content fact about an element location, kept from the test
 to the second read, as a field path would need one (`o.a !== undefined &&
-f(o.a)` is refused the same way). A `flatMap` callback returning a
+f(o.a)` is refused the same way). An optional chain's truthy or present
+result narrows the value the chain saved, not the binding it was read from
+(`optional-chain-receiver-not-narrowed`: `if (o?.inner) use(o)`), which
+needs the chain's test related to the receiver's slot. A `flatMap` callback returning a
 primitive or an array of primitives (`flat-map-scalar-result-refused`)
 needs a second signature quantifying a binder bounded by the primitives,
 which the first does not use: neither the producer's instance of a member
@@ -474,12 +477,13 @@ first three items 2026-10-19):
   `createRequire`, whose type names a qualified one (1); `node:path`'s
   `sep`, a constant of the object the module exports (2); a default import
   (5);
-- the compiler's synchronous API failing on a query (1), reported as a tool
-  failure: `TypeObject.getTypes` panics converting a type reference to a
-  tuple (`forInEntryReads`);
-- the parser exceeding the call stack (2: `readDiagnostic`, and
-  `diagnosticNode`, which another run reports as a reply of
-  `Checker.getTypeFromTypeNode` the client cannot decode), cause unknown.
+- a union holding an empty array literal's tuple type, whose parts the
+  compiler's API panics writing, a [tool failure](docs/DESIGN.md)
+  (1: `forInEntryReads`, 2026-10-19);
+- `readDiagnostic` stops in the producer at a read of `forEach` through a
+  field holding an object beside `null` or `undefined`, and `diagnosticNode` in
+  search at a key read that may name an `Object.prototype` member
+  (2026-10-19).
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:
@@ -534,8 +538,9 @@ Their first blockers, by the number of slices each stops:
   `createHash`'s `TransformOptions` (1);
 - a member read after `assert` narrowed a union (the producer's "missing
   field", 2, and `process.stdout`, outside the reviewed globals, 1);
-- the verifier's search exceeding the stack (`checkOverloads`), cause
-  unknown;
+- a key-adding write of `instantiate` in search (`checkOverloads`,
+  2026-10-19, past a lowering that recursed without end on two `?.` links
+  over an element read, `optional-chain-element-receiver`);
 - a key-adding write to `process.env` (2);
 - `import.meta`, `new Array(n)`, a mapped type over `Readonly` and a record at
   an index signature (1 each);

@@ -2,12 +2,14 @@
 // documents and claims no case can make. The controls needing no build are
 // node-runs.mts and trusted-inputs.mts, among the fast checks.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { present } from "../tools/files.mts";
 import { join } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { check, producerExecutable, readClaimsFile, readFragmentFile, verifier } from "./verify-source.mts";
+import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
+import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { useHostInstallationForTests } from "../tools/compiler-api.mts";
 import { cases } from "./cases.mts";
@@ -1876,7 +1878,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     // search named, or of a unit whose call of it the forged type no longer
     // admits at the signature the evidence selected.
     const callable = must(failure.source?.sourceMap?.pos, "the failed callable's source location");
-    assert.equal(existsSync(join(artifacts, "evidence.json")), consumed,
+    assert.equal(present(join(artifacts, "evidence.json")), consumed,
       `${file}: a consumed control needs the fixture's honest evidence, a production-only one has none`);
     if (consumed) {
       const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
@@ -2119,7 +2121,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   const failure = readDiagnostic(produce.stdout + produce.stderr);
   assert.ok(failure && failure.kind === "node-typing", "a forged dispatch effect must fail at a node's typing");
-  assert.ok(existsSync(join(artifacts, "evidence.json")), "the fixture's honest evidence");
+  assert.ok(present(join(artifacts, "evidence.json")), "the fixture's honest evidence");
   assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts),
     /source effect refusal at \[\d+,\d+\): the footprint claimed for/);
   process.stdout.write("forged dispatch effect: a global regex's replacement refused in search and in checking\n");
@@ -2972,7 +2974,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.throws(() => readClaimsFile(raw), /not valid UTF-8/);
   const rawSearched = produceWith(artifacts, raw, "forged-invalid-utf8");
   assert.equal(rawSearched.status, 1, rawSearched.stdout + rawSearched.stderr);
-  assert.match(rawSearched.stdout + rawSearched.stderr, /non UTF-8/);
+  assert.match(rawSearched.stdout + rawSearched.stderr, /^reject: .*a text that is not valid UTF-8 is refused/);
   // The parser's document, read by the producer and by Lean.
   const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
   assert.ok(fragment.includes(""), "the fragment holds U+E000");
@@ -2992,4 +2994,46 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.notEqual(rawProposed.status, 0, rawProposed.stdout + rawProposed.stderr);
   assert.match(rawProposed.stdout + rawProposed.stderr, /not valid UTF-8/);
   process.stdout.write("wire strings: lone surrogates and invalid UTF-8 refused by the producer, Lean and TypeScript\n");
+}
+{
+  // A step's exit other than its complete refusal record (the verifier's
+  // exit 1, a first line `reject: …` and a last line `end of refusal`; the
+  // producer's exit 2 and `unsupported: …`) is a tool failure, no verdict:
+  // no output, an exception's text, and a record cut short, at each step
+  // whose refusal is a verdict; and an `--explain` run of the producer that
+  // fails or prints no explanations.
+  const dir = runDirectory("tscert-step-failures-");
+  const fake = (name: string, real: string, status: number): string => {
+    const path = join(dir, name);
+    writeFileSync(path, `#!/bin/sh\nif [ "$1" = "$FAIL_MODE" ]; then\n  [ -n "$FAIL_TEXT" ] && echo "$FAIL_TEXT" >&2\n` +
+      `  [ -n "$FAIL_OUT" ] && echo "$FAIL_OUT"\n  exit \${FAIL_STATUS:-${status}}\nfi\nexec "${real}" "$@"\n`);
+    chmodSync(path, 0o755);
+    return path;
+  };
+  const fakeVerifier = fake("verifier.sh", verifier, 1);
+  const fakeProducer = fake("producer.sh", producerExecutable, 2);
+  const outcomeOf = (source: string, env: Record<string, string>): Outcome => {
+    const ran = spawnSync(process.execPath, [join(here, "verify-source.mts"), join(here, "examples", source)],
+      { encoding: "utf8", timeout: 120_000, env: { ...process.env, VERIFIER: fakeVerifier, PRODUCER: fakeProducer, ...env } });
+    return readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+  };
+  for (const mode of ["--lower-control-flow", "--produce-source-claims", "--check-source-claims"])
+    for (const text of ["", "uncaught exception: forced by pipeline/test.mts", "reject: a record cut short"]) {
+      const outcome = outcomeOf("optional-chain-element-receiver.ts", { FAIL_MODE: mode, FAIL_TEXT: text });
+      assert.equal(outcome.status, "error", `${mode} ${JSON.stringify(text)}: ${JSON.stringify(outcome)}`);
+      assert.equal(outcome.detail,
+        `tool failure: verifier ${mode} exited with status 1 without a complete refusal: ${text || "no output"}`);
+    }
+  // The producer's run is told by its arguments' count, the fragment first.
+  const cut = outcomeOf("invalid-closure-contextual-result.ts", { FAIL_MODE: "--explain", FAIL_STATUS: "2" });
+  assert.equal(cut.status, "error", JSON.stringify(cut));
+  assert.equal(cut.detail, "tool failure: the producer's --explain exited with status 2: no output");
+  const garbled = outcomeOf("invalid-closure-contextual-result.ts", { FAIL_MODE: "--explain", FAIL_STATUS: "0", FAIL_OUT: "[{\"pos\":1}]" });
+  assert.equal(garbled.status, "error", JSON.stringify(garbled));
+  assert.match(garbled.detail ?? "", /^tool failure: the producer's --explain printed a malformed explanation/);
+  // An operational failure of the verifier is its own exit status, 3.
+  const unread = spawnSync(verifier, ["--lower-control-flow", join(dir, "absent.json")], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(unread.status, 3, unread.stderr);
+  assert.match(unread.stderr, /^error: /);
+  process.stdout.write("step failures: an exit without a complete refusal, and a failed --explain, are tool failures\n");
 }

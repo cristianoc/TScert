@@ -11,6 +11,7 @@ import type { Span } from "./span.mts";
 import type { SourceTypeParameter, TypeTerm, WrittenApplication } from "./declaration-types.mts";
 import { visitType } from "./type-term.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
+import { messageOf } from "./thrown.mts";
 
 /** What a name or a selection denotes, as TypeScript's checker has it: one
  * symbol's declarations (an overload set's, an accessor pair's, a merged
@@ -77,8 +78,8 @@ export type SweepContext = {
  * it is written, at `span` in the client file, or null elsewhere. */
 export class SweepError extends Error {
   readonly span: Span | null;
-  constructor(span: Span | null, message: string) {
-    super(message);
+  constructor(span: Span | null, message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
     this.span = span;
   }
 }
@@ -311,7 +312,7 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
     } catch (error) {
       if (error instanceof SweepError) throw error;
       throw new SweepError(span, `the written application ${node.getText(file)} in ${site(node)}: ` +
-        (error instanceof Error ? error.message : String(error)));
+        messageOf(error), error);
     }
   };
   const refusal = (node: Node, message: string): SweepError => {

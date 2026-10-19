@@ -15,6 +15,7 @@ import type { Node, TypeAliasDeclaration, TypeNode, TypeReferenceNode } from "ty
 import type { Span } from "./span.mts";
 import type { TypeTerm } from "./declaration-types.mts";
 import { computedAlias, computedForm, numericKey, optionalTerm } from "./type-term.mts";
+import { passToolFailure } from "./thrown.mts";
 
 /** What the evaluator reads with: the project's checker, and the reader of a
  * declaration's own annotation, in that declaration's scope, with the binders
@@ -513,7 +514,9 @@ function indexedAccess(context: ComputedContext, node: ts.IndexedAccessTypeNode,
   try {
     return project(read(node.objectType));
   } catch (error) {
-    // TypeScript defers an access it cannot compute before an instance.
+    // TypeScript defers an access it cannot compute before an instance; a
+    // tool failure is no refusal.
+    passToolFailure(error);
     if (generic(type))
       throw Error(`the indexed access ${computed} over a type parameter is computed only at an instance`);
     throw error;

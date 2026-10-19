@@ -6,6 +6,8 @@
  * refuse such a string and every reader refuses a document holding one,
  * before reading any value. */
 
+import { passToolFailure } from "./thrown.mts";
+
 /** Whether a string is well-formed UTF-16: each surrogate in a pair. */
 export function wellFormed(s: string): boolean {
   for (let i = 0; i < s.length; i++) {
@@ -55,7 +57,8 @@ export function requireWellFormed(value: unknown, what: string): void {
 export function wireText(bytes: Uint8Array, what: string): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
+  } catch (error) {
+    passToolFailure(error);
     throw Error(`${what}: the text is not valid UTF-8`);
   }
 }

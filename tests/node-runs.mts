@@ -66,6 +66,20 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   ] as const)
     assert.equal(runExample(file, `((r) => Object.keys(r).length === r.length && JSON.stringify(r))(${call})`),
       expected, `${file}: the result is dense`);
+  // Optional chains nested, shadowed, in a closure and skipping a key's
+  // effect: each result at the type the case verifies.
+  for (const [call, expected] of [
+    [`deep([{ inner: { leaf: { value: 7 } } }])`, 7],
+    [`deep([{ inner: {} }, { inner: { leaf: { value: 7 } } }])`, 0],
+    [`deep([])`, 0],
+    [`shadowed({ inner: { leaf: { value: 2 } } }, [{ inner: { leaf: { value: 3 } } }])`, 203],
+    [`shadowed(undefined, [{}])`, 0],
+    [`values([{ inner: { leaf: { value: 1 } } }, {}, { inner: {} }]).join(",")`, "1,-1,-1"],
+    [`keysRun(undefined)`, 5],
+    [`keysRun({ inner: {} })`, 5],
+    [`keysRun({ inner: { list: [4] } })`, 14],
+  ] as const)
+    assert.equal(runExample("optional-chain-nesting", call), expected, `optional-chain-nesting: ${call}`);
   assert.equal(runExample("invalid-map-unstable-pop", "Object.keys(shrink([1, 2, 3])).length"), 2,
     "invalid-map-unstable-pop: the result has three positions, two present");
   assert.equal(runExample("map-unstable-pop-sparse", "Object.keys(shrink([1, 2, 3])).length"), 2,
