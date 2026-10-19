@@ -460,6 +460,86 @@ observations after the call agree with the model: `e.message` reads a string
 the model's type allows, and keys, copies and entries see the declared
 fields alone; `e.stack` is refused.
 
+**Proposal, under review: reserved writes decided by checked claims.** This
+paragraph is a design, not the current fragment, whose write refusal above
+reads TypeScript's types in the parser. The proposed rule is one check in
+Lean's lowering, on the claims evidence establishes, for every write of the
+fragment. Notation: $`\mathrm{cl}(T)`$ is the finite list of clauses of a
+claim $`T`$, its declared names expanded (`PositiveRules.expand`, then
+`splitSets`); $`R = \{\texttt{"message"}, \texttt{"stack"}\}`$.
+
+```math
+\mathrm{reservedKey}(K) \iff \exists c \in \mathrm{cl}(K).\;
+  c \in \{\mathsf{str}, \mathsf{top}, \mathsf{source}\}
+  \;\lor\; (c = \mathsf{strLit}\ s \land s \in R)
+  \;\lor\; (c = \mathsf{strIn}\ S \land S \cap R \neq \varnothing)
+```
+
+```math
+\mathrm{protoFree}(T) \iff \forall c \in \mathrm{cl}(T).\;
+  \mathrm{primitive}(c) \;\lor\; \mathrm{indexedDict}(c)
+  \;\lor\; \bigl(c \in \{\mathsf{refs}, \mathsf{dict}\} \land \exists b \in \mathrm{bounds}(c).\ \lnot\, b.\mathrm{admits}(\texttt{[[proto]]})\bigr)
+```
+
+```math
+\frac{\Gamma \vdash r : T \qquad \kappa = f \ \text{or}\ \Gamma \vdash k : K \qquad
+  \mathrm{reserved}(\kappa) \Rightarrow \mathrm{protoFree}(T)}
+  {r[\kappa] \mathrel{=} e \ \text{is lowered}}\ (\textsf{Write-Reserved})
+```
+
+with $`\mathrm{reserved}(f) \iff f \in R`$ for a key the source spells and
+$`\mathrm{reserved}(k) \iff \mathrm{reservedKey}(K)`$ for a computed one; a
+write failing the premise is a located refusal. $`T`$ and $`K`$ are the
+claims at the receiver's and the key's spans, each an expression obligation
+evidence must establish, so the premise is decided on certified facts, with
+no reading of TypeScript's types or its narrowing.
+
+- **Where.** In `comparisonsExpr` (`Lowering/Types.lean`), the pass that
+  resolves a computed key from its claim: at `.write`, at `.indexWrite` once
+  its key is resolved (a singleton field or a run-time key), and at the
+  targets of `.update`, `.logicalAssign` and `.arrayAssign`, which are reads
+  of the same references. `.elemWrite` keys are numbers, never reserved.
+  `Object.assign` is the native call's contract check, in the same place:
+  each source $`S`$ is a write at every key it may own, reserved unless every
+  clause of $`\mathrm{cl}(S)`$ is a primitive or a `refs` or `dict` with a
+  bound admitting neither key and no string index; the parser's syntactic
+  rule for it is then deleted.
+- **Decidability.** Both predicates are Boolean functions of finite clause
+  lists and of finite key bounds. Their meaning: $`\mathrm{protoFree}(T)`$
+  implies that no value of $`T`$ is an object owning `[[proto]]`: a
+  primitive family holds no object, `dictViewT` and `dictCellT` require the
+  key absent, and `ownKeysT` of a bound not admitting it gives
+  `lookup [[proto]] = none` (`ownKeysT_lookup`). This lemma is to be proved
+  with the rule; acceptance soundness does not depend on it, since the rule
+  only refuses.
+- **Why the premise excludes every instance of the family.** An instance is,
+  in the model, an object owning `[[proto]]`: one the lowering constructs
+  (its first link), the overlay's `new Error` (its prototype record), and one
+  a unit receives at a class or `Error` type (each holds `[[proto]]`). A
+  value received at a dictionary or a key-bounded record is a plain object
+  by the caller contract ([trust](DESIGN.md)). So a receiver whose checked
+  claim is proto-free is no instance, also of a class other than `Error`,
+  which the rule refuses alike: it is chosen by the behaviour it excludes, a
+  write that may change a non-enumerable own property the model does not
+  state.
+- **What stays the parser's.** A field of an allocation is no write: an
+  instance member, a parameter property, and a `this.k = e` of a constructor,
+  which the lowering makes a field of the instance's allocation, stay
+  reserved by the parser for a class extending `Error`. The forged-fragment
+  pin keeps that part; a forged claim placing a `.stack` write's receiver at
+  a proto-free type becomes a control refused in search and check.
+- **Expected effect.** The parser's type-based write check (`reservedWrites`,
+  `admitsError`, `carriesReserved`, the declared-type reading) is deleted.
+  The 33 cases the syntactic rule of the review refused all keep their
+  outcomes (array index keys are numbers; the dictionary writes have indexed
+  receivers; the other keys are literals other than the two), except
+  `reserved-write-excluded`, whose receiver `{ name: number; message: string }`
+  bounds no keys and becomes a refused control. The `invalid-error-subclass-*`
+  write controls stay refused, at the Lean refusal, located at the write. The
+  census of `tools/` is expected to change by nothing: no function writes
+  `message` or `stack`, and a computed string key reaches no receiver whose
+  claim is an open record or a class instance; to be measured.
+
 **Trusted boundary.** The member and parameter-property reservations and the
 write refusals are the parser's: Lean reads no class declaration and no
 TypeScript type, and accepts a fragment, claims and evidence with a member
