@@ -1,0 +1,12 @@
+{
+  // A project whose own module merges an `at` into `ReadonlyArray` whose result leaves out `undefined`:
+  // the `*merged-narrowed*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["./augment.ts", "../examples/*merged-narrowed*.ts"]
+}

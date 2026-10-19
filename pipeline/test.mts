@@ -1299,17 +1299,25 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   // The input is a valid array: claims and evidence are borrowed from a
   // weakened program whose declared `Hooked` and `View` are records with a
   // writable `toJSON`, then offered for the program itself, whose `Hooked` is
-  // an array. Search and evidence consumption both refuse, located at the
-  // write, directly and through a structural view.
+  // an array. The weakened declaration stays an intersection holding an
+  // array, so both programs read the same declarations and the evidence
+  // decodes against either. Search refuses at the write, directly and
+  // through a structural view; consumption refuses the view's write where it
+  // is, and the direct evidence, which the weakened program's check accepts,
+  // for the program whose `Hooked` is an array.
   const borrow = (file: string): { artifacts: string; claims: string; evidence: string } => {
     const artifacts = run(file);
     const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
     const weakened = ast.declarations.definitions.filter(d => ["Hooked", "View"].includes(d.declaration.name));
     assert.ok(weakened.some(d => d.declaration.name === "Hooked"), "the declared array type");
+    const record = (name: string, type: TypeTerm): TypeTerm => ({ k: "object", span: [0, 0], stringIndex: null,
+      calls: [], fields: [{ name, optional: false, readonly: false, span: [0, 0], type }] });
     for (const definition of weakened)
-      definition.expression = { k: "object", span: [0, 0], stringIndex: null, calls: [], fields: [{ name: "toJSON",
-        optional: false, readonly: false, span: [0, 0], type: { k: "function", effect: ordinaryEffect, receiver: null,
-          params: [], rest: null, result: { k: "atom", name: "undefined", span: [0, 0] }, span: [0, 0] } }] };
+      definition.expression = { k: "intersection", span: [0, 0], parts: [
+        record("toJSON", { k: "function", effect: ordinaryEffect, receiver: null, params: [], rest: null,
+          result: { k: "atom", name: "undefined", span: [0, 0] }, span: [0, 0] }),
+        record("items", { k: "array", presence: "readable", readonly: false, span: [0, 0],
+          element: { k: "atom", name: "number", span: [0, 0] } })] };
     const weak = join(artifacts, "weakened-array-tojson.json");
     writeFileSync(weak, JSON.stringify(ast));
     const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
@@ -1322,7 +1330,11 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
     writeFileSync(claims, proposed.stdout);
     const borrowed = produceWith(artifacts, claims, "weakened-array-tojson", weak);
     assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
-    return { artifacts, claims, evidence: join(artifacts, "weakened-array-tojson-evidence.json") };
+    const evidence = join(artifacts, "weakened-array-tojson-evidence.json");
+    const accepted = spawnSync(verifier, ["--check-source-claims", weak, claims, join(artifacts, "source.ts"), evidence],
+      { encoding: "utf8", timeout: 30_000 });
+    assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+    return { artifacts, claims, evidence };
   };
   const direct = borrow("invalid-array-tojson-write");
   const source = readFileSync(join(direct.artifacts, "source.ts"), "utf8");
@@ -1335,7 +1347,12 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   const term = failure?.sequent?.term;
   assert.ok(term?.kind === "writeAt");
   assert.equal(term.field, "toJSON");
-  invoke(direct.claims, direct.evidence, direct.artifacts);
+  // The check states no node for this refusal: the evidence's equations
+  // read `Hooked` as the weakened record. The weakened program differs from
+  // this one only there, and its check accepts the same evidence, so the
+  // refusal is the array's.
+  assert.match(invoke(direct.claims, direct.evidence, direct.artifacts),
+    /^reject: source evidence does not justify the extracted program and exact claims$/m);
   const view = borrow("invalid-array-tojson-view");
   const viewSource = readFileSync(join(view.artifacts, "source.ts"), "utf8");
   const viewAt = viewSource.indexOf("alias.toJSON = f");

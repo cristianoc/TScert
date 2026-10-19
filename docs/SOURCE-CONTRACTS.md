@@ -1887,12 +1887,12 @@ inherited declaration (`invalid-array-tojson-inherited`), a write
 (`invalid-array-tojson-write`), an alias (`invalid-array-tojson-alias`,
 `invalid-array-tojson-view`) nor
 an element at `unknown` (`invalid-json-stringify-hidden-hook`) gives one.
-A declaration merging a `toJSON` into the global `Array` or `ReadonlyArray`
-states a member `Array.prototype` does not have: a merged member is read only
-where the prototype contract reviews it at the type the merge gives it
-([source fragment](SOURCE-FRAGMENT.md)), so a unit an array reaches under such
-a merge is refused, whether the array is written or a callback's parameter by
-context (`invalid-merged-array-param`,
+A declaration merging a `toJSON` into the global `Array`, `ReadonlyArray` or
+`Object` states a hook the host's prototypes do not hold: a merged member is
+admitted only where a standard library declaration of the interface states it
+at the same contract ([source fragment](SOURCE-FRAGMENT.md)), so a unit an
+array reaches under such a merge is refused, whether the array is written or
+a callback's parameter by context (`invalid-merged-array-param`,
 `invalid-merged-array-callback`, `invalid-merged-readonly-array-param`,
 `invalid-merged-readonly-array-callback`).
 `JSON.stringify` is read with a replacer that

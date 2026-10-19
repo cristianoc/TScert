@@ -27,9 +27,11 @@ named like a standard library file, for the `*augmented*` and `*fake-lib*`
 cases; `pipeline/lib-collision-project/` holds one at
 `typescript/lib/lib.augment.d.ts`, the path a standard library identity is
 printed with, for the `*lib-collision*` case;
-`pipeline/merged-array-project/` and `pipeline/merged-readonly-array-project/`
-merge a `toJSON` into the global `Array` and `ReadonlyArray`, for the
-`*merged-array*` and `*merged-readonly-array*` cases;
+the `pipeline/merged-*-project/` directories each merge a member into one
+standard library interface (`Array`, `ReadonlyArray`, `Object`, `Function`,
+`Iterator`, `ArrayIterator`, `String`, and `ReadonlyArray`'s `at` restated
+and narrowed), for the cases whose file names contain the directory's
+`merged-*` part;
 `pipeline/host-fixture-project/` reads `pipeline/host-fixture/`, a package
 whose manifest names the host package and whose `Node` reaches no node list:
 as a case it is no host (`host-fixture-lookalike`), and `pipeline/test.mts`
