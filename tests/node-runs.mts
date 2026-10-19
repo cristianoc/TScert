@@ -146,6 +146,15 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   ])
     assert.equal(runExample(file, `(r => r.length === 3 && !(2 in r))(${call})`), true,
       `${file}: the hook shrinks the mapped array, leaving a hole in the result`);
+  // A `toJSON` an array owns, or an open record holds beside its declared
+  // fields, is called by `JSON.stringify`, whose result is then the hook's
+  // `undefined` where the declared result is a string.
+  assert.equal(runExample("invalid-array-own-tojson", "typeof text(Object.assign([1, 2], { toJSON: () => undefined }))"),
+    "undefined", "invalid-array-own-tojson: an array's own toJSON makes stringify return undefined");
+  assert.equal(runExample("invalid-json-stringify-record", "typeof encode({ x: 1, y: 2, toJSON: () => undefined })"),
+    "undefined", "invalid-json-stringify-record: a record's undeclared toJSON makes stringify return undefined");
+  assert.equal(runExample("json-stringify-arrays", "[nested([[1, 2], []]), ...mixed([[1, { a: [true] }], null])].join(\" \")"),
+    '[[1,2],[]] [[1,{"a":[true]}],[[1,{"a":[true]}],null]] [null,[null,null]]', "json-stringify-arrays: strings");
   assert.equal(runExample("map-stable-json-error", `JSON.stringify([quotedAll(["a"]), checkedAll([1, 2])])`),
     '[["\\"a\\""],[1,2]]', "map-stable-json-error: dense results");
   assert.throws(() => runExample("map-stable-json-error", "checkedAll([-1])"), /negative: -1/,

@@ -279,7 +279,7 @@ are in `Types/ReferenceConjunctions.lean`.
 A graph with arrays states its **built-ins** $\mathcal B$: the row of `ArrayProto`
 ($P_{\mathcal B}$), the row of `unknown` ($U_{\mathcal B}$, the nullary
 `source` row) and the excluded keys ($N_{\mathcal B}$): `ArrayProto`'s
-declared keys plus `constructor` and `then` (`NormalGraph.builtins`, set by
+declared keys plus `constructor`, `then` and `toJSON` (`NormalGraph.builtins`, set by
 `builtinsOf` where the store has an array type). In such a graph a label's
 record, dictionary or `source` clause means its members that are also arrays
 of the built-ins where they own the store key $\sigma$

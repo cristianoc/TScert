@@ -111,24 +111,26 @@ const dictionary = (value: TypeTerm): TypeTerm =>
 
 /** The values `JSON.stringify` serializes to a string with no code of the
  * client's run and no `undefined` returned: `null`, a Boolean, a number, a
- * string, or a dictionary of such values,
+ * string, or a read-only array or dictionary of such values,
  *
- *     type JsonValue = null | boolean | number | string | { readonly [k: string]: JsonValue };
+ *     type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [k: string]: JsonValue };
  *
  * A dictionary owns no `[[proto]]` and every string key it owns holds a
  * `JsonValue` (`dictViewT`), so no key it owns is callable and it inherits
- * only what `Object.prototype` holds: `toJSON` is never called, and no
- * getter runs. Arrays are left out: an array may own keys its type does not
- * state (DESIGN.md, "Arrays"), a callable `toJSON`
- * among them, which `stringify` would call, and whose result may be
- * `undefined`. A cycle throws, an outcome; a bigint would throw too, and is
- * left out as a value the host never serializes. */
+ * only what `Object.prototype` holds. An array owns no `toJSON` (the arrays'
+ * own-key exclusion, `RequestJson.arrayExcludedKeys`) and inherits none: no
+ * object along its prototype chain holds one, a host assumption (DESIGN.md,
+ * the trust surface). So `toJSON` is never called, and no getter runs. A
+ * record a declaration types by its fields is left out: a record is open,
+ * and nothing bounds the own keys it does not declare. A cycle throws, an
+ * outcome; a bigint would throw too, and is left out as a value the host
+ * never serializes. */
 const jsonValueIdentity: DeclarationIdentity = { module: "tscert/json", name: "JsonValue", span: at };
 const jsonValue: TypeTerm = { k: "reference", args: [], span: at,
   reference: { name: jsonValueIdentity.name, span: at, arguments: [], target: jsonValueIdentity } };
 const jsonValueDefinition: TypeDefinition = { declaration: jsonValueIdentity, parameters: [], bases: [],
   expression: { k: "union", span: at, parts: [atom("null"), atom("boolean"), atom("number"), atom("string"),
-    dictionary(jsonValue)] } };
+    { k: "array", presence: "readable", readonly: true, element: jsonValue, span: at }, dictionary(jsonValue)] } };
 
 
 

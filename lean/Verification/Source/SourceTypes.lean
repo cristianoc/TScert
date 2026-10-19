@@ -39,12 +39,12 @@ def prototypeNames : List String := arrayPrototypeName :: primitivePrototypes.ma
 
 /-- An array type: its store at `store`, invariant or, for a readonly array, a
 view; the prototype as a view at `proto`, `ArrayProto`; and none of `excluded`,
-the keys `ArrayProto` provides plus `constructor` and `then` (`arrayExcludedKeys`), among
+the keys `ArrayProto` provides plus `constructor`, `then` and `toJSON` (`arrayExcludedKeys`), among
 its own keys, so a read of one of them continues at the prototype. -/
 def arrayClause (excluded : List PropKey) (store proto : ι) (readonly : Bool) : Clause (List ι) :=
   PositiveNormalization.arrayClauseOf [store] [proto] excluded readonly
 
-/-- The keys an array cannot own: `constructor`, `then` and those `ArrayProto`'s row
+/-- The keys an array cannot own: `constructor`, `then`, `toJSON` and those `ArrayProto`'s row
 (`proto`) names, its fields, views, optional fields and methods, the reserved
 keys aside. An array owns none of them, so reading one continues at the
 prototype; any other own key an array may have. -/

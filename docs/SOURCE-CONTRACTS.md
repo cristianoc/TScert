@@ -1836,7 +1836,7 @@ interface (`Set<T>`, read through [its overlay](#prototype-contracts)) or a
 declaration no library has, which joins the document with the entry:
 
 ```math
-\mathsf{JsonValue}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\{\mathsf{readonly}\ [k:\mathsf{string}]:\mathsf{JsonValue}\}
+\mathsf{JsonValue}=\mathsf{null}\mid\mathsf{boolean}\mid\mathsf{number}\mid\mathsf{string}\mid\mathsf{readonly}\ \mathsf{JsonValue}[\,]\mid\{\mathsf{readonly}\ [k:\mathsf{string}]:\mathsf{JsonValue}\}
 ```
 
 (`JSON.stringify`'s parameter), and
@@ -1859,15 +1859,29 @@ what it allocates, also before it throws a SyntaxError: the empty
 footprint, on a throw too. A reviver is client code: the call is read with
 the text only (`json-parse-reviver-refused`). A dictionary arm is no array
 (its members own no prototype key), so `Array.isArray` of a `ParsedJson`
-leaves its array arm, whose `map` stays dense (`json-parse-data`). Unlike
-`JsonValue`, `ParsedJson` admits arrays, which may own keys their type does
-not state: it is no argument of `JSON.stringify`. At a `JsonValue`, `JSON.stringify` reads own
-data properties, calls no `toJSON` and no getter, and allocates its string,
-so it states the empty footprint, on a throw too (a cycle); so does `Error`
+leaves its array arm, whose `map` stays dense (`json-parse-data`).
+`ParsedJson` is a `JsonValue`: each of its arms is one read-only. A
+`JsonValue` array owns no `toJSON` (the arrays' own-key exclusion,
+[arrays](SOURCE-MODEL.md#arrays)), inherits none (no object along its chain
+holds one, a host assumption), and holds `JsonValue`s; a dictionary owns no
+prototype key and holds `JsonValue`s at every string key it owns, none
+callable. At a `JsonValue`, `JSON.stringify` reads own data properties,
+calls no `toJSON` and no getter, and allocates its string, so it returns a
+string and states the empty footprint, on a throw too (a cycle); so does `Error`
 at a string message, which it stores without conversion code
 ([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints);
 `map-stable-json-error`,
-`json-stringify-recursive`). `JSON.stringify` is read with a replacer that
+`json-stringify-recursive`, `json-stringify-arrays`). A record a declaration
+types by its fields (an interface, a type literal) is no `JsonValue`: a
+record is open, and nothing bounds the own string keys it does not declare,
+one of which may hold a `toJSON` (`invalid-json-stringify-record`, run under
+Node: `JSON.stringify` of it returns the hook's `undefined`). An
+array owning a `toJSON` is no array (`invalid-array-own-tojson`, run under
+Node: `JSON.stringify` of it returns the hook's `undefined`); neither an
+inherited declaration (`invalid-array-tojson-inherited`), a write
+(`invalid-array-tojson-write`), an alias (`invalid-array-tojson-alias`) nor
+an element at `unknown` (`invalid-json-stringify-hidden-hook`) gives one.
+`JSON.stringify` is read with a replacer that
 is `null`, absent or a list of keys (primitive numbers and strings, read by
 length and index), and an indent that is a primitive number or string:
 none runs code (`json-stringify-space`). A boxed key or indent would run

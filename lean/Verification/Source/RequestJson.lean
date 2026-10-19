@@ -193,13 +193,14 @@ def reservedKey : PropKey → Bool
   | .sym _ => false
 
 /-- The keys an ordinary array cannot own: its prototype's declared keys,
-`constructor` and `then`. These preserve standard species construction and
-the array's non-thenable contract during native promise resolution.
+`constructor`, `then` and `toJSON`. These preserve standard species
+construction, the array's non-thenable contract during native promise
+resolution, and `JSON.stringify`'s calling no hook of an array.
 Sorted, each once, with the model's reserved keys aside. -/
 def arrayExcludedKeys (ks : List PropKey) : List PropKey :=
-  (((PropKey.str "constructor" :: PropKey.str "then" :: ks).filter fun k => !reservedKey k).eraseDups).mergeSort PropKey.before
+  (((PropKey.str "constructor" :: PropKey.str "then" :: PropKey.str "toJSON" :: ks).filter fun k => !reservedKey k).eraseDups).mergeSort PropKey.before
 
-/-- The excluded array keys: `constructor`, `then` and the prototype row's fields', views', optional fields'
+/-- The excluded array keys: `constructor`, `then`, `toJSON` and the prototype row's fields', views', optional fields'
 and methods', the reserved keys aside. -/
 @[nospecialize] def arrayExcludedKeysOf : List (Clause (List ι)) → List PropKey
   | [.refs a bs vs os ms _] =>

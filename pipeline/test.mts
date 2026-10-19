@@ -1273,6 +1273,28 @@ checkSchemeDefaults(verifier, run("generic-default"));
 process.stdout.write("forged claims at each kind of point: read and checked there\n");
 
 {
+  // An array owns no `toJSON`, whatever the parser and the producer say: a
+  // forged parameter type giving `nested`'s array one is refused by the
+  // search and by the check of the evidence the original program earned.
+  const artifacts = run("json-stringify-arrays");
+  const ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const nested = must(ast.functions.find(f => f.name === "nested"), "nested's declaration");
+  const rows = must(nested.params[0], "nested's parameter");
+  const span = rows.type.span;
+  rows.type = { k: "intersection", span, parts: [rows.type, { k: "object", span, stringIndex: null, calls: [],
+    fields: [{ name: "toJSON", optional: false, readonly: false, span, type: { k: "function", effect: ordinaryEffect,
+      receiver: null, params: [], rest: null, result: { k: "atom", name: "undefined", span }, span } }] }] };
+  const forged = join(artifacts, "forged-array-tojson.json");
+  writeFileSync(forged, must(JSON.stringify(ast), "the forged fragment's text"));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-array-tojson", forged);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /intersection is empty/);
+  assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, forged),
+    /intersection is empty/);
+  process.stdout.write("an array owning toJSON, forged past the parser and the producer: refused by search and check\n");
+}
+
+{
   // Own-key exclusion preserves the inherited constructor read. A forged
   // undefined claim must fail both search and evidence consumption.
   const artifacts = run("native-promise-constructor-read");
