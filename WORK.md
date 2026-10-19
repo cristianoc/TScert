@@ -401,6 +401,13 @@ In `tests/`, `docs.mts`'s `withoutCode`, `prose`, `slug` and `compare`
 verify; the others stop at a namespace import, Node's `Buffer` type, `join`
 of `node:path`, `Number` read as a value, or a top-level block.
 
+`readFragmentFile` and `readClaimsFile` in `pipeline/verify-source.mts` read
+back a document the run wrote, for a test to forge, and assert its type with
+`as` (reason at the assertion) rather than decode it: no TypeScript decoder
+of the Fragment or the claims document exists, and the tests reach about 100
+fields deep in them. The two stay outside the goal by decision; what they
+read is decoded again by Lean before anything is checked.
+
 Two forms of the record tools are rewritten for a verifier limit, not
 for a departure from the fragment; each rewrite is reverted when its limit
 lifts: element reads the code already guards by a test of the same element
