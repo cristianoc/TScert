@@ -1302,11 +1302,13 @@ export function functionDecl(this: Gate, node: FunctionDeclaration): FunctionAst
   if (!node.name) gate.fail(node, "anonymous function");
   if (node.name.text === "undefined")
     gate.fail(node, "shadowing undefined is outside the fragment");
+  // `export default function f` exports f's own binding as `default`, which
+  // no code of an imported module writes (`writesName`).
   if (node.modifiers?.some(modifier => modifier.kind !== ts.SyntaxKind.ExportKeyword &&
-      modifier.kind !== ts.SyntaxKind.AsyncKeyword))
+      modifier.kind !== ts.SyntaxKind.AsyncKeyword && modifier.kind !== ts.SyntaxKind.DefaultKeyword))
     gate.fail(
       node,
-      "only the export and async modifiers are admitted on a source function",
+      "only the export, default and async modifiers are admitted on a source function",
     );
   if (node.asteriskToken)
     gate.fail(node, GENERATOR);

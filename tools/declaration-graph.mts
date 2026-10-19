@@ -323,16 +323,19 @@ function importBindings(client: SourceFile, members: readonly NamespaceMemberSpa
   const named = client.statements.filter(ts.isImportDeclaration).flatMap(node => {
     const span: Span = [node.getStart(client), node.end];
     const clause = node.importClause;
-    if (!clause || clause.name || !clause.namedBindings || !ts.isStringLiteral(node.moduleSpecifier))
-      throw new DeclarationError(span, "only named and namespace imports are resolved");
-    if (ts.isNamespaceImport(clause.namedBindings)) return [];
+    if (!clause || (!clause.name && !clause.namedBindings) || !ts.isStringLiteral(node.moduleSpecifier))
+      throw new DeclarationError(span, "only named, default and namespace imports are resolved");
     const specifier = node.moduleSpecifier.text;
     // The unstable AST exposes this runtime field but omits it from the
     // ImportClause interface.
     const clauseTypeOnly = "isTypeOnly" in clause && clause.isTypeOnly === true;
-    return clause.namedBindings.elements.map(element => ({ name: element.name.text, at: element.name,
+    // A default import binds the module's `default` export.
+    const defaulted = clause.name ? [{ name: clause.name.text, at: clause.name, imported: "default", specifier, span,
+      typeOnly: clauseTypeOnly }] : [];
+    if (!clause.namedBindings || ts.isNamespaceImport(clause.namedBindings)) return defaulted;
+    return [...defaulted, ...clause.namedBindings.elements.map(element => ({ name: element.name.text, at: element.name,
       imported: element.propertyName?.text ?? element.name.text, specifier, span,
-      typeOnly: clauseTypeOnly || element.isTypeOnly }));
+      typeOnly: clauseTypeOnly || element.isTypeOnly }))];
   });
   const namespaced = members.map(member => {
     const [first] = member.uses;

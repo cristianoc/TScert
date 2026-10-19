@@ -198,9 +198,13 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // to the nearest number, a symbol throws a TypeError, an outcome. An
   // object's conversion calls its `Symbol.toPrimitive`, `valueOf` or
   // `toString`, client code, so the parameter is stated at the primitives,
-  // where the call writes nothing and states heap preservation.
-  { host: contract, global: "Number", signature: "(value?: any): number;", effect: emptyEffect,
-    admit: { parameter: "value", safe: ["null", "undefined", "boolean", "number", "string", "bigint", "symbol"] } },
+  // where the call writes nothing and states heap preservation. It reads its
+  // first argument alone and no receiver, so the global may be read as a
+  // value (`texts.map(Number)`): the callable taking a primitive and any
+  // further arguments.
+  { host: contract, global: "Number", signature: "(value?: any): number;", value: true, effect: emptyEffect,
+    stated: { binders: [], params: [{ k: "union", span: at, parts: (["null", "undefined", "boolean", "number",
+      "string", "bigint", "symbol"] as const).map(atom) }], rest: atom("unknown"), result: atom("number") } },
   // `Boolean(v)` is ToBoolean of its first argument, which reads no property
   // and runs no code of any value's, and ignores every further argument;
   // `Boolean()` is `false`; it reads no receiver. So the global may be read

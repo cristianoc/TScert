@@ -71,7 +71,8 @@
  * parentheses, assertions, `await`, a comma's last operand, an assignment's
  * right side, conditionals, logical operators, array literals and their
  * spreads), unless a type gives it its contextual type. Each states the type of every parameter and, but for a
- * constructor or a setter, its result. What lies inside a unit is inferred
+ * constructor or a setter, its result. A module `let` or `var`, which the
+ * module's units read and write, states its type. What lies inside a unit is inferred
  * and checked there: a local `const` or `let`, and a function written as an
  * argument or held by a local.
  *
@@ -234,7 +235,14 @@ function boundary(checker: Checker, node: Node, moduleLevel: boolean): [Node, st
   const held = (value: Node | undefined): [Node, string[]][] =>
     heldFunctions(value).filter((fn) => !writtenContext(checker, fn)).map((fn): [Node, string[]] => [fn, unstated(fn, true)]);
   if (member && (ts.isPropertyAssignment(node) || ts.isPropertyDeclaration(node))) return held(node.initializer);
-  if (moduleLevel && ts.isVariableDeclaration(node)) return held(node.initializer);
+  if (moduleLevel && ts.isVariableDeclaration(node)) {
+    // A module `let` or `var` is a binding the module's units read and
+    // write: a unit boundary, whose type is written.
+    const list = node.parent;
+    const mutable = list !== undefined && ts.isVariableDeclarationList(list) && !(list.flags & ts.NodeFlags.Const);
+    return [...(mutable && node.type === undefined ? [[node, ["its type"]] satisfies [Node, string[]]] : []),
+      ...held(node.initializer)];
+  }
   if (ts.isExportAssignment(node)) return held(node.expression);
   return [];
 }

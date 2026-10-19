@@ -32,6 +32,7 @@ const atom = (name: AtomName): TypeTerm => ({ k: "atom", name, span: at });
 const text = (value: string): TypeTerm => ({ k: "literal", name: "string", text: value, span: at });
 const union = (...parts: TypeTerm[]): TypeTerm => ({ k: "union", parts, span: at });
 const no = (): TypeTerm => ({ k: "literal", name: "false", text: "false", span: at });
+const yes = (): TypeTerm => ({ k: "literal", name: "true", text: "true", span: at });
 /** A field of an object type term. */
 type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
 const field = (name: string, type: TypeTerm, optional: boolean): Field =>
@@ -118,6 +119,34 @@ export const modulesOverlay: readonly ModuleEntry[] = [
   { module: "fs", name: "writeFileSync",
     signature: "export function writeFileSync(file: PathOrFileDescriptor, data: string | NodeJS.ArrayBufferView, options?: WriteFileOptions): void;",
     stated: { binders: [], params: [atom("string"), atom("string")], result: atom("undefined") } },
+  // `readFileSync(path, "utf8")` with a string path reads the whole file and
+  // returns its contents decoded as UTF-8, a string; a path it cannot open
+  // or read, or one holding a NUL character, throws. It runs no code of the
+  // client's on a string path and a string encoding. Stated at the encoding
+  // "utf8", where the declaration's other forms return a `Buffer`.
+  { module: "fs", name: "readFileSync",
+    signature: "export function readFileSync(path: PathOrFileDescriptor, options: | { encoding: BufferEncoding; flag?: string | undefined; } | BufferEncoding): string;",
+    stated: { binders: [], params: [atom("string"), text("utf8")], result: atom("string") } },
+  // `existsSync(path)` with a string tests whether the path exists on the
+  // file system and returns a Boolean; it does not throw. It runs no code of
+  // the client's on a string.
+  { module: "fs", name: "existsSync", signature: "export function existsSync(path: PathLike): boolean;",
+    stated: { binders: [], params: [atom("string")], result: atom("boolean") } },
+  // `mkdtempSync(prefix)` with a string creates a directory named by the
+  // prefix and six random characters and returns its path, a string; a
+  // prefix it cannot create a directory at throws. Stated at one argument,
+  // where an encoding option may select a `Buffer`.
+  { module: "fs", name: "mkdtempSync",
+    signature: "export function mkdtempSync(prefix: string, options?: EncodingOption): string;",
+    stated: { binders: [], params: [atom("string")], result: atom("string") } },
+  // `rmSync(path, { recursive: true, force: true })` with a string path
+  // removes the path and everything under it, a path that does not exist
+  // included, and returns `undefined`; one it cannot remove throws. The host
+  // reads and validates the options' properties, which an object of another
+  // type may hold as accessors: the call is unrestricted in its effect.
+  { module: "fs", name: "rmSync", signature: "export function rmSync(path: PathLike, options?: RmOptions): void;",
+    stated: { binders: [], params: [atom("string"), { k: "object", stringIndex: null, calls: [], span: at, fields: [
+      field("recursive", yes(), false), field("force", yes(), false)] }], result: atom("undefined") } },
   // `realpathSync(path)` with a string resolves it on the file system, its
   // symbolic links followed, and returns the canonical path as a string; a
   // path that does not exist throws. A relative path is resolved against

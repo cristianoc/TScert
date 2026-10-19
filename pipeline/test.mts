@@ -75,7 +75,7 @@ const writeClaims = (artifacts: string, name: string, claims: SourceClaims): str
 
 const outcomes = await pooled(cases, runCase);
 const artifactsOf = new Map<string, string>();
-let verifiedFunctions = 0;
+let verifiedFunctions: number = 0;
 for (const [i, test] of cases.entries()) {
   const settled = outcomes[i];
   if (settled.status === "rejected") throw settled.reason;

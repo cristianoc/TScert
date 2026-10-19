@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import vm from "node:vm";
+import { runInNewContext } from "node:vm";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { stripTypes } from "../tools/strip-types.mts";
@@ -152,7 +152,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
 
   const source = stripTypes(readFileSync(join(artifacts, "source.ts"), "utf8"));
   const evaluate = (expression: string): unknown =>
-    vm.runInNewContext(source + "\n" + expression, {}, { timeout: 1000 });
+    runInNewContext(source + "\n" + expression, {}, { timeout: 1000 });
   assert.equal(evaluate("JSON.stringify(genericRestUses(true, 7))"), "[7,7]");
   assert.equal(
     evaluate("JSON.stringify(genericRestPrefix(false, 7))"),

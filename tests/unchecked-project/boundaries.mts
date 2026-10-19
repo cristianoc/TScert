@@ -9,9 +9,9 @@ export const arrow = (x: number) => x; // expected: unannotated
 export const chosen = flag ? (x: number) => x : (x: number): number => x + 1; // expected: unannotated
 export const listed = [(x: number) => x]; // expected: unannotated
 export const sequenced = (Math.random(), (x: number) => x); // expected: unannotated
-export let assignedLater = (x: number): number => x;
-// The type of `assignedLater`, which its annotated initializer states, gives
-// the assigned function its context.
+export let assignedLater: (x: number) => number = (x: number): number => x;
+// The type of `assignedLater`, which its annotation states, gives the
+// assigned function its context.
 export const reassigned = (assignedLater = (x) => x);
 export const object = {
   method(x: number) { // expected: unannotated
@@ -33,6 +33,12 @@ export class Counter {
   }
 }
 export default () => 1; // expected: unannotated
+// A module `let` or `var` is read and written by the module's units: its
+// type is written, as a `const`'s need not be.
+export let counter = 0; // expected: unannotated
+export var total = 0; // expected: unannotated
+export let counted: number = 0;
+export const fixed = 0;
 
 // A written type gives these their types: the binding's, the parameter's,
 // the context of an argument.
