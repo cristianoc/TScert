@@ -48,13 +48,10 @@ function numberText(value: number): string | null {
   return Number.isFinite(value) ? String(value) : null;
 }
 
-/** A bigint literal type's value, which the checker sends as its decimal
- * spelling, a bigint, or a sign and digits. */
-function bigintValue(value: unknown): string | null {
-  if (typeof value === "bigint" || typeof value === "string") return String(value);
-  if (value && typeof value === "object" && "base10Value" in value && typeof value.base10Value === "string")
-    return ("negative" in value && value.negative === true ? "-" : "") + value.base10Value;
-  return null;
+/** A bigint literal type's value, a `bigint` (the synchronous API decodes
+ * the decimal spelling it is sent as into one), by its decimal spelling. */
+function bigintValue(value: bigint): string {
+  return String(value);
 }
 
 /** `type` as a union of the fragment's primitive families and literals, when
@@ -76,9 +73,7 @@ export function literalUnion(type: Type, span: Span, unique?: (part: Type) => nu
       if (text === null) return null;
       terms.push({ k: "literal", name: "number", text, span });
     } else if (part.isBigIntLiteralType()) {
-      const text = bigintValue(part.value);
-      if (text === null) return null;
-      terms.push({ k: "literal", name: "bigint", text, span });
+      terms.push({ k: "literal", name: "bigint", text: bigintValue(part.value), span });
     } else if (part.isBooleanLiteralType())
       terms.push(part.value
         ? { k: "literal", name: "true", text: "true", span }

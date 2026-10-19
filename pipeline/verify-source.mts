@@ -122,14 +122,29 @@ interface Explanation {
   pos: [number, number];
   reason: string;
 }
+/** What `JSON.parse` gives: null, a Boolean, a number, a string, a fresh
+ * array or a fresh plain object of such values. */
+type Json = null | boolean | number | string | readonly Json[] | JsonRecord;
+type JsonRecord = { readonly [key: string]: Json };
+function isJsonArray(value: Json): value is readonly Json[] {
+  return Array.isArray(value);
+}
+function isJsonRecord(value: Json): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 function readExplanations(text: string): Explanation[] {
   try {
-    const parsed: unknown = JSON.parse(text);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((e: unknown): Explanation[] =>
-      e && typeof e === "object" && "pos" in e && "reason" in e && typeof e.reason === "string" &&
-        Array.isArray(e.pos) && e.pos.length === 2 && typeof e.pos[0] === "number" && typeof e.pos[1] === "number"
-        ? [{ pos: [e.pos[0], e.pos[1]], reason: e.reason }] : []);
+    const parsed: Json = JSON.parse(text);
+    if (!isJsonArray(parsed)) return [];
+    return parsed.flatMap((e: Json): Explanation[] => {
+      if (!isJsonRecord(e)) return [];
+      const reason = e["reason"];
+      const pos = e["pos"];
+      if (typeof reason !== "string" || !isJsonArray(pos) || pos.length !== 2) return [];
+      const start = pos[0];
+      const end = pos[1];
+      return typeof start === "number" && typeof end === "number" ? [{ pos: [start, end], reason }] : [];
+    });
   } catch {
     return [];
   }
