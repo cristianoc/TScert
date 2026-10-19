@@ -1116,6 +1116,13 @@ the corpus runs are regression evidence, not proofs.
   member's type, and its model value holds `"RemoteNode"` under `[[host]]`; its stable members return the same value on every read,
   and nothing the package does after construction changes them. This
   defines the host-admissible worlds.
+- **T1′ (marker to invariant).** Every model value of an admitted external
+  value that holds `"RemoteNode"` under `[[host]]` meets $`S_k`$ for
+  its `kind` $`k`$, at every later step, and the locations of its stable
+  members have stable contracts. With T1 this makes the marker and the node
+  invariant correspond in both directions, which the agreement of two units'
+  residuals needs. It is an external-model obligation, not a conjunct of
+  `WorldAdm`.
 - **T2 (guards).** The guard bodies the guard check reads are the functions
   Node runs for the package's exports; the check itself is a trusted part of
   the front end.
@@ -1410,7 +1417,8 @@ nodes among them.
 The four land in this order, each a commit of its own with its controls.
 
 1. **Kind sets.** One clause of the type language, $`\mathsf{numIn}(S)`$
-   ([compact kind sets](#compact-kind-sets)):
+   ([compact kind sets](#compact-kind-sets)), a finite set of number bit
+   patterns independent of `SyntaxKind`:
    - Lean: a constructor `numIn (bits : List UInt64)` of
      `PositiveNormalization.Clause`, of the number shape, meaning
      $`v=\mathsf{num}(b)\land b\in S`$; its meets with `num`, `numLit` and
@@ -1419,6 +1427,10 @@ The four land in this order, each a commit of its own with its controls.
      union covering each element); its `numEq` and truthiness slices in
      `tagSlice`; admissibility and congruence, which a world-independent
      clause has trivially.
+   - Normalization: a union of two or more number literals in a normal body
+     is the one clause $`\mathsf{numIn}`$ of their bit patterns, and two kind
+     sets of a union are their union, so an ordinary literal union costs one
+     clause wherever it is written.
    - Wire: a label body's clause `{"numIn": {"bits": [b, …]}}`, sorted,
      distinct, at least two, refused otherwise by the decoder; the producer's
      atom `NumIn` with the same slices; `source-claims.mts` and the field-name
@@ -1431,8 +1443,15 @@ The four land in this order, each a commit of its own with its controls.
      [the node invariant](#the-node-invariant) states, with the corrections.
      Each shape carries the provenance view: a required readonly view of the
      reserved key `[[host]]` at the string literal `"RemoteNode"`, which no
-     program object meets, since no allocation owns `[[host]]`. T1 states the
-     model value of a node holds it there.
+     program object meets, since no allocation owns `[[host]]`.
+   - The correspondence is an external-model obligation, stated in
+     [trust](#trust) in both directions: a runtime node's model value holds
+     the marker (T1), and a model value of an admitted external value holding
+     the marker meets the whole kind-indexed invariant, $`S_k`$ for its
+     `kind` $`k`$, preserved by every later step, its stable members backed
+     by stable contracts (T1′). Cross-unit agreement of residuals needs the
+     second direction. It is no conjunct of `WorldAdm`, which states
+     contract admissibility and is the premise `checkJson_safe` keeps.
    - $`\mathrm{members}(A)`$ from the `extends` edges and alias unions of the
      audited declarations, computed once per installation.
    - Per unit, $`K_u`$: the kinds the unit's kind tests name (comparisons
@@ -1446,43 +1465,66 @@ The four land in this order, each a commit of its own with its controls.
      any declaration.
    - Controls: the cases of [tests](#tests) for the residual (`parent` of a
      source file), separate units, the JavaScript typedef, and a forged claim
-     stating a node at an arm its kind excludes.
+     stating a node at an arm its kind excludes. Measured: the cost of a
+     unit's record arms, as it grows.
 3. **Host guards**, in the parser and `compiler-api.mts`:
-   - The guard check C2 reads the guard bodies of the resolved
-     `is.generated.js` and `is.js` with the front end's parser, accepts the
-     syntax of [guards](#guards), and computes $`K_g`$ from the `SyntaxKind`
-     values C1 reads. The refused guards are listed with their texts.
-   - The parser writes a call of a checked host guard as the rule
-     `host-guard` states: the argument evaluated once into a fresh binding
-     (the binding itself where the argument is an immutable name), then
+   - The guard check C2 reads the whole function of each guard of the
+     resolved `is.generated.js` and `is.js` with the front end's parser,
+     parameter initialization included, accepts the syntax of
+     [guards](#guards) and refuses any other effect, and computes $`K_g`$ from
+     the `SyntaxKind` values C1 reads. Helpers and the enum binding are
+     resolved as the module binds them. The refused guards are listed with
+     their texts.
+   - A call is recognized by resolution, never by name: its callee resolves
+     through the import binding to the checked export. A same-named local
+     function, or any other callee, is an ordinary call.
+   - The rewrite applies where the argument's claimed type is a node type,
+     whose provenance view the node invariant gives; a call with a spread or
+     an argument past the guard's parameter is refused.
+   - The parser writes the call as the rule `host-guard` states: the argument
+     evaluated once into a fresh binding (the binding itself where the
+     argument is an immutable name), then
      `y.kind === k₁ || … || y.kind === kₙ` with each $`k_i`$ a number literal.
-     The fragment gains no form; Lean sees ordinary reads and tests.
+     Reading `kind` again gives the same value (T1), runs no code and throws
+     nothing (T4, a transparent read), so the chain has the call's result,
+     effects and exceptions. The fragment gains no form; Lean sees ordinary
+     reads and tests.
    - Controls: `invalid-compiler-api-guard-argument` (one evaluation, under
-     Node), a guard outside the syntax refused at its use,
-     `compiler-api-guard-false-branch` from gap to positive, and its forged
-     claims.
+     Node), a guard outside the syntax refused at its use, a local function
+     named as a guard, a spread argument, `compiler-api-guard-false-branch`
+     from gap to positive, and its forged claims. Measured: the cost of a
+     long guard chain (`isExpression`, 46 kinds).
 4. **Stable paths** ([stable paths](#stable-paths)), after the three:
-   - Lean: a `stable` flag on a readonly view, meaning the view's location
-     has a pinned contract, one admitting at most one value at every level and
-     world; a stable view is below the plain view of the same type, and no
-     rule makes a stable view of a plain one. A rule at an edge: where a read
-     link $`x.f\mapsto y`$ holds, every arm of $`x`$'s claim states $`f`$ as a
-     stable view, and $`y`$ is claimed at $`B`$, $`x`$ is claimed at the arms
-     with $`f`$'s view at $`B`$. Soundness: the pinned contract makes the
-     location hold $`\rho(y)`$ in every later world, and a type's meaning is
-     preserved by world extension and lower levels. The refined claim is a
-     type in $`\Gamma`$, so calls and writes of other locations leave it; a
-     write of $`x`$'s slot replaces it. This is `read-eq` with the read link
-     as its certificate.
-   - Front end: the node shapes' stable members, and only theirs, as stable
-     views.
+   - Lean: a `stable` flag on a readonly view. A **stable contract** is one
+     fixed value: $`\exists v_0.\ \forall j, U, u.\ c_j(U,u)\Rightarrow u=v_0`$,
+     the same $`v_0`$ at every level and world. A stable view's location has
+     a stable contract implying the view's type. Proved: truncation and world
+     extension keep it, and the refinement below transports.
+   - Only the trusted host-contract elaborator sets the flag, for the audited
+     stable members of node shapes; a producer's claim, a source annotation
+     and `readonly` cannot. A stable view is below the plain view of the same
+     type, no rule makes a stable view of a plain one, mappings and subtyping
+     keep the flag, and a claim stating a stable view the declaration does not
+     give is refused (forged).
+   - A rule at an edge: where a read link $`x.f\mapsto y`$ holds, every arm
+     of $`x`$'s claim states $`f`$ as a stable view, and $`y`$ is claimed at
+     $`B`$, $`x`$ is claimed at the arms with $`f`$'s view at $`B`$.
+     Soundness: the stable contract makes the location hold $`\rho(y)`$ in
+     every later world, and a type's meaning is preserved by world extension
+     and lower levels. The refined claim is a type in $`\Gamma`$, so calls and
+     writes of other locations leave it; a write of $`x`$'s slot, also
+     through a captured binding, replaces it. This is `read-eq` with the read
+     link as its certificate.
 
 **What regresses out of order.** Host guards before the node invariant read
 `ts.isIdentifier(n) && n.text` with `n: Node` as a test of `n.kind` on
 `Node`'s declared record, whose `kind` is `number`, and so lose the `true`
 outcome's narrowing the promise gives today (`compiler-api-kind-narrowing`).
 The node invariant before kind sets gives a residual a union of up to 330
-number literals, past the search limit ([arms per unit](#arms-per-unit)).
+number literals: 20 record arms beside one such arm took 9.2 s, and the cost
+of a union grows with its arms, 100 record arms exceeding the 30 s limit
+([arms per unit](#arms-per-unit)); kind sets make each literal union one
+clause, and the record arms' remaining cost is measured as units grow.
 Stable paths before host guards meet the guard's call, of an unchecked
 effect, between the read and its test: the read link would have to survive
 calls, a second mechanism. Kind sets alone change no outcome.
