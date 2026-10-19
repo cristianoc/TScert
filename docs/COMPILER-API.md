@@ -844,11 +844,23 @@ as regression evidence.
   the installed declarations and walks every node of `tools/*.mts`,
   `pipeline/*.mts`, `tests/*.mts`, `dev/*.mts`, `pipeline/examples/*.ts` and
   `tests/node-shapes-corpus/` (TypeScript, JSX and JavaScript with JSDoc),
-  each node's JSDoc included: it fails on a property a kind's shape states
-  required, not admitting `undefined`, that a node of that kind lacks and no
-  correction covers, and it reports the kinds no node of the corpus has and
-  the members of reached kinds no node holds. Its coverage is the corpus's:
-  a member absent only in a form the corpus does not contain is not found.
+  each node's JSDoc included: it fails on a property a kind's flattened
+  shape states required, not admitting `undefined` (inherited and generic
+  components included), that a node of that kind lacks and no correction
+  covers. It checks the presence of every checked required property, not
+  required methods, member types, children's kinds or stability: presence
+  regression evidence, not a completeness proof, and its coverage is the
+  corpus's, so a member absent only in a form the corpus does not contain
+  is not found. It reports the kinds the corpus never reaches and the
+  members of reached kinds no node holds. On 2026-10-19 it reaches 268 of
+  352 kinds; of the 84 others, 80 state no checked property beyond the
+  root's and `NodeBase`'s, which every reached node is checked for (trivia,
+  punctuation and keyword tokens, which `forEachChild` does not visit,
+  `NotEmittedStatement`, `NotEmittedTypeElement` and `Count`), and 4 state
+  their own: `SyntaxList` (`children`), which only `getChildren` builds,
+  and `SyntheticExpression`, `PartiallyEmittedExpression` and
+  `SyntheticReferenceExpression`, which the checker and the emitter make
+  and no parse gives.
   The rest of the check as designed: every node of a corpus
   (`tools/*.mts`, `tests/*.mts`, `dev/*.mts`, `pipeline/**/*.ts`, the
   standard library `.d.ts` files, and a JavaScript file with JSDoc) has every

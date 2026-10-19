@@ -1,8 +1,11 @@
-// C3, the members a shape states required, against run time
-// (COMPILER-API.md, "Binding the contract to the implementation"): every
-// node of a corpus, the JSDoc nodes each holds included, has every property
-// its kind's shape states required and not admitting `undefined`, unless a
-// correction of the compiler API's family covers it. The shapes are the
+// C3, the presence of the properties a shape states required, against run
+// time (COMPILER-API.md, "Binding the contract to the implementation"):
+// every node of a corpus, the JSDoc nodes each holds included, holds every
+// property its kind's flattened shape states required and not admitting
+// `undefined`, inherited and generic components included, unless a
+// correction of the compiler API's family covers it. Methods, member types,
+// children's kinds and stability are not checked here: this is presence
+// regression evidence over the corpus, not a completeness proof. The shapes are the
 // family table's (`tools/host-families.mts`) over the installed package's
 // declarations, resolved by name; the corpus is the repository's own sources
 // and fixtures and `tests/node-shapes-corpus/`. What the corpus never reaches
@@ -148,7 +151,16 @@ for (const path of corpus) {
 }
 closeParser();
 
-const unreached = [...table.shapes.keys()].filter((k) => !seenKinds.has(k)).map(graph.constantName);
+// An unreached kind whose shape states no checked property beyond the
+// root's and `NodeBase`'s, which every reached node is checked for (a token,
+// a keyword, trivia), leaves no property of its own unchecked; the others
+// are listed apart.
+const common = new Set([compilerApiFamily.root.name, "NodeBase", "ReadonlyTextRange"]);
+const ownRequired = (k: number): FlatMember[] => required(k).filter((f) => !common.has(f.owner.name.text));
+const unreachedKinds = [...table.shapes.keys()].filter((k) => !seenKinds.has(k));
+const unreached = unreachedKinds.filter((k) => !ownRequired(k).length).map(graph.constantName);
+const uncovered = unreachedKinds.filter((k) => ownRequired(k).length).map((k) =>
+  `${graph.constantName(k)} (${ownRequired(k).map((f) => f.name).join(", ")})`);
 const unheld = [...seenKinds].flatMap((k) => {
   const source = table.shapes.get(k);
   const flat = !source ? [] : source.rule === "generic" ? source.declarations.flatMap(table.flatten) : table.flatten(source.declaration);
@@ -157,8 +169,9 @@ const unheld = [...seenKinds].flatMap((k) => {
     .map((f) => `${graph.constantName(k)}.${f.name}`);
 });
 console.log(`C3: ${nodes} nodes of ${corpus.length} files, ${seenKinds.size} of ${table.shapes.size} kinds reached`);
-console.log(`  kinds no node has (${unreached.length}): ${unreached.join(" ")}`);
+console.log(`  kinds no node has, stating no checked property of its own (${unreached.length}): ${unreached.join(" ")}`);
+console.log(`  kinds no node has, stating checked properties of its own (${uncovered.length}): ${uncovered.join(" ")}`);
 console.log(`  members of reached kinds no node holds (${unheld.length}): ${unheld.join(" ")}`);
 assert.deepEqual([...absent].map(([key, count]) => `${key} (${count} nodes)`), [],
   "a member a shape states required is absent at run time, and no correction covers it");
-console.log("C3: every member a reached kind's shape states required is held by every node of that kind, or corrected");
+console.log("C3: every checked required property of a reached kind's shape is held by every node of that kind, or corrected (presence regression evidence)");
