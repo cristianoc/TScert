@@ -1926,6 +1926,8 @@ export const cases: Case[] = [
     /a spread of a program's iterable is outside the fragment here/),
   gap("spread-program-iterable-global-getter-refused", "a spread of a program's iterable in a call of a global the file only declares, which may be a getter run before the iterator (run under Node): no library declaration binds it", "unsupported", "source",
     /a spread of a program's iterable is outside the fragment here/),
+  gap("spread-program-iterable-ambient-function-refused", "a spread of a program's iterable in a call of a `declare function`: an ambient declaration says nothing of what the name holds, a getter run before the iterator at run time (run under Node)", "unsupported", "source",
+    /a spread of a program's iterable is outside the fragment here/),
   gap("spread-program-iterable-global-tdz-refused", "a spread of a program's iterable after a global the file only declares, which may be another script's lexical binding read before its initialization (run under Node)", "unsupported", "source",
     /a spread of a program's iterable is outside the fragment here/),
   positive("spread-program-iterable-first", "a spread of a program's iterable that is its statement's first evaluation able to run code: the first element of an array literal before an element that runs code, an argument of `new Set(…)`, the receiver of a method call (run under Node: the iterator's steps precede the later element's code)"),

@@ -233,7 +233,7 @@ export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
   const assigned = gate.assignedNames();
   // A name read before the spread runs after the collection: it must hold
   // the same value then, and its read must not throw where the source's
-  // would. So it is a parameter or a function declaration, a `let` or
+  // would. So it is a parameter or a function declaration with a body, a `let` or
   // `const` of a function body the early-binding analysis finds initialized
   // at every read (`markEarly`), or, declared nowhere in the file, a name
   // TypeScript binds to the standard library's `var`s or functions alone
@@ -247,7 +247,15 @@ export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
         ? at.statements : null;
       if (!statements) continue;
       for (const st of statements) {
-        if (ts.isFunctionDeclaration(st) && st.name?.text === id.text) return true;
+        // A function declaration with a body is created when its scope is
+        // entered; an ambient one (`declare function`, an overload without
+        // a body) says nothing of what the name holds at run time.
+        if (ts.isFunctionDeclaration(st) && st.name?.text === id.text) {
+          const named = statements.filter((d): d is ts.FunctionDeclaration =>
+            ts.isFunctionDeclaration(d) && d.name?.text === id.text);
+          return named.some(d => !!d.body) &&
+            !named.some(d => d.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword));
+        }
         if (ts.isClassDeclaration(st) && st.name?.text === id.text) return false;
         if (ts.isImportDeclaration(st) && importedNames(st).includes(id.text)) return false;
         if (ts.isVariableStatement(st))

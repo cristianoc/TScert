@@ -2661,7 +2661,9 @@ A spread of a program's iterable (`collect`) that is the first evaluation
 able to run code of the statement's value (an expression statement's, a
 `return`'s or a declaration's one initializer), every evaluation before it
 a literal or a name the file never assigns whose read cannot throw nor run
-code: a parameter, a function declaration, a function body's `let` or
+code: a parameter, a function declaration with a body (an ambient
+`declare function` is none, `spread-program-iterable-ambient-function-refused`),
+a function body's `let` or
 `const` the early-binding analysis finds initialized at every read, or a
 name the file declares nowhere that TypeScript binds to the standard
 library's `var`s or functions alone. A module binding, an import, a class,
