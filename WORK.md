@@ -20,6 +20,7 @@ design, not its progress.
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
+| [Guard overloads of `every` and `filter`](#guard-overloads) | open | a reviewed `every<S>` and `filter<S>` narrow their receiver and their result where a guard is passed, and `shadow-contracts.mts`'s `print` verifies |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
@@ -137,6 +138,17 @@ Left open:
 array from another beyond fresh storage, so that `pop` on an array literal
 the callback allocated is admitted; and a declaration's fresh result, which
 only closures state.
+
+<a id="guard-overloads"></a>
+**Guard overloads of `every` and `filter`.** TypeScript's `every` and
+`filter` take a guard at overloads binding the guard's type, `every<S>`
+narrowing the array to `S[]` where it answers `true` and `filter<S>`
+returning `S[]`. The reviewed overlay states only their predicate
+overloads, so a guard closure passed to them is checked and narrows
+nothing; a callback a later call of the array takes is then read at the
+array's element type, where TypeScript reads the guard's
+(`shadow-contracts.mts`). Stating the overloads is a new library contract,
+to be reviewed as the overlay's others are.
 
 **Field facts across calls** are deferred, measured (2026-10-19): a call
 step keeps no current-content fact, and keeping those a call's checked
@@ -490,8 +502,11 @@ in search; of the drivers' 48, 4 and 8. By the judgment that fails:
   a test (6): the compiler-node narrowing the host-families work covers;
 - a user guard's promise not established by its body (`isObject`,
   `isRecord`: 9) and the reads it would narrow (about 16, `atom.required` in
-  `claim-text.mts` among them), and guard closures with binders (5): guard
-  recognition;
+  `claim-text.mts` among them): guard recognition; guard closures passed as
+  callbacks (5) are claimed at the callback's signature, and stop at the
+  guard overloads of `every` and `filter` the overlay does not state (4 of
+  `shadow-contracts.mts`, where TypeScript narrows the array a guard tested)
+  and at a host guard (`interfacesOf`);
 - a read of a key `in` found on an open object (4, and 2 drivers): the
   [proposal](docs/PROGRAM-TYPING.md) under review;
 - a spread of a narrowed union member or a type parameter (5);

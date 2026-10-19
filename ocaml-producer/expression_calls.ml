@@ -115,7 +115,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                     | Some _ -> List.length offered.params >= arity) -> Some (t,offered)
           | _ -> None in
         match arg.node with
-        | Lambda (_,[],ps,_,false,_,_,_) ->
+        (* A guard closure is claimed at its own signatures, the promise and
+           the ones it is offered among them (`Closures`). *)
+        | Lambda (_,[],ps,_,false,_,None,_) ->
           Option.map (fun (t,_) () -> publish_instance arg.pos t)
             (offered (List.length ps))
         | Id n when List.mem_assoc n (path_facts ()).Proposal_flow.closures ->

@@ -2514,6 +2514,35 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A guard closure passed as a callback is claimed at its own signature,
+  // its promise and the callback's longer signature. Claimed without the
+  // promise, the closure is refused where evidence is produced and where the
+  // honest evidence is checked.
+  const artifacts = run("guard-closure-callback");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "allPresent"), "allPresent's claims");
+  const at = source.indexOf("(x): x is string");
+  const closure = must(fn.expressions.find(e => e.pos[0] === at), "the closure's claim");
+  const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
+  assert.ok(typeof label === "number", "the closure's claim is a row");
+  const row = must(claims.types[label], "the closure's row");
+  const clause = row[0];
+  assert.ok(clause !== undefined && typeof clause === "object" && "arrs" in clause, "an arrow clause");
+  const arrows = clause.arrs.arrows;
+  const promised = arrows.findIndex(a => a.effect.promise !== null);
+  assert.ok(promised >= 0, "the claim offers the promise");
+  arrows.splice(promised, 1);
+  const rows = must((fn.arrows ?? []).find(a => a.pos[0] === at), "the closure's arrow rows");
+  rows.rows.splice(promised, 1);
+  const input = writeClaims(artifacts, "forged-guard-closure-promise", claims);
+  const refusal = "a guard closure's claim must offer its written promise over its annotated parameters";
+  refusedAt(artifacts, input, "forged-guard-closure-promise", refusal);
+  assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  process.stdout.write("guard closure callback: a claim without the promise refused in search and in checking\n");
+}
+
+{
   // A footprint check that runs out of subtype rounds is inconclusive, not a
   // refusal: `marks` claims the empty footprint, and with one round the
   // checks of its graph exhaust. Search and checking report exhaustion, never

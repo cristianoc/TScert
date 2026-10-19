@@ -110,6 +110,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     '[{"a":1},[{},{}],0]', "guard-negated-short-circuit: the guarded values");
   assert.equal(runExample("invalid-guard-negated-and", "wrong(5, 0)"), 5,
     "invalid-guard-negated-and: 5 returned where a record is promised");
+  assert.equal(runExample("invalid-guard-closure-callback", "allPresent([null])"), true,
+    "invalid-guard-closure-callback: the guard answers true of null, which is no string");
   assert.equal(runExample("invalid-guard-ternary-false-arm", `wrong("a")`), "a",
     "invalid-guard-ternary-false-arm: \"a\" where \"b\" is promised");
   assert.equal(runExample("invalid-guard-footprint", `(() => { const a = ["x", "y", "z"]; return 2 in wrong(a, a); })()`), false,
