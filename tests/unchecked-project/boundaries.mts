@@ -38,6 +38,18 @@ export default () => 1; // expected: unannotated
 export let counter = 0; // expected: unannotated
 export var total = 0; // expected: unannotated
 export let counted: number = 0;
+// A `var` in a block or a loop of the module is the module's binding, which
+// a function reads; a block's `let` and a function's `var` are not.
+{
+  var hidden = 0; // expected: unannotated
+  let local = 0;
+  hidden += local;
+}
+for (var step = 0; step < 1; step++) {} // expected: unannotated
+export function read(): number {
+  var inner = hidden + step;
+  return inner;
+}
 export const fixed = 0;
 
 // A written type gives these their types: the binding's, the parameter's,
