@@ -9,7 +9,7 @@ import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { clientErrors, tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
-import { fieldOf, messageOf } from "../tools/thrown.mts";
+import { fieldOf, messageOf, passToolFailure } from "../tools/thrown.mts";
 import { keepRunDirectories, runDirectory, runRoot } from "./run-directory.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
@@ -150,7 +150,8 @@ function readExplanations(text: string): Explanation[] {
       const end = pos[1];
       return typeof start === "number" && typeof end === "number" ? [{ pos: [start, end], reason }] : [];
     });
-  } catch {
+  } catch (error) {
+    passToolFailure(error);
     return [];
   }
 }
@@ -203,7 +204,8 @@ function refusedByTypeScript(detail: string, read: () => SeenDiagnostic[]): stri
 function typeScriptErrors(file: string, tsconfigPath?: string): SeenDiagnostic[] {
   try {
     return clientErrors(file, tsconfigPath);
-  } catch {
+  } catch (error) {
+    passToolFailure(error);
     return [];
   }
 }

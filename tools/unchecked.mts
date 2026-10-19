@@ -102,6 +102,7 @@ import * as ts from "typescript/unstable/ast";
 import type { Node, SourceFile } from "typescript/unstable/ast";
 import { isHostFile } from "./compiler-api.mts";
 import { prelude, shadowText, type ReplacedInput } from "./shadow-contracts.mts";
+import { toolFailureOf } from "./thrown.mts";
 
 /** What was found, which report it is, and the reason written with it. */
 type Kind = "any" | "as" | "!" | "any flow" | "suppressed" | "typed any" | "unannotated" | "uninspected";
@@ -267,7 +268,10 @@ function isAny(checker: Checker, type: Type, seen: Set<number> = new Set<number>
   try {
     parts = type.isUnionType() || type.isIntersectionType() ? type.getTypes() ?? []
       : isTypeReference(type) ? checker.getTypeArguments(type) : [];
-  } catch {
+  } catch (error) {
+    // A panic the compiler replied leaves the channel readable, and the
+    // part it did not give is uninspected; any other failure is thrown on.
+    if (toolFailureOf(error)?.kind !== "panic") throw error;
     return null;
   }
   let result: boolean | null = false;
@@ -313,7 +317,11 @@ function typeOnly(node: Node): boolean {
 function typesOf(checker: Checker, nodes: Node[]): (Type | undefined | null)[] {
   try {
     return checker.getTypeAtLocation(nodes);
-  } catch {
+  } catch (error) {
+    // A panic the compiler replied leaves the channel readable, so the
+    // nodes are asked again in halves, down to the one it fails on; any
+    // other failure may leave the channel unreadable, and is thrown on.
+    if (toolFailureOf(error)?.kind !== "panic") throw error;
     if (nodes.length === 1) return [null];
     const half = Math.ceil(nodes.length / 2);
     return [...typesOf(checker, nodes.slice(0, half)), ...typesOf(checker, nodes.slice(half))];

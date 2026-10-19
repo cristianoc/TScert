@@ -3,6 +3,7 @@
  * nondefault object modes and conjunction metadata explicitly. The text always
  * determines its type. */
 import { decodeClaimType, type Atom } from "./claim.mts";
+import { passToolFailure } from "./thrown.mts";
 import {
   numberOfBits,
   isArrayPresence,
@@ -234,7 +235,8 @@ function printType(type: unknown): Printed {
   const state: PrintState = { printable: true };
   try {
     decodeClaimType(type);
-  } catch {
+  } catch (error) {
+    passToolFailure(error);
     state.printable = false;
   }
   const text = typeText(type, state);

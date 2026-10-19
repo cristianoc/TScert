@@ -15,6 +15,7 @@ import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { nameOf } from "./syntax.mts";
+import { passToolFailure } from "./thrown.mts";
 
 /** Reading rule 2: a property of a host declaration declared `any` states
  * nothing, and is read as an optional member of type `unknown`, as the
@@ -283,7 +284,8 @@ export function isHostFile(file: string): boolean {
   let real: string;
   try {
     real = realpathSync(file);
-  } catch {
+  } catch (error) {
+    passToolFailure(error);
     return false;
   }
   const host = installation();

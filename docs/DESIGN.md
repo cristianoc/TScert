@@ -215,7 +215,16 @@ The outcome is one of:
   the front end's call site and the compiler's reason, and certifies
   nothing. The front end exhausting the call stack is a tool failure too:
   it may interrupt a query mid-reply, after which the channel's replies are
-  unreadable, so no refusal is made of it.
+  unreadable. A tool failure is never made a refusal, an absence or an
+  unknown answer: every front-end catch passes it on, and one caught within
+  a located read keeps that location. The compiler's API (typescript 7.0.2)
+  panics writing the type of an empty array literal TypeScript types as a
+  tuple (`[] as const`, or `[]` where a destructuring or a tuple type is its
+  context) into a reply, observed of `Checker.getTypeAtLocation` and
+  `TypeObject.getTypes`; a query whose reply holds that type is such a tool
+  failure, and its report names the cause (`empty-tuple-literal-api-panic`).
+  A literal whose type no query asks is unaffected (`constructor-tuple-spread`,
+  `as-const`).
 
 A whole-file failure can precede claim generation.
 Neither an unsupported result nor an infrastructure error is a safety verdict.

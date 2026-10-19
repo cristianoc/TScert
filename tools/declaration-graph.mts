@@ -36,7 +36,7 @@ import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, 
 import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
-import { messageOf, toolFailureOf } from "./thrown.mts";
+import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -842,7 +842,8 @@ export function collectDeclarations(file: string, options: {
       try {
         const node = lookup(reference.typeName, reference.typeName.text);
         return ts.isTypeAliasDeclaration(node) ? node : null;
-      } catch {
+      } catch (error) {
+        passToolFailure(error);
         return null;
       }
     };
@@ -1217,7 +1218,7 @@ export function collectDeclarations(file: string, options: {
         const type = node.type;
         const unique = ts.isTypeOperatorNode(type) && type.operator === ts.SyntaxKind.UniqueKeyword &&
           type.type.kind === ts.SyntaxKind.SymbolKeyword;
-        const symbol = unique ? (() => { try { return symbolOf(node.name); } catch { return null; } })() : null;
+        const symbol = unique ? (() => { try { return symbolOf(node.name); } catch (error) { passToolFailure(error); return null; } })() : null;
         return { declaration: { module: idOf(source), name: node.name.text, span }, construct: false,
           typeParams: [], type: symbol === null ? typeTerm(valueScope(node, what), type, node)
             : { k: "unique", symbol, span: [type.getStart(source), type.end] } };
@@ -3065,7 +3066,7 @@ function declarationOrigin(file: SourceFile, libraryFile: (file: SourceFile) => 
     try {
       const manifest: unknown = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
       if (manifest && typeof manifest === "object" && "name" in manifest && manifest.name === name) origin = name;
-    } catch { origin = "project"; }
+    } catch (error) { passToolFailure(error); origin = "project"; }
   }
   origins.set(path, origin);
   return origin;

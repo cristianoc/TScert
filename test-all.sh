@@ -116,6 +116,8 @@ run_test "Documents: links, math" node tests/docs.mts
 run_test "Examples run under Node" node tests/node-runs.mts
 # tests/trusted-inputs.mts checks the front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay.
 run_test "Trusted inputs" node tests/trusted-inputs.mts
+# tests/tool-failures.mts forces a failure of the compiler's API at each kind of catching site: each is reported as a tool failure.
+run_test "Tool failures stay tool failures" node tests/tool-failures.mts
 # tests/compiler-api.mts binds the compiler-API contract to the installed package: C1, its enums.
 run_test "Compiler-API contract" node tests/compiler-api.mts
 # tests/regexp-shapes.mts checks the capture-shape reading of regex literals against the host.

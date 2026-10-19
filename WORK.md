@@ -475,7 +475,7 @@ first three items 2026-10-19):
   `sep`, a constant of the object the module exports (2); a default import
   (5);
 - a union holding an empty array literal's tuple type, whose parts the
-  compiler's API panics writing ([refused](docs/SOURCE-FRAGMENT.md#model-limits))
+  compiler's API panics writing, a [tool failure](docs/DESIGN.md)
   (1: `forInEntryReads`, 2026-10-19);
 - `readDiagnostic` stops in the producer at a read of `forEach` through a
   field holding an object beside `null` or `undefined`, and `diagnosticNode` in
