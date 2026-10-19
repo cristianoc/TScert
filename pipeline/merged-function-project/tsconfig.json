@@ -1,0 +1,12 @@
+{
+  // A project whose own module merges a `toJSON` into the standard library's `Function`:
+  // the `*merged-function*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["./augment.ts", "../examples/*merged-function*.ts"]
+}

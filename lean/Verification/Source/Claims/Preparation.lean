@@ -78,6 +78,60 @@ partial def sourceGate : Json → Except String Unit
     kvs.toList.forM fun (_, v) => sourceGate v
   | _ => pure ()
 
+/-- A property key `{"symbol": i}` naming one of `tags`. -/
+def isTagKey (tags : List Nat) (key : Json) : Bool :=
+  match (key.getObjValAs? Nat "symbol").toOption with
+  | some i => tags.contains i
+  | none => false
+
+/-- **The tag gate.** No object the source's code makes holds
+`Symbol.toStringTag`: no allocation (a literal, a class's prototype or
+instance), no class value's static and no write is keyed by it. The native
+`Promise` contract requires it of a promise's prototype, so no such object, nor
+an object whose prototype it is, meets that contract. -/
+partial def tagGate (tags : List Nat) : Json → Except String Unit
+  | .arr xs => xs.forM (tagGate tags)
+  | j@(.obj kvs) => do
+    let keyed := match (j.getObjValAs? String "k").toOption with
+      | some "alloc" => ((j.getObjValAs? (Array Json) "fields").toOption.getD #[]).toList.map (fun (f : Json) => f.getObjValD "name")
+      | some "ctor" => ((j.getObjValAs? (Array Json) "statics").toOption.getD #[]).toList.map (fun (f : Json) => f.getObjValD "name")
+      | some "write" => [j.getObjValD "field"]
+      | _ => []
+    if keyed.any (isTagKey tags) then
+      throw s!"an object the source makes is keyed by `Symbol.toStringTag` at {(j.getObjValD "pos").compress}: no object the program makes holds the tag the native `Promise` contract requires"
+    kvs.toList.forM fun (_, v) => tagGate tags v
+  | _ => pure ()
+
+/-- Whether a type term names the standard library's `PromiseLike`. -/
+partial def namesPromiseLike : Json → Bool
+  | .arr xs => xs.any namesPromiseLike
+  | j@(.obj kvs) =>
+    (match j.getObjVal? "reference" with
+      | .ok r => (r.getObjValAs? String "name").toOption == some "PromiseLike" &&
+          (((r.getObjValD "target").getObjValAs? String "module").toOption.getD "").startsWith "typescript/lib/"
+      | .error _ => false) || kvs.toList.any fun (_, v) => namesPromiseLike v
+  | _ => false
+
+/-- **The native `Promise`'s tag.** The native `Promise` definition states
+`Symbol.toStringTag`, listed by its identity, on its prototype as a readonly
+`string`, and its `then` and `catch` name no `PromiseLike`, their callbacks'
+results being native promises or other values. That no other prototype the
+store states holds the tag is checked of the lowered heads
+(`EquationStore.tagPrototypes`). -/
+def tagDeclarations (document : Json) (tags : List Nat) : Except String Unit := do
+  for d in ← jArr document "definitions" do
+    let native := EquationLowering.ImplicitDependency.promise.selects (d.getObjValD "declaration")
+    let expression := d.getObjValD "expression"
+    if native then
+      let fields := ((expression.getObjValD "prototype").getObjValAs? (Array Json) "fields").toOption.getD #[]
+      if !fields.any (fun f => isTagKey tags (f.getObjValD "name") &&
+          (f.getObjValAs? Bool "readonly").toOption == some true &&
+          (f.getObjValAs? Bool "optional").toOption == some false &&
+          ((f.getObjValD "type").getObjValAs? String "name").toOption == some "string") then
+        throw "the native Promise contract states no readonly `Symbol.toStringTag` of type string on its prototype"
+      if namesPromiseLike expression then
+        throw "the native Promise contract names PromiseLike: its callbacks' results resolve as native promises only"
+
 /-- The tree with the value at `path` (`/functions/0/params/0/type`) set. -/
 partial def setPath (j : Json) (path : List String) (v : Json) : Json :=
   match path with
@@ -161,6 +215,10 @@ def equationFront (ast claims : Json) (fileKey : String)
   let symbols ← jArr document "symbols"
   if symbols.eraseDups.length != symbols.length then
     throw "a unique symbol declaration is listed twice"
+  let tags := EquationLowering.tagSymbols document
+  tagGate tags (ast.getObjValD "functions")
+  tagGate tags (ast.getObjValD "init")
+  tagDeclarations document tags
   let roots ← (← jArr document "roots").mapM fun root => do jStr (← jField (← jField root "binding") "local")
   if roots.eraseDups.length != roots.length then throw "duplicate declaration root name"
   -- A declaration failure belongs to the unit requiring the contract, not to

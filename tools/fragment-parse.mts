@@ -37,7 +37,7 @@ import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, t
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
   throwUninitializedName, type EnumMemberValue } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
-import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement } from "./fragment-support.mts";
+import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
 import * as expressions from "./fragment-expressions.mts";
 import * as statements from "./fragment-statements.mts";
@@ -236,6 +236,9 @@ export class Gate {
    * `Symbol.toPrimitive`, …), by index: keys no literal or class of the
    * fragment writes (`writtenSymbol`). */
   hostSymbols: Set<number> = new Set();
+  /** The declaration document's entries for the standard library's
+   * `Symbol.toStringTag`, by index. */
+  tagSymbols: Set<number> = new Set();
   /** The statement being lowered, where it runs a program iterable's
    * protocol before its own code (`hoistTarget`): the spread collected, and
    * the claim sites the lowering takes from the statement. */
@@ -1628,6 +1631,7 @@ function lowerFile(file: string, carriesContext: boolean,
         globals: globalNodes.map(node => gate.span(node)),
         globalValues: globalValueNodes.map(node => gate.span(node)),
         ambient: ambientNames.map(node => gate.span(node)),
+        root: gate.span(first),
         ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
         ...(firstAsync ? { intrinsics: { span: gate.span(firstAsync), names: [...intrinsicNames] } } : {}),
         symbolKeys: keyNodes.map(node => gate.span(node)),
@@ -1765,6 +1769,7 @@ function lowerFile(file: string, carriesContext: boolean,
     // operand (`binary`), and calls where that operand's type states it.
     gate.hostSymbols = new Set(declarations.symbols.flatMap((s, i) =>
       s.module.startsWith("typescript/lib/") && s.name !== "iterator" && s.name !== "hasInstance" ? [i] : []));
+    gate.tagSymbols = new Set(declarations.symbols.flatMap((s, i) => isTagSymbol(s) ? [i] : []));
     for (const { declaration } of declarations.definitions)
       gate.typeIdentities.add(JSON.stringify([declaration.module, declaration.span, declaration.name]));
     for (const root of declarations.roots) {

@@ -1,0 +1,12 @@
+{
+  // A project whose own module merges the standard library's own `at` into `ReadonlyArray`, at another binder and parameter name:
+  // the `*merged-renamed*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["./augment.ts", "../examples/*merged-renamed*.ts"]
+}

@@ -146,6 +146,19 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   ])
     assert.equal(runExample(file, `(r => r.length === 3 && !(2 in r))(${call})`), true,
       `${file}: the hook shrinks the mapped array, leaving a hole in the result`);
+  // A `toJSON` an array owns, or an open record holds beside its declared
+  // fields, is called by `JSON.stringify`, whose result is then the hook's
+  // `undefined` where the declared result is a string.
+  assert.equal(runExample("invalid-array-own-tojson", "typeof text(Object.assign([1, 2], { toJSON: () => undefined }))"),
+    "undefined", "invalid-array-own-tojson: an array's own toJSON makes stringify return undefined");
+  assert.equal(runExample("invalid-json-stringify-record", "typeof encode({ x: 1, y: 2, toJSON: () => undefined })"),
+    "undefined", "invalid-json-stringify-record: a record's undeclared toJSON makes stringify return undefined");
+  assert.equal(runExample("json-parse-stringify-tojson-member",
+    `[roundTrip('{"a":{"toJSON":1},"b":[{"toJSON":"x"}]}'), wrapped('{"toJSON":[1]}')].join(" ")`),
+    '{"a":{"toJSON":1},"b":[{"toJSON":"x"}]} [{"toJSON":[1]},{"toJSON":{"toJSON":[1]}}]',
+    "json-parse-stringify-tojson-member: noncallable toJSON members round-trip");
+  assert.equal(runExample("json-stringify-arrays", "[nested([[1, 2], []]), ...mixed([[1, { a: [true] }], null])].join(\" \")"),
+    '[[1,2],[]] [[1,{"a":[true]}],[[1,{"a":[true]}],null]] [null,[null,null]]', "json-stringify-arrays: strings");
   assert.equal(runExample("map-stable-json-error", `JSON.stringify([quotedAll(["a"]), checkedAll([1, 2])])`),
     '[["\\"a\\""],[1,2]]', "map-stable-json-error: dense results");
   assert.throws(() => runExample("map-stable-json-error", "checkedAll([-1])"), /negative: -1/,
@@ -980,4 +993,36 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   const global = /&/g;
   global.lastIndex = 2;
   assert.deepEqual(["a&b&".replace(global, "+"), global.lastIndex], ["a+b+", 0], "replace writes lastIndex");
+}
+{
+  // A callable `then` reaching a resolution is called: each operation the
+  // pipeline refuses at a thenable settles to what that `then` passes, 42,
+  // not to the object (`invalid-*-thenable*`, `invalid-await-*`).
+  for (const [file, call] of [
+    ["invalid-await-thenable-literal", "settle()"],
+    ["invalid-async-return-thenable", "adopt()"],
+    ["invalid-promise-resolve-thenable", "wrap()"],
+    ["invalid-then-callback-thenable", "chain(Promise.resolve(1))"],
+    ["invalid-catch-callback-thenable", "recover(Promise.reject(0))"],
+    ["invalid-new-promise-thenable", "make()"],
+    ["invalid-await-thenable-width", "widened()"],
+    ["invalid-await-inherited-then", "inherited()"],
+    ["invalid-await-promise-like", "awaited({ then(resolve) { resolve(42); } })"],
+    ["invalid-awaited-alias-thenable", "adopted()"],
+  ] as const) {
+    const settled: unknown = await runExample(file, call);
+    assert.equal(settled, 42, `${file}: the thenable's then is called and settles the result`);
+  }
+  // `finally` resolves its cleanup result: the thenable's `then` runs.
+  const cleaned: unknown = await runExample("invalid-finally-thenable",
+    "(async () => { const log = []; await cleanup(Promise.resolve(1), log); return log.length; })()");
+  assert.equal(cleaned, 1, "invalid-finally-thenable: the cleanup result's then is called");
+  // An object given the tag beside `then`, `catch` and `finally` has a
+  // promise's shape, yet `Promise.resolve` takes it for no native promise.
+  assert.equal(runExample("invalid-tag-write",
+    "(() => { const o = { then() {}, catch() {}, finally() {} }; forge(o); " +
+    "return JSON.stringify([Object.prototype.toString.call(o), Promise.resolve(o) === o]); })()"),
+  '["[object Promise]",false]', "invalid-tag-write: the tagged object is no native promise");
+  assert.equal(runExample("invalid-tag-computed-write", "Object.prototype.toString.call(tagged(Symbol.toStringTag))"),
+    "[object Promise]", "invalid-tag-computed-write: a computed write gives the object the tag");
 }

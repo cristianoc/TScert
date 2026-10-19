@@ -100,6 +100,10 @@ structure State where
   arrayAnnotations : List (String × ArrayParts) := []
   /-- The producer's rows the claims name (§9.1). -/
   rows : ProducerRows := default
+  /-- The declaration document's entries for the standard library's
+  `Symbol.toStringTag`, by index: the symbol keys no object the source makes
+  holds. -/
+  tags : List Nat := []
 
 abbrev M := StateT State (Except String)
 

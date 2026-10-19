@@ -1,0 +1,12 @@
+{
+  // A project whose own module merges a `label` into the standard library's `ArrayIterator`:
+  // the `*merged-values-iterator*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["./augment.ts", "../examples/*merged-values-iterator*.ts"]
+}

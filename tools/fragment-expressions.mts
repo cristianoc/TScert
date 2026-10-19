@@ -12,7 +12,7 @@ import type { Span } from "./span.mts";
 import { nameOf } from "./syntax.mts";
 import { asyncReturnName, elementAtName, hasPropertyName } from "./intrinsics.mts";
 import { guardResult } from "./fragment-guards.mts";
-import { FORGED_PROMISE, GENERATOR, HAS_INSTANCE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
+import { GENERATOR, HAS_INSTANCE, TAG_WRITE, INSTANCE_STATIC, type ObjectPart, SPREAD_POSITION, STATIC_INIT_CLASS, STATIC_INIT_CLOSURE, bindingScope, callableAssign, classKey, completes, firstOptional, inKey, literalExpr, parameterName, prototypeName, skipParentheses, staticFieldOf, staticMethodOf, staticName } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 
 export function expr(this: Gate, node: Expression): Expr {
@@ -706,7 +706,6 @@ export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen:
       : gate.fail(f, "expected a plain property name");
     if (seen.has(text)) gate.fail(f, "duplicate field name in a record");
     if (text === "__proto__") gate.fail(f, "prototype initializers are outside the fragment");
-    if (text === "then") gate.fail(f, FORGED_PROMISE);
     seen.add(text);
     return text;
   };
@@ -1589,6 +1588,8 @@ export function binary(this: Gate, node: BinaryExpression): Expr {
     // that symbol's key, as the read is.
     const symbolKey = ts.isElementAccessExpression(node.left)
       ? gate.symbolKeys.get(gate.span(node.left.argumentExpression).join(":")) : undefined;
+    if (symbolKey !== undefined && gate.tagSymbols.has(symbolKey))
+      gate.fail(node.left, TAG_WRITE);
     if (symbolKey !== undefined && ts.isElementAccessExpression(node.left) && !node.left.questionDotToken)
       return { k: "write", pos: gate.span(node), field: { symbol: symbolKey },
         receiver: gate.expr(node.left.expression), rhs: gate.expr(node.right) };

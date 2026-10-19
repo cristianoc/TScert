@@ -19,8 +19,8 @@ import type { Span } from "./span.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type MappedMember, type TermScope } from "./type-term.mts";
-import { arrayPrototype, interfaceOverlay, overlay, primitiveKinds, primitivePrototype, primitivePrototypeName, type OverlayEntry,
-  splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
+import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
+  primitivePrototypeName, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, type EnumMemberValue } from "./intrinsics.mts";
@@ -381,6 +381,9 @@ export function collectDeclarations(file: string, options: {
   /** The client uses arrays: `Array.prototype`'s contract joins the graph
    * (`array-prototype.mts`), at `arrays`, the first array the client writes. */
   arrays?: Span;
+  /** The first construct of the client that reaches the graph, where a
+   * declaration merging into `Object` or `Function` is refused. */
+  root?: Span;
   /** The overlay `Array.prototype` is read through; tests vary it. */
   arrayOverlay?: readonly OverlayEntry[];
   /** The client uses `async`, `await` or `for...of`: the intrinsics that
@@ -1524,6 +1527,25 @@ export function collectDeclarations(file: string, options: {
         return { k: "reference", reference: { name: target.name, span, arguments: args.map(() => span),
           target }, args: completeArguments(node, args, null, target.name), span };
       },
+      libraryFile,
+      // The reviewed text as an interface appended to the client, in a probe
+      // program of its own, at a name the client does not spell.
+      // The declaration read is the one at the appended text's exact start
+      // and end, whatever the client declares under any name; only its own
+      // syntax is read, so a client declaration merging with it adds nothing.
+      reviewed: (body, read) => {
+        let index = 0;
+        while (client.text.includes(`__TScertReviewed${index}`)) index++;
+        const appended = `interface __TScertReviewed${index}${body}`;
+        const start = client.text.length + 1;
+        return probeProgram(new Map([[client.fileName, `${client.text}\n${appended}\n`]]), program => {
+          const file = program.getSourceFile(client.fileName);
+          const declaration = file?.statements.find((n): n is InterfaceDeclaration => ts.isInterfaceDeclaration(n) &&
+            n.getStart(file) === start && n.end === start + appended.length);
+          if (!declaration) throw Error("the reviewed signatures do not parse as the appended interface");
+          return read(declaration);
+        });
+      },
     };
     // The keys a regex's type states (`regexp.mts`): the well-known symbols
     // its methods are keyed by, and the marks, synthetic symbols no source
@@ -1580,6 +1602,16 @@ export function collectDeclarations(file: string, options: {
       if (kinds.includes("string") && member && ts.isPropertyAccessExpression(member) &&
           member.name.text === "split" && member.parent && ts.isCallExpression(member.parent))
         stringSplit ??= span;
+    }
+    // Every object's prototype chain ends at `Object.prototype`, and every
+    // function's holds `Function.prototype`: a declaration merging a member
+    // into either interface states it of every such value, which no unit
+    // reads at the standard library's contract (`mergeRefusal`).
+    for (const name of ["Object", "Function"]) {
+      const parts = (checker.resolveName(name, SymbolFlags.Interface, client, false)?.declarations ?? [])
+        .map(d => d.resolve()).filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));
+      const { refusal } = mergeRefusal(checker, libraryFile, parts, overlayLibrary.reviewed);
+      if (refusal) throw new DeclarationError(options.root ?? [0, 0], mergeMessage(name, refusal));
     }
     let arrayProto: TypeDefinition[] = [];
     const arraysAt = options.arrays ?? stringSplit;
@@ -3544,7 +3576,26 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // promise. The receiver's payload must therefore stay non-thenable.
       // The payload binder belongs to the callable, preserving covariance of
       // Promise itself and requiring the bound at every actual receiver.
-      const nativeFields = expression.fields.map(field => {
+      // `then` and `catch` resolve their callbacks' results: a native
+      // promise is adopted through its standard `then`, and any other value
+      // fulfills the result. A `PromiseLike` there is read as the native
+      // promise, which a source thenable is not; elsewhere it stays the
+      // structural record it is declared.
+      const assimilated = (type: TypeTerm): TypeTerm =>
+        type.k === "union" ? { ...type, parts: type.parts.map(assimilated) }
+        : type.k === "reference" && type.reference.name === "PromiseLike" &&
+            /typescript\/lib\//.test(type.reference.target.module) && type.args.length === 1 && type.args[0]
+          ? promiseAt(type.args[0]) : type;
+      const callbackResults = (type: TypeTerm): TypeTerm =>
+        type.k === "union" ? { ...type, parts: type.parts.map(callbackResults) }
+        : type.k === "function" ? { ...type, result: assimilated(type.result) } : type;
+      const resolving = (type: TypeTerm): TypeTerm =>
+        type.k === "scheme" ? { ...type, signatures: type.signatures.map(signature => signature.k === "function"
+          ? { ...signature, params: signature.params.map(callbackResults) } : signature) }
+        : type.k === "function" ? { ...type, params: type.params.map(callbackResults) } : type;
+      const nativeFields = expression.fields.map(declared => {
+        const field = declared.name === "then" || declared.name === "catch"
+          ? { ...declared, type: resolving(declared.type) } : declared;
         if (field.name !== "catch" && field.name !== "finally") return field;
         const type = field.type;
         const binders = type.k === "scheme" ? type.binders : [];

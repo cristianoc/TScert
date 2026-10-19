@@ -10,7 +10,7 @@ import type { BindingAst, Expr, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enumIntrinsicName, enumMembersTerm, literalTerm } from "./intrinsics.mts";
-import { type ClassRecord, type EnumMember, FORGED_PROMISE, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
+import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { ordinaryEffect } from "./type-graph.mts";
 
@@ -364,7 +364,6 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
       if (!p.questionToken && !p.initializer && i > firstOptional(all))
         gate.fail(p, "a required parameter cannot follow an optional one");
       if (p.name.text === "undefined") gate.fail(p, "shadowing undefined is outside the fragment");
-      if (p.modifiers?.length && p.name.text === "then") gate.fail(p, FORGED_PROMISE);
       const local = gate.local(p.name);
       const binding: Stmt | null = p.initializer ? {
         k: "destructure", pos: gate.span(p), target: { k: "name", name: local, pos: gate.span(p.name) },
@@ -416,9 +415,6 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
           init: { k: "apply", pos: gate.span(member), callee: block, args: [] } });
         continue;
       }
-      const memberName = nameOf(member);
-      if (memberName && (ts.isIdentifier(memberName) || ts.isStringLiteral(memberName)) && memberName.text === "then")
-        gate.fail(member, FORGED_PROMISE);
       const modifiers = childrenOf(member, "modifiers");
       if (modifiers.some((m) => m.kind !== ts.SyntaxKind.ReadonlyKeyword && m.kind !== ts.SyntaxKind.AsyncKeyword &&
           m.kind !== ts.SyntaxKind.StaticKeyword && !CLASS_ACCESS.includes(m.kind)))
