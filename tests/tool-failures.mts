@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { messageOf } from "../tools/thrown.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
+import { abandonCompiler, compilerProcess, openCompiler } from "../tools/compiler-channel.mts";
 import { run as runStep } from "../pipeline/verify-source.mts";
 
 const dir = runDirectory("tscert-tool-failures-");
@@ -70,6 +71,8 @@ for (const { name, site, text, force, at } of sites) {
 // is the report, the compilers are abandoned without a further request, and
 // the next parse reads replies of its own.
 const iterable = sites.find((s) => s.name === "iterable.ts")?.text ?? "";
+// A source the declaration reader refuses where the compiler is open.
+const refusedText = "export function f(): number {\n  return Math.random();\n}\n";
 for (const [site, frame] of [["the parser's compiler", "at openFile \\("], ["the declaration reader's", "at kindsOf \\("]]) {
   const report = forcedParse("sent.ts", iterable, { TSCERT_FORCE_FRAME: frame ?? "", TSCERT_FORCE_AFTER_SEND: "1" });
   assert.match(report, /^tool failure: the front end exhausted the call stack/, `${site}, after a request was sent: ${report}`);
@@ -77,6 +80,50 @@ for (const [site, frame] of [["the parser's compiler", "at openFile \\("], ["the
   const fresh = parseFile(join(dir, "sent.ts"), false, config);
   assert.ok(fresh.functions.length === 1, `a parse after ${site} failed lowers its function`);
   process.stdout.write(`${site}, failing after a request was sent: a tool failure, and the next parse as without it\n`);
+}
+
+// A native read failure, before or after the request was sent, is a tool
+// failure of the request, wherever its stack's first frame is.
+for (const after of ["", "1"]) {
+  const report = forcedParse("io.ts", iterable, { TSCERT_FORCE_FRAME: "at kindsOf \\(", TSCERT_FORCE_KIND: "io",
+    TSCERT_FORCE_AFTER_SEND: after });
+  assert.match(report, /^tool failure: the compiler's API failed in Checker\.getTypeAtLocation .*EBADF: bad file descriptor, read/,
+    `a native read failure${after ? " after the request was sent" : ""}: ${report}`);
+}
+process.stdout.write("a native read failure, before and after the request was sent: a tool failure\n");
+
+// Releasing the compiler: a failure of the snapshot releases its close sends
+// is reported as a tool failure, with what was in flight as context, and the
+// compiler is abandoned without a further request.
+for (const [name, text, context] of [["released.ts", iterable, "closing the compiler"],
+  ["refused-release.ts", refusedText, "closing the compiler after: "]] as const) {
+  const report = forcedParse(name, text, { TSCERT_FORCE_FRAME: "at releaseCompiler \\(", TSCERT_FORCE_KIND: "io" });
+  assert.match(report, /^tool failure: the compiler's API failed in .*EBADF: bad file descriptor, read, /, report);
+  assert.ok(report.includes(context), `${name}: ${report}`);
+}
+process.stdout.write("a failure releasing the compiler: a tool failure, the refusal in flight its context\n");
+
+// The private client this module reads is the installed package's, and an
+// abandoned compiler's process ends.
+{
+  const api = openCompiler({ cwd: dir });
+  // A snapshot, which an orderly close would release by a request.
+  api.updateSnapshot({ openFiles: [join(dir, "iterable.ts")] });
+  const child = compilerProcess(api);
+  const ended = new Promise<void>((done) => child.once("exit", () => done()));
+  writeFileSync(fired, "");
+  process.env["TSCERT_RECORD_ALL"] = "1";
+  abandonCompiler(api);
+  delete process.env["TSCERT_RECORD_ALL"];
+  // A timer that keeps the loop running while the exit is awaited: the
+  // client leaves its process unreferenced.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<string>((done) => { timer = setTimeout(() => done("timeout"), 10_000); });
+  const outcome = await Promise.race([ended.then(() => "ended"), timeout]);
+  clearTimeout(timer);
+  assert.equal(outcome, "ended", "the abandoned compiler's process ended");
+  assert.equal(readFileSync(fired, "utf8"), "", "abandoning sends no request");
+  process.stdout.write("an abandoned compiler: its process ends, and no request is sent\n");
 }
 closeParser();
 

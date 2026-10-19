@@ -99,12 +99,13 @@ import fs from "node:fs";
 import { availableParallelism } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { API, TypeFlags, isTypeReference, type Checker, type Program, type Type } from "typescript/unstable/sync";
+import { TypeFlags, isTypeReference, type Checker, type Program, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node, SourceFile } from "typescript/unstable/ast";
 import { isHostFile } from "./compiler-api.mts";
 import { prelude, shadowText, type ReplacedInput } from "./shadow-contracts.mts";
 import { toolFailureOf } from "./thrown.mts";
+import { openCompiler } from "./compiler-channel.mts";
 
 /** What was found, which report it is, and the reason written with it. */
 type Kind = "any" | "as" | "!" | "any flow" | "suppressed" | "typed any" | "unannotated" | "uninspected" | "tool failure";
@@ -428,12 +429,12 @@ function check(config: string, part: number, parts: number, inputs: ReplacedInpu
   // The written program checks the external declarations too.
   const checkingLibraries = (name: string): string | undefined => name === config
     ? fs.readFileSync(name, "utf8").replace(/"skipLibCheck":\s*true/, '"skipLibCheck": false') : undefined;
-  const written = new API({ cwd: path.dirname(config), fs: { readFile: checkingLibraries, fileExists: () => undefined } });
+  const written = openCompiler({ cwd: path.dirname(config), fs: { readFile: checkingLibraries, fileExists: () => undefined } });
   const base = written.updateSnapshot({ openProjects: [config] }).getProject(config);
   if (!base) throw new Error(`the compiler did not open ${config}`);
   const roots = new Set(base.rootFiles);
   const external: string[] = [];
-  const shadow = new API({ cwd: path.dirname(config), fs: {
+  const shadow = openCompiler({ cwd: path.dirname(config), fs: {
     readFile: (name) => {
       if (roots.has(name) || !/\.d\.[cm]?ts$/.test(name)) return undefined;
       external.push(name);

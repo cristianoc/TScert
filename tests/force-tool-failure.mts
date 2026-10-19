@@ -4,12 +4,14 @@
 // holds a frame matching `TSCERT_FORCE_FRAME`, or whose payload names
 // `TSCERT_FORCE_PAYLOAD`, throws before it is sent: a stack exhaustion
 // (`TSCERT_FORCE_KIND=stack`, the default) or a panic the compiler replied
-// (`panic`). With `TSCERT_FORCE_AFTER_SEND`, a stack exhaustion is thrown
+// (`panic`) or a native read failure (`io`). With `TSCERT_FORCE_AFTER_SEND`,
+// a stack exhaustion or the read failure is thrown
 // after the request is written and before its reply is read, which leaves
 // the reply unread on the channel. `TSCERT_FORCE_LIMIT` bounds how many
 // requests of this process fail. Each forced failure appends a line to
 // `TSCERT_FORCE_FIRED`, and so does each later request on a channel a stack
-// exhaustion was forced on (`later <method>`), whose replies may be unread.
+// exhaustion was forced on (`later <method>`), whose replies may be unread;
+// with `TSCERT_RECORD_ALL`, every request (`sent <method>`).
 import { appendFileSync, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -60,17 +62,20 @@ Object.assign(prototype, {
     const fired = process.env["TSCERT_FORCE_FIRED"];
     const channel = typeof this === "object" && this !== null ? this : null;
     if (channel && damaged.has(channel) && fired) appendFileSync(fired, `later ${String(method)}\n`);
+    if (process.env["TSCERT_RECORD_ALL"] && fired) appendFileSync(fired, `sent ${String(method)}\n`);
     if (forced(method, payload)) {
       failures++;
       if (fired) appendFileSync(fired, `${String(method)}\n`);
-      const panic = process.env["TSCERT_FORCE_KIND"] === "panic";
-      if (channel && !panic) damaged.add(channel);
+      const kind = process.env["TSCERT_FORCE_KIND"];
+      if (channel && kind !== "panic") damaged.add(channel);
+      // A native read failure, as `fs.readSync` raises it.
+      const io = (): Error => Object.assign(new Error("EBADF: bad file descriptor, read"), { code: "EBADF", syscall: "read" });
       if (process.env["TSCERT_FORCE_AFTER_SEND"]) {
         write.call(this, REQUEST, nameBytes.call(this, method), payload);
-        throw new RangeError("Maximum call stack size exceeded");
+        throw kind === "io" ? io() : new RangeError("Maximum call stack size exceeded");
       }
-      throw panic ? new Error("panic: forced by tests/force-tool-failure.mts")
-        : new RangeError("Maximum call stack size exceeded");
+      throw kind === "panic" ? new Error("panic: forced by tests/force-tool-failure.mts")
+        : kind === "io" ? io() : new RangeError("Maximum call stack size exceeded");
     }
     return original.call(this, method, payload);
   },

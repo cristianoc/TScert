@@ -210,16 +210,24 @@ The outcome is one of:
 - **unverified**: search or checking did not establish the required derivation;
 - **exhausted**: a verification resource budget was reached before the
   obligation could be decided;
-- **error**: a subprocess failed or exceeded its time limit, or the
-  compiler's API failed on a query: a `tool failure`, which names the query,
-  the front end's call site and the compiler's reason, and certifies
-  nothing. The front end exhausting the call stack is a tool failure too:
-  it may interrupt a query mid-reply, after which the channel's replies are
-  unreadable. A tool failure is never made a refusal, an absence or an
-  unknown answer: every front-end catch passes it on, and one caught within
-  a located read keeps that location. After a panic the compiler replied,
-  its channel stays readable; after any other tool failure the compiler is
-  abandoned without a further request, and the next parse opens another. The compiler's API (typescript 7.0.2)
+- **error**: a `tool failure`, which certifies nothing: a subprocess
+  killed by a signal, past its time limit, or exiting without its refusal
+  (the verifier's is exit status 1 with a first line `reject: …`, the
+  producer's exit status 2 with a first line `unsupported: …`; a file the
+  verifier cannot read or write is no refusal); or a failed request to the
+  compiler's API, which names the query, the front end's call site and the
+  compiler's reason. Every request goes through one guard
+  (`tools/compiler-channel.mts`), which makes whatever it throws a
+  `CompilerFailure`: a reply the compiler sent as an error, a transport or
+  native I/O failure, before or after the request was written, or the front
+  end exhausting the call stack, which may interrupt a query mid-reply. A
+  tool failure is never made a refusal, an absence or an unknown answer:
+  every front-end catch passes it on, and one caught within a located read
+  keeps that location. After a panic the compiler replied, its channel stays
+  readable; after any other tool failure the compiler is abandoned without a
+  further request, its process killed, and the next parse opens another. A
+  failure closing the compiler is a tool failure that names what was in
+  flight. The compiler's API (typescript 7.0.2)
   panics writing the type of an empty array literal TypeScript types as a
   tuple (`[] as const`, or `[]` where a destructuring or a tuple type is its
   context) into a reply, observed of `Checker.getTypeAtLocation` and

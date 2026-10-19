@@ -2,12 +2,13 @@
 // documents and claims no case can make. The controls needing no build are
 // node-runs.mts and trusted-inputs.mts, among the fast checks.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { check, producerExecutable, readClaimsFile, readFragmentFile, verifier } from "./verify-source.mts";
+import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier } from "./verify-source.mts";
+import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { useHostInstallationForTests } from "../tools/compiler-api.mts";
 import { cases } from "./cases.mts";
@@ -2967,7 +2968,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.throws(() => readClaimsFile(raw), /not valid UTF-8/);
   const rawSearched = produceWith(artifacts, raw, "forged-invalid-utf8");
   assert.equal(rawSearched.status, 1, rawSearched.stdout + rawSearched.stderr);
-  assert.match(rawSearched.stdout + rawSearched.stderr, /non UTF-8/);
+  assert.match(rawSearched.stdout + rawSearched.stderr, /^reject: .*a text that is not valid UTF-8 is refused/);
   // The parser's document, read by the producer and by Lean.
   const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
   assert.ok(fragment.includes(""), "the fragment holds U+E000");
@@ -2987,4 +2988,23 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.notEqual(rawProposed.status, 0, rawProposed.stdout + rawProposed.stderr);
   assert.match(rawProposed.stdout + rawProposed.stderr, /not valid UTF-8/);
   process.stdout.write("wire strings: lone surrogates and invalid UTF-8 refused by the producer, Lean and TypeScript\n");
+}
+{
+  // A verifier exit other than a refusal (status 1, a first line `reject: …`)
+  // is a tool failure, no verdict: no output, and an uncaught exception's
+  // text, at each step whose refusal is a verdict.
+  const dir = runDirectory("tscert-verifier-failures-");
+  const fake = join(dir, "verifier.sh");
+  writeFileSync(fake, `#!/bin/sh\nif [ "$1" = "$FAIL_MODE" ]; then\n  [ -n "$FAIL_TEXT" ] && echo "$FAIL_TEXT" >&2\n  exit 1\nfi\nexec "${verifier}" "$@"\n`);
+  chmodSync(fake, 0o755);
+  const source = join(here, "examples/optional-chain-element-receiver.ts");
+  for (const mode of ["--lower-control-flow", "--produce-source-claims", "--check-source-claims"])
+    for (const text of ["", "uncaught exception: forced by pipeline/test.mts"]) {
+      const ran = spawnSync(process.execPath, [join(here, "verify-source.mts"), source], { encoding: "utf8",
+        timeout: 120_000, env: { ...process.env, VERIFIER: fake, FAIL_MODE: mode, FAIL_TEXT: text } });
+      const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+      assert.equal(outcome.status, "error", `${mode} ${JSON.stringify(text)}: ${JSON.stringify(outcome)}`);
+      assert.equal(outcome.detail, `tool failure: verifier ${mode} exited with status 1 without a refusal: ${text || "no output"}`);
+    }
+  process.stdout.write("verifier failures: an exit without a refusal is a tool failure at lowering, search and check\n");
 }

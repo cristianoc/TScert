@@ -18,8 +18,8 @@ def hex4 (cs : List Char) : Option Nat :=
 /-- A lone surrogate escape of a JSON text's strings, if it has one. Every
 wire string is well-formed Unicode (HOST-FAMILIES.md, "Tag sets"): Lean's
 JSON parser reads a lone surrogate as U+FFFD, a different string, so a text
-holding one is refused before it is parsed; `IO.FS.readFile` refuses a text
-that is not valid UTF-8. -/
+holding one is refused before it is parsed, as is a text that is not valid
+UTF-8. -/
 partial def loneSurrogate (cs : List Char) (inString : Bool := false) : Option String :=
   match cs, inString with
   | [], _ => none
@@ -40,13 +40,16 @@ partial def loneSurrogate (cs : List Char) (inString : Bool := false) : Option S
   | '\\' :: _ :: rest, true => loneSurrogate rest true
   | _ :: rest, b => loneSurrogate rest b
 
+/-- A document's JSON, or its refusal. A file that cannot be read is no
+refusal of a document: its error is thrown, and the command fails without a
+`reject:` line. -/
 def readJson (path : String) : IO (Except String Json) := do
-  try
-    let text ← IO.FS.readFile path
-    if let some what := loneSurrogate text.toList then
-      return .error s!"{path}: a string that is not well-formed Unicode, {what}, is refused"
-    return Json.parse text
-  catch e => return .error s!"cannot read {path}: {e}"
+  let bytes ← IO.FS.readBinFile path
+  let some text := String.fromUTF8? bytes
+    | return .error s!"{path}: a text that is not valid UTF-8 is refused"
+  if let some what := loneSurrogate text.toList then
+    return .error s!"{path}: a string that is not well-formed Unicode, {what}, is refused"
+  return Json.parse text
 
 /-- Export the same execution graph constructor used by typed extraction. -/
 def flowFile (astPath : String) : IO UInt32 := do
@@ -85,10 +88,9 @@ def sourceFiles (astPath claimsPath fileKey evidencePath : String)
     match produced with
     | .error e => IO.eprintln s!"reject: {e}"; return 1
     | .ok evidence =>
-      try
-        IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
-        IO.println s!"checked source evidence written: {evidencePath}"
-        return 0
-      catch e => IO.eprintln s!"reject: cannot write {evidencePath}: {e}"; return 1
+      -- A file that cannot be written is no refusal: its error is thrown.
+      IO.FS.writeFile evidencePath (evidence.compress ++ "\n")
+      IO.println s!"checked source evidence written: {evidencePath}"
+      return 0
 
 end Verification.RequestCli

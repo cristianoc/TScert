@@ -20,32 +20,56 @@ export const fieldOf = (thrown: unknown, key: string): unknown =>
     : undefined;
 
 
+/** Whether what was thrown is the engine exhausting the call stack. */
+const stackExhaustion = (thrown: unknown): boolean =>
+  thrown instanceof RangeError && thrown.message === "Maximum call stack size exceeded";
+
+/** A failure of a request to the compiler: whatever its call into the
+ * compiler's package threw (`compiler-channel.mts` makes every request's
+ * failure one), the request's name, and whether the channel's later replies
+ * stay readable, which only a panic the compiler replied leaves them. */
+export class CompilerFailure extends Error {
+  readonly request: string;
+  readonly readable: boolean;
+  constructor(request: string, cause: unknown, context: string = "") {
+    super(`${messageOf(cause).split("\n")[0] ?? ""}${context}`, { cause });
+    this.request = request;
+    this.readable = !context && !stackExhaustion(cause) && messageOf(cause).startsWith("panic:");
+  }
+}
+
 /** A failure of the tool itself, not a refusal of the source, by kind:
- * - `panic`: the compiler process panicked on a query and replied so, which
- *   leaves the channel's later replies readable;
- * - `api`: any other error raised inside the compiler's package (its RPC
- *   channel included, whose replies may be unreadable after it);
- * - `stack`: the front end exhausted the call stack, which can interrupt a
- *   query mid-reply and leave the channel's next reply unreadable.
- * The query is the outermost API frame, the caller the first frame of the
- * front end's own code; the reason is the first line of the message. An
- * error carrying a tool failure as its `cause` is that failure. */
-export type ToolFailure = { kind: "panic" | "api" | "stack"; query: string; caller: string; reason: string };
+ * - `panic`: the compiler process panicked on a query and replied so;
+ * - `api`: any other failure of a request to the compiler (`CompilerFailure`),
+ *   or an error raised in the compiler's package before the front end's code;
+ * - `stack`: the front end exhausted the call stack, also inside a request.
+ * `readable` is whether the channel's later replies may be read: only after
+ * a replied panic. The query is the outermost API frame (the request's name
+ * where there is none), the caller the first frame of the front end's own
+ * code; the reason is the first line of the message. An error carrying a tool
+ * failure as its `cause` is that failure. */
+export type ToolFailure = { kind: "panic" | "api" | "stack"; readable: boolean; query: string; caller: string; reason: string };
 export const toolFailureOf = (thrown: unknown): ToolFailure | null => {
   if (!(thrown instanceof Error)) return null;
-  const inner = toolFailureOf(thrown.cause);
-  if (inner) return inner;
+  const request = thrown instanceof CompilerFailure ? thrown : null;
+  if (!request) {
+    const inner = toolFailureOf(thrown.cause);
+    if (inner) return inner;
+  }
   const compiler = /[/\\](typescript|@typescript)[/\\]/;
   const frames = (thrown.stack ?? "").split("\n").map(l => l.trim()).filter(l => l.startsWith("at "));
   const inCompiler = frames.map(f => compiler.test(f));
+  const own = (f: string): boolean => !compiler.test(f) && !/compiler-channel\.mts/.test(f) && /\.mts:\d+/.test(f);
+  const firstOwn = frames.findIndex(own);
+  const stack = stackExhaustion(thrown) || (request !== null && stackExhaustion(request.cause));
   const panic = thrown.message.startsWith("panic:");
-  const stack = thrown instanceof RangeError && thrown.message === "Maximum call stack size exceeded";
-  if (!stack && !panic && !inCompiler[0]) return null;
+  if (!request && !stack && !panic && !inCompiler.slice(0, firstOwn < 0 ? frames.length : firstOwn).some(b => b))
+    return null;
   const outer = inCompiler.lastIndexOf(true);
-  const query = outer >= 0 ? (/^at (\S+)/.exec(frames[outer] ?? "")?.[1] ?? "?") : "?";
-  const own = frames.find((f, i) => i > outer && !compiler.test(f)) ?? "";
-  const caller = /\/([^/]+:\d+):\d+\)?$/.exec(own)?.[1] ?? "?";
-  return { kind: stack ? "stack" : panic ? "panic" : "api", query, caller, reason: thrown.message.split("\n")[0] ?? "" };
+  const query = outer >= 0 ? (/^at (\S+)/.exec(frames[outer] ?? "")?.[1] ?? "?") : request?.request ?? "?";
+  const caller = /\/([^/]+:\d+):\d+\)?$/.exec(frames.find((f, i) => i > outer && own(f)) ?? "")?.[1] ?? "?";
+  return { kind: stack ? "stack" : panic ? "panic" : "api", readable: request ? request.readable : panic,
+    query, caller, reason: thrown.message.split("\n")[0] ?? "" };
 };
 /** A catch that makes a refusal, an absence or an unknown of what it caught
  * calls this first: a tool failure is none of them, and is thrown on. */

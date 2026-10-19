@@ -114,6 +114,24 @@ export function run(command: string, args: string[]): Ran {
     detail: err.trim() || out.trim(),
   };
 }
+/** Whether the verifier refused, which only a first line `reject: …` with
+ * exit status 1 says. Any other exit but 0 (no output, an uncaught
+ * exception, a usage error, a file it could not read or write) is a failure
+ * of the tool, no verdict. */
+function verifierRefused(ran: Ran, step: string): boolean {
+  if (ran.code === 0) return false;
+  if (ran.code === 1 && ran.detail.startsWith("reject: ")) return true;
+  throw Error(`tool failure: verifier ${step} exited with status ${ran.code} without a refusal: ` +
+    `${ran.detail.split("\n")[0] || "no output"}`);
+}
+/** Whether the producer refused, which only a first line `unsupported: …`
+ * with exit status 2 says; any other exit but 0 is a failure of the tool. */
+function producerRefused(ran: Ran): boolean {
+  if (ran.code === 0) return false;
+  if (ran.code === 2 && ran.detail.startsWith("unsupported: ")) return true;
+  throw Error(`tool failure: the producer exited with status ${ran.code} without a refusal: ` +
+    `${ran.detail.split("\n")[0] || "no output"}`);
+}
 /** A failed search names the obligation it could not establish and why, in
  * source terms: the presentation's summary (`diagnostic-view.mts`) of the verifier's structured record, as
  * the line `obligation: …` after the verifier's own first line. Display only;
@@ -301,7 +319,8 @@ class ModuleRuns {
       const ast = join(artifacts, `module-${index}.fragment.json`);
       writeFileSync(ast, JSON.stringify(doc));
       const lowered = run(verifier, ["--lower-control-flow", ast]);
-      if (lowered.code !== 0) continue;
+      // A module the verifier refuses to lower is read at its declared types.
+      if (verifierRefused(lowered, "--lower-control-flow")) continue;
       const flow = join(artifacts, `module-${index}.flow.json`);
       writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
       const imports = [...new Set(list(field(doc.declarations, "values")).map((v) => field(field(v, "declaration"), "module"))
@@ -329,7 +348,8 @@ class ModuleRuns {
       if (!this.proposed.has(key)) {
         const proposed = propose(doc.ast, doc.flow, reads, join(this.artifacts, `module-${doc.index}.qualified.json`));
         writeFileSync(join(this.artifacts, `module-${doc.index}.proposal.log`), proposed.detail);
-        this.proposed.set(key, proposed.code === 0 ? { text: proposed.out, parsed: JSON.parse(proposed.out) } : null);
+        // A module the producer refuses is read at its declared types.
+        this.proposed.set(key, producerRefused(proposed) ? null : { text: proposed.out, parsed: JSON.parse(proposed.out) });
       }
       const proposed = this.proposed.get(key);
       if (proposed) claims.set(location, proposed);
@@ -431,7 +451,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
     const flow = join(artifacts, "flow.json");
     const lowered = run(verifier, ["--lower-control-flow", ast]);
     writeFileSync(join(artifacts, "flow.log"), lowered.detail);
-    if (lowered.code !== 0)
+    if (verifierRefused(lowered, "--lower-control-flow"))
       return { status: "unsupported", artifacts, phase, detail: lowered.detail };
     writeFileSync(flow, JSON.stringify(decodeFlowDocument(JSON.parse(lowered.out))));
     phase = "proposal";
@@ -449,10 +469,8 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
       const { claims: moduleClaims, readsOf, reads } = modules.claims(field(parsedData, "declarations"), withdrawn);
       const proposed = propose(ast, flow, reads, join(artifacts, "qualified.json"));
       writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
-      if (proposed.code !== 0)
-        return proposed.detail.startsWith("unsupported:")
-          ? { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposed.detail, refusedErrors) }
-          : { status: "error", artifacts, phase, detail: proposed.detail };
+      if (producerRefused(proposed))
+        return { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposed.detail, refusedErrors) };
       // The importer's claims, its `modules` the claims of each module a read
       // qualifies, directly or through a module's reads, spliced as text: a
       // bigint literal's digits pass through unrounded.
@@ -475,7 +493,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
         evidence,
         String(searchDepth),
       ]);
-      const failed = produced.code !== 0 ? failedImport(produced.detail) : null;
+      const failed = verifierRefused(produced, "--produce-source-claims") ? failedImport(produced.detail) : null;
       if (!failed) break;
       const key = `${failed.module}#${failed.name ?? "*"}`;
       if (withdrawn.has(key)) break;
@@ -501,7 +519,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
       evidence,
     ]);
     writeFileSync(join(artifacts, "check.log"), checked.detail);
-    if (checked.code !== 0)
+    if (verifierRefused(checked, "--check-source-claims"))
       return { status: refusalStatus(checked.detail), artifacts, phase, detail: checked.detail };
     return { status: "verified", artifacts, phase, functions, initialization };
   } catch (e) {

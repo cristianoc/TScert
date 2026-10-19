@@ -298,7 +298,10 @@ value itself passed on keeps `undefined`
 (`guarded-element-read-refused`): `xs[0] !== undefined && known.has(xs[0])`
 needs a current-content fact about an element location, kept from the test
 to the second read, as a field path would need one (`o.a !== undefined &&
-f(o.a)` is refused the same way). A `flatMap` callback returning a
+f(o.a)` is refused the same way). An optional chain's truthy or present
+result narrows the value the chain saved, not the binding it was read from
+(`optional-chain-receiver-not-narrowed`: `if (o?.inner) use(o)`), which
+needs the chain's test related to the receiver's slot. A `flatMap` callback returning a
 primitive or an array of primitives (`flat-map-scalar-result-refused`)
 needs a second signature quantifying a binder bounded by the primitives,
 which the first does not use: neither the producer's instance of a member

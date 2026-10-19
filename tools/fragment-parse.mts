@@ -15,7 +15,7 @@
  * are in fragment-support.mts. All five are this one trusted program. The fragment it accepts is stated in
  * ../AGENTS.md and, as a grammar, in the pull request description.
  */
-import { API, SymbolFlags, type Checker, type Project } from "typescript/unstable/sync";
+import { type API, SymbolFlags, type Checker, type Project } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
@@ -32,9 +32,11 @@ import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFa
 import { childOf, isStatic, nameOf } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
-import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, releaseCompiler, libraryTerm, tsconfigOf, type LibraryType,
+import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
+// compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
+import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
   throwUninitializedName, type EnumMemberValue } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
@@ -67,7 +69,7 @@ const opened = new Set<string>();
  * needs the same project (and the same compiler process) the gate used.
  */
 function projectFor(absolute: string): Project {
-  compiler ??= new API({
+  compiler ??= openCompiler({
     cwd: dirname(absolute),
     fs: {
       readFile: (name) => contents.get(name),

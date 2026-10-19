@@ -6,7 +6,7 @@
  * cannot state; a refusal never drops a declaration. */
 import { readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { API, DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
+import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 // declaration-types.mts declares the declaration document this module writes, which the Fragment carries and Lean's EquationLowering reads.
@@ -36,7 +36,9 @@ import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, 
 import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
-import { fieldOf, messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
+import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
+// compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
+import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -127,7 +129,7 @@ export function tsconfigOf(path: string): string {
 function withProject<T>(file: string, tsconfigPath: string | undefined,
   use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
   const overlay = new Map<string, string>();
-  const api = new API({ cwd: dirname(file), fs: {
+  const api = openCompiler({ cwd: dirname(file), fs: {
     readFile: name => overlay.get(name),
     fileExists: name => (overlay.has(name) ? true : undefined),
   } });
@@ -176,37 +178,6 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
     throw error;
   } finally {
     releaseCompiler(api, thrown);
-  }
-}
-
-/** A procedure of no arguments, as a client's `close` is. */
-const isProcedure = (f: unknown): f is () => unknown => typeof f === "function";
-
-/** Releases a compiler after its work, or after `thrown`. After none, a
- * refusal, or a panic the compiler replied, its channel is readable: it is
- * closed in order, its snapshots released by request. After any other tool
- * failure the channel may be unreadable: the compiler is abandoned, its
- * process ended by its client (`API`'s private `client`, whose `close` ends
- * the process and sends nothing), without a further request. After a
- * failure, a failure releasing it is not the report: what was thrown is. */
-export function releaseCompiler(api: API, thrown: { error: unknown } | null): void {
-  const failure = thrown && toolFailureOf(thrown.error);
-  if (failure && failure.kind !== "panic") {
-    const client = fieldOf(api, "client");
-    const close = client && typeof client === "object" && "close" in client ? client.close : undefined;
-    if (!isProcedure(close))
-      throw new Error("the compiler's API has no client to abandon", { cause: thrown.error });
-    close.call(client);
-    return;
-  }
-  if (!thrown) {
-    api.close();
-    return;
-  }
-  try {
-    api.close();
-  } catch {
-    // The error in flight is the report.
   }
 }
 
