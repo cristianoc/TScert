@@ -15,6 +15,7 @@ import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 // ../tools/source-flow.mts checks the shared execution graph wire before proposal.
 import { decodeFlowDocument } from "../tools/source-flow.mts";
+import { wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
 
 /** A Fragment document this pipeline's parser wrote, read back by a test that
@@ -24,7 +25,7 @@ import { resolvableDeclaration } from "../tools/intrinsics.mts";
  * exists. The assertion stands for the parser's output; it is not checked
  * before the test reads it. */
 export function readFragmentFile(file: string): Ast {
-  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+  const parsed: unknown = JSON.parse(wireText(readFileSync(file), file));
   return parsed as Ast; // asserted: the parser wrote the file from an Ast; a check of every field the tests read would cost more than it guards a test's forgery
 }
 
@@ -33,7 +34,7 @@ export function readFragmentFile(file: string): Ast {
  * its type, and no TypeScript decoder of the claims exists; the assertion
  * stands for the producer's output, unchecked before the test reads it. */
 export function readClaimsFile(file: string): SourceClaims {
-  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+  const parsed: unknown = JSON.parse(wireText(readFileSync(file), file));
   return parsed as SourceClaims; // asserted: the producer wrote the file against SourceClaims; a check of every field the tests read would cost more than it guards a test's forgery
 }
 
@@ -83,7 +84,6 @@ type Ran = { code: number; out: string; detail: string };
 function run(command: string, args: string[]): Ran {
   const p = spawnSync(command, args, {
     cwd: repo,
-    encoding: "utf8",
     timeout: stepTimeoutMs,
     maxBuffer: 16 * 1024 * 1024,
   });
@@ -99,10 +99,13 @@ function run(command: string, args: string[]): Ran {
     throw Error(
       `${step}: ${p.error?.message ?? p.signal ?? "no exit status"}`,
     );
+  // Every wire document a step prints is valid UTF-8 (`wireText`).
+  const out = wireText(p.stdout, step);
+  const err = wireText(p.stderr, step);
   return {
     code: p.status,
-    out: p.stdout,
-    detail: p.stderr.trim() || p.stdout.trim(),
+    out,
+    detail: err.trim() || out.trim(),
   };
 }
 /** A failed search names the obligation it could not establish and why, in

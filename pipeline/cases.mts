@@ -1942,6 +1942,8 @@ export const cases: Case[] = [
   negative("invalid-zero-literal-type", "the arm a test leaves at 0 holds a zero, never 1"),
   positive("tag-sets", "a union of two or more literals of one primitive is one tag set: an alias's narrowed by equality on both edges, a mixed union by `typeof`, truthiness on both edges with both zeros falsy, slices to one element, a computed key at a set, meets of two sets and of a set with its primitive, a set within a wider union"),
   positive("tag-set-coverage", "a set covered between several target clauses, element by element: an alias's union of a parameter and a literal, read at a set argument, and an array of them"),
+  { file: "invalid-lone-surrogate-string", area: "a string holding a lone surrogate is no well-formed Unicode string, which the wire carries: refused at the gate",
+    kind: "negative", status: "unsupported", phase: "source", diagnostic: /not well-formed Unicode, a lone surrogate, is refused \(at \[184,192\)\)/ },
   positive("tag-set-code-points", "a string set of U+E000 and U+10000 is ordered by code point on the wire, and narrowed by equality"),
   positive("tag-sets-literal-heavy", "unions of 120 strings and of 120 numbers, each one tag set, tested against a few elements and passed on whole"),
   negative("invalid-tag-set-slice", "after a failed equality the set holds no element equal to the tested one", /source expression obligation at \[153,154\)/),

@@ -1,5 +1,6 @@
 /** Claim-independent execution graphs supplied by Lean to the producer. */
 import type { Span } from "./span.mts";
+import { requireWellFormed } from "./wire-strings.mts";
 
 interface FlowBinding {
   name: string;
@@ -512,6 +513,7 @@ const bindingPlan = (value: unknown): void => {
 };
 
 export function decodeFlowDocument(value: unknown): FlowDocument {
+  requireWellFormed(value, "flow document");
   const owners = new Set<string>();
   for (const raw of array(value)) {
     const graph = object(raw);

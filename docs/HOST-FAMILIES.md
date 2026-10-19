@@ -120,7 +120,9 @@ union of literals does, in a read and in a key-adding allocation
 
 **Wire.** A tag set is `{"numIn": {"bits": [b, …]}}` or
 `{"strIn": {"values": [s, …]}}`, sorted and distinct, at least two; a
-decoder refuses any other list (`RequestJson`, `type-graph.mts`). Numbers
+decoder refuses any other list (`RequestJson`, `type-graph.mts`). Its strings
+are well-formed Unicode, as every wire string is
+([wire text](REQUEST-PROTOCOL.md#wire-text)). Numbers
 are ordered by their bit patterns as unsigned integers, strings
 lexicographically by Unicode code point: Lean's `String` order, OCaml's byte
 order of UTF-8 and `codePointLess` in TypeScript, whose own `<` compares UTF-16

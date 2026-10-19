@@ -4,6 +4,7 @@
  * simultaneous requirements (including all arrows of an overload).
  */
 import type { CallEffect, CallPromise, ClosedFootprint, PropertyKey } from "./declaration-types.mts";
+import { requireWellFormed } from "./wire-strings.mts";
 export type { CallEffect, CallPromise, ClosedFootprint } from "./declaration-types.mts";
 /** Physical density and a safe in-bounds read are distinct guarantees. */
 export type ArrayPresence = "dense" | "readable" | "sparse";
@@ -301,6 +302,7 @@ function isIndexClass(v: unknown): v is IndexClass {
 const keyText = (name: PropertyKey): string =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
 export function decodeGraph(value: unknown): TypeGraph {
+  requireWellFormed(value, "type graph");
   const rows = array(value);
   const labels = (v: unknown) => decodeLabels(v, rows.length);
   const indexEntry = (v: unknown) => {

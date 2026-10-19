@@ -25,6 +25,7 @@ import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaratio
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, substitute, typeTerm, visitType, type MappedMember, type TermScope } from "./type-term.mts";
 import type { Ast, Expr, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
+import { requireWellFormed } from "./wire-strings.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
 import { messageOf, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
@@ -978,7 +979,10 @@ export function parseFile(file: string, carriesContext: boolean = false,
     if (lowered.module) modules.push(lowered.module);
     work.push(...lowered.imported);
   }
-  return { ...main.ast, modules };
+  const ast = { ...main.ast, modules };
+  // A source string the wire cannot carry as itself (SOURCE-FRAGMENT.md).
+  requireWellFormed(ast, "gate");
+  return ast;
 }
 
 /** A lowered file: its fragment, the module entry it is as an imported

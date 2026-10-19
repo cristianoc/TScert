@@ -2796,3 +2796,54 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.match(searched.stdout + searched.stderr, /a string set lists two or more strings, sorted and distinct/);
   process.stdout.write("string sets: ordered by code point in the producer, Lean and TypeScript\n");
 }
+{
+  // Every wire string is well-formed Unicode (HOST-FAMILIES.md, "Tag sets"):
+  // a lone surrogate, which JSON writes as an escape, and bytes that are not
+  // UTF-8 are refused by every reader before it reads a value, in the
+  // claims (Lean, TypeScript) and in the parser's document (the producer,
+  // Lean).
+  const artifacts = run("tag-set-code-points");
+  const original = readClaims(artifacts);
+  const row = original.types.findIndex((r) => r.length === 1 && typeof r[0] === "object" && "strIn" in r[0]);
+  const lone = { strIn: { values: ["\ud800", ""] } };
+  assert.throws(() => decodeGraph([[lone]]), /not well-formed Unicode/);
+  const claims = readClaims(artifacts);
+  claims.types[row] = [lone];
+  const escaped = writeClaims(artifacts, "forged-lone-surrogate", claims);
+  assert.ok(readFileSync(escaped, "utf8").includes("\\ud800"), "JSON writes the lone surrogate as an escape");
+  const searched = produceWith(artifacts, escaped, "forged-lone-surrogate");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /not well-formed Unicode, a lone high surrogate/);
+  // Bytes that are no UTF-8, in place of a string's code point.
+  const withByte = (text: string): Buffer => {
+    const bytes = Buffer.from(text.replace("", "\u0001"), "utf8");
+    const at = bytes.indexOf(0x01);
+    assert.ok(at >= 0, "the document holds U+E000");
+    bytes[at] = 0xff;
+    return bytes;
+  };
+  const raw = join(artifacts, "forged-invalid-utf8.json");
+  writeFileSync(raw, withByte(readFileSync(join(artifacts, "claims.json"), "utf8")));
+  assert.throws(() => readClaimsFile(raw), /not valid UTF-8/);
+  const rawSearched = produceWith(artifacts, raw, "forged-invalid-utf8");
+  assert.equal(rawSearched.status, 1, rawSearched.stdout + rawSearched.stderr);
+  assert.match(rawSearched.stdout + rawSearched.stderr, /non UTF-8/);
+  // The parser's document, read by the producer and by Lean.
+  const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  assert.ok(fragment.includes(""), "the fragment holds U+E000");
+  const flow = join(artifacts, "flow.json");
+  const loneFragment = join(artifacts, "forged-lone-surrogate-fragment.json");
+  writeFileSync(loneFragment, fragment.replace("", "\\ud800"));
+  const proposed = spawnSync(producerExecutable, [loneFragment, flow], { encoding: "utf8", timeout: 30_000 });
+  assert.notEqual(proposed.status, 0, proposed.stdout + proposed.stderr);
+  assert.match(proposed.stdout + proposed.stderr, /low surrogate/);
+  const leanFragment = produceWith(artifacts, join(artifacts, "claims.json"), "forged-lone-fragment", loneFragment);
+  assert.equal(leanFragment.status, 1, leanFragment.stdout + leanFragment.stderr);
+  assert.match(leanFragment.stdout + leanFragment.stderr, /not well-formed Unicode/);
+  const rawFragment = join(artifacts, "forged-invalid-utf8-fragment.json");
+  writeFileSync(rawFragment, withByte(fragment));
+  const rawProposed = spawnSync(producerExecutable, [rawFragment, flow], { encoding: "utf8", timeout: 30_000 });
+  assert.notEqual(rawProposed.status, 0, rawProposed.stdout + rawProposed.stderr);
+  assert.match(rawProposed.stdout + rawProposed.stderr, /not valid UTF-8/);
+  process.stdout.write("wire strings: lone surrogates and invalid UTF-8 refused by the producer, Lean and TypeScript\n");
+}
