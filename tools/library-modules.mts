@@ -2,7 +2,7 @@
  * may import and call them: through a reviewed overlay (SOURCE-CONTRACTS.md,
  * "Library modules"), as `library-globals.mts` reads the standard library's
  * globals. An entry names one overload of the function's declaration in
- * `@types/node`, with exactly the text it was reviewed against, so a changed
+ * `@types/node`, with the tokens it was reviewed against, so a changed
  * declaration is refused and reviewed again, and states the signature the
  * host meets at the arguments it admits: what the host does there, stated as
  * a type. The value is the statements' intersection; the declaration's types
@@ -12,13 +12,15 @@
 import type { Stated } from "./library-globals.mts";
 import type { CallEffect, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import { SyntaxKind } from "typescript/unstable/ast";
+import { createScanner } from "typescript/unstable/ast/scanner";
 
 export type ModuleEntry = {
   /** The module, as `node:` names it without the prefix: `child_process`. */
   module: string;
   /** The exported function. */
   name: string;
-  /** The overload as reviewed, in `reviewedText`'s form. */
+  /** The overload as reviewed, compared by its tokens (`sameReviewed`). */
   signature: string;
   stated: Stated;
   /** The effect the stated signature states, where reviewed: a call at it
@@ -218,32 +220,35 @@ export const modulesOverlay: readonly ModuleEntry[] = [
         field("stdout", union(atom("string"), atom("undefined")), false),
         field("stderr", union(atom("string"), atom("undefined")), false),
         field("error", atom("unknown"), true)] } } },
-  // `readdirSync(path, options)` with a string path and options stating the
-  // three properties Node reads, `withFileTypes: true`, `encoding` "utf8" or
-  // absent (`"buffer"` names the entries by Buffers) and `recursive`, reads
-  // the directory and returns a fresh array of entries, each owning its
-  // `name` and `parentPath`, writable strings. An entry is a `Dirent`, whose
-  // seven `is…` tests on `Dirent.prototype` compare its own type field, or,
-  // where the directory reports an unknown type, a `DirentFromStats`, whose
-  // tests call those of the `Stats` it holds under a symbol, which test that
-  // object's `mode` (Node 25.2.1). Neither runs the client's code while those
-  // prototypes' tests keep their standard identities, a host assumption: the
-  // empty footprint. The declared `path` is absent (`"path" in entry` is
+  // `readdirSync(path, options)` with a string path reads, of the options,
+  // `encoding` and `signal` (`getOptions`), then `recursive`, `encoding` and
+  // `withFileTypes` again (Node 25.2.1's `lib/fs.js`). The four are stated:
+  // `withFileTypes: true`, `encoding` "utf8" or absent (`"buffer"` names the
+  // entries by Buffers), `recursive` false or absent (true takes another
+  // path) and `signal` absent, so under the caller contract each is a data
+  // property every read of which agrees. The result is a fresh array of
+  // entries, each owning its `name` and `parentPath`, writable strings: a
+  // `Dirent`, or, where the directory reports an unknown type, a
+  // `DirentFromStats` built from `fs.lstatSync` of the joined path, both
+  // writable properties other code may replace. An entry's `is…` tests
+  // dispatch through prototypes other code may change (`Stats`'s call
+  // `this._checkModeProperty`): each is stated at `() => unknown`, its
+  // effect unrestricted. The declared `path` is absent (`"path" in entry` is
   // false), so the element states none and a value read at the declared
-  // `Dirent` is refused. A path it cannot read throws. The options are
-  // read, which an object of another type may hold as accessors: the call
-  // states no effect.
+  // `Dirent` is refused. A path it cannot read throws. The call states no
+  // effect.
   { module: "fs", name: "readdirSync",
     signature: "export function readdirSync(path: PathLike, options: ObjectEncodingOptions & { withFileTypes: true; recursive?: boolean | undefined; }): Dirent[];",
     stated: { binders: [], params: [atom("string"),
       { k: "object", stringIndex: null, calls: [], span: at, fields: [field("withFileTypes", yes(), false),
         field("encoding", union(text("utf8"), atom("undefined")), true),
-        field("recursive", union(atom("boolean"), atom("undefined")), true)] }],
+        field("recursive", union(no(), atom("undefined")), true),
+        field("signal", atom("undefined"), true)] }],
       result: { k: "array", presence: "readable", readonly: false, span: at, element: { k: "object", stringIndex: null,
         calls: [], span: at, fields: [{ ...field("name", atom("string"), false), readonly: false },
           { ...field("parentPath", atom("string"), false), readonly: false },
-          ...["isFile", "isDirectory", "isBlockDevice", "isCharacterDevice", "isSymbolicLink", "isFIFO", "isSocket"].map(name => field(name, { k: "function", effect: emptyEffect, receiver: { k: "self", span: at },
-            params: [], rest: null, result: atom("boolean"), span: at }, false))] } } } },
+          ...["isFile", "isDirectory", "isBlockDevice", "isCharacterDevice", "isSymbolicLink", "isFIFO", "isSocket"].map(name => field(name, { k: "function", effect: ordinaryEffect, receiver: { k: "self", span: at },
+            params: [], rest: null, result: atom("unknown"), span: at }, false))] } } } },
   // `writeFileSync(file, data)` with a path and a string writes the string,
   // encoded as UTF-8, to the file, replacing it, and returns `undefined`. A
   // path it cannot open or write, or one holding a NUL character, throws.
@@ -307,13 +312,36 @@ export const modulesOverlay: readonly ModuleEntry[] = [
     stated: { binders: [], params: [atom("string"), atom("string")], result: atom("string") } },
 ];
 
-/** A declaration's text as an entry spells it: its string and template
- * literals verbatim, the text between them with white space collapsed, none
- * after `(` or before `)`, and no comma before `)`. */
+/** A declaration's text as messages print it: white space collapsed. */
 export function reviewedText(declaration: string): string {
-  const parts = declaration.split(/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`)/);
-  return parts.map((part, i) => i % 2 === 1 ? part
-    : part.replace(/\s+/g, " ").replace(/,\s*\)/g, ")").replace(/\(\s+/g, "(").replace(/\s+\)/g, ")")).join("").trim();
+  return declaration.replace(/\s+/g, " ").trim();
+}
+
+/** A declaration's tokens as TypeScript's scanner reads them, each literal's
+ * text exact (a template's substitutions scanned as code), comments and white
+ * space dropped and a comma before `)` dropped, joined by spaces: two texts
+ * are the same declaration exactly when their tokens agree. */
+export function reviewedTokens(declaration: string): string {
+  const scanner = createScanner(false, undefined, declaration);
+  const tokens: string[] = [];
+  // Per open brace, whether it opened a template's substitution.
+  const braces: boolean[] = [];
+  for (let kind = scanner.scan(); kind !== SyntaxKind.EndOfFile; kind = scanner.scan()) {
+    if (kind === SyntaxKind.CloseBraceToken && braces.pop()) {
+      kind = scanner.reScanTemplateToken(false);
+      if (kind === SyntaxKind.TemplateMiddle) braces.push(true);
+    } else if (kind === SyntaxKind.OpenBraceToken) braces.push(false);
+    else if (kind === SyntaxKind.TemplateHead) braces.push(true);
+    if (kind === SyntaxKind.WhitespaceTrivia || kind === SyntaxKind.NewLineTrivia ||
+        kind === SyntaxKind.SingleLineCommentTrivia || kind === SyntaxKind.MultiLineCommentTrivia) continue;
+    tokens.push(scanner.getTokenText());
+  }
+  return tokens.filter((token, k) => !(token === "," && tokens[k + 1] === ")")).join(" ");
+}
+
+/** Whether a declaration's text is the overload an entry pins. */
+export function sameReviewed(declaration: string, signature: string): boolean {
+  return reviewedTokens(declaration) === reviewedTokens(signature);
 }
 
 /** The entries of an import from `specifier` of `name`: `node:fs` and `fs` name one module. */

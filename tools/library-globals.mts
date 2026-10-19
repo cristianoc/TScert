@@ -7,7 +7,7 @@
  *
  * - which signatures exist: a global's call, construct, method or property
  *   signature is read only when an entry lists it, with the text it was
- *   reviewed against (a global function's in `reviewedText`'s form), so a
+ *   reviewed against (a global function's by its tokens, `sameReviewed`), so a
  *   changed library is refused and reviewed again;
  * - where the host runs code of the client's on an argument the declaration
  *   admits (`String` of an object calls its `toString`), the parameter the
@@ -44,8 +44,8 @@ export type GlobalEntry = {
   global: string;
   /** The member read, `Symbol.for`; absent for a call of the global itself. */
   member?: string;
-  /** The declaration as reviewed: a global function's in `reviewedText`'s
-   * form, any other's exactly. */
+  /** The declaration as reviewed: a global function's compared by its tokens
+   * (`sameReviewed`), any other's exactly. */
   signature: string;
   /** A parameter some declared arguments of which the host runs the client's
    * code on: it is stated as `safe`, the part on which it runs none. */
@@ -450,15 +450,16 @@ export const globalsOverlay: readonly GlobalEntry[] = [
   // Node's global `structuredClone(value)` serializes its argument, reading
   // every own enumerable property by [[Get]], so a getter runs, and builds a
   // fresh copy of data properties, its prototypes `Object.prototype`, its
-  // symbol keys dropped; a function throws a `DataCloneError`. A `JsonValue`
-  // array may own enumerable properties beside its elements, which it reads
-  // and copies too (Node 25.2.1: a getter there runs): no effect is stated.
-  // The copy of a `JsonValue` is one, an array's extra properties included.
+  // symbol keys dropped; a function throws a `DataCloneError`. A getter may
+  // change what the traversal reads later, so the copy of a `JsonValue` may
+  // be none (Node 25.2.1: a getter beside an array's elements popping an
+  // enclosing array leaves a hole in its copy). Stated at any value, the
+  // result `unknown`, no effect stated; a transfer list is not admitted.
   ...["function structuredClone<T>(value: T, options?: { transfer?: Transferable[] }): T;",
     "function structuredClone<T>(value: T, transfer?: { transfer: ReadonlyArray<import(\"worker_threads\").TransferListItem> }): T;"].map(
     (signature): GlobalEntry => ({ host: contract,
-      origin: node, global: "structuredClone", signature, definitions: [jsonValueDefinition],
-      stated: { binders: [], params: [jsonValue], result: jsonValue } })),
+      origin: node, global: "structuredClone", signature,
+      stated: { binders: [], params: [atom("unknown")], result: atom("unknown") } })),
   // `Math.ceil(x)` of a number, a primitive: no conversion code runs.
   { host: contract, global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },
   // `Object.fromEntries(entries)` iterates `entries` and, for each element,
@@ -629,8 +630,8 @@ export const globalsOverlay: readonly GlobalEntry[] = [
 
 /** The entry for `global`'s `member` (absent: its call) declared as `text`. */
 export function globalEntry(entries: readonly GlobalEntry[], global: string, member: string | undefined,
-    text: string, origin: string): GlobalEntry | undefined {
-  return entries.find(e => e.global === global && e.member === member && e.signature === text &&
+    matches: (signature: string) => boolean, origin: string): GlobalEntry | undefined {
+  return entries.find(e => e.global === global && e.member === member && matches(e.signature) &&
     (e.origin ?? "library") === origin);
 }
 
