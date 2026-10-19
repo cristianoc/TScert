@@ -886,6 +886,100 @@ excludes the key is of other objects; an open record may be either, since an
 array may carry other keys. -/
 def arrayAnswer (c : Clause α) : Option Bool := keyAnswer CallArguments.arrayStoreField c
 
+/-- Whether a label's clauses are exactly the literal `e`. -/
+def rowIs (G : NormalGraph ι) (l : ι) (e : Clause (List ι)) : Bool :=
+  match G l, e with
+  | [.numLit b'], .numLit b => b' == b
+  | [.strLit s'], .strLit s => s' == s
+  | _, _ => false
+
+theorem rowIs_sound {G : NormalGraph ι} {l : ι} {e : Clause (List ι)} (h : rowIs G l e = true) :
+    G l = [e] := by
+  unfold rowIs at h
+  split at h <;> simp_all
+
+/-- The label of the graph whose row is the literal `e`, checked. -/
+def elementLabel (G : NormalGraph ι) (e : Clause (List ι)) : Option ι :=
+  let key : Option LitKey := match e with
+    | .numLit b => some (.num b)
+    | .strLit s => some (.str s)
+    | _ => none
+  (key.bind G.literal).filter (rowIs G · e)
+
+theorem elementLabel_sound {G : NormalGraph ι} {e : Clause (List ι)} {l : ι}
+    (h : elementLabel G e = some l) : G l = [e] := by
+  unfold elementLabel at h
+  exact rowIs_sound (Option.filter_eq_some_iff.mp h).2
+
+theorem mapM_mem {f : α → Option β} : ∀ {xs : List α} {ys : List β}, xs.mapM f = some ys →
+    ∀ x ∈ xs, ∃ y ∈ ys, f x = some y
+  | [], ys, _, x, hx => by cases hx
+  | x' :: xs, ys, h, x, hx => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨y, hy, ys', hys, rfl⟩ := h
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact ⟨y, List.mem_cons_self, hy⟩
+    · obtain ⟨z, hz, hfz⟩ := mapM_mem hys x hx
+      exact ⟨z, List.mem_cons_of_mem _ hz, hfz⟩
+
+/-- The labels a union eliminates into (`unionVar`): each label, a tag set
+split into its elements' labels where the graph holds a label for each
+(HOST-FAMILIES.md, "Tag sets"). -/
+def labelMembers (G : NormalGraph ι) (a : ι) : List ι :=
+  match G a with
+  | [c] => if c.elements.length == 1 then [a] else (c.elements.mapM (elementLabel G)).getD [a]
+  | _ => [a]
+
+def members (G : NormalGraph ι) (C : Ty ι) : Ty ι := C.flatMap (labelMembers G)
+
+/-- A member of a union is a member of one of its members. -/
+theorem members_sound {G : NormalGraph ι} {C : Ty ι} {n W v} (hv : meaning G C n W v) :
+    ∃ a ∈ members G C, meaning G [a] n W v := by
+  obtain ⟨a, ha, hav⟩ := hv
+  unfold members
+  by_cases hsplit : ∃ c ls, G a = [c] ∧ (c.elements.length == 1) = false ∧ c.elements.mapM (elementLabel G) = some ls
+  · obtain ⟨c, ls, hrow, hlen, hls⟩ := hsplit
+    have hplain : G.plain a = true := NormalGraph.plain_of_clauses (c := c) (by simp [hrow])
+    have hpt : G.plainTy [a] = true := by simp [NormalGraph.plainTy, hplain]
+    obtain ⟨c', hc', hcv⟩ := (expand_sem G [a] hpt n W v).mp ⟨a, by simp, hav⟩
+    have hcc : c' = c := by simpa [expand, hpt, clausesOf, hrow] using hc'
+    subst hcc
+    obtain ⟨e, he, hev⟩ := rowSem_elements G _ _ _ hcv
+    obtain ⟨l, hl, hel⟩ := mapM_mem hls e he
+    have hlr := elementLabel_sound hel
+    have hlp : G.plain l = true :=
+      NormalGraph.plain_of_clauses (c := e) (show e ∈ G l by rw [hlr]; exact List.mem_singleton_self e)
+    have hlt : G.plainTy [l] = true := by simp [NormalGraph.plainTy, hlp]
+    refine ⟨l, List.mem_flatMap.mpr ⟨a, ha, by simp [labelMembers, hrow, hlen, hls, hl]⟩, ?_⟩
+    exact (expand_sem G [l] hlt n W v).mpr ⟨e, by simp [expand, hlt, clausesOf, hlr], hev⟩
+  · refine ⟨a, List.mem_flatMap.mpr ⟨a, ha, ?_⟩, ⟨a, by simp, hav⟩⟩
+    unfold labelMembers
+    split
+    · rename_i c hrow
+      split
+      · simp
+      · rename_i hlen
+        cases hm : c.elements.mapM (elementLabel G) with
+        | none => simp
+        | some ls => exact absurd ⟨c, ls, hrow, by simpa using hlen, hm⟩ hsplit
+    · simp
+
+/-- The one answer every element gives, if they agree. -/
+def uniform (bs : List Bool) : Option Bool :=
+  if bs.all id then some true else if bs.all (!·) then some false else none
+
+theorem uniform_mem {bs : List Bool} {q : Bool} (h : uniform bs = some q) {x : Bool} (hx : x ∈ bs) :
+    x = q := by
+  unfold uniform at h
+  split at h
+  · rename_i ha; cases h; simpa using List.all_eq_true.mp ha x hx
+  · split at h
+    · rename_i _ ha; cases h; simpa using List.all_eq_true.mp ha x hx
+    · cases h
+
+/-- A tag set answers a test where all its elements do (HOST-FAMILIES.md,
+"Tag sets"). -/
 def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   match tag, c with
   | _, .top | _, .source => none
@@ -897,6 +991,10 @@ def tagClause (tag : Tag) (c : Clause α) : Option Bool :=
   | .truthy, .numLit value => some (numberTruthy value)
   | .truthy, .strLit t => some (t != "")
   | .truthy, .bigintLit i => some (i != 0)
+  | .numEq bits, .numIn S => uniform (S.map fun value => numberEqual value bits)
+  | .strEq s, .strIn S => uniform (S.map fun t => s == t)
+  | .truthy, .numIn S => uniform (S.map numberTruthy)
+  | .truthy, .strIn S => uniform (S.map fun t => t != "")
   | .isArray, .refs .. | .isArray, .dict .. => arrayAnswer c
   | .hasKey k, .refs .. | .hasKey k, .dict .. => inAnswer k c
   | _, _ => tagShape tag (shape c)
@@ -981,6 +1079,18 @@ theorem tagClause_sound {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
     change v = .str t at hv; subst v; simpa only [tagClause, tagHolds, Option.some.injEq] using hq
   case truthy.bigintLit i =>
     change v = .bigint i at hv; subst v; simpa only [tagClause, tagHolds, Option.some.injEq] using hq
+  case numEq.numIn bits S =>
+    obtain ⟨b, hb, rfl⟩ := hv
+    exact uniform_mem hq (List.mem_map.mpr ⟨b, hb, rfl⟩)
+  case strEq.strIn s S =>
+    obtain ⟨t, ht, rfl⟩ := hv
+    exact uniform_mem hq (List.mem_map.mpr ⟨t, ht, rfl⟩)
+  case truthy.numIn S =>
+    obtain ⟨b, hb, rfl⟩ := hv
+    exact uniform_mem hq (List.mem_map.mpr ⟨b, hb, rfl⟩)
+  case truthy.strIn S =>
+    obtain ⟨t, ht, rfl⟩ := hv
+    exact uniform_mem hq (List.mem_map.mpr ⟨t, ht, rfl⟩)
   case isArray.refs => exact arrayAnswer_sound (by simpa only [tagClause] using hq) hv
   case isArray.dict => exact arrayAnswer_sound (by simpa only [tagClause] using hq) hv
   case hasKey.refs k _ _ _ _ _ _ =>

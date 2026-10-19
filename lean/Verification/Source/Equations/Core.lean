@@ -10,7 +10,7 @@ mutual
 partial def lowerType (ctx : Ctx) (term : Json) : M Union := do
   match ← str term "k" with
   | "atom" => atomLabels term
-  | "literal" => literalLabels term
+  | "literal" => mergeLiterals (← literalLabels term)
   | "unique" => uniqueLabels term
   | "union" | "intersection" => do
     let (U, meets) ← lowerArm ctx term
@@ -163,7 +163,7 @@ partial def lowerArm (ctx : Ctx) (term : Json) : M (Union × Bool) := do
   match kindOf term with
   | some "union" =>
     let arms ← (← arr term "parts").toList.mapM (lowerArm ctx)
-    return (normUnion (arms.flatMap (·.1)), arms.any (·.2))
+    return (← mergeLiterals (normUnion (arms.flatMap (·.1))), arms.any (·.2))
   | some "intersection" => return (← intersect ctx term, true)
   | _ => return (← lowerType ctx term, false)
 

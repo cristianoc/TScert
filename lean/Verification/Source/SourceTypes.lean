@@ -90,6 +90,8 @@ private def clauseName : Clause (List ι) → String
   | .symbol => "symbol"
   | .symbolLit _ => "unique symbol"
   | .ctors .. => "constructor"
+  | .numIn _ => "numeric literal"
+  | .strIn _ => "string literal"
 
 def render (T : State) (A : Ty Tree) : String :=
   match expand (graph T) A with
@@ -168,17 +170,33 @@ labels, because their singletons are unbounded; the four fixed labels are the
 primitive values. -/
 def numberLabels (t : Claim.Ty) : Lowering (Ty Tree) := do
   let mut out := []
+  -- Two or more literals of one primitive are one tag set (HOST-FAMILIES.md,
+  -- "Tag sets"), each element's own label interned beside it.
+  let mut nums : List UInt64 := []
+  let mut strs : List String := []
   for a in t.atoms do
     match a with
-    | .num => out := out ++ [← use .num]
     | .numLit b =>
       -- TypeScript's literal type 0 includes both runtime zeros. The graph's
       -- bit singletons remain exact, so state both rather than erase a sign.
-      out := out ++ [← use (.numLit b)]
-      if Float.ofBits b == 0.0 then
-        out := out ++ [← use (.numLit (9223372036854775808 : UInt64))]
+      nums := nums ++ [b]
+      if Float.ofBits b == 0.0 then nums := nums ++ [(9223372036854775808 : UInt64)]
+    | .strLit s => strs := strs ++ [s]
+    | _ => pure ()
+  nums := (nums.mergeSort (· ≤ ·)).eraseDups
+  strs := (strs.mergeSort fun a b => decide (a ≤ b)).eraseDups
+  for b in nums do
+    let l ← use (.numLit b)
+    if nums.length == 1 then out := out ++ [l]
+  if nums.length ≥ 2 then out := out ++ [← use (.numIn nums)]
+  for v in strs do
+    let l ← use (.strLit v)
+    if strs.length == 1 then out := out ++ [l]
+  if strs.length ≥ 2 then out := out ++ [← use (.strIn strs)]
+  for a in t.atoms do
+    match a with
+    | .num => out := out ++ [← use .num]
     | .str => out := out ++ [← use .str]
-    | .strLit s => out := out ++ [← use (.strLit s)]
     | .bigint => out := out ++ [← use .bigint]
     | .bigintLit i => out := out ++ [← use (.bigintLit i)]
     | .symbol => out := out ++ [← use .symbol]

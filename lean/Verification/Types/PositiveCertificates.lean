@@ -465,8 +465,10 @@ checked evidence. -/
     OpaqueFamily G sub (Prem G sub look gen f) known
       (ArrowsCheckedWith G (Prem G sub look gen f) arrows) f.hypotheses p.1 p.2 ∧
     ∀ a ∈ sourceClauses G p.1 ++ meetSources G p.1 p.2 f.hypotheses,
-      ∃ b ∈ ClauseSelection.candidates G a p.2 ++ clausesOf G p.2,
-        checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b = true)
+      (∃ b ∈ ClauseSelection.candidates G a p.2 ++ clausesOf G p.2,
+        checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 a b = true) ∨
+      ∀ e ∈ a.elements, ∃ b ∈ clausesOf G p.2,
+        checkClauseWith G sub (Prem G sub look gen f) known arrows p.1 e b = true)
 
 theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
     {known : Known ι} {gen : ι → List ι → List (Nat × List (List ι))} {look : Lookup ι}
@@ -479,12 +481,15 @@ theorem checkEntries_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (
   refine ⟨hk, OpaqueFamily.mono (fun L S M hs q hq => ?_) ho, fun a ha => ?_⟩
   · obtain ⟨e, _, _, _, he⟩ := hs q hq
     exact checkArrowWith_sound he
-  · obtain ⟨b, hb, hcb⟩ := hc a ha
-    have hb : b ∈ clausesOf G p.2 := by
-      rcases List.mem_append.mp hb with hb | hb
-      · exact ClauseSelection.mem_candidates G hb
-      · exact hb
-    exact ⟨b, hb, checkClauseWith_sound hcb⟩
+  · rcases hc a ha with ⟨b, hb, hcb⟩ | he
+    · have hb : b ∈ clausesOf G p.2 := by
+        rcases List.mem_append.mp hb with hb | hb
+        · exact ClauseSelection.mem_candidates G hb
+        · exact hb
+      exact .inl ⟨b, hb, checkClauseWith_sound hcb⟩
+    · exact .inr fun e he' => by
+        obtain ⟨b, hb, hcb⟩ := he e he'
+        exact ⟨b, hb, checkClauseWith_sound hcb⟩
 
 /-- The variable discipline, decided. -/
 @[nospecialize] def variablesOk [DecidableEq ι] {G : NormalGraph ι} (sub : Option (Renaming G))
@@ -1189,7 +1194,11 @@ searched for its rows. The check decides (`compareUsing`). -/
       (ArrowsCheckedWith G R es) [] p.1 p.2) &&
     (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
       (if images.budget.select then ClauseSelection.candidates G a p.2 else clausesOf G p.2).any
-        fun b => checkClauseWith G images.sub R known es p.1 a b)
+        (fun b => checkClauseWith G images.sub R known es p.1 a b) ||
+      -- A tag set is covered between several target clauses, element by
+      -- element, where no one clause covers it.
+      (a.elements != [a] && a.elements.all fun e => (clausesOf G p.2).any
+        fun b => checkClauseWith G images.sub R known es p.1 e b))
 
 /-- Grow the table from its frontier: each row adds the pairs its coverage
 compares (`demandPairs`, and quantified members after renaming), each read
@@ -1214,8 +1223,10 @@ the execution budget. -/
       let f : Entry ι := { source := [], target := [], table := tbl }
       if premTable G images.sub f p.1 p.2 then return (tbl, fresh)
       if (reached p).isEmpty && (p.1 ++ p.2).all G.plain && !(SameKind G p.1 p.2 &&
-          (sourceClauses G p.1).all fun a => (clausesOf G p.2).any fun b =>
-            checkClauseWith G images.sub (Rel []) [] [] p.1 a b) then return (tbl, fresh)
+          (sourceClauses G p.1).all fun a => (clausesOf G p.2).any (fun b =>
+            checkClauseWith G images.sub (Rel []) [] [] p.1 a b) ||
+            (a.elements != [a] && a.elements.all fun e => (clausesOf G p.2).any fun b =>
+              checkClauseWith G images.sub (Rel []) [] [] p.1 e b)) then return (tbl, fresh)
       if let some r := images.sub then
         if grows r tbl p.1 p.2 then throw .growth
       return (tbl ++ [p], fresh ++ [p])

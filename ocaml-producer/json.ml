@@ -10,7 +10,11 @@ let str = function String s -> s | _ -> fail "expected string"
 let list = function Array xs -> xs | _ -> fail "expected array"
 let boolean = function Bool b -> b | _ -> fail "expected boolean"
 let int n = Number (string_of_int n)
+(* Every wire string is well-formed Unicode: the text is valid UTF-8, and an
+   escape of a surrogate is one of a pair (refused below), before any value
+   is read. *)
 let parse s =
+  if not (String.is_valid_utf_8 s) then fail "JSON text: not valid UTF-8";
   let i = ref 0 and n = String.length s in
   let error m = fail (Printf.sprintf "JSON byte %d: %s" !i m) in
   let peek () = if !i < n then s.[!i] else '\000' in

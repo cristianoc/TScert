@@ -57,6 +57,7 @@ The clauses, with what each denotes:
 | `str`, `strLit s` | any string; exactly $s$ |
 | `bigint`, `bigintLit i` | any bigint; exactly the bigint $i\in\mathbb Z$ |
 | `symbol`, `symbolLit n` | any symbol (an opaque identity); exactly the symbol $\mathsf{sym}(n)$ |
+| `numIn S`, `strIn S` | exactly the numbers whose bit pattern is in $S$; exactly the strings in $S$ ([tag sets](HOST-FAMILIES.md#tag-sets)) |
 | `refs` | a plain object under record contracts, readonly views, optional fields and methods ([Records](#records)) |
 | `dict` | a `refs` object whose present keys of each index's class (every string key, the canonical numeric ones, or every symbol key) also meet readonly and writable index contracts |
 | `list` | an array under one or more tuple contracts ([Arrays](#arrays)) |

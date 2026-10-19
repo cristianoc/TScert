@@ -222,7 +222,16 @@ def Equations.memo (E : Equations) : Equations :=
       if hs : (Tree.app h .nil).scoped E.signature 0 0 = true then
         some ⟨(⟨.app h .nil, hs⟩, rowFrom E.signature body ⟨.app h .nil, hs⟩), rfl⟩
       else none
+  -- The nullary heads whose row is one literal, by that literal.
+  let literals : Std.HashMap LitKey (Label E.signature) :=
+    rows.foldl (fun m r => match r with
+      | some p => match p.1.2 with
+        | .clauses [.numLit b] => m.insert (.num b) p.1.1
+        | .clauses [.strLit s] => m.insert (.str s) p.1.1
+        | _ => m
+      | none => m) {}
   { signature := E.signature, body, builtins := E.builtins, domain := E.domain
+    literal := fun k => literals[k]?
     cached := fun l => match l.1 with
       | .app h .nil => match rows[h]? with
         | some (some p) => if l = p.1.1 then some p.1.2 else none

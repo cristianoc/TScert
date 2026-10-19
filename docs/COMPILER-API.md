@@ -7,7 +7,10 @@ through `typescript/unstable/ast` and its checker through
 which such code is verified: how the package's declarations are read, the
 audited corrections where a declaration cannot be its own contract, the
 assumptions the result is relative to, the restrictions it imposes, and the
-tests that exercise it.
+tests that exercise it. The node invariant, the guards and stable members
+are the first instance of the general mechanism of
+[host families](HOST-FAMILIES.md), which owns their rules; this document
+gives the instance's data.
 
 The pipeline implements namespace imports
 ([derived source forms](SOURCE-ELABORATION.md#derived-source-forms)), host
@@ -519,6 +522,14 @@ different values. That stable members return the same value on every read is
 the host assumption T1; no rule of the node shapes or the guards reads it,
 since the host-guard expansion reads `kind` with nothing between the reads
 and the field slice's exclusion is timeless.
+[Stable members](HOST-FAMILIES.md#stable-members) are the one rule that
+reads it.
+
+A test of a stable member's value refines the member for later reads by
+[read equality](HOST-FAMILIES.md#stable-members), whose segments are the
+stable members of node shapes alone: T1 states equality of reads for nodes,
+and the other host classes (`Type`, `Symbol`, `Checker`, `API`) and node
+lists have no such assumption.
 
 The refinements of `unknown` (`typeof`, `in`, `Array.isArray`) must give
 readonly views or optional fields, so that no writable view of a host object
@@ -530,10 +541,11 @@ only on a record excluding host values, and as a readonly view otherwise
 
 ## The node invariant
 
-Let $`\mathcal K`$ be the 352 values of `SyntaxKind`. For $`k\in\mathcal K`$
-the **shape** $`S_k`$ is the record type with the provenance key
-$`\kappa_{\mathit{RemoteNode}}`$, `kind` at the literal $`k`$, and the
-members of:
+The node invariant is the [family contract](HOST-FAMILIES.md#the-family-contract)
+of the compiler API's [description](HOST-FAMILIES.md#the-compiler-api). Let
+$`\mathcal K`$ be the 352 values of `SyntaxKind`. For $`k\in\mathcal K`$
+the **shape** $`S_k`$ is the record type with the marker `"RemoteNode"`,
+`kind` at the literal $`k`$, and the members of:
 
 - the non-generic interface whose `kind` is the literal $`k`$ and which
   extends no other such interface (for `PropertyAccessExpression`, the
@@ -542,202 +554,58 @@ members of:
   admits $`k`$, at $`k`$ (`Token<k>`, `KeywordTypeNode<k>`);
 - otherwise, `NodeBase` (`JSTypeAliasDeclaration`, `JSImportDeclaration`),
 
-with the [corrections](#corrections) applied and reading rules 1–3. Write
-$`I_k`$ for the declaration $`S_k`$ is read from. A node type $`A`$ whose
-`kind` is no set of literals (an abstract base, `Node`, an alias of one) is
-the union of the shapes of its **members**:
-
-```math
-\frac{A\ \text{a node type of the host},\quad \mathtt{kind}\ \text{of}\ A\ \text{not a set of literals}}
-     {⟦A⟧=\textstyle\bigcup\{\,S_k \mid k\in\mathrm{members}(A)\,\}}\ \textsf{node-union}
-```
-
-$`k\in\mathrm{members}(A)`$ when $`I_k`$ reaches $`A`$ through `extends`
-clauses, or $`A`$ is an alias whose union reaches $`I_k`$. Membership is
-computed on the declaration graph, before any correction: it is a fact of
-the declarations' hierarchy, and a correction changes a member's shape
-while keeping its membership. `SourceFile` is a member of `Node`, although
-its corrected shape is outside `Node`'s declared record. Every interface
-extends `Node`, so $`\mathrm{members}(\mathtt{Node})=\mathcal K`$;
-`Expression` is the kinds whose interfaces extend `ExpressionBase`, and
-`FunctionLikeBase` the kinds whose interfaces extend it. The guard
-`isExpression` accepts a different set (it excludes `JsxText`, which the
-declarations make an expression); the guard's kind set serves the guard and
-the hierarchy the type. A concrete union
-(`MemberName = Identifier | PrivateIdentifier`) is read as declared.
+with the [corrections](#corrections) applied and reading rules 1–3. A node
+type whose `kind` is no set of literals is the union of the shapes of its
+members (`family-union`). `SourceFile` is a member of `Node`, although its
+corrected shape is outside `Node`'s declared record. Every interface extends
+`Node`, so $`\mathrm{members}(\mathtt{Node})=\mathcal K`$; `Expression` is
+the kinds whose interfaces extend `ExpressionBase`, and `FunctionLikeBase`
+the kinds whose interfaces extend it. The guard `isExpression` accepts a
+different set (it excludes `JsxText`, which the declarations make an
+expression); the guard's kind set serves the guard and the hierarchy the
+type. A concrete union (`MemberName = Identifier | PrivateIdentifier`) is
+read as declared.
 
 ### Arms per unit
 
-A unit's node union keeps the shapes of the kinds $`K_u`$ its tests and
-types name, and one residual arm for the rest, the join of the shapes it
-replaces:
-
-```math
-⟦A⟧_u=\textstyle\bigcup\{\,S_k\mid k\in K_u\cap\mathrm{members}(A)\,\}\ \cup\ R_u,
-\qquad
-R_u=\textstyle\bigsqcup\{\,S_k\mid k\in\mathrm{members}(A)\setminus K_u\,\}
-```
-
-The join of records keeps the fields every operand has, each at the union of
-its operands' types and optional where any operand has it optional, `kind`
-at the union of the literals, and the provenance key. A unit naming
-`Identifier` and leaving `SourceFile` to the residual gets `parent` optional
-in its residual, since a source file's `parent` is absent.
-
-**Residual inclusion.** Each replaced shape $`S_k`$ is below $`R_u`$. Every
-member of $`R_u`$ is a member of $`S_k`$, since the join keeps only common
-members; its provenance key is $`S_k`$'s; every member of $`R_u`$ is a
-readonly view whose type contains $`S_k`$'s, which covariance admits,
-`kind` included ($`\{k\}\le\bigcup_j\{k_j\}`$); an optional member of
-$`R_u`$ admits a required one of $`S_k`$. A member of $`S_k`$ that the join
-drops is forgotten, which record subtyping allows for every field mode. So
-$`⟦A⟧\subseteq⟦A⟧_u`$, with no invariant field widened. The client never
-produces $`R_u`$.
-
-Shapes with the same fields and different kinds (the 15 modifier keywords,
-the token families) are one arm whose `kind` is the union of their
-literals. A test $`e.\mathtt{kind}\equiv k`$ with $`k\in K_u`$ drops
-$`R_u`$, whose `kind` excludes $`k`$. A unit's union thus has the size of
-its use: median 4 named kinds, at most 57. The cost of a union grows with
-its arms: through `verify-source.mts` at commit cbe2893 on 2026-10-16, a
-union of $`n`$ record arms narrowed by `kind` took 1.2 s for $`n=20`$ and
-9.4 s for $`n=50`$, and exceeded the 30 s search limit for $`n=100`$; 20 arms
-plus one arm whose `kind` is a union of 330 literals took 9.2 s.
-
-### Compact kind sets
-
-A residual's `kind`, and any other union of two or more number literals, is
-one atom of the type language, a **kind set**: for a finite set $`S`$ of
-number bit patterns with $`|S|\ge 2`$, the atom $`\mathsf{numIn}(S)`$ means
-exactly the numbers whose bit pattern is in $`S`$. A union of number
-literals normalizes to it, and a kind set of one element is that literal:
-
-```math
-\mathsf{numLit}(b_1)\cup\cdots\cup\mathsf{numLit}(b_n)=\mathsf{numIn}(\{b_1,\ldots,b_n\})\quad(n\ge 2),
-\qquad
-\mathsf{numIn}(S)\cup\mathsf{numIn}(T)=\mathsf{numIn}(S\cup T)
-```
-
-Subtyping is inclusion of sets, and every kind set is a number:
-
-```math
-\frac{S\subseteq T}{\mathsf{numIn}(S)\le\mathsf{numIn}(T)}
-\qquad
-\frac{b\in S}{\mathsf{numLit}(b)\le\mathsf{numIn}(S)}
-\qquad
-\frac{}{\mathsf{numIn}(S)\le\mathsf{Number}}
-```
-
-A test answers on a kind set element by element, and its slices are sets again
-(a set of one element its literal, an empty one no atom):
-
-```math
-T_{\mathsf{numEq}(b)}(\mathsf{numIn}(S))=\{s\in S\mid\mathrm{numberEqual}(s,b)\},\qquad
-T_{\lnot\mathsf{numEq}(b)}(\mathsf{numIn}(S))=\{s\in S\mid\lnot\mathrm{numberEqual}(s,b)\},\qquad
-T_{\mathsf{truthy}}(\mathsf{numIn}(S))=S\setminus Z,\qquad
-T_{\lnot\mathsf{truthy}}(\mathsf{numIn}(S))=S\cap Z
-```
-
-with $`\mathrm{numberEqual}`$ the step's equality of numbers (`Calculus.numberEqual`,
-ECMAScript's `Number::equal`): $`+0`$ and $`-0`$ are equal and a NaN equals
-nothing, so for $`S=\{-0,1\}`$ a test against $`+0`$ keeps $`-0`$ on its true
-edge, and a NaN in $`S`$ is on every false edge. $`Z`$ is the bit patterns of
-$`0`$, $`-0`$ and the NaNs; `typeof` answers
-`"number"`. A test of a slot at $`\mathsf{numIn}(S)`$ is one node of
-evidence whatever $`|S|`$ is, its two arms at the two slices, and a field
-test reaches the record arms through the field slice $`F^f`$ unchanged. On
-the wire a kind set is `{"numIn": {"bits": [b, …]}}`, the bit patterns as
-`numLit` spells them, sorted and distinct, at least two; a decoder refuses
-any other list. Its obligations in Lean are the meaning, the soundness of
-the three subtyping rules, of normalization, and of each slice
-(`tagSlice`'s for the new atom).
-
-### Host-admissible worlds
-
-$`K_u`$ is fixed per verification run, so every occurrence of a node type
-in one run has one reading. Two runs (a function and its importer, verified
-separately) read `Node` with different arms, whose ordinary record meanings
-differ: $`R_u`$ admits objects with the provenance key and only the base
-fields. They agree on **host-admissible worlds**: heaps in which every
-object whose prototype chain carries $`\kappa_{\mathit{RemoteNode}}`$ and
-whose `kind` is $`k`$ meets $`S_k`$. There $`⟦R_u⟧`$ is exactly the union of
-the replaced shapes' meanings, so $`⟦A⟧_u=⟦A⟧_v`$ for all units $`u,v`$. A
-run's result is stated relative to host-admissible worlds, a conjunct of
-the world admissibility premise $`\mathrm{WorldAdm}`$ of the acceptance
-theorem, discharged by T1; the import rule's assumption that a separately
-verified function meets its importer's reading holds in those worlds.
+A unit keeps the arms of the kinds its tests and types name and one
+[residual](HOST-FAMILIES.md#residuals). A unit naming `Identifier` and
+leaving `SourceFile` to the residual gets `parent` optional in its residual,
+since a source file's `parent` is absent. The shapes with the same members
+and different kinds are the 15 modifier keywords and the token families. A
+unit's union has the size of its use: median 4 named kinds, at most 57.
+Through `verify-source.mts` at commit cbe2893 on 2026-10-16, a union of
+$`n`$ record arms narrowed by `kind` took 1.2 s for $`n=20`$ and 9.4 s for
+$`n=50`$, and exceeded the 30 s search limit for $`n=100`$; 20 arms plus one
+arm whose `kind` is a union of 330 literals took 9.2 s. Two units' readings
+agree for the values T1 and T1′ describe
+([agreement across units](HOST-FAMILIES.md#agreement-across-units)).
 
 ## Guards
 
-The guard check reads the body of each guard a unit names, in
+[Guard recognition](HOST-FAMILIES.md#guard-recognition) reads the bodies in
 `dist/ast/is.generated.js` and `dist/ast/is.js` as the package's `exports`
-map resolves them, with the front end's own parser, and accepts this syntax:
-
-```math
-\begin{aligned}
-b &::= \mathtt{return}\ c \mid \mathtt{const\ kind = node.kind;\ return}\ c \mid \mathtt{switch\ (node.kind)\ \{\ \overline{\mathtt{case}\ \kappa:}\ \mathtt{return\ true;\ default: return\ false;}\ \}}\\
-c &::= x\ \mathtt{===}\ \kappa \mid x\ \mathtt{>=}\ \kappa \mid x\ \mathtt{<=}\ \kappa \mid c\ \mathtt{||}\ c \mid c\ \mathtt{\&\&}\ c \mid h(x)\\
-x &::= \mathtt{node.kind} \mid \mathtt{kind},\qquad \kappa ::= \mathtt{SyntaxKind}.M
-\end{aligned}
-```
-
-with these side conditions, each checked on the resolved files:
-
-- `SyntaxKind` is the module's import binding of `#enums/syntaxKind`, never
-  reassigned, and resolves under the `default` condition to the file whose
-  values the enum check compares with the declaration; $`M`$ is a member of
-  it.
-- A helper $`h`$ is a function declaration of the same module, never
-  reassigned, whose body is again in this syntax with its parameter for
-  $`x`$; the helper call graph is acyclic (the `OrHigher` chain has depth
-  9), so expansion terminates.
-- The body declares nothing but its `kind` constant, assigns nothing, and
-  reads only its parameter's `kind`, or the parameter itself for a guard
-  taking a kind.
-
-The result is then a function of the kind. For a guard taking a node, the
-check computes $`K_g\subseteq\mathcal K`$ by evaluating $`c`$ over
-$`\mathcal K`$; a node's kind is in $`\mathcal K`$ by T1, so ranges
+map resolves them. The tag field is `kind`, and a constant is a member of
+`SyntaxKind` read through the module's import binding of `#enums/syntaxKind`,
+which resolves under the `default` condition to the file whose values the
+enum check compares with the declaration. The helper graph has depth 9 (the
+`OrHigher` chain). A node's kind is in $`\mathcal K`$ by T1, so ranges
 (`isTokenKind`'s `kind >= SyntaxKind.FirstToken && kind <= SyntaxKind.LastToken`)
 are exact there. A guard taking a kind has a parameter of type `number`
-(rule 3), and the check requires its $`c`$ to be built from equalities
-alone, so that it holds of exactly a finite set of numbers. Every such guard
-with a predicate is (the 29 use equalities and helpers); the 5 range helpers
-are Boolean functions without a predicate, read as declared. The 326 guards
-of `is.generated.js`, read on 2026-10-16: 232 a single equality, 35 a
-disjunction of equalities, 15 a `kind` constant and equalities, 2 a
-`switch`, 8 a helper on the kind, 34 taking a kind; all are in the syntax.
-`isLeftHandSideExpression` and `isUnaryExpression` (`is.js`) read
-`expression` and are outside it.
+(rule 3); the 29 such guards with a predicate use equalities and helpers,
+and the 5 range helpers are Boolean functions without a predicate, read as
+declared. The 326 guards of `is.generated.js`, read on 2026-10-16: 232 a
+single equality, 35 a disjunction of equalities, 15 a `kind` constant and
+equalities, 2 a `switch`, 8 a helper on the kind, 34 taking a kind; all are
+in the syntax. `isLeftHandSideExpression` and `isUnaryExpression`
+(`is.js`) read `expression` and are outside it.
 
-The parser writes a call of a host guard $`g`$ on an expression $`e`$ as one
-evaluation of $`e`$ followed by the test of its kind against $`K_g`$, as it
-writes `Array.isArray(e)` as the test `isArray`:
-
-```math
-\frac{g\ \text{a host guard taking a node},\quad K_g=\{k_1,\ldots,k_n\}}
-     {g(e)\ \leadsto\ \mathsf{let}\ y=e\ \mathsf{in}\ y.\mathtt{kind}\equiv k_1\lor\cdots\lor y.\mathtt{kind}\equiv k_n}\ \textsf{host-guard}
-```
-
-with $`y`$ fresh; for a guard taking a kind, the disjunction tests $`y`$
-itself. $`e`$ runs once, as the call runs it; `kind` is a stable member, so
-reading it $`n`$ times observes one value and runs no code. Where $`e`$ is
-an immutable binding $`x`$, $`y`$ is $`x`$ and the refinement is of $`x`$.
-
-On an immutable binding $`x`$ of a node type, the true edge refines $`x`$ to
-$`\bigcup_i S_{k_i}`$ by `if-field` and the false edge to the other arms; on
-a binding of a `SyntaxKind` (`isAdditiveOperator(op)`), to the literals
-$`K_g`$ by `if-singleton` ([guards](SOURCE-CONTRACTS.md#guards)). Both edges
-refine because the test is the guard's body. The evidence records $`K_g`$
-for each guard a unit names. A guard outside the syntax is refused at its
-use. A guard the contract leaves unrecognized is what its declaration says,
-an `x is T` function, read by the
-[user-defined guard](SOURCE-CONTRACTS.md#user-defined-guards) rules.
-
-So `isTypeAliasDeclaration(n)` refines `n` to `TypeAliasDeclaration`'s shape
-or `JSTypeAliasDeclaration`'s base shape, and reading `n.name` after it is
-refused; `isExpression(n)` refines `n` to the 46 kinds the implementation
-accepts.
+On a binding of a `SyntaxKind` (`isAdditiveOperator(op)`) the test refines
+to the literals $`K_g`$ by `if-singleton`
+([guards](SOURCE-CONTRACTS.md#guards)). So `isTypeAliasDeclaration(n)`
+refines `n` to `TypeAliasDeclaration`'s shape or `JSTypeAliasDeclaration`'s
+base shape, and reading `n.name` after it is refused; `isExpression(n)`
+refines `n` to the 46 kinds the implementation accepts.
 
 ## Corrections
 
@@ -1012,12 +880,19 @@ the corpus runs are regression evidence, not proofs.
 - **T1 (node invariant).** Every object whose prototype chain carries
   $`\kappa_{\mathit{RemoteNode}}`$ has a `kind` in $`\mathcal K`$; for that
   kind $`k`$ it has every member $`S_k`$ states, holding a value of the
-  member's type; its stable members return the same value on every read,
-  and nothing the package does after construction changes them. This
-  defines the host-admissible worlds.
+  member's type, and its model value holds `"RemoteNode"` under `[[host]]`; its stable members return the same value on every read,
+  and nothing the package does after construction changes them (F1 and F2
+  of [host families](HOST-FAMILIES.md#trust-rows)).
+- **T1′ (marker to invariant).** Every model value of an admitted external
+  value that holds `"RemoteNode"` under `[[host]]` meets $`S_k`$ for
+  its `kind` $`k`$, at every later step, and the locations of its stable
+  members have stable contracts. With T1 this makes the marker and the node
+  invariant correspond in both directions, which the agreement of two units'
+  residuals needs (F1′). It is an external-model obligation, not a conjunct
+  of `WorldAdm`.
 - **T2 (guards).** The guard bodies the guard check reads are the functions
-  Node runs for the package's exports; the check itself is a trusted part of
-  the front end.
+  Node runs for the package's exports, under the bindings the check resolved
+  (F3); the check itself is a trusted part of the front end.
 - **T3 (node methods).** The node methods make no server request, run no
   client code but `forEachChild`'s visitors, which they call synchronously,
   only with children of the receiver, in a fixed order, and propagate a
@@ -1158,6 +1033,14 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
 - `invalid-compiler-api-guard-argument`: `isIdentifier(next())` with `next`
   counting its calls, the count after the guard asserted 1 in a positive
   case, and a forged claim reading the argument twice refused;
+- stable paths: positive, `ts.isIdentifier(m.name) && m.name.text`, a test
+  of `node.expression.name` read past an unrelated call, and a `let` slot's
+  path read before its next write; refused: the same path over a readonly
+  program object, mutated through an alias and by a call; a root written
+  directly and from a closure the program runs between test and read; a
+  mixed path past its first program-object segment; a segment read off a
+  `Type`; forged claims stating the refined read before the test and after
+  the root's write;
 - host provenance, each refused: a node assigned to a variable of a mutable
   structural type and written; `{ ...node }` and `Object.assign({}, node)`
   passed to `getTypeAtLocation`; a node widened to `unknown`, refined by
@@ -1254,7 +1137,7 @@ The implementation needs, beside these:
   non-host values as the obligated `Object` members' parameter,
   $`\mathrm{excludesHost}`$ with its soundness and the `JsonValue` lemma,
   and the obligated rules' premises.
-- **Kind sets** ([compact kind sets](#compact-kind-sets)) in the type
+- **Kind sets** ([tag sets](HOST-FAMILIES.md#tag-sets)) in the type
   language, claims and evidence.
 - **Guard signatures** for the stated type guards of the sync API.
 - From the pipeline: a method call on a union receiver whose arms share the
@@ -1295,6 +1178,9 @@ refusal; the restricted-value policy, then $`\mathsf{NodeList}`$; then rules 2, 
 branded types, the corrections table, every reviewed declaration text) and
 the node invariant, each tested on the host types the front end reads,
 nodes among them.
+
+The [implementation plan](HOST-FAMILIES.md#implementation-plan) of host
+families orders the node invariant, kind sets, the guards and stable members.
 
 ## A measured slice
 
@@ -1346,7 +1232,7 @@ package):
 | 102 | 2.7 s | 1.4 s | 17.9 MB |
 | 347 (the reading) | 16.9 s | 11.9 s | 108 MB |
 
-A kind set ([compact kind sets](#compact-kind-sets)) makes each residual's
+A kind set ([tag sets](HOST-FAMILIES.md#tag-sets)) makes each residual's
 `kind` one atom, which the 4-literal row approximates.
 
 Controls, against the same readings:
@@ -1360,5 +1246,5 @@ Controls, against the same readings:
   result is any node and the push is refused.
 - The two units at $`\{79\}`$ and $`\{307\}`$ verify separately under
   residuals that differ (`parent` optional in the first); a call between
-  them is the import rule's, relative to host-admissible worlds, and was
+  them is the import rule's, relative to T1′, and was
   not run.

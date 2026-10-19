@@ -14,7 +14,7 @@ import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
-import { emptyEffect, emptyFootprint, footprintEffect, ordinaryEffect, type ClosedFootprint } from "../tools/type-graph.mts";
+import { decodeGraph, emptyEffect, emptyFootprint, footprintEffect, ordinaryEffect, type ClosedFootprint } from "../tools/type-graph.mts";
 // Forged-claim controls on single cases, each in a file of its own:
 // generic-rest.mts, a universal rest claim past collection, substitution and binding;
 // rest-pack-instance.mts, a forged non-array instance of a type parameter typing a value and a rest, at a call and at a `new`;
@@ -2846,4 +2846,110 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.match(invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, ast),
     /%RegExp:111%/);
   process.stdout.write("forged regex shape: a literal naming a shape no declaration lists refused\n");
+}
+{
+  // A tag set has one spelling: its elements sorted and distinct, at least
+  // two (HOST-FAMILIES.md, "Tag sets"). Claims spelling a set otherwise are
+  // refused by the decoder.
+  const artifacts = run("tag-sets");
+  const original = readClaims(artifacts);
+  const numbers = original.types.findIndex((row) => row.length === 1 && typeof row[0] === "object" && "numIn" in row[0]);
+  const strings = original.types.findIndex((row) => row.length === 1 && typeof row[0] === "object" && "strIn" in row[0]);
+  assert.ok(numbers >= 0 && strings >= 0, "the claims state a number set and a string set");
+  const forgeries: [string, number, (bits: string[]) => string[], RegExp][] = [
+    ["unsorted-number-set", numbers, (xs) => [...xs].reverse(), /a number set lists two or more bit patterns, sorted and distinct/],
+    ["duplicate-number-set", numbers, (xs) => [xs[0] ?? "0", ...xs], /a number set lists two or more bit patterns, sorted and distinct/],
+    ["single-number-set", numbers, (xs) => xs.slice(0, 1), /a number set lists two or more bit patterns, sorted and distinct/],
+    ["unsorted-string-set", strings, (xs) => [...xs].reverse(), /a string set lists two or more strings, sorted and distinct/],
+    ["single-string-set", strings, (xs) => xs.slice(0, 1), /a string set lists two or more strings, sorted and distinct/],
+  ];
+  for (const [name, row, forge, refusal] of forgeries) {
+    const claims = readClaims(artifacts);
+    const clause = claims.types[row]?.[0];
+    if (typeof clause === "object" && "numIn" in clause) clause.numIn.bits = forge(clause.numIn.bits);
+    else if (typeof clause === "object" && "strIn" in clause) clause.strIn.values = forge(clause.strIn.values);
+    else assert.fail("the forged row is a tag set");
+    const forged = writeClaims(artifacts, `forged-${name}`, claims);
+    const searched = produceWith(artifacts, forged, `forged-${name}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.match(searched.stdout + searched.stderr, refusal);
+  }
+  process.stdout.write("forged tag sets: unsorted, duplicated and single-element sets refused\n");
+}
+{
+  // The wire orders a string set by Unicode code point, in every decoder:
+  // U+E000 before U+10000, which UTF-16 code units would order first. The
+  // producer's set is accepted by Lean and by the TypeScript decoder, and the
+  // reverse is refused by both.
+  const artifacts = run("tag-set-code-points");
+  const original = readClaims(artifacts);
+  const row = original.types.findIndex((r) => r.length === 1 && typeof r[0] === "object" && "strIn" in r[0] &&
+    r[0].strIn.values.includes("\uE000") && r[0].strIn.values.includes("\u{10000}"));
+  const clause = original.types[row]?.[0];
+  assert.ok(typeof clause === "object" && "strIn" in clause, "the claims state the set of U+E000 and U+10000");
+  const values = clause.strIn.values;
+  assert.ok(values.indexOf("\uE000") < values.indexOf("\u{10000}"), "the producer orders by code point");
+  decodeGraph([[clause]]);
+  const reversed = { strIn: { values: [...values].reverse() } };
+  assert.throws(() => decodeGraph([[reversed]]), /invalid string set/);
+  const claims = readClaims(artifacts);
+  claims.types[row] = [reversed];
+  const forged = writeClaims(artifacts, "forged-code-point-order", claims);
+  const searched = produceWith(artifacts, forged, "forged-code-point-order");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /a string set lists two or more strings, sorted and distinct/);
+  process.stdout.write("string sets: ordered by code point in the producer, Lean and TypeScript\n");
+}
+{
+  // Every wire string is well-formed Unicode (HOST-FAMILIES.md, "Tag sets"):
+  // a lone surrogate, which JSON writes as an escape, and bytes that are not
+  // UTF-8 are refused by every reader before it reads a value, in the
+  // claims (Lean, TypeScript) and in the parser's document (the producer,
+  // Lean).
+  const artifacts = run("tag-set-code-points");
+  const original = readClaims(artifacts);
+  const row = original.types.findIndex((r) => r.length === 1 && typeof r[0] === "object" && "strIn" in r[0]);
+  const lone = { strIn: { values: ["\ud800", ""] } };
+  assert.throws(() => decodeGraph([[lone]]), /not well-formed Unicode/);
+  const claims = readClaims(artifacts);
+  claims.types[row] = [lone];
+  const escaped = writeClaims(artifacts, "forged-lone-surrogate", claims);
+  assert.ok(readFileSync(escaped, "utf8").includes("\\ud800"), "JSON writes the lone surrogate as an escape");
+  const searched = produceWith(artifacts, escaped, "forged-lone-surrogate");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /not well-formed Unicode, a lone high surrogate/);
+  assert.throws(() => readClaimsFile(escaped), /not well-formed Unicode/);
+  // Bytes that are no UTF-8, in place of a string's code point.
+  const withByte = (text: string): Buffer => {
+    const bytes = Buffer.from(text.replace("", "\u0001"), "utf8");
+    const at = bytes.indexOf(0x01);
+    assert.ok(at >= 0, "the document holds U+E000");
+    bytes[at] = 0xff;
+    return bytes;
+  };
+  const raw = join(artifacts, "forged-invalid-utf8.json");
+  writeFileSync(raw, withByte(readFileSync(join(artifacts, "claims.json"), "utf8")));
+  assert.throws(() => readClaimsFile(raw), /not valid UTF-8/);
+  const rawSearched = produceWith(artifacts, raw, "forged-invalid-utf8");
+  assert.equal(rawSearched.status, 1, rawSearched.stdout + rawSearched.stderr);
+  assert.match(rawSearched.stdout + rawSearched.stderr, /non UTF-8/);
+  // The parser's document, read by the producer and by Lean.
+  const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
+  assert.ok(fragment.includes(""), "the fragment holds U+E000");
+  const flow = join(artifacts, "flow.json");
+  const loneFragment = join(artifacts, "forged-lone-surrogate-fragment.json");
+  writeFileSync(loneFragment, fragment.replace("", "\\ud800"));
+  const proposed = spawnSync(producerExecutable, [loneFragment, flow], { encoding: "utf8", timeout: 30_000 });
+  assert.notEqual(proposed.status, 0, proposed.stdout + proposed.stderr);
+  assert.match(proposed.stdout + proposed.stderr, /low surrogate/);
+  assert.throws(() => readFragmentFile(loneFragment), /not well-formed Unicode/);
+  const leanFragment = produceWith(artifacts, join(artifacts, "claims.json"), "forged-lone-fragment", loneFragment);
+  assert.equal(leanFragment.status, 1, leanFragment.stdout + leanFragment.stderr);
+  assert.match(leanFragment.stdout + leanFragment.stderr, /not well-formed Unicode/);
+  const rawFragment = join(artifacts, "forged-invalid-utf8-fragment.json");
+  writeFileSync(rawFragment, withByte(fragment));
+  const rawProposed = spawnSync(producerExecutable, [rawFragment, flow], { encoding: "utf8", timeout: 30_000 });
+  assert.notEqual(rawProposed.status, 0, rawProposed.stdout + rawProposed.stderr);
+  assert.match(rawProposed.stdout + rawProposed.stderr, /not valid UTF-8/);
+  process.stdout.write("wire strings: lone surrogates and invalid UTF-8 refused by the producer, Lean and TypeScript\n");
 }

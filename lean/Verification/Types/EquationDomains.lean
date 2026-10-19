@@ -274,7 +274,9 @@ private theorem meetRowOf_within [DecidableEq ι] (P : ι → Prop) (rows : List
   | nil =>
     intro S hS q hq
     obtain ⟨c,hc,hSc⟩ := List.mem_flatMap.mp hS
-    exact clauses c (List.mem_filter.mp hc).1 S hSc q hq
+    rcases mem_mergeSets hc with hc | hc
+    · exact clauses c (List.mem_filter.mp hc).1 S hSc q hq
+    · cases c <;> simp_all [Clause.numBits, Clause.strVals, Clause.operands]
   | cons p ps =>
     simp only [GraphRow.operands, List.forall_mem_cons, List.forall_mem_flatMap]
     exact ⟨⟨rigid p (he ▸ List.mem_cons_self),

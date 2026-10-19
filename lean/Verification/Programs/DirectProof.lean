@@ -98,6 +98,8 @@ def renderAt (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
       -- fewer labels than the recipe planned for (a variable tested twice).
       let some C := Γ[i]? | failure
       let some P := j.context[i]? | failure
+      let C := ProgramTyping.members G C
+      let P := ProgramTyping.members G P
       if P.length != children.length then failure else do
         let ps ← C.mapM fun a => do
           let some k := P.idxOf? a | failure

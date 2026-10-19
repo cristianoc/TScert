@@ -33,6 +33,8 @@ def admitsVal (c : Clause α) (v : Val) : Bool :=
   | .bool, .tru | .bool, .fls => true
   | .strLit t, .str s => t == s
   | .numLit a, .num b => a == b
+  | .numIn S, .num b => S.contains b
+  | .strIn S, .str s => S.contains s
   | .boolLit true, .tru | .boolLit false, .fls => true
   | .bigintLit i, .bigint j => i == j
   | .symbolLit i, .sym j => i == j
@@ -83,13 +85,17 @@ def isUniverse : Clause α → Bool
   | _ => false
 
 /-- **R2.** A primitive target that cannot cover a primitive source: one not
-admitting the source's literal, or a literal under a family source. -/
+admitting the source's literal, a literal or a tag set under a family source,
+and a literal or a tag set not holding every element of a source tag set. -/
 def primExcl (a b : Clause α) : Bool :=
   match litVal a with
   | some v => !isUniverse b && !admitsVal b v
   | none => match a, b with
     | .str, .strLit _ | .num, .numLit _ | .bool, .boolLit _ | .bigint, .bigintLit _
-    | .symbol, .symbolLit _ => true
+    | .symbol, .symbolLit _ | .num, .numIn _ | .str, .strIn _ => true
+    | .numIn _, .numLit _ | .strIn _, .strLit _ => true
+    | .numIn S, .numIn T => !S.all T.contains
+    | .strIn S, .strIn T => !S.all T.contains
     | _, _ => false
 
 theorem covers_prim [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
@@ -172,7 +178,8 @@ that key holds a literal the type does not admit. -/
   (fixedOf b).any fun (f, B) => G.plainTy B &&
     let src := (entriesOf a).filter (·.1 == f)
     !src.isEmpty && src.all fun (_, A) => (clausesOf G A).any fun c =>
-      match litVal c with
+      -- A tag set's elements are literals of the entry too.
+      c.elements.any fun e => match litVal e with
       | some v => (clausesOf G B).all fun d => !admitsVal d v
       | none => false
 
@@ -215,6 +222,18 @@ theorem lit_member {η : MixedAssignment ι} {A : List ι} {c : Clause (List ι)
     builtinInvariant_of_withoutInvariant (litVal_plain hv) _ _ _⟩
 
 omit [DecidableEq ι] in
+/-- An element's literal of a clause of a type is a member of the type. -/
+theorem element_member {η : MixedAssignment ι} {A : List ι} {c e : Clause (List ι)} {v : Val}
+    (hc : c ∈ clausesOf G A) (he : e ∈ c.elements) (hv : litVal e = some v) {n W} :
+    mixedValues G η A n W v := by
+  have hev : semWithArgs (excOf G) (mixedValues G η) (mixedArgs G η) e n W v := litVal_sem hv n W
+  have hcv := (elements_sem _ _ _ c n W v).mp ⟨e, he, hev⟩
+  have hplain : c.carriesInvariant = false := by
+    cases c <;> simp [Clause.elements] at he <;> (try subst he) <;>
+      first | rfl | exact litVal_plain hv
+  exact mixed_expand_mpr ⟨c, hc, hcv, builtinInvariant_of_withoutInvariant hplain _ _ _⟩
+
+omit [DecidableEq ι] in
 theorem lit_excluded {η : MixedAssignment ι} {B : List ι} {c : Clause (List ι)} {v : Val}
     (hv : litVal c = some v) (hB : G.plainTy B = true)
     (hx : (clausesOf G B).all (fun d => !admitsVal d v) = true) {n W} :
@@ -242,12 +261,13 @@ theorem covers_litExcl {sub : Option (Renaming G)} {R : List ι → List ι → 
     obtain ⟨p, hp, hpf, hpB⟩ := covers_fixed h hq
     obtain ⟨c, hc, hcv⟩ := List.any_eq_true.mp
       (hall p (List.mem_filter.mpr ⟨hp, by simp [hpf]⟩))
-    cases hv : litVal c with
-    | none => simp [hv] at hcv
+    obtain ⟨e, he, hev⟩ := List.any_eq_true.mp hcv
+    cases hv : litVal e with
+    | none => simp [hv] at hev
     | some v =>
-      simp only [hv] at hcv
-      exact lit_excluded G hv hB hcv
-        (hR _ _ hpB 0 (ofList []) v (lit_member G hc hv))
+      simp only [hv] at hev
+      exact lit_excluded G hv hB hev
+        (hR _ _ hpB 0 (ofList []) v (element_member G hc he hv))
 
 /-- **R4, proved.** A target requiring a key the source holds no entry at is
 no covering, under every table. -/

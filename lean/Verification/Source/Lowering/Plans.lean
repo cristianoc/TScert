@@ -158,7 +158,7 @@ A broad numeric arm is not silently treated as unequal to the singleton. -/
     (equal : Bool) (A : Ty ι) : Except String (DirectProof.Plan ι) := do
   let some C := Γ[slot]? | throw "internal tag-test slot mismatch"
   let term := tagTestTerm tag equal slot
-  let children ← C.mapM fun a => do
+  let children ← (ProgramTyping.members G C).mapM fun a => do
     let H := Γ.set slot [a]
     let q := decide (Answers G [a] tag true)
     let value := if q == equal then Tm.tru else .fls
@@ -188,7 +188,7 @@ the nullish, `undefined` and truthiness tags. -/
     Except String (DirectProof.Plan ι) := do
   let some C := Γ[slot]? | throw "internal selection slot mismatch"
   let term := Tm.ite (.test tag (.var slot)) yes.term no.term
-  let children := C.map fun label =>
+  let children := (ProgramTyping.members G C).map fun label =>
     let L := Γ.set slot [label]
     let q := decide (Answers G [label] tag true)
     if q || decide (Answers G [label] tag false) then
@@ -490,8 +490,8 @@ prototype is the built-ins'). An object shape needs none. -/
     (fld : PropKey) : Compiler (List (Tag × (PrimitiveArm Tree))) := do
   let G := SourceTypes.graph (← table)
   let shapeOf (c : PositiveNormalization.Clause (Ty Tree)) : Option Tag := match c with
-    | .str | .strLit _ => some .isStr
-    | .num | .numLit _ => some .isNum
+    | .str | .strLit _ | .strIn _ => some .isStr
+    | .num | .numLit _ | .numIn _ => some .isNum
     | .bigint | .bigintLit _ => some .isBigint
     | .bool | .boolLit _ => some .isBool
     | _ => none
@@ -565,7 +565,7 @@ is read as an object (`readCell`). -/
       else if decide (Answers G [label] tag false) then
         return DirectProof.node L term A .ifFalse [← chain L label rest]
       else throw "a member read's receiver needs labels of one shape each"
-  let children ← O.mapM fun label => chain (K.set o [label]) label arms
+  let children ← (ProgramTyping.members G O).mapM fun label => chain (K.set o [label]) label arms
   return DirectProof.node K (dispatchTerm arms fld o object) A (.unionVar o) children
 
 /-- The write node under context `H`, with the value in slot 0 and the
@@ -689,7 +689,7 @@ over a family's class (`ComputedKey.keyedClause`). -/
 @[nospecialize] def keyedType (K W : Ty Tree) : Compiler (Ty Tree) := do
   let G := SourceTypes.graph (← table)
   let mut labels : List Tree := []
-  for c in PositiveRules.expand G K do
+  for c in PositiveNormalization.splitSets (PositiveRules.expand G K) do
     let some d := ComputedKey.keyedClause c W
       | throw "an allocation at a key known only at run time needs a key of strings, numbers or symbols"
     labels := labels ++ [← lower (SourceTypes.use d)]

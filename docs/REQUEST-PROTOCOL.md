@@ -36,6 +36,20 @@ soundness theorem quantifies over every budget. A smaller budget can prevent
 verification; it cannot authorize a typing step.
 
 
+## Wire text
+
+Every document the tools exchange (the parser's fragment and declarations,
+the producer's claims, the flow, the evidence, a diagnostic record) is JSON
+text in UTF-8, and every string it holds, key or value, is well-formed
+Unicode: a `\u` escape of a surrogate is one of a pair. Each reader refuses a
+document breaking either before it reads a value: Lean (`IO.FS.readFile`
+refuses bytes that are not UTF-8, `RequestCli.loneSurrogate` a lone surrogate
+escape, which Lean's JSON parser would read as U+FFFD), the producer
+(`Json.parse`), and the TypeScript tools (`wireText` for the bytes,
+`requireWellFormed` for the strings). A writer refuses such a string before
+writing it: the parser's gate a source string holding a lone surrogate
+([source fragment](SOURCE-FRAGMENT.md#refused-on-principle)).
+
 ## Request fields
 
 All fields are explicit; object field order is immaterial.

@@ -4,6 +4,7 @@ import { decodeGraph, decodeLabels, type TypeGraph, type Labels, type Clause } f
 import { decodeTag, decodeTerm, type Json, type Tag, type Term } from "./calculus.mts";
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
 import type { Span } from "./span.mts";
+import { illFormedString } from "./wire-strings.mts";
 
 // Optional explanatory metadata, never evidence. A record this reader cannot
 // decode field by field is left in the human diagnostic; it must not change the
@@ -317,7 +318,7 @@ export function readDiagnostic(
   let result: { [key: string]: unknown };
   try {
     const parsed: Json = JSON.parse(lines[0].slice(PREFIX.length));
-    if (!isRecord(parsed)) return undefined;
+    if (!isRecord(parsed) || illFormedString(parsed)) return undefined;
     const d = parsed;
     const variants: Record<string,string[]> = {
       "node-typing":["id","source","sequent"], "expression-claim":["id","sourceMap","sequent"],

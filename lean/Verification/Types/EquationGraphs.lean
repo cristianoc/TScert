@@ -757,7 +757,7 @@ scheme parts when it has any. A meet means values only: without such parts,
 argument-list clauses are left out. -/
 def meetRowOf [DecidableEq ι] (parts : List (ι × GraphRow ι)) : GraphRow ι :=
   match meetRigid parts with
-  | [] => .clauses ((meetAll ((meetClauseLists parts).eraseDups)).filter Clause.isValue)
+  | [] => .clauses (mergeSets ((meetAll ((meetClauseLists parts).eraseDups)).filter Clause.isValue))
   | p :: ps => .meet p (meetAll ((meetClauseLists parts).eraseDups)) ps
 
 /-- The row of a label that is not a meet, from a signature's templates
@@ -797,6 +797,9 @@ structure Equations where
   cached_row : ∀ l r, cached l = some r → r = rowFrom signature body l := by
     intro l r h
     simp at h
+  /-- The label whose row is one literal, where one is cached
+  (`NormalGraph.literal`): read only after its row is checked. -/
+  literal : LitKey → Option (Label signature) := fun _ => none
 
 /-- The row of a label that is not a meet. -/
 def Equations.baseRow (equations : Equations) (label : Label equations.signature) :
@@ -841,7 +844,7 @@ theorem Equations.row_eq_rowFrom (equations : Equations) (label : Label equation
   · exact E.row_eq_rowFrom l
 
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
-  NormalGraph.ofRowMap equations.row equations.builtins equations.domain
+  NormalGraph.ofRowMap equations.row equations.builtins equations.domain equations.literal
 
 /-- A bound parameter has the kind declared at its own lexical owner. -/
 @[simp] theorem Equations.kind_bound (equations : Equations) (scope : Scope equations.signature)

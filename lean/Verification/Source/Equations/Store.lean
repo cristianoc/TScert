@@ -74,8 +74,6 @@ def builtins (s : State) : Option (ArrayBuiltins Tree) :=
   if s.arrays then s.proto.bind fun p => (s.keys.get? unknownKey).map fun u =>
     ⟨[mkApp p []], [mkApp u []], s.excluded⟩ else none
 
-def graph (s : State) : NormalGraph Tree := NormalGraph.ofRowMap (rowOf s) (builtins s)
-
 /-! ### Growing the store -/
 
 /-- Run a lowering step on the store. A step that fails leaves an open tree,
@@ -97,6 +95,9 @@ def intern (s : State) (cs : List (Clause (List Tree))) : State × Tree :=
 def lookup (s : State) (cs : List (Clause (List Tree))) : Option Tree :=
   let (key, args) := internKey s.heads cs
   (s.keys.get? key).map fun h => mkApp h args
+
+def graph (s : State) : NormalGraph Tree := NormalGraph.ofRowMap (rowOf s) (builtins s) .ordinary
+  fun | .num b => lookup s [.numLit b] | .str v => lookup s [.strLit v]
 
 /-- A value parameter within clauses and further parameters, `p ⊓ cs ⊓ also`:
 the meet label of its parts (§3.3), the clauses a head of their own. -/

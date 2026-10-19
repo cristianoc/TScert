@@ -424,7 +424,7 @@ structure Obj (ι : Type) where
 /-- A clause whose values own no enumerable property: `null`, `undefined`,
 Booleans, numbers, bigints and symbols. A spread of one copies nothing. -/
 @[nospecialize] def emptyClause : Clause (List ι) → Bool
-  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .bigint | .bigintLit _ | .symbol
+  | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .symbol
   | .symbolLit _ => true
   | _ => false
 
@@ -535,6 +535,7 @@ theorem emptyClause_ownData {G : NormalGraph ι} {c : Clause (List ι)} (he : em
   · obtain ⟨_, rfl⟩ := hv; exact ⟨rfl, rfl⟩
   · subst hv; exact ⟨rfl, rfl⟩
   · subst hv; exact ⟨rfl, rfl⟩
+  · obtain ⟨_, -, rfl⟩ := hv; exact ⟨rfl, rfl⟩
 
 
 /-- The part of a function or class clause a merge's source reads: a
@@ -608,7 +609,7 @@ inductive Src (ι : Type) where
 
 /-- A clause of strings. -/
 @[nospecialize] def stringClause : Clause (List ι) → Bool
-  | .str | .strLit _ => true
+  | .str | .strLit _ | .strIn _ => true
   | _ => false
 
 @[nospecialize] def srcOf (c : Clause (List ι)) : Option (Src ι) :=
@@ -745,7 +746,7 @@ primitive's or a plain object's. A string index at such a type rules out the
 store key, `[]`, which is a string. -/
 @[nospecialize] def noStore (G : NormalGraph ι) (T : List ι) : Bool :=
   G.plainTy T && (expand G T).all fun c => match c with
-    | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .str | .strLit _
+    | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .str | .strLit _ | .strIn _
     | .bigint | .bigintLit _ | .symbol | .symbolLit _ | .refs .. | .dict .. => true
     | _ => false
 
@@ -781,6 +782,8 @@ theorem noStore_sound {G : NormalGraph ι} {T : List ι} (h : noStore G T = true
   | list a bs => simp at hw
   | ctors L S => simp at hw
   | pack a bs => simp at hw
+  | numIn _ => simp only [semWithArgs] at hs; obtain ⟨_, -, h1⟩ := hs; cases h1
+  | strIn _ => simp only [semWithArgs] at hs; obtain ⟨_, -, h1⟩ := hs; cases h1
 
 /-- Whatever the source gives under a key the class `K` admits is within `T`.
 The symbol class admits none of the string keys the model's copy gives;
@@ -1894,6 +1897,7 @@ theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (Lis
       cases cb <;> simp [stringClause] at hstr
       · obtain ⟨s, rfl⟩ := hsb; exact ⟨s, rfl⟩
       · rename_i s; simp only [semWithArgs] at hsb; exact ⟨s, hsb⟩
+      · simp only [semWithArgs] at hsb; obtain ⟨s, -, rfl⟩ := hsb; exact ⟨s, rfl⟩
     obtain ⟨s, rfl⟩ := hs
     have hq : ownData h (.str s) = some (firstKeys (stringData s)) := rfl
     exact ⟨_, _, ownAll_nodup hp,

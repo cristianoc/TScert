@@ -333,9 +333,10 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       (q = true → HasTyWith G images subtyping Γ u B) → (q = false → HasTyWith G images subtyping Γ e B) →
       HasTyWith G images subtyping Γ (.ite (.test tag (.var i)) u e) B
   /-- Eliminate a finite union in one immutable environment slot. Every member
-  must establish the same term and result, without changing other bindings. -/
+  must establish the same term and result, without changing other bindings. A
+  tag set's members are its elements' labels (`members`). -/
   | unionVar : Γ[i]? = some C →
-      (∀ a ∈ C, HasTyWith G images subtyping (Γ.set i [a]) t A) → HasTyWith G images subtyping Γ t A
+      (∀ a ∈ members G C, HasTyWith G images subtyping (Γ.set i [a]) t A) → HasTyWith G images subtyping Γ t A
   /-- **A literal with spreads.** `[a, ...s, b]` allocates a fresh store of
   its parts' values in order: each plain part at the element type `E`, each
   spread the elements of the store it evaluates to, read where it is written,
@@ -1623,9 +1624,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
             (WorldAdm_trunc _ hw) (by simpa only [trunc_trunc] using HeapOk_trunc k _ h (HeapOk_trunc (k+1) W h hh))
   | @unionVar Γ i C t A hi ht ih =>
     intro n W h ρ henv hw hh
-    obtain ⟨a, ha, hv⟩ := henv.2 i C hi
-    apply ih a ha n W h ρ (henv.refine hi ?_) hw hh
-    exact ⟨a, by simp, hv⟩
+    obtain ⟨a, ha, hv⟩ := members_sound (henv.2 i C hi)
+    exact ih a ha n W h ρ (henv.refine hi hv) hw hh
   | @arrParts Γ T E ro presence parts hp hparts hr ih =>
     intro n W h ρ he hw hh
     have hterm : instantiate 0 ρ (.arrLit (parts.map fun p => spreadTerm (p.1, p.2.2)))

@@ -320,6 +320,8 @@ def primitive : List (Clause (Ty ι)) → Option (List Atom)
   | .numLit b :: cs => (primitive cs).map ([.numLit b] ++ ·)
   | .str :: cs => (primitive cs).map ([.str] ++ ·)
   | .strLit s :: cs => (primitive cs).map ([.strLit s] ++ ·)
+  | .numIn bs :: cs => (primitive cs).map (bs.map .numLit ++ ·)
+  | .strIn ss :: cs => (primitive cs).map (ss.map .strLit ++ ·)
   | _ => none
 
 /-- A type's members as atoms, when it is of clause rows. -/
@@ -344,6 +346,14 @@ theorem primitive_sem {G : NormalGraph ι} {cs R} (hc : primitive cs = some R) (
         rw [hi]
         simp [semWithArgs,nulT,undefT,boolT,numT,strT,Atom.holds,apply_ite,or_assoc]
         all_goals try (split <;> simp_all [Atom.holds])
+        all_goals try (
+          constructor
+          · rintro (⟨b, hb, rfl⟩ | ⟨a, ha, hh⟩)
+            · exact ⟨_, .inl ⟨b, hb, rfl⟩, rfl⟩
+            · exact ⟨a, .inr ha, hh⟩
+          · rintro ⟨a, (⟨b, hb, rfl⟩ | ha), hh⟩
+            · exact .inl ⟨b, hb, hh⟩
+            · exact .inr ⟨a, ha, hh⟩)
 
 /-- The built-ins asks nothing of primitive clauses. -/
 theorem primitive_plain : ∀ {cs : List (Clause (Ty ι))} {R}, primitive cs = some R →

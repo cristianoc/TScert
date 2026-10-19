@@ -63,6 +63,60 @@ def ground (name : String) (cs : List (Clause (List Tree))) : M Tree := do
 
 def prim (name : String) (c : Clause (List Tree)) : M Tree := ground name [c]
 
+/-- The literals a label stands for, where its row is one literal or one tag
+set; none otherwise. -/
+def literalsOf (t : Tree) : M (Option (List LitKey)) := do
+  let .app h _ := t | return none
+  if t != mkApp h [] then return none
+  match (← draft h).body with
+  | some (.clauses [.numLit b]) => return some [.num b]
+  | some (.clauses [.numIn bs]) => return some (bs.map .num)
+  | some (.clauses [.strLit s]) => return some [.str s]
+  | some (.clauses [.strIn ss]) => return some (ss.map .str)
+  | _ => return none
+
+/-- The label of a finite set of numbers, its elements' labels interned too, so
+that a reader can split it (HOST-FAMILIES.md, "Tag sets"). -/
+def numSetLabel (bits : List UInt64) : M Tree := do
+  let bits := (bits.mergeSort (· ≤ ·)).eraseDups
+  match bits with
+  | [b] => prim s!"number {b}" (.numLit b)
+  | _ =>
+    for b in bits do let _ ← prim s!"number {b}" (.numLit b)
+    prim "number set" (.numIn bits)
+
+def strSetLabel (values : List String) : M Tree := do
+  let values := (values.mergeSort fun a b => decide (a ≤ b)).eraseDups
+  match values with
+  | [v] => prim (Json.str v).compress (.strLit v)
+  | _ =>
+    for v in values do let _ ← prim (Json.str v).compress (.strLit v)
+    prim "string set" (.strIn values)
+
+/-- A union with its literals and tag sets of one primitive as one tag set
+(HOST-FAMILIES.md, "Tag sets"); every other label as it is. -/
+def mergeLiterals (u : Union) : M Union := do
+  let mut nums : List UInt64 := []
+  let mut strs : List String := []
+  let mut numLabels := 0
+  let mut strLabels := 0
+  let mut rest : Union := []
+  for t in u do
+    match ← literalsOf t with
+    | some ks =>
+      if ks.all (fun k => match k with | .num _ => true | .str _ => false) then
+        nums := nums ++ ks.filterMap (fun k => match k with | .num b => some b | .str _ => none)
+        numLabels := numLabels + 1
+      else
+        strs := strs ++ ks.filterMap (fun k => match k with | .str v => some v | .num _ => none)
+        strLabels := strLabels + 1
+    | none => rest := rest ++ [t]
+  if numLabels ≤ 1 && strLabels ≤ 1 then return u
+  let mut out := rest
+  if !nums.isEmpty then out := out ++ [← numSetLabel nums]
+  if !strs.isEmpty then out := out ++ [← strSetLabel strs]
+  return normUnion out
+
 /-- The key of the built-ins' `unknown`: the nullary head of the `source` clause. -/
 def unknownKey : String := s!"ground|{spelling ([.source] : List (Clause (List Tree)))}"
 

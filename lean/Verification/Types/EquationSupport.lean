@@ -334,6 +334,10 @@ theorem Clause.meet_operands {a b c : Clause α} (h : c ∈ PositiveNormalizatio
   cases a <;> cases b <;> unfold PositiveNormalization.meet at h <;>
     simp only [List.mem_singleton, List.not_mem_nil] at h <;>
     (try split at h) <;> (try simp only [List.mem_singleton, List.not_mem_nil] at h) <;>
+    (try (rcases PositiveNormalization.mem_numSet h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;>
+      simp [Clause.operands] at hS)) <;>
+    (try (rcases PositiveNormalization.mem_strSet h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;>
+      simp [Clause.operands] at hS)) <;>
     (try subst h) <;> simp only [Clause.operands, Tuple.operands, List.map_append, List.mem_append,
       List.flatMap_append, List.flatten_append, List.flatMap_cons] at hS ⊢ <;>
     grind (splits := 40)
@@ -411,11 +415,11 @@ theorem Equations.free_support (equations : Equations) :
     have hshape : equations.graph.params ⟨.meet ps, valid⟩ = false ∧
         equations.graph.schemes ⟨.meet ps, valid⟩ = none ∧
         ∀ c ∈ equations.graph ⟨.meet ps, valid⟩ ++ meetClauses equations.graph ⟨.meet ps, valid⟩,
-          c ∈ meetAll ((meetClauseLists rows).eraseDups) := by
+          c ∈ meetAll ((meetClauseLists rows).eraseDups) ∨ c.operands = [] := by
       cases hr : meetRigid rows with
       | nil =>
         have hrow' : equations.row ⟨.meet ps, valid⟩ =
-            .clauses ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue) := by
+            .clauses (mergeSets ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue)) := by
           rw [hrow]; simp only [meetRowOf]; rw [hr]
         obtain ⟨_, hG⟩ := equations.graph_clauses hrow'
         refine ⟨by simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, hrow'],
@@ -423,12 +427,15 @@ theorem Equations.free_support (equations : Equations) :
         rw [hG] at hc
         simp only [meetClauses, Equations.graph, NormalGraph.ofRowMap, hrow', Option.map_none,
           Option.getD_none, List.append_nil] at hc
-        exact (List.mem_filter.mp hc).1
+        rcases mem_mergeSets hc with hc | hc
+        · exact .inl (List.mem_filter.mp hc).1
+        · right; cases c <;> simp_all [Clause.numBits, Clause.strVals, Clause.operands]
       | cons p rs =>
         have hrow' : equations.row ⟨.meet ps, valid⟩ = .meet p (meetAll ((meetClauseLists rows).eraseDups)) rs := by
           rw [hrow]; simp only [meetRowOf]; rw [hr]
         refine ⟨by simp [NormalGraph.params, Equations.graph, NormalGraph.ofRowMap, hrow'],
           by simp [Equations.graph, NormalGraph.ofRowMap, hrow'], fun c hc => ?_⟩
+        left
         simpa [NormalGraph.clauses, NormalGraph.plain, NormalGraph.params, meetClauses,
           Equations.graph, NormalGraph.ofRowMap, hrow'] using hc
     obtain ⟨hpar, hsch, hcl⟩ := hshape
@@ -437,7 +444,9 @@ theorem Equations.free_support (equations : Equations) :
     simp only [reads, hsch] at hl
     obtain ⟨c, hc, hl⟩ := List.mem_flatMap.mp hl
     obtain ⟨S, hS, hlS⟩ := List.mem_flatten.mp hl
-    obtain ⟨C, hC, d, hd, hSd⟩ := meetAll_operands (hcl c hc) hS
+    rcases hcl c hc with hcm | hno
+    case inr => simp [hno] at hS
+    obtain ⟨C, hC, d, hd, hSd⟩ := meetAll_operands hcm hS
     obtain ⟨⟨q, r⟩, hx, hr⟩ := mem_meetClauseLists (List.mem_eraseDups.mp hC)
     simp only at hr
     subst hr
@@ -474,7 +483,7 @@ theorem Equations.free_support (equations : Equations) :
       cases hr : meetRigid rows with
       | nil =>
         have hrow' : equations.row ⟨.meet ps, valid⟩ =
-            .clauses ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue) := by
+            .clauses (mergeSets ((meetAll ((meetClauseLists rows).eraseDups)).filter Clause.isValue)) := by
           rw [hrow]; simp only [meetRowOf]; rw [hr]
         simp [meetParts, Equations.graph, NormalGraph.ofRowMap, hrow'] at hq
       | cons p rs =>
