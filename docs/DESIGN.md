@@ -213,7 +213,9 @@ The outcome is one of:
 - **error**: a subprocess failed or exceeded its time limit, or the
   compiler's API failed on a query: a `tool failure`, which names the query,
   the front end's call site and the compiler's reason, and certifies
-  nothing.
+  nothing. The front end exhausting the call stack is a tool failure too:
+  it may interrupt a query mid-reply, after which the channel's replies are
+  unreadable, so no refusal is made of it.
 
 A whole-file failure can precede claim generation.
 Neither an unsupported result nor an infrastructure error is a safety verdict.

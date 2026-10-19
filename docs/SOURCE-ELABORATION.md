@@ -1098,7 +1098,11 @@ named declaration's instance is the reference at the instance's arguments,
 the declaration read as written with each binder at its argument, so
 `Box<T>`'s `v?: T` is `v?: number`, `v?: number | undefined` and `v?: never`
 (absent only) at `number`, `number | undefined` and `never`
-(`closure-contextual-optional-instances`). A type literal or mapped type the
+(`closure-contextual-optional-instances`). A type TypeScript gives with the
+name of a program's declaration, an alias of a union included, is read as
+that reference, before its structure: a recursive alias such as `Json`
+closes at its name (`closure-contextual-recursive-alias`), and a type reached
+again within its own structure through no declaration's name is refused. A type literal or mapped type the
 program writes is read as written, by the annotation reader, where
 TypeScript gives it outside any generic declaration or at its declaration's
 own binders. Any other record (an object literal's type, a library mapped

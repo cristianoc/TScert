@@ -27,12 +27,12 @@ import type { Ast, Expr, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 // thrown.mts reads what the TypeScript API throws into the message the gate reports, without asserting its type.
-import { messageOf, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
+import { emptyTupleRefusal, messageOf, toolFailureOf, toolFailureText, type ToolFailure } from "./thrown.mts";
 // syntax.mts reads the name, modifiers and other children a member or declaration of unasked kind carries, checking each is a node.
 import { childOf, isStatic, nameOf } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
-import { collectDeclarations, DeclarationError, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
+import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
   type SeenDiagnostic }
   from "./declaration-graph.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
@@ -1784,9 +1784,11 @@ function lowerFile(file: string, carriesContext: boolean,
             ...classTestNodes, ...classReadNodes, ...contextualNodes, ...assignNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
             ...keyTypeNodes, ...bindingNodes, ...privateNodes].find(node =>
-            node.getStart(source) === error.at[0]) ?? first
+            node.getStart(source) === error.at[0]) ?? expressionAt(source, error.at) ?? first
         : first;
       const failure = toolFailureOf(error);
+      const emptyTuple = failure && emptyTupleRefusal(failure);
+      if (emptyTuple) gate.fail(at, emptyTuple);
       if (failure) gate.toolFailure(at, failure);
       gate.fail(at, messageOf(error));
     }

@@ -474,12 +474,13 @@ first three items 2026-10-19):
   `createRequire`, whose type names a qualified one (1); `node:path`'s
   `sep`, a constant of the object the module exports (2); a default import
   (5);
-- the compiler's synchronous API failing on a query (1), reported as a tool
-  failure: `TypeObject.getTypes` panics converting a type reference to a
-  tuple (`forInEntryReads`);
-- the parser exceeding the call stack (2: `readDiagnostic`, and
-  `diagnosticNode`, which another run reports as a reply of
-  `Checker.getTypeFromTypeNode` the client cannot decode), cause unknown.
+- a union holding an empty array literal's tuple type, whose parts the
+  compiler's API panics writing ([refused](docs/SOURCE-FRAGMENT.md#model-limits))
+  (1: `forInEntryReads`, 2026-10-19);
+- `readDiagnostic` stops in the producer at a read of `forEach` through a
+  field holding an object beside `null` or `undefined`, and `diagnosticNode` in
+  search at a key read that may name an `Object.prototype` member
+  (2026-10-19).
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:
