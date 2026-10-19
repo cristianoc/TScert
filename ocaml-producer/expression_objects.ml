@@ -25,6 +25,11 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         (* A key the contract names is built at its member's type; any other
            at the index. *)
         let expected = match hint,contract with
+          (* An instance's prototype link is built at what it holds: the
+             contract's view of the chain (an `Error`-derived instance's
+             message) states less than its methods, which the instance's
+             own-key bound sends reads on to. *)
+          | _ when name = Name proto_key -> None
           | Some (f:Semantic.field),_ -> Some f.read
           | None,Some shape -> Option.map (fun (i:Semantic.index_signature) -> i.value)
               (index_for shape name)
@@ -43,7 +48,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         (* A literal's type widens in a mutable field, as TypeScript's fresh
            literal types do; a name's or a read's declared type does not. *)
         let fresh = match e.node with Id _ | Read _ -> false | _ -> true in
-        let t=if widened || (expected = None && not fresh) then inferred
+        let t=if widened || name = Name proto_key || (expected = None && not fresh) then inferred
           else Option.value expected ~default:(widen inferred) in
         {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) fs in
       (* Where the contract is a dictionary, or has optional fields, the
@@ -92,7 +97,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let field_of (name,e) =
         let hint = Option.bind contract (fun s ->
           List.find_opt (fun (f:Semantic.field) -> f.name=Name name) s.fields) in
-        let expected = match Option.map (fun (f:Semantic.field) -> f.read) hint with
+        (* The prototype link at what it holds, as in an allocation. *)
+        let expected = if name = proto_key then None else match Option.map (fun (f:Semantic.field) -> f.read) hint with
           | Some t -> Some t
           | None ->
             (match List.sort_uniq compare (List.filter_map (fun (s:shape) ->
@@ -101,7 +107,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
              | [t] -> Some t
              | _ -> None) in
         let inferred = expr ?expected env e in
-        let t = Option.value expected ~default:(widen inferred) in
+        let t = if name = proto_key then inferred else Option.value expected ~default:(widen inferred) in
         ({name=Name name;optional=false;read=t;write=Some t;host=false;receivers=[]} : Semantic.field) in
       let group fs = {empty_alternative with afields=fs} in
       let merge alts b = List.concat_map (fun a -> List.map (merge_alternative a) b) alts in

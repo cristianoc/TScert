@@ -477,6 +477,78 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged computed key: a key's read claimed at another literal, a field renamed or spelled otherwise than its number's ToString: refused\n");
 }
 {
+  // An `Error`-derived instance holds its message on its first link, and no
+  // `stack`: `new Decline()` claimed at a record owning `message`, or
+  // holding `stack` beside it, is refused where evidence is produced, and
+  // checking refuses the evidence of the original claim for it.
+  const errors = run("error-subclass");
+  const source = readFileSync(join(errors, "source.ts"), "utf8");
+  const start = source.indexOf("new Decline()");
+  const at = `[${start},${start + "new Decline()".length})`;
+  const forgeries: [name: string, owned: string[], viewed: string[]][] = [
+    ["forged-error-own-message", ["message"], []],
+    ["forged-error-stack", [], ["message", "stack"]],
+  ];
+  for (const [name, owned, viewed] of forgeries) {
+    const claims = readClaims(errors);
+    const str = rowOf(claims, "str");
+    const fields = (names: string[]): [string, number[]][] => names.map((field) => [field, [str]]);
+    const fn = must(claims.functions.find((f) => f.name === "omitted"), "omitted's claims");
+    const made = must(fn.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + "new Decline()".length),
+      "the construction's claim");
+    made.type = [rowOf(claims, { refs: { first: fields(owned), rest: [], views: fields(viewed) } })];
+    const forged = writeClaims(errors, name, claims);
+    refusedAt(errors, forged, name, at);
+    invoke(forged, join(errors, "evidence.json"), errors);
+  }
+  process.stdout.write("forged error instances: an own message and a stack claimed of a constructed error, refused\n");
+}
+{
+  // The allocation route's trusted boundary: the parser reserves `message`
+  // and `stack` as member names of a class extending `Error` (SOURCE-ELABORATION.md, "A class
+  // extending Error"), and Lean reads no class declaration. A fragment, claims
+  // and evidence with `text` renamed `stack` throughout are accepted: the
+  // reservation is the parser's alone.
+  const methods = run("error-subclass-methods");
+  const renamed = (file: string): string => {
+    const path = join(methods, `forged-stack-member-${file}`);
+    writeFileSync(path, readFileSync(join(methods, file), "utf8").replaceAll('"text"', '"stack"')
+      .replaceAll("Located.text", "Located.stack"));
+    return path;
+  };
+  const fragment = renamed("fragment.json");
+  const accepted = spawnSync(verifier, ["--check-source-claims", fragment, renamed("claims.json"),
+    join(methods, "source.ts"), renamed("evidence.json")], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  assert.ok(readFileSync(fragment, "utf8").includes('"name":"stack"'), "the forged fragment names a member `stack`");
+  process.stdout.write("forged stack member: accepted by Lean, the reservation enforced by the parser alone\n");
+}
+{
+  // The write route is Lean's: each write of `reserved-write-twin`, its key
+  // renamed `stack` in the fragment, the claims and the evidence, is a valid,
+  // otherwise typable document the reserved-write check alone refuses, at
+  // the write, where evidence is produced and where it is checked.
+  const twin = run("reserved-write-twin");
+  const source = readFileSync(join(twin, "source.ts"), "utf8");
+  for (const [key, write] of [["stackPattern", "o.stackPattern"], ["stackUpdate", 'o.stackUpdate += "s"'],
+      ["stackLogical", 'o.stackLogical ??= "s"'], ["stackCallback", "o.stackCallback = v"], ["stackComputed", 'o[k] = "s"']] as const) {
+    const renamed = (file: string): string => {
+      const path = join(twin, `forged-${key}-${file}`);
+      writeFileSync(path, readFileSync(join(twin, file), "utf8").replaceAll(`"${key}"`, '"stack"'));
+      return path;
+    };
+    const fragment = renamed("fragment.json");
+    const claims = renamed("claims.json");
+    const start = source.indexOf(write);
+    const at = `source refusal at [${start},${start + write.length}): a write at a key that may be \`message\` or \`stack\``;
+    const searched = produceWith(twin, claims, `forged-${key}`, fragment);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes(at), searched.stdout + searched.stderr);
+    assert.ok(invoke(claims, renamed("evidence.json"), twin, fragment).includes(at), key);
+  }
+  process.stdout.write("forged reserved writes: each write form renamed to `stack`, refused at the write in search and check\n");
+}
+{
   // An optional call of a method reads its object again as the call's
   // receiver, claimed at the method's name: claimed at `undefined`, it is
   // refused there where evidence is produced, and checking refuses the

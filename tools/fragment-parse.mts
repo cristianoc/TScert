@@ -1417,6 +1417,10 @@ function lowerFile(file: string, carriesContext: boolean,
           ts.isParameterDeclaration(node.parent) || ts.isFunctionDeclaration(node.parent) ||
           ts.isMethodDeclaration(node.parent) || ts.isClassDeclaration(node.parent)) && node.parent.name === node))
       libraryValueNodes.push(node);
+    // A class extending `Error`: TypeScript decides it is the standard one.
+    if (ts.isExpressionWithTypeArguments(node) && node.parent && ts.isHeritageClause(node.parent) &&
+        ts.isIdentifier(node.expression) && node.expression.text === "Error")
+      libraryNameNodes.push(node.expression);
     if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
       if (["call", "apply", "bind"].includes(node.name.text)) libraryNameNodes.push(node.name);
       if (node.name.text === "assign" && ts.isIdentifier(node.expression) && node.expression.text === "Object")

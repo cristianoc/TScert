@@ -312,6 +312,41 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-instanceof-error-message",
     "typeof text(Object.create(Error.prototype, { message: { value: 5 } }))"),
     "number", "invalid-instanceof-error-message: an object holding Error.prototype has a numeric message");
+  // An `Error`-derived message: read through the chain, `""` where omitted,
+  // seen by `in`, left out of keys and spreads, serialized where a replacer
+  // names it.
+  assert.equal(runExample("error-subclass",
+    `[decode("a\\\\b"), decode("ab"), located([0, 1]).message, deeper(), JSON.stringify(omitted()), observed()].join(";")`),
+    'declined;ab;here;deep@0;"";true,at,true,true', "error-subclass: the messages and observations");
+  assert.equal(runExample("error-subclass-methods", `[direct(), deeper()].join(";")`), "at: x;at: y (2)at: ",
+    "error-subclass-methods: the methods through the chain");
+  assert.throws(() => runExample("invalid-error-subclass-stack-method", "trace()"), /not a function/,
+    "invalid-error-subclass-stack-method: the own stack shadows the method");
+  assert.equal(runExample("invalid-error-subclass-null-message", "read()"), "null",
+    "invalid-error-subclass-null-message: ToString converts null");
+  for (const file of ["invalid-error-subclass-stack-copy", "invalid-error-subclass-alias-stack"])
+    assert.equal(runExample(file, "copied()"), undefined, `${file}: the copy has no stack`);
+  // A write of `message` or `stack` onto an instance: `stack` stays
+  // non-enumerable; `message` does where one was passed, and becomes
+  // enumerable where none was.
+  assert.equal(JSON.stringify(runExample("invalid-error-subclass-assign-target", "relabelled()")), '["message"]',
+    "invalid-error-subclass-assign-target: an enumerable message");
+  assert.equal(JSON.stringify(runExample("invalid-error-subclass-assign-alias", "relabelled()")), '["message","tag"]',
+    "invalid-error-subclass-assign-alias: the hidden message copied, enumerable");
+  for (const file of ["invalid-error-subclass-narrowed-write", "invalid-error-subclass-narrowed-computed"])
+    assert.equal(JSON.stringify(runExample(file,
+      `(() => { const box = { v: { kind: "record", name: 1 } }; return traced(box, (b) => { b.v = new Decline("x"); }, "stack"); })()`)),
+      '["kind"]', `${file}: the callback put an instance there, whose stack stays non-enumerable`);
+  // A reserved write through a structural parameter an instance meets: the
+  // instance's `stack` stays non-enumerable.
+  for (const file of ["invalid-error-subclass-pattern-write", "invalid-reserved-update",
+      "invalid-reserved-logical", "invalid-reserved-callback"])
+    assert.equal(JSON.stringify(runExample(file, `traced(new (class extends Error {})("x"))`)), "[]",
+      `${file}: the instance's stack stays non-enumerable`);
+  assert.equal(runExample("invalid-error-subclass-spread", "main()"), undefined,
+    "invalid-error-subclass-spread: the copy has no message");
+  assert.equal(runExample("error-subclass-json-replacer", "text()"), '{"message":"x"}',
+    "error-subclass-json-replacer: the replacer reads the message");
   assert.equal(runExample("instanceof-error", "[isError(new Error(\"x\")), isError({ message: \"x\" })].join()"),
     "true,false", "instanceof-error: the walk");
   assert.equal(runExample("invalid-number-value-object",

@@ -314,7 +314,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let k ← closureExpr recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) key
     let a ← closureExpr recursive fc (held ⟨"",some key.span⟩::held ⟨"",some receiver.span⟩ :: scope) (k.type::B::Γ) rhs
     let H := a.type::k.type::B::Γ
-    let write ← writeCell G H fld B a.type 2
+    let write ← writeCell e.span G H fld B a.type 2
     let done := DirectProof.letE H write (DirectProof.var ([Labels.nul]::H) 1 a.type)
     pure (DirectProof.letE Γ r (DirectProof.letE (B::Γ) k (DirectProof.letE (k.type::B::Γ) a done)))
   | .indexWrite _ none .. => throw "internal unresolved computed key"
@@ -713,7 +713,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let a ← closureExpr recursive fc (held ⟨"",some receiver.span⟩ :: scope) (B::Γ) rhs
     let C := a.type
     let H := C::B::Γ
-    let write ← writeCell G H fld B C 1
+    let write ← writeCell e.span G H fld B C 1
     let done := DirectProof.letE H write (DirectProof.var ([Labels.nul]::H) 1 C)
     pure (DirectProof.letE Γ r (DirectProof.letE (B::Γ) a done))
   | .ifBody _ cond thn els => do
