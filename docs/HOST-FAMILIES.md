@@ -211,8 +211,10 @@ shape stating a generic method shares its one method head whatever other
 methods it overrides; a member a reading states optional, by its
 declaration or by a correction at any tag the reading covers (a literal
 declaration's tags, a generic declaration's every application, so every
-generic arm), is that reading's own optional member, and a residual holds
-it optional where any replaced shape does. The base shapes, the residuals and the method definitions are
+generic arm), is that reading's own optional member. A residual forgets a method some
+replaced shape states optional, so it relates both to the shapes stating it
+required, through the shared definition, and to those stating it optional;
+an optional property it holds optional. The base shapes, the residuals and the method definitions are
 definitions of the module `tscert/family/<marker>`, named by what they read:
 the declaration and method, or the declaration, the number of tags and a
 digest of the tag set.

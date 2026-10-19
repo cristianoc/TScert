@@ -837,7 +837,8 @@ export function collectDeclarations(file: string, options: {
           const name = type && ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) ? type.typeName.text : null;
           return name !== null && (d.typeParameters ?? []).some(p => p.name.text === name) ? name : null;
         },
-        questioned: m => ts.isPropertySignatureDeclaration(m) && m.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
+        questioned: m => (ts.isPropertySignatureDeclaration(m) || ts.isMethodSignatureDeclaration(m)) &&
+          m.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
         name: m => { const n = nameOf(m); return n && ts.isIdentifier(n) ? n.text : null; },
         text: m => m.getText(m.getSourceFile()).trim(),
         mentions: (m, parameter) => {
@@ -4068,7 +4069,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           const methods: FlatMember[] = [];
           for (const s of a.fields) {
             const [first] = s.sources;
-            if (first && !s.optional && shared(first.member, []) &&
+            // A method some replaced shape states optional is forgotten: the
+            // residual relates to the shapes stating it required and to those
+            // stating it optional alike.
+            if (first && isMethod(first.member) && (s.optional || !shared(first.member, []))) continue;
+            if (first && shared(first.member, []) &&
                 s.sources.every(x => x.member.owner === first.member.owner)) {
               methods.push(first.member);
               continue;

@@ -3000,26 +3000,84 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     ["QuestionToken", "compiler-api-corrected-arm", "n.getText"],
     ["QuestionToken", "compiler-api-corrected-residual", "n.getText"],
   ] as const;
+  // The claims and evidence of a run under the compiler API's own
+  // description, offered with the corrected declaration document as if the
+  // producer had proposed them: each declaration renamed to its index in
+  // the corrected document, by identity.
+  const identity = (d: TypeDefinition): string => JSON.stringify(d.declaration);
+  const reindexed = (value: unknown, from: readonly TypeDefinition[], to: Map<string, number>): unknown => {
+    if (Array.isArray(value)) return value.map(v => reindexed(v, from, to));
+    if (typeof value !== "object" || value === null) return value;
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, k === "decl" && typeof v === "number"
+      ? must(to.get(identity(must(from[v], "a declaration the claims name"))), "the declaration in the corrected document")
+      : reindexed(v, from, to)]));
+  };
+  const plainRuns = new Map<string, string>();
   for (const name of new Set(controls.map(([, file]) => file))) {
     const plain = check(join(import.meta.dirname, "examples", `${name}.ts`), project);
     assert.equal(plain.status, "verified", `${name}: ${JSON.stringify(plain)}`);
+    plainRuns.set(name, plain.artifacts);
   }
   for (const [kind, name, read] of controls) {
     useFamilyDescriptionForTests({ ...compilerApiFamily, corrections: [...compilerApiFamily.corrections, getText(kind)] });
+    let artifacts: string;
     try {
       const file = join(import.meta.dirname, "examples", `${name}.ts`);
       const corrected = check(file, project);
       const at = readFileSync(file, "utf8").indexOf(read);
-      // The producer finds no arrow to call in a possibly absent member, at
-      // the call, or the search no derivation at the read.
-      assert.ok(corrected.status !== "verified" && corrected.detail.includes(`at [${at},`) &&
-        (/call requires a single arrow the arguments can call/.test(corrected.detail) || corrected.status === "unverified"),
+      // The producer finds no arrow to call in a possibly absent member, or
+      // no member in a residual that forgets it, at the read.
+      assert.ok(corrected.status === "unsupported" && corrected.detail.includes(`at [${at},`) &&
+        /call requires a single arrow the arguments can call|missing field getText/.test(corrected.detail),
         `${name} with getText corrected at ${kind}: refused at ${read}: ${JSON.stringify(corrected)}`);
+      artifacts = corrected.artifacts;
     } finally {
       useFamilyDescriptionForTests(null);
     }
+    // Lean, bypassing the producer: the plain run's claims and evidence
+    // against the corrected document, refused in search at the read and in
+    // checking.
+    const plain = must(plainRuns.get(name), "the plain run");
+    const from = must(readFragmentFile(join(plain, "fragment.json")).declarations, "the plain declarations").definitions;
+    const fragment = readFragmentFile(join(artifacts, "fragment.json"));
+    const to = new Map(must(fragment.declarations, "the corrected declarations").definitions.map((d, i) => [identity(d), i]));
+    const claims: unknown = reindexed(JSON.parse(readFileSync(join(plain, "claims.json"), "utf8")), from, to);
+    assert.ok(typeof claims === "object" && claims !== null);
+    const forged = join(artifacts, "forged-corrected.json");
+    writeFileSync(forged, JSON.stringify({ ...claims, file: fragment.file }));
+    const at = readFileSync(join(artifacts, "source.ts"), "utf8").indexOf(read);
+    refusedAt(artifacts, forged, "forged-corrected", `at [${at},`);
+    invoke(forged, join(plain, "evidence.json"), artifacts);
   }
-  process.stdout.write("corrected method: a method a correction makes absent at a tag is optional in that tag's shape, a generic declaration, a selected generic arm and a residual, each call refused at it\n");
+  process.stdout.write("corrected method: a method a correction makes absent at a tag is optional in that tag's shape, a generic declaration and a selected generic arm, and forgotten in a residual: each call refused by the producer at it, and claims made under the plain description refused by Lean's search at the read and by its checker\n");
+}
+{
+  // A method declared optional (HOST-FAMILIES.md, "The family contract"):
+  // on a stand-in host package whose family root declares `describe?()`
+  // beside `text()`, each shape names the shared definition of `text` as a
+  // base and states `describe` as its own optional member, and its call is
+  // refused at the call.
+  const project = tsconfigOf(join(import.meta.dirname, "family-fixture-project"));
+  const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
+  useHostInstallationForTests(join(import.meta.dirname, "family-fixture"));
+  useFamilyDescriptionForTests({ ...compilerApiFamily, table: [{ rule: "literal" }], corrections: [] });
+  try {
+    const kept = check(example("family-fixture-optional-method"), project);
+    assert.equal(kept.status, "verified", JSON.stringify(kept));
+    const first = must(must(readFragmentFile(join(kept.artifacts, "fragment.json")).declarations, "the declarations")
+      .definitions.find((d) => d.declaration.name === "First"), "First's reading");
+    assert.deepEqual(first.bases.map((b) => b.k === "reference" ? b.reference.name : b.k), ["Node.text"]);
+    assert.ok(first.expression?.k === "object" && first.expression.fields.some((f) => f.name === "describe" && f.optional),
+      "First states describe optional");
+    const file = example("invalid-family-fixture-optional-method");
+    const refused = check(file, project);
+    const at = readFileSync(file, "utf8").indexOf("n.describe");
+    assert.ok(refused.status === "unsupported" && refused.detail.includes(`at [${at},`), JSON.stringify(refused));
+  } finally {
+    useFamilyDescriptionForTests(null);
+    useHostInstallationForTests(null);
+  }
+  process.stdout.write("declared-optional method: each shape's own optional member, the required one shared, its call refused\n");
 }
 {
   // One tag selection per run (HOST-FAMILIES.md, "Residuals"): the importer
