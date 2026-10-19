@@ -2233,6 +2233,7 @@ export const cases: Case[] = [
   positive("field-test-disjunction", "a disjunction or conjunction of field tests keeps the arms either outcome admits: on one object, on two, over three arms, under `!`"),
   { file: "invalid-field-test-disjunction", area: "a disjunction holding by its test of another object leaves the first object at every arm, whose missing field is refused",
     kind: "negative", status: "unsupported", phase: "proposal", diagnostic: /missing field x at \[389,392\)/ },
+  positive("loop-exit-named-union", "a loop over a mutable local holding a named union of records, left when it is falsy or a declared guard accepts it: the exit's claim keeps the named union its guard edges keep"),
   positive("field-test-named-arms", "a field test keeps or drops each arm of a named union where the name stands beside arms of it a join left, or inside another named union; a falsy test drops a named union of records"),
   { file: "invalid-field-test-named-arms", area: "after a join, the arms no test dropped remain: one without the field read is refused",
     kind: "negative", status: "unsupported", phase: "proposal", diagnostic: /missing field fields at \[373,385\)/ },
