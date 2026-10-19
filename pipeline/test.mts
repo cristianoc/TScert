@@ -2533,8 +2533,8 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   truth.type = [2];
   const input = writeClaims(artifacts, "forged-boolean-return", claims);
   refusedAt(artifacts, input, "forged-boolean-return", `obligation at [${at},${at + 1})`);
-  assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts),
-    /reject: source evidence does not justify the extracted program and exact claims/);
+  assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts)
+    .includes(`reject: source evidence refusal at [${at},${at + 1}): the evidence does not establish this node's claim`));
   // The false return claimed `true`, and an arrow guard's true return, at
   // its `=>`, claimed `false`: each refused the same way.
   for (const [file, name, from, text, before, after] of [
@@ -2557,7 +2557,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     const forgedInput = writeClaims(where, `forged-boolean-return-${name}`, forgedClaims);
     refusedAt(where, forgedInput, `forged-boolean-return-${name}`, "evidence search failed");
     assert.match(invoke(forgedInput, join(where, "evidence.json"), where),
-      /reject: source evidence (does not justify the extracted program and exact claims|refusal at \[\d+,\d+\): the evidence does not establish this obligation's claim)/);
+      /reject: source evidence (does not justify the extracted program and exact claims|refusal at \[\d+,\d+\): the evidence does not establish this (node|obligation)'s claim)/);
   }
   process.stdout.write("guard Boolean return: the true return claimed false, the false one claimed true and an arrow's true one claimed false refused in search and in checking\n");
 }
