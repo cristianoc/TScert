@@ -24,6 +24,7 @@ design, not its progress.
 | [A guard's promise on a field](#guard-promise-field) | open | `str(o.name); o.name.length` verifies: an assertion or a guard on a field narrows the field's current content |
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
 | [Generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
+| [A literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
 | [Guard overloads of `every` and `filter`](#guard-overloads) | open | a reviewed `every<S>` and `filter<S>` narrow their receiver and their result where a guard is passed, and `shadow-contracts.mts`'s `print` verifies |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
@@ -42,7 +43,7 @@ design, not its progress.
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
 | [Node's process](#nodes-process) | open: the environment write a located gap; events known only as strings refused | a write of `process.env` through a receiver-bound host setter over shared state preserving every alias's view; signals reached through iteration proven admitted |
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
-| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 109 of 350 functions verify in `tools/`, 24 of 24 in `dev/`, 9 of 13 in `tests/` and 3 of 37 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 119 of 361 functions verify in `tools/`, 24 of 24 in `dev/`, 9 of 13 in `tests/` and 3 of 37 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -181,6 +182,20 @@ lowering, which turns a return into a condition, is scoped to type guards
 and assertion functions until this holds: applied to every return, it
 refuses `loose-equality` and `generic-unknown-arguments`, which keep their
 outcomes.
+
+<a id="literal-guard-json-read"></a>
+**A literal guard over `JsonValue | undefined`**, an investigation:
+`isDense(value: JsonValue | undefined): value is "dense"` returning `value
+=== "dense"` is refused at its true return, the literal `true` at the first
+code unit of `return` ("the promised argument is not within the promise at
+this return"), where the diagnostic gives the argument's claim as
+`JsonValue`, `undefined` removed, and not `"dense"`
+(`guard-literal-json-read-refused`). The same guard over `unknown`,
+`JsonValue`, `string`, `string | undefined`, `null | string` or `string |
+number` verifies (2026-10-19). Which step of the comparison's narrowing
+keeps the whole of `JsonValue` is unknown. The front end's literal guards
+(`isArrayPresence`, `isIndexClass` in `type-graph.mts`) take `unknown`,
+which verifies.
 
 <a id="guard-overloads"></a>
 **Guard overloads of `every` and `filter`.** TypeScript's `every` and
@@ -491,7 +506,12 @@ run under Node). Admitting one needs a bound on all of its own string keys:
 each a declared field whose present value is a `JsonValue`, an ordinary data
 property, over a safe prototype; established where the record is built or
 validated and kept through its mutations and through external calls; and a
-policy for an optional field, absent or present at `undefined`.
+policy for an optional field, absent or present at `undefined`. The claim
+printer's lifter (`liftType`, `liftClause` and `treeAtom` in
+`claim-text.mts`) builds such records and passes them at `JsonValue`, and is
+refused there. A general form of the bound: a fresh object literal
+establishes it where it is built, its own keys being the literal's, and the
+bound is preserved through the object's mutations and through calls.
 
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,

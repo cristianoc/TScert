@@ -245,6 +245,8 @@ export const cases: Case[] = [
   positive("nullish-member-order", "the order of a nullish member access: a computed key, then the throw; a method call throws before its actuals; a compound assignment throws before its right side; an optional chain skips its key, and a member of its result is an ordinary access"),
   negative("invalid-nullish-member-reads", "a member read past the nullish guard is the member's number, no string",
     /no derivation of its return-contract claim/),
+  gap("guard-literal-json-read-refused", "a guard `value === \"dense\"` over `JsonValue | undefined`, refused at its true return, where the argument's claim is `JsonValue`; over `unknown`, `JsonValue` or `string | undefined` it verifies", "unverified", "search",
+    /source expression obligation at \[\d+,\d+\): evidence search failed: the promised argument is not within the promise at this return/),
   gap("nullish-member-write-refused", "a plain write to a member of a value whose type admits `undefined`: the guard is stated for reads, calls and updates", "unverified", "search",
     /No rule derives this writeAt/),
   positive("map-stable-fresh-store", "`map` callbacks shifting, popping and reversing arrays they allocated, through `filter`, `split` and `map` and a constant whose code returns `filter`'s result: each receiver's store is fresh, so each call is within `{value: any, store: keep}` and the results are dense"),
