@@ -48,10 +48,12 @@ function numberText(value: number): string | null {
   return Number.isFinite(value) ? String(value) : null;
 }
 
-/** A bigint literal type's value, a `bigint` (the synchronous API decodes
- * the decimal spelling it is sent as into one), by its decimal spelling. */
-function bigintValue(value: bigint): string {
-  return String(value);
+/** A bigint literal type's value by its decimal spelling. The synchronous
+ * API decodes the decimal spelling it is sent as into a `bigint`, and leaves
+ * a null or missing one undefined (`sync/api.js`), which the declared
+ * `bigint` does not state: any value other than a bigint has no spelling. */
+function bigintValue(value: unknown): string | null {
+  return typeof value === "bigint" ? String(value) : null;
 }
 
 /** `type` as a union of the fragment's primitive families and literals, when
@@ -73,7 +75,9 @@ export function literalUnion(type: Type, span: Span, unique?: (part: Type) => nu
       if (text === null) return null;
       terms.push({ k: "literal", name: "number", text, span });
     } else if (part.isBigIntLiteralType()) {
-      terms.push({ k: "literal", name: "bigint", text: bigintValue(part.value), span });
+      const text = bigintValue(part.value);
+      if (text === null) return null;
+      terms.push({ k: "literal", name: "bigint", text, span });
     } else if (part.isBooleanLiteralType())
       terms.push(part.value
         ? { k: "literal", name: "true", text: "true", span }
