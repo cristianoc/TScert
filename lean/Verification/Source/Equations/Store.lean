@@ -747,6 +747,53 @@ def resolutionContext (s : State) (p : NativePromise E) :
     else throw "native resolution inputs must contain only JavaScript values"
   else throw "native stable-value bound must be closed within the ordinary dependency region"
 
+/-- The keys a record clause names: its fields, views, optional fields and
+methods. -/
+private def clauseKeys : Clause (List Tree) → List PropKey
+  | .refs fs rs vs os ms _ => (fs ++ rs.flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key)
+  | .dict fs rs vs _ os ms _ _ => (fs ++ rs.flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key)
+  | _ => []
+
+/-- The prototype operands a clause states under `[[proto]]`. -/
+private def protoOperands : Clause (List Tree) → List (List Tree)
+  | .refs _ _ vs .. | .dict _ _ vs .. => vs.filterMap fun (k, P) => if k == CallArguments.protoField then some P else none
+  | _ => []
+
+private def headClauses (s : State) (g : Nat) : List (Clause (List Tree)) :=
+  match (s.heads[g]?).bind (·.body) with
+  | some (.clauses cs) => cs
+  | _ => []
+
+/-- The heads a prototype operand applies, through its meets; none where a
+part is no head's application. -/
+private partial def prototypeHeads : Tree → Option (List Nat)
+  | .app g _ => some [g]
+  | .meet ps => (ps.toList.mapM prototypeHeads).map List.flatten
+  | _ => none
+
+/-- **The prototype tag.** Every prototype a lowered head's row states under
+`[[proto]]`, through its bases, intersections and instances as lowering
+resolved them, is a head's application, and the only heads holding
+`Symbol.toStringTag` among them are the native `Promise`'s prototype records:
+no other contract states a prototype holding the tag. -/
+def tagPrototypes (s : State) : Except String Unit := do
+  let native := (List.range s.heads.size).filter fun h =>
+    match (s.heads[h]?).map Draft.kind with
+    | some (.declaration i) => s.doc[i]?.any fun d => ImplicitDependency.promise.selects d.identity
+    | _ => false
+  let heads (h : Nat) : Except String (List Nat) :=
+    ((headClauses s h).flatMap protoOperands).flatten.foldlM (fun acc t => match prototypeHeads t with
+      | some gs => pure (acc ++ gs)
+      | none => throw s!"{(s.heads[h]?).map (·.name) |>.getD "a head"}: a prototype is stated as no record") []
+  let nativeProtos ← native.foldlM (fun acc h => do return acc ++ (← heads h)) []
+  let tagged (g : Nat) := (headClauses s g).any fun c => (clauseKeys c).any fun k => match k with
+    | .sym i => s.tags.contains i
+    | _ => false
+  for h in List.range s.heads.size do
+    for g in ← heads h do
+      if tagged g && !nativeProtos.contains g then
+        throw s!"{(s.heads[h]?).map (·.name) |>.getD "a head"}: a prototype holding `Symbol.toStringTag` other than the native Promise's"
+
 /-- Native identity comes from the declaration document; a user declaration
 with the same display name does not select a native constructor. -/
 def nativePromise (s : State) (E : Equations) : Except String (Option (NativePromise E)) := do
@@ -826,6 +873,7 @@ def freeze (s : State) : Except String Frozen := do
   let E := { E with builtins := if s.arrays then builtinsOf E s.proto (s.keys.get? unknownKey) s.excluded else none }
   let E := E.memo
   let ⟨p⟩ ← primitive E
+  tagPrototypes s
   let promise ← nativePromise s E
   match promise with
   | none => return ⟨E, p, { heads := s }⟩

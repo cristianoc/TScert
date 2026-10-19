@@ -2379,52 +2379,71 @@ and the required readonly field $`\sigma_{\mathit{tag}}:\mathsf{string}`$, with
 $`\sigma_{\mathit{tag}}`$ the standard library's `Symbol.toStringTag`. A
 record with a prototype record is the model's `refs` clause owning
 `[[proto]]` at that record, so a value of `Promise<T>` owns `[[proto]]` at an
-object owning $`\sigma_{\mathit{tag}}`$. Lean checks the declaration document
-before it lowers a unit (`tagDeclarations`, `tagGate` in
-`Claims/Preparation.lean`):
+object owning $`\sigma_{\mathit{tag}}`$. Lean checks:
 
 - the symbol list names $`\sigma_{\mathit{tag}}`$ by its declaration identity
   (the module `lib.es2015.symbol.wellknown.d.ts`, the name `toStringTag`),
   and the native `Promise` definition, selected by its identity, states it on
-  its prototype as a readonly `string`; a document lacking either is
-  refused;
-- no other definition or declared value states a prototype record holding
-  it;
+  its prototype as a readonly `string`; a document lacking either is refused
+  (`tagDeclarations` in `Claims/Preparation.lean`);
+- every prototype a lowered head's row states under `[[proto]]`, through its
+  bases, intersections and instances as lowering resolves them, is a head's
+  record, and the only such records holding $`\sigma_{\mathit{tag}}`$ are the
+  native `Promise`'s (`tagPrototypes` in `Equations/Store.lean`). A copy of
+  that record is the same record, so a declaration extending `Promise` holds
+  it (`tag-fake-holder`);
 - no allocation of the source's code (a literal, a class's prototype or
-  instance), no class value's static and no write is keyed by it. The parser
-  refuses the same keys where the source writes them (`writtenSymbol`, the
-  write at `Symbol.toStringTag`).
+  instance), no class value's static and no named write is keyed by it
+  (`tagGate`), and a key-adding write refuses a key that may be it: one typed
+  `symbol`, listed or not, or the tag's literal (`executionGrowth` in
+  `Lowering/Execution.lean`; `invalid-tag-computed-write`). The parser
+  refuses the keys the source writes (`writtenSymbol`, the write at
+  `Symbol.toStringTag`).
 
-The exclusion this gives is conjectured, not proved:
+The symbol list's authenticity and completeness, that its entry is the
+library's own symbol and that a symbol the source reaches is listed, are the
+parser's, a trusted extraction obligation: Lean checks duplicate entries and
+the identity's module and name.
+
+The exclusion these give is conjectured, not proved. It concerns the
+ordinary objects certified code allocates, its literals, classes' prototypes
+and instances, class values and merges, not the promises the native
+operations make:
 
 ```math
-\frac{o\ \text{allocated by certified code}\quad o'\ \text{reached from}\ o\ \text{through}\ [[\mathit{proto}]]}
+\frac{o\ \text{an ordinary allocation of certified code}\quad o'\ \text{reached from}\ o\ \text{through}\ [[\mathit{proto}]]}
      {o'\notin⟦\mathsf{Promise}\langle A\rangle⟧}
 ```
 
 for every $`A`$. The argument:
 
-- an object certified code allocates owns no $`\sigma_{\mathit{tag}}`$:
-  every key of a literal, a class's prototype or instance and a class value
-  is checked above, and a merge copies string keys only (`copiedKey`,
-  $`\mathsf{data}_h`$);
+- such an object owns no $`\sigma_{\mathit{tag}}`$: every key of a literal, a
+  class's prototype or instance and a class value is checked above, a
+  key-adding write adds no key that may be it, and a merge copies string keys
+  only (`copiedKey`, $`\mathsf{data}_h`$);
 - its `[[proto]]` is a class's prototype, itself such an allocation, or no
   key at all (a literal owns none). A prototype is reached by no source
   expression, so no write, alias or prototype change reaches it: `__proto__`,
   `Object.create`, `Object.setPrototypeOf` and accessors are outside the
   fragment ([fragment](SOURCE-FRAGMENT.md));
 - a class's base is a class of the same file (`invalid-tag-ambient-base`
-  refuses a declared one), so the chain holds only certified prototypes.
+  refuses a declared one), so the chain holds only such prototypes.
 
-Promises themselves come from the native operations: async functions and the
-intrinsics make them during certified execution, and the native identity and
-standard prototype of every value of the external heap at a `Promise` type
-are [host assumptions](DESIGN.md#trust-surface). A declaration's tag is no
-evidence of that identity. A declared class's `[Symbol.toStringTag]`, own or
-inherited (`Map`'s), is a field of its instance, which states no prototype
-(`declared-symbol-members`, `invalid-tag-inherited-declaration`). Other
-well-known symbols keep their own restrictions: a declaration's
-`[Symbol.iterator]` is read as declared.
+`checkJson_safe` does not depend on it: the theorem gives the modeled safety
+of every accepted unit under its premises, and the exclusion is part of the
+correspondence between that model and JavaScript, beside the native-promise
+invariant on the [trust surface](DESIGN.md#trust-surface). Promises come from
+the native operations: async functions and the intrinsics make them during
+certified execution, and the native identity and standard prototype of every
+value of the external heap at a `Promise` type are host assumptions. A
+declaration's tag is no evidence of that identity. A declared class's
+`[Symbol.toStringTag]`, own or inherited (`Map`'s), is a field of its
+instance, which states no prototype (`declared-symbol-members`,
+`invalid-tag-inherited-declaration`, refused first at its methods' binders;
+the forged controls of `tag-fake-holder` give a declaration the native
+methods, and without the tag it is refused at the return). Other well-known
+symbols keep their own restrictions: a declaration's `[Symbol.iterator]` is
+read as declared.
 
 **A callable `then` reaching a resolution is refused.** The obligations above
 stay at each resolving operation:
@@ -2460,10 +2479,12 @@ This reading covers the native `Promise` declaration; it is no audit of the
 `PromiseLike` positions of imported signatures.
 
 The forged controls (`pipeline/test.mts`) refuse a document whose tag is
-renamed or dropped, stated of another prototype, whose native `then` names
-`PromiseLike`, or whose allocation is keyed by the tag, and claims putting a
-thenable at each resolving operation's instance or claiming an allocation
-with a callable `then` as a `Promise<number>`.
+renamed or dropped, stated of another prototype or of a base's, whose
+native `then` names `PromiseLike`, or whose allocation is keyed by the tag; a
+declaration given the native methods without the tag; claims putting a
+thenable at each resolving operation's instance, claiming an allocation with
+a callable `then` as a `Promise<number>`, or a key-adding write's key at
+`symbol`.
 
 ## Loops and spreads over iterables
 

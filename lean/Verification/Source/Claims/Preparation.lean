@@ -78,12 +78,6 @@ partial def sourceGate : Json → Except String Unit
     kvs.toList.forM fun (_, v) => sourceGate v
   | _ => pure ()
 
-/-- The standard library's `Symbol.toStringTag`, by its declaration identity
-in the document's symbol list. -/
-def isTagSymbol (identity : Json) : Bool :=
-  (identity.getObjValAs? String "module").toOption == some "typescript/lib/lib.es2015.symbol.wellknown.d.ts" &&
-    (identity.getObjValAs? String "name").toOption == some "toStringTag"
-
 /-- A property key `{"symbol": i}` naming one of `tags`. -/
 def isTagKey (tags : List Nat) (key : Json) : Bool :=
   match (key.getObjValAs? Nat "symbol").toOption with
@@ -108,17 +102,6 @@ partial def tagGate (tags : List Nat) : Json → Except String Unit
     kvs.toList.forM fun (_, v) => tagGate tags v
   | _ => pure ()
 
-/-- Whether a type term holds an object type with a prototype record keyed by
-one of `tags`. -/
-partial def tagsPrototype (tags : List Nat) : Json → Bool
-  | .arr xs => xs.any (tagsPrototype tags)
-  | j@(.obj kvs) =>
-    (match j.getObjVal? "prototype" with
-      | .ok proto => ((proto.getObjValAs? (Array Json) "fields").toOption.getD #[]).any
-          fun f => isTagKey tags (f.getObjValD "name")
-      | .error _ => false) || kvs.toList.any fun (_, v) => tagsPrototype tags v
-  | _ => false
-
 /-- Whether a type term names the standard library's `PromiseLike`. -/
 partial def namesPromiseLike : Json → Bool
   | .arr xs => xs.any namesPromiseLike
@@ -129,12 +112,12 @@ partial def namesPromiseLike : Json → Bool
       | .error _ => false) || kvs.toList.any fun (_, v) => namesPromiseLike v
   | _ => false
 
-/-- **The declarations' tag.** The document lists `Symbol.toStringTag` by its
-identity, and only the native `Promise` contract states a prototype holding
-it: there it is a readonly `string`, and its `then` and `catch` name no
-`PromiseLike`, their callbacks' results being native promises or other
-values. A document stating the tag of another prototype, or a native `Promise`
-without it, is refused. -/
+/-- **The native `Promise`'s tag.** The native `Promise` definition states
+`Symbol.toStringTag`, listed by its identity, on its prototype as a readonly
+`string`, and its `then` and `catch` name no `PromiseLike`, their callbacks'
+results being native promises or other values. That no other prototype the
+store states holds the tag is checked of the lowered heads
+(`EquationStore.tagPrototypes`). -/
 def tagDeclarations (document : Json) (tags : List Nat) : Except String Unit := do
   for d in ← jArr document "definitions" do
     let native := EquationLowering.ImplicitDependency.promise.selects (d.getObjValD "declaration")
@@ -148,11 +131,6 @@ def tagDeclarations (document : Json) (tags : List Nat) : Except String Unit := 
         throw "the native Promise contract states no readonly `Symbol.toStringTag` of type string on its prototype"
       if namesPromiseLike expression then
         throw "the native Promise contract names PromiseLike: its callbacks' results resolve as native promises only"
-    else if tagsPrototype tags expression then
-      throw s!"a declaration other than the native Promise states a prototype holding `Symbol.toStringTag`: {(d.getObjValD "declaration").compress}"
-  for v in ← jArr document "values" do
-    if tagsPrototype tags v then
-      throw "a declared value's type states a prototype holding `Symbol.toStringTag`"
 
 /-- The tree with the value at `path` (`/functions/0/params/0/type`) set. -/
 partial def setPath (j : Json) (path : List String) (v : Json) : Json :=
@@ -237,7 +215,7 @@ def equationFront (ast claims : Json) (fileKey : String)
   let symbols ← jArr document "symbols"
   if symbols.eraseDups.length != symbols.length then
     throw "a unique symbol declaration is listed twice"
-  let tags := (List.range symbols.length).filter fun i => (symbols[i]?).any isTagSymbol
+  let tags := EquationLowering.tagSymbols document
   tagGate tags (ast.getObjValD "functions")
   tagGate tags (ast.getObjValD "init")
   tagDeclarations document tags

@@ -1010,4 +1010,6 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     "(() => { const o = { then() {}, catch() {}, finally() {} }; forge(o); " +
     "return JSON.stringify([Object.prototype.toString.call(o), Promise.resolve(o) === o]); })()"),
   '["[object Promise]",false]', "invalid-tag-write: the tagged object is no native promise");
+  assert.equal(runExample("invalid-tag-computed-write", "Object.prototype.toString.call(tagged(Symbol.toStringTag))"),
+    "[object Promise]", "invalid-tag-computed-write: a computed write gives the object the tag");
 }
