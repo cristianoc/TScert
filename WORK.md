@@ -45,6 +45,25 @@ mechanized specification would turn the ECMA rows of the trust surface into
 theorems; the lemmas and their cost are in
 [TRUST-REDUCTION](docs/TRUST-REDUCTION.md#the-host).
 
+<a id="native-identity-beyond-the-goal"></a>
+**Native identity beyond the goal.** A program-built value is kept out of
+`Promise<T>` structurally: certified code writes no `[Symbol.toStringTag]`,
+which Promise's prototype record requires. A native internal slot (the
+`[[PromiseState]]` that ECMA-262's `IsPromise` tests) accepts the same
+programs; it becomes the cheaper path once a retained program writes its own
+`[Symbol.toStringTag]`, subclasses `Promise`, or `Set`, `Map`, `Date`,
+`RegExp` and `Promise` are to share one mechanism. A survey of 12.9 M lines
+of library and tooling code in the local repositories' `node_modules`
+(2026-10-19; no application code) ranks what lies beyond the goal: custom
+thenables in 19 packages, several awaited by documented use (tinyexec,
+fastify's reply, postcss's `LazyResult`), which a checked thenable protocol
+at `await` and resolution would admit under either choice; about 30
+hand-written tags, all in library code, one tagging a non-promise
+`"Promise"` (vitest); about 7 `Promise` subclasses in 5 packages, 3 of them
+one generated SDK class (`APIPromise`); and, for contrast, `extends Error`
+1,150 times in 236 packages, container subclasses in about 50. The
+repository's own code has none of the first three.
+
 <a id="constructor-rests"></a>
 **Constructor rests.** A constructor's rest parameter is refused: `new`
 constructs only code without a rest (`CallArguments.construction`), so code
