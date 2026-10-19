@@ -389,7 +389,14 @@ void _handled;
 interface Table {
   rows: JsonValue;
   names: ReadonlyMap<number, string>;
+  /** The depth a lift starts at: a union below it shows its first
+   * `nestedArms` arms, then `…`. */
+  top: number;
 }
+
+// A nested union of a family's arms is hundreds of objects, each with fields
+// of the same union: shown whole, a three-level lift is gigabytes of text.
+const nestedArms = 8;
 
 // A row, where the table has one under that label. Both arrive from the
 // document, so neither is trusted to be there.
@@ -681,6 +688,8 @@ function liftType(types: Table, labels: JsonRead, depth: number): Shown {
       .flatMap(setLiterals)
       .map((clause) => liftClause(types, clause, depth));
   });
+  if (depth < types.top && atoms.length > nestedArms)
+    return { top: false, atoms: [...atoms.slice(0, nestedArms), "…"] };
   return { top: false, atoms };
 }
 
@@ -718,7 +727,7 @@ function lift(
   depth: number = 3,
   names: readonly (readonly [number, string])[] = [],
 ): JsonValue {
-  return liftType({ rows, names: new Map(names) }, labels, depth);
+  return liftType({ rows, names: new Map(names), top: depth }, labels, depth);
 }
 
 const same = (a: JsonValue, b: JsonValue): boolean =>
