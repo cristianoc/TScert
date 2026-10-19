@@ -1,4 +1,5 @@
 import Verification.Programs.ControlFlow
+import Std.Data.HashMap
 
 /-! Bounded, untrusted evidence search. Supplied point claims are immutable.
 Search fuel and the finite type vocabulary affect success, never acceptance.
@@ -428,9 +429,55 @@ theorem comparisonUsing_sound [DecidableEq ι] [Hashable ι] [Instantiates ι]
   PositiveCertificates.compareUsing_sound h
 
 /-- Instantiation choices, or the typed reason subtype search is unfinished. -/
-@[nospecialize] def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+@[nospecialize] def subtypeSearch [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (A B : Ty ι) : CheckResult ι (PositiveCertificates.SubtypeChoices ι) :=
   CheckResult.fromComparison images.budget.rounds A B (comparisonUsing G images A B)
+
+/-- The search's answered requests in one graph state: the graph and image
+check they were asked in, kept so that their addresses identify them, and each
+answer under the hash of its source and target. Erased types: an entry is read
+back only for the graph it was stored for. -/
+structure Answered where
+  graph : NonScalar
+  images : NonScalar
+  answers : Std.HashMap UInt64 (List (NonScalar × NonScalar × NonScalar))
+
+initialize answeredRef : IO.Ref (Option Answered) ← IO.mkRef none
+
+/-- `subtypeSearch`, answering a request asked before in the same graph state
+from its earlier answer. The answer is a function of the graph, the image
+check, the source and the target: the same objects, compared by address, and
+equal types give the same answer. A new graph state starts afresh. -/
+@[noinline] unsafe def subtypeReused [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (A B : Ty ι) : CheckResult ι (PositiveCertificates.SubtypeChoices ι) :=
+  let key := hash (A, B)
+  let sameState (r : Answered) : Bool :=
+    ptrAddrUnsafe r.graph == ptrAddrUnsafe G && ptrAddrUnsafe r.images == ptrAddrUnsafe images
+  let run : IO (CheckResult ι (PositiveCertificates.SubtypeChoices ι)) := do
+    if let some r ← answeredRef.get then
+      if sameState r then
+        for (a, b, v) in r.answers.getD key [] do
+          if (unsafeCast a : Ty ι) == A && (unsafeCast b : Ty ι) == B then return unsafeCast v
+    let v ← IO.lazyPure fun _ => subtypeSearch G images A B
+    let answers := match ← answeredRef.get with
+      | some r => if sameState r then r.answers else {}
+      | none => {}
+    let entry : NonScalar × NonScalar × NonScalar := (unsafeCast A, unsafeCast B, unsafeCast v)
+    let next : Answered :=
+      ⟨unsafeCast G, unsafeCast images, answers.insert key (entry :: answers.getD key [])⟩
+    answeredRef.set (some next)
+    return v
+  match unsafeIO run with
+  | .ok v => v
+  | .error _ => subtypeSearch G images A B
+
+/-- Subtype search as the producer asks it. Its meaning is `subtypeSearch`'s;
+the compiled producer answers a request repeated in one graph state from the
+first answer (`subtypeReused`). Untrusted: the consumer checks every result. -/
+@[nospecialize, implemented_by subtypeReused] def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
+    (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
+    CheckResult ι (PositiveCertificates.SubtypeChoices ι) :=
+  subtypeSearch G images A B
 
 /-- Proofs that the member of key `k` on `O` covers each signature of `F`:
 for each fixed one, a member signature of as many parameters, each claimed
