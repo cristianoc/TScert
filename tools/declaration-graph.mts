@@ -23,7 +23,7 @@ import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, 
   primitivePrototypeName, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
-  literalTerm, type EnumMemberValue } from "./intrinsics.mts";
+  literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { globalEntry, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
@@ -384,6 +384,9 @@ export function collectDeclarations(file: string, options: {
   /** The client uses arrays: `Array.prototype`'s contract joins the graph
    * (`array-prototype.mts`), at `arrays`, the first array the client writes. */
   arrays?: Span;
+  /** A statement call of `node:assert/strict`'s `assert` or `ok` read as the
+   * calculus's own test (`ModuleEntry.lowering`), by the call's span. */
+  assertionCall?: (span: Span) => void;
   /** The first construct of the client that reaches the graph, where a
    * declaration merging into `Object` or `Function` is refused. */
   root?: Span;
@@ -1357,6 +1360,92 @@ export function collectDeclarations(file: string, options: {
       }
       return completed;
     };
+    // A module exporting a function merged with a namespace, read by its
+    // default import (`import assert from "node:assert/strict"`): one value,
+    // the function's call and the members the file calls, each the
+    // declaration TypeScript resolves the call to, read at the reviewed
+    // entry of its text (`library-modules.mts`). Every mention is a call of
+    // the value or of a member.
+    const assertionSpans: Span[] = [];
+    const namespaceFunction = (binding: { name: string; at: Identifier; specifier: string; imported: string },
+        nodes: readonly Node[]): Omit<ValueRoot, "binding"> | null => {
+      const member = binding.imported === "default" ? undefined : binding.imported.slice("default.".length);
+      const entries = moduleEntries(binding.specifier, "default");
+      const what = `the default import of ${binding.specifier}`;
+      const symbol = checker.getSymbolAtLocation(binding.at);
+      if (!symbol) throw Error(`TypeScript binds no ${what}`);
+      // The direct calls `assert(…)`; a member read `assert.m` is a binding
+      // of its own (`namespace-members.mts`), found through `members`.
+      const calls: ts.CallExpression[] = [];
+      const find = (n: Node): void => {
+        if (ts.isIdentifier(n) && n !== binding.at && n.text === binding.name &&
+            checker.getSymbolAtLocation(n)?.id === symbol.id && ts.isCallExpression(n.parent) && n.parent.expression === n)
+          calls.push(n.parent);
+        n.forEachChild(find);
+      };
+      if (member === undefined) find(client);
+      else
+        for (const use of (options.namespaceMembers ?? []).find(m => m.local === binding.name)?.uses ?? []) {
+          const access = expressionAt(client, use.span);
+          const call = access?.parent;
+          if (!access || !call || !ts.isCallExpression(call) || call.expression !== access)
+            throw Error(`${binding.name} is only called`);
+          calls.push(call);
+        }
+      const spanOf = (node: Node): Span => [node.getStart(client), node.end];
+      const entryAt = (call: ts.CallExpression, member: string | undefined): ModuleEntry => {
+        const declaration = checker.getResolvedSignature(call)?.declaration?.resolve();
+        const text = declaration ? reviewedText(declaration.getText(declaration.getSourceFile())) : "";
+        const entry = entries.find(e => e.member === member && e.signature === text);
+        if (!entry)
+          throw Error(`${member === undefined ? binding.name : `${binding.name}.${member}`}(…) is not declared as reviewed: ${text}`);
+        return entry;
+      };
+      // A statement call with no message or a literal one, read as a test.
+      const lowered = (call: ts.CallExpression): boolean => {
+        const [value, message, ...more] = call.arguments;
+        return ts.isExpressionStatement(call.parent) && call.parent.expression === call && !!value && !more.length &&
+          !call.typeArguments?.length && !call.arguments.some(ts.isSpreadElement) &&
+          (!message || ts.isStringLiteral(message) || ts.isNoSubstitutionTemplateLiteral(message));
+      };
+      const chosen = new Map<ModuleEntry, Span>();
+      for (const call of calls) {
+        if (call.questionDotToken) throw Error(`${binding.name} is called without an optional chain`);
+        const entry = entryAt(call, member);
+        const span = spanOf(call);
+        chosen.set(entry, span);
+        if (entry.lowering === "test" && lowered(call)) {
+          assertionSpans.push(span);
+          options.assertionCall?.(span);
+        }
+      }
+      // An entry's forms: its statement, and where it states a promise, the
+      // promise signature beside it.
+      const forms = (entry: ModuleEntry, receiver: TypeTerm | null, at: Span): FunctionTerm[] => {
+        const effect = entry.effect ?? ordinaryEffect;
+        const plain: FunctionTerm = { k: "function", effect, receiver, params: entry.stated.params,
+          rest: entry.stated.rest ?? null, result: entry.stated.result, span: at };
+        return entry.promise
+          ? [plain, { ...plain, effect: { ...effect, promise: { asserts: { param: entry.promise.param } } }, result: entry.promise.type }]
+          : [plain];
+      };
+      // The value: the forms of each overload its calls resolve to; a generic
+      // statement's binders are the value's type parameters, as an imported
+      // generic function's are.
+      const entriesChosen = [...chosen];
+      const binders = entriesChosen.flatMap(([entry]) => entry.stated.binders);
+      if (binders.length && entriesChosen.length > 1)
+        throw Error(`${binding.name} selects a generic statement beside other overloads`);
+      const signatures = entriesChosen.flatMap(([entry, at]) => forms(entry, null, at));
+      const [first] = nodes;
+      if (!first) throw Error(`TypeScript declares no ${what}`);
+      const source = first.getSourceFile();
+      const at: Span = [first.getStart(source), first.end];
+      if (!signatures.length) return null;
+      return { declaration: { module: idOf(source), name: member === undefined ? "default" : `default.${member}`, span: at },
+        construct: false, typeParams: binders.map(name => ({ name, bound: null, resolution: null })),
+        type: oneTerm(signatures, at) };
+    };
     for (const binding of importBindings(client, options.namespaceMembers ?? [])) {
       try {
         // A function with overloads is its several declarations; any other
@@ -1371,6 +1460,21 @@ export function collectDeclarations(file: string, options: {
           continue;
         }
         const reviewed = moduleEntries(binding.specifier, binding.imported);
+        // Node's assertion functions state promises their declarations alone
+        // assert: a value of `node:assert` or `node:assert/strict` is read
+        // through the latter's default import and its members alone, at
+        // their reviewed entries, never at a declaration.
+        const module = binding.specifier.startsWith("node:") ? binding.specifier.slice("node:".length) : binding.specifier;
+        if (!binding.typeOnly && (module === "assert" || (module === "assert/strict" &&
+            binding.imported !== "default" && !binding.imported.startsWith("default."))))
+          throw Error(`${binding.name} of ${binding.specifier} is read through the default import of node:assert/strict alone`);
+        if (!binding.typeOnly && (binding.imported === "default" || binding.imported.startsWith("default.")) &&
+            moduleEntries(binding.specifier, "default").some(e => e.member !== undefined)) {
+          const value = namespaceFunction(binding, nodes);
+          if (value) values.push({ binding: { local: binding.name, imported: binding.imported,
+            specifier: binding.specifier, span: binding.span }, ...value });
+          continue;
+        }
         if (!binding.typeOnly && reviewed.length) {
           values.push({ binding: { local: binding.name, imported: binding.imported,
             specifier: binding.specifier, span: binding.span }, ...moduleValue(nodes, reviewed, binding.name) });
@@ -1807,6 +1911,7 @@ export function collectDeclarations(file: string, options: {
       }
     };
     if (options.intrinsics) listIntrinsics(options.intrinsics.span, options.intrinsics.names);
+    for (const span of assertionSpans) listIntrinsics(span, [assertionFailureName]);
     if (resolutionContextAt) listStable(resolutionContextAt);
     // `k in o` with a key TypeScript types as string literals only is the
     // model's key test, which narrows `o`; any other key, a number, a symbol
@@ -2859,6 +2964,61 @@ function typesOnly(node: Node): boolean {
     : typesOnly(body);
 }
 
+/** A global function, its overloads declared without bodies: its value's
+ * call signatures, each overload a call resolves to. Its implementation is
+ * outside what is verified, wherever the declaration lies (the standard
+ * library, an installed package, a declaration file of the project): each
+ * overload a call resolves to is read through the reviewed overlay, an
+ * entry listing it with exactly the text reviewed, an augmentation's
+ * included; any other is refused. The function is only called. */
+function globalFunction(checker: Checker, name: string, uses: readonly Identifier[],
+    overloads: readonly ts.FunctionDeclaration[], context: SelectionContext): { definition: TypeDefinition } {
+  const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
+  const where = (node: Node) => `${context.identityOf(node.getSourceFile())}#${name}`;
+  const what = `${name}(…)`;
+  const chosen = new Map<ts.FunctionDeclaration, ts.CallExpression[]>();
+  for (const use of uses) {
+    const call = use.parent;
+    if (!ts.isCallExpression(call) || call.expression !== use || call.questionDotToken)
+      throw Error(`the global function ${name} is only called`);
+    const resolved = checker.getResolvedSignature(call)?.declaration?.resolve();
+    const overload = overloads.find(o => resolved && o.pos === resolved.pos && o.end === resolved.end &&
+      o.getSourceFile().fileName === resolved.getSourceFile().fileName);
+    if (!overload) throw Error(`TypeScript resolves the call of ${name} to no overload it declares`);
+    chosen.set(overload, [...chosen.get(overload) ?? [], call]);
+  }
+  const calls = [...chosen].flatMap(([overload, calls]): FunctionTerm[] => {
+    if (overload.typeParameters?.length) throw Error(`${what} is generic`);
+    const at = spanOf(overload);
+    const entry = globalEntry(context.overlay, name, undefined, overload.getText(overload.getSourceFile()).trim());
+    if (!entry)
+      throw Error(`${what} is not in the reviewed overlay of library globals: ${overload.getText(overload.getSourceFile()).trim()}`);
+    if (entry && (entry.test || entry.intrinsic || entry.construct || entry.value || entry.admit))
+      throw Error(`${what} is reviewed in a form a global function does not take`);
+    const written = entry?.stated;
+    const stated = typeof written === "function" ? written(context.library) : written;
+    if (Array.isArray(stated)) throw Error(`${what} states several forms`);
+    if (stated) {
+      if (stated.binders.length) throw Error(`${what} is stated with binders`);
+      for (const call of calls) boundedArguments(call, stated, what);
+      return [{ k: "function", effect: entry?.effect ?? ordinaryEffect, receiver: null, params: stated.params,
+        rest: stated.rest ?? null, result: stated.result, span: at }];
+    }
+    context.clean(overload, where(overload));
+    return signatures(context.valueScope(overload, what), overload.parameters, overload.type, overload, at)
+      .map(form => {
+        if (form.receiver) throw Error(`${what} states its receiver`);
+        return { ...form, effect: entry?.effect ?? form.effect };
+      });
+  });
+  const [declaration] = overloads;
+  if (!declaration) throw Error(`the global function ${name} has no declaration`);
+  const source = declaration.getSourceFile();
+  return { definition: { declaration: { module: context.identityOf(source), name,
+    span: [declaration.getStart(source), declaration.end] }, parameters: [], bases: [],
+    expression: { k: "object", fields: [], stringIndex: null, calls, span: spanOf(uses[0] ?? declaration) } } };
+}
+
 function selectGlobal(checker: Checker, uses: readonly Identifier[], context: SelectionContext):
     { definition: TypeDefinition } |
     { construct: { declaration: DeclarationIdentity; typeParams: ValueRoot["typeParams"]; type: TypeTerm } } |
@@ -2867,6 +3027,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   if (!first) throw Error("a global value without a reference");
   const name = first.text;
   const declarations = (checker.getSymbolAtLocation(first)?.declarations ?? []).map(d => d.resolve());
+  // A global declared as a function, `declare function parseInt(…)`.
+  const functions = declarations.filter((d): d is ts.FunctionDeclaration => !!d && ts.isFunctionDeclaration(d) && !d.body);
+  if (functions.length && functions.length === declarations.length)
+    return globalFunction(checker, name, uses, functions, context);
   const variables = declarations.filter((d): d is ts.VariableDeclaration =>
     !!d && ts.isVariableDeclaration(d) && !!d.type && ts.isIdentifier(d.name));
   const [declaration] = variables;
@@ -2978,8 +3142,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
       // `e instanceof X`, read only where the overlay states it as a test of
       // the calculus, against the variable's declaration as reviewed.
       const entry = reviewed(undefined, declaration, `${name} as the right operand of instanceof`);
-      if (!entry?.test) throw Error(`${name} is not read as an instanceof test`);
-      context.test(spanOf(parent), entry.test);
+      // A test of the calculus, or an intrinsic stating the Boolean alone.
+      if (entry?.intrinsic) context.intrinsic(spanOf(parent), entry.intrinsic);
+      else if (entry?.test) context.test(spanOf(parent), entry.test);
+      else throw Error(`${name} is not read as an instanceof test`);
     }
     else if (isWritten(use)) throw Error(`the global ${name} is written, which the module may not do`);
     else valueUses.push(use);

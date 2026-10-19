@@ -25,9 +25,9 @@
  * is read as its declaration states, member by member (`selectGlobal`). */
 import { obligated, transparent, type HostClass } from "./host-operations.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { asyncCompleteName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
+import { asyncCompleteName, instanceOfErrorName, promiseResolveName, newPromiseName, promiseAllName, promiseRejectName, symbolForName,
   symbolKeyForName } from "./intrinsics.mts";
-import { emptyEffect } from "./type-graph.mts";
+import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 
 type AtomName = Extract<TypeTerm, { k: "atom" }>["name"];
@@ -336,6 +336,90 @@ export const globalsOverlay: readonly GlobalEntry[] = [
         result: { k: "object", fields: [], stringIndex: null, calls: [], span: at,
           prototype: { k: "object", fields: [{ name: "message", optional: false, readonly: true,
             type: atom("string"), span: at }], stringIndex: null, calls: [], span: at } } } })),
+  // `parseInt(s, radix)` converts `s` by ToString and `radix` by ToInt32,
+  // which run no code on a string and a number, the calculus's primitive
+  // types its declaration states: a number, `NaN` where `s` spells none.
+  // It writes nothing: the empty footprint.
+  { host: contract, global: "parseInt", signature: "declare function parseInt(string: string, radix?: number): number;",
+    effect: emptyEffect },
+  // Node's global `clearTimeout(t)`, declared in `@types/node`: of a
+  // number or a string, it cancels the timer of that id; of an object, it
+  // reads and clears the object's `_onTimeout` and unlinks the timer, which
+  // for an object that is no timer reads and writes its properties, which
+  // may be accessors; of anything else it does nothing. It returns
+  // `undefined`. Stated at any value, and with no effect. The two texts are
+  // the two pinned `@types/node` installations' (the tools' and
+  // `library-project`'s).
+  ...["function clearTimeout(timeout: NodeJS.Timeout | string | number | undefined): void;",
+    "function clearTimeout(timeoutId: NodeJS.Timeout | string | number | undefined): void;"].map(
+    (signature): GlobalEntry => ({ host: contract, global: "clearTimeout", signature,
+      stated: { binders: [], params: [atom("unknown")], result: atom("undefined") } })),
+  // `Math.ceil(x)` of a number, a primitive: no conversion code runs.
+  { host: contract, global: "Math", member: "ceil", signature: "ceil(x: number): number;", effect: emptyEffect },
+  // `Object.fromEntries(entries)` iterates `entries` and, for each element,
+  // reads its 0 and 1, converts the key by ToPropertyKey and defines it as
+  // an own data property of a fresh object (CreateDataPropertyOrThrow, a
+  // `"__proto__"` key included). Over an array, its iterator is the host's
+  // (`%Iterate%`), and a pair `readonly [string, T]` is an array whose
+  // positions hold data: no code runs, and nothing it did not allocate is
+  // written. A program's iterable would run its iterator, client code, and
+  // a key of another type its conversion: stated at an array of string-keyed
+  // pairs, its result a dictionary of `T`.
+  { host: transparent("an array of pairs, which no node list is"), global: "Object", member: "fromEntries",
+    signature: "fromEntries<T = any>(entries: Iterable<readonly [PropertyKey, T]>): { [k: string]: T; };", effect: emptyEffect,
+    stated: { binders: ["T"], params: [readonlyArray({ k: "tuple", presence: "dense", readonly: true,
+      required: [atom("string"), binder("T")], optional: [], rest: null, span: at })],
+      result: { k: "object", fields: [], stringIndex: { readonly: false, value: binder("T"), span: at }, calls: [], span: at } } },
+  // `Array.from(xs)` of an array copies it through its iterator, the
+  // host's, reading the current length at each step: a fresh dense array of
+  // its elements, a hole read as `undefined`, which a readable `T[]` holds
+  // only where `undefined` meets `T`. It writes nothing else.
+  ...["from<T>(arrayLike: ArrayLike<T>): T[];", "from<T>(iterable: Iterable<T> | ArrayLike<T>): T[];"].map(
+    (signature): GlobalEntry => ({ host: transparent("the array's store: a node list's table"), global: "Array",
+      member: "from", signature, effect: emptyEffect,
+      stated: { binders: ["T"], params: [readonlyArray(binder("T"))], result: array(binder("T")) } })),
+  // `Array.from(items, f)` reads `items[Symbol.iterator]`: where `items`
+  // has one, it steps that iterator, and otherwise reads `items.length`
+  // (ToLength, no code on a number) and each index; it calls `f` with each
+  // value and its index, and defines `f`'s results on a fresh array. A
+  // record `{ readonly length: number }` may hold an iterator or accessors
+  // of its own, client code yielding any value: `f` takes `unknown`, and the
+  // call states no effect, as `f` and that code may change anything. The
+  // result is a fresh dense array of `f`'s results.
+  ...["from<T, U>(arrayLike: ArrayLike<T>, mapfn: (v: T, k: number) => U, thisArg?: any): U[];",
+    "from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: (v: T, k: number) => U, thisArg?: any): U[];"].map(
+    (signature): GlobalEntry => ({ host: transparent("the record's length or its iterator, whose values the callback takes at unknown"),
+      global: "Array", member: "from", signature,
+      stated: { binders: ["U"], params: [
+        { k: "object", stringIndex: null, calls: [], span: at,
+          fields: [{ name: "length", optional: false, readonly: true, type: atom("number"), span: at }] },
+        { k: "function", effect: ordinaryEffect, receiver: null, params: [atom("unknown"), atom("number")], rest: null,
+          result: binder("U"), span: at }],
+        result: array(binder("U")) } })),
+  // `new RegExp(pattern, flags)` of strings compiles the pattern, a
+  // SyntaxError where the pattern or the flags are invalid, an outcome. A
+  // regex `pattern` would be read by its `Symbol.match`, `source` and
+  // `flags`, which an object may hold as accessors: stated at strings. The
+  // pattern is known only at run time, so its capture shape and flags are
+  // not: the result is the structural regex a `RegExp` annotation states
+  // (SOURCE-CONTRACTS.md, "Regular expressions"), whose members state no
+  // effect, the native mark not stated. It writes nothing it did not
+  // allocate, on its throw too.
+  ...["new (pattern: RegExp | string, flags?: string): RegExp;", "new (pattern: string, flags?: string): RegExp;",
+    "new (pattern: RegExp | string): RegExp;"].map((signature): GlobalEntry => ({ host: contract, global: "RegExp", signature,
+      effect: { ...emptyEffect, onThrow: true },
+      stated: library => ({ binders: [], params: signature.includes("flags")
+        ? [atom("string"), optional(atom("string"))] : [atom("string")], result: library("RegExp", []) }) })),
+  // `e instanceof Error`: `Error` owns no `[Symbol.hasInstance]` and
+  // `Function.prototype`'s cannot be replaced, so the operator walks `e`'s
+  // prototype chain for `Error.prototype`, a data property that is neither
+  // writable nor configurable: no code runs, no object being a proxy, and
+  // nothing is written. The answer says nothing of `e`'s fields: an object
+  // gets `Error.prototype` without `Error` constructing it
+  // (`Object.create`, a class extending `Error`), so the test narrows
+  // nothing (SOURCE-FRAGMENT.md), and is read as the intrinsic stating the
+  // Boolean alone.
+  { host: contract, global: "Error", signature: "Error: ErrorConstructor", intrinsic: instanceOfErrorName },
   // PromiseResolve retains a native promise with the built-in standard
   // constructor, and freshly resolves stably non-thenable values. Without a
   // value, the promise settles to `undefined`, as an async completion does.

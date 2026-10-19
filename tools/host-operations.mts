@@ -19,6 +19,7 @@ import {
   asyncCompleteName, asyncReturnName, awaitName, elementAtName, forInName, hasPropertyName, iterateForInName,
   iterateIteratorName, iterateMapName, iterateName, iterateRegExpStringName, iterateSetName, iterateStringName,
   newPromiseName, promiseAllName, promiseRejectName, promiseResolveName, symbolForName, symbolKeyForName,
+  instanceOfErrorName, assertionFailureName,
 } from "./intrinsics.mts";
 
 export type HostClass =
@@ -78,6 +79,8 @@ export const intrinsicForms: Readonly<Record<string, HostClass>> = {
   [promiseResolveName]: transparent("a stably non-thenable value or a realm promise"),
   [promiseAllName]: transparent("elements at Promise types: realm promises by the await assumption"),
   [promiseRejectName]: value, [newPromiseName]: calls,
+  [assertionFailureName]: transparent("allocates an AssertionError from a string message"),
+  [instanceOfErrorName]: transparent("a prototype chain walk for Error.prototype, which no host prototype is"),
   [symbolForName]: value, [symbolKeyForName]: value,
   [iterateName]: store,
   [iterateStringName]: value, [iterateSetName]: value, [iterateMapName]: value, [iterateIteratorName]: value,

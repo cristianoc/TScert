@@ -157,6 +157,34 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
     `[roundTrip('{"a":{"toJSON":1},"b":[{"toJSON":"x"}]}'), wrapped('{"toJSON":[1]}')].join(" ")`),
     '{"a":{"toJSON":1},"b":[{"toJSON":"x"}]} [{"toJSON":[1]},{"toJSON":{"toJSON":[1]}}]',
     "json-parse-stringify-tojson-member: noncallable toJSON members round-trip");
+  assert.equal(runImporting("invalid-node-assert-deep-preserving",
+    "(() => { const s = Symbol(\"k\"); const xs = []; const hooked = (pop) => { const o = { a: 1 }; Object.defineProperty(o, s, { enumerable: true, get() { if (pop) xs.pop(); return 1; } }); return o; }; xs.push(hooked(true), hooked(false)); return 1 in checked(xs, hooked(false)); })()"),
+    false, "invalid-node-assert-deep-preserving: a symbol getter a passing deepEqual reads shrinks the mapped array");
+  assert.equal(runImporting("invalid-node-assert-catch-continue",
+    "(() => { const xs = [1, 2]; const saved = Error.prepareStackTrace; Error.prepareStackTrace = () => { xs.pop(); return \"\"; }; try { return 1 in rows(xs, 2); } finally { Error.prepareStackTrace = saved; } })()"),
+    false, "invalid-node-assert-catch-continue: prepareStackTrace run by a failing equal shrinks the mapped array");
+  assert.equal(runImporting("invalid-node-assert-throws-callback",
+    "(() => { const xs = [1, 2]; return 1 in rows(xs, () => { xs.pop(); throw new Error(\"x\"); }); })()"),
+    false, "invalid-node-assert-throws-callback: the block shrinks the mapped array");
+  assert.equal(runImporting("node-assert-strict",
+    "(() => { const saved = Error.prepareStackTrace; Error.prepareStackTrace = () => { throw 7; }; try { return [reason(2), reason(1), first([4]), same([1, 2]).length].join(); } finally { Error.prepareStackTrace = saved; } })()"),
+    "a number,same,4,2", "node-assert-strict: a hook's thrown number reaches the handler; passing calls");
+  assert.equal(runExample("invalid-parse-int-overload", "Number.isNaN(fromFlag(true))"), true,
+    "invalid-parse-int-overload: parseInt of a Boolean converts it to \"true\", NaN");
+  assert.equal(runExample("invalid-from-entries-iterable",
+    "(() => { let ran = 0; build({ *[Symbol.iterator]() { ran++; yield [\"a\", 1]; } }); return ran; })()"),
+    1, "invalid-from-entries-iterable: Object.fromEntries steps a program's iterator");
+  assert.equal(runExample("invalid-array-from-iterator",
+    "(() => { const xs = [1, 2]; const items = { length: 1, *[Symbol.iterator]() { xs.pop(); yield 0; } }; return 1 in grow(xs, items); })()"),
+    false, "invalid-array-from-iterator: a length record's own iterator shrinks the mapped array, leaving a hole");
+  assert.equal(runExample("invalid-regexp-object-pattern",
+    "(() => { let read = 0; copied({ get [Symbol.match]() { read++; return true; }, source: \"a\", flags: \"\" }); return read; })()"),
+    1, "invalid-regexp-object-pattern: new RegExp reads an object pattern's Symbol.match getter");
+  assert.equal(runExample("invalid-instanceof-error-message",
+    "typeof text(Object.create(Error.prototype, { message: { value: 5 } }))"),
+    "number", "invalid-instanceof-error-message: an object holding Error.prototype has a numeric message");
+  assert.equal(runExample("instanceof-error", "[isError(new Error(\"x\")), isError({ message: \"x\" })].join()"),
+    "true,false", "instanceof-error: the walk");
   assert.equal(runExample("invalid-number-value-object",
     "(() => { const xs = [{}, {}]; xs[0] = { valueOf() { xs.pop(); return 1; } }; return 1 in values(xs); })()"),
     false, "invalid-number-value-object: an object's valueOf shrinks the mapped array, leaving a hole");

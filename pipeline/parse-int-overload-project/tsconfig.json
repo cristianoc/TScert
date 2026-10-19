@@ -1,0 +1,12 @@
+{
+  // A project whose own module adds an overload to the standard library's
+  // `parseInt`: the `*parse-int-overload*` cases.
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2022"],
+    "types": []
+  },
+  "include": ["./augment.ts", "../examples/*parse-int-overload*.ts"]
+}
