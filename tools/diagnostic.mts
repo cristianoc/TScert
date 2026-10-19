@@ -47,7 +47,7 @@ function heapAtom(v: Json): void {
   if (heapAtoms.includes(v)) return;
   // Singleton payloads use the graph language's existing decoder.
   if (isRecord(v) && "strLit" in v) {
-    decodeGraph([[{strLit: record(v,["strLit"]).strLit}]]);
+    decodeGraph([[record(v,["strLit"])]]);
     return;
   }
   if (isRecord(v) && "tag" in v) {
@@ -56,8 +56,7 @@ function heapAtom(v: Json): void {
     if (typeof t.answer !== "boolean") throw Error("invalid tag atom answer");
     return;
   }
-  const a = record(v,["numLit"]);
-  decodeGraph([[{numLit: a.numLit}]]);
+  decodeGraph([[record(v,["numLit"])]]);
 }
 interface HeapFact {
   slot: number;
