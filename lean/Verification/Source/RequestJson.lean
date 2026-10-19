@@ -644,16 +644,18 @@ table checked before it, not part of this request. -/
     result := q.entry.row.result, start := q.entry.start,
     inputs := codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store, codes := [] }
 
-/-- Search one graph's certificate, the codes of `table` admitted. -/
-@[nospecialize] def produceGraph (r : Request σ ι) (fuel : Nat) (labels : List ι)
+/-- Search one graph's certificate, the codes of `table` admitted, in the
+producer's graph `G` and image check `I`: the request's own, built once by the
+producer's caller for every search it makes (`produceResponseUsing`). -/
+@[nospecialize] def produceGraphUsing (G : NormalGraph ι) (I : PositiveCertificates.InstanceImageCheck G)
+    (r : Request σ ι) (fuel : Nat) (labels : List ι)
     (suggestions : List (ProgramCertificates.Sequent ι)) (known : List (ProgramCertificates.Evidence ι))
     (sourceMap : SourceMap) (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
     (table : List (CodeEntry ι))
-    (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
-      HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types))
+    (checker : HeapExpressionRules.Checker G I := HeapExpressionRules.Checker.ordinary G I)
     (aliases : List (ι × ι) := []) (goal : Option (ControlFlow.Goal ι) := none) :
     Except String (ControlFlow.Certificate ι) :=
-  match CertificateProducer.produceUsing (graph r) (StoreView.images r.types) labels fuel (goal.getD r.goal)
+  match CertificateProducer.produceUsing G I labels fuel (goal.getD r.goal)
       r.program r.claims r.start [] r.inputs suggestions known
       requirements cuts (GraphCode.admits table) checker aliases with
   | .ok c => pure c
@@ -699,8 +701,13 @@ structure CodeHints where
 
 /-- Search a request's evidence: each code's certificate, then the graph's,
 checked as the consumer checks them. Fuel bounds search only; it is not
-part of the certified request. -/
-@[nospecialize] def produceResponse (r : Request σ ι) (fuel : Nat)
+part of the certified request. Search runs in the producer's graph `G` and
+image check `I`, which the caller builds once and shares between the
+requests whose stores give the same graph and image check, under the search
+checker `searchChecker`; the response is checked under the request's own
+`checker`, as acceptance checks it. -/
+@[nospecialize] def produceResponseUsing (G : NormalGraph ι) (I : PositiveCertificates.InstanceImageCheck G)
+    (searchChecker : HeapExpressionRules.Checker G I) (r : Request σ ι) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent ι) := [])
     (known : List (ProgramCertificates.Evidence ι) := [])
     (sourceMap : SourceMap := [])
@@ -717,7 +724,7 @@ part of the certified request. -/
   let mut certificates : List (ControlFlow.Certificate ι) := []
   for (q, i) in r.codes.zipIdx do
     let hints := (codeHints[i]?).getD {}
-    let C ← produceGraph (q.asRequest r) fuel labels suggestions known hints.sourceMap
+    let C ← produceGraphUsing G I (q.asRequest r) fuel labels suggestions known hints.sourceMap
       hints.requirements hints.cuts table (goal := some q.entry.goal)
     certificates := certificates ++ [C]
     -- Search may use only definitions whose complete certificate checks,
@@ -731,7 +738,8 @@ part of the certified request. -/
       let label := stop.nodeLabel.getD q.entry.start
       throw (withDiagnostic "subtype search exhausted during code admission; result is inconclusive"
         (failureDiagnostic (q.asRequest r) fuel hints.sourceMap (.exhaustedExpression label stop)))
-  let C ← produceGraph r fuel labels suggestions known sourceMap requirements cuts table checker aliases
+  let C ← produceGraphUsing G I r fuel labels suggestions known sourceMap requirements cuts table
+    searchChecker aliases
   let response := Response.mk C certificates
   let checked := verifyResult r response checker
   if checked.accepted then return response

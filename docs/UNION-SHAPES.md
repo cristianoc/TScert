@@ -871,11 +871,12 @@ c.\mathrm{variances}=c'.\mathrm{variances}\land c.\mathrm{budget}=c'.\mathrm{bud
 \Rightarrow \mathrm{images}(c)=\mathrm{images}(c'),
 ```
 
-both by the definitions (status: holds by unfolding; the Lean statements are
-`rfl` and a congruence). `subtypeSearch` is a function of the graph, the image
+both by the definitions (proved: `Checked.graph_eq`, by `rfl`, and
+`Checked.images_eq`, a congruence). `subtypeSearch` is a function of the graph, the image
 check, the three dictionaries, the source and the target, so its answer in
-one object is its answer in the other: acceptances and refusals transport
-alike, and no monotonicity question arises, since nothing grows. The
+one object is its answer in the other: its whole result transports, an
+exhaustion included, and no monotonicity question arises, since nothing
+grows. The
 document's requests share one store (`types := F.store`), so the condition
 holds between all of them.
 
@@ -887,16 +888,6 @@ sets: `printGraph`'s three are separate, a domain change (`withDomain`, which
 builds `{ E with domain := D }`) makes another, and so would a store whose
 variances or budget differ.
 
-**Growth proper**, for completeness. The lowering's own store grows (`grow`
-appends heads; "a store only grows: every operation above keeps the labels it
-had and their rows"). There an established answer over labels whose heads
-precede the growth keeps its meaning, the rows it reads being unchanged
-(sketched), and a refusal transports only if the search reads the graph
-nowhere but at labels reachable from its source and target. `NormalGraph`
-offers no enumeration of its labels, which suggests that locality, but it is
-not proved. Evidence search does not run on the growing store, so the design
-needs neither.
-
 **How the producer carries answers.** The graph and the image check are
 computed once for the document, from the frozen equations and store, and
 passed to every producer step of every request (`ExpressionClaims.produceUsing`,
@@ -906,7 +897,17 @@ objects are then the same throughout the document, and the reuse keyed by
 their addresses (§9.4) answers across what are now separate objects. The
 change is in the producer's plumbing, pure, with no new unsafe code; the
 checker keeps calling `RequestJson.graph` as it does, and acceptance is
-unchanged.
+unchanged. A request with a qualified body keeps its own graph and image
+check, over which its body checker is stated.
+
+Implemented (`produceDocument`, `produceResponseUsing`, `produceGraphUsing`):
+the graph and image-check objects are one per document. The reuse's hits
+barely move (`termsOf`: 102,468 answered from the store, 3,532 searched,
+34 changes of context, against 101,503, 3,497 and 32 before): every change
+of context is now a change of a class dictionary's address: the label type's
+`DecidableEq` in all 34, `Instantiates` in 25, `Hashable` in 13 (2026-10-19). The dictionaries are rebuilt where they are resolved, so the
+address-keyed store still forgets at each rebuild; the safe memo, whose
+dictionaries are fixed by the function that holds it, does not.
 
 **Expected gain.** Of the requests first asked in their graph object, those
 asked before in another object of the document: `termsOf` 1,416 (6.4 s of
