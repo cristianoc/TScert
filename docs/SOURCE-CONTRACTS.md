@@ -2182,10 +2182,13 @@ code: ToBoolean and `Object.is`. A failing call builds an `AssertionError`:
 it calls no `inspect.custom` hook, but it reads the compared values'
 accessors while building the message, sets and restores
 `Error.stackTraceLimit`, and runs a program's `Error.prepareStackTrace`; a
-message that is an `Error` is thrown as it is. So each entry states its
-effect on normal return only, and the throw edge states none, as the
-[effect](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification) of a call reaching a handler never carries
-preservation onto the exceptional edge. A message is stated at `string`.
+message that is an `Error` is thrown as it is. Failure construction can so
+run code of the program's. Each entry states a footprint for normal return
+only, and on the exceptional edge unrestricted effects: `onThrow` false, so
+a handler catching an `AssertionError` holds no fact about the heap that the
+call's footprint would preserve, as the
+[effect](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)
+of any call reaching a handler. A message is stated at `string`.
 
 **Entries.** With $`M=\mathtt{string}\mid\mathtt{undefined}`$, the message:
 
@@ -2202,13 +2205,16 @@ preservation onto the exceptional edge. A message is stated at `string`.
   the value $`e`$, of type $`T`$. `notEqual`: $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{undefined}`$,
   the empty footprint on normal return.
 - `assert.deepEqual(a, e, m)` (`deepStrictEqual`) and `notDeepEqual` compare
-  by traversal, which reads own properties, accessors among them (observed: a
-  passing comparison calls a getter). At $`\mathsf{JsonValue}`$ operands, whose
-  members are data, they run no code:
-  $`(\mathsf{JsonValue},\ \mathsf{JsonValue},\ M)\Rightarrow\mathtt{undefined}`$,
-  the empty footprint on normal return; at other types, no effect. Neither
-  narrows: deep equality to a value of type $`T`$ is not shown to give type $`T`$
-  (the declaration's `asserts actual is T` is not read).
+  by traversal, which reads every own property, enumerable symbol-keyed ones
+  and an array's properties beyond its elements included, accessors among
+  them (observed: a passing comparison calls an enumerable symbol getter and
+  an extra array property's getter). No type the fragment states bounds all
+  of these, `JsonValue` included:
+  $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{undefined}`$,
+  stating no effect, on normal return too. A stronger form would need a type
+  bounding everything the comparison traverses, with Node-run controls.
+  Neither narrows: deep equality to a value of type $`T`$ is not shown to give
+  type $`T`$ (the declaration's `asserts actual is T` is not read).
 - `assert.match(s, r, m)` and `doesNotMatch`: Node checks `r`'s regex slot and
   runs `RegExp.prototype.exec` on it, which reads `lastIndex` by ToLength
   (observed: an object `lastIndex` runs its `valueOf`). At a native regex
@@ -2226,10 +2232,20 @@ preservation onto the exceptional edge. A message is stated at `string`.
 **Trust.** Each entry is an assumption about the host, as a library module's
 is: the promises of `equal` and `ifError` follow from the comparison the
 host makes before it returns, and the footprints from the steps observed
-above; nothing in Lean proves them. Controls the implementation would carry:
-a Node run of each failure path that runs code (an accessor of a compared
-value, an object `lastIndex`, a thrown object's `toString`), refused where a
-footprint would claim preservation across it.
+above; nothing in Lean proves them. Controls the implementation would carry,
+each run under Node:
+
+- for each failure path that runs code (an accessor of a compared value, a
+  program's `Error.prepareStackTrace`, an object `lastIndex`, a thrown
+  object's `toString`), a catch-and-continue program: a `try` around a
+  failing call whose hook mutates an alias of an array the code reads after
+  the handler, refused where it relies on a fact the call's normal-return
+  footprint would have kept (a `map` result's density, an element's type);
+- the same program with a passing call, verified, showing the normal-return
+  footprint is used only on that edge;
+- a passing `deepEqual` whose compared value holds an enumerable symbol
+  getter or an extra array property's getter that mutates an alias, refused
+  where a fact across the call is relied on.
 
 ## Regular expressions
 
