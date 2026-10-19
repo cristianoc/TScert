@@ -2367,6 +2367,111 @@ The instance is the producer's proposal, checked as any instance of a
 scheme ([`compareInstArrsState`](POSITIVE-TYPES.md#instances-of-a-scheme-row)).
 Background: [promises and flattened types](REFERENCES.md#promises-and-flattened-types).
 
+### Proposal: a `then` member on a source object
+
+This section is a design under review, not the current fragment, which
+refuses an object literal, class or parameter property with a `then` member
+([fragment](SOURCE-FRAGMENT.md)). It admits such a member as an ordinary
+field or method and replaces the refusal by two obligations. `Promise<T>`
+stays the structural contract above, and `checkJson_safe` is unchanged.
+
+**(a) No source-built value meets `Promise<T>`.** The contract the parser
+writes for the standard `Promise` holds, on its prototype record, the
+methods' slots, `constructor` and the required readonly field
+`[Symbol.toStringTag]: string` (observed in the declaration document).
+Let $`\sigma_{\mathit{tag}}`$ be that symbol, and $`H`$ the standard
+library's well-known symbols the host reads off an object
+(`hostSymbols` in `fragment-parse.mts`), $`\sigma_{\mathit{tag}}\in H`$.
+The statement to prove, conjectured:
+
+```math
+\frac{v\ \text{allocated by certified code, or reached from such a value through}\ [[\mathit{proto}]]\ \text{links to certified allocations}}
+     {v\notin⟦\mathsf{Promise}\langle A\rangle⟧}
+```
+
+for every $`A`$, from two lemmas:
+
+1. **No certified allocation owns a key of $`H`$.** The literal rules
+   (`HasTyWith.alloc`, `allocDict`) and the class translation (its
+   prototype's methods, its instance's fields) take $`H`$ from the
+   declaration document and exclude its keys. Today the parser alone refuses
+   them (`writtenSymbol`): the check moves into the rules, as `[[host]]`'s
+   exclusion is in them. A merge copies string keys only (`copiedKey`,
+   $`\mathsf{data}_h`$). A write at a computed key of $`H`$ needs the same
+   exclusion where a write can name a symbol.
+2. **No prototype a certified allocation reaches provides $`\sigma_{\mathit{tag}}`$.**
+   That prototype is `Object.prototype`, `Function.prototype`, a class's
+   prototype or a certified base class's prototype. The class prototypes are
+   certified allocations, covered by lemma 1. `Object.prototype` and
+   `Function.prototype` own no $`\sigma_{\mathit{tag}}`$
+   ([ECMA-262](REFERENCES.md#ecma-262)), a fact to add beside their own-key
+   facts on the [trust surface](DESIGN.md#trust-surface). A library base
+   class is refused ([fragment](SOURCE-FRAGMENT.md)).
+
+A source-built object therefore reads $`\sigma_{\mathit{tag}}`$ as absent,
+where `Promise<T>`'s prototype requires a string. The exclusion follows from
+the key, not from the fragment refusing a class's computed fields. The same
+lemmas state why `Set` and `Map`, whose contracts also require
+$`\sigma_{\mathit{tag}}`$, cannot be met by a source object
+(SOURCE-FRAGMENT.md states that reason for refusing the key today).
+
+**The minimal bound to add.** Lemma 2 does not cover an ambient or imported
+declaration stating $`\sigma_{\mathit{tag}}`$ beside `then`, `catch` and
+`finally`. The parser reads one today
+(`declare class Fake { …; readonly [Symbol.toStringTag]: string }`). Its
+instance meets `Promise<T>` structurally, although no native-promise
+assumption covers it. A probe returning one at `Promise<number>` was
+refused first because its methods bind a different number of binders than
+the native ones, which a declaration can match. The
+bound: refuse a key of $`H`$ in any declaration outside the standard
+library, as literals and classes are refused it. Then only a library type
+admits a value that provides $`\sigma_{\mathit{tag}}`$, and the native
+promise invariant, stated of values at `Promise` types, covers every
+external value that meets the contract. Where a base class is an ambient
+declaration rather than a certified one, the same bound covers its
+prototype.
+
+**(b) A callable `then` reaching a resolution is refused.** The obligations
+stay as stated above: `%Await%` requires $`\mathsf{Obs}`$, `%AsyncReturn%`
+$`\mathsf{Desc}`$, `%PromiseResolve%` $`\mathsf{Obs}`$, a `finally` cleanup
+result $`N`$ or a native `Promise<unknown>`, and `%NewPromise%`'s `resolve`
+$`T\le P`$. A record with a callable `then` is in neither:
+
+- not in $`N`$, whose record arm requires `then` absent or a primitive as a
+  lifetime contract;
+- not in `Promise`, by (a).
+
+An open record such as `{ a: number }` has no classification either. So a
+thenable is refused at the operation, with that operation's located
+diagnostic, until a checked thenable protocol (calling `then` with resolving
+functions and adopting the result) exists.
+
+The one change is the reading of `PromiseLike<T>`, which is structural: an
+object whose `then` meets its signature meets it. It occurs where the host
+resolves a value: the results of `then`'s and `catch`'s callbacks
+(`TResult | PromiseLike<TResult>`) and `new Promise`'s `resolve` argument,
+whose stated contract already takes $`T\le P`$. In the first two it is read
+as the native `Promise<T>`, so `TResult | Promise<TResult>` with
+$`\mathit{TResult}\le N`$. The width is exactly the standard `Promise`
+declarations' `then` and `catch`; besides them the overlay names
+`PromiseLike` only in `new Promise` (observed in `library-globals.mts`). A library signature naming `PromiseLike`
+in another position is refused until its resolution is reviewed. This
+narrows a trusted contract and adds no trust.
+
+**Controls of the change.**
+
+- A positive case: an object literal and a class with a `then` field and
+  method, called directly.
+- Negative cases, each refused at its operation and run under Node to show
+  the source `then` is called: `await` of a literal with a callable `then`,
+  async return of a class instance with a `then` method, `Promise.resolve`
+  of it, a `then` callback returning a thenable literal, a `finally` cleanup
+  returning one, and the value through `{ a: number }`.
+- Forged claims at `Promise<number>` of a literal and of a class instance
+  with `then`, `catch` and `finally`, refused in search and in check.
+- A declaration stating `[Symbol.toStringTag]` outside the library,
+  refused at the source.
+
 ## Loops and spreads over iterables
 
 `for (const x of e) S` steps a trusted **iteration intrinsic**, one per kind
