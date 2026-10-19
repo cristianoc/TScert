@@ -117,20 +117,36 @@ def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
   -- equations, its variances and its budget (`Checked.images_eq`).
   let G : NormalGraph (EquationStore.CheckedLabel F.equations F.primitive) := StoreView.graph F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images F.store
-  let es ← rs.mapM fun r => ExpressionClaims.produceUsing G I r.searchLabels (StoreView.valid r.types)
-    (StoreView.projection r.types) fuel r.obligations
-  let cs ← (rs.zip es).mapM fun (r,proofs) => do
-    let known := proofs ++ ExpressionClaims.renderKnownUsing G I r.searchLabels (StoreView.valid r.types)
-      r.nodePlans
+  -- The answered requests of the document's graph and image check, threaded
+  -- through every search in them; a qualified body's search, in its own
+  -- image check, starts its own.
+  let mut answers : CertificateProducer.Answered (EquationStore.CheckedLabel F.equations F.primitive) := {}
+  let mut proofLists := #[]
+  for r in rs do
+    let (e, next) ← ExpressionClaims.produceUsing G I r.searchLabels (StoreView.valid r.types)
+      (StoreView.projection r.types) fuel r.obligations answers
+    answers := next
+    proofLists := proofLists.push e
+  let mut responses := #[]
+  for (r, proofs) in rs.zip proofLists.toList do
+    let (rendered, next) := ExpressionClaims.renderKnownUsing G I r.searchLabels (StoreView.valid r.types)
+      r.nodePlans answers
+    answers := next
+    let known := proofs ++ rendered
     -- A qualified body's checker is stated over the request's own image
     -- check: its search keeps that check.
     if r.qualification.isNone then
-      RequestJson.produceResponseUsing G I (HeapExpressionRules.Checker.ordinary G I) r.toRequest fuel []
-        known r.sourceMap (some r.searchLabels) r.assertions r.cuts r.codeHints r.checker r.aliases
+      let (c, next) ← RequestJson.produceResponseUsing G I (HeapExpressionRules.Checker.ordinary G I) r.toRequest
+        fuel [] known r.sourceMap (some r.searchLabels) r.assertions r.cuts r.codeHints r.checker r.aliases answers
+      answers := next
+      responses := responses.push c
     else
-      RequestJson.produceResponseUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
+      let (c, _) ← RequestJson.produceResponseUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
         r.checker r.toRequest fuel [] known r.sourceMap (some r.searchLabels) r.assertions r.cuts
         r.codeHints r.checker r.aliases
+      responses := responses.push c
+  let es := proofLists.toList
+  let cs := responses.toList
   for (plan, c) in frozen.zip cs do
     let .graph name namePos r := plan
     if let some refusal := footprintRefusal name namePos r c then throw refusal

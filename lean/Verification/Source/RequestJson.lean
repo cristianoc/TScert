@@ -653,13 +653,14 @@ producer's caller for every search it makes (`produceResponseUsing`). -/
     (sourceMap : SourceMap) (requirements : List (Nat × HeapKnowledge.Knowledge)) (cuts : List Nat)
     (table : List (CodeEntry ι))
     (checker : HeapExpressionRules.Checker G I := HeapExpressionRules.Checker.ordinary G I)
-    (aliases : List (ι × ι) := []) (goal : Option (ControlFlow.Goal ι) := none) :
-    Except String (ControlFlow.Certificate ι) :=
+    (aliases : List (ι × ι) := []) (goal : Option (ControlFlow.Goal ι) := none)
+    (answers : CertificateProducer.Answered ι := {}) :
+    Except String (ControlFlow.Certificate ι × CertificateProducer.Answered ι) :=
   match CertificateProducer.produceUsing G I labels fuel (goal.getD r.goal)
       r.program r.claims r.start [] r.inputs suggestions known
-      requirements cuts (GraphCode.admits table) checker aliases with
-  | .ok c => pure c
-  | .error e =>
+      requirements cuts (GraphCode.admits table) checker aliases answers with
+  | (.ok c, answers) => pure (c, answers)
+  | (.error e, _) =>
     let location := match e with
       | .expression label | .exhaustedExpression label _ | .promise label .. => match (sourceMap[label]?).bind id with
         | some o => s!"source expression obligation at [{o.pos.1},{o.pos.2}): "
@@ -716,16 +717,18 @@ checker `searchChecker`; the response is checked under the request's own
     (codeHints : List CodeHints := [])
     (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
       HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types))
-    (aliases : List (ι × ι) := []) :
-    Except String (Response ι) := do
+    (aliases : List (ι × ι) := []) (answers : CertificateProducer.Answered ι := {}) :
+    Except String (Response ι × CertificateProducer.Answered ι) := do
   let labels := searchLabels.getD (StoreView.labels r.types)
   -- Each code against the table of those before it, as `codeTable` checks.
+  let mut answers := answers
   let mut table : List (CodeEntry ι) := []
   let mut certificates : List (ControlFlow.Certificate ι) := []
   for (q, i) in r.codes.zipIdx do
     let hints := (codeHints[i]?).getD {}
-    let C ← produceGraphUsing G I (q.asRequest r) fuel labels suggestions known hints.sourceMap
-      hints.requirements hints.cuts table (goal := some q.entry.goal)
+    let (C, next) ← produceGraphUsing G I (q.asRequest r) fuel labels suggestions known hints.sourceMap
+      hints.requirements hints.cuts table (goal := some q.entry.goal) (answers := answers)
+    answers := next
     certificates := certificates ++ [C]
     -- Search may use only definitions whose complete certificate checks,
     -- including their effect. Otherwise the defining expression must fail at
@@ -738,11 +741,11 @@ checker `searchChecker`; the response is checked under the request's own
       let label := stop.nodeLabel.getD q.entry.start
       throw (withDiagnostic "subtype search exhausted during code admission; result is inconclusive"
         (failureDiagnostic (q.asRequest r) fuel hints.sourceMap (.exhaustedExpression label stop)))
-  let C ← produceGraphUsing G I r fuel labels suggestions known sourceMap requirements cuts table
-    searchChecker aliases
+  let (C, final) ← produceGraphUsing G I r fuel labels suggestions known sourceMap requirements cuts table
+    searchChecker aliases (answers := answers)
   let response := Response.mk C certificates
   let checked := verifyResult r response checker
-  if checked.accepted then return response
+  if checked.accepted then return (response, final)
   throw (match checked.exhaustion with
     | some stop => validationFailure r fuel sourceMap codeHints stop
     | none => "the certificate does not justify the actual program and supplied claims")
