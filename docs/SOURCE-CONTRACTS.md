@@ -235,9 +235,14 @@ TypeScript resolves its calls to:
      {\Gamma(x)=⟦\mathsf{calls}(C)⟧}\ \textsf{global-function}
 ```
 
-A standard library global is
-read through the reviewed overlay ([Library globals](#library-globals)). So
-is every global function: its implementation is outside what is verified,
+Every global variable is read through the reviewed overlay
+([Library globals](#library-globals)), wherever it is declared (the standard
+library, an installed package such as Node's `process`, a declaration file of
+the project): each member, call, construct or value reading it selects is one
+an entry lists with its exact text, or it is refused; a mixed declaration
+(`console` of the DOM's library and of `@types/node`) is no exception
+([Node's `process`](#nodes-process); `invalid-host-global-variable`,
+`invalid-node-console-unreviewed`). So is every global function: its implementation is outside what is verified,
 wherever its declaration lies (the standard library, an installed package,
 a declaration file of the project), so each overload a call resolves to is
 one an entry lists with its exact text, an augmentation's included, or the
@@ -2025,6 +2030,62 @@ the symbol it holds not being known:
 So two constants made by `Symbol.for` of one string name one key, and a
 type naming both names that key twice, which is refused, though TypeScript
 types each constant a distinct `unique symbol`.
+
+### Node's `process`
+
+Node's `process` and `console` are read through the overlay at the members
+the repository's code uses, each pinned to its declaration in the pinned
+`@types/node` installations, observed under Node 25.2.1 (2026-10-19). A member
+read at a stated contract is a readonly view: no write of it is admitted.
+
+- `process.argv`: an array of strings Node builds at start-up, read as
+  $`\mathtt{readonly\ string}[\,]`$. The property is writable: no code
+  replaces it or writes a non-string into it, an assumption.
+- `process.execPath`, a string, and `process.pid`, a number.
+- `process.env`: an object whose own entries hold strings and on which no
+  accessor can be defined (`defineProperty` with a getter throws), its chain
+  a prototype holding `constructor` and then `Object.prototype`: read as the
+  readonly dictionary $`\{[k:\mathtt{string}]:\mathtt{string}\mid\mathtt{undefined}\}`$,
+  at no key a prototype may provide (the dictionary rule;
+  `invalid-collections-process-env`). A write is refused where it is written
+  (`node-process-env-write`, a gap): an assignment converts its value by
+  ToString, which runs an object's `toString`, stores `undefined` as the
+  string `"undefined"` and throws on a symbol, and a new key is visible
+  through every alias of the object, which the model's key addition, a copy
+  of a local object, does not represent ([WORK.md](../WORK.md#nodes-process)).
+- `process.exit(code)` at a number or nothing: `never`, stating no effect. It
+  runs the `exit` listeners synchronously, and one may throw into the caller
+  (`invalid-node-process-exit-handler`, run under Node).
+- `process.kill(pid, s)` at a number and an admitted signal $`\mathsf{Sig}`$:
+  `true`, a throw, or the process ending; neither delivery nor termination is
+  promised, and no effect is stated.
+- `process.on(e, f)` and `process.once(e, f)` at a named event: `exit` and
+  `beforeExit`, whose listener is called with the exit code, a number, and
+  $`\mathsf{Sig}=\texttt{"SIGINT"}\mid\texttt{"SIGTERM"}\mid\texttt{"SIGHUP"}\mid\texttt{"SIGUSR1"}\mid\texttt{"SIGUSR2"}`$,
+  whose listener is called with the signal's name, each with the process as
+  `this` (`node-process-listeners`, run under Node). The listener is a value of
+  the checked callable type $`(\mathtt{number})\Rightarrow\mathtt{unknown}`$ or
+  $`(\mathtt{string})\Rightarrow\mathtt{unknown}`$, stating no effect; a
+  listener of another parameter type is refused
+  (`invalid-collections-process-listener`, and with borrowed claims and
+  evidence in `pipeline/test.mts`). Registering emits `newListener`, and
+  `once`'s removal `removeListener`, synchronously: the call states no
+  effect, its throw included, and returns the process. An event known only as
+  a string, a meta-event, or an event no entry lists (`message`) is refused
+  (`collections-process` and `collections-main`, gaps; `invalid-node-process-meta-event`,
+  `invalid-node-process-message-event`); so are `emit`, reading listeners back
+  and replacing a method, which no entry lists.
+- `console.log` and `console.error`, of the DOM's library and Node's, at
+  primitive arguments, stating no effect (`node-console`).
+
+A listener runs after the unit that registered it, between synchronous jobs,
+or inside an operation stating no effect (`process.exit`, `kill`, a
+registration): its body is checked as any closure is, its captured mutable
+state read at its declared types, no narrowing made at registration retained
+(`invalid-node-process-listener-stale`, run under Node). At an `await`, the
+ordinary effect of `%Await%` drops every fact another job may change. The
+scheduling is a host assumption ([trust surface](DESIGN.md#trust-surface)):
+the calculus does not prove Node's scheduler.
 
 ## Library modules
 

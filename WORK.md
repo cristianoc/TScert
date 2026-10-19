@@ -35,6 +35,7 @@ design, not its progress.
 | [Regular expressions left](#regular-expressions-left) | open | replacement callbacks, `new RegExp`, a regex's properties and structural match iterators are admitted, and `SetIterator` and `MapIterator` loops require the native mark |
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
+| [Node's process](#nodes-process) | open: the environment write a located gap; events known only as strings refused | a write of `process.env` through a receiver-bound host setter over shared state preserving every alias's view; signals reached through iteration proven admitted |
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
 | [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 101 of 341 functions verify in `tools/` (2026-10-19, the missing library globals reviewed), 24 of 24 in `dev/`, 8 of 13 in `tests/` and 2 of 35 in `pipeline/` (2026-10-19, `node:assert/strict` read, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
@@ -386,6 +387,33 @@ the sources stringify a value that is no `JsonValue` (2026-10-19; 84 before
 `diagnostic-view.mts`), or a record a declaration types by its fields (the
 Fragment, claims and flow documents, a `tsconfig.json`'s object), which
 [JSON records by their fields](#json-records-by-their-fields) would admit.
+
+<a id="nodes-process"></a>
+**Node's process.** Every global is read through reviewed entries
+([Node's process](docs/SOURCE-CONTRACTS.md#nodes-process)). Two forms stay
+outside:
+
+- **The environment write.** `runRoot` writes `process.env[k] = s`, a key
+  `env` may not hold, visible through every alias of the object
+  (`node-process-env-write`, a gap). The model's key addition is typed only
+  on a local's own fresh object, a copy no other reference sees; it cannot
+  justify a key visible through existing aliases. The obligation: represent
+  mutable host lookup through shared state, with read and write contracts
+  preserving every exported view. The operation then designed: a
+  receiver-bound host setter with `env` as its audited instance, taking a
+  primitive string key and value, its footprint `{value: any, store: keep}`
+  on normal return, exceptions unrestricted, promising no later read equal to
+  the string written (invalid names, NUL handling and platform
+  normalization unaudited); the assignment lowered as receiver, key and value
+  once, in order, the setter, and the saved value as the assignment's. Its
+  controls: a new key and an overwrite observed through an earlier alias,
+  stale narrowings refused, array density kept, `undefined`, objects and
+  symbols refused with Node's coercions run, prototype-sensitive keys, fake
+  receivers, mutable-view exports and forged setter claims refused.
+- **Events known only as strings.** A `for...of` over an array literal of
+  signal names gives each a `string`, not proven an admitted signal, so its
+  registration is refused (`collections-process`, `collections-main`, gaps,
+  both verified before the review).
 
 <a id="json-records-by-their-fields"></a>
 **JSON records by their fields.** A record a declaration types by its fields

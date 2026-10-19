@@ -33,6 +33,16 @@ console.log(JSON.stringify(${expression}));
   const printed: unknown = JSON.parse(run.stdout);
   return printed;
 };
+/** Run an example as an ES module in a Node process of its own, then
+ * `statements`: what the process prints, its status and the signal that
+ * ended it, for a control whose process exits by a listener or a signal. */
+export const runNode = (file: string, statements: string): { stdout: string; status: number | null; signal: string | null } => {
+  const out = runDirectory("node-");
+  writeFileSync(join(out, "main.mjs"), `${stripTypes(readFileSync(join(here, "examples", `${file}.ts`), "utf8"))}\n${statements}\n`);
+  const run = spawnSync(process.execPath, [join(out, "main.mjs")], { encoding: "utf8", timeout: 30_000 });
+  assert.ifError(run.error);
+  return { stdout: run.stdout.trim(), status: run.status, signal: run.signal };
+};
 /** Run an example as TypeScript's own emit compiles it, then `expression`:
  * an enum, which type stripping does not erase, and whose member reads a
  * transforming stripper may replace by their values. TypeScript emits the

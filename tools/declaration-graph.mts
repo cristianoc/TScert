@@ -3040,15 +3040,15 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   const where = (node: Node, key: string) => `${context.identityOf(node.getSourceFile())}#${key}`;
   for (const variable of variables) context.clean(variable, where(variable, name));
   const spanOf = (node: Node): Span => [node.getStart(node.getSourceFile()), node.end];
-  // A standard library global is read through the reviewed overlay: a
-  // signature it does not list, with exactly the text reviewed, is refused.
-  const library = variables.every(v => context.libraryFile(v.getSourceFile()));
+  // Every global is read through the reviewed overlay, wherever it is
+  // declared (the standard library, an installed package such as Node's
+  // `process`, a declaration file of the project): a member or signature it
+  // does not list, with exactly the text reviewed, is refused.
   // An entry stating several forms states construct signatures: each form is
   // one, under the entry's binders, which every form names alike. Read
   // anywhere else, or empty, the list is refused rather than an arm dropped.
   const reviewedForms = (member: string | undefined, node: Node, what: string):
       (Omit<GlobalEntry, "stated"> & { forms?: Stated[] }) | undefined => {
-    if (!library) return undefined;
     const text = node.getText(node.getSourceFile()).trim();
     const entry = globalEntry(context.overlay, name, member, text);
     if (!entry) throw Error(`${what} is not in the reviewed overlay of library globals: ${text}`);
@@ -3223,8 +3223,10 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
         !property.modifiers?.some(m => m.kind !== ts.SyntaxKind.ReadonlyKeyword)) {
       const entry = reviewed(key, property, what);
       context.clean(property, where(property, key));
+      // A member read at a stated contract is a readonly view: no write of
+      // it is admitted.
       fields.push({ name: key, optional: property.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
-        readonly: property.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
+        readonly: !!entry?.stated || property.modifiers?.some(m => m.kind === ts.SyntaxKind.ReadonlyKeyword) === true,
         type: entry?.stated ? entry.stated.result : typeTerm(scopeOf(property, what), property.type, property),
         span: spanOf(property) });
     } else throw Error(`${what} is not one property signature or method signatures`);
@@ -3245,7 +3247,7 @@ function selectGlobal(checker: Checker, uses: readonly Identifier[], context: Se
   if (valueUses.length) {
     if (!declared.length) throw Error(`${name} is read as a value, which declares no call signature`);
     for (const signature of declared) {
-      if (library && !reviewed(undefined, signature, `${name} as a value`)?.value)
+      if (!reviewed(undefined, signature, `${name} as a value`)?.value)
         throw Error(`${name} is read as a value only where the overlay states its call signatures for one`);
       if (!chosen.has(signature)) chosen.set(signature, []);
     }

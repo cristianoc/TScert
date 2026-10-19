@@ -34,8 +34,8 @@ standard library interface (`Array`, `ReadonlyArray`, `Object`, `Function`,
 whose file names contain the directory's `merged-*` part;
 `pipeline/parse-int-overload-project/` adds an overload to the standard
 library's `parseInt`, for the `*parse-int-overload*` case;
-`pipeline/host-global-project/` declares global functions in a declaration
-file of its own, for the `*host-global*` cases;
+`pipeline/host-global-project/` declares globals in a declaration file of
+its own, for the `*host-global*` cases;
 `pipeline/host-fixture-project/` reads `pipeline/host-fixture/`, a package
 whose manifest names the host package and whose `Node` reaches no node list:
 as a case it is no host (`host-fixture-lookalike`), and `pipeline/test.mts`
