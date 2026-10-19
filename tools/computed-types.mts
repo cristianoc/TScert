@@ -48,13 +48,12 @@ function numberText(value: number): string | null {
   return Number.isFinite(value) ? String(value) : null;
 }
 
-/** A bigint literal type's value, which the checker sends as its decimal
- * spelling, a bigint, or a sign and digits. */
+/** A bigint literal type's value by its decimal spelling. The synchronous
+ * API decodes the decimal spelling it is sent as into a `bigint`, and leaves
+ * a null or missing one undefined (`sync/api.js`), which the declared
+ * `bigint` does not state: any value other than a bigint has no spelling. */
 function bigintValue(value: unknown): string | null {
-  if (typeof value === "bigint" || typeof value === "string") return String(value);
-  if (value && typeof value === "object" && "base10Value" in value && typeof value.base10Value === "string")
-    return ("negative" in value && value.negative === true ? "-" : "") + value.base10Value;
-  return null;
+  return typeof value === "bigint" ? String(value) : null;
 }
 
 /** `type` as a union of the fragment's primitive families and literals, when

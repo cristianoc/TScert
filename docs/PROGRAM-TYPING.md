@@ -2302,6 +2302,53 @@ Four implementations discharge the tested-slot obligation:
   \mathsf{Dict}\bigl(\varphi;\ \psi\cup\{k{:}D\mid(\theta{:}D)\in\iota,\ \theta\ \text{surely admits}\ k\};\ \iota;\ \omega;\ \beta;\ \chi\bigr)
 ```
 
+**Proposal, under review: a key found on an open object.** This paragraph is
+a design, not the current rules, and a change to the model: it adds an
+invariant to what `checkJson_safe`'s premise says about inputs. A value that
+`typeof v === "object"`, `v !== null` and `"k" in v` admit (`if (typeof v
+=== "object" && v !== null && "k" in v) return v.k`) holds an object of an
+open record clause $`c`$, stating no key $`k`$ and no bound excluding it. The
+test $`\mathsf{hasKey}(k)`$ has no answer on $`c`$ (above), the true branch
+keeps $`c`$, and the read $`v.k`$ TypeScript then admits has no rule: the
+producer stops at "field read on non-object" (4 `tools/` slices and 2
+drivers, 2026-10-19). The proposed rule reads it at $`\top`$:
+
+```math
+\frac{\Gamma\vdash v:c\quad c\ \text{an open record clause}\quad k\ \text{a string key}\notin\mathrm{objectProtoKeys}\quad c\ \text{excludes host values}}
+     {\Gamma\vdash v.k:\top}\ \textsf{read-unstated}
+```
+
+Under the current premises its safety does not hold: the record meaning
+(`recT`) constrains the named fields only, so an unnamed key of an open
+record may hold a location outside the heap, which `HeapOk` does not cover;
+an unconstrained `[[proto]]` can leave the lookup without a result; and a
+host object's property is no inert data (its audited stable members aside,
+allocating getters are refused, and JavaScript's OrdinaryGet can run a
+getter, throw or diverge). The rule needs:
+
+- **a lookup invariant**, part of the premise on inputs and preserved by
+  every step: every object's field locations are valid heap locations and
+  its prototype links lead through such objects, so a lookup of any key
+  steps to a value (the own entry, then the chain's, then `undefined`);
+  with its preservation and the read rule proved in Lean;
+- **the plain-data caller assumption** extended to state it of the
+  properties a value's type leaves unstated and of the prototype chain a
+  read traverses: a checked class's instance meets it through its modeled
+  prototypes, and an arbitrary external instance does not by its shape;
+- **host values excluded** ($`c`$ excludes host values, the existing
+  $`\mathrm{excludesHost}`$) unless a reviewed contract grants the read;
+- **`objectProtoKeys` kept refused** (`__proto__`, `constructor`,
+  `toString`, …), and symbol keys outside the rule until an explicit
+  extension states them;
+- **array own-key exclusions preserved**: reading at $`\top`$ grants no
+  ownership and no write, so an array's excluded keys stay excluded.
+
+Reading at $`\top`$, and not depending on the `in` test's answer, are sound
+once the lookup is justified. Controls: the positive shape above and a
+decoder over `JSON.parse`'s result; a read at `toString` after
+`"toString" in v`, a host value and a symbol key stay refused; a write at the
+key is not admitted by this rule.
+
 For the current primitive profile, null filtering gives:
 
 ```math
