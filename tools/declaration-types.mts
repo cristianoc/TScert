@@ -96,7 +96,12 @@ export type TypeTerm =
        * symbol key. */
       numberIndex?: { readonly: boolean; value: TypeTerm; span: Span };
       symbolIndex?: { readonly: boolean; value: TypeTerm; span: Span };
-      calls: Extract<TypeTerm, { k: "function" }>[]; span: Span; prototype?: TypeTerm }
+      calls: Extract<TypeTerm, { k: "function" }>[]; span: Span; prototype?: TypeTerm;
+      /** A host family's marker (HOST-FAMILIES.md, "The family contract"),
+       * stated by the family's reading only: the record also has a required
+       * readonly view of the model's `[[host]]` at this string, which no
+       * allocation of the program owns. */
+      host?: string }
   | { k: "function"; effect: CallEffect; receiver: TypeTerm | null; params: TypeTerm[];
       rest: TypeTerm | null; result: TypeTerm; span: Span }
   /** `new (params) => result`: a construct signature, which a class meets and

@@ -20,7 +20,7 @@
 // declared as reviewed, and under Node two reads of it give different values
 // where a stable member gives one.
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -285,4 +285,26 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(!("kind" in copy) && "parent" in copy, "a spread of a node copies parent and no kind");
   closeParser();
   console.log("C4: jsDoc allocates on each read; a stable member does not");
+}
+
+// The residual's correction under Node (HOST-FAMILIES.md, "Residuals"): the
+// negative fixture `invalid-compiler-api-residual-parent`, which a unit naming
+// `Identifier` and leaving `SourceFile` to its residual writes, returns
+// `undefined` on a source file, whose `parent` the runtime leaves absent.
+{
+  const dir = runDirectory("tscert-residual-");
+  mkdirSync(join(dir, "node_modules"));
+  symlinkSync(root, join(dir, "node_modules", hostPackage.name));
+  const fixture = join(dir, "residual-parent.ts");
+  copyFileSync(resolve(import.meta.dirname, "../pipeline/examples/invalid-compiler-api-residual-parent.ts"), fixture);
+  const module: unknown = await import(pathToFileURL(fixture).href);
+  assert.ok(isNamespace(module) && typeof module.up === "function", "the fixture exports up");
+  const file = join(dir, "parsed.ts");
+  const source = "export const answer = 42;\n";
+  writeFileSync(file, source);
+  const tree = openText(file, source);
+  assert.equal(tree.parent, undefined, "a source file's parent is absent");
+  assert.equal(module.up(tree), undefined, "up returns undefined on a source file");
+  closeParser();
+  console.log("residual: the fixture's up returns undefined on a source file under Node");
 }

@@ -118,6 +118,8 @@ run_test "Examples run under Node" node tests/node-runs.mts
 run_test "Trusted inputs" node tests/trusted-inputs.mts
 # tests/compiler-api.mts binds the compiler-API contract to the installed package: C1, its enums.
 run_test "Compiler-API contract" node tests/compiler-api.mts
+# tests/host-families.mts checks the family interpreter on declarations no audited package has: generic arms, residual members, refinements.
+run_test "Host family interpreter" node tests/host-families.mts
 # tests/regexp-shapes.mts checks the capture-shape reading of regex literals against the host.
 run_test "RegExp shapes" node tests/regexp-shapes.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.

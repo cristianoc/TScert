@@ -14,9 +14,11 @@ This document specifies one mechanism for every such family, parameterized
 by a reviewed **family description**. Each part has one implementation,
 which reads the description; no part names a family. The
 [compiler API](COMPILER-API.md) is the first instance. The pipeline
-implements [tag sets](#tag-sets), with their Lean proofs; the other parts are
-a design, which the pipeline does not implement, and their Lean obligations
-are unproved.
+implements [tag sets](#tag-sets), with their Lean proofs, and
+[the family contract](#the-family-contract) in the front end, whose readings
+the checker reads by its ordinary rules; [guard recognition](#guard-recognition)
+and [stable members](#stable-members) are a design, which the pipeline does
+not implement, and their Lean obligations are unproved.
 
 ## The parts
 
@@ -167,7 +169,7 @@ shapes of its **members**:
 ```
 
 $`\mathrm{members}_F(A)`$ is computed on the declaration graph before any
-correction, by the root's form: for an **inheritance root**, the $`t`$ whose
+correction or flattening, by the root's form: for an **inheritance root**, the $`t`$ whose
 $`I_t`$ reaches $`A`$ through `extends` clauses; for a **union root**, an
 alias of a union of declarations, the $`t`$ whose $`I_t`$ the union of $`A`$
 reaches through aliases. An alias of a family type is that type. A concrete
@@ -178,6 +180,36 @@ members, never as invariant fields: an invariant field's record admits no
 host value (`ReferenceConjunctions.refsT` requires `NoHost` of every record
 with an invariant operand), so a marked shape with one would be uninhabited.
 A family whose clients write its objects is outside this mechanism.
+
+$`\mathrm{members}_F`$ and the table are computed on the declarations as
+declared; a shape then **flattens** $`I_t`$: its own members and, for each
+other name, the declaration of it nearest $`I_t`$ along `extends`. A name two
+bases state through declarations neither of which extends the other is
+refused, since its contract would be their meet. A declaration whose tag is
+a literal the table selects another declaration for (a **refinement**,
+`PropertyAccessEntityNameExpression`) is read as its own flattened members
+with the marker, so its narrower members are kept; a test of the tag gives
+the selected shape, never a refinement sharing its tag. A family type keeps
+its declaration's identity, its equation the union; the identity alone
+relates nothing.
+
+A generic shape source is read as its application at the tag. The arms of
+one generic declaration at several selected tags are one application at
+their tag set where the declaration's other members do not mention its tag
+parameter, so that the application at the set is the union of the
+applications at each tag; otherwise each tag is its own arm.
+
+In the declaration graph (`tools/host-families.mts` interprets the
+description, `tools/declaration-graph.mts` writes the readings) the marker is
+the optional `host` field of an object type term, which only a family's
+reading writes and which Lean lowers to the required readonly view of
+`hostKey` at the marker's string (`objectClause`); a declared member's key is
+never a reserved key. A shape is a definition without bases but one per
+declaration whose methods it states, a definition of those methods alone, so
+that every shape stating a generic method shares its one method head. The
+base shapes, the residuals and the method definitions are definitions of the
+module `tscert/family/<marker>`, named by what they read: the declaration,
+the number of tags and a digest of the tag set.
 
 #### Residuals
 
@@ -193,23 +225,46 @@ R_u=\textstyle\bigsqcup\{\,S_t\mid t\in\mathrm{members}_F(A)\setminus K_u\,\}
 
 The join of records keeps the members every operand has, each at the union
 of its operands' types and optional where any operand has it optional, the
-tag at the tag set of the literals, and the marker. Each replaced shape is
+tag at the tag set of the literals, and the marker. The join over-approximates
+the union it replaces: it forgets the correlation between a member and the
+tag, and the members some shapes lack (of shapes `{kind: 1, x: number}` and
+`{kind: 2, y: string}` it requires neither `x` nor `y`), so two selections
+give a family type different meanings. Each replaced shape is
 below $`R_u`$: every member of $`R_u`$ is a member of $`S_t`$, a readonly
 view whose type contains $`S_t`$'s, which covariance admits, the tag
 included; an optional member of $`R_u`$ admits a required one; a member the
 join drops is forgotten, which record subtyping allows. So
 $`⟦A⟧\subseteq⟦A⟧_u`$. The client never produces $`R_u`$. Shapes with the
 same members and different tag values are one arm whose tag is their tag
-set. $`K_u`$ is the tag values the unit's tests name (comparisons with the
-tag's constants, `case` labels, and the tag sets of the guards it calls)
-and those of the family types it names whose tag is a set of literals.
+set.
 
-#### Agreement across units
+#### The run's selection
 
-Two units read one family type with different arms, whose record meanings
+A verification run has one selection $`K`$ for each family, computed in the
+front end before any module is lowered, and every module the run lowers
+reads the family with it. $`K`$ is the tag values the run's
+**candidate modules** name: the checked module and, transitively, each
+program module it imports a function from by a value import, the modules
+the run may lower; a candidate the run leaves unlowered, or a qualified
+read that falls back to its ordinary signature, keeps $`K`$. A module names
+the tag constants it compares by equality and its `case` labels, the tag
+sets of the guards it calls, and the tags of the family types it names whose
+tag is a set of literals, through aliases. Its arms are in tag order, the
+residual last.
+
+One selection per run makes two modules' readings of a family declaration
+the same definitions, which the structural comparison of a
+[qualified import](SOURCE-MODEL.md#certified-imports) requires; with
+different selections their residuals would differ in meaning, not only in
+form. A run's own selection is a fact of the front end, so no producer
+proposal and no checker premise states it.
+
+#### Agreement across runs
+
+Two runs read one family type with different arms, whose record meanings
 differ: $`R_u`$ admits objects with the marker and only the common members.
-A value one unit passes another at a family type is read by both through
-their own arms. That the two readings agree on the values that occur is a
+A value a unit of one run passes a unit verified in another at a family
+type is read by both through their own arms. That the two readings agree on the values that occur is a
 correspondence between the units' sources and the host's objects (F1′): a
 marked value with the tag $`t`$ meets $`S_t`$. It is an external obligation
 of the import rule's assumption that a separately verified function meets
@@ -475,8 +530,10 @@ The description of `typescript` 7.0.2's syntax trees
 - table: `literal`, excluding interfaces that extend another candidate with
   the same tag (so `PropertyAccessExpression` is selected, not its two
   refinements);
-  `generic` over `Token<k>` and `KeywordTypeNode<k>`; `base` `NodeBase`
-  (`JSTypeAliasDeclaration`, `JSImportDeclaration`);
+  `generic` over `Token<k>`, `KeywordTypeNode<k>` and `KeywordExpression<k>`,
+  every generic node declaration (the last gives `null`, `true`, `false`,
+  `this`, `super` and `import`, which the declarations make expressions);
+  `base` `NodeBase` (`JSTypeAliasDeclaration`, `JSImportDeclaration`);
 - corrections: the [corrections](COMPILER-API.md#corrections) table;
 - marker: `"RemoteNode"`;
 - stable members: every property member of a shape but `jsDoc`, which

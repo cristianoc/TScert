@@ -1565,8 +1565,8 @@ Proof search uses the rule for tag tests over explicit unions of labels. It does
 not repeatedly split a singleton label whose graph definition itself contains
 mixed shapes; that representation needs additional decomposition rules.
 
-A method call on a union receiver whose alternatives read different members
-is split on its receiver the same way. With the object $`x`$ and the actuals
+A method call on a union receiver is split on its receiver the same way,
+whether its alternatives read different members or one member each holds. With the object $`x`$ and the actuals
 $`\vec y`$ already in slots, the source call `x.k(y…)` lowers to one term that
 reads the member and invokes it, dispatched as a member read is
 (`dispatchCallTerm`, over `dispatchTerm`'s tests):

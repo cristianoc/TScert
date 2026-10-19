@@ -970,7 +970,10 @@ type ImportedModule = { absolute: string; location: string };
 export function parseFile(file: string, carriesContext: boolean = false,
   tsconfigPath?: string, resolutionFile: string = file,
   seen?: (diagnostic: SeenDiagnostic) => void): Ast {
-  const main = lowerFile(file, carriesContext, tsconfigPath, resolutionFile, seen, null);
+  // One tag selection of each host family for the run (HOST-FAMILIES.md,
+  // "Residuals"): the checked file's, every imported module lowered with it.
+  let selection: readonly number[] | undefined;
+  const main = lowerFile(file, carriesContext, tsconfigPath, resolutionFile, seen, null, { selected: s => { selection = s; } });
   const modules: ModuleAst[] = [];
   const done = new Set<string>();
   const work = [...main.imported];
@@ -979,7 +982,8 @@ export function parseFile(file: string, carriesContext: boolean = false,
     done.add(next.location);
     let lowered: Lowered;
     try {
-      lowered = lowerFile(next.absolute, false, tsconfigPath, next.absolute, undefined, next.location);
+      lowered = lowerFile(next.absolute, false, tsconfigPath, next.absolute, undefined, next.location,
+        selection ? { given: selection } : {});
     } catch {
       continue;
     }
@@ -1025,7 +1029,8 @@ function renamedModule<T>(value: T, from: string, to: string): T {
 
 function lowerFile(file: string, carriesContext: boolean,
   tsconfigPath: string | undefined, resolutionFile: string,
-  seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null): Lowered {
+  seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null,
+  family: { given?: readonly number[]; selected?: (selection: readonly number[]) => void }): Lowered {
   const absolute = resolve(file);
   const text = readFileSync(absolute, "utf8");
   const { file: source, checker } = openFile(absolute, text);
@@ -1651,6 +1656,8 @@ function lowerFile(file: string, carriesContext: boolean,
     // one named explicitly: the declaration graph is the compiler's.
     try {
       declarations = collectDeclarations(resolutionFile, { tsconfigPath, client: source,
+        ...(family.given ? { familySelection: family.given } : {}),
+        ...(family.selected ? { familySelected: family.selected } : {}),
         namespaceMembers: [...members.values()].map(m => ({ local: m.local, imported: m.imported,
           specifier: m.specifier, uses: m.uses.map(u => ({ span: gate.span(u.node), name: gate.span(u.name),
             value: u.value, callee: u.callee })) })),

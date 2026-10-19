@@ -2877,6 +2877,61 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   process.stdout.write("forged tag sets: unsorted, duplicated and single-element sets refused\n");
 }
 {
+  // A residual arm is no shape (HOST-FAMILIES.md, "Residuals"): claims
+  // stating the node a kind test's false edge leaves at the shape the test
+  // excluded, and its `parent` then at `Node`, bypass the producer and are
+  // refused by the search.
+  const artifacts = run("invalid-compiler-api-residual-parent");
+  const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const expressions = must(claims.functions[0], "up's claims").expressions;
+  const at = (start: number, length: number) =>
+    must(expressions.find((e) => e.pos[0] === start && e.pos[1] === start + length), `the claim at ${start}`);
+  const shape = at(text.lastIndexOf("return n;") + "return ".length, 1).type;
+  const parent = text.lastIndexOf("n.parent");
+  at(parent, 1).type = shape;
+  const read = at(parent, "n.parent".length);
+  const labels = read.type;
+  assert.ok(Array.isArray(labels), "n.parent is claimed at labels");
+  read.type = labels.filter((label) => typeof label === "object");
+  const forged = writeClaims(artifacts, "forged-residual-shape", claims);
+  refusedAt(artifacts, forged, "forged-residual-shape", `at [${parent},${parent + 1})`);
+  process.stdout.write("forged residual claims: the node a kind test's false edge leaves claimed at the excluded shape, refused\n");
+}
+{
+  // One tag selection per run (HOST-FAMILIES.md, "Residuals"): the importer
+  // and the module it imports a function from name different kinds, and the
+  // run reads every family declaration alike in both modules' documents,
+  // the union of the kinds both name. The module's own run selects only its
+  // own kinds.
+  const artifacts = run("compiler-api-units");
+  const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const [module] = ast.modules;
+  const family = (definitions: readonly TypeDefinition[]): Map<string, TypeDefinition> => new Map(definitions
+    .filter((d) => d.declaration.module.startsWith("tscert/family/") || d.declaration.module.includes("/typescript/dist/ast/"))
+    .map((d) => [`${d.declaration.module}#${d.declaration.name}`, d]));
+  const main = family(must(ast.declarations, "the importer's declarations").definitions);
+  const imported = family(must(must(module, "the imported module").declarations, "its declarations").definitions);
+  assert.deepEqual([...imported.keys()].sort(), [...main.keys()].sort(), "both documents read the same family declarations");
+  for (const [key, definition] of main)
+    assert.equal(JSON.stringify(imported.get(key)), JSON.stringify(definition), `${key} is read alike in both modules`);
+  const arms = (definitions: Map<string, TypeDefinition>): number[] => {
+    const node = [...definitions].find(([key]) => key.endsWith("/ast.d.ts#Node"));
+    const expression = must(node, "Node's reading")[1].expression;
+    assert.ok(expression?.k === "union", "Node's reading is a union");
+    return expression.parts.map((part) => part.k !== "reference" ? -2
+      : part.reference.name === "NumericLiteral" ? 9 : part.reference.name === "Identifier" ? 80 : -1);
+  };
+  assert.deepEqual(arms(main), [9, 80, -1], "the run's Node: NumericLiteral, Identifier and a residual");
+  const alone = check(join(import.meta.dirname, "compiler-api-project", "node-names.ts"),
+    tsconfigOf(join(import.meta.dirname, "compiler-api-project")));
+  assert.equal(alone.status, "verified", JSON.stringify(alone));
+  const own: Ast = readFragmentFile(join(alone.artifacts, "fragment.json"));
+  assert.deepEqual(arms(family(must(own.declarations, "the module's declarations").definitions)), [80, -1],
+    "the module's own run: Identifier and a residual");
+  process.stdout.write("tag selection: one per run, the importer's and its module's family readings equal; the module's own run selects its own kinds\n");
+}
+{
   // The wire orders a string set by Unicode code point, in every decoder:
   // U+E000 before U+10000, which UTF-16 code units would order first. The
   // producer's set is accepted by Lean and by the TypeScript decoder, and the

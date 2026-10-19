@@ -7,6 +7,10 @@
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 
+/** The compiler's syntax module as the front end resolves it, for the suites
+ * outside tools/ that read trees (tests/host-families.mts). */
+export * as syntax from "typescript/unstable/ast";
+
 /** A child of the compiler's tree: an object with a syntax kind. */
 const isNode = (value: unknown): value is Node =>
   typeof value === "object" && value !== null && "kind" in value && typeof value.kind === "number";

@@ -28,6 +28,7 @@ design, not its progress.
 | [Optional-field truthiness over unions](#optional-field-truthiness) | open: an investigation, cause unknown | `optional-field-truthiness-union-refused` verifies |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
+| [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
 | [Precision](#precision) | open | the facts listed there are derivable |
@@ -228,6 +229,13 @@ TypeScript's downlevel emit writes one: a closure over the suspension
 point's number and the live locals, whose `next` resumes at a `switch` on
 it. An element read past a readonly tuple arm's length needs a rule
 reading `undefined` beyond an exact length.
+
+<a id="enum-member-case-labels"></a>
+**Enum-member case labels.** A `switch` whose `case` labels are enum
+members (`case K.One:`, `case ts.SyntaxKind.SourceFile:`) narrows nothing in
+the producer, where the same constants narrow in an `===` test and literal
+labels narrow in a `switch` (`switch-enum-case-narrowing`, a gap). The
+compiler API's code switches on `node.kind` this way.
 
 <a id="remaining-source-forms"></a>
 **Remaining source forms.** A method call on a union of primitives,
@@ -440,7 +448,7 @@ first three items 2026-10-19):
   `if (ts.isIdentifier(node)) return …`, and `knownLocal` reads `name`
   after `!ts.isSpreadAssignment(parent)` (2026-10-19, 829513e); the
   [host-guard rule](docs/COMPILER-API.md#guards) reads the call as a kind
-  test refining both edges, and waits on the node invariant;
+  test refining both edges, and waits on guard recognition;
 - a member read through a host node's member a test refined,
   `ts.isIdentifier(m.name) && m.name.text` (7: `staticFieldOf`,
   `staticMethodOf`, `hasInstanceClass`, `hasInstanceAlong`, `localArrow`,
@@ -554,10 +562,10 @@ against the fragment (2026-10-16) gives the work, each item its own design:
   through `typescript/unstable/ast` and its checker through
   `typescript/unstable/sync`; [the compiler API](docs/COMPILER-API.md)
   specifies the contract they are verified under. Its implementation waits
-  on reading rules 2 and 4 and the node invariant (the restricted-value
-  policy and `NodeList` hold), a compact
-  representation of kind sets in claims and evidence, and guard signatures
-  for the sync API's type guards.
+  on [guard recognition](docs/HOST-FAMILIES.md#guard-recognition),
+  [stable members](docs/HOST-FAMILIES.md#stable-members) and guard
+  signatures for the sync API's type guards; a generic method called on a
+  node, `forEachChild<T>`, is refused.
 - **Guard signatures.** A guard's promise is part of its function type,
   proved at its definition and consumed at a call, for any promised type
   and across modules.

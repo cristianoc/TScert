@@ -244,6 +244,14 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
       let keys ← (← arr t "fields").mapM fun f => do PropKey.decode (← field f "name")
       pure (some (P, keys.toList))
     | .error _ => pure none
+  -- A host family's marker (HOST-FAMILIES.md, "The family contract"): a
+  -- required readonly view of the model's `[[host]]` at the marker's string,
+  -- which no allocation of the program owns.
+  let marker ← match term.getObjVal? "host" with
+    | .ok m => do
+      let s ← m.getStr?
+      pure [(Verification.hostKey, [← prim (Json.str s).compress (.strLit s)])]
+    | .error _ => pure []
   let mut methods : List (MethodMembers.Sig (List Tree)) := []
   let mut all : Array (PropKey × List Tree × Bool × Bool) := #[]
   for f in ← arr term "fields" do
@@ -302,8 +310,8 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
     if !(← bool index "readonly") then cells := cells ++ [(keys, value)]
   let writes := fs.toList.filterMap fun (name, value, readonly) =>
     if readonly then none else some (name, value)
-  let views := fs.toList.filterMap fun (name, value, readonly) =>
-    if readonly then some (name, value) else none
+  let views := fs.toList.filterMap (fun (name, value, readonly) =>
+    if readonly then some (name, value) else none) ++ marker
   let mut fixed : List (Arrow (List Tree)) := []
   let mut variadic : List (RestArrow (List Tree)) := []
   for call in ← arr term "calls" do
@@ -319,6 +327,8 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
     else variadic := variadic ++ [⟨receiver, (domains.toList, ← lowerRest ctx rest), result, effect⟩]
   if hidden.isSome && (!fixed.isEmpty || !variadic.isEmpty || !indexes.isEmpty) then
     throw s!"{ctx.site}: a prototype of hidden members is stated of a plain record only"
+  if !marker.isEmpty && (hidden.isSome || !fixed.isEmpty || !variadic.isEmpty || !indexes.isEmpty) then
+    throw s!"{ctx.site}: a host family's marker is stated of a plain record only"
   if fixed.isEmpty && variadic.isEmpty then
     if indexes.isEmpty then
       match hidden with
@@ -461,7 +471,8 @@ partial def declarationRow (h i : Nat) : M (GraphRow Tree (List Tree)) := do
   let empty := kindOf own == some "object" &&
     ((own.getObjValAs? (Array Json) "fields").toOption.getD #[1]).isEmpty &&
     ((own.getObjValAs? (Array Json) "calls").toOption.getD #[1]).isEmpty &&
-    (indexSignatures own).isEmpty && (own.getObjVal? "prototype").toOption.isNone
+    (indexSignatures own).isEmpty && (own.getObjVal? "prototype").toOption.isNone &&
+    (own.getObjVal? "host").toOption.isNone
   let mut rows ← if empty && !d.bases.isEmpty then pure [.top]
     else if kindOf own == some "object" then pure [← objectClause ctx own]
     else heritage ctx own

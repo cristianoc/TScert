@@ -24,7 +24,8 @@ import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, 
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
-import { allocatingMembers, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
+import { familyTable, type FamilyArm, type FamilyGraph, type FamilyTable, type FlatMember } from "./host-families.mts";
+import { allocatingMembers, compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -588,6 +589,12 @@ export function collectDeclarations(file: string, options: {
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
   seen?: (diagnostic: SeenDiagnostic) => void;
+  /** The run's tag selection of the compiler API's family
+   * (HOST-FAMILIES.md, "Residuals"), when an imported module of the run is
+   * lowered; otherwise it is computed over the modules the checked file
+   * reaches and reported to `familySelected`. */
+  familySelection?: readonly number[];
+  familySelected?: (selection: readonly number[]) => void;
 } = {}): DeclarationDocument {
   const clientFile = resolve(file);
   return withProject(clientFile, options.tsconfigPath, (checker, client, root, program, probeProgram) => {
@@ -721,6 +728,221 @@ export function collectDeclarations(file: string, options: {
           return { name: m.name.text, value };
         });
       });
+    // The host families (HOST-FAMILIES.md): the compiler API's, read through
+    // its description by `familyTable`, from the package's declarations as
+    // TypeScript resolves them. The table is built once, from the first
+    // declaration of the package that reaches the description's root.
+    const familyDescription = compilerApiFamily;
+    const baseDeclarations = (d: InterfaceDeclaration): InterfaceDeclaration[] =>
+      (d.heritageClauses ?? []).flatMap(clause => clause.types.map(base => {
+        if (!ts.isIdentifier(base.expression) || base.typeArguments?.length)
+          throw Error(`the family ${familyDescription.marker} reads no base ${base.getText(d.getSourceFile())} of ${d.name.text}`);
+        const targets = (targetOf(checker, base.expression)?.declarations ?? []).map(x => x.resolve());
+        const [only] = targets;
+        if (!only || targets.length !== 1 || !ts.isInterfaceDeclaration(only))
+          throw Error(`the base ${base.expression.text} of ${d.name.text} is not one interface`);
+        return only;
+      }));
+    const isFamilyRoot = (d: InterfaceDeclaration): boolean => isHostFile(d.getSourceFile().fileName) &&
+      d.name.text === familyDescription.root.name &&
+      d.getText(d.getSourceFile()).split("\n")[0]?.trim() === familyDescription.root.text;
+    const rootOf = (d: InterfaceDeclaration, seen = new Set<InterfaceDeclaration>()): InterfaceDeclaration | null => {
+      if (seen.has(d)) return null;
+      seen.add(d);
+      if (isFamilyRoot(d)) return d;
+      for (const b of baseDeclarations(d)) {
+        const r = rootOf(b, seen);
+        if (r) return r;
+      }
+      return null;
+    };
+    let family: { table: FamilyTable; members: Set<InterfaceDeclaration>; enums: readonly ts.EnumDeclaration[];
+      literals: (type: TypeNode) => readonly number[] | null } | null = null;
+    // The family's files: the root's and those its module statements name,
+    // transitively, within the package.
+    const familyFiles = (root: InterfaceDeclaration): SourceFile[] => {
+      const files: SourceFile[] = [];
+      const visit = (file: SourceFile): void => {
+        if (files.includes(file) || !isHostFile(file.fileName)) return;
+        files.push(file);
+        for (const statement of file.statements)
+          if ((ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) && statement.moduleSpecifier) {
+            const module = checker.getSymbolAtLocation(statement.moduleSpecifier)?.declarations[0]?.resolve();
+            if (module && ts.isSourceFile(module)) visit(module);
+          }
+      };
+      visit(root.getSourceFile());
+      return files;
+    };
+    const familyFrom = (start: InterfaceDeclaration): typeof family => {
+      if (family) return family.members.has(start) ? family : null;
+      if (!isHostFile(start.getSourceFile().fileName)) return null;
+      const root = rootOf(start);
+      if (!root) return null;
+      const reachesRoot = new Map<InterfaceDeclaration, boolean>();
+      const reaching = (d: InterfaceDeclaration): boolean => {
+        const known = reachesRoot.get(d);
+        if (known !== undefined) return known;
+        reachesRoot.set(d, false);
+        // Through every base TypeScript binds to an interface, whatever its form.
+        const result = d === root || (d.heritageClauses ?? []).some(clause => clause.types.some(base =>
+          ts.isIdentifier(base.expression) && (targetOf(checker, base.expression)?.declarations ?? [])
+            .some(x => { const t = x.resolve(); return !!t && ts.isInterfaceDeclaration(t) && reaching(t); })));
+        reachesRoot.set(d, result);
+        return result;
+      };
+      const interfaces = familyFiles(root).flatMap(file => file.statements.filter(ts.isInterfaceDeclaration))
+        .filter(reaching);
+      const tagType = root.members.find(m => nameOf(m)?.getText(root.getSourceFile()) === familyDescription.tag.field);
+      const tagName = tagType && ts.isPropertySignatureDeclaration(tagType) && tagType.type &&
+        ts.isTypeReferenceNode(tagType.type) && ts.isIdentifier(tagType.type.typeName) ? tagType.type.typeName : null;
+      const enums = tagName && tagName.text === familyDescription.tag.constants.enum ? enumsOf(tagName) : null;
+      if (!enums) throw Error(`the root ${root.name.text} states no ${familyDescription.tag.field} of the enum ${familyDescription.tag.constants.enum}`);
+      const constants = enumMembersOf(enums, familyDescription.tag.constants.enum);
+      const values = [...new Set(constants.flatMap(c => typeof c.value === "number" ? [c.value] : []))].sort((a, b) => a - b);
+      // The tag values a type node states, through aliases of the package.
+      const literals = (type: TypeNode, seen = new Set<Node>()): number[] | null => {
+        if (ts.isParenthesizedTypeNode(type)) return literals(type.type, seen);
+        if (ts.isUnionTypeNode(type)) {
+          const parts = type.types.map(t => literals(t, seen));
+          return parts.every((p): p is number[] => p !== null) ? [...new Set(parts.flat())].sort((a, b) => a - b) : null;
+        }
+        if (!ts.isTypeReferenceNode(type) || type.typeArguments?.length) return null;
+        if (ts.isQualifiedName(type.typeName)) {
+          const owner = memberName(type.typeName.left);
+          const named = owner ? enumsOf(owner) : null;
+          if (!named || !named.every(e => enums.includes(e))) return null;
+          const member = type.typeName.right.text;
+          const value = constants.find(c => c.name === member)?.value;
+          return typeof value === "number" ? [value] : null;
+        }
+        const target = (targetOf(checker, type.typeName)?.declarations ?? []).map(d => d.resolve());
+        const [only] = target;
+        if (!only || target.length !== 1 || seen.has(only)) return null;
+        if (ts.isTypeAliasDeclaration(only) && !only.typeParameters?.length && isHostFile(only.getSourceFile().fileName)) {
+          seen.add(only);
+          return literals(only.type, seen);
+        }
+        return null;
+      };
+      const graph: FamilyGraph = {
+        interfaces,
+        bases: baseDeclarations,
+        literals,
+        values,
+        constantName: value => constants.find(c => c.value === value)?.name ?? String(value),
+        tagParameter: d => {
+          const own = d.members.find(m => nameOf(m)?.getText(d.getSourceFile()) === familyDescription.tag.field);
+          const type = own && ts.isPropertySignatureDeclaration(own) ? own.type : undefined;
+          const name = type && ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName) ? type.typeName.text : null;
+          return name !== null && (d.typeParameters ?? []).some(p => p.name.text === name) ? name : null;
+        },
+        questioned: m => ts.isPropertySignatureDeclaration(m) && m.postfixToken?.kind === ts.SyntaxKind.QuestionToken,
+        name: m => { const n = nameOf(m); return n && ts.isIdentifier(n) ? n.text : null; },
+        text: m => m.getText(m.getSourceFile()).trim(),
+        mentions: (m, parameter) => {
+          const visit = (n: Node): boolean => (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) &&
+            n.typeName.text === parameter) || (n.forEachChild(visit) ?? false);
+          return visit(m);
+        },
+        omitted: (owner, name) => allocatingMembers.some(m => m.owner === owner && m.name === name),
+        fail: message => { throw Error(`the family ${familyDescription.marker}: ${message}`); },
+      };
+      family = { table: familyTable(familyDescription, graph), members: new Set(interfaces), enums, literals };
+      return family.members.has(start) ? family : null;
+    };
+    // The run's tag selection (HOST-FAMILIES.md, "Residuals"): one for every
+    // module the run lowers, the tag values its candidate modules name. These
+    // are the checked file and, transitively, each program module it imports
+    // a function from by a value import (`importedModules` in
+    // fragment-parse.mts, the modules the run may lower); a module named
+    // there that the run leaves out keeps the selection. A module names the
+    // tag constants it compares and its `case` labels, and the tags of the
+    // family types it names whose tag is a set of literals. Given when an
+    // imported module of the run is lowered.
+    const closure = (): SourceFile[] => {
+      const files: SourceFile[] = [];
+      const program = (file: SourceFile): boolean => !file.isDeclarationFile && !libraryFile(file) &&
+        !isHostFile(file.fileName) && !file.fileName.split(sep).includes("node_modules");
+      const visit = (file: SourceFile): void => {
+        if (files.includes(file) || !program(file)) return;
+        files.push(file);
+        for (const statement of file.statements) {
+          if (!ts.isImportDeclaration(statement)) continue;
+          const clause = statement.importClause;
+          if (!clause || ("isTypeOnly" in clause && clause.isTypeOnly === true)) continue;
+          const bindings = clause.namedBindings;
+          const names = [...(clause.name ? [clause.name] : []),
+            ...(bindings && ts.isNamedImports(bindings) ? bindings.elements.filter(e => !e.isTypeOnly).map(e => e.name) : [])];
+          for (const name of names)
+            for (const declaration of (targetOf(checker, name)?.declarations ?? []).map(x => x.resolve())) {
+              if (!declaration || !ts.isFunctionDeclaration(declaration) || !declaration.body) continue;
+              visit(declaration.getSourceFile());
+            }
+        }
+      };
+      visit(client);
+      return files;
+    };
+    const scanSelection = (files: readonly SourceFile[]): number[] => {
+      const found = new Set<number>();
+      const constant = (expression: Node): void => {
+        while (ts.isParenthesizedExpression(expression)) expression = expression.expression;
+        if (!ts.isPropertyAccessExpression(expression) || !ts.isIdentifier(expression.name)) return;
+        const declaration = targetOf(checker, expression.name)?.declarations[0]?.resolve();
+        if (!declaration || !ts.isEnumMember(declaration) || !isHostFile(declaration.getSourceFile().fileName)) return;
+        const owner = declaration.parent;
+        if (!ts.isEnumDeclaration(owner)) return;
+        if (family ? !family.enums.includes(owner) : owner.name.text !== familyDescription.tag.constants.enum) return;
+        const value = checker.getConstantValue(declaration);
+        if (typeof value === "number") found.add(value);
+      };
+      const seenAliases = new Set<Node>();
+      const namedType = (type: TypeNode): void => {
+        if (ts.isParenthesizedTypeNode(type)) namedType(type.type);
+        else if (ts.isUnionTypeNode(type)) type.types.forEach(namedType);
+        else if (ts.isTypeReferenceNode(type)) named(type);
+      };
+      const named = (reference: ts.TypeReferenceNode): void => {
+        const name = memberName(reference.typeName);
+        if (!name) return;
+        for (const d of (targetOf(checker, name)?.declarations ?? []).map(x => x.resolve())) {
+          if (!d || !isHostFile(d.getSourceFile().fileName)) continue;
+          if (ts.isTypeAliasDeclaration(d) && !d.typeParameters?.length && !seenAliases.has(d)) {
+            seenAliases.add(d);
+            namedType(d.type);
+          }
+          if (!ts.isInterfaceDeclaration(d)) continue;
+          const fam = familyFrom(d);
+          if (!fam) continue;
+          const tag = fam.table.tagOf(d);
+          const [argument] = reference.typeArguments ?? [];
+          const values = tag.k === "literal" ? tag.values
+            : tag.k === "parameter" && argument ? fam.literals(argument) ?? [] : [];
+          for (const v of values) found.add(v);
+        }
+      };
+      const equality: readonly ts.SyntaxKind[] = [ts.SyntaxKind.EqualsEqualsEqualsToken,
+        ts.SyntaxKind.ExclamationEqualsEqualsToken, ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken];
+      const visit = (node: Node): void => {
+        if (ts.isBinaryExpression(node) && equality.includes(node.operatorToken.kind)) {
+          constant(node.left);
+          constant(node.right);
+        }
+        if (ts.isCaseClause(node)) constant(node.expression);
+        if (ts.isTypeReferenceNode(node)) named(node);
+        node.forEachChild(visit);
+      };
+      files.forEach(visit);
+      return [...found].sort((a, b) => a - b);
+    };
+    let selection: readonly number[] | null = options.familySelection ?? null;
+    const selected = (): readonly number[] => selection ??= scanSelection(closure());
+    let selectionSet: ReadonlySet<number> | null = null;
+    const familyOf = (node: InterfaceDeclaration): { table: FamilyTable; selection: ReadonlySet<number> } | null => {
+      const found = familyFrom(node);
+      return found ? { table: found.table, selection: selectionSet ??= new Set(selected()) } : null;
+    };
     // The type an enum's name denotes where `at` writes it
     // (SOURCE-CONTRACTS.md, "Enums"; COMPILER-API.md, reading rule 3): at a
     // position of a host declaration `number`, since TypeScript admits any
@@ -2720,7 +2942,7 @@ export function collectDeclarations(file: string, options: {
         try {
           collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
             enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
-            libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read),
+            libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read), family: familyOf,
             keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited });
         } catch (error) {
           throw new DeclarationError(span, error instanceof Error ? error.message : String(error));
@@ -2766,6 +2988,7 @@ export function collectDeclarations(file: string, options: {
       { ...v, typeParams: promisedBinders(v.typeParams, v.type), type: promisedMethods(v.type) });
     const trustedDefinitions = definitions.map(d => d.declaration.module === clientModule ? d :
       { ...d, expression: d.expression && promisedMethods(d.expression) });
+    options.familySelected?.(selected());
     return { roots: roots.map(r => r.root), definitions: trustedDefinitions, values: trustedValues, symbols, applications };
   });
 }
@@ -3585,6 +3808,9 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   enumerated: NonNullable<TermScope["enumerated"]>;
   /** The name a type reference reads, a namespace member's included. */
   memberName: (name: ts.EntityName) => Identifier | null;
+  /** A host family's table and the run's tag selection, where `node` is a
+   * declaration of the family. */
+  family: (node: InterfaceDeclaration) => { table: FamilyTable; selection: ReadonlySet<number> } | null;
 }): void {
   const { lookup, identityOf, symbol, partners, library, equation } = context;
   const queue: TypeDeclaration[] = [start];
@@ -3750,6 +3976,125 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // installation merges into it, and it inherits nothing.
     if ((view || context.hostType(node)) && parts.some(part => !isHostFile(part.getSourceFile().fileName)))
       throw Error(`a declaration merged into the host type ${node.name?.text} outside the audited installation is refused: the installation's declarations are its whole shape (COMPILER-API.md, reading rules 1 and 4)`);
+    // A declaration of a host family (HOST-FAMILIES.md, "The family
+    // contract"): one whose tag is a set of literals, or a generic one, is
+    // its flattened members with the family's marker; one whose tag is no
+    // set of literals keeps its identity and is read as the union of the
+    // arms the run's selection keeps, the residual last.
+    const familyReading = ts.isInterfaceDeclaration(node) ? context.family(node) : null;
+    if (familyReading && ts.isInterfaceDeclaration(node)) {
+      const { table, selection } = familyReading;
+      const marker = table.description.marker;
+      const span: Span = [node.getStart(source), node.end];
+      for (const entry of allocatingMembers.filter(m => m.owner === node.name.text)) {
+        const declared = node.members.filter(m => { const name = nameOf(m); return !!name && ts.isIdentifier(name) && name.text === entry.name; });
+        if (declared.length !== 1 || declared.some(m => m.getText(source).trim() !== entry.text))
+          throw Error(`${entry.owner}.${entry.name} is not declared as reviewed: ${entry.text}`);
+      }
+      const tagTerm = (values: readonly number[]): TypeTerm => {
+        const parts = values.map(v => literalTerm(v, span));
+        const [only] = parts;
+        return only && parts.length === 1 ? only : { k: "union", parts, span };
+      };
+      // A flattened member, read in its owner's scope, as a host type's
+      // member is (reading rules 1, 2 and 5); a generic owner's tag
+      // parameter is read at `value` where a synthetic shape reads it.
+      type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
+      const readMember = (f: FlatMember, value: number | null, own: boolean): Field => {
+        const file = f.owner.getSourceFile();
+        const names = (f.owner.typeParameters ?? []).map(p => p.name.text);
+        const term = members(scopeOf(file, names), f.members, f.owner, [f.owner.getStart(file), f.owner.end], true);
+        const [field] = term.k === "object" ? term.fields : [];
+        if (term.k !== "object" || !field || term.fields.length !== 1 || term.calls.length || term.stringIndex)
+          throw Error(`the family ${marker} reads ${f.owner.name.text}.${f.name} as no one member`);
+        const type = names.length && !own && value !== null ? substitute(field.type, [literalTerm(value, span)]) : field.type;
+        return { ...field, readonly: true,
+          optional: field.optional || table.optional(f, value) || f.members.some(readsAsOptionalUnknown),
+          type: hostBrands(type, true, context.isBrand,
+            message => { throw Error(`${message} in ${identity.module}#${identity.name}.${f.name}`); }) };
+      };
+      const shape = (fields: Field[]): TypeTerm => ({ k: "object", fields, stringIndex: null, calls: [], span, host: marker });
+      const reference = (target: TypeDeclaration, args: TypeTerm[]): TypeTerm => {
+        queue.push(target);
+        const id = identityOf(target);
+        return { k: "reference", span, args: context.complete(target, args, null, `${id.module}#${id.name}`),
+          reference: { name: id.name, span, arguments: args.map(() => span), target: id } };
+      };
+      const synthetic = (name: string): { id: DeclarationIdentity; fresh: boolean; term: TypeTerm } => {
+        const id: DeclarationIdentity = { module: `tscert/family/${marker}`, name, span: [0, 0] };
+        const key = `${id.module}#${id.name}`;
+        const fresh = !seen.has(key);
+        seen.add(key);
+        return { id, fresh, term: { k: "reference", span, args: [], reference: { name, span, arguments: [], target: id } } };
+      };
+      // A declaration's methods are one definition, which every shape
+      // stating them names as a base: one method head, shared by the shapes.
+      const isMethod = (f: FlatMember): boolean => f.members.every(ts.isMethodSignatureDeclaration);
+      const ownMethods = (owner: InterfaceDeclaration): readonly FlatMember[] =>
+        table.flatten(owner).filter(f => f.owner === owner && isMethod(f));
+      const methodBase = (owner: InterfaceDeclaration): TypeTerm => {
+        const made = synthetic(`${owner.name.text} methods`);
+        if (made.fresh) {
+          if (owner.typeParameters?.length) throw Error(`the family ${marker} reads no methods of the generic ${owner.name.text}`);
+          definitions.push({ declaration: made.id, parameters: [], bases: [], expression: { k: "object",
+            fields: ownMethods(owner).map(f => readMember(f, null, true)), stringIndex: null, calls: [], span } });
+        }
+        return made.term;
+      };
+      const methodOwners = (methods: readonly FlatMember[]): TypeTerm[] => {
+        const owners: InterfaceDeclaration[] = [];
+        for (const f of methods) if (!owners.includes(f.owner)) owners.push(f.owner);
+        for (const o of owners)
+          if (!ownMethods(o).every(g => methods.some(f => f.owner === o && f.name === g.name)))
+            throw Error(`the family ${marker} reads a shape stating some of ${o.name.text}'s methods only`);
+        return owners.map(methodBase);
+      };
+      // A term without its spans, which two readings of one member share.
+      const unspanned = (t: TypeTerm): string =>
+        JSON.stringify(t, (key: string, v: unknown): unknown => key === "span" || key === "arguments" ? undefined : v) ?? "";
+      const arm = (a: FamilyArm): TypeTerm => {
+        if (a.k === "declaration") return reference(a.declaration, []);
+        if (a.k === "generic") {
+          const parts = a.declarations.map(g => reference(g, [tagTerm(a.values)]));
+          const [only] = parts;
+          return only && parts.length === 1 ? only : { k: "intersection", parts, span };
+        }
+        const made = synthetic(a.name);
+        if (made.fresh) {
+          const fields: Field[] = [{ name: table.description.tag.field, optional: false, readonly: true, type: tagTerm(a.values), span }];
+          const methods: FlatMember[] = [];
+          for (const s of a.fields) {
+            const [first] = s.sources;
+            if (first && isMethod(first.member) && s.sources.every(x => x.member.owner === first.member.owner)) {
+              methods.push(first.member);
+              continue;
+            }
+            const read = s.sources.map(x => readMember(x.member, x.value, false));
+            const types: TypeTerm[] = [];
+            for (const r of read) if (!types.some(t => unspanned(t) === unspanned(r.type))) types.push(r.type);
+            const [one] = types;
+            if (!one) continue;
+            fields.push({ name: s.name, readonly: true, optional: s.optional || read.some(r => r.optional),
+              type: types.length === 1 ? one : { k: "union", parts: types, span }, span });
+          }
+          definitions.push({ declaration: made.id, parameters: [], bases: methodOwners(methods), expression: shape(fields) });
+        }
+        return made.term;
+      };
+      const tag = table.tagOf(node);
+      if (tag.k === "open") {
+        const parts = table.arms(node, selection).map(arm);
+        const [only] = parts;
+        definitions.push({ declaration: identity, parameters, bases: [],
+          expression: only && parts.length === 1 ? only : parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span } });
+      } else {
+        const [value] = tag.k === "literal" && tag.values.length === 1 ? tag.values : [];
+        const flat = table.flatten(node);
+        definitions.push({ declaration: identity, parameters, bases: methodOwners(flat.filter(isMethod)),
+          expression: shape(flat.filter(f => !isMethod(f)).map(f => readMember(f, value ?? null, true))) });
+      }
+      continue;
+    }
     let expression = ts.isTypeAliasDeclaration(node)
       ? typeTerm(scope, node.type)
       : ts.isClassDeclaration(node)
