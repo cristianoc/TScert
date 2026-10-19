@@ -2685,7 +2685,9 @@ code: a parameter, a function declaration with a body (an ambient
 a function body's `let` or
 `const` the early-binding analysis finds initialized at every read, or a
 name the file declares nowhere that TypeScript binds to the standard
-library's `var`s or functions alone. A module binding, an import, a class,
+library's `var`s or functions alone, whose read runs no code by the
+[host assumption](DESIGN.md#trust-surface) on standard-library global
+bindings. A module binding, an import, a class,
 an ambient declaration or an unresolved name is none
 (`spread-program-iterable-uninitialized-refused`,
 `spread-program-iterable-global-getter-refused`,
