@@ -518,7 +518,46 @@ A view states no equality between two reads: a readonly `parent` may give
 different values. That stable members return the same value on every read is
 the host assumption T1; no rule of the node shapes or the guards reads it,
 since the host-guard expansion reads `kind` with nothing between the reads
-and the field slice's exclusion is timeless.
+and the field slice's exclusion is timeless. [Stable paths](#stable-paths)
+are the one rule that reads it.
+
+### Stable paths
+
+A **stable path** $`p = x.f_1\cdots f_n`$ ($`n\ge 1`$) is a root $`x`$ whose
+value no step between a test and a later read changes (an immutable binding,
+or a `let` slot until its next write), followed by members $`f_i`$ each a
+stable member of the host type the path reaches before it. By T1 every read
+of $`p`$ gives one value, so a test of $`p`$ refines $`p`$ itself, and a read
+of $`p`$, or of a stable path extending it, after the test reads the refined
+type:
+
+```math
+\frac{p\ \text{a stable path}\quad \Gamma\vdash p : A\quad
+      \Gamma[p : T_c(A)]\vdash_R S_1\quad \Gamma[p : T_{\lnot c}(A)]\vdash_R S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ (c(p))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-path}
+```
+
+$`c`$ is a test that refines a name in the fragment: a kind test, a host
+guard, a type guard's promise (its `true` outcome alone), a truthiness,
+nullish or strict-equality test, a conjunction or disjunction of these;
+$`T_c`$ and $`T_{\lnot c}`$ are the slices the same test gives a name. A
+conditional expression and the operands of `&&` and `||` refine the same
+way. A path's refinement is a fact about the path, not about one read: a
+call, a closure run or a write of another location leaves it, because by T1
+no step of the package changes a stable member, and no client step writes one
+(a view grants no write, and [excluding host values](#excluding-host-values)
+keeps host objects out of every writable contract). A write of the root's
+slot ends the facts of the paths it roots. So
+`ts.isIdentifier(m.name) && m.name.text` reads `text` of an `Identifier`,
+and `ts.isComputedPropertyName(m.name) && m.name.expression` reads the
+computed name's `expression`.
+
+Its Lean obligation is the model's form of T1's equality of reads: in
+host-admissible worlds, a stable member of a host object denotes one value
+from the object's allocation on, so a fact about a stable path holds at every
+later step of the root's lifetime; the fact store keeps such facts across
+the steps that end other heap observations
+([current-content assertions](SOURCE-MODEL.md#current-content-assertions)).
 
 The refinements of `unknown` (`typeof`, `in`, `Array.isArray`) must give
 readonly views or optional fields, so that no writable view of a host object
@@ -1158,6 +1197,11 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
 - `invalid-compiler-api-guard-argument`: `isIdentifier(next())` with `next`
   counting its calls, the count after the guard asserted 1 in a positive
   case, and a forged claim reading the argument twice refused;
+- stable paths: positive, `ts.isIdentifier(m.name) && m.name.text`, a test
+  of `node.expression.name` read past a call, and a `let` slot's path read
+  before its next write; refused, the same reads past a write of the root's
+  slot, through a member outside the stable ones, and from a forged claim
+  stating the refined path before its test;
 - host provenance, each refused: a node assigned to a variable of a mutable
   structural type and written; `{ ...node }` and `Object.assign({}, node)`
   passed to `getTypeAtLocation`; a node widened to `unknown`, refined by

@@ -400,9 +400,21 @@ stops at its first refusal, so each blocker below hides the ones behind it.
 The first blockers, by the number of slices each stops (2026-10-18; the
 first two items 2026-10-19):
 
-- the producer reading an object's `elements` field it does not find (20),
-  18 of them the slices of `fragment-statements.mts` the `then` member
-  stopped before it was admitted, an investigation whose cause is unknown;
+- a host guard answering `false`, which narrows nothing while the guard is
+  read at its declared `x is T` signature
+  (`compiler-api-guard-false-branch`): 18 slices of
+  `fragment-statements.mts` read `elements` of a `BindingName` after
+  `if (ts.isIdentifier(node)) return …`, and `knownLocal` reads `name`
+  after `!ts.isSpreadAssignment(parent)` (2026-10-19, 829513e); the
+  [host-guard rule](docs/COMPILER-API.md#guards) reads the call as a kind
+  test refining both edges, and waits on the node invariant;
+- a member read through a host node's member a test refined,
+  `ts.isIdentifier(m.name) && m.name.text` (7: `staticFieldOf`,
+  `staticMethodOf`, `hasInstanceClass`, `hasInstanceAlong`, `localArrow`,
+  `memberOf`, and `moduleFunction` through `memberMayBeWritten`;
+  2026-10-19, 829513e): a promise refines a name alone; the
+  [stable-path rule](docs/COMPILER-API.md#stable-paths), a design, refines
+  the path;
 - a spread of a program's iterable where its iterator's code would run out
   of place (18);
 - a computed key in an object literal other than a `unique symbol` constant
