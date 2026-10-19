@@ -3303,7 +3303,9 @@ is the import assumption of [the trust surface](DESIGN.md#trust-surface),
 discharged where the imported module's own run verifies the guard. A guard
 of a host family is read instead from its audited table entry
 ([guard recognition](HOST-FAMILIES.md#guard-recognition)), never at its
-declared predicate.
+declared predicate; the entry rests on the host assumption that the
+package's enum objects and its guards' bindings are never written, by the
+program or by external code, and a source write to them is refused.
 
 Implementation: `CallEffects.Effect` (`guards p`, `asserts p`) gives the
 contract; `ControlFlow.Goal` states a body's goal and `checkReturnResult` its

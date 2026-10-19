@@ -835,7 +835,9 @@ as regression evidence.
   member of its `.enum.d.ts` is an integer literal equal to the value of the
   runtime object Node loads for `#enums/<name>` under the `default`
   condition, the object's keys are the members and their reverse mappings,
-  and the entry points exporting the enum export that object.
+  each an own data property holding a primitive, and the entry points
+  exporting the enum export that object. The object is mutable; that it is
+  never written is F5.
 - **C2, guards (regression evidence).** The
   [guard table](HOST-FAMILIES.md#the-guard-table)'s generator, run on every
   exported guard, gives exactly the reviewed table, its unlisted exports
@@ -922,10 +924,12 @@ the corpus runs are regression evidence, not proofs.
   residuals needs (F1′). It is an external-model obligation, not a conjunct
   of `WorldAdm`.
 - **T2 (guards).** Each entry of the guard table holds of the function Node
-  runs for its export (F3): exact tag set, the tag the only member read, no
-  other effect, and an answer independent of further arguments and of the
-  receiver. No guard's declared predicate is trusted: a listed guard
-  narrows by its entry, and an unlisted one narrows nothing.
+  runs for its export, resolved as the entry records (F3): exact tag set,
+  the tag the only member read, no other effect, and an answer independent
+  of further arguments and of the receiver; and the package's enum objects
+  and its guards' and helpers' bindings are never written, by the program
+  or by external code (F5). No guard's declared predicate is trusted: a
+  listed guard narrows by its entry, and an unlisted one narrows nothing.
 - **T3 (node methods).** The node methods make no server request, run no
   client code but `forEachChild`'s visitors, which they call synchronously,
   only with children of the receiver, in a fixed order, and propagate a
