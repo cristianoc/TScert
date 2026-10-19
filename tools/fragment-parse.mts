@@ -19,7 +19,9 @@ import { type API, SymbolFlags, type Checker, type Project } from "typescript/un
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
+// files.mts makes every file-system failure a tool failure.
+import { readText } from "./files.mts";
 import { dirname, resolve } from "node:path";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, substitute, typeTerm, visitType, type MappedMember, type TermScope } from "./type-term.mts";
@@ -1059,7 +1061,7 @@ function lowerFile(file: string, carriesContext: boolean,
   tsconfigPath: string | undefined, resolutionFile: string,
   seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null): Lowered {
   const absolute = resolve(file);
-  const text = readFileSync(absolute, "utf8");
+  const text = readText(absolute);
   const { file: source, checker } = openFile(absolute, text);
   const gate = new Gate(source);
   // The members read through namespace imports, each a binding of its own.

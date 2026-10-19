@@ -216,9 +216,10 @@ The outcome is one of:
   line `reject: …` or `unsupported: …` and a last line `end of refusal`;
   each exits 3 with a first line `error: …` on an operational failure, a
   file it cannot read or write among them); the producer's `--explain`
-  failing or printing no explanations; the file system failing a read or a
-  path the front end resolves, other than a path naming nothing where that
-  absence has a meaning; or a failed request to the compiler's API, which
+  failing or printing no explanations; any failure of a file-system
+  operation of the front end, each made in one module
+  (`tools/files.mts`), other than a path naming nothing where that absence
+  has a meaning; or a failed request to the compiler's API, which
   names the query, the front end's call site and the compiler's reason. Every request goes through one guard
   (`tools/compiler-channel.mts`), which makes whatever it throws a
   `CompilerFailure`: a reply the compiler sent as an error, a transport or

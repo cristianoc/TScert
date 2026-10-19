@@ -38,14 +38,26 @@ export class CompilerFailure extends Error {
   }
 }
 
+/** A failure of a file-system operation of the front end: whatever it threw,
+ * the operation and the path. */
+export class IoFailure extends Error {
+  readonly operation: string;
+  readonly path: string;
+  constructor(operation: string, path: string, cause: unknown) {
+    super(`${operation} ${path}: ${messageOf(cause).split("\n")[0] ?? ""}`, { cause });
+    this.operation = operation;
+    this.path = path;
+  }
+}
+
 /** A failure of the tool itself, not a refusal of the source, by kind:
  * - `panic`: the compiler process panicked on a query and replied so;
  * - `api`: any other failure of a request to the compiler (`CompilerFailure`),
  *   or an error raised in the compiler's package before the front end's code;
  * - `stack`: the front end exhausted the call stack, also inside a request;
- * - `io`: the operating system failed a call Node made for the front end, a
- *   file read or a path resolved (an error Node gives a `syscall`), where no
- *   absence was asked for (`orAbsent`).
+ * - `io`: a file-system operation of the front end failed (`IoFailure`, which
+ *   `files.mts` makes of whatever such an operation throws), where no absence
+ *   was asked for (`orAbsent`).
  * `readable` is whether the channel's later replies may be read: only after
  * a replied panic. The query is the outermost API frame (the request's name
  * where there is none), the caller the first frame of the front end's own
@@ -55,7 +67,8 @@ export type ToolFailure = { kind: "panic" | "api" | "stack" | "io"; readable: bo
 export const toolFailureOf = (thrown: unknown): ToolFailure | null => {
   if (!(thrown instanceof Error)) return null;
   const request = thrown instanceof CompilerFailure ? thrown : null;
-  if (!request) {
+  const io = thrown instanceof IoFailure;
+  if (!request && !io) {
     const inner = toolFailureOf(thrown.cause);
     if (inner) return inner;
   }
@@ -66,7 +79,6 @@ export const toolFailureOf = (thrown: unknown): ToolFailure | null => {
   const firstOwn = frames.findIndex(own);
   const stack = stackExhaustion(thrown) || (request !== null && stackExhaustion(request.cause));
   const panic = thrown.message.startsWith("panic:");
-  const io = !request && systemError(thrown);
   if (!request && !stack && !panic && !io && !inCompiler.slice(0, firstOwn < 0 ? frames.length : firstOwn).some(b => b))
     return null;
   const outer = inCompiler.lastIndexOf(true);
@@ -75,24 +87,6 @@ export const toolFailureOf = (thrown: unknown): ToolFailure | null => {
   return { kind: stack ? "stack" : panic ? "panic" : io ? "io" : "api", readable: request ? request.readable : panic || io,
     query, caller, reason: thrown.message.split("\n")[0] ?? "" };
 };
-/** Whether what was thrown is a failure the operating system reported for a
- * call Node made (Node gives it the `syscall` it failed). */
-const systemError = (thrown: unknown): boolean => thrown instanceof Error && typeof fieldOf(thrown, "syscall") === "string";
-/** Whether what was thrown says a path names nothing: `ENOENT`, or `ENOTDIR`
- * for a path through a file. */
-const absence = (thrown: unknown): boolean =>
-  systemError(thrown) && (fieldOf(thrown, "code") === "ENOENT" || fieldOf(thrown, "code") === "ENOTDIR");
-/** What `read` gives, or null where the path it reads names nothing: the one
- * absence a caller of the file system gives a meaning. Every other failure of
- * the file system is the tool's (`io`), thrown on. */
-export function orAbsent<T>(read: () => T): T | null {
-  try {
-    return read();
-  } catch (error) {
-    if (absence(error)) return null;
-    throw error;
-  }
-}
 /** A catch that makes a refusal, an absence or an unknown of what it caught
  * calls this first: a tool failure is none of them, and is thrown on. */
 export const passToolFailure = (thrown: unknown): void => {

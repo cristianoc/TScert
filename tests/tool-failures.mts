@@ -84,17 +84,19 @@ for (const [site, frame] of [["the parser's compiler", "at openFile \\("], ["the
   process.stdout.write(`${site}, failing after a request was sent: a tool failure, and the next parse as without it\n`);
 }
 
-// The file system failing where the front end reads a file (EIO reading an
-// imported module, EACCES resolving a path) is a tool failure; a path that
-// names nothing is the absence its reader gives a meaning.
+// The file system failing where the front end reads a file is a tool
+// failure, whatever the error's fields: reading an imported module denied as
+// Node's permission model denies it (ERR_ACCESS_DENIED, no `syscall`), and
+// EACCES resolving a path; a path that names nothing is the absence its
+// reader gives a meaning.
 {
-  const failing = (call: string, path: string, code: string) => (...args: unknown[]): unknown => {
-    if (args[0] === path) throw Object.assign(new Error(`${code}: forced by tests/tool-failures.mts, ${call} '${path}'`), { code, syscall: call });
+  const failing = (call: string, path: string, code: string, fields: Record<string, string>) => (...args: unknown[]): unknown => {
+    if (args[0] === path) throw Object.assign(new Error(`${code}: forced by tests/tool-failures.mts, ${call} '${path}'`), { code, ...fields });
     return undefined;
   };
   const read = fs.readFileSync, resolveReal = fs.realpathSync;
   const lib = join(dir, "lib.ts");
-  const readFailure = failing("open", lib, "EIO");
+  const readFailure = failing("open", lib, "ERR_ACCESS_DENIED", { permission: "FileSystemRead", resource: lib });
   fs.readFileSync = Object.assign((...args: Parameters<typeof read>) => (readFailure(...args), read(...args)), read);
   syncBuiltinESMExports();
   let report = "";
@@ -106,9 +108,9 @@ for (const [site, frame] of [["the parser's compiler", "at openFile \\("], ["the
     fs.readFileSync = read;
     syncBuiltinESMExports();
   }
-  assert.match(report, /^tool failure: the file system failed \(called from [^)]+\): EIO: forced .*\(lowering the imported module \.\/lib\.ts\)$/, report);
+  assert.match(report, /^tool failure: the file system failed \(called from [^)]+\): read [^:]*lib\.ts: ERR_ACCESS_DENIED: forced .*\(lowering the imported module \.\/lib\.ts\)$/, report);
   const denied = join(dir, "denied.d.ts");
-  const resolveFailure = failing("realpath", denied, "EACCES");
+  const resolveFailure = failing("realpath", denied, "EACCES", { syscall: "realpath" });
   fs.realpathSync = Object.assign((...args: Parameters<typeof resolveReal>) => (resolveFailure(...args), resolveReal(...args)), resolveReal);
   syncBuiltinESMExports();
   try {

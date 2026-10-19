@@ -4,7 +4,6 @@
  * resolve exactly as the compiler resolves them. This module turns each
  * declaration reached into a source equation, or refuses a form the fragment
  * cannot state; a refusal never drops a declaration. */
-import { readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
@@ -36,7 +35,9 @@ import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, 
 import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
 import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
-import { messageOf, orAbsent, passToolFailure, toolFailureOf } from "./thrown.mts";
+import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
+// files.mts makes every file-system failure a tool failure.
+import { orAbsent, readText, realPath } from "./files.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
 
@@ -194,8 +195,8 @@ function namesArray(value: unknown): boolean {
  * file by name, anything else by its real path relative to the project. */
 function moduleIds(clientFile: string, root: string, program: Program):
     { idOf: (file: SourceFile) => string; libraryFile: (file: SourceFile) => boolean } {
-  const client = realpathSync(clientFile);
-  const projectRoot = realpathSync(root);
+  const client = realPath(clientFile);
+  const projectRoot = realPath(root);
   // The standard library is the files the compiler's own library resolution
   // gives the program (`isSourceFileDefaultLibrary`), whatever else is
   // named like one; only names of that form are asked. Every library
@@ -203,15 +204,15 @@ function moduleIds(clientFile: string, root: string, program: Program):
   const libraries = new Set(program.getSourceFileNames().filter(name => /^lib\..*\.d\.ts$/.test(basename(name)))
     .flatMap(name => {
       const file = program.getSourceFile(name);
-      return file && program.isSourceFileDefaultLibrary(file) ? [realpathSync(name)] : [];
+      return file && program.isSourceFileDefaultLibrary(file) ? [realPath(name)] : [];
     }));
-  const libraryFile = (file: SourceFile): boolean => libraries.has(realpathSync(file.fileName));
+  const libraryFile = (file: SourceFile): boolean => libraries.has(realPath(file.fileName));
   // The identities are disjoint by construction: the client by its absolute
   // path, a library file `typescript/lib/<file>`, any other file its path
   // from the project root, written `./…` inside it and `../…` outside, so
   // no other file's identity reads as a library file's.
   const idOf = (file: SourceFile): string => {
-    const path = realpathSync(file.fileName);
+    const path = realPath(file.fileName);
     if (path === client) return clientFile;
     if (libraries.has(path)) return `typescript/lib/${basename(path)}`;
     const inside = relative(projectRoot, path).split(sep).join("/");
@@ -3052,7 +3053,7 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
 const origins = new Map<string, string>();
 function declarationOrigin(file: SourceFile, libraryFile: (file: SourceFile) => boolean): string {
   if (libraryFile(file)) return "library";
-  const path = realpathSync(file.fileName);
+  const path = realPath(file.fileName);
   const known = origins.get(path);
   if (known) return known;
   const parts = path.split(sep);
@@ -3064,7 +3065,7 @@ function declarationOrigin(file: SourceFile, libraryFile: (file: SourceFile) => 
     const directory = parts.slice(0, at + 1 + name.split("/").length).join(sep);
     // A directory without a manifest is the project's; a manifest that
     // cannot be read or parsed is no absence.
-    const text = orAbsent(() => readFileSync(join(directory, "package.json"), "utf8"));
+    const text = orAbsent(readText, join(directory, "package.json"));
     const manifest: unknown = text === null ? null : JSON.parse(text);
     if (manifest && typeof manifest === "object" && "name" in manifest && manifest.name === name) origin = name;
   }
