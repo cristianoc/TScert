@@ -242,6 +242,12 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "invalid-error-subclass-assign-target: an enumerable message");
   assert.equal(JSON.stringify(runExample("invalid-error-subclass-pattern-write", "traced()")), "[]",
     "invalid-error-subclass-pattern-write: no enumerable stack");
+  assert.equal(JSON.stringify(runExample("invalid-error-subclass-assign-alias", "relabelled()")), '["message","tag"]',
+    "invalid-error-subclass-assign-alias: the hidden message copied, enumerable");
+  for (const file of ["invalid-error-subclass-narrowed-write", "invalid-error-subclass-narrowed-computed"])
+    assert.equal(JSON.stringify(runExample(file,
+      `(() => { const box = { v: { kind: "record", name: 1 } }; return traced(box, (b) => { b.v = new Decline("x"); }, "stack"); })()`)),
+      '["kind"]', `${file}: the callback put an instance there, whose stack stays non-enumerable`);
   assert.equal(runExample("invalid-error-subclass-spread", "main()"), undefined,
     "invalid-error-subclass-spread: the copy has no message");
   assert.equal(runExample("error-subclass-json-replacer", "text()"), '{"message":"x"}',

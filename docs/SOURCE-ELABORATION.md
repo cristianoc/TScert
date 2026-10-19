@@ -420,13 +420,22 @@ instance owns no `message`, and an assignment creates an own enumerable one
 (observed under Node, `invalid-error-subclass-assign-target`). Either way the
 model, which states neither property, would add or change an enumerable own
 field, which a later copy, `Object.keys` or an exact-key claim observes. So a
-write that may set either key is refused where its receiver's type admits an
-instance of the family: an assignment or an update at `.message`,
-`.stack`, `["message"]` or `["stack"]`, at a computed key whose type may be
-either string, a target of a destructuring assignment or a loop head, and
-`Object.assign` onto such a receiver from a source whose type may carry
-either key. TypeScript's type of the receiver decides, so a structural alias
-typed `{ stack?: string }` is covered with the class's own type and `this`.
+write that may set either key is refused where its receiver's declared type
+admits an instance of the family: an assignment or an update at `.message`,
+`.stack`, `["message"]` or `["stack"]`, at a computed key whose declared type
+may be either string, a target of a destructuring assignment or a loop head,
+and `Object.assign` onto such a receiver from any source but an object
+literal whose keys are all written and none is `message` or `stack` (a
+source's type need not mention a key it owns, which the copy takes:
+`invalid-error-subclass-assign-alias`). The declared type is the program's,
+never TypeScript's narrowing at the write, since a call between a test and
+the write may have replaced what the test saw
+(`invalid-error-subclass-narrowed-write`): a name is read at its
+declaration's type, a member at its declared type in each part of its
+object's, step by step, an element read at none, so refused, and any other
+expression at the type TypeScript gives it; a fresh object or array literal
+is no instance. A structural alias typed
+`{ stack?: string }` is covered with the class's own type and `this`.
 A type admits an instance unless every part of it is a primitive, an array
 or tuple, a callable or constructible type, or an object type whose `name`,
 `message` or `stack`, or string index, holds no string, each of its parts
@@ -434,16 +443,22 @@ another primitive, `object`, an array or a callable type (`reservedWrites` in
 `declaration-graph.mts`); a write of `message` onto a record whose `name` is a
 number stays an ordinary field write (`reserved-write-excluded`).
 
-External code is required to create no enumerable own `message` or `stack`
-on an instance of the family: no assignment of `message` to one constructed
-without a message, and no definition of either key as enumerable. An
-external function's effect does not exempt it: a footprint says which
-locations a call may change, not whether a key it writes is enumerable, and
-after the call the model reads the instance at its declared type, which
-states neither key as an own field. With the requirement, every admitted
-observation of the instance after the call (its reads, keys, copies and
-entries) agrees with the model's; a change of the non-enumerable properties
-JavaScript keeps is invisible to them, and `e.stack` is refused.
+External code reaching an instance of the family is required to keep the
+message contract the model represents and to create no enumerable own
+`message` or `stack` on it. The message contract: `e.message` is a string,
+the one the model's link holds; where the model re-reads the instance after
+the external code runs (a call whose footprint may change it), any string
+its declared type allows. This holds through a parameter type looser than
+the instance's own, such as `{ message?: unknown }`: such code may not write
+another value. The enumerability requirement excludes an assignment of
+`message` to an instance constructed without a message and a definition of
+either key as enumerable. A footprint states which locations a call may
+change, not what a changed message holds or whether a key it creates is
+enumerable, so neither requirement follows from an external function's
+effect; both are stated of external code. With them, the admitted
+observations after the call agree with the model: `e.message` reads a string
+the model's type allows, and keys, copies and entries see the declared
+fields alone; `e.stack` is refused.
 
 **Trusted boundary.** The member and parameter-property reservations and the
 write refusals are the parser's: Lean reads no class declaration and no
