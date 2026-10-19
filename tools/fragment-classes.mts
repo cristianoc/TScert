@@ -312,7 +312,13 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
           : ts.isElementAccessExpression(n) && n.expression.kind === ts.SyntaxKind.ThisKeyword ? reserved(n.argumentExpression) : undefined;
         const write = (n: Node): Node | undefined => ts.isBinaryExpression(n) &&
           n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
-          target(n.left) ? n : n.forEachChild(write);
+          target(n.left) ? n
+          // A function, a method or a class binds its own `this`: its writes
+          // are writes, Lean's to judge; an arrow keeps the constructor's.
+          : ts.isFunctionExpression(n) || ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) ||
+              ts.isClassExpression(n) || ts.isClassDeclaration(n) || ts.isGetAccessorDeclaration(n) ||
+              ts.isSetAccessorDeclaration(n) ? undefined
+          : n.forEachChild(write);
         const written = write(m.body);
         if (written && ts.isBinaryExpression(written))
           gate.fail(written, `a write of \`this.${target(written.left)}\` in the constructor of a class extending \`Error\` is outside the fragment: it defines the instance's own \`${target(written.left)}\`, which JavaScript keeps non-enumerable`);

@@ -495,9 +495,11 @@ premise reads certified facts and no TypeScript type or narrowing.
   overlay's `new Error` and `Error(m)`, and a value at a class or `Error`
   type, whose declared instance type holds a prototype (`errorInstance` in
   `library-globals.mts`, for constructor results and explicit `Error`
-  heritage). A value a unit receives at a dictionary or a key-bounded record
-  is a plain object by the caller contract ([trust](DESIGN.md)); that is
-  assumed of external code, not derived from its annotation. So a receiver
+  heritage). A value a unit receives at a dictionary with an index, or at a
+  record whose key bound excludes `[[proto]]`, owns no prototype key: that
+  is the meaning of those clauses (`dictViewT`, `dictCellT`, `ownKeysT`),
+  which the inputs meet by `EnvOk`, so it adds no assumption beyond the
+  caller contract ([trust](DESIGN.md)). So a receiver
   whose checked claim is proto-free is no instance, also of any other class,
   which the rule refuses alike. Being proto-free discriminates instances in
   this representation; it says nothing of a plain object's own
@@ -505,7 +507,10 @@ premise reads certified facts and no TypeScript type or narrowing.
 - **What stays the parser's.** A field of an allocation is no write: an
   instance member, a parameter property, and a constructor's `this.k = e`,
   which the lowering makes a field of the instance's allocation, are
-  reserved by the parser in a class extending `Error`. Lean reads no class
+  reserved by the parser in a class extending `Error`. The parser's scan of
+  the constructor follows arrows, which keep its `this`, and stops at a
+  function, a method, an accessor or a class, which bind their own: their
+  writes are writes, the rule's (`invalid-error-subclass-nested-function-write`). Lean reads no class
   declaration, and accepts a fragment, claims and evidence with a member
   renamed `stack` throughout (`pipeline/test.mts`, "forged stack member").
   Each write form of `reserved-write-twin`, its key renamed `stack` in the

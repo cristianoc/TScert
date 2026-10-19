@@ -1551,6 +1551,8 @@ export const cases: Case[] = [
   negative("invalid-reserved-callback", "a closure's write of a captured parameter's `stack`, lowered apart through the same write emission (run under Node): refused at the write",
     /source refusal at \[257,268\): a write at a key that may be `message` or `stack` onto an object that may hold a prototype/),
   positive("reserved-write-twin", "the reserved writes' twins, each at its own key: a destructuring target, a compound and a logical assignment, a closure's write and a computed key (`pipeline/test.mts` renames each key `stack` and requires the reserved-write refusal)"),
+  negative("invalid-error-subclass-nested-function-write", "a function in a constructor binds its own `this`: its write of `this.message` is a write, not a field of the instance, which the parser leaves to the reserved-write rule; its receiver bounds no keys, refused at the write",
+    /source refusal at \[488,504\): a write at a key that may be `message` or `stack` onto an object that may hold a prototype/),
   { file: "invalid-error-subclass-message-member", area: "a member named `message` of a class extending `Error` would stand for the message `Error` installs: refused at the member", kind: "negative",
     status: "unsupported", phase: "source", diagnostic: /a member named `message` of a class extending `Error`.*\(line 4, col 3\)/ },
   { file: "invalid-error-subclass-message-write", area: "a write of `this.message` in the constructor of a class extending `Error` defines a field of the instance's allocation: reserved by the parser, refused at the write", kind: "negative",
