@@ -20,6 +20,7 @@ design, not its progress.
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
+| [A negated guard in a short-circuit condition](#negated-guard-short-circuit) | open | `if (!isRecord(v) || n > 3) throw …; return v;` verifies, and `record`, `sourceMap`, `directJudgment` and `heapAtom` of `diagnostic.mts` with it |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
@@ -137,6 +138,40 @@ Left open:
 array from another beyond fresh storage, so that `pop` on an array literal
 the callback allocated is admitted; and a declaration's fresh result, which
 only closures state.
+
+<a id="negated-guard-short-circuit"></a>
+**A negated guard in a short-circuit condition.** A type guard's call
+narrows its actual where it answered `true`, and a condition `g(v) && b`
+dispatches on the call and lowers `b` and the condition's outcome on each
+arm. A negated call, `!g(v) || b`, is a test form (`testForm`), so the
+condition is lowered as one value, whose two arms join before its branch:
+where `!g(v)` is false and `b` false the call answered `true`, but the join
+keeps `v` at its declared type (`e` below fails at its `return`, the
+non-negated `g(v) && b` verifies):
+
+```ts
+function e(v: Json | undefined, n: number): Fields {
+  if (!isRecord(v) || n > 3) throw Error("x");
+  return v;
+}
+```
+
+The fix lowers a negated operand that is no test as a dispatch on the
+operand itself, its arms exchanged, as `ExpressionPlan.truthOf` lowers a
+non-test operand; the outcome where `!g(v)` decides is a Boolean constant,
+which needs a claimed type at the synthetic span or a claimless constant.
+`record(v, required, optional)` in `diagnostic.mts`, which `record`,
+`sourceMap`, `directJudgment` and `heapAtom` reach, has this form.
+
+**Field facts across calls** are deferred, measured (2026-10-19): a call
+step keeps no current-content fact, and keeping those a call's checked
+footprint leaves true would move the evidence search of 7 functions of the
+front end's census past the fact's loss at an empty-footprint call, none
+more at a `value: keep` footprint, and 3 more only where every step keeps
+them; search completes for 2 (`completes`, `heapAtom`), and the others stop
+at a later obligation. The measurement kept facts in search's untrusted step
+choice and in the producer's proposals, with the checker unchanged; no
+function was verified by it.
 
 <a id="keys-known-only-at-run-time"></a>
 **Keys known only at run time.** A write at a string key known only at run
