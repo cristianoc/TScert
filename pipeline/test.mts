@@ -2945,33 +2945,41 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
 }
 {
   // A correction of a method to absent (HOST-FAMILIES.md, "The family
-  // contract"): under a description correcting `getText` on a source file,
-  // the method is an optional member of the source file's shape and of the
-  // residual holding it, so each call is refused at its read; under the
-  // compiler API's own description both verify.
+  // contract"): under a description correcting `getText` at one tag, the
+  // method is an optional member of every reading covering that tag, the
+  // tag's own shape, a generic declaration applied at any of its tags, a
+  // selected generic arm and a residual holding the tag, so each call is
+  // refused at its read; under the compiler API's own description each
+  // verifies.
   const project = tsconfigOf(join(import.meta.dirname, "compiler-api-project"));
-  const files = [["compiler-api-corrected-method", "f.getText"], ["compiler-api-corrected-residual", "n.getText"]] as const;
-  for (const [name] of files) {
+  const getText = (kind: string) => ({ kind, owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;" });
+  const controls = [
+    ["SourceFile", "compiler-api-corrected-method", "f.getText"],
+    ["SourceFile", "compiler-api-corrected-residual", "n.getText"],
+    ["QuestionToken", "compiler-api-corrected-token", "t.getText"],
+    ["QuestionToken", "compiler-api-corrected-arm", "n.getText"],
+    ["QuestionToken", "compiler-api-corrected-residual", "n.getText"],
+  ] as const;
+  for (const name of new Set(controls.map(([, file]) => file))) {
     const plain = check(join(import.meta.dirname, "examples", `${name}.ts`), project);
-    assert.equal(plain.status, "verified", JSON.stringify(plain));
+    assert.equal(plain.status, "verified", `${name}: ${JSON.stringify(plain)}`);
   }
-  useFamilyDescriptionForTests({ ...compilerApiFamily, corrections: [...compilerApiFamily.corrections,
-    { kind: "SourceFile", owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;" }] });
-  try {
-    for (const [name, read] of files) {
+  for (const [kind, name, read] of controls) {
+    useFamilyDescriptionForTests({ ...compilerApiFamily, corrections: [...compilerApiFamily.corrections, getText(kind)] });
+    try {
       const file = join(import.meta.dirname, "examples", `${name}.ts`);
       const corrected = check(file, project);
       const at = readFileSync(file, "utf8").indexOf(read);
-      // The producer finds no arrow to call in a possibly absent member, or
-      // the search no derivation at the read.
-      assert.ok((corrected.status === "unsupported" && /call requires a single arrow the arguments can call/.test(corrected.detail)) ||
-        (corrected.status === "unverified" && corrected.detail.includes(`at [${at},`)),
-        `${name}: refused at ${read}: ${JSON.stringify(corrected)}`);
+      // The producer finds no arrow to call in a possibly absent member, at
+      // the call, or the search no derivation at the read.
+      assert.ok(corrected.status !== "verified" && corrected.detail.includes(`at [${at},`) &&
+        (/call requires a single arrow the arguments can call/.test(corrected.detail) || corrected.status === "unverified"),
+        `${name} with getText corrected at ${kind}: refused at ${read}: ${JSON.stringify(corrected)}`);
+    } finally {
+      useFamilyDescriptionForTests(null);
     }
-  } finally {
-    useFamilyDescriptionForTests(null);
   }
-  process.stdout.write("corrected method: a method a correction makes absent is an optional member of its shape and of a residual, each call refused\n");
+  process.stdout.write("corrected method: a method a correction makes absent at a tag is optional in that tag's shape, a generic declaration, a selected generic arm and a residual, each call refused at it\n");
 }
 {
   // One tag selection per run (HOST-FAMILIES.md, "Residuals"): the importer

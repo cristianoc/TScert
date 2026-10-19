@@ -679,6 +679,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          A loop's later pass, where the receiver may be present, types it;
          Lean checks the claims of the last. *)
       | Atoms [] when spreads = [] -> List.iter (fun a -> ignore (expr env a)) args; Atoms []
-      | _ -> Proposal_diagnostics.unsupported "call requires a single arrow the arguments can call"))
+      | _ -> Proposal_diagnostics.unsupported ("call requires a single arrow the arguments can call at " ^ Proposal_diagnostics.span_text site)))
     | _ -> Json.fail "expression dispatched to the wrong typing family"
 end

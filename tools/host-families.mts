@@ -122,9 +122,12 @@ export type FamilyTable = {
   /** A declaration's members, its bases' included, the nearest declaration
    * of each name, without the members whose read allocates. */
   flatten: (declaration: InterfaceDeclaration) => readonly FlatMember[];
-  /** Whether a flattened member is optional in the shape of `value`: so
-   * declared, or so corrected. */
-  optional: (member: FlatMember, value: number | null) => boolean;
+  /** Whether a flattened member is optional in a reading covering the tag
+   * values `values`: so declared, or corrected at one of them. */
+  optional: (member: FlatMember, values: readonly number[]) => boolean;
+  /** The tag values a declaration's values can have: its literals, its tag
+   * parameter's bound, or the members of an open declaration. */
+  tagsOf: (declaration: InterfaceDeclaration) => readonly number[];
   /** The family's shape sources, by tag value. */
   shapes: ReadonlyMap<number, ShapeSource>;
   /** `members_F(A)`: the tag values whose shape source reaches `A`. */
@@ -270,9 +273,16 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
     if (value === undefined) graph.fail(`the correction of ${c.owner}.${c.member} names no tag ${c.kind}`);
     corrected.add(`${value}:${c.owner}.${c.member}`);
   }
-  const optional = (f: FlatMember, value: number | null): boolean =>
-    f.members.some(graph.questioned) ||
-    (value !== null && corrected.has(`${value}:${f.owner.name.text}.${f.name}`));
+  const optional = (f: FlatMember, values: readonly number[]): boolean =>
+    f.members.some(graph.questioned) || values.some(v => corrected.has(`${v}:${f.owner.name.text}.${f.name}`));
+  const tagsOf = (d: InterfaceDeclaration): readonly number[] => {
+    const tag = tagOf(d);
+    if (tag.k === "literal") return tag.values;
+    if (tag.k === "open") return membersOf(d);
+    const parameter = d.typeParameters?.find(p => p.name.text === tag.parameter);
+    return (parameter?.constraint ? graph.literals(parameter.constraint) : null)
+      ?? graph.fail(`${d.name.text}'s tag parameter has no bound of literals`);
+  };
   // Whether a shape source's other members depend on its tag parameter: then
   // its applications at different tags are different arms.
   const tagOnly = (g: InterfaceDeclaration): boolean => {
@@ -303,7 +313,7 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
           if (!sources.some(s => s.member.owner === member.owner &&
               (!family.has(member.owner) || tagOf(member.owner).k !== "parameter" || s.value === p.t)))
             sources.push({ member, value: p.t });
-      fields.push({ name: f.name, sources, optional: found.some(p => p.members.some(g => optional(g, p.t))) });
+      fields.push({ name: f.name, sources, optional: found.some(p => p.members.some(g => optional(g, [p.t]))) });
     }
     const digest = createHash("sha256").update(values.join(",")).digest("hex").slice(0, 16);
     return { k: "synthetic", name: `${base} at ${values.length} tags ${digest}`, values, fields };
@@ -338,5 +348,5 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
     return result;
   };
   for (const d of graph.interfaces) if (!family.has(d)) graph.fail("a family interface outside the family");
-  return { description, tagOf, flatten, optional, shapes, membersOf, arms };
+  return { description, tagOf, flatten, optional, tagsOf, shapes, membersOf, arms };
 }

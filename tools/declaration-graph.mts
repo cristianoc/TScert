@@ -3997,19 +3997,20 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         return only && parts.length === 1 ? only : { k: "union", parts, span };
       };
       // A flattened member, read in its owner's scope, as a host type's
-      // member is (reading rules 1, 2 and 5); a generic owner's tag
-      // parameter is read at `value` where a synthetic shape reads it.
+      // member is (reading rules 1, 2 and 5), optional where it is at one of
+      // the tags `tags` the reading covers; a generic owner's tag parameter
+      // is read at `value` where a synthetic shape reads it.
       type Field = Extract<TypeTerm, { k: "object" }>["fields"][number];
-      const readMember = (f: FlatMember, value: number | null, own: boolean): Field => {
+      const readMember = (f: FlatMember, tags: readonly number[], value: number | null): Field => {
         const file = f.owner.getSourceFile();
         const names = (f.owner.typeParameters ?? []).map(p => p.name.text);
         const term = members(scopeOf(file, names), f.members, f.owner, [f.owner.getStart(file), f.owner.end], true);
         const [field] = term.k === "object" ? term.fields : [];
         if (term.k !== "object" || !field || term.fields.length !== 1 || term.calls.length || term.stringIndex)
           throw Error(`the family ${marker} reads ${f.owner.name.text}.${f.name} as no one member`);
-        const type = names.length && !own && value !== null ? substitute(field.type, [literalTerm(value, span)]) : field.type;
+        const type = names.length && value !== null ? substitute(field.type, [literalTerm(value, span)]) : field.type;
         return { ...field, readonly: true,
-          optional: field.optional || table.optional(f, value) || f.members.some(readsAsOptionalUnknown),
+          optional: field.optional || table.optional(f, tags) || f.members.some(readsAsOptionalUnknown),
           type: hostBrands(type, true, context.isBrand,
             message => { throw Error(`${message} in ${identity.module}#${identity.name}.${f.name}`); }) };
       };
@@ -4033,13 +4034,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       // shape states optional, by its declaration or by a correction of the
       // shape's tag, is that shape's own optional member.
       const isMethod = (f: FlatMember): boolean => f.members.every(ts.isMethodSignatureDeclaration);
-      const shared = (f: FlatMember, value: number | null): boolean => isMethod(f) && !table.optional(f, value);
+      const shared = (f: FlatMember, tags: readonly number[]): boolean => isMethod(f) && !table.optional(f, tags);
       const methodBase = (f: FlatMember): TypeTerm => {
         const made = synthetic(`${f.owner.name.text}.${f.name}`);
         if (made.fresh) {
           if (f.owner.typeParameters?.length) throw Error(`the family ${marker} reads no methods of the generic ${f.owner.name.text}`);
           definitions.push({ declaration: made.id, parameters: [], bases: [], expression: { k: "object",
-            fields: [readMember(f, null, true)], stringIndex: null, calls: [], span } });
+            fields: [readMember(f, [], null)], stringIndex: null, calls: [], span } });
         }
         return made.term;
       };
@@ -4060,12 +4061,12 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           const methods: FlatMember[] = [];
           for (const s of a.fields) {
             const [first] = s.sources;
-            if (first && !s.optional && shared(first.member, null) &&
+            if (first && !s.optional && shared(first.member, []) &&
                 s.sources.every(x => x.member.owner === first.member.owner)) {
               methods.push(first.member);
               continue;
             }
-            const read = s.sources.map(x => readMember(x.member, x.value, false));
+            const read = s.sources.map(x => readMember(x.member, [x.value], x.value));
             const types: TypeTerm[] = [];
             for (const r of read) if (!types.some(t => unspanned(t) === unspanned(r.type))) types.push(r.type);
             const [one] = types;
@@ -4084,11 +4085,12 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         definitions.push({ declaration: identity, parameters, bases: [],
           expression: only && parts.length === 1 ? only : parts.length ? { k: "union", parts, span } : { k: "atom", name: "never", span } });
       } else {
-        const [value] = tag.k === "literal" && tag.values.length === 1 ? tag.values : [];
+        // Optional where it is at any tag the declaration's values can have:
+        // a generic declaration's every application, a literal set's every tag.
+        const tags = table.tagsOf(node);
         const flat = table.flatten(node);
-        const at = value ?? null;
-        definitions.push({ declaration: identity, parameters, bases: methodOwners(flat.filter(f => shared(f, at))),
-          expression: shape(flat.filter(f => !shared(f, at)).map(f => readMember(f, at, true))) });
+        definitions.push({ declaration: identity, parameters, bases: methodOwners(flat.filter(f => shared(f, tags))),
+          expression: shape(flat.filter(f => !shared(f, tags)).map(f => readMember(f, tags, null))) });
       }
       continue;
     }
