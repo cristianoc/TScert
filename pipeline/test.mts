@@ -1295,6 +1295,60 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
 }
 
 {
+  // An array acquires no `toJSON` by a write, whatever claims are offered.
+  // The input is a valid array: claims and evidence are borrowed from a
+  // weakened program whose declared `Hooked` and `View` are records with a
+  // writable `toJSON`, then offered for the program itself, whose `Hooked` is
+  // an array. Search and evidence consumption both refuse, located at the
+  // write, directly and through a structural view.
+  const borrow = (file: string): { artifacts: string; claims: string; evidence: string } => {
+    const artifacts = run(file);
+    const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+    const weakened = ast.declarations.definitions.filter(d => ["Hooked", "View"].includes(d.declaration.name));
+    assert.ok(weakened.some(d => d.declaration.name === "Hooked"), "the declared array type");
+    for (const definition of weakened)
+      definition.expression = { k: "object", span: [0, 0], stringIndex: null, calls: [], fields: [{ name: "toJSON",
+        optional: false, readonly: false, span: [0, 0], type: { k: "function", effect: ordinaryEffect, receiver: null,
+          params: [], rest: null, result: { k: "atom", name: "undefined", span: [0, 0] }, span: [0, 0] } }] };
+    const weak = join(artifacts, "weakened-array-tojson.json");
+    writeFileSync(weak, JSON.stringify(ast));
+    const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(lowered.status, 0, lowered.stderr);
+    const flow = join(artifacts, "weakened-array-tojson-flow.json");
+    writeFileSync(flow, lowered.stdout);
+    const proposed = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(proposed.status, 0, proposed.stderr);
+    const claims = join(artifacts, "weakened-array-tojson-claims.json");
+    writeFileSync(claims, proposed.stdout);
+    const borrowed = produceWith(artifacts, claims, "weakened-array-tojson", weak);
+    assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
+    return { artifacts, claims, evidence: join(artifacts, "weakened-array-tojson-evidence.json") };
+  };
+  const direct = borrow("invalid-array-tojson-write");
+  const source = readFileSync(join(direct.artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("xs.toJSON = f");
+  const searched = produceWith(direct.artifacts, direct.claims, "forged-array-tojson-write");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  const failure = readDiagnostic(searched.stdout + searched.stderr);
+  assert.equal(failure?.kind, "node-typing");
+  assert.deepEqual(failure?.source?.sourceMap?.pos, [at, at + "xs.toJSON = f".length]);
+  const term = failure?.sequent?.term;
+  assert.ok(term?.kind === "writeAt");
+  assert.equal(term.field, "toJSON");
+  invoke(direct.claims, direct.evidence, direct.artifacts);
+  const view = borrow("invalid-array-tojson-view");
+  const viewSource = readFileSync(join(view.artifacts, "source.ts"), "utf8");
+  const viewAt = viewSource.indexOf("alias.toJSON = f");
+  const refusal = `source refusal at [${viewAt},${viewAt + "alias.toJSON = f".length}): a write of 'toJSON'`;
+  const viewSearched = produceWith(view.artifacts, view.claims, "forged-array-tojson-view");
+  assert.equal(viewSearched.status, 1, viewSearched.stdout + viewSearched.stderr);
+  assert.ok((viewSearched.stdout + viewSearched.stderr).includes(refusal), viewSearched.stdout + viewSearched.stderr);
+  assert.ok(invoke(view.claims, view.evidence, view.artifacts).includes(refusal));
+  process.stdout.write("an array given toJSON by a write, on borrowed claims and evidence: refused at the write, " +
+    "directly and through a view\n");
+}
+
+{
   // Own-key exclusion preserves the inherited constructor read. A forged
   // undefined claim must fail both search and evidence consumption.
   const artifacts = run("native-promise-constructor-read");

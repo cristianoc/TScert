@@ -120,7 +120,10 @@ const dictionary = (value: TypeTerm): TypeTerm =>
  * only what `Object.prototype` holds. An array owns no `toJSON` (the arrays'
  * own-key exclusion, `RequestJson.arrayExcludedKeys`) and inherits none: no
  * object along its prototype chain holds one, a host assumption (DESIGN.md,
- * the trust surface). So `toJSON` is never called, and no getter runs. A
+ * the trust surface). So `toJSON` is never called, and no getter runs. The
+ * array is dense: a readable array admits a hole only where `undefined`
+ * meets its element contract, which `JsonValue` excludes, and neither
+ * `Array.prototype` nor `Object.prototype` owns a numeric key. A
  * record a declaration types by its fields is left out: a record is open,
  * and nothing bounds the own keys it does not declare. A cycle throws, an
  * outcome; a bigint would throw too, and is left out as a value the host
@@ -131,8 +134,6 @@ const jsonValue: TypeTerm = { k: "reference", args: [], span: at,
 const jsonValueDefinition: TypeDefinition = { declaration: jsonValueIdentity, parameters: [], bases: [],
   expression: { k: "union", span: at, parts: [atom("null"), atom("boolean"), atom("number"), atom("string"),
     { k: "array", presence: "readable", readonly: true, element: jsonValue, span: at }, dictionary(jsonValue)] } };
-
-
 
 /** What `JSON.parse` returns without a reviver: `null`, a Boolean, a number,
  * a string, an array of such values, or an object of them,
@@ -146,9 +147,8 @@ const jsonValueDefinition: TypeDefinition = { declaration: jsonValueIdentity, pa
  * (CreateDataProperty, a `"__proto__"` member included, which becomes an own
  * key and sets no prototype); without a reviver, InternalizeJSONProperty
  * never runs. The array is `T[]` at writable elements, the object a writable
- * dictionary, as a client may go on writing what is fresh. Unlike
- * `JsonValue`, which `JSON.stringify` takes, it admits arrays: nothing here
- * calls a member. */
+ * dictionary, as a client may go on writing what is fresh. Each arm is a
+ * `JsonValue`'s, writable: a `ParsedJson` is a `JsonValue`. */
 const parsedJsonIdentity: DeclarationIdentity = { module: "tscert/json", name: "ParsedJson", span: at };
 const parsedJson: TypeTerm = { k: "reference", args: [], span: at,
   reference: { name: parsedJsonIdentity.name, span: at, arguments: [], target: parsedJsonIdentity } };

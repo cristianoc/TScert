@@ -448,6 +448,9 @@ export type OverlayLibrary = {
   /** Identity from the standard library, never a synthetic identifier node. */
   wellKnownSymbol: (name: string) => number | null;
   reference: (node: ts.InterfaceDeclaration, args: TypeTerm[], span: [number, number]) => TypeTerm;
+  /** Whether a file is one of the standard library's, by the compiler's own
+   * library resolution. */
+  libraryFile: (file: ts.SourceFile) => boolean;
 };
 
 /** The synthetic declaration the array types' prototype view names. */
@@ -559,11 +562,60 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     if (!parts.length) throw Error(`the standard library declares no ${name}`);
     return parts;
   };
+  // Every value of the interface is read at this contract, which reviews
+  // what the host's prototype holds. A declaration outside the standard
+  // library merging into the interface (a global augmentation, a base it
+  // adds) states the members every value of the type has, so each member it
+  // gives the interface is one the contract reviews at that same type:
+  // Node's `at` polyfill (`RelativeIndexable<T>`) is, a `toJSON` stating that
+  // every array holds a hook is not, and is refused rather than erased.
+  const merged = (name: string, parts: readonly ts.InterfaceDeclaration[]): void => {
+    const [first] = parts;
+    if (!first || parts.every(part => library.libraryFile(part.getSourceFile()))) return;
+    const refuse = (what: string): never => {
+      throw Error(`${name} is not the standard library's alone: a declaration merges ${what} into it, ` +
+        `which the standard library's ${name} contract does not state at that type`);
+    };
+    const seen = new Set<ts.InterfaceDeclaration>();
+    const visit = (part: ts.InterfaceDeclaration): void => {
+      if (seen.has(part) || library.libraryFile(part.getSourceFile())) return;
+      seen.add(part);
+      for (const member of part.members)
+        if (!ts.isMethodSignatureDeclaration(member) && !ts.isPropertySignatureDeclaration(member))
+          refuse("a call, construct or index signature");
+      for (const clause of part.heritageClauses ?? [])
+        for (const base of clause.types) {
+          const nodes = (checker.getSymbolAtLocation(base.expression)?.declarations ?? []).map(d => d.resolve());
+          if (!nodes.length) refuse("a base it does not resolve");
+          for (const node of nodes)
+            if (node && ts.isInterfaceDeclaration(node)) visit(node);
+            else refuse("a base that is no interface");
+        }
+    };
+    parts.forEach(visit);
+    const type = checker.getTypeAtLocation(first.name);
+    if (!type) return refuse("a declaration whose type is unresolved");
+    // A reviewed member's type as the checker prints a method's:
+    // `at(index: number): T | undefined;` is `(index: number) => T | undefined`.
+    const reviewed = (signature: string): string | null => {
+      const form = /^[A-Za-z]\w*\((.*)\): (.*);$/.exec(signature);
+      return form ? `(${form[1]}) => ${form[2]}` : null;
+    };
+    for (const property of checker.getPropertiesOfType(type)) {
+      const nodes = property.declarations.map(d => d.resolve());
+      if (nodes.every(node => !!node && library.libraryFile(node.getSourceFile()))) continue;
+      const stated = checker.getTypeOfSymbol(property);
+      const text = stated ? checker.typeToString(stated) : null;
+      if (!text || !proto.entries.some(entry => entry.name === property.name && reviewed(entry.signature) === text))
+        refuse(`'${property.name}'`);
+    }
+  };
   const libraries = new Map<string, ts.InterfaceDeclaration[]>();
   const libraryOf = (name: string) => {
     const known = libraries.get(name);
     if (known) return known;
     const parts = declared(name);
+    merged(name, parts);
     libraries.set(name, parts);
     return parts;
   };

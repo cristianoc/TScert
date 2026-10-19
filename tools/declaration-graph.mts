@@ -1524,6 +1524,7 @@ export function collectDeclarations(file: string, options: {
         return { k: "reference", reference: { name: target.name, span, arguments: args.map(() => span),
           target }, args: completeArguments(node, args, null, target.name), span };
       },
+      libraryFile,
     };
     // The keys a regex's type states (`regexp.mts`): the well-known symbols
     // its methods are keyed by, and the marks, synthetic symbols no source

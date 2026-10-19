@@ -1863,9 +1863,14 @@ leaves its array arm, whose `map` stays dense (`json-parse-data`).
 `ParsedJson` is a `JsonValue`: each of its arms is one read-only. A
 `JsonValue` array owns no `toJSON` (the arrays' own-key exclusion,
 [arrays](SOURCE-MODEL.md#arrays)), inherits none (no object along its chain
-holds one, a host assumption), and holds `JsonValue`s; a dictionary owns no
-prototype key and holds `JsonValue`s at every string key it owns, none
-callable. At a `JsonValue`, `JSON.stringify` reads own data properties,
+holds one, a host assumption), and holds `JsonValue`s. It is dense: a
+readable array admits a hole only where `undefined` meets its element
+contract, which `JsonValue` excludes, and neither `Array.prototype` nor
+`Object.prototype` owns a numeric key ([trust surface](DESIGN.md#trust-surface)).
+A dictionary owns no prototype key and holds `JsonValue`s at every string key
+it owns, none callable: a member `JSON.parse` defines under the name
+`"toJSON"`, at any depth, is JSON data, which `JSON.stringify` reads and does
+not call (`json-parse-stringify-tojson-member`, run under Node). At a `JsonValue`, `JSON.stringify` reads own data properties,
 calls no `toJSON` and no getter, and allocates its string, so it returns a
 string and states the empty footprint, on a throw too (a cycle); so does `Error`
 at a string message, which it stores without conversion code
@@ -1879,8 +1884,17 @@ Node: `JSON.stringify` of it returns the hook's `undefined`). An
 array owning a `toJSON` is no array (`invalid-array-own-tojson`, run under
 Node: `JSON.stringify` of it returns the hook's `undefined`); neither an
 inherited declaration (`invalid-array-tojson-inherited`), a write
-(`invalid-array-tojson-write`), an alias (`invalid-array-tojson-alias`) nor
+(`invalid-array-tojson-write`), an alias (`invalid-array-tojson-alias`,
+`invalid-array-tojson-view`) nor
 an element at `unknown` (`invalid-json-stringify-hidden-hook`) gives one.
+A declaration merging a `toJSON` into the global `Array` or `ReadonlyArray`
+states a member `Array.prototype` does not have: a merged member is read only
+where the prototype contract reviews it at the type the merge gives it
+([source fragment](SOURCE-FRAGMENT.md)), so a unit an array reaches under such
+a merge is refused, whether the array is written or a callback's parameter by
+context (`invalid-merged-array-param`,
+`invalid-merged-array-callback`, `invalid-merged-readonly-array-param`,
+`invalid-merged-readonly-array-callback`).
 `JSON.stringify` is read with a replacer that
 is `null`, absent or a list of keys (primitive numbers and strings, read by
 length and index), and an indent that is a primitive number or string:
