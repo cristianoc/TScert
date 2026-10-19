@@ -1023,11 +1023,12 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
   `node.kind` at `SyntaxKind.TypeAliasDeclaration` after
   `isTypeAliasDeclaration(node)`; under Node (`tests/node-runs.mts`), on the
   JavaScript typedef above, the function returns 345;
-- negative `invalid-compiler-api-default-clause`:
-  `function expr(c: DefaultClause): Expression { return c.expression; }`;
-  under Node, on `switch (x) { default: }`, it returns `undefined`;
-- negative `invalid-compiler-api-source-file-parent`: returning `sf.parent`
-  at `Node`; under Node it returns `undefined`;
+- negatives `invalid-compiler-api-corrected-*`, one per correction: the
+  corrected member returned at the type the declarations state
+  (`function read(c: DefaultClause): Expression { return c.expression; }`,
+  `sf.parent` at `Node`); under Node (`tests/compiler-api.mts`), on a node of
+  its kind (`switch (x) { default: }`, a source file), each returns
+  `undefined`;
 - negative `invalid-compiler-api-residual-parent`: a unit naming
   `Identifier` and leaving `SourceFile` to its residual, returning
   `n.parent` at `Node`, refused because its residual's `parent` is

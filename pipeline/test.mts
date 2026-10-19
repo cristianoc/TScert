@@ -3002,16 +3002,14 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   ] as const;
   // The claims and evidence of a run under the compiler API's own
   // description, offered with the corrected declaration document as if the
-  // producer had proposed them: each declaration renamed to its index in
-  // the corrected document, by identity.
-  const identity = (d: TypeDefinition): string => JSON.stringify(d.declaration);
-  const reindexed = (value: unknown, from: readonly TypeDefinition[], to: Map<string, number>): unknown => {
-    if (Array.isArray(value)) return value.map(v => reindexed(v, from, to));
-    if (typeof value !== "object" || value === null) return value;
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, k === "decl" && typeof v === "number"
-      ? must(to.get(identity(must(from[v], "a declaration the claims name"))), "the declaration in the corrected document")
-      : reindexed(v, from, to)]));
-  };
+  // producer had proposed them. The two documents name the same
+  // definitions in the same order, every method's definition written
+  // whether or not a reading shares it, so the claims and the evidence keep
+  // their meaning; offered with the plain document they are accepted.
+  const located = (detail: string, position: number): boolean =>
+    [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= position && position < Number(m[2]));
+  const verifierOn = (fragment: string, claims: string, source: string, evidence: string): SpawnSyncReturns<string> =>
+    spawnSync(verifier, ["--check-source-claims", fragment, claims, source, evidence], { encoding: "utf8", timeout: 60_000 });
   const plainRuns = new Map<string, string>();
   for (const name of new Set(controls.map(([, file]) => file))) {
     const plain = check(join(import.meta.dirname, "examples", `${name}.ts`), project);
@@ -3034,20 +3032,26 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     } finally {
       useFamilyDescriptionForTests(null);
     }
-    // Lean, bypassing the producer: the plain run's claims and evidence
-    // against the corrected document, refused in search at the read and in
-    // checking.
     const plain = must(plainRuns.get(name), "the plain run");
-    const from = must(readFragmentFile(join(plain, "fragment.json")).declarations, "the plain declarations").definitions;
-    const fragment = readFragmentFile(join(artifacts, "fragment.json"));
-    const to = new Map(must(fragment.declarations, "the corrected declarations").definitions.map((d, i) => [identity(d), i]));
-    const claims: unknown = reindexed(JSON.parse(readFileSync(join(plain, "claims.json"), "utf8")), from, to);
-    assert.ok(typeof claims === "object" && claims !== null);
-    const forged = join(artifacts, "forged-corrected.json");
-    writeFileSync(forged, JSON.stringify({ ...claims, file: fragment.file }));
+    const identities = (dir: string): string[] => must(readFragmentFile(join(dir, "fragment.json")).declarations, "the declarations")
+      .definitions.map((d) => JSON.stringify(d.declaration));
+    assert.deepEqual(identities(artifacts), identities(plain), `${name}: both documents name the same definitions in order`);
     const at = readFileSync(join(artifacts, "source.ts"), "utf8").indexOf(read);
-    refusedAt(artifacts, forged, "forged-corrected", `at [${at},`);
-    invoke(forged, join(plain, "evidence.json"), artifacts);
+    // Accepted with the plain document, refused with the corrected one: by
+    // the search at the read, and by the checker at the call.
+    const accepted = verifierOn(join(plain, "fragment.json"), join(plain, "claims.json"), join(plain, "source.ts"), join(plain, "evidence.json"));
+    assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+    const fragment = readFragmentFile(join(artifacts, "fragment.json"));
+    const forged = join(artifacts, "forged-corrected.json");
+    const claims: unknown = JSON.parse(readFileSync(join(plain, "claims.json"), "utf8"));
+    assert.ok(typeof claims === "object" && claims !== null);
+    writeFileSync(forged, JSON.stringify({ ...claims, file: fragment.file }));
+    const searched = produceWith(artifacts, forged, "forged-corrected");
+    assert.ok(searched.status === 1 && located(searched.stdout + searched.stderr, at),
+      `${name} at ${kind}: the search refuses at ${read}: ${searched.stdout + searched.stderr}`);
+    const checked = verifierOn(join(artifacts, "fragment.json"), forged, join(artifacts, "source.ts"), join(plain, "evidence.json"));
+    assert.ok(checked.status === 1 && located(checked.stdout + checked.stderr, at),
+      `${name} at ${kind}: the checker refuses at ${read}: ${checked.stdout + checked.stderr}`);
   }
   process.stdout.write("corrected method: a method a correction makes absent at a tag is optional in that tag's shape, a generic declaration and a selected generic arm, and forgotten in a residual: each call refused by the producer at it, and claims made under the plain description refused by Lean's search at the read and by its checker\n");
 }

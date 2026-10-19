@@ -308,3 +308,46 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   closeParser();
   console.log("residual: the fixture's up returns undefined on a source file under Node");
 }
+
+// The corrections under Node (COMPILER-API.md, "Corrections"): each negative
+// fixture `invalid-compiler-api-corrected-*` returns a corrected member at
+// the type the declarations state, and on a node of its kind the runtime
+// leaves the member absent, so the function returns `undefined`.
+{
+  const dir = runDirectory("tscert-corrections-");
+  mkdirSync(join(dir, "node_modules"));
+  symlinkSync(root, join(dir, "node_modules", hostPackage.name));
+  const syntaxKind: unknown = Reflect.get(ast, "SyntaxKind");
+  assert.ok(isNamespace(syntaxKind), "the package exports SyntaxKind");
+  const corrected: [string, string, string][] = [
+    ["source-file-parent", "SourceFile", "export const answer = 42;\n"],
+    ["property-signature-initializer", "PropertySignature", "interface I { x: number }\n"],
+    ["property-assignment-type", "PropertyAssignment", "export const o = { a: 1 };\n"],
+    ["shorthand-assignment-type", "ShorthandPropertyAssignment", "const a = 1;\nexport const o = { a };\n"],
+    ["export-assignment-type", "ExportAssignment", "export default 1;\n"],
+    ["default-clause-expression", "DefaultClause", "declare const x: number;\nswitch (x) { default: }\n"],
+    ["template-raw-text", "NoSubstitutionTemplateLiteral", "export const t = `a`;\n"],
+    ["template-flags", "NoSubstitutionTemplateLiteral", "export const t = `a`;\n"],
+  ];
+  for (const [slug, kindName, source] of corrected) {
+    const fixture = join(dir, `${slug}.ts`);
+    copyFileSync(resolve(import.meta.dirname, `../pipeline/examples/invalid-compiler-api-corrected-${slug}.ts`), fixture);
+    const module: unknown = await import(pathToFileURL(fixture).href);
+    assert.ok(isNamespace(module) && typeof module.read === "function", `${slug}: the fixture exports read`);
+    const file = join(dir, `${slug}-input.ts`);
+    writeFileSync(file, source);
+    const tree = openText(file, source);
+    const kind: unknown = syntaxKind[kindName];
+    type AstNode = Parameters<Parameters<typeof tree.forEachChild>[0]>[0];
+    let found: AstNode | typeof tree | undefined = kind === tree.kind ? tree : undefined;
+    const visit = (node: AstNode): undefined => {
+      if (!found && node.kind === kind) found = node;
+      return node.forEachChild(visit);
+    };
+    tree.forEachChild(visit);
+    assert.ok(found, `${slug}: a ${kindName} in ${JSON.stringify(source)}`);
+    assert.equal(module.read(found), undefined, `${slug}: read returns undefined on a ${kindName}`);
+  }
+  closeParser();
+  console.log(`corrections: the ${corrected.length} corrected members' fixtures return undefined under Node`);
+}

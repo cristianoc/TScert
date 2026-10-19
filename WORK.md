@@ -30,6 +30,7 @@ design, not its progress.
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
+| [Corrected members](#corrected-members) | closed: each of the eight corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
 | [Model limits of one form each](#model-limits-of-one-form-each) | open | each limit listed there has its model support |
@@ -263,6 +264,18 @@ allocation at a family type (`pipeline/test.mts`). Left: a callback of
 node type it did not receive, which wait on a generic method called on a
 node (`compiler-api-node-callback`, a gap); a re-exported guard and a
 guard's wrapper, which wait on guard recognition.
+
+<a id="corrected-members"></a>
+**Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)
+are fields the declarations state required and the runtime leaves absent.
+Read as declared (a8caafd), a function returning one at its declared type
+verified and returns `undefined` under Node: `sf.parent` at `Node`,
+`PropertySignatureDeclaration.initializer`, `PropertyAssignment.type`,
+`ShorthandPropertyAssignment.type`, `ExportAssignment.type`,
+`DefaultClause.expression`, and `NoSubstitutionTemplateLiteral.rawText` and
+`.templateFlags`. The family contract reads each optional; the eight
+`invalid-compiler-api-corrected-*` cases are refused, each run under Node
+by `tests/compiler-api.mts`.
 
 <a id="effects-of-dispatched-calls"></a>
 **Effects of dispatched calls.** A method call on a union receiver is
@@ -517,6 +530,38 @@ first three items 2026-10-19):
 - the parser exceeding the call stack (2: `readDiagnostic`, and
   `diagnosticNode`, which another run reports as a reply of
   `Checker.getTypeFromTypeNode` the client cannot decode), cause unknown.
+  For `diagnosticNode` the reply is to the query `keyTypeOf` makes
+  (`declaration-graph.mts`), "Expected fixed 3-element array (0x93),
+  received: 0x69", seen once, in a census run of 0337c3f (2026-10-19); two
+  runs of the slice alone on that revision, and the census of a8caafd, end
+  with the call stack exceeded at line 101 of the slice. The failing query's
+  arguments and stack were not kept, and no smaller reproducer exists.
+
+<a id="census-host-family-contract"></a>
+The `tools/` census of a8caafd (main) and of 0337c3f (the family contract,
+with that main merged), run back to back on one machine (2026-10-19, load
+averages 20 to 40): 105 of 350 slices verify on main, 107 of 353 on the
+branch. The branch adds 3 slices: `compiler-api.mts#useFamilyDescriptionForTests`
+and `#hostFamily`, verified, and `host-families.mts#familyTable`, refused at
+the gate on a `TransformOptions` declaration. Of the 350 common slices:
+
+- verified on the branch only (4): `declaration-graph.mts#expressionAt`,
+  `#identifierAt`, `#typeNodeAt` and `type-probe.mts#identifiers`, refused
+  in search on main;
+- verified on main only (3), each now refused in search, and none a
+  timeout: `fragment-support.mts#jumpTarget` and `#writtenElement` write
+  `parent = parent.parent` into a `let` TypeScript types `Node`, and the
+  branch's `Node` reads `parent` optional, since a source file's is absent
+  ([corrected members](#corrected-members)); `fragment-support.mts#bindingScope`
+  reads `holder.parent` again after testing it, which no fact of the first
+  read narrows ([stable members](docs/HOST-FAMILIES.md#stable-members));
+- verified on main, a timeout on the branch (1):
+  `declaration-graph.mts#untypedAmbientField`, the search past 60 s;
+- a changed failure (3): `declaration-graph.mts#computedAt`, refused in
+  search on main, the search past 60 s on the branch;
+  `fragment-statements.mts#closeStatements`, the search past 60 s on main,
+  the check past 60 s on the branch; `diagnostic.mts#diagnosticNode`, the
+  call stack exceeded on main, the reply above on the branch.
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:

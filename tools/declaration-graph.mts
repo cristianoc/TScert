@@ -4067,15 +4067,22 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         if (made.fresh) {
           const fields: Field[] = [{ name: table.description.tag.field, optional: false, readonly: true, type: tagTerm(a.values), span }];
           const methods: FlatMember[] = [];
+          // Every method's definition, in member order, whether or not the
+          // residual shares it.
+          const written: FlatMember[] = [];
           for (const s of a.fields) {
             const [first] = s.sources;
             // A method some replaced shape states optional is forgotten: the
             // residual relates to the shapes stating it required and to those
             // stating it optional alike.
-            if (first && isMethod(first.member) && (s.optional || !shared(first.member, []))) continue;
+            if (first && isMethod(first.member) && (s.optional || !shared(first.member, []))) {
+              written.push(...s.sources.map(x => x.member));
+              continue;
+            }
             if (first && shared(first.member, []) &&
                 s.sources.every(x => x.member.owner === first.member.owner)) {
               methods.push(first.member);
+              written.push(first.member);
               continue;
             }
             const read = s.sources.map(x => readMember(x.member, [x.value], x.value));
@@ -4086,6 +4093,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
             fields.push({ name: s.name, readonly: true, optional: s.optional || read.some(r => r.optional),
               type: types.length === 1 ? one : { k: "union", parts: types, span }, span });
           }
+          written.forEach(methodBase);
           definitions.push({ declaration: made.id, parameters: [], bases: methodOwners(methods), expression: shape(fields) });
         }
         return made.term;
@@ -4101,6 +4109,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         // a generic declaration's every application, a literal set's every tag.
         const tags = table.tagsOf(node);
         const flat = table.flatten(node);
+        // Every method's definition is written, whether or not this reading
+        // shares it, so readings that differ only by corrections number their
+        // definitions alike.
+        flat.filter(isMethod).forEach(methodBase);
         definitions.push({ declaration: identity, parameters, bases: methodOwners(flat.filter(f => shared(f, tags))),
           expression: shape(flat.filter(f => !shared(f, tags)).map(f => readMember(f, tags, null))) });
       }
