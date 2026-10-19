@@ -434,6 +434,47 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged tag key: a key-adding write claimed at a symbol key refused\n");
 }
 {
+  // A computed key's expression is checked at the literal its field's key
+  // spells: with the read of `awaitName` claimed at another literal, the key
+  // is refused where evidence is produced, and checking refuses the evidence of
+  // the original claim for it.
+  const keyed = run("object-computed-literal-key");
+  const claims = readClaims(keyed);
+  const source = readFileSync(join(keyed, "source.ts"), "utf8");
+  const start = source.indexOf("[awaitName]: 0") + 1;
+  const fn = must(claims.functions.find(f => f.name === "names"), "names' claims");
+  const read = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + "awaitName".length),
+    "the key's read");
+  read.type = [rowOf(claims, { strLit: { value: "k" } })];
+  const forged = writeClaims(keyed, "forged-computed-key", claims);
+  const searched = produceWith(keyed, forged, "forged-computed-key");
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  // Refused at the key, `[awaitName]`, checked at its literal.
+  assert.ok((searched.stdout + searched.stderr).includes(`[${start - 1},${start + "awaitName".length + 1})`),
+    searched.stdout + searched.stderr);
+  invoke(forged, join(keyed, "evidence.json"), keyed);
+  // A computed field's key is the one its checked literal converts to: with
+  // the key claim unchanged, a field renamed (`"x"` for `"%Await%"`) or
+  // spelled otherwise than the number's `ToString` (`"1.0"` for `1`) is
+  // refused where evidence is produced and where it is checked.
+  for (const [name, from, to] of [["computed-key-renamed", '"%Await%"', '"x"'],
+      ["computed-key-numeric", '"1"', '"1.0"']] as const) {
+    const text = readFileSync(join(keyed, "fragment.json"), "utf8");
+    const field = `{"name":${from},"e":{"k":"comma"`;
+    assert.ok(text.includes(field), `the computed field ${from}`);
+    const path = join(keyed, `${name}.fragment.json`);
+    writeFileSync(path, text.replace(field, `{"name":${to},"e":{"k":"comma"`));
+    for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+      const result = spawnSync(verifier, [mode, path, join(keyed, "claims.json"), join(keyed, "source.ts"),
+        join(keyed, mode === "--produce-source-claims" ? `${name}-evidence.json` : "evidence.json"),
+        ...(mode === "--produce-source-claims" ? ["12"] : [])], { encoding: "utf8", timeout: 30_000 });
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      assert.match(result.stdout + result.stderr, /is not the key .* its literal converts to/);
+    }
+  }
+  process.stdout.write("forged computed key: a key's read claimed at another literal, a field renamed or spelled otherwise than its number's ToString: refused\n");
+}
+{
   // A parameter's entry claim in an `&&` operand is its first read before a
   // call, which the incoming edge checks: a read claimed narrower than any
   // test establishes is refused where evidence is produced and where it is

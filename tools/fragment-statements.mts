@@ -208,12 +208,14 @@ export function collect(this: Gate, operand: Expression): Expr {
 }
 
 /** The spread of a program's iterable the statement `s` runs, where the
- * collection may run before the statement: the one element of an array
- * literal, or an argument of a call of a name, every operand before it a
- * name or a literal, none of them assigned anywhere in the file, so that
- * what they hold before the iterator's code runs is what they hold after.
- * The literal or call is the statement's value: an expression statement's,
- * a `return`'s or a declaration's one initializer. */
+ * collection may run before the statement: the first evaluation of the
+ * statement's value that may run code, every evaluation before it a name or
+ * a literal, none of the names assigned anywhere in the file, so that what
+ * they hold before the iterator's code runs is what they hold after. The
+ * value is an expression statement's, a `return`'s or a declaration's one
+ * initializer, and evaluation is followed in JavaScript's order: an array
+ * literal's elements, a call's or construction's callee then arguments, a
+ * member read's object. */
 export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
   const gate: Gate = this;
   let e: Expression | undefined;
@@ -228,20 +230,98 @@ export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
     const kind = gate.iterations.get(gate.span(x).join(":"));
     return !!kind?.startsWith("client");
   };
-  if (ts.isArrayLiteralExpression(e)) {
-    const [only, ...others] = e.elements;
-    return only && !others.length && ts.isSpreadElement(only) && program(only.expression) ? only : null;
-  }
-  if (!ts.isCallExpression(e) || e.questionDotToken || !ts.isIdentifier(e.expression)) return null;
-  const index = e.arguments.findIndex((a) => ts.isSpreadElement(a) && program(a.expression));
-  const spread = e.arguments[index];
-  if (!spread || !ts.isSpreadElement(spread)) return null;
   const assigned = gate.assignedNames();
-  const stable = (x: Node) => ts.isIdentifier(x) ? !assigned.has(x.text)
+  // A name read before the spread runs after the collection: it must hold
+  // the same value then, and its read must not throw where the source's
+  // would. So it is a parameter or a function declaration with a body, a `let` or
+  // `const` of a function body the early-binding analysis finds initialized
+  // at every read (`markEarly`), or, declared nowhere in the file, a name
+  // TypeScript binds to the standard library's `var`s or functions alone
+  // (`libraryValues`); a module binding, an import, a class, an ambient or
+  // unresolved name is not skipped.
+  const initialized = (id: ts.Identifier): boolean => {
+    for (let at: Node | undefined = id.parent; at; at = at.parent) {
+      if (functionLikeNode(at) && at.parameters.some(p => ts.isIdentifier(p.name) && p.name.text === id.text))
+        return true;
+      const statements = ts.isBlock(at) || ts.isSourceFile(at) || ts.isCaseClause(at) || ts.isDefaultClause(at)
+        ? at.statements : null;
+      if (!statements) continue;
+      for (const st of statements) {
+        // A function declaration with a body is created when its scope is
+        // entered; an ambient one (`declare function`, an overload without
+        // a body) says nothing of what the name holds at run time.
+        if (ts.isFunctionDeclaration(st) && st.name?.text === id.text) {
+          const named = statements.filter((d): d is ts.FunctionDeclaration =>
+            ts.isFunctionDeclaration(d) && d.name?.text === id.text);
+          return named.some(d => !!d.body) &&
+            !named.some(d => d.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword));
+        }
+        if (ts.isClassDeclaration(st) && st.name?.text === id.text) return false;
+        if (ts.isImportDeclaration(st) && importedNames(st).includes(id.text)) return false;
+        if (ts.isVariableStatement(st))
+          for (const d of st.declarationList.declarations)
+            if (ts.isIdentifier(d.name) && d.name.text === id.text)
+              return !ts.isSourceFile(at) && !gate.earlyDecls.has(d);
+      }
+    }
+    return gate.libraryValues.has(gate.span(id).join(":"));
+  };
+  const stable = (x: Node) => ts.isIdentifier(x) ? !assigned.has(x.text) && initialized(x)
     : ts.isNumericLiteral(x) || ts.isStringLiteral(x) || x.kind === ts.SyntaxKind.TrueKeyword ||
       x.kind === ts.SyntaxKind.FalseKeyword || x.kind === ts.SyntaxKind.NullKeyword;
-  return stable(e.expression) && e.arguments.slice(0, index).every(stable) ? spread : null;
+  // The spread, if it is the first evaluation of `x` that may run code;
+  // `"stable"` where `x` runs none; null where code runs before it.
+  const first = (x: Node): ts.SpreadElement | "stable" | null => {
+    while (ts.isParenthesizedExpression(x)) x = x.expression;
+    if (stable(x)) return "stable";
+    const sequence = (parts: readonly Node[]): ts.SpreadElement | "stable" | null => {
+      for (const part of parts) {
+        if (ts.isSpreadElement(part) && program(part.expression)) return part;
+        if (!stable(part)) {
+          const inner = first(part);
+          return inner === "stable" ? null : inner;
+        }
+      }
+      return "stable";
+    };
+    if (ts.isArrayLiteralExpression(x)) return sequence(x.elements) === "stable" ? null : sequence(x.elements);
+    if ((ts.isCallExpression(x) && !x.questionDotToken) || ts.isNewExpression(x)) {
+      // A callee that is a stable name is read where the call is; a method
+      // read off a value reads that value's member, which the iterator's
+      // code may change, so the spread must come first within the value.
+      const callee = x.expression;
+      if (stable(callee)) {
+        const found = sequence(x.arguments ?? []);
+        return found === "stable" ? null : found;
+      }
+      const head = ts.isPropertyAccessExpression(callee) && !callee.questionDotToken ? callee.expression : callee;
+      const inner = first(head);
+      return inner === "stable" ? null : inner;
+    }
+    if (ts.isPropertyAccessExpression(x) && !x.questionDotToken) {
+      const inner = first(x.expression);
+      return inner === "stable" ? null : inner;
+    }
+    return null;
+  };
+  const found = first(e);
+  return found === "stable" ? null : found;
 }
+
+/** The local names an import declaration binds. */
+const importedNames = (st: ts.ImportDeclaration): string[] => {
+  const clause = st.importClause;
+  if (!clause) return [];
+  const bindings = clause.namedBindings;
+  return [...(clause.name ? [clause.name.text] : []),
+    ...(bindings && ts.isNamespaceImport(bindings) ? [bindings.name.text] : []),
+    ...(bindings && ts.isNamedImports(bindings) ? bindings.elements.map(e => e.name.text) : [])];
+};
+
+const functionLikeNode = (n: Node): n is ts.FunctionDeclaration | ts.FunctionExpression | ts.ArrowFunction |
+    ts.MethodDeclaration | ts.ConstructorDeclaration =>
+  ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n) || ts.isMethodDeclaration(n) ||
+  ts.isConstructorDeclaration(n);
 
 /** The names the file assigns anywhere: an assignment, a compound or
  * logical one, an update, a destructuring assignment. */

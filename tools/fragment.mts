@@ -47,7 +47,9 @@ export type Expr =
      class's key, which no source property spells either, at `undefined`
      (`brand`, its value claimed at `pos`). A class's private field or
      method `#x` is keyed by its private name's symbol. */
-  | { k: "alloc"; pos: Span; fields: { name: PropertyKey; e: Expr }[]; proto?: Expr;
+  /* A computed key `[k]: v` (`computed`) is the field `(k satisfies ℓ, v)`,
+     its key the one the literal ℓ converts to. */
+  | { k: "alloc"; pos: Span; fields: { name: PropertyKey; e: Expr; computed?: true }[]; proto?: Expr;
       brand?: { key: string; pos: Span } }
   /* An object literal with spreads of values: its parts in source order, a
      named field or a spread. Each part is evaluated where written, and a

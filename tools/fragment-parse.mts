@@ -185,7 +185,7 @@ export class Gate {
   /** The computed keys of the file's annotations' type literals, by span of
    * the key expression: the `unique symbol` each names, as the declaration
    * document lists it, or the reason it names none. */
-  readonly symbolNames: Map<string, number | { literal: string } | { refused: string }> = new Map();
+  readonly symbolNames: Map<string, number | { literal: string; value: string | number } | { refused: string }> = new Map();
   /** Mapped types' keys and library mapped types' arguments in the file's
    * annotations, by span: the union of literals and primitives TypeScript
    * computes for each, or null. */
@@ -318,6 +318,9 @@ export class Gate {
   /** The names TypeScript binds to the standard library's declarations
    * alone, among those the gate lowers specially (`libraryNames`), by span. */
   readonly libraryNames: Set<string> = new Set();
+  /** The names the file declares nowhere that TypeScript binds to the
+   * standard library's `var`s and functions alone, by span. */
+  readonly libraryValues: Set<string> = new Set();
   /** The identifiers spelled `undefined` that TypeScript binds to the global
    * `undefined`, by span: those alone read the value `undefined`. */
   readonly globalUndefined: Set<string> = new Set();
@@ -1356,7 +1359,19 @@ function lowerFile(file: string, carriesContext: boolean,
   // The names the gate lowers specially where they are the standard
   // library's: TypeScript decides (`libraryName`).
   const libraryNameNodes: Node[] = [];
+  // The names read as values, which a hoisted spread may pass where the
+  // file declares them nowhere: TypeScript decides which are the standard
+  // library's `var`s and functions (`libraryValue`). A spread of a program's
+  // iterable is a reason to read the declarations; these names alone are
+  // not.
+  const libraryValueNodes: Node[] = [];
   const findLibraryNames = (node: Node): void => {
+    if (ts.isIdentifier(node) && node.parent && !ts.isTypeNode(node.parent) &&
+        !(ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) &&
+        !((ts.isPropertyAssignment(node.parent) || ts.isVariableDeclaration(node.parent) ||
+          ts.isParameterDeclaration(node.parent) || ts.isFunctionDeclaration(node.parent) ||
+          ts.isMethodDeclaration(node.parent) || ts.isClassDeclaration(node.parent)) && node.parent.name === node))
+      libraryValueNodes.push(node);
     if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
       if (["call", "apply", "bind"].includes(node.name.text)) libraryNameNodes.push(node.name);
       if (node.name.text === "assign" && ts.isIdentifier(node.expression) && node.expression.text === "Object")
@@ -1707,6 +1722,8 @@ function lowerFile(file: string, carriesContext: boolean,
         methodTarget: ([start, end]) => gate.methodTargets.add(`${start}:${end}`),
         libraryNames: libraryNameNodes.map(node => gate.span(node)),
         libraryName: ([start, end]) => gate.libraryNames.add(`${start}:${end}`),
+        libraryValues: libraryValueNodes.map(node => gate.span(node)),
+        libraryValue: ([start, end]) => gate.libraryValues.add(`${start}:${end}`),
         elementReads: elementReadNodes.map(node => gate.span(node)),
         hostElement: ([start, end]) => gate.hostElements.add(`${start}:${end}`),
         regexps: regexpNodes.map(node => gate.span(node)),

@@ -1030,3 +1030,58 @@ import { runEmitted, runExample, runImporting } from "../pipeline/run-example.mt
   assert.equal(runExample("invalid-tag-computed-write", "Object.prototype.toString.call(tagged(Symbol.toStringTag))"),
     "[object Promise]", "invalid-tag-computed-write: a computed write gives the object the tag");
 }
+{
+  // A computed key is evaluated before the value: read before its
+  // declaration, the key throws, and the value has not run.
+  assert.equal(runExample("object-computed-key-order", "(() => { const log = []; const k = order(log); return JSON.stringify([log, k]); })()"),
+    '[["thrown","value"],1]', "object-computed-key-order: the key throws before the value runs");
+}
+{
+  // A program iterable spread first in its statement: its steps run before
+  // the later element's code, as in place.
+  assert.equal(runExample("spread-program-iterable-first",
+    "(() => { const log = []; before(new Counter(log, 2)); return JSON.stringify(log); })()"),
+  '["step","step","step","later"]', "spread-program-iterable-first: the iterator steps before the later element");
+}
+{
+  // A read that throws before a spread's iterator runs: the first call logs
+  // the throw alone, the iterator runs at the second.
+  assert.equal(runExample("spread-program-iterable-uninitialized-refused",
+    "(() => { const log = []; const n = early(log); return JSON.stringify([log, n]); })()"),
+  '[["thrown","iterator"],1]', "spread-program-iterable-uninitialized-refused: the read throws before the iterator runs");
+}
+{
+  // A global getter read as a callee runs before the iterator; a global
+  // lexical binding read before its initialization throws before it.
+  assert.equal(runExample("spread-program-iterable-global-getter-refused",
+    "(() => { const log = []; Object.defineProperty(globalThis, \"counted\", { get() { log.push(\"getter\"); " +
+    "return (...xs) => xs.length; } }); call(log); return JSON.stringify(log); })()"),
+  '["getter","iterator"]', "spread-program-iterable-global-getter-refused: the getter runs before the iterator");
+  assert.equal(runExample("spread-program-iterable-ambient-function-refused",
+    "(() => { const log = []; Object.defineProperty(globalThis, \"counted\", { get() { log.push(\"getter\"); " +
+    "return (...xs) => xs.length; } }); call(log); return JSON.stringify(log); })()"),
+  '["getter","iterator"]', "spread-program-iterable-ambient-function-refused: the getter runs before the iterator");
+  assert.equal(runExample("spread-program-iterable-global-tdz-refused",
+    "(() => { const log = []; try { read(log); } catch { log.push(\"thrown\"); } return JSON.stringify(log); })();\nlet late = 1;"),
+  '["thrown"]', "spread-program-iterable-global-tdz-refused: the read throws before the iterator runs");
+}
+{
+  // Behaviour the host assumption on standard-library global bindings
+  // excludes, and the parser cannot detect: a getter on `globalThis.Set`
+  // returning the genuine `Set`. The source reads `Set` before the spread's
+  // iterator; the collection hoisted before the statement runs the iterator
+  // first. With a throwing iterator the source logs the getter and the
+  // iterator, the hoisted order the iterator alone.
+  const getter = "const real = Set; Object.defineProperty(globalThis, \"Set\", { get() { log.push(\"getter\"); return real; } });";
+  const throwing = "{ [Symbol.iterator]() { return { next() { log.push(\"iterator\"); throw 0; } }; } }";
+  const run = (body: string): unknown => runExample("spread-program-iterable-first",
+    `(() => { const log = []; ${getter} try { ${body} } catch {} return JSON.stringify(log); })()`);
+  assert.equal(run("distinct(new Counter(log, 1), []);"), '["getter","step","step"]',
+    "the source reads Set before the iterator steps");
+  assert.equal(run("const items = [...new Counter(log, 1)]; new Set([...items]);"), '["step","step","getter"]',
+    "the hoisted collection steps the iterator before reading Set");
+  assert.equal(run(`distinct(${throwing}, []);`), '["getter","iterator"]',
+    "the source reads Set before a throwing iterator");
+  assert.equal(run(`const items = [...${throwing}]; new Set([...items]);`), '["iterator"]',
+    "the hoisted collection throws before reading Set");
+}

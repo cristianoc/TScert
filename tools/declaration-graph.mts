@@ -480,6 +480,11 @@ export function collectDeclarations(file: string, options: {
    * standard library alone is reported to `libraryName`. */
   libraryNames?: readonly Span[];
   libraryName?: (span: Span) => void;
+  /** Names the file declares nowhere: each TypeScript binds to the standard
+   * library's `var` or function declarations alone, whose read runs no code
+   * and cannot throw, is reported to `libraryValue`. */
+  libraryValues?: readonly Span[];
+  libraryValue?: (span: Span) => void;
   /** The client's element reads `e[k]`: each whose object TypeScript types
    * as arrays and tuples only and whose key as `number`, no literal, is
    * reported to `hostElement`, and the intrinsics, among them
@@ -575,7 +580,7 @@ export function collectDeclarations(file: string, options: {
    * joins the symbols and is reported to `symbolName` with its index, any
    * other with the reason it names none. */
   symbolNames?: readonly Span[];
-  symbolName?: (span: Span, result: number | { literal: string } | { refused: string }) => void;
+  symbolName?: (span: Span, result: number | { literal: string; value: string | number } | { refused: string }) => void;
   /** Told each TypeScript error the gate reads while deciding whether a
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
@@ -1658,6 +1663,14 @@ export function collectDeclarations(file: string, options: {
       // `RegExpMatchArray` as tuple views), which the host builds with
       // `ArrayCreate`: iterated as one.
       if (library && (symbol?.name === "RegExpExecArray" || symbol?.name === "RegExpMatchArray")) return "array";
+      // A compiler-API node list is read as a dense readonly array of its
+      // elements (COMPILER-API.md, "Node lists in the model"): its own
+      // `Symbol.iterator`, indexing and `Array.from` agree (T4, run by C4),
+      // so it is iterated as that array is, a host assumption about the
+      // package's values.
+      if (symbol?.name === hostNodeList && !!symbol.declarations.length &&
+          symbol.declarations.every(d => isHostFile(d.resolve()?.getSourceFile().fileName ?? "")))
+        return "array";
       if (part.flags & TypeFlags.Object) {
         const method = checker.getPropertiesOfType(part).find(p => p.name.startsWith("__@iterator@"));
         if (method) {
@@ -1888,6 +1901,21 @@ export function collectDeclarations(file: string, options: {
         const node = d.resolve();
         return !!node && libraryFile(node.getSourceFile());
       })) options.libraryName?.(span);
+    }
+    for (const span of options.libraryValues ?? []) {
+      const name = identifierAt(client, span);
+      const symbol = name && checker.getSymbolAtLocation(name);
+      if (!symbol || symbol.flags & SymbolFlags.Alias || !symbol.declarations.length) continue;
+      // An interface or a type merged with the value declares no value.
+      const values = symbol.declarations.map(d => d.resolve())
+        .filter(node => !node || !(ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node)));
+      if (values.length && values.every(node => {
+        if (!node || !libraryFile(node.getSourceFile())) return false;
+        if (ts.isFunctionDeclaration(node)) return true;
+        const list = node.parent;
+        return ts.isVariableDeclaration(node) && !!list && ts.isVariableDeclarationList(list) &&
+          !(list.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const));
+      })) options.libraryValue?.(span);
     }
     for (const span of options.receiverTargets ?? []) {
       const name = identifierAt(client, span);
@@ -2397,7 +2425,9 @@ export function collectDeclarations(file: string, options: {
       }
       try {
         const literal = literalKeyOf(node);
-        options.symbolName?.(span, literal !== null ? { literal } : symbolOf(node));
+        const type = checker.getTypeAtLocation(node);
+        const value = type?.isStringLiteralType() || type?.isNumberLiteralType() ? type.value : null;
+        options.symbolName?.(span, literal !== null && value !== null ? { literal, value } : symbolOf(node));
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
         options.symbolName?.(span, { refused: error instanceof Error ? error.message : String(error) });

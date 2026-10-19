@@ -186,6 +186,16 @@ structure Guard where
   asserts : Bool
   type : Json
 
+/-- The property key a string or number literal type converts to. -/
+def computedKey (literal : Json) : Except String String := do
+  fieldsExactly literal ["k", "name", "text", "span"]
+  if (← jStr (← jField literal "k")) != "literal" then throw "a computed key is checked at a literal"
+  let text ← jStr (← jField literal "text")
+  match ← jStr (← jField literal "name") with
+  | "string" => return text
+  | "number" => return numberToString (← numBits text)
+  | _ => throw "a computed key is checked at a string or number literal"
+
 mutual
 inductive Expr where
   | var (pos : Span) (name : String)
@@ -846,7 +856,21 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let parts ← fields.mapM fun f => do
       let key ← PropKey.decode (← jField f "name")
       if let .str s := key then discard <| sourceKey s
-      return (key, ← decodeExpr (← jField f "e"))
+      let e ← decodeExpr (← jField f "e")
+      -- A computed key `[k]: v` is its field `(k satisfies ℓ, v)`: the key
+      -- expression checked at a string or number literal ℓ, then the value.
+      -- The field's key is the one ℓ converts to (`ToPropertyKey`, a
+      -- number's by its `ToString`).
+      match (f.getObjVal? "computed").toOption with
+      | none => fieldsExactly f ["name", "e"]
+      | some computed => do
+        -- Its key is compared with its literal before the annotations are
+        -- read (`SourceClaimJson.computedGate`).
+        fieldsExactly f ["name", "e", "computed"]
+        if computed != .bool true then throw "a computed field is marked `true`"
+        let .comma _ (.cast _ (some _) _) _ := e
+          | throw "a computed key's field is its key's check at a literal, then its value"
+      return (key, e)
     -- A class instance holds its class's prototype object under the key no
     -- source property spells: the parser's lowering of a class states it
     -- apart from the fields, never as a key.
