@@ -23,10 +23,10 @@ function isObject(v: unknown): v is Record<string, unknown> {
 }
 /** An ordinary arrow's effect, the one a structural function atom states. */
 const isOrdinary = (effect: unknown): boolean => isCallEffect(effect) && sameEffect(effect, ordinaryEffect);
-/** A list of records where the producer sends one: what arrives may not be one,
- * and a nullish element reaches the field read and throws there, as before. */
+/** A list of records where the producer sends one: each element is checked
+ * to be an object, so a list holding anything else is not one. */
 function isRecordList(v: unknown): v is Record<string, unknown>[] {
-  return Array.isArray(v);
+  return Array.isArray(v) && v.every((e: unknown) => isObject(e));
 }
 /** The atoms whose kind is all there is to them, read off `Atom` rather than
  * restated: the members whose only field is `a`. */

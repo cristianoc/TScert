@@ -17,7 +17,9 @@ import type { DiagnosticOutcome, HeapKnowledge, ObligationDiagnostic, SourceMapE
  * elements stop being checked; `isList` keeps them unknown. */
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object";
-const isList = (v: unknown): v is unknown[] => Array.isArray(v);
+// `Array.isArray` finds an array of any elements, which a reader may read but
+// not write at `unknown`.
+const isList = (v: unknown): v is readonly unknown[] => Array.isArray(v);
 
 /**
  * What the verifier had and what had to follow from it, in source names.
