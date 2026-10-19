@@ -376,20 +376,30 @@ where `split` holds one. -/
     compile scope Γ o afterObject
 
 /-- A family guard's test of an immutable name (`Fragment.Expr.tagMember`):
-its derivation, with its operand's and its domain's obligations, then the
+its domain's obligation, then the
 test of the name's slot, or a read of its field into a slot of its own and
 the test of that, at the continuation `cont` gives past the slots the nodes
 add. The read's link states what the field holds, which the test's yields
 refine the name's object by (`PromiseCalls.memberYield`). -/
-@[nospecialize] def memberNodes (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
+@[nospecialize] def memberNodes (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (e : Fragment.Expr) (cont : Nat → Continuation) :
     Compiler Target := do
-  let .tagMember p _ field tags (.var _ name) := e | throw "internal extraction error: a family guard's test of no name"
+  let .tagMember p domain field tags (.var _ saved) := e | throw "internal extraction error: a family guard's test of no name"
+  -- A saved operand read from an immutable name is tested at that name's
+  -- slot, which holds the same value, as a promise's actual is
+  -- (`promiseNarrowing`).
+  let name := match (← executionOrigins).lookup saved with
+    | some (.var _ original) => if (memberSlot scope original).isSome then original else saved
+    | _ => saved
   let some i := memberSlot scope name
     | throw (locatedRefusal (← table) p .expressionClaim
         "a family guard's test of a name the unit does not hold as one value")
   let A ← exprType fc e
-  let _ ← LoweringExpression.closureExpr recursive fc scope Γ e
+  -- The name within the guard's domain, an obligation of its slot; the
+  -- operand's claim is its evaluation's, the test's claim its node's.
+  let D ← lower (Fragment.translate domain)
+  let check := DirectProof.var Γ i D
+  obligation p check.goal (some check) "guard-domain" scope
   let some X := Γ[i]? | throw "internal extraction error: a family guard's slot"
   -- The test's derivation is one node per tag (`memberPlan`), whatever the
   -- tested value's type.
@@ -397,7 +407,11 @@ refine the name's object by (`PromiseCalls.memberYield`). -/
   | none => emitPlanned p (memberPlan Γ i X A tags) (cont 0) Γ A "tag-dispatch" (scope := scope)
   | some fld =>
     let G := SourceTypes.graph (← table)
-    let R := (← readCell G Γ fld (DirectProof.var Γ i X)).type
+    -- The field's type as the name's arms read it, or, where some arm
+    -- reads it otherwise, the tags' primitive, which the read's own
+    -- derivation must establish.
+    let R ← tryCatch (do pure (← readCell G Γ fld (DirectProof.cast Γ (← byClause X) (DirectProof.var Γ i X))).type)
+      fun _ => do pure [← lower (SourceTypes.use (match tags with | .strEq _ :: _ => .str | _ => .num))]
     let test ← emitPlanned p (memberPlan (R :: Γ) 0 R A tags) (cont 1) (R :: Γ) A "tag-dispatch"
       (scope := held ⟨"",some p⟩ :: scope)
     emitAt p (.readAt fld (.var i)) (.bind test) Γ R "tag-dispatch" (scope := scope)
@@ -570,7 +584,7 @@ Mappings discard only the temporaries introduced by this expression. -/
   | .tagMember _ _ _ _ _ =>
     -- A family guard's test as a value: its nodes (`memberNodes`), its
     -- Boolean bound for `next`.
-    memberNodes recursive fc scope Γ e fun k =>
+    memberNodes fc scope Γ e fun k =>
       .bind ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
         (fun j => if j == 0 then 0 else j+k))⟩
   | .cast _ annot a =>
@@ -1048,7 +1062,7 @@ traverses its operands once instead of evaluating it and then replaying it. -/
   if let .tagMember .. := cond then
     let shift := fun (t : Target) (k : Nat) =>
       (⟨t.label, some ((t.mapping.getD (List.range scope.length)).map (·+k))⟩ : Target)
-    return ← memberNodes recursive fc scope Γ cond fun k => .branchBind (shift yes (k+1)) (shift no (k+1))
+    return ← memberNodes fc scope Γ cond fun k => .branchBind (shift yes (k+1)) (shift no (k+1))
   let simple := do
     let A ← exprType fc cond
     if let some (snapshot, read, tested) := readGuard scope cond then
@@ -1143,7 +1157,11 @@ traverses its operands once instead of evaluating it and then replaying it. -/
     let arrays ← if arrayTested left then some <$> builtinArrayTy else pure none
     let G := SourceTypes.graph (← table)
     let singles ← conditionSingletons G scope Γ left
-    let H := conditionContext G scope Γ left andOp arrays (singletonOf singles)
+    let origins ← executionOrigins
+    let original := fun (n : String) => match origins.lookup n with
+      | some (.var _ o) => o
+      | _ => n
+    let H := conditionContext G scope Γ left andOp arrays (singletonOf singles) original
     let rhs ← compileConditionAtom recursive fc scope H right yes no
     compileConditionAtom recursive fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
   | .not _ e =>

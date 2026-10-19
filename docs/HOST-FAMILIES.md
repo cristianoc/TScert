@@ -298,7 +298,11 @@ guard's declared type is
 `SyntaxKind.TypeAliasDeclaration | undefined` verifies and returns 345 under
 Node. No guard of a family is read at its declared predicate: a guard the
 table lists narrows by its entry, and every other is read at its declared
-parameters and result without predicate, narrowing nothing.
+parameters and result without predicate, narrowing nothing. A guard of the
+family is a function declaring a predicate in a module the table records an
+entry of, or of a parameter typed by a member of the family or by its tag
+enum; a predicate of another interface of the package, such as the sync
+API's `isUnionType(type: Type)`, is read as an imported guard's is.
 
 It is an instance of the [effects vision](#stable-members): an operation
 proved stable for a structure makes the effect-free rule sound for code

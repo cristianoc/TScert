@@ -3223,14 +3223,18 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     return path;
   };
   const claims = join(artifacts, "claims.json");
-  const searched = produceWith(artifacts, claims, "forged-guard-domain", forgedDocument("forged-guard-domain", narrowed));
+  const narrowedDocument = forgedDocument("forged-guard-domain", narrowed);
+  const searched = produceWith(artifacts, claims, "forged-guard-domain", narrowedDocument);
   const detail = searched.stdout + searched.stderr;
   assert.equal(searched.status, 1, detail);
   assert.ok(detail.includes(`at [${call.pos.join(",")})`), `the narrowed domain refused at the call: ${detail}`);
+  // The case's evidence, offered for the narrowed document, is refused too.
+  assert.match(invoke(claims, join(artifacts, "evidence.json"), artifacts, narrowedDocument),
+    /evidence does not justify the extracted program and exact claims|evidence refusal at \[\d+,\d+\)|obligation/);
   const absent = produceWith(artifacts, claims, "forged-guard-no-domain", forgedDocument("forged-guard-no-domain", null));
   assert.equal(absent.status, 1, absent.stdout + absent.stderr);
   assert.match(absent.stdout + absent.stderr, /a family guard's call states its guard's domain/);
-  process.stdout.write("forged guard domains: a domain the argument is not within refused at the call, and a call without its domain by the decoder\n");
+  process.stdout.write("forged guard domains: a domain the argument is not within refused at the call by the search and by the checker against the case's evidence, and a call without its domain by the decoder\n");
 }
 {
   // A correction of a method to absent (HOST-FAMILIES.md, "The family

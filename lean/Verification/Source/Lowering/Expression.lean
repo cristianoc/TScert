@@ -188,7 +188,13 @@ slots are introduced only after the operand supplying their type is checked. -/
     match field with
     | none => pure (DirectProof.letE Γ operand (memberPlan K 0 operand.type A tags))
     | some fld =>
-      let read ← readCell G K fld (DirectProof.var K 0 operand.type)
+      -- A named union is read clause by clause, as a union of its arms.
+      let O ← byClause operand.type
+      -- Where some arm reads the field otherwise, the read at the tags'
+      -- primitive, which the obligation's check decides, at the call.
+      let read ← tryCatch (readCell G K fld (DirectProof.cast K O (DirectProof.var K 0 operand.type))) fun _ => do
+        let R := [← lower (SourceTypes.use (match tags with | .strEq _ :: _ => .str | _ => .num))]
+        pure (DirectProof.node K (.readAt fld (.var 0)) R .read [DirectProof.var K 0 operand.type])
       pure (DirectProof.letE Γ operand (DirectProof.letE K read (memberPlan (read.type :: K) 0 read.type A tags)))
   | .cast _ annot a => do
     -- The value is the operand's; the claim at the cast follows from the

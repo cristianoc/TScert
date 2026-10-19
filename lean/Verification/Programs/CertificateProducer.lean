@@ -1326,36 +1326,40 @@ type, a type of the pool the test decides. Untrusted: the checker decides. -/
       let ys ← tested i tag true
       let zs ← throughFields i tag true
       let ns ← memberYields [tag] i [false]
-      pure (ys ++ zs ++ ns)
+      pure (fewestLast (ys ++ zs) ++ ns)
     | .ite (.test tag (.var i)) .fls .tru => do
       let ys ← tested i tag false
       let zs ← throughFields i tag false
-      pure (ys ++ zs)
+      pure (fewestLast (ys ++ zs))
     | t => match PromiseCalls.memberParts t with
       | some (ts, i) => if PromiseCalls.isMemberOn ts i t then memberYields ts i [true, false] else pure []
       | none => pure []
 where
   /-- A membership test's yields (`PromiseCalls.memberYield`): for each
   answer, the tested slot's type and the objects' a current read link says
-  its value was read from, as the answer leaves them, where it leaves less. -/
+  its value was read from, as the answer leaves them, where it leaves less;
+  each yield's type is its slice, which the empty choices relate to itself
+  without a search. -/
   memberYields (ts : List Tag) (i : Nat) (answers : List Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) := do
     let slot ← answers.filterMapM fun q => match Γ[i]? with
       | none => pure none
       | some A =>
         let sliced := PromiseCalls.memberSlice (BranchRefinement.tagSlice G) A ts q
-        if sliced == A then pure none else do
-        let r ← (subtypeUsing G images sliced sliced).toState
-        pure (r.value.map fun p => { conditional := q, onFalse := !q, target := i, type := sliced, evidence := some p })
+        if sliced == A then pure none else
+        pure (some { conditional := q, onFalse := !q, target := i, type := sliced, evidence := some {} })
     let fields ← (answers.flatMap fun q => k.links.map (q, ·)).filterMapM fun (q, g) =>
       if g.distinct || g.alias || g.optional || g.value != i then pure none else
         match Γ[g.cell]? with
         | none => pure none
         | some A =>
           let sliced := PromiseCalls.memberSlice (fun B t q => BranchRefinement.fieldSlice G B g.field t q) A ts q
-          if sliced == A then pure none else do
-          let r ← (subtypeUsing G images sliced sliced).toState
-          pure (r.value.map fun p => { conditional := q, onFalse := !q, target := g.cell, type := sliced, evidence := some p })
-    pure (slot ++ fields)
+          if sliced == A then pure none else
+          pure (some { conditional := q, onFalse := !q, target := g.cell, type := sliced, evidence := some {} })
+    pure (fewestLast (slot ++ fields))
+  /-- The edge sets each slot an alias link relates to every yield of its
+  class, in order: a slice of fewer labels last, the one the edge keeps. -/
+  fewestLast (ys : List (PromiseCalls.Yield ι)) : List (PromiseCalls.Yield ι) :=
+    ys.mergeSort fun a b => a.type.length ≥ b.type.length
   /-- The objects a current read link says the tested slot's value was read
   from: each at the arms whose field answers the test so. -/
   throughFields (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=

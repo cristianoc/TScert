@@ -64,8 +64,8 @@ export type GuardTable = {
   entryPoint: string;
   conditions: readonly string[];
   entryModule: string;
-  imports: Readonly<Record<string, string | Readonly<Record<string, string>>>>;
-  helpers: Readonly<Record<string, string>>;
+  imports: { readonly [pattern: string]: string | { readonly [condition: string]: string } };
+  helpers: { readonly [helper: string]: string };
   guards: readonly GuardEntry[];
   excluded: readonly (readonly [string, string])[];
 };

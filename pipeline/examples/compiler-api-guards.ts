@@ -2,9 +2,13 @@
 // (HOST-FAMILIES.md, "Calls"): a call of an immutable name is the test of its
 // tag against the entry's exact tag set, which narrows both edges, through a
 // namespace import or a named one, under `!`, `&&` and a conditional, for a
-// set of one tag or of 167; a tag guard narrows the tag itself.
+// set of one tag or of 167, in a chain of several, of a name and of a
+// constant holding a node's parent; a tag guard narrows the tag itself. A
+// guard of the sync API's types, no member of the family, keeps its
+// declared predicate.
 import * as ts from "typescript/unstable/ast";
 import { isIdentifier, isStringLiteral } from "typescript/unstable/ast";
+import { isUnionType, type Type } from "typescript/unstable/sync";
 
 export function nameLength(node: ts.Node): number {
   if (ts.isIdentifier(node)) return node.text.length;
@@ -22,7 +26,9 @@ export function elementCount(name: ts.BindingName): number {
 }
 
 export function both(a: ts.Node, b: ts.Node): number {
-  return ts.isIdentifier(a) && ts.isStringLiteral(b) ? a.text.length + b.text.length : 0;
+  return ts.isIdentifier(a) && ts.isStringLiteral(b)
+    ? a.text.length + b.text.length
+    : 0;
 }
 
 export function token(node: ts.Node): number {
@@ -31,4 +37,27 @@ export function token(node: ts.Node): number {
 
 export function modifier(kind: ts.SyntaxKind): ts.ModifierSyntaxKind | null {
   return ts.isModifierKind(kind) ? kind : null;
+}
+
+export function functionLike(node: ts.Node): boolean {
+  return (
+    ts.isFunctionDeclaration(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isArrowFunction(node)
+  );
+}
+
+export function isBody(node: ts.Node): boolean {
+  const owner = node.parent;
+  return (
+    !!owner &&
+    (ts.isFunctionDeclaration(owner) ||
+      ts.isFunctionExpression(owner) ||
+      ts.isArrowFunction(owner)) &&
+    owner.body === node
+  );
+}
+
+export function parts(type: Type): readonly Type[] {
+  return isUnionType(type) ? type.getTypes() : [type];
 }

@@ -135,9 +135,11 @@ alone, which `tagMember` checks on the edge. -/
     else
       joinContexts Γ (conditionContext G scope Γ left answer arrays single original)
         (conditionContext G scope (conditionContext G scope Γ left (!answer) arrays single original) right answer arrays single original)
-  | .tagMember _ _ field tags (.var _ name) =>
+  | .tagMember _ _ field tags (.var _ saved) =>
     -- A family guard's test leaves the name's type, or its object's arms, as
-    -- its answer's yields state them (`PromiseCalls.memberYield`).
+    -- its answer's yields state them (`PromiseCalls.memberYield`); a saved
+    -- operand, the name it was read from (`LoweringAtoms.memberNodes`).
+    let name := if (memberSlot scope (original saved)).isSome then original saved else saved
     match memberSlot scope name with
     | none => Γ
     | some i =>

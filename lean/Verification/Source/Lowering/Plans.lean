@@ -161,11 +161,10 @@ def memberPlan (H : List (Ty ι)) (slot : Nat) (B A : Ty ι) : List Tag → Dire
       [DirectProof.node H (.test t (.var slot)) [Labels.tru, Labels.fls] .test [DirectProof.var H slot B],
        DirectProof.cast H A (DirectProof.node H .tru [Labels.tru] .truLit), rest]
 
-/-- The slot a family guard's test reads: a name the scope holds as one value. -/
-@[nospecialize] def memberSlot (scope : List (ScopeBinding ι)) (name : String) : Option Nat := do
-  match ← resolve scope name with
-  | (i, .value) => some i
-  | _ => none
+/-- The slot a family guard's test reads: a name the scope holds in a slot,
+whose value the test reads where the call reads its argument. -/
+@[nospecialize] def memberSlot (scope : List (ScopeBinding ι)) (name : String) : Option Nat :=
+  valueSlot scope name
 
 def tagTestTerm (tag : Tag) (equal : Bool) (slot : Nat) : Tm :=
   .ite (.test tag (.var slot)) (if equal then .tru else .fls) (if equal then .fls else .tru)
