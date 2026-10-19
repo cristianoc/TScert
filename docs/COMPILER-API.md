@@ -1113,7 +1113,7 @@ the corpus runs are regression evidence, not proofs.
 - **T1 (node invariant).** Every object whose prototype chain carries
   $`\kappa_{\mathit{RemoteNode}}`$ has a `kind` in $`\mathcal K`$; for that
   kind $`k`$ it has every member $`S_k`$ states, holding a value of the
-  member's type; its stable members return the same value on every read,
+  member's type, and its model value holds `"RemoteNode"` under `[[host]]`; its stable members return the same value on every read,
   and nothing the package does after construction changes them. This
   defines the host-admissible worlds.
 - **T2 (guards).** The guard bodies the guard check reads are the functions
@@ -1404,6 +1404,88 @@ refusal; the restricted-value policy, then $`\mathsf{NodeList}`$; then rules 2, 
 branded types, the corrections table, every reviewed declaration text) and
 the node invariant, each tested on the host types the front end reads,
 nodes among them.
+
+### Plan: kind sets, the node invariant, host guards, stable paths
+
+The four land in this order, each a commit of its own with its controls.
+
+1. **Kind sets.** One clause of the type language, $`\mathsf{numIn}(S)`$
+   ([compact kind sets](#compact-kind-sets)):
+   - Lean: a constructor `numIn (bits : List UInt64)` of
+     `PositiveNormalization.Clause`, of the number shape, meaning
+     $`v=\mathsf{num}(b)\land b\in S`$; its meets with `num`, `numLit` and
+     `numIn` (intersection, a one-element result its literal, an empty one
+     $`\bot`$); its coverings ($`S\subseteq T`$, $`b\in S`$, `num`, and a
+     union covering each element); its `numEq` and truthiness slices in
+     `tagSlice`; admissibility and congruence, which a world-independent
+     clause has trivially.
+   - Wire: a label body's clause `{"numIn": {"bits": [b, …]}}`, sorted,
+     distinct, at least two, refused otherwise by the decoder; the producer's
+     atom `NumIn` with the same slices; `source-claims.mts` and the field-name
+     check carry the field.
+   - Evidence: no new node. A kind test is a chain of `numEq` tests, the
+     tests JavaScript runs; each slices a slot at $`\mathsf{numIn}(S)`$ in one
+     node, and a field test reaches the record arms through the field slice.
+2. **The node invariant**, in the declaration graph (trusted front end):
+   - For each $`k\in\mathcal K`$, $`S_k`$ from its declaration $`I_k`$ as
+     [the node invariant](#the-node-invariant) states, with the corrections.
+     Each shape carries the provenance view: a required readonly view of the
+     reserved key `[[host]]` at the string literal `"RemoteNode"`, which no
+     program object meets, since no allocation owns `[[host]]`. T1 states the
+     model value of a node holds it there.
+   - $`\mathrm{members}(A)`$ from the `extends` edges and alias unions of the
+     audited declarations, computed once per installation.
+   - Per unit, $`K_u`$: the kinds the unit's kind tests name (comparisons
+     with `SyntaxKind` members, `case` labels, and the kind sets of the host
+     guards it calls) and the kinds of the node types it names whose `kind` is
+     a set of literals. A node type $`A`$ whose `kind` is no set of literals is
+     emitted as the union of the arms $`S_k`$, $`k\in K_u\cap\mathrm{members}(A)`$,
+     and the residual $`R_u`$, the join of the others, whose `kind` is a kind
+     set. Arms with the same members are one arm whose `kind` is a kind set.
+     The emission is a declaration's equation, so claims name it by label as
+     any declaration.
+   - Controls: the cases of [tests](#tests) for the residual (`parent` of a
+     source file), separate units, the JavaScript typedef, and a forged claim
+     stating a node at an arm its kind excludes.
+3. **Host guards**, in the parser and `compiler-api.mts`:
+   - The guard check C2 reads the guard bodies of the resolved
+     `is.generated.js` and `is.js` with the front end's parser, accepts the
+     syntax of [guards](#guards), and computes $`K_g`$ from the `SyntaxKind`
+     values C1 reads. The refused guards are listed with their texts.
+   - The parser writes a call of a checked host guard as the rule
+     `host-guard` states: the argument evaluated once into a fresh binding
+     (the binding itself where the argument is an immutable name), then
+     `y.kind === k₁ || … || y.kind === kₙ` with each $`k_i`$ a number literal.
+     The fragment gains no form; Lean sees ordinary reads and tests.
+   - Controls: `invalid-compiler-api-guard-argument` (one evaluation, under
+     Node), a guard outside the syntax refused at its use,
+     `compiler-api-guard-false-branch` from gap to positive, and its forged
+     claims.
+4. **Stable paths** ([stable paths](#stable-paths)), after the three:
+   - Lean: a `stable` flag on a readonly view, meaning the view's location
+     has a pinned contract, one admitting at most one value at every level and
+     world; a stable view is below the plain view of the same type, and no
+     rule makes a stable view of a plain one. A rule at an edge: where a read
+     link $`x.f\mapsto y`$ holds, every arm of $`x`$'s claim states $`f`$ as a
+     stable view, and $`y`$ is claimed at $`B`$, $`x`$ is claimed at the arms
+     with $`f`$'s view at $`B`$. Soundness: the pinned contract makes the
+     location hold $`\rho(y)`$ in every later world, and a type's meaning is
+     preserved by world extension and lower levels. The refined claim is a
+     type in $`\Gamma`$, so calls and writes of other locations leave it; a
+     write of $`x`$'s slot replaces it. This is `read-eq` with the read link
+     as its certificate.
+   - Front end: the node shapes' stable members, and only theirs, as stable
+     views.
+
+**What regresses out of order.** Host guards before the node invariant read
+`ts.isIdentifier(n) && n.text` with `n: Node` as a test of `n.kind` on
+`Node`'s declared record, whose `kind` is `number`, and so lose the `true`
+outcome's narrowing the promise gives today (`compiler-api-kind-narrowing`).
+The node invariant before kind sets gives a residual a union of up to 330
+number literals, past the search limit ([arms per unit](#arms-per-unit)).
+Stable paths before host guards meet the guard's call, of an unchecked
+effect, between the read and its test: the read link would have to survive
+calls, a second mechanism. Kind sets alone change no outcome.
 
 ## A measured slice
 
