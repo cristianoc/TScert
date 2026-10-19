@@ -2,12 +2,14 @@
 // documents and claims no case can make. The controls needing no build are
 // node-runs.mts and trusted-inputs.mts, among the fast checks.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { present } from "../tools/files.mts";
 import { join } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { check, producerExecutable, readClaimsFile, readFragmentFile, verifier, type Outcome } from "./verify-source.mts";
+import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
+import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { compilerApiFamily, useFamilyDescriptionForTests, useHostInstallationForTests } from "../tools/compiler-api.mts";
 import { cases } from "./cases.mts";
@@ -473,6 +475,78 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     }
   }
   process.stdout.write("forged computed key: a key's read claimed at another literal, a field renamed or spelled otherwise than its number's ToString: refused\n");
+}
+{
+  // An `Error`-derived instance holds its message on its first link, and no
+  // `stack`: `new Decline()` claimed at a record owning `message`, or
+  // holding `stack` beside it, is refused where evidence is produced, and
+  // checking refuses the evidence of the original claim for it.
+  const errors = run("error-subclass");
+  const source = readFileSync(join(errors, "source.ts"), "utf8");
+  const start = source.indexOf("new Decline()");
+  const at = `[${start},${start + "new Decline()".length})`;
+  const forgeries: [name: string, owned: string[], viewed: string[]][] = [
+    ["forged-error-own-message", ["message"], []],
+    ["forged-error-stack", [], ["message", "stack"]],
+  ];
+  for (const [name, owned, viewed] of forgeries) {
+    const claims = readClaims(errors);
+    const str = rowOf(claims, "str");
+    const fields = (names: string[]): [string, number[]][] => names.map((field) => [field, [str]]);
+    const fn = must(claims.functions.find((f) => f.name === "omitted"), "omitted's claims");
+    const made = must(fn.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + "new Decline()".length),
+      "the construction's claim");
+    made.type = [rowOf(claims, { refs: { first: fields(owned), rest: [], views: fields(viewed) } })];
+    const forged = writeClaims(errors, name, claims);
+    refusedAt(errors, forged, name, at);
+    invoke(forged, join(errors, "evidence.json"), errors);
+  }
+  process.stdout.write("forged error instances: an own message and a stack claimed of a constructed error, refused\n");
+}
+{
+  // The allocation route's trusted boundary: the parser reserves `message`
+  // and `stack` as member names of a class extending `Error` (SOURCE-ELABORATION.md, "A class
+  // extending Error"), and Lean reads no class declaration. A fragment, claims
+  // and evidence with `text` renamed `stack` throughout are accepted: the
+  // reservation is the parser's alone.
+  const methods = run("error-subclass-methods");
+  const renamed = (file: string): string => {
+    const path = join(methods, `forged-stack-member-${file}`);
+    writeFileSync(path, readFileSync(join(methods, file), "utf8").replaceAll('"text"', '"stack"')
+      .replaceAll("Located.text", "Located.stack"));
+    return path;
+  };
+  const fragment = renamed("fragment.json");
+  const accepted = spawnSync(verifier, ["--check-source-claims", fragment, renamed("claims.json"),
+    join(methods, "source.ts"), renamed("evidence.json")], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  assert.ok(readFileSync(fragment, "utf8").includes('"name":"stack"'), "the forged fragment names a member `stack`");
+  process.stdout.write("forged stack member: accepted by Lean, the reservation enforced by the parser alone\n");
+}
+{
+  // The write route is Lean's: each write of `reserved-write-twin`, its key
+  // renamed `stack` in the fragment, the claims and the evidence, is a valid,
+  // otherwise typable document the reserved-write check alone refuses, at
+  // the write, where evidence is produced and where it is checked.
+  const twin = run("reserved-write-twin");
+  const source = readFileSync(join(twin, "source.ts"), "utf8");
+  for (const [key, write] of [["stackPattern", "o.stackPattern"], ["stackUpdate", 'o.stackUpdate += "s"'],
+      ["stackLogical", 'o.stackLogical ??= "s"'], ["stackCallback", "o.stackCallback = v"], ["stackComputed", 'o[k] = "s"']] as const) {
+    const renamed = (file: string): string => {
+      const path = join(twin, `forged-${key}-${file}`);
+      writeFileSync(path, readFileSync(join(twin, file), "utf8").replaceAll(`"${key}"`, '"stack"'));
+      return path;
+    };
+    const fragment = renamed("fragment.json");
+    const claims = renamed("claims.json");
+    const start = source.indexOf(write);
+    const at = `source refusal at [${start},${start + write.length}): a write at a key that may be \`message\` or \`stack\``;
+    const searched = produceWith(twin, claims, `forged-${key}`, fragment);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes(at), searched.stdout + searched.stderr);
+    assert.ok(invoke(claims, renamed("evidence.json"), twin, fragment).includes(at), key);
+  }
+  process.stdout.write("forged reserved writes: each write form renamed to `stack`, refused at the write in search and check\n");
 }
 {
   // An optional call of a method reads its object again as the call's
@@ -1876,7 +1950,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     // search named, or of a unit whose call of it the forged type no longer
     // admits at the signature the evidence selected.
     const callable = must(failure.source?.sourceMap?.pos, "the failed callable's source location");
-    assert.equal(existsSync(join(artifacts, "evidence.json")), consumed,
+    assert.equal(present(join(artifacts, "evidence.json")), consumed,
       `${file}: a consumed control needs the fixture's honest evidence, a production-only one has none`);
     if (consumed) {
       const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
@@ -2119,7 +2193,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   assert.equal(produce.status, 1, produce.stdout + produce.stderr);
   const failure = readDiagnostic(produce.stdout + produce.stderr);
   assert.ok(failure && failure.kind === "node-typing", "a forged dispatch effect must fail at a node's typing");
-  assert.ok(existsSync(join(artifacts, "evidence.json")), "the fixture's honest evidence");
+  assert.ok(present(join(artifacts, "evidence.json")), "the fixture's honest evidence");
   assert.match(invoke(input, join(artifacts, "evidence.json"), artifacts),
     /source effect refusal at \[\d+,\d+\): the footprint claimed for/);
   process.stdout.write("forged dispatch effect: a global regex's replacement refused in search and in checking\n");
@@ -2519,6 +2593,110 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A guard's Boolean return is a condition returning the literal `true` at
+  // the first code unit of its `return` and `false` at the second. Claimed
+  // `false` where it returns `true`, the claims are refused where evidence
+  // is produced and where the honest evidence is checked.
+  const artifacts = run("guard-boolean-return");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "isFields"), "isFields' claims");
+  const at = source.indexOf("return typeof v");
+  const truth = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === at + 1), "the true return's claim");
+  assert.deepEqual(truth.type, [1], "the true return is true");
+  truth.type = [2];
+  const input = writeClaims(artifacts, "forged-boolean-return", claims);
+  refusedAt(artifacts, input, "forged-boolean-return", `obligation at [${at},${at + 1})`);
+  assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts)
+    .includes(`reject: source evidence refusal at [${at},${at + 1}): the evidence does not establish this node's claim`));
+  // The false return claimed `true`, and an arrow guard's true return, at
+  // its `=>`, claimed `false`: each refused the same way.
+  for (const [file, name, from, text, before, after] of [
+    ["guard-boolean-return", "isFields", "function isFields", "return typeof v", 2, 1],
+    ["guard-boolean-return-boundaries", "guardOf", "function guardOf", "=> typeof v", 1, 2],
+  ] as const) {
+    const where = run(file);
+    const text0 = readFileSync(join(where, "source.ts"), "utf8");
+    const forgedClaims = readClaims(where);
+    const fnClaims = must(forgedClaims.functions.find(f => f.name === name), `${name}'s claims`);
+    const offset = text0.indexOf(text, text0.indexOf(from)) + (before === 2 ? 1 : 0);
+    // A closure's interior claims are stated per signature row as well.
+    const literals = [...fnClaims.expressions, ...(fnClaims.arrows ?? []).flatMap(a => a.rows.flatMap(r => r.expressions))]
+      .filter(e => e.pos[0] === offset && e.pos[1] === offset + 1);
+    assert.ok(literals.length > 0, `${name}'s literal at ${offset}`);
+    for (const literal of literals) {
+      assert.deepEqual(literal.type, [before], `${name}'s literal`);
+      literal.type = [after];
+    }
+    const forgedInput = writeClaims(where, `forged-boolean-return-${name}`, forgedClaims);
+    refusedAt(where, forgedInput, `forged-boolean-return-${name}`, "evidence search failed");
+    assert.match(invoke(forgedInput, join(where, "evidence.json"), where),
+      /reject: source evidence (does not justify the extracted program and exact claims|refusal at \[\d+,\d+\): the evidence does not establish this (node|obligation)'s claim)/);
+  }
+  process.stdout.write("guard Boolean return: the true return claimed false, the false one claimed true and an arrow's true one claimed false refused in search and in checking\n");
+}
+
+{
+  // A guard closure passed as a callback is claimed at its own signature,
+  // its promise and the callback's longer signature. Claimed without the
+  // promise, the closure is refused where evidence is produced and where the
+  // honest evidence is checked.
+  const artifacts = run("guard-closure-callback");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const fn = must(claims.functions.find(f => f.name === "allPresent"), "allPresent's claims");
+  const at = source.indexOf("(x): x is string");
+  const closure = must(fn.expressions.find(e => e.pos[0] === at), "the closure's claim");
+  const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
+  assert.ok(typeof label === "number", "the closure's claim is a row");
+  const row = must(claims.types[label], "the closure's row");
+  const clause = row[0];
+  assert.ok(clause !== undefined && typeof clause === "object" && "arrs" in clause, "an arrow clause");
+  const arrows = clause.arrs.arrows;
+  const promised = arrows.findIndex(a => a.effect.promise !== null);
+  assert.ok(promised >= 0, "the claim offers the promise");
+  arrows.splice(promised, 1);
+  const rows = must((fn.arrows ?? []).find(a => a.pos[0] === at), "the closure's arrow rows");
+  rows.rows.splice(promised, 1);
+  const input = writeClaims(artifacts, "forged-guard-closure-promise", claims);
+  const refusal = "a guard closure's claim must offer its written promise over its annotated parameters";
+  refusedAt(artifacts, input, "forged-guard-closure-promise", refusal);
+  assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  // The callback's longer signature, a row of its own, claimed at a result
+  // the body does not return, and the rows of interior claims one short of
+  // the signatures: each refused where evidence is produced and where the
+  // honest evidence is checked.
+  type ClosureArrows = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"];
+  type ClosureRows = NonNullable<SourceClaims["functions"][number]["arrows"]>[number]["rows"];
+  const forgeLonger = (name: string, edit: (forgedArrows: ClosureArrows, forgedRows: ClosureRows) => void): string => {
+    const forged = readClaims(artifacts);
+    const forgedFn = must(forged.functions.find(f => f.name === "allPresent"), "allPresent's claims");
+    const forgedClosure = must(forgedFn.expressions.find(e => e.pos[0] === at), "the closure's claim");
+    const forgedLabel = Array.isArray(forgedClosure.type) ? forgedClosure.type[0] : undefined;
+    assert.ok(typeof forgedLabel === "number", "the closure's claim is a row");
+    const forgedClause = must(forged.types[forgedLabel], "the closure's row")[0];
+    assert.ok(forgedClause !== undefined && typeof forgedClause === "object" && "arrs" in forgedClause, "an arrow clause");
+    edit(forgedClause.arrs.arrows, must((forgedFn.arrows ?? []).find(a => a.pos[0] === at), "the closure's rows").rows);
+    return writeClaims(artifacts, name, forged);
+  };
+  const longerResult = forgeLonger("forged-guard-closure-longer-result", (arrows) => {
+    const longer = must(arrows.find(a => a.arguments.length > 1), "the callback's longer signature");
+    longer.result = [rowOf(claims, "nul")];
+  });
+  const shortRows = forgeLonger("forged-guard-closure-short-rows", (_, rows) => { rows.pop(); });
+  for (const [input, name, refusal] of [
+    [longerResult, "forged-guard-closure-longer-result", "reject: "],
+    [shortRows, "forged-guard-closure-short-rows", "per-arrow interior claims do not match the claimed arrows"],
+  ] as const) {
+    const searched = produceWith(artifacts, input, name);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes(refusal), searched.stdout + searched.stderr);
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  }
+  process.stdout.write("guard closure callback: a claim without the promise, a longer row at an unjustified result and rows short of the signatures refused in search and in checking\n");
+}
+
+{
   // A footprint check that runs out of subtype rounds is inconclusive, not a
   // refusal: `marks` claims the empty footprint, and with one round the
   // checks of its graph exhaust. Search and checking report exhaustion, never
@@ -2792,8 +2970,14 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const str = rowOf(claims, "str");
   const tru = rowOf(claims, { boolLit: { value: true } });
   for (const entry of guard.entries) for (const b of entry.bindings) if (b.name === x.name) b.type = [str];
-  const read = must(guard.expressions.find((e) => e.pos[1] - e.pos[0] === x.name.length), "the read of the argument");
-  for (const e of guard.expressions) e.type = e === read ? [str] : [tru];
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  // The answers' literals at the first two code units of the `return`
+  // (`booleanReturn`) keep their claims.
+  const answer = (e: { pos: [number, number] }): boolean =>
+    source.startsWith("return", e.pos[0]) || source.startsWith("eturn", e.pos[0]);
+  const read = must(guard.expressions.find((e) => !answer(e) && source.slice(e.pos[0], e.pos[1]) === x.name),
+    "the read of the argument");
+  for (const e of guard.expressions) if (!answer(e)) e.type = e === read ? [str] : [tru];
   const forged = writeClaims(artifacts, "forged-guard-promise", claims);
   const searched = produceWith(artifacts, forged, "forged-guard-promise");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
@@ -3226,7 +3410,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.throws(() => readClaimsFile(raw), /not valid UTF-8/);
   const rawSearched = produceWith(artifacts, raw, "forged-invalid-utf8");
   assert.equal(rawSearched.status, 1, rawSearched.stdout + rawSearched.stderr);
-  assert.match(rawSearched.stdout + rawSearched.stderr, /non UTF-8/);
+  assert.match(rawSearched.stdout + rawSearched.stderr, /^reject: .*a text that is not valid UTF-8 is refused/);
   // The parser's document, read by the producer and by Lean.
   const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
   assert.ok(fragment.includes(""), "the fragment holds U+E000");
@@ -3246,4 +3430,46 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.notEqual(rawProposed.status, 0, rawProposed.stdout + rawProposed.stderr);
   assert.match(rawProposed.stdout + rawProposed.stderr, /not valid UTF-8/);
   process.stdout.write("wire strings: lone surrogates and invalid UTF-8 refused by the producer, Lean and TypeScript\n");
+}
+{
+  // A step's exit other than its complete refusal record (the verifier's
+  // exit 1, a first line `reject: …` and a last line `end of refusal`; the
+  // producer's exit 2 and `unsupported: …`) is a tool failure, no verdict:
+  // no output, an exception's text, and a record cut short, at each step
+  // whose refusal is a verdict; and an `--explain` run of the producer that
+  // fails or prints no explanations.
+  const dir = runDirectory("tscert-step-failures-");
+  const fake = (name: string, real: string, status: number): string => {
+    const path = join(dir, name);
+    writeFileSync(path, `#!/bin/sh\nif [ "$1" = "$FAIL_MODE" ]; then\n  [ -n "$FAIL_TEXT" ] && echo "$FAIL_TEXT" >&2\n` +
+      `  [ -n "$FAIL_OUT" ] && echo "$FAIL_OUT"\n  exit \${FAIL_STATUS:-${status}}\nfi\nexec "${real}" "$@"\n`);
+    chmodSync(path, 0o755);
+    return path;
+  };
+  const fakeVerifier = fake("verifier.sh", verifier, 1);
+  const fakeProducer = fake("producer.sh", producerExecutable, 2);
+  const outcomeOf = (source: string, env: Record<string, string>): Outcome => {
+    const ran = spawnSync(process.execPath, [join(here, "verify-source.mts"), join(here, "examples", source)],
+      { encoding: "utf8", timeout: 120_000, env: { ...process.env, VERIFIER: fakeVerifier, PRODUCER: fakeProducer, ...env } });
+    return readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+  };
+  for (const mode of ["--lower-control-flow", "--produce-source-claims", "--check-source-claims"])
+    for (const text of ["", "uncaught exception: forced by pipeline/test.mts", "reject: a record cut short"]) {
+      const outcome = outcomeOf("optional-chain-element-receiver.ts", { FAIL_MODE: mode, FAIL_TEXT: text });
+      assert.equal(outcome.status, "error", `${mode} ${JSON.stringify(text)}: ${JSON.stringify(outcome)}`);
+      assert.equal(outcome.detail,
+        `tool failure: verifier ${mode} exited with status 1 without a complete refusal: ${text || "no output"}`);
+    }
+  // The producer's run is told by its arguments' count, the fragment first.
+  const cut = outcomeOf("invalid-closure-contextual-result.ts", { FAIL_MODE: "--explain", FAIL_STATUS: "2" });
+  assert.equal(cut.status, "error", JSON.stringify(cut));
+  assert.equal(cut.detail, "tool failure: the producer's --explain exited with status 2: no output");
+  const garbled = outcomeOf("invalid-closure-contextual-result.ts", { FAIL_MODE: "--explain", FAIL_STATUS: "0", FAIL_OUT: "[{\"pos\":1}]" });
+  assert.equal(garbled.status, "error", JSON.stringify(garbled));
+  assert.match(garbled.detail ?? "", /^tool failure: the producer's --explain printed a malformed explanation/);
+  // An operational failure of the verifier is its own exit status, 3.
+  const unread = spawnSync(verifier, ["--lower-control-flow", join(dir, "absent.json")], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(unread.status, 3, unread.stderr);
+  assert.match(unread.stderr, /^error: /);
+  process.stdout.write("step failures: an exit without a complete refusal, and a failed --explain, are tool failures\n");
 }

@@ -43,6 +43,10 @@ so it fails here rather than reaching a message. -/
 @[nospecialize] def emitAt (pos : Span) (t : Tm) (k : Continuation) (Γ : List (Ty Tree)) (A : Ty Tree)
     (role : String := "node-typing") (environmentStart : Option Nat := none)
     (scope : List (ScopeBinding Tree) := []) : Compiler Target := do
+  -- Every write the lowering emits is a node's term: one at a reserved key
+  -- needs a proto-free receiver (`reservedWriteCheck`).
+  if let .writeAt fld (.var i) _ := t then
+    reservedWriteCheck pos (Γ[i]?.getD []) (reservedKey fld)
   let target ← emit t k Γ A
   if scope.length != Γ.length then
     throw s!"internal extraction error: source map covers {scope.length} of {Γ.length} bindings at {pos.1}"

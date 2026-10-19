@@ -1,5 +1,6 @@
 import Verification.Source.Lowering.State
 import Verification.Source.FragmentTypes
+import Verification.Types.ProtoFree
 
 /-! Resolves source claims and type-directed expression operations. -/
 namespace Verification.SourceExtraction
@@ -372,6 +373,65 @@ singleton; NaN, which no equality test finds, is not one. -/
     let _ ← arrayIndex G K
     pure .element
 
+/-! ### Reserved writes
+
+A write of a key some object holds as a property the model does not state is
+lowered only onto a receiver whose checked claim excludes every such object
+(SOURCE-ELABORATION.md, "Reserved writes"). The policy is its two parts: the
+reserved keys, and the receiver exclusion, `ProtoFree.clause` over the
+receiver's clauses. An instance of the `Error` family owns a non-enumerable
+`message` (where its construction passed one) and `stack`; every such
+instance owns the prototype key in the model. -/
+
+/-- The keys a write may reach only on a proto-free receiver. -/
+def reservedKeys : List String := ["message", "stack"]
+
+/-- A key a write names. -/
+def reservedKey : PropKey → Bool
+  | .str s => reservedKeys.contains s
+  | .sym _ => false
+
+/-- A key whose claim is `K` may be reserved: unless `K` is of clause rows,
+each a number, bigint, symbol, Boolean, `null`, `undefined` (whose
+conversions to a key are none of the reserved strings) or a string literal
+other than them. Any other clause, an object's included (whose conversion to
+a key runs code), may be. -/
+@[nospecialize] def reservedKeyClaim (G : PositiveGraphs.NormalGraph ι) (K : Ty ι) : Bool :=
+  !G.plainTy K || (PositiveNormalization.splitSets (PositiveRules.expand G K)).any fun c => match c with
+    | .strLit s => reservedKeys.contains s
+    | .strIn ss => ss.any reservedKeys.contains
+    | .num | .numLit _ | .numIn _ | .bigint | .bigintLit _ | .symbol | .symbolLit _
+    | .bool | .boolLit _ | .nul | .undef => false
+    | _ => true
+
+/-- No value of `T` owns the prototype key (`ProtoFree.list_sound`): `T` is
+of clause rows, each proto-free. A type with a parameter or scheme row has no
+clauses to read and is not proto-free. -/
+@[nospecialize] def protoFreeTy (G : PositiveGraphs.NormalGraph ι) (T : Ty ι) : Bool :=
+  G.plainTy T && (PositiveNormalization.splitSets (PositiveRules.expand G T)).all ProtoFree.clause
+
+/-- An `Object.assign` source owns no reserved key: of clause rows, each a
+primitive, or a record or dictionary with no index and a key bound admitting
+none of them. -/
+@[nospecialize] def excludesReservedKeys (G : PositiveGraphs.NormalGraph ι) (S : Ty ι) : Bool :=
+  G.plainTy S && (PositiveNormalization.splitSets (PositiveRules.expand G S)).all fun c =>
+    let bounded := fun (ks : List KeyBound) =>
+      ks.any fun b => reservedKeys.all fun k => !b.admits (.str k)
+    match c with
+    | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .str | .strLit _ | .strIn _
+    | .bigint | .bigintLit _ | .symbol | .symbolLit _ => true
+    | .refs _ _ _ _ _ ks => bounded ks
+    | .dict _ _ _ [] _ _ ks [] => bounded ks
+    | _ => false
+
+/-- The refusal of a write at a key that may be reserved onto a receiver of
+claim `R` that is not proto-free, located at the write. -/
+@[nospecialize] def reservedWriteCheck (pos : Span) (R : Ty Tree) (reserved : Bool) : Compiler Unit := do
+  let T ← table
+  if reserved && !protoFreeTy (SourceTypes.graph T) R then
+    throw (locatedRefusal T pos .expressionClaim
+      "a write at a key that may be `message` or `stack` onto an object that may hold a prototype: an instance of the `Error` family owns them as non-enumerable properties the model does not state, so the write is typed only on a receiver whose type excludes every object holding a prototype")
+
 /-- Whether a key's claim is of keys known only at run time: every clause a
 string, a number or a symbol, singletons or families, and not one key the
 source spells (one string or number singleton, which `growingWrite` reads as
@@ -448,7 +508,11 @@ negation. -/
   | .alloc p ns es => return .alloc p ns (← es.mapM (comparisonsExpr fc))
   | .build p ns es => return .build p ns (← es.mapM (comparisonsExpr fc))
   | .read p f e => return .read p f (← comparisonsExpr fc e)
-  | .write p f l r => return .write p f (← comparisonsExpr fc l) (← comparisonsExpr fc r)
+  | .write p f l r =>
+    -- Checked here, before any lowering of the write, and again where the
+    -- write is emitted (`reservedWriteCheck`).
+    reservedWriteCheck p (← exprType fc l) (reservedKey f)
+    return .write p f (← comparisonsExpr fc l) (← comparisonsExpr fc r)
   | .index p _ e key =>
     let key ← comparisonsExpr fc key
     let e ← comparisonsExpr fc e
@@ -486,6 +550,8 @@ negation. -/
   | .update p op target rhs post =>
     return .update p op (← comparisonsExpr fc target) (← rhs.mapM (comparisonsExpr fc)) post
   | .indexWrite p _ r key rhs =>
+    reservedWriteCheck p (← exprType fc r)
+      (reservedKeyClaim (SourceTypes.graph (← table)) (← exprType fc (← comparisonsExpr fc key)))
     let key ← comparisonsExpr fc key
     let r ← comparisonsExpr fc r
     let rhs ← comparisonsExpr fc rhs

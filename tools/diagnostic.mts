@@ -5,6 +5,7 @@ import { decodeTag, decodeTerm, type Json, type Tag, type Term } from "./calculu
 import { decodeNode, type ProgramNode } from "./control-flow.mts";
 import type { Span } from "./span.mts";
 import { illFormedString } from "./wire-strings.mts";
+import { passToolFailure } from "./thrown.mts";
 
 // Optional explanatory metadata, never evidence. A record this reader cannot
 // decode field by field is left in the human diagnostic; it must not change the
@@ -46,7 +47,7 @@ function heapAtom(v: Json): void {
   if (heapAtoms.includes(v)) return;
   // Singleton payloads use the graph language's existing decoder.
   if (isRecord(v) && "strLit" in v) {
-    decodeGraph([[{strLit: record(v,["strLit"]).strLit}]]);
+    decodeGraph([[record(v,["strLit"])]]);
     return;
   }
   if (isRecord(v) && "tag" in v) {
@@ -55,8 +56,7 @@ function heapAtom(v: Json): void {
     if (typeof t.answer !== "boolean") throw Error("invalid tag atom answer");
     return;
   }
-  const a = record(v,["numLit"]);
-  decodeGraph([[{numLit: a.numLit}]]);
+  decodeGraph([[record(v,["numLit"])]]);
 }
 interface HeapFact {
   slot: number;
@@ -410,7 +410,8 @@ export function readDiagnostic(
       return undefined;
     if ((kind === "node-typing" || kind === "expression-claim") && !d.sequent)
       return undefined;
-  } catch {
+  } catch (error) {
+    passToolFailure(error);
     return undefined;
   }
   // asserted: the decoder's result, checked field by field and variant by variant above

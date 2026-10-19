@@ -10,7 +10,7 @@ import type { BindingAst, Expr, Stmt, TypeParamAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { childrenOf, isStatic, nameOf } from "./syntax.mts";
 import { enumIntrinsicName, enumMembersTerm, literalTerm } from "./intrinsics.mts";
-import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
+import { type ClassRecord, type EnumMember, GENERATOR, HAS_INSTANCE, PRIVATE_INHERITANCE, baseName, classKey, errorBase, messageArgumentName, messageName, completes, conditionParen, enumMemberName, firstOptional, freshName, literalExpr, parameterName, prototypeName, selfConstructs, selfName, staticName, unnamedMember } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
 import { ordinaryEffect } from "./type-graph.mts";
 
@@ -220,9 +220,14 @@ export function classStmt(this: Gate, node: ClassDeclaration): Stmt {
     const t = heritage.types[0];
     if (heritage.types.length !== 1 || !t || !ts.isIdentifier(t.expression))
       gate.fail(heritage, "a class extends one class, by its name");
-    base = gate.classRecords.get(t.expression.text) ?? null;
+    // The standard `Error`, as TypeScript resolves it, is a base whose
+    // construction the lowering states (SOURCE-ELABORATION.md, a class
+    // extending `Error`).
+    base = gate.classRecords.get(t.expression.text) ??
+      (t.expression.text === "Error" && gate.libraryName(t.expression) && !t.typeArguments?.length
+        ? errorBase(gate.span(t.expression)) : null);
     if (!base)
-      gate.fail(t, "a class extends a class declared earlier in the file; one from a library, an ambient declaration or a value is outside the fragment");
+      gate.fail(t, "a class extends a class declared earlier in the file, or the standard `Error`; one from a library, an ambient declaration or a value is outside the fragment");
     // A generic class's binders are the declaring unit's parameter rows,
     // one per spelling: a derived class extends a generic base at the
     // base's own binders, which it declares too, so the base's
@@ -275,6 +280,51 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
   // read that binding directly.
   gate.strict = true;
   gate.superClass = base;
+  // An `Error`-derived instance owns `message` and `stack` in JavaScript
+  // (Node gives every instance an own `stack`, and an own `message` where one
+  // is passed): an instance member under either name would be shadowed by the
+  // own property. Each class extending one of the family is checked here, so
+  // the names are reserved at every depth. A parameter property and a
+  // constructor's `this.k = e` are fields of the instance's allocation, which
+  // the lowering defines, and are reserved here too; any other write of
+  // either key is Lean's (`reservedWriteCheck`, SOURCE-ELABORATION.md,
+  // "Reserved writes").
+  if (base?.error) {
+    const spelled = (key: Node | undefined): string | undefined =>
+      key && (ts.isIdentifier(key) || ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) ? key.text : undefined;
+    const reserved = (key: Node | undefined): string | undefined => {
+      const text = key && ts.isComputedPropertyName(key) ? spelled(key.expression) : spelled(key);
+      return text === "message" || text === "stack" ? text : undefined;
+    };
+    for (const m of node.members) {
+      const key = isStatic(m) ? undefined : reserved(nameOf(m));
+      if (key) gate.fail(m, `a member named \`${key}\` of a class extending \`Error\` is outside the fragment: an instance's own \`${key}\` in JavaScript shadows it`);
+      // A parameter property is a field the constructor defines.
+      if (ts.isConstructorDeclaration(m))
+        for (const p of m.parameters) {
+          const field = p.modifiers?.length ? reserved(p.name) : undefined;
+          if (field) gate.fail(p, `a parameter property named \`${field}\` of a class extending \`Error\` is outside the fragment: it assigns the instance's own \`${field}\`, which JavaScript keeps non-enumerable`);
+        }
+      // A constructor's write through `this` is a field of the allocation.
+      if (ts.isConstructorDeclaration(m) && m.body) {
+        const target = (n: Node): string | undefined => ts.isPropertyAccessExpression(n) && n.expression.kind === ts.SyntaxKind.ThisKeyword
+          ? reserved(n.name)
+          : ts.isElementAccessExpression(n) && n.expression.kind === ts.SyntaxKind.ThisKeyword ? reserved(n.argumentExpression) : undefined;
+        const write = (n: Node): Node | undefined => ts.isBinaryExpression(n) &&
+          n.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+          target(n.left) ? n
+          // A function, a method or a class binds its own `this`: its writes
+          // are writes, Lean's to judge; an arrow keeps the constructor's.
+          : ts.isFunctionExpression(n) || ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) ||
+              ts.isClassExpression(n) || ts.isClassDeclaration(n) || ts.isGetAccessorDeclaration(n) ||
+              ts.isSetAccessorDeclaration(n) ? undefined
+          : n.forEachChild(write);
+        const written = write(m.body);
+        if (written && ts.isBinaryExpression(written))
+          gate.fail(written, `a write of \`this.${target(written.left)}\` in the constructor of a class extending \`Error\` is outside the fragment: it defines the instance's own \`${target(written.left)}\`, which JavaScript keeps non-enumerable`);
+      }
+    }
+  }
   const instanceMembers = { name: name.text, generic: binders.length > 0 };
   gate.selfClass = instanceMembers;
   try {
@@ -637,12 +687,19 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
         // then its own fields over it: the allocation from parts an object
         // literal with a spread is.
         const at = gate.span(name);
+        // An `Error`-derived instance's first link holds its message, then
+        // the class's prototype: what JavaScript's own non-enumerable
+        // `message` is to every read, copy and test the fragment admits.
+        const link: Expr | null = base?.error && heritage ? { k: "alloc", pos: [heritage.getStart(gate.file), heritage.end],
+          fields: [{ name: "message", e: { k: "id", pos: [heritage.end - 1, heritage.end], name: messageName(name.text) } }],
+          ...(proto ? { proto } : {}) } : null;
+        const proto_ = link ?? proto;
         const instanceValue: Expr = derivedBase
           ? { k: "build", pos: at, parts: [{ spread: derivedBase },
               ...fields.map(({ name, e }) => ({ name: typeof name === "string" ? name : gate.fail(node, PRIVATE_INHERITANCE), e }))],
-              ...(proto ? { proto } : {}) }
+              ...(proto_ ? { proto: proto_ } : {}) }
           : { k: "alloc", pos: at, fields: fields.map(({ name, e }) => ({ name, e })),
-            ...(proto ? { proto } : {}) };
+            ...(proto_ ? { proto: proto_ } : {}) };
         statements.push({ k: "return", pos: end ?? at, e: instanceValue });
       }
       return statements;
@@ -682,10 +739,38 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
         calleeAt = gate.span(call.expression);
         body = body.slice(index + 1);
       }
-      const slot = baseName(name.text);
-      prelude.push({ k: "const", pos: at, bindings: [{ early: false, name: slot, namePos: at, annot: null,
-        init: { k: "new", pos: at, callee: { k: "id", pos: calleeAt, name: base.fresh }, args: actuals } }] });
-      derivedBase = { k: "id", pos: [heritage.getStart(gate.file), heritage.getStart(gate.file) + "extends".length], name: slot };
+      const extendsAt: Span = [heritage.getStart(gate.file), heritage.getStart(gate.file) + "extends".length];
+      if (base.error === "native") {
+        // `super(m)` runs `Error(m)`: its message, `m` a string, or none,
+        // which `Error.prototype.message`, `""`, stands for.
+        if (actuals.length > 1)
+          gate.fail(heritage, "`super(message, options)` of `Error` is outside the fragment: its options are not stated");
+        // The argument is bound at `string | undefined` before it defaults:
+        // another value would be converted by `ToString`.
+        const [actual] = actuals;
+        const empty: Expr = { k: "lit", pos: calleeAt, lit: { a: "stringlit", v: "" } };
+        const argument = messageArgumentName(name.text);
+        if (actual) {
+          const actualAt = actual.pos;
+          prelude.push({ k: "const", pos: actualAt, bindings: [{ early: false, name: argument, namePos: actualAt,
+            annot: { k: "union", parts: [{ k: "atom", name: "string", span: actualAt }, { k: "atom", name: "undefined", span: actualAt }], span: actualAt },
+            init: actual }] });
+        }
+        prelude.push({ k: "const", pos: at, bindings: [{ early: false, name: messageName(name.text), namePos: at,
+          annot: { k: "atom", name: "string", span: at },
+          init: actual ? { k: "coalesce", pos: at, left: { k: "id", pos: actual.pos, name: argument }, right: empty } : empty }] });
+      } else {
+        const slot = baseName(name.text);
+        prelude.push({ k: "const", pos: at, bindings: [{ early: false, name: slot, namePos: at, annot: null,
+          init: { k: "new", pos: at, callee: { k: "id", pos: calleeAt, name: base.fresh }, args: actuals } }] });
+        derivedBase = { k: "id", pos: extendsAt, name: slot };
+        // An `Error`-derived base's message, read where its instance holds
+        // it, its first link.
+        if (base.error === "derived")
+          prelude.push({ k: "const", pos: extendsAt, bindings: [{ early: false, name: messageName(name.text),
+            namePos: extendsAt, annot: null,
+            init: { k: "read", pos: [extendsAt[0], extendsAt[0] + 1], field: "message", e: { ...derivedBase, pos: extendsAt } } }] });
+      }
     }
     // The class value is its constructor as construct-only code, which only
     // `new` runs, holding its static fields.
@@ -740,9 +825,10 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
       classBindings = [{ early: false, name: name.text, namePos: gate.span(name), annot: type,
         init: staticFields.length ? lambda : { k: "id", pos: [brace, brace + 1], name: freshName(name.text) } }];
     }
+    const derivedError: "derived" = "derived";
     gate.classRecords.set(name.text, { params: params.map((p) => ({ name: p.name, type: p.type })),
       methods: methodBindings, fresh: freshName(name.text), proto: protoBinding,
-      binders: binders.map((tp) => tp.name.text) });
+      binders: binders.map((tp) => tp.name.text), ...(base?.error ? { error: derivedError } : {}) });
     return { k: "const", pos: gate.span(node),
       bindings: [...staticMethods, ...methods, ...prototypeBinding, ...freshBinding, ...statics, ...classBindings] };
   } finally {

@@ -66,6 +66,20 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   ] as const)
     assert.equal(runExample(file, `((r) => Object.keys(r).length === r.length && JSON.stringify(r))(${call})`),
       expected, `${file}: the result is dense`);
+  // Optional chains nested, shadowed, in a closure and skipping a key's
+  // effect: each result at the type the case verifies.
+  for (const [call, expected] of [
+    [`deep([{ inner: { leaf: { value: 7 } } }])`, 7],
+    [`deep([{ inner: {} }, { inner: { leaf: { value: 7 } } }])`, 0],
+    [`deep([])`, 0],
+    [`shadowed({ inner: { leaf: { value: 2 } } }, [{ inner: { leaf: { value: 3 } } }])`, 203],
+    [`shadowed(undefined, [{}])`, 0],
+    [`values([{ inner: { leaf: { value: 1 } } }, {}, { inner: {} }]).join(",")`, "1,-1,-1"],
+    [`keysRun(undefined)`, 5],
+    [`keysRun({ inner: {} })`, 5],
+    [`keysRun({ inner: { list: [4] } })`, 14],
+  ] as const)
+    assert.equal(runExample("optional-chain-nesting", call), expected, `optional-chain-nesting: ${call}`);
   assert.equal(runExample("invalid-map-unstable-pop", "Object.keys(shrink([1, 2, 3])).length"), 2,
     "invalid-map-unstable-pop: the result has three positions, two present");
   assert.equal(runExample("map-unstable-pop-sparse", "Object.keys(shrink([1, 2, 3])).length"), 2,
@@ -116,6 +130,25 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     '[{"a":1},[{},{}],0]', "guard-negated-short-circuit: the guarded values");
   assert.equal(runExample("invalid-guard-negated-and", "wrong(5, 0)"), 5,
     "invalid-guard-negated-and: 5 returned where a record is promised");
+  assert.equal(runExample("invalid-guard-array-promise", `isNumbers(["a"])`), true,
+    "invalid-guard-array-promise: the guard answers true of a string array");
+  assert.equal(runExample("guard-array-promise", "JSON.stringify([count([1, 2]), count(3), isNumbers([1])])"), "[2,0,true]",
+    "guard-array-promise: the guards' answers");
+  assert.equal(runExample("invalid-guard-boolean-return", "isText(null)"), true,
+    "invalid-guard-boolean-return: the guard answers true of null, which is no string");
+  assert.equal(runExample("guard-boolean-return-boundaries", `(() => {
+    const log = [];
+    const answers = [counted("a", log), counted(1, log), finished("a", log), overridden("a"), nested("ab"), nested(""),
+      guardOf()(1), atLeast(1, 2), atLeast(3)];
+    let thrown = false;
+    try { nonEmpty(""); } catch { thrown = true; }
+    return JSON.stringify([answers, log, thrown]);
+  })()`), '[[true,false,true,false,true,false,true,false,true],["tested","finally"],true]',
+    "guard-boolean-return-boundaries: each test runs once, its effect and its throw as written, the finally after the answer");
+  assert.equal(runExample("guard-boolean-return", `JSON.stringify([size({ a: 1 }), size([1, 2]), size(3), size(null), isMode("read")])`),
+    "[1,2,3,0,true]", "guard-boolean-return: the guards' answers");
+  assert.equal(runExample("invalid-guard-closure-callback", "allPresent([null])"), true,
+    "invalid-guard-closure-callback: the guard answers true of null, which is no string");
   assert.equal(runExample("invalid-guard-ternary-false-arm", `wrong("a")`), "a",
     "invalid-guard-ternary-false-arm: \"a\" where \"b\" is promised");
   assert.equal(runExample("invalid-guard-footprint", `(() => { const a = ["x", "y", "z"]; return 2 in wrong(a, a); })()`), false,
@@ -279,6 +312,41 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-instanceof-error-message",
     "typeof text(Object.create(Error.prototype, { message: { value: 5 } }))"),
     "number", "invalid-instanceof-error-message: an object holding Error.prototype has a numeric message");
+  // An `Error`-derived message: read through the chain, `""` where omitted,
+  // seen by `in`, left out of keys and spreads, serialized where a replacer
+  // names it.
+  assert.equal(runExample("error-subclass",
+    `[decode("a\\\\b"), decode("ab"), located([0, 1]).message, deeper(), JSON.stringify(omitted()), observed()].join(";")`),
+    'declined;ab;here;deep@0;"";true,at,true,true', "error-subclass: the messages and observations");
+  assert.equal(runExample("error-subclass-methods", `[direct(), deeper()].join(";")`), "at: x;at: y (2)at: ",
+    "error-subclass-methods: the methods through the chain");
+  assert.throws(() => runExample("invalid-error-subclass-stack-method", "trace()"), /not a function/,
+    "invalid-error-subclass-stack-method: the own stack shadows the method");
+  assert.equal(runExample("invalid-error-subclass-null-message", "read()"), "null",
+    "invalid-error-subclass-null-message: ToString converts null");
+  for (const file of ["invalid-error-subclass-stack-copy", "invalid-error-subclass-alias-stack"])
+    assert.equal(runExample(file, "copied()"), undefined, `${file}: the copy has no stack`);
+  // A write of `message` or `stack` onto an instance: `stack` stays
+  // non-enumerable; `message` does where one was passed, and becomes
+  // enumerable where none was.
+  assert.equal(JSON.stringify(runExample("invalid-error-subclass-assign-target", "relabelled()")), '["message"]',
+    "invalid-error-subclass-assign-target: an enumerable message");
+  assert.equal(JSON.stringify(runExample("invalid-error-subclass-assign-alias", "relabelled()")), '["message","tag"]',
+    "invalid-error-subclass-assign-alias: the hidden message copied, enumerable");
+  for (const file of ["invalid-error-subclass-narrowed-write", "invalid-error-subclass-narrowed-computed"])
+    assert.equal(JSON.stringify(runExample(file,
+      `(() => { const box = { v: { kind: "record", name: 1 } }; return traced(box, (b) => { b.v = new Decline("x"); }, "stack"); })()`)),
+      '["kind"]', `${file}: the callback put an instance there, whose stack stays non-enumerable`);
+  // A reserved write through a structural parameter an instance meets: the
+  // instance's `stack` stays non-enumerable.
+  for (const file of ["invalid-error-subclass-pattern-write", "invalid-reserved-update",
+      "invalid-reserved-logical", "invalid-reserved-callback"])
+    assert.equal(JSON.stringify(runExample(file, `traced(new (class extends Error {})("x"))`)), "[]",
+      `${file}: the instance's stack stays non-enumerable`);
+  assert.equal(runExample("invalid-error-subclass-spread", "main()"), undefined,
+    "invalid-error-subclass-spread: the copy has no message");
+  assert.equal(runExample("error-subclass-json-replacer", "text()"), '{"message":"x"}',
+    "error-subclass-json-replacer: the replacer reads the message");
   assert.equal(runExample("instanceof-error", "[isError(new Error(\"x\")), isError({ message: \"x\" })].join()"),
     "true,false", "instanceof-error: the walk");
   assert.equal(runExample("invalid-number-value-object",

@@ -8,7 +8,7 @@
  * A function the pipeline refuses before the producer's claims exist has no
  * graph; the command then prints the refusal. */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { present } from "../tools/files.mts";
 import { join, resolve } from "node:path";
 import { fields, nat, showTag, showTerm, unmatched, type Json } from "../tools/calculus.mts";
 import { decodeNode, type Continuation, type ProgramNode, type Target } from "../tools/control-flow.mts";
@@ -28,7 +28,7 @@ const artifacts: string = outcome.artifacts;
 const claims = join(artifacts, "claims.json");
 const firstLine = (s: unknown): string => String(s).split("\n")[0];
 console.log(`outcome: ${outcome.status}${outcome.status === "verified" ? "" : `: ${firstLine(outcome.detail)}`}`);
-if (!existsSync(claims)) process.exit(0);
+if (!present(claims)) process.exit(0);
 
 const lowered = spawnSync(verifier, ["--lower-program", join(artifacts, "fragment.json"), claims, join(artifacts, "source.ts")], { encoding: "utf8" });
 if (lowered.status !== 0) throw new Error(lowered.stderr);

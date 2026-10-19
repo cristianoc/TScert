@@ -25,7 +25,8 @@
  * read, fails the suite instead of silently contributing no constructors.
  */
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { present } from "../tools/files.mts";
 import { join } from "node:path";
 
 const LEAN = "lean/Verification";
@@ -249,7 +250,7 @@ console.log();
 if (process.env.UPDATE_EXPECT === "1") {
   writeFileSync(SNAP, snapshot);
   console.log(`  signatures written: ${SNAP}`);
-} else if (!existsSync(SNAP)) {
+} else if (!present(SNAP)) {
   report(`${SNAP} does not exist; regenerate with UPDATE_EXPECT=1`);
 } else if (readFileSync(SNAP, "utf8") !== snapshot) {
   report(

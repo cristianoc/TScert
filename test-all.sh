@@ -116,12 +116,16 @@ run_test "Documents: links, math" node tests/docs.mts
 run_test "Examples run under Node" node tests/node-runs.mts
 # tests/trusted-inputs.mts checks the front end's trusted inputs: pinned declarations, resolved files, imports, the array overlay.
 run_test "Trusted inputs" node tests/trusted-inputs.mts
+# tests/tool-failures.mts forces a failure of the compiler's API at each kind of catching site: each is reported as a tool failure.
+run_test "Tool failures stay tool failures" node tests/tool-failures.mts
 # tests/compiler-api.mts binds the compiler-API contract to the installed package: C1, its enums.
 run_test "Compiler-API contract" node tests/compiler-api.mts
 # tests/host-families.mts checks the family interpreter on declarations no audited package has: generic arms, residual members, refinements.
 run_test "Host family interpreter" node tests/host-families.mts
 # tests/regexp-shapes.mts checks the capture-shape reading of regex literals against the host.
 run_test "RegExp shapes" node tests/regexp-shapes.mts
+# tests/claim-text.mts checks the claim printer on malformed producer output.
+run_test "Claim text of malformed input" node tests/claim-text.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node tests/rule-inventory.mts
 

@@ -120,6 +120,9 @@ let definition declarations id args =
     List.fold_left (fun own base ->
       match Inference.substitute ~meet solution base with
       | Atoms [Named _] as named -> merge (base_of (id::seen) named) own
+      (* A base written as its record: `Error`'s instance contract, which a
+         class extending it inherits (SOURCE-ELABORATION.md). *)
+      | Atoms [Shape _] as record -> merge record own
       | _ -> unsupported "heritage is not a named base")
       body d.bases
   | None -> unsupported ("missing declaration " ^ id) in
@@ -203,7 +206,11 @@ let rec field_type bounds declarations seen t name = match t with
               | None -> unsupported ("missing field " ^ key_text name))))
       | Exact fields -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) fields with
           | Some f -> f.read
-          | None -> unsupported ("missing field " ^ key_text name))
+          | None -> (match List.find_opt (fun (f:Semantic.field) -> f.name=Name proto_key) fields with
+            (* A fresh object's member its prototype holds: an
+               `Error`-derived instance's message, on its first link. *)
+            | Some p -> field_type bounds declarations seen p.read name
+            | None -> unsupported ("missing field " ^ key_text name)))
       (* A class value's static field. *)
       | Ctors (_,statics) -> (match List.find_opt (fun (f:Semantic.field) -> f.name=name) statics with
           | Some f -> f.read

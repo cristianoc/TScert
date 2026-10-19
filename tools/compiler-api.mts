@@ -8,14 +8,14 @@
  * values. Each entry is checked against the installed package by
  * `tests/compiler-api.mts`. */
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, realpathSync } from "node:fs";
-import { createRequire } from "node:module";
 import { dirname, join, relative, sep } from "node:path";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import type { FamilyDescription } from "./host-families.mts";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { nameOf } from "./syntax.mts";
+// files.mts makes every file-system failure a tool failure.
+import { listDirectory, orAbsent, readBytes, readText, realPath, resolveModule } from "./files.mts";
 
 /** Reading rule 2: a property of a host declaration declared `any` states
  * nothing, and is read as an optional member of type `unknown`, as the
@@ -275,12 +275,12 @@ export const hostDeclarationsDigest = "16f2260fe0003d51dfb6b8503926ce01ff3e8afd3
 /** The digest of the declarations of the package installed at `root`. */
 export function declarationsDigest(root: string): string {
   const hash = createHash("sha256");
-  const manifest: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const manifest: unknown = JSON.parse(readText(join(root, "package.json")));
   const version = typeof manifest === "object" && manifest !== null && "version" in manifest ? String(manifest.version) : "";
   hash.update(`${version}\0`);
   const files: string[] = [];
   const walk = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    for (const entry of listDirectory(directory)) {
       const path = join(directory, entry.name);
       if (entry.isDirectory()) walk(path);
       else if (entry.name.endsWith(".d.ts")) files.push(relative(root, path).split(sep).join("/"));
@@ -289,7 +289,7 @@ export function declarationsDigest(root: string): string {
   walk(join(root, "dist"));
   for (const file of files.sort()) {
     hash.update(`${file}\0`);
-    hash.update(readFileSync(join(root, file)));
+    hash.update(readBytes(join(root, file)));
     hash.update("\0");
   }
   return hash.digest("hex");
@@ -309,7 +309,7 @@ let digestChecked: boolean = false;
 
 function installation(): Installation {
   if (standIn) return standIn;
-  audited ??= { root: realpathSync(dirname(createRequire(import.meta.url).resolve(`${hostPackage.name}/package.json`))),
+  audited ??= { root: realPath(dirname(resolveModule(import.meta.url, `${hostPackage.name}/package.json`))),
     checked: true };
   return audited;
 }
@@ -317,19 +317,17 @@ function installation(): Installation {
 /** Tests only: read the package at `root` as the host package, its digest
  * unchecked, until called again with null. */
 export function useHostInstallationForTests(root: string | null): void {
-  standIn = root === null ? null : { root: realpathSync(root), checked: false };
+  standIn = root === null ? null : { root: realPath(root), checked: false };
 }
 
 /** Whether `file` is a declaration of the host package: a file of the
  * audited installation, whose declarations have the reviewed digest. A
  * package elsewhere, whatever its manifest names, is no host. */
 export function isHostFile(file: string): boolean {
-  let real: string;
-  try {
-    real = realpathSync(file);
-  } catch {
-    return false;
-  }
+  // A path that names nothing is no host file; any other failure resolving
+  // it is the tool's.
+  const real = orAbsent(realPath, file);
+  if (real === null) return false;
   const host = installation();
   if (!real.startsWith(host.root + sep)) return false;
   if (host.checked && !digestChecked) {

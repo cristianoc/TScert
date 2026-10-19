@@ -585,8 +585,9 @@ is read as an object (`readCell`). -/
 
 /-- The write node under context `H`, with the value in slot 0 and the
 receiver, claimed at `B`, in slot `ri`. -/
-@[nospecialize] def writeCell (G : PositiveGraphs.NormalGraph Tree) (H : List (Ty Tree)) (fld : PropKey)
+@[nospecialize] def writeCell (pos : Span) (G : PositiveGraphs.NormalGraph Tree) (H : List (Ty Tree)) (fld : PropKey)
     (B C : Ty Tree) (ri : Nat) : Compiler (DirectProof.Plan Tree) := do
+  reservedWriteCheck pos B (reservedKey fld)
   let term := Tm.writeAt fld (.var ri) (.var 0)
   match PositiveRules.expand G B with
   | [.refs fs [] vs [] _ _] =>
@@ -677,6 +678,7 @@ its keys change. -/
       | _ => return none
     | _ => return none
   let G := SourceTypes.graph (← table)
+  reservedWriteCheck e.span (← exprType fc receiver) (reservedKey fld)
   if !mayLack G (← exprType fc receiver) fld then return none
   let owned ← match receiver with
     | .var _ n => ownedSlots scope e.span n
@@ -722,8 +724,9 @@ reference may hold the object and see its keys change. -/
     (e : Fragment.Expr) :
     Compiler (Option (List (Nat × Storage Tree) × Fragment.Expr × Fragment.Expr × Fragment.Expr)) := do
   let .indexWrite p none receiver key rhs := e | return none
-  if !(← recordReceiver fc receiver) then return none
   let G := SourceTypes.graph (← table)
+  reservedWriteCheck p (← exprType fc receiver) (reservedKeyClaim G (← exprType fc (← comparisonsExpr fc key)))
+  if !(← recordReceiver fc receiver) then return none
   if !computedKeyClaim G (← exprType fc (← comparisonsExpr fc key)) then return none
   let owned ← match receiver with
     | .var _ n => ownedSlots scope p n

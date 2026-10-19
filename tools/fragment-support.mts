@@ -180,7 +180,23 @@ export const classKey = (cls: string): string => `[[${cls}.prototype]]`;
  * its own overriding them), and the binding holding its constructor at the
  * fresh instance it allocates. */
 export type ClassRecord = { params: { name: string; type: TypeTerm }[]; methods: Map<string, string>; fresh: string;
-  proto: string | null; binders: string[] };
+  proto: string | null; binders: string[];
+  /** The class is the standard `Error` itself (`native`), or extends it
+   * through classes of the file (SOURCE-ELABORATION.md, a class extending
+   * `Error`). */
+  error?: "native" | "derived" };
+
+/** The standard `Error` as a base: its construction takes one optional
+ * message, a string; its prototype holds no method the file reads. */
+export const errorBase = (span: Span): ClassRecord => ({ params: [{ name: "message",
+  type: { k: "union", parts: [{ k: "atom", name: "string", span }, { k: "atom", name: "undefined", span }], span } }],
+  methods: new Map(), fresh: "", proto: null, binders: [], error: "native" });
+
+/** The binding holding an `Error`-derived instance's message. */
+export const messageName = (cls: string): string => `${cls}.[[message]]`;
+
+/** The binding holding the message argument `super` passes to `Error`. */
+export const messageArgumentName = (cls: string): string => `${cls}.[[messageArgument]]`;
 
 /** The binding holding a class's constructor where a class extends it: the
  * class value itself, claimed also at the fresh instance it allocates, whose
@@ -586,3 +602,29 @@ export function shadowingLocals(source: SourceFile): Map<string, Identifier> {
   return found;
 }
 
+
+/** Whether an expression's value is a Boolean by its form: a test of a
+ * shape, a key or an instance, an equality, a negation, a comparison, or
+ * `&&` and `||` of such. Its value is then its truth. */
+export function booleanForm(e: Expr): boolean {
+  switch (e.k) {
+    case "typeofTest": case "arrayTest": case "inTest": case "instanceTest": case "not": return true;
+    case "bin": return e.op === "===" || e.op === "!==" || e.op === "==" || e.op === "!=" ||
+      ((e.op === "&&" || e.op === "||") && booleanForm(e.l) && booleanForm(e.r));
+    case "arith": return e.op === "lt" || e.op === "le" || e.op === "gt" || e.op === "ge";
+    default: return false;
+  }
+}
+
+/** `return e` of a Boolean by its form, `if (e) return true; else return
+ * false;`: a condition the lowering dispatches on, each answer refining what
+ * it tests, as a guard's promise is checked at each return. The literals are
+ * at the two code units from `at`, which no expression has (a `return`
+ * keyword's, an arrow's `=>`), each the span of its own `return`. */
+export function booleanReturn(pos: Span, e: Expr, at: number): Stmt {
+  return {
+    k: "if", pos, cond: e,
+    then: [{ k: "return", pos: [at, at + 1], e: { k: "lit", pos: [at, at + 1], lit: { a: "booleanlit", v: "true" } } }],
+    else_: [{ k: "return", pos: [at + 1, at + 2], e: { k: "lit", pos: [at + 1, at + 2], lit: { a: "booleanlit", v: "false" } } }],
+  };
+}

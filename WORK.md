@@ -20,6 +20,12 @@ design, not its progress.
 | [Class offers across units](#class-offers-across-units) | open | a module class passed by a module function to a variadic construct signature verifies |
 | [Generic methods left](#generic-methods-left) | open | `class-generic-method-bounded-refused` verifies, and members binding different numbers of binders relate |
 | [Contract completeness](#restoring-completeness) | open | effect inference covers the rest wrappers, call forms and nested heap operations it is conservative for |
+| [Slices of the value universe](#universe-slices) | open: a design, under review (2026-10-19) | `typeof v === "object" && v !== null` narrows `unknown`, and the guards over `unknown` promise what their tests establish |
+| [A guard's promise on a field](#guard-promise-field) | open | `str(o.name); o.name.length` verifies: an assertion or a guard on a field narrows the field's current content |
+| [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
+| [Generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
+| [A literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
+| [Guard overloads of `every` and `filter`](#guard-overloads) | open | a reviewed `every<S>` and `filter<S>` narrow their receiver and their result where a guard is passed, and `shadow-contracts.mts`'s `print` verifies |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
@@ -41,7 +47,7 @@ design, not its progress.
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
 | [Node's process](#nodes-process) | open: the environment write a located gap; events known only as strings refused | a write of `process.env` through a receiver-bound host setter over shared state preserving every alias's view; signals reached through iteration proven admitted |
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
-| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 109 of 350 functions verify in `tools/`, 24 of 24 in `dev/`, 9 of 13 in `tests/` and 3 of 37 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 119 of 361 functions verify in `tools/`, 24 of 24 in `dev/`, 9 of 13 in `tests/` and 3 of 37 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -141,6 +147,70 @@ Left open:
 array from another beyond fresh storage, so that `pop` on an array literal
 the callback allocated is admitted; and a declaration's fresh result, which
 only closures state.
+
+<a id="universe-slices"></a>
+**Slices of the value universe.** A tag test on a value at `unknown`
+narrows nothing: `typeof v === "object" && v !== null` leaves `v` at
+`unknown`. The [design](docs/SOURCE-MODEL.md#slices-of-the-value-universe-by-tag-tests-design)
+slices the universe by kind; the dictionary view
+`{ readonly [key: string]: unknown }` stays out of reach of those tests, so
+the guards over `unknown` in `claim-text.mts`, `claim.mts`, `type-graph.mts`
+and `diagnostic-view.mts` (6 slices refused at their promise, 3 more behind
+them) wait on it and on their own promises.
+
+<a id="guard-promise-field"></a>
+**A guard's promise on a field.** A promise narrows an actual that is an
+immutable name: `str(o.name)` (`asserts v is string`) leaves `o.name` at its
+type, and a field's current-content facts hold primitive atoms only. The
+promise of a call whose actual is a field read, a primitive one, would be a
+current-content fact of the field through the read's link (`claim.mts`'s
+`atom` and `decodeClaimType`).
+
+<a id="guard-answer-constant"></a>
+**A guard's answer held in a constant.** `const ok = isRecord(v)` keeps the
+call's promise on the call's result, an implication of its slot, which no
+statement entry carries: `if (ok) return v` reads `v` at its declared type,
+and a narrowed claim there is refused at the edge. Carrying implications in
+entry claims is a fact kind of its own.
+
+<a id="generic-equality-condition"></a>
+**Generic equality in a condition**, an investigation: a strict or loose
+comparison of two values of a type parameter verifies as a returned value,
+`return left !== right`, and is refused as a statement's condition, `if
+(left !== right) return 1;`, with `left, right: T` (2026-10-19). The search
+fails; the message it reports ("strict equality with a value of a type
+parameter: neither operand is known to be a primitive or an object") is the
+producer's diagnostic of the comparison (`expression_values.ml`), not a
+located obligation, and which judgment fails is unknown. The Boolean-return
+lowering, which turns a return into a condition, is scoped to type guards
+and assertion functions until this holds: applied to every return, it
+refuses `loose-equality` and `generic-unknown-arguments`, which keep their
+outcomes.
+
+<a id="literal-guard-json-read"></a>
+**A literal guard over `JsonValue | undefined`**, an investigation:
+`isDense(value: JsonValue | undefined): value is "dense"` returning `value
+=== "dense"` is refused at its true return, the literal `true` at the first
+code unit of `return` ("the promised argument is not within the promise at
+this return"), where the diagnostic gives the argument's claim as
+`JsonValue`, `undefined` removed, and not `"dense"`
+(`guard-literal-json-read-refused`). The same guard over `unknown`,
+`JsonValue`, `string`, `string | undefined`, `null | string` or `string |
+number` verifies (2026-10-19). Which step of the comparison's narrowing
+keeps the whole of `JsonValue` is unknown. The front end's literal guards
+(`isArrayPresence`, `isIndexClass` in `type-graph.mts`) take `unknown`,
+which verifies.
+
+<a id="guard-overloads"></a>
+**Guard overloads of `every` and `filter`.** TypeScript's `every` and
+`filter` take a guard at overloads binding the guard's type, `every<S>`
+narrowing the array to `S[]` where it answers `true` and `filter<S>`
+returning `S[]`. The reviewed overlay states only their predicate
+overloads, so a guard closure passed to them is checked and narrows
+nothing; a callback a later call of the array takes is then read at the
+array's element type, where TypeScript reads the guard's
+(`shadow-contracts.mts`). Stating the overloads is a new library contract,
+to be reviewed as the overlay's others are.
 
 **Field facts across calls** are deferred, measured (2026-10-19): a call
 step keeps no current-content fact, and keeping those a call's checked
@@ -326,7 +396,14 @@ module-level `let`) needs cells every call may write, read at their declared
 type. Sloppy code's `this` at a receiver type that may hold a primitive,
 `undefined` or `null` needs the receiver conversion (the global object, a
 wrapper). A library class as a base needs a construction rule for what its
-constructor allocates. `keyof T` and `T[K]` over a function's own binder need a row whose
+constructor allocates; `Error` has one, its message on the instance's first
+link ([a class extending `Error`](docs/SOURCE-ELABORATION.md#a-class-extending-error)),
+which serves while ownness, descriptors and the prototype of an instance are
+refused. The Error family's general mechanism is a store of non-enumerable own
+properties: reads and ownness tests see it, enumeration and copies exclude
+it, the instance's prototype stays `D.prototype`, and a write or redefinition
+and every subclass's construction act on it; it admits `TypeError` and the
+other native errors, `hasOwnProperty("message")` and `Object.getPrototypeOf`. `keyof T` and `T[K]` over a function's own binder need a row whose
 meaning fixes a key set, which a value set does not. `o.m?.()` needs the receiver saved
 across the test. `key in o` at a key the built-in prototypes hold needs those
 prototypes' keys in the model.
@@ -350,7 +427,10 @@ value itself passed on keeps `undefined`
 (`guarded-element-read-refused`): `xs[0] !== undefined && known.has(xs[0])`
 needs a current-content fact about an element location, kept from the test
 to the second read, as a field path would need one (`o.a !== undefined &&
-f(o.a)` is refused the same way). A `flatMap` callback returning a
+f(o.a)` is refused the same way). An optional chain's truthy or present
+result narrows the value the chain saved, not the binding it was read from
+(`optional-chain-receiver-not-narrowed`: `if (o?.inner) use(o)`), which
+needs the chain's test related to the receiver's slot. A `flatMap` callback returning a
 primitive or an array of primitives (`flat-map-scalar-result-refused`)
 needs a second signature quantifying a binder bounded by the primitives,
 which the first does not use: neither the producer's instance of a member
@@ -485,7 +565,12 @@ run under Node). Admitting one needs a bound on all of its own string keys:
 each a declared field whose present value is a `JsonValue`, an ordinary data
 property, over a safe prototype; established where the record is built or
 validated and kept through its mutations and through external calls; and a
-policy for an optional field, absent or present at `undefined`.
+policy for an optional field, absent or present at `undefined`. The claim
+printer's lifter (`liftType`, `liftClause` and `treeAtom` in
+`claim-text.mts`) builds such records and passes them at `JsonValue`, and is
+refused there. A general form of the bound: a fresh object literal
+establishes it where it is built, its own keys being the literal's, and the
+bound is preserved through the object's mutations and through calls.
 
 <a id="the-front-ends-own-functions"></a>
 **The front end's own functions.** Each top-level function of `tools/*.mts`,
@@ -526,18 +611,13 @@ first three items 2026-10-19):
   `createRequire`, whose type names a qualified one (1); `node:path`'s
   `sep`, a constant of the object the module exports (2); a default import
   (5);
-- the compiler's synchronous API failing on a query (1), reported as a tool
-  failure: `TypeObject.getTypes` panics converting a type reference to a
-  tuple (`forInEntryReads`);
-- the parser exceeding the call stack (2: `readDiagnostic`, and
-  `diagnosticNode`, which another run reports as a reply of
-  `Checker.getTypeFromTypeNode` the client cannot decode), cause unknown.
-  For `diagnosticNode` the reply is to the query `keyTypeOf` makes
-  (`declaration-graph.mts`), "Expected fixed 3-element array (0x93),
-  received: 0x69", seen once, in a census run of 0337c3f (2026-10-19); two
-  runs of the slice alone on that revision, and the census of a8caafd, end
-  with the call stack exceeded at line 101 of the slice. The failing query's
-  arguments and stack were not kept, and no smaller reproducer exists.
+- a union holding an empty array literal's tuple type, whose parts the
+  compiler's API panics writing, a [tool failure](docs/DESIGN.md)
+  (1: `forInEntryReads`, 2026-10-19);
+- `readDiagnostic` stops in the producer at a read of `forEach` through a
+  field holding an object beside `null` or `undefined`, and `diagnosticNode` in
+  search at a key read that may name an `Object.prototype` member
+  (2026-10-19).
 
 <a id="census-host-family-contract"></a>
 The `tools/` census of a8caafd (main) and of 0337c3f (the family contract,
@@ -563,7 +643,11 @@ the gate on a `TransformOptions` declaration. Of the 350 common slices:
   search on main, the search past 60 s on the branch;
   `fragment-statements.mts#closeStatements`, the search past 60 s on main,
   the check past 60 s on the branch; `diagnostic.mts#diagnosticNode`, the
-  call stack exceeded on main, the reply above on the branch.
+  call stack exceeded on main, on the branch a reply of
+  `Checker.getTypeFromTypeNode` to the query `keyTypeOf` makes that the
+  client cannot decode ("Expected fixed 3-element array (0x93), received:
+  0x69"), seen once; two runs of the slice alone on 0337c3f exceeded the
+  call stack, and the failing query's arguments and stack were not kept.
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:
@@ -574,8 +658,11 @@ in search; of the drivers' 48, 4 and 8. By the judgment that fails:
   a test (6): the compiler-node narrowing the host-families work covers;
 - a user guard's promise not established by its body (`isObject`,
   `isRecord`: 9) and the reads it would narrow (about 16, `atom.required` in
-  `claim-text.mts` among them), and guard closures with binders (5): guard
-  recognition;
+  `claim-text.mts` among them): guard recognition; guard closures passed as
+  callbacks (5) are claimed at the callback's signature, and stop at the
+  guard overloads of `every` and `filter` the overlay does not state (4 of
+  `shadow-contracts.mts`, where TypeScript narrows the array a guard tested)
+  and at a host guard (`interfacesOf`);
 - a read of a key `in` found on an open object (4, and 2 drivers): the
   [proposal](docs/PROGRAM-TYPING.md) under review;
 - past their spreads of a bounded binder and of an intersection of records
@@ -618,8 +705,9 @@ Their first blockers, by the number of slices each stops:
   `createHash`'s `TransformOptions` (1);
 - a member read after `assert` narrowed a union (the producer's "missing
   field", 2, and `process.stdout`, outside the reviewed globals, 1);
-- the verifier's search exceeding the stack (`checkOverloads`), cause
-  unknown;
+- a key-adding write of `instantiate` in search (`checkOverloads`,
+  2026-10-19, past a lowering that recursed without end on two `?.` links
+  over an element read, `optional-chain-element-receiver`);
 - a key-adding write to `process.env` (2);
 - `import.meta`, `new Array(n)`, a mapped type over `Readonly` and a record at
   an index signature (1 each);
@@ -691,8 +779,7 @@ against the fragment (2026-10-16) gives the work, each item its own design:
   `execFileSync`, `fork` and its messages), `os`, `crypto`, `vm`, `net`,
   `module`, `assert/strict` (assertion functions) and `process`.
 - **Classes and `this` parameters.** The parser's `Gate` class, the functions
-  of `fragment-*.mts` declaring `this: Gate` (198 reads of `this`), and the
-  error classes extending `Error`.
+  of `fragment-*.mts` declaring `this: Gate` (198 reads of `this`).
 - **Imports between the repository's modules.** Default imports, and a
   value imported from another module certified against its signature, which [module composition](#module-composition) proves sound.
 - **The code's own departures from the fragment.** Downcasting `as`
