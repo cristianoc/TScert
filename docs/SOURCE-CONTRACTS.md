@@ -2148,6 +2148,84 @@ unrestricted in its effect unless its entry states one. The entries:
   exports one object (`export = path`), whose methods are the overloads an
   entry names.
 
+### Proposal: `node:assert/strict`
+
+A proposal under review; nothing below is admitted. The drivers import
+`node:assert/strict` by default (`import assert from "node:assert/strict"`).
+Node declares that module's export as a function merged with a namespace,
+`function strict(value, message?): asserts value` beside
+`namespace strict { export { ok, strictEqual as equal, … } }` and
+`export = strict`, its members aliases of `node:assert`'s functions; the
+module `node:assert` itself, whose `equal` is loose equality, is not proposed.
+
+**Reading.** The default import is one value: the call signature of
+`strict` and, as fields, the members the file reads, each the declaration
+TypeScript resolves the member to. Every mention of the binding is a call of
+it or a call of one of its members, `assert.m(…)`; any other mention (passing
+`assert`, `assert.strict`, a member read uncalled) is refused. A member call
+passes the namespace function as its receiver, which none of these functions
+reads, so it is read as a call of the member's binding, as a namespace
+import's member is ([namespace imports](SOURCE-ELABORATION.md#derived-source-forms)).
+Each member is an entry of the overlay of library modules (module
+`assert/strict`, name `default`, the member, and the declaration's text,
+pinned as every entry is), so a changed declaration is refused and reviewed
+again.
+
+**Footprints.** Under Node 25.2.1 (observed 2026-10-19 by probes run
+under Node), a passing `ok`, `equal` and `notEqual` run no
+code: ToBoolean and `Object.is`. A failing call builds an `AssertionError`:
+it calls no `inspect.custom` hook, but it reads the compared values'
+accessors while building the message, sets and restores
+`Error.stackTraceLimit`, and runs a program's `Error.prepareStackTrace`; a
+message that is an `Error` is thrown as it is. So each entry states its
+effect on normal return only, and the throw edge states none, as the
+[effect](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification) of a call reaching a handler never carries
+preservation onto the exceptional edge. A message is stated at `string`.
+
+**Entries.** With $`M=\mathtt{string}\mid\mathtt{undefined}`$, the message:
+
+- `assert(v, m)` and `assert.ok(v, m)`: a falsy `v` throws. Lowered as the
+  calculus's own test, `if (!v) throw %AssertionFailure%(m)`, so the
+  argument narrows exactly as an `if` narrows it, where `m` is absent or a
+  string literal, which then is evaluated after `v` with nothing observable
+  between; with another message the call is read in its order and narrows
+  nothing. `%AssertionFailure%` returns a fresh `AssertionError` and states
+  no effect.
+- `assert.equal(a, e, m)` (`strictEqual`):
+  $`\forall T.\ (\mathtt{unknown},\ T,\ M)\to T\,[\mathsf{asserts}\ 0]`$, the
+  empty footprint on normal return, which `Object.is(a, e)` implies: $`a`$ is
+  the value $`e`$, of type $`T`$. `notEqual`: $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{undefined}`$,
+  the empty footprint on normal return.
+- `assert.deepEqual(a, e, m)` (`deepStrictEqual`) and `notDeepEqual` compare
+  by traversal, which reads own properties, accessors among them (observed: a
+  passing comparison calls a getter). At $`\mathsf{JsonValue}`$ operands, whose
+  members are data, they run no code:
+  $`(\mathsf{JsonValue},\ \mathsf{JsonValue},\ M)\Rightarrow\mathtt{undefined}`$,
+  the empty footprint on normal return; at other types, no effect. Neither
+  narrows: deep equality to a value of type $`T`$ is not shown to give type $`T`$
+  (the declaration's `asserts actual is T` is not read).
+- `assert.match(s, r, m)` and `doesNotMatch`: Node checks `r`'s regex slot and
+  runs `RegExp.prototype.exec` on it, which reads `lastIndex` by ToLength
+  (observed: an object `lastIndex` runs its `valueOf`). At a native regex
+  $`N(\Sigma)`$, the effect of its `exec` ([regular expressions](#regular-expressions));
+  at a structural `RegExp`, none. No narrowing.
+- `assert.throws(f, x, m)` and `doesNotThrow(f, m)` call `f`, and `throws`
+  tests the thrown value against `x`: a regex converts it by `String`, which
+  runs an object's `toString` (observed). Stated with no effect, `f` at
+  `() => unknown`, `x` absent or a regex. No narrowing.
+- `assert.ifError(v)`: $`(\mathtt{unknown})\to\mathtt{null}\mid\mathtt{undefined}\,[\mathsf{asserts}\ 0]`$,
+  the empty footprint on normal return; a failure reads `v`'s `message` and
+  `stack` (observed).
+- `assert.fail(m)`: $`(M)\Rightarrow\mathtt{never}`$, no effect.
+
+**Trust.** Each entry is an assumption about the host, as a library module's
+is: the promises of `equal` and `ifError` follow from the comparison the
+host makes before it returns, and the footprints from the steps observed
+above; nothing in Lean proves them. Controls the implementation would carry:
+a Node run of each failure path that runs code (an accessor of a compared
+value, an object `lastIndex`, a thrown object's `toString`), refused where a
+footprint would claim preservation across it.
+
 ## Regular expressions
 
 A regex is an object of host-relative methods (`regexp.mts`), read in two

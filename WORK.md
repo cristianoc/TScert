@@ -36,7 +36,7 @@ design, not its progress.
 | [Computed types evaluated through helper declarations](#computed-types-evaluated-through-helper-declarations) | open: a stopgap | the helper declarations are replaced by a checker endpoint (relaxed), or TypeScript's computation is checked by a source-type elaborator in Lean (checked) |
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
-| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 101 of 337 functions verify in `tools/` (2026-10-19, the `then` member admitted), 24 of 24 in `dev/`, 6 of 13 in `tests/` and 2 of 35 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 101 of 341 functions verify in `tools/` (2026-10-19, the missing library globals reviewed), 24 of 24 in `dev/`, 6 of 13 in `tests/` and 2 of 35 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -411,10 +411,12 @@ first three items 2026-10-19):
 - a callback's parameter written without a type is read at its contextual
   type, records, indexes and aliases without parameters included; no slice
   stops there;
-- library globals absent from the overlay or refused (12): the global
-  function `parseInt` (3), `Reflect` ([refused](docs/SOURCE-FRAGMENT.md))
-  (3), `Object.fromEntries` (2), `Array.from` (2), `Math.ceil`,
-  `new RegExp`, `instanceof Error`;
+- library globals absent from the overlay or refused (4, 2026-10-19):
+  `Reflect` ([refused](docs/SOURCE-FRAGMENT.md)) (3) and `Object.hasOwn`; the
+  slices `parseInt`, `Object.fromEntries`, `Array.from`, `Math.ceil`,
+  `new RegExp` and `instanceof Error` stopped now stop later, at a class
+  extending a class of the file (4), `Object.hasOwn`, a `Stream` declaration,
+  a type alias statement, an `in` test, and the search (2);
 - members of `Type` and `Checker` outside their named views (10);
 - the sync API's `API` class, whose type parameter has a default (8);
   `createRequire`, whose type names a qualified one (1); `node:path`'s
@@ -444,7 +446,7 @@ blockers, by the number of slices each stops:
 - `node:assert`, which the drivers import as `assert` (14): a function merged
   with a namespace and exported whole (`export =`), read at no reviewed
   contract;
-- the global `clearTimeout`, absent from the overlay (4);
+- the global `setTimeout` (4), a generic function merged with a namespace;
 - Node functions outside the reviewed overlay of library modules, whose
   declarations reach `Buffer` and, through `BufferConstructor`, a
   conditional type over a signature's own binder (`ImplicitArrayBuffer`),
@@ -453,8 +455,7 @@ blockers, by the number of slices each stops:
 - `ReturnType<typeof run>` (2) and `Pick` over a generic interface (1), written
   applications;
 - a key-adding write to `process.env` (2);
-- `Error` as `instanceof`'s right operand, `Array.from` and
-  `Object.fromEntries`, absent from the overlay (1 each);
+- `import.meta`, `new Array(n)` and a mapped type over `Readonly` (1 each);
 - the producer or the search (11), each a separate investigation.
 
 `readFragmentFile` and `readClaimsFile` in `pipeline/verify-source.mts` read
