@@ -1397,26 +1397,31 @@ instantiates, at the ordinary effect an annotation of it states, which
 assumes no preservation of the heap:
 
 ```math
-\frac{\tau\ \text{has exactly the call signature}\ (\mathit{this}{:}Q;\ x_1{:}A_1,\ldots,x_n{:}A_n,\ \ldots r{:}E)\Rightarrow B\ \text{and no binder, other signature or member}}
+\frac{\tau\ \text{has exactly the call signature}\ (\mathit{this}{:}Q;\ x_1{:}A_1,\ldots,x_n{:}A_n,\ \ldots r{:}E[\,])\Rightarrow B\ \text{and no binder, other signature or member}}
      {\mathrm{ctx}(\tau)=(\mathrm{ctx}(Q);\ \mathrm{ctx}(A_1),\ldots,\mathrm{ctx}(A_n),\ \ldots\mathrm{ctx}(E))\to_{\mathsf{ord}}\mathrm{ctx}(B)}\ \textsf{contextual-callable}
 ```
 
-The receiver is read where the signature states one, an optional or
-defaulted parameter at its signature's parameter type, which includes the
-`undefined` admitted by omission or an explicit argument, a rest at its array's element or its
-tuple's required positions, and a promise `x is T` or `asserts x is T` about
-a parameter as a second form at the promise's effect and type, as the
+A rest typed by a tuple of required positions $`[E_1,\ldots,E_k]`$ is those
+$`k`$ further parameters at $`\mathrm{ctx}(E_1),\ldots,\mathrm{ctx}(E_k)`$,
+and a rest typed by an alias is read through the alias's equation, as a
+written rest is. The receiver is read where the signature states one
+(`closure-contextual-callable-receiver`), an optional or defaulted parameter
+at its signature's parameter type, which holds the `undefined` an omitted or
+explicit argument gives, and a promise `x is T` or `asserts x is T` about a
+parameter as a second form at the promise's effect and type, as the
 annotation reader reads a guard. Refused at the parameter, as contracts the
 reading does not recover: type parameters
 (`closure-contextual-callable-generic-refused`), a promise about the
 receiver or without a type, a rest of another type, a construct signature, a
 second call signature and a member beside the call signature
-(`closure-contextual-callable-members-refused`). The reading is
-the annotation the closure is checked at, and the closure is checked where
-it flows at the signature it is offered: a closure calling its callable
+(`closure-contextual-callable-members-refused`). The reading is the
+annotation the closure is checked at, and the closure is checked where it
+flows at the signature it is offered: a closure calling its callable
 parameter with a number is no handler of a signature passing a function of
 strings alone (`invalid-closure-contextual-callable`, run under Node;
-`closure-contextual-callable`, `compiler-api-contextual-callable`). It is a proposal like any claim, since the body is checked at
+`closure-contextual-callable`, `compiler-api-contextual-callable`).
+
+A contextual parameter type is a proposal like any claim, since the body is checked at
 $`A_j\sqsubseteq_G D_j`$ and the closure at $`\bigwedge L`$ wherever it goes, the
 call offering it included. A closure is **offered** each signature binding
 more parameters than it does that is expected where it flows: passed where
