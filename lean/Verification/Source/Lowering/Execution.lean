@@ -721,6 +721,21 @@ prepared predicate without replaying an effectful source operand. -/
       let next ← LoweringAtoms.observeExprCurrent fc scope'.tail Δ.tail source A next
       emitAt source (.var 0) (.effect next) Δ C "expression-claim" (scope := scope')
   | .atom source operation =>
+    -- A path's read whose receiver was read just before, into the prefix's
+    -- witness as well, reads its field from the witness: the two slots hold
+    -- one value, and the read's link is then the one a statement entry
+    -- states from the prefix's witness (HOST-FAMILIES.md, "Entries").
+    let operation := match operation with
+      | .evaluate original@(.read _ _ receiver) (.read p f (.var q name)) .none =>
+        match pathWitness scope original, pathWitness scope receiver, scope.head? with
+        | some _, some j, some newest =>
+          if newest.source.name == name then
+            match scope[j]? with
+            | some w => .evaluate original (.read p f (.var q w.source.name)) .none
+            | none => operation
+          else operation
+        | _, _, _ => operation
+      | _ => operation
     let A ← executionOperationType fc scope Γ operation
     let previous ← executionOrigins
     let preservesReads := match operation with

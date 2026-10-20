@@ -221,16 +221,22 @@ nullish exclusions `A` implies. -/
     | none => pure none
   return answer.orElse fun _ => HeapExpressionRules.nullishAtoms G A
 
-/-- A statement witness asserts the origin of its saved value. Every incoming
-edge checks this link together with the witness's context type. -/
+/-- A statement witness asserts the origin of its saved value: read from the
+root binding through the path's one field, or from the witness of the path's
+prefix through its last field. Every incoming edge checks each link together
+with the witness's context type. -/
 @[nospecialize] def witnessLinks (T : EquationStore.State) (Γ : List (Ty Tree))
     (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) : HeapLinks.Links :=
   scope.zipIdx.filterMap fun (b,j) => do
-    let (root, [field]) ← b.witness | none
-    let _ ← witnessClaim T fc pos root field
+    let (root, path) ← b.witness
+    let field ← path.getLast?
+    let _ ← witnessClaim T fc pos root path
     let (i, .value) ← resolve scope root | none
-    return ⟨i,j,false,field,false,valueField,
-      !(HeapExpressionRules.fieldOperand (PositiveRules.expand (SourceTypes.graph T) (Γ[i]?.getD [])) field)⟩
+    let r ← if path.length == 1 then some i else do
+      let _ ← witnessClaim T fc pos root path.dropLast
+      scope.findIdx? (·.witness == some (root, path.dropLast))
+    return ⟨r,j,false,field,false,valueField,
+      !(HeapExpressionRules.fieldOperand (PositiveRules.expand (SourceTypes.graph T) (Γ[r]?.getD [])) field)⟩
 
 /-- Mutable entry types are assertions about contents, not reference types.
 Supported primitive assertions are checked on every incoming edge. Other claims
@@ -287,22 +293,35 @@ must follow from the stable storage contract; no claim is silently dropped. -/
         if clauses.isEmpty then none
         let ws ← clauses.mapM (fun c => declaredRead c fld)
         some ws.flatten.eraseDups
-      for (fld, A) in asserted do
+      for (path, A) in asserted do
         if !RequestJson.validTy (StoreView.valid T) A then throw "invalid current-content type label"
-        match b.storage with
-        | .cell .. | .early .. =>
-          -- Slot i is the private holder, not the object inside it. A field
-          -- observation cannot be attached to the holder's own value field.
-          persistentObservation b.source (pos,pos+1) reference fld A
-        | .value | .slot _ =>
-          if (witnessClaim T fc pos b.source.name fld).isSome &&
-              scope.any (fun w => w.witness == some (b.source.name, [fld]) && (match b.storage with | .value => true | _ => false)) then
-            pure ()
-          else if (invariant fld).any (within T · A) then
+        match path with
+        | [fld] =>
+          match b.storage with
+          | .cell .. | .early .. =>
+            -- Slot i is the private holder, not the object inside it. A field
+            -- observation cannot be attached to the holder's own value field.
             persistentObservation b.source (pos,pos+1) reference fld A
-          else match ← fieldAtoms (invariant fld) A with
-          | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
-          | none => persistentObservation b.source (pos,pos+1) reference fld A
+          | .value | .slot _ =>
+            if (witnessClaim T fc pos b.source.name [fld]).isSome &&
+                scope.any (fun w => w.witness == some (b.source.name, [fld]) && (match b.storage with | .value => true | _ => false)) then
+              pure ()
+            else if (invariant fld).any (within T · A) then
+              persistentObservation b.source (pos,pos+1) reference fld A
+            else match ← fieldAtoms (invariant fld) A with
+            | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
+            | none => persistentObservation b.source (pos,pos+1) reference fld A
+        | _ =>
+          -- A path of two members or more is its witness's, which every
+          -- incoming edge checks with its links, or the declared read of
+          -- its last field from what the entry states of its prefix.
+          let witnessed := (match b.storage with | .value => true | _ => false) &&
+            (witnessClaim T fc pos b.source.name path).isSome &&
+            scope.any (·.witness == some (b.source.name, path))
+          let declared := ((pathType T fc pos b.source.name path.dropLast).bind fun R =>
+            path.getLast?.bind (declaredFieldRead T R ·)).any (within T · A)
+          if !witnessed && !declared then
+            throw s!"source environment obligation at {pos}: the path of {path.length} members from '{b.source.name}' has no witness at this entry"
       return facts) []
 
 /-- A dot cannot occur in a source binding identifier, so these names designate

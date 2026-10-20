@@ -269,7 +269,10 @@ private def actionPaths (a : SourceFlow.Action) : List (String × List PropKey) 
     (scope : List (ScopeBinding Tree)) (stmts : List Fragment.Stmt) : Compiler Target := do
   let graph ← liftSource (SourceFlow.build owner [] stmts)
   -- The module's initialization is the body whose owner is `(0,0)`.
-  let paths := (graph.nodes.toList.flatMap fun n => actionPaths n.action).eraseDups
+  -- A path's witness at an entry reads its last field from its prefix's
+  -- (HOST-FAMILIES.md, "Entries"), so every prefix has a witness too.
+  let paths := (graph.nodes.toList.flatMap fun n => (actionPaths n.action).flatMap fun (root, fields) =>
+    (List.range fields.length).map fun k => (root, fields.take (k+1))).eraseDups
   let top ← lower (SourceTypes.use .source)
   let witnesses : List (ScopeBinding Tree) := paths.zipIdx.map fun (p,i) =>
     { source := ⟨s!".path:{i}", some owner⟩, fixed := some [top], witness := some p }

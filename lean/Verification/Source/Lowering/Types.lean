@@ -78,22 +78,64 @@ def declaredRead (c : PositiveNormalization.Clause (Ty Tree)) (fld : PropKey) : 
     ((ds ++ cs).find? (HeapExpressionRules.stringIndex · fld)).map (fun d => d.2 ++ [Labels.undef])
   | _ => none
 
-/-- Existing field predicates and declared contracts retain their own entry
-checks. A witness carries a refinement that neither of those establishes. -/
-@[nospecialize] def witnessClaim (T : EquationStore.State) (fc : SourceClaims.Function Tree)
-    (pos : Nat) (root : String) (field : PropKey) : Option (Ty Tree) := do
-  let A ← ((fc.entryCurrent.lookup pos).getD []).lookup root >>= (·.lookup field)
+/-- The declared read of `field` from every record `R` may hold, including
+absence for an optional key. -/
+def declaredFieldRead (T : EquationStore.State) (R : Ty Tree) (field : PropKey) : Option (Ty Tree) := do
+  let fields ← (PositiveRules.expand (SourceTypes.graph T) R).mapM (fun c => declaredRead c field)
+  return fields.flatten.eraseDups
+
+/-- What a statement entry states of each field a path's prefixes read:
+asserted of the root binding (`current`), or else the declared read of the
+field from what the entry states of the shorter prefix, the root's claimed
+type for none (HOST-FAMILIES.md, "Entries"). -/
+@[nospecialize] def pathType (T : EquationStore.State) (fc : SourceClaims.Function Tree)
+    (pos : Nat) (root : String) (path : List PropKey) : Option (Ty Tree) := do
+  let asserted := ((fc.entryCurrent.lookup pos).getD []).lookup root
+  let raw ← ((fc.envs.lookup pos).getD []).lookup root
+  let R ← (SourceClaims.resolve T raw).toOption
+  path.zipIdx.foldlM (fun B (f, i) =>
+    match asserted >>= (·.lookup (path.take (i+1))) with
+    | some A => some A
+    | none => declaredFieldRead T B f) R
+
+/-- A path's own refinement at a statement entry: its asserted type, where
+neither the declared read contract nor, for one member, the supported field
+predicates establish it. -/
+@[nospecialize] def ownWitness (T : EquationStore.State) (fc : SourceClaims.Function Tree)
+    (pos : Nat) (root : String) (path : List PropKey) : Option (Ty Tree) := do
+  let A ← ((fc.entryCurrent.lookup pos).getD []).lookup root >>= (·.lookup path)
   let G := SourceTypes.graph T
-  if (HeapKnowledge.atoms G A).isSome then none else do
-    let raw ← ((fc.envs.lookup pos).getD []).lookup root
-    let R ← (SourceClaims.resolve T raw).toOption
-    let cs := PositiveRules.expand G R
-    let fields ← cs.mapM (fun c => declaredRead c field)
-    let C := fields.flatten.eraseDups
-    if within T C A || (HeapExpressionRules.fieldOperand cs field &&
-        [Tag.isUndef, .isNul, .isNullish].any
-          (fun tag => within T (BranchRefinement.tagSlice G C tag false) A)) then none
-    else some A
+  match path with
+  | [] => none
+  | [field] =>
+    if (HeapKnowledge.atoms G A).isSome then none else do
+      let raw ← ((fc.envs.lookup pos).getD []).lookup root
+      let R ← (SourceClaims.resolve T raw).toOption
+      let cs := PositiveRules.expand G R
+      let C ← declaredFieldRead T R field
+      if within T C A || (HeapExpressionRules.fieldOperand cs field &&
+          [Tag.isUndef, .isNul, .isNullish].any
+            (fun tag => within T (BranchRefinement.tagSlice G C tag false) A)) then none
+      else some A
+  | _ => do
+    let field ← path.getLast?
+    let C ← pathType T fc pos root path.dropLast >>= (declaredFieldRead T · field)
+    if within T C A then none else some A
+
+/-- The type a statement entry's witness of `root.path` holds: its own
+refinement, and, for a proper prefix of a path that has one, the prefix's
+asserted type or declared read, so that each segment's read link has its
+receiver (HOST-FAMILIES.md, "Entries"). Existing field predicates and
+declared contracts retain their own entry checks. -/
+@[nospecialize] def witnessClaim (T : EquationStore.State) (fc : SourceClaims.Function Tree)
+    (pos : Nat) (root : String) (path : List PropKey) : Option (Ty Tree) :=
+  match ownWitness T fc pos root path with
+  | some A => some A
+  | none =>
+    let asserted := (((fc.entryCurrent.lookup pos).getD []).lookup root).getD []
+    if !path.isEmpty && asserted.any (fun (q, _) => path.length < q.length && q.take path.length == path &&
+        (ownWitness T fc pos root q).isSome) then pathType T fc pos root path
+    else none
 
 @[nospecialize] private def envCore (T : EquationStore.State) (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
     Except String (List (Ty Tree)) := do
@@ -105,8 +147,8 @@ checks. A witness carries a refinement that neither of those establishes. -/
     -- The slot holds the cell's identity. What the producer says `x` is now
     -- describes the contents, and is an observation, not this slot's type.
     let name := b.source.name
-    if let some (root, [field]) := b.witness then
-      if let some A := witnessClaim T fc pos root field then
+    if let some (root, path) := b.witness then
+      if let some A := witnessClaim T fc pos root path then
         return A
     if let some A := b.fixed then return A
     let some t := vars.lookup name | throw s!"missing claimed binding '{name}' at {pos}"

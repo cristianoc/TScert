@@ -14,7 +14,7 @@ inside that point; separate copies of a finalizer have separate point IDs. -/
 structure PointData (ι : Type) where
   exprs : List (Span × Candidate ι) := []
   envs : List (Nat × List (String × Candidate ι)) := []
-  entryCurrent : List (Nat × List (String × List (PropKey × Ty ι))) := []
+  entryCurrent : List (Nat × List (String × List (List PropKey × Ty ι))) := []
   exprCurrent : List (Span × List (PropKey × Ty ι)) := []
 
 /-- Replacement claims for the sites a closure signature owns. Absence of a
@@ -43,7 +43,7 @@ structure Function (ι : Type) where
   ret : Candidate ι
   envs : List (Nat × List (String × Candidate ι))
   exprs : List (Span × Candidate ι)
-  entryCurrent : List (Nat × List (String × List (PropKey × Ty ι))) := []
+  entryCurrent : List (Nat × List (String × List (List PropKey × Ty ι))) := []
   exprCurrent : List (Span × List (PropKey × Ty ι)) := []
   /-- The source closure's interior obligations, one per claimed signature. -/
   arrowClaims : List (Span × List (Overlay ι)) := []

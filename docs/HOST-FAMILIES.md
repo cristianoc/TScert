@@ -654,7 +654,16 @@ receiver and field, segment by segment. The rule is
 discard read links but those of [stable links](#stable-links), segment by
 segment, so a path's chain survives a call where every segment is stable;
 closure entries and exceptional transfers establish none. A catch therefore
-cannot receive a witness link from the throwing computation.
+cannot receive a witness link from the throwing computation. In a
+condition, a path's read whose receiver was read just before, into its
+prefix's witness as well, reads its field from that witness, which holds the
+same value, so the link it records is the one the entry states. Controls:
+`compiler-api-entry-path` (two and three members, a loop's backedge, past a
+call), `invalid-compiler-api-entry-path-record` (a middle member a call
+replaces, run under Node), and in `pipeline/test.mts` forged chains of
+`path-chain-controls`: a second segment's link of another receiver or another
+field, an unjustified predecessor, a chain past a call and an untested path,
+each refused, with the honest document accepted.
 
 #### Stable keys
 

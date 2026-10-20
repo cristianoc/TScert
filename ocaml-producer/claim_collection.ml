@@ -57,9 +57,12 @@ open S
         (match List.assoc_opt (owner n) env with
          | Some (Value t) ->
            let field = field_of n in
+           (* A path's first member is the root's field; its later members
+              are read from what the entry states of its prefix, in Lean. *)
            if is_path n then
-             List.length (String.split_on_char '\001' n) = 2 &&
-             record_field ~allow_optional:true declarations t (String.sub field 1 (String.length field - 1))
+             (match String.split_on_char '\001' field with
+              | "" :: first :: _ -> record_field ~allow_optional:true declarations t first
+              | _ -> false)
            else record_field ~allow_optional:true declarations t field
          | _ -> false)) env in
       publish_entry start bindings
