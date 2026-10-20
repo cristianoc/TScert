@@ -176,7 +176,12 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           | BlockBody ss -> List.exists (assigns n) ss
           | _ -> false in
         let input=if List.mem_assoc i defaults then union t (Atoms [Undef]) else t in
-        extend env n (if assigned then holding t input else Value input)) env (List.mapi (fun i p -> i,p) ps) in
+        (* An assigned parameter is a cell where the flow graph holds it in
+           one (a closure writes it, or reads it after a write), and a slot
+           of the activation otherwise, as a function's parameter is. *)
+        extend env n (if not assigned then Value input
+          else if held_in_cell n body.pos then holding t input
+          else Local (t,arms declarations input))) env (List.mapi (fun i p -> i,p) ps) in
       (* A closure literal without a result annotation expected at one
          signature taking at least its parameters has that signature's result
          as its contextual return type, as in TypeScript. *)

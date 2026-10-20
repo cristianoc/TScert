@@ -613,10 +613,14 @@ first three items 2026-10-19):
   refines the slot of its argument's read, which a later read of the same
   path is through the read link;
 - a pattern binding a `for...of` over a program's iterable (17), the slices
-  of `type-term.mts` past their contextual function types, and a member
-  read of a `let` holding a union of objects after a test of it (19), the
-  slices of `fragment-statements.mts` past `protocolPattern`'s call of
-  `gate.fail` (2026-10-20, [census](#census-never-callable));
+  of `type-term.mts` past their contextual function types (2026-10-20,
+  [census](#census-never-callable)); the slices of
+  `fragment-statements.mts` past `protocolPattern`'s call of `gate.fail`
+  read a closure's assigned parameter after a host guard, a
+  [slot](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)
+  of the closure's activation, and stop at `ts.SyntaxKind[s.kind]`, a
+  numeric enum's reverse lookup ("missing field 242",
+  [record](#census-closure-parameter-slots));
 - a callback's parameter written without a type is read at its contextual
   type, records, indexes and aliases without parameters included; no slice
   stops there;
@@ -751,6 +755,16 @@ read of a `let` holding a union of objects after a test of it, and
 Of `type-term.mts`, the 17 slices stopped at the contextual
 `(node: TypeNodeBase) => TypeTerm` stop at a pattern binding a `for...of`
 over a program's iterable.
+
+<a id="census-closure-parameter-slots"></a>
+Two slices of `fragment-statements.mts`, `protocolPattern` and
+`patternStmt`, which calls it, on a654145 (main) and on the branch reading a
+closure's assigned parameters by the flow graph's slot or cell decision
+(2026-10-21): neither verifies on either. On main both stop at "a read of
+expression on a `let` holding a union of objects" (`hoistTarget`'s `first`
+and `assignedNames`'s `targets`, `while (ts.isParenthesizedExpression(x))
+x = x.expression`); on the branch both stop at "missing field 242", the
+reverse lookup `ts.SyntaxKind[s.kind]` in `statements`.
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:
