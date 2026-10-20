@@ -399,6 +399,9 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const captured = await load("invalid-compiler-api-stable-let");
   assert.equal(captured({ name: { kind: identifier, text: "a" } }, { name: { kind: computed } }), undefined,
     "invalid-compiler-api-stable-let: the callback replaces the let root");
+  const cell = await load("invalid-compiler-api-stable-let-cell");
+  assert.equal(cell({ name: { kind: identifier, text: "a" } }, { name: { kind: computed } }), undefined,
+    "invalid-compiler-api-stable-let-cell: the callback replaces the mutable name");
   console.log("stable links: a record's member, a mixed path's first member and a let root replaced by the call, each read returns undefined under Node");
 }
 

@@ -174,7 +174,7 @@ def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
     (((certified.zip b.functions).findSome? fun (plan, c) => match plan with
       | .graph name namePos r => footprintRefusal name namePos r c) <|>
      (((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
-      | .graph _ _ r => nodeRefusal r c <|> obligationRefusal r c es <|> claimRefusal r c <|> edgeRefusal r c <|> typingRefusal r c)).getD fallback)
+      | .graph _ _ r => obligationRefusal r c es <|> claimRefusal r c <|> edgeRefusal r c <|> nodeRefusal r c <|> typingRefusal r c)).getD fallback)
 
 def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
     (budget : PositiveCertificates.SearchBudget := {})

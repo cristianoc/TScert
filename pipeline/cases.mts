@@ -720,6 +720,8 @@ export const cases: Case[] = [
     /missing field text at \[435,451\)/), status: "unsupported", phase: "proposal", project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-stable-let", "a `let` root a callback replaces between the test and the read: the cell's read link ends at the call (run under Node)",
     /missing field text at \[495,506\)/), status: "unsupported", phase: "proposal", project: "pipeline/compiler-api-project" },
+  { ...negative("invalid-compiler-api-stable-let-cell", "a mutable name replaced by a callback: the producer refuses the union-valued cell read; forged claims and evidence isolate its read link across the call (run under Node)",
+    /a read of text on a `let` holding a union of objects/), status: "unsupported", phase: "proposal", project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-stable-catch", "a refinement read in a `catch`: the exceptional edge keeps no stable link, so the handler reads the declared type",
     /missing field text at \[412,423\)/), status: "unsupported", phase: "proposal", project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-stable-view", "a host view's member tested and read past a call: no family states a view's members stable, so the read is of the declared type",

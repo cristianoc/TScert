@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { chmodSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
 import { join, resolve } from "node:path";
-import type { Ast } from "../tools/fragment.mts";
+import type { Ast, Expr } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
@@ -30,6 +30,7 @@ import { checkOverloads } from "./overload-claims.mts";
 import { checkDefaults, checkSchemeDefaults, checkEarlyDefault, checkPatternDefaults } from "./default-parameters.mts";
 import { decodeFlowDocument, type ExecutionPlan, type ExecutionOperation } from "../tools/source-flow.mts";
 import { runExample } from "./run-example.mts";
+import { checkMutation, forgedEvidence } from "./evidence-mutations.mts";
 const here = import.meta.dirname;
 
 function must<T>(value: T | null | undefined, message: string): T {
@@ -3753,14 +3754,9 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
 
 {
   // Constant returns isolate the entry obligation from subsequent read typing.
-  // Evidence edits include contexts, expression proofs, knowledge and outputs;
-  // each edit checks its honest input. The patches come from evidence production
-  // with mapped/observed edge coverage and heap-link checks bypassed; the
-  // root-reassignment edit also supplies its required cell observation.
-  // Mutation check: disabling coverage alone accepts predecessor; disabling
-  // links alone accepts receiver, field, afterCall and read. before and caught
-  // need both bypasses. afterRoot is a cell observation: bypassing cell knowledge
-  // as well accepts it. All mutations are temporary and restored before suites.
+  // Forged claims select named paths at source statements. The test-only
+  // mutation executable searches their complete evidence and checks it with
+  // every selected bypass necessary: coverage, links, or cell knowledge.
   const artifacts = run("path-witness-controls");
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
   const honest = readClaims(artifacts);
@@ -3770,40 +3766,6 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const type = must(current.find(([field]) => field === "value"), "value field")[1];
   const object = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
-  const patches: unknown = JSON.parse(readFileSync(join(here, "path-witness-evidence.json"), "utf8"));
-  assert.ok(object(patches));
-  const patchedEvidence = (name: string): string => {
-    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
-    assert.ok(object(evidence));
-    const edits = patches[name];
-    assert.ok(Array.isArray(edits), `${name}: evidence edits`);
-    for (const edit of edits) {
-      assert.ok(object(edit) && Array.isArray(edit.path) && edit.path.length > 0);
-      let target: unknown = evidence;
-      for (const key of edit.path.slice(0, -1)) {
-        if (typeof key === "number") {
-          assert.ok(Array.isArray(target));
-          target = target[key];
-        } else {
-          assert.ok(typeof key === "string" && object(target));
-          target = target[key];
-        }
-      }
-      const key: unknown = edit.path.at(-1);
-      if (typeof key === "number") {
-        assert.ok(Array.isArray(target));
-        assert.deepEqual(target[key], edit.before, `${name}: honest evidence at ${edit.path.join(".")}`);
-        target[key] = edit.after;
-      } else {
-        assert.ok(typeof key === "string" && object(target));
-        assert.deepEqual(target[key], edit.before, `${name}: honest evidence at ${edit.path.join(".")}`);
-        target[key] = edit.after;
-      }
-    }
-    const path = join(artifacts, `forged-witness-${name}-evidence.json`);
-    writeFileSync(path, JSON.stringify(evidence));
-    return path;
-  };
   for (const [name, functionName, marker, failure] of [
     ["before", "before", "if (holder.value", "type coverage"],
     ["afterCall", "afterCall", "return 0;", "heap knowledge"],
@@ -3824,7 +3786,9 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const input = writeClaims(artifacts, `forged-witness-${name}`, claims);
     const obligation = `source incoming edge obligation at [${at.start},${source.indexOf(";", at.start) + 1})`;
     refusedAt(artifacts, input, `forged-witness-${name}`, obligation);
-    const checked = invoke(input, patchedEvidence(name), artifacts);
+    const checked = invoke(input, forgedEvidence(artifacts, input, `forged-witness-${name}`,
+      name === "predecessor" ? "coverage" : name === "afterCall" || name === "read" ? "links" :
+        name === "afterRoot" ? "coverage,cells" : "coverage,links"), artifacts);
     assert.ok(checked.includes(`${obligation}: evidence fails ${failure} from node `), checked);
   }
 
@@ -3869,6 +3833,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     node.output.links.push({ ...forged, cell: forged.cell + 1, value: forged.value + 1 });
     const path = join(artifacts, `forged-witness-${name}-evidence.json`);
     writeFileSync(path, JSON.stringify(evidence));
+    checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
     const start = entry.start + "return ".length;
     const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
     assert.ok(checked.includes(`source incoming edge obligation at [${start},${start + 1}): evidence fails heap knowledge`), checked);
@@ -3968,90 +3933,101 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
 }
 
 {
-  // Lean's side of the stable-link negatives, bypassing the producer, which
-  // refuses each at the read. A document weakened so that a property
-  // assignment's `name` (and the program record's) is an identifier or a
-  // private one, both stating `text`, has the producer state the read past
-  // the call there; its search and
-  // check accept those claims there. With each case's own unchanged
-  // document, the same claims are refused by the search and the same
-  // evidence by the checker, located at the read. On the handler's case, a
-  // witness of the tested name forged into the `catch` entry is refused at
-  // that entry's incoming edge.
-  type Term = TypeTerm;
-  const referenceTo = (fragment: Ast, name: string): Term => {
-    const find = (t: Term): Term | undefined =>
-      t.k === "reference" && t.reference.name === name && t.args.length === 0 ? t
-        : t.k === "union" ? t.parts.map(find).find(x => x !== undefined)
-          : t.k === "object" ? t.fields.map(f => find(f.type)).find(x => x !== undefined) : undefined;
-    return must(must(fragment.declarations, "the declarations").definitions
-      .map(d => d.expression ? find(d.expression) : undefined).find(x => x !== undefined), `a reference to ${name}`);
-  };
-  const weaken = (artifacts: string, file: string): string => {
-    const fragment: Ast = readFragmentFile(join(artifacts, "fragment.json"));
-    // Both arms state `text`, and the guard still splits them.
-    const named: Term = { k: "union", span: [0, 0],
-      parts: [referenceTo(fragment, "Identifier"), referenceTo(fragment, "PrivateIdentifier")] };
-    for (const d of must(fragment.declarations, "the declarations").definitions) {
-      const e = d.expression;
-      if (e?.k !== "object") continue;
-      const weakened = e.host !== undefined ? d.declaration.name === "PropertyAssignment" : d.declaration.name === "Named";
-      if (!weakened) continue;
-      for (const f of e.fields) if (f.name === "name") f.type = named;
-    }
-    const path = join(artifacts, `${file}.json`);
-    writeFileSync(path, JSON.stringify(fragment));
-    return path;
-  };
-  const hostile = (file: string, read: string): { artifacts: string; claims: string; evidence: string; at: number; reads: number[] } => {
-    const artifacts = run(file);
-    const weak = weaken(artifacts, `weakened-${file}`);
-    const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
-    assert.equal(lowered.status, 0, lowered.stderr);
-    const flow = join(artifacts, `weakened-${file}-flow.json`);
-    writeFileSync(flow, lowered.stdout);
-    const proposed = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
-    assert.equal(proposed.status, 0, proposed.stderr);
-    const claims = join(artifacts, `weakened-${file}-claims.json`);
-    writeFileSync(claims, proposed.stdout);
-    const borrowed = produceWith(artifacts, claims, `weakened-${file}`, weak);
-    assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
-    const evidence = join(artifacts, `weakened-${file}-evidence.json`);
+  // The constant-return neighbour supplies valid claims and evidence before
+  // the tested call. Only the final path/read and its entry witness are forged;
+  // the declaration document is identical throughout. The let-cell neighbour
+  // observes the mutable root directly with a kind test; the original let
+  // case also loses its member witness at a statement entry before the call.
+  // The mutation executable searches the source-anchored claims. Each exact
+  // document must pass its mutation and fail both the production verifier
+  // and the other stable/handler mutation.
+  for (const kind of ["mixed", "record", "let", "catch"] as const) {
+    const artifacts = run(`invalid-compiler-api-stable-${kind === "let" ? "let-cell" : kind}`);
+    const fragment = readFragmentFile(join(artifacts, "fragment.json"));
     const source = readFileSync(join(artifacts, "source.ts"), "utf8");
-    const reads = [...source.matchAll(new RegExp(read.replace(/\./g, "\\."), "g"))].map(m => m.index);
-    return { artifacts, claims, evidence, at: source.lastIndexOf(read), reads };
-  };
-  // Located at a read of the path, where the claims and the document differ.
-  const located = (detail: string, reads: readonly number[]): boolean =>
-    [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some(m => reads.some(at => Number(m[1]) <= at && at < Number(m[2])));
-  for (const [file, read] of [["invalid-compiler-api-stable-mixed", "m.name"], ["invalid-compiler-api-stable-record", "w.node.name"],
-      ["invalid-compiler-api-stable-let", "m.name"], ["invalid-compiler-api-stable-catch", "m.name"]] as const) {
-    const h = hostile(file, read);
-    const searched = produceWith(h.artifacts, h.claims, `hostile-${file}`);
+    const body = must(fragment.functions[0], "the function").body;
+    // Select the catch from the parsed tree, never from a keyword in a comment.
+    const caught = body.find(s => s.k === "try");
+    const handler = caught?.k === "try" ? caught.handler?.body[0] : undefined;
+    if (kind === "catch") {
+      assert.ok(handler?.k === "return");
+      assert.deepEqual(handler.pos, [405, 424]);
+    }
+    const statement = kind === "catch" ? must(handler, "the handler entry")
+      : must(body.find(s => s.k === "return"), "the final return");
+    assert.ok(statement.k === "return" && statement.e);
+    const returned = statement.e;
+    const comma = returned.k === "conditional" ? returned.then : undefined;
+    if (kind === "record" || kind === "let") assert.ok(comma?.k === "comma");
+    const read = comma?.k === "comma" ? comma.right : returned;
+    assert.ok(read.k === "read" && read.field === "text" && (read.e.k === "read" || read.e.k === "id"));
+    const path = read.e;
+    const [at, end] = read.pos;
+    const neutral: Expr = { k: "lit", pos: read.pos, lit: { a: "stringlit", v: "" } };
+    if (comma?.k === "comma") comma.right = neutral;
+    else statement.e = neutral;
+    const neighbour = join(artifacts, "stable-neighbour.json");
+    writeFileSync(neighbour, JSON.stringify(fragment));
+    const lowered = spawnSync(verifier, ["--lower-control-flow", neighbour], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
+    const flow = join(artifacts, "stable-neighbour-flow.json");
+    writeFileSync(flow, lowered.stdout);
+    const proposed = spawnSync(producerExecutable, [neighbour, flow], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
+    const honestPath = join(artifacts, "stable-neighbour-claims.json");
+    writeFileSync(honestPath, proposed.stdout);
+    const claims = readClaimsFile(honestPath);
+    const fn = must(claims.functions[0], "the claims");
+    // The constant has the same (wider) result contract as the hostile read,
+    // keeping the surrounding contexts and graph labels identical.
+    for (const e of fn.expressions) if (e.pos[0] <= at && e.pos[1] >= end) e.type = fn.result;
+    writeFileSync(honestPath, JSON.stringify(claims));
+    const honestSearch = produceWith(artifacts, honestPath, "stable-neighbour", neighbour);
+    assert.equal(honestSearch.status, 0, honestSearch.stdout + honestSearch.stderr);
+    const constant = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === end), "constant neighbour");
+    const definitions = must(fragment.declarations, "declarations").definitions;
+    const identifier = definitions.findIndex(d => d.declaration.name === "Identifier");
+    assert.ok(identifier >= 0);
+    const refined = [{ decl: identifier }];
+    const prefix = structuredClone(fn.expressions.filter(e => e.pos[1] <= at));
+    fn.expressions = fn.expressions.filter(e => e !== constant);
+    // Copy each receiver's type from the honest pre-test read of the same path.
+    const addRead = (e: Expr): void => {
+      assert.ok(e.k === "read" || e.k === "id");
+      if (e.k === "read") addRead(e.e);
+      const previous = must(prefix.find(p => p.pos[1] - p.pos[0] === e.pos[1] - e.pos[0] &&
+        source.slice(p.pos[0], p.pos[1]) ===
+        source.slice(e.pos[0], e.pos[1])), "honest receiver read");
+      fn.expressions.push({ ...structuredClone(previous), point: constant.point, pos: e.pos,
+        type: e === path ? refined : previous.type, current: null });
+    };
+    addRead(path);
+    fn.expressions.push({ ...constant, type: fn.result });
+    for (const e of fn.expressions) if (e.pos[0] <= at && e.pos[1] >= end) e.type = fn.result;
+    if (kind === "mixed" || kind === "catch") {
+      const entry = must(fn.entries.find(e => e.start === statement.pos[0]), "post-call/handler entry");
+      assert.equal(entry.start, kind === "catch" ? 405 : 500);
+      must(entry.bindings.find(b => b.name === "m"), "m at the entry").current = [["name", refined]];
+    }
+    assert.deepEqual(fn.expressions.filter(e => e.pos[1] <= at), prefix);
+    const forged = writeClaims(artifacts, `isolated-stable-${kind}`, claims);
+    const searched = produceWith(artifacts, forged, `isolated-stable-${kind}`);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    assert.ok(located(searched.stdout + searched.stderr, h.reads), `${file}: the search at ${read}: ${searched.stdout + searched.stderr}`);
-    // The checker refuses the borrowed evidence where it first differs from
-    // the case's document: at a node between the test and the read.
-    const checked = invoke(h.claims, h.evidence, h.artifacts);
-    const first = Math.min(...h.reads);
-    assert.ok([...checked.matchAll(/at \[(\d+),(\d+)\)/g)].some(m => Number(m[1]) >= first && Number(m[1]) <= h.at),
-      `${file}: the checker between the test and the read of ${read}: ${checked}`);
-    if (file !== "invalid-compiler-api-stable-catch") continue;
-    // The handler's entry claiming the tested name's witness.
-    const claims = readClaimsFile(h.claims);
-    const fn = must(claims.functions[0], "the function");
-    const source = readFileSync(join(h.artifacts, "source.ts"), "utf8");
-    const handler = source.indexOf("catch");
-    const entry = must(fn.entries.find(e => e.start > handler), "the catch entry");
-    const readAt = must(fn.expressions.find(e => e.pos[0] === h.at && e.pos[1] === h.at + read.length), "the read");
-    const binding = must(entry.bindings.find(b => b.name === "m"), "m at the catch");
-    assert.ok(Array.isArray(readAt.type), "the read's labels");
-    binding.current = [["name", readAt.type]];
-    const forged = writeClaims(h.artifacts, "forged-handler-witness", claims);
-    const witnessed = produceWith(h.artifacts, forged, "forged-handler-witness");
-    assert.equal(witnessed.status, 1, witnessed.stdout + witnessed.stderr);
-    assert.match(witnessed.stdout + witnessed.stderr, /at \[\d+,\d+\)/, witnessed.stdout + witnessed.stderr);
-    assert.match(invoke(forged, h.evidence, h.artifacts), /at \[\d+,\d+\)/);
+    const obligation = kind === "mixed" ? "source incoming edge obligation at [500,519)"
+      : kind === "catch" ? "source expression obligation at [382,387)"
+        : `source expression obligation at [${path.pos[0]},${path.pos[1]})`;
+    assert.ok((searched.stdout + searched.stderr).includes(obligation), searched.stdout + searched.stderr);
+    const evidencePath = forgedEvidence(artifacts, forged, `isolated-stable-${kind}`,
+      kind === "catch" ? "handler" : "stable");
+    const checked = invoke(forged, evidencePath, artifacts);
+    if (kind === "catch")
+      assert.match(checked, /source incoming edge obligation at \[405,424\): evidence fails heap knowledge from node \d+, handler edge/);
+    else {
+      // The forged output keeps the read link at the call. The exact output
+      // check is the boundary that drops it, before any later read is checked.
+      const callSpan = kind === "mixed" ? [491, 496] : kind === "record" ? [428, 433] : [495, 504];
+      assert.ok(checked.includes(`source evidence refusal at [${callSpan[0]},${callSpan[1]}): the evidence does not establish this node's typing`), checked);
+    }
   }
-  process.stdout.write("stable-link negatives: claims made under a document weakening the name to identifiers refused with each case's own document, by the search at a read of the path and by the checker between the test and the read; a forged handler witness refused by both\n");
+  process.stdout.write("stable-link negatives: honest pre-test claims and evidence; mixed, record and let isolate the call, catch isolates the incoming handler edge at [405,424)\n");
 }
