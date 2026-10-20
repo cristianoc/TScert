@@ -464,9 +464,10 @@ a nonempty list of field names. Each path's first field must be named,
 required or optional, by every record alternative, and its labels name a
 valid type in the table. An empty inner label list denotes impossibility;
 it does not mean that the assertion is absent. A path of two fields or more
-is asserted only of a statement entry's immutable binding, as the
-[witness of a member path](HOST-FAMILIES.md#entries); an expression's
-assertion and a cell's name one field each.
+is asserted only of a statement entry's binding, as the
+[witness of a member path](HOST-FAMILIES.md#entries), and is read only
+where the entry holds that witness; an expression's assertion names one
+field.
 
 For a table whose row 4 is a single invariant Boolean cell:
 

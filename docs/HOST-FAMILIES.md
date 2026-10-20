@@ -666,8 +666,9 @@ same value, so the link it records is the one the entry states. Controls:
 call), `invalid-compiler-api-entry-path-record` (a middle member a call
 replaces, run under Node), and in `pipeline/test.mts` forged chains of
 `path-chain-controls`: a second segment's link of another receiver or another
-field, an unjustified predecessor, a chain past a call and an untested path,
-each refused, with the honest document accepted.
+field, an unjustified predecessor and a chain past a call, each refused,
+with the honest document accepted. An assertion of a path of two members or
+more where the entry holds no witness of it is the premise of nothing.
 
 #### Stable keys
 

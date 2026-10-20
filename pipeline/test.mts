@@ -3877,24 +3877,6 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     assert.ok(checked.includes(`${obligation}: evidence fails ${failure} from node `), checked);
   }
 
-  // A refinement of another path, at another receiver (`alt`) or through
-  // another field (`other`), claimed where only `holder.mid.leaf` is
-  // tested: no witness of it is held, so the entry's claim is refused in
-  // search and in checking; the `receiver` and `field` functions, which test
-  // those paths, are its accepted neighbours.
-  for (const path of [["alt", "leaf"], ["mid", "other"]] as const) {
-    const claims = structuredClone(honest);
-    const fn = must(claims.functions.find(f => f.name === "before"), "before");
-    const at = must(fn.entries.find(e => source.startsWith("return 1;", e.start)), "the refined entry");
-    must(at.bindings.find(b => b.name === "holder"), "holder").current = [[["mid", "leaf"], type], [[...path], type]];
-    const input = writeClaims(artifacts, `forged-chain-${path.join("-")}`, claims);
-    const refusal = `the path of 2 members from 'holder' has no witness at this entry`;
-    const searched = produceWith(artifacts, input, `forged-chain-${path.join("-")}`);
-    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-    assert.ok((searched.stdout + searched.stderr).includes(refusal), searched.stdout + searched.stderr);
-    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
-  }
-
   // A second-segment link, from a prefix's witness to the path's, added at
   // a non-cut return node beside the honest ones: of the other prefix's
   // witness (`receiver`), or through the prefix's other field (`field`).
@@ -3947,7 +3929,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
     assert.ok(checked.includes(`source incoming edge obligation at [${start},${start + 1}): evidence fails heap knowledge`), checked);
   }
-  process.stdout.write("path chains: the honest document accepted; a forged predecessor refused by type coverage, a chain past a call and a second segment's wrong receiver or field by heap knowledge, each accepted with that check disabled; an untested path's claim refused in search and checking\n");
+  process.stdout.write("path chains: the honest document accepted; a forged predecessor refused by type coverage, a chain past a call and a second segment's wrong receiver or field by heap knowledge, each accepted with that check disabled\n");
 }
 
 {

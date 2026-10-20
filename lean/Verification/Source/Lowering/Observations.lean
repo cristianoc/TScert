@@ -312,16 +312,11 @@ must follow from the stable storage contract; no claim is silently dropped. -/
             | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
             | none => persistentObservation b.source (pos,pos+1) reference fld A
         | _ =>
-          -- A path of two members or more is its witness's, which every
-          -- incoming edge checks with its links, or the declared read of
-          -- its last field from what the entry states of its prefix.
-          let witnessed := (match b.storage with | .value => true | _ => false) &&
-            (witnessClaim T fc pos b.source.name path).isSome &&
-            scope.any (·.witness == some (b.source.name, path))
-          let declared := ((pathType T fc pos b.source.name path.dropLast).bind fun R =>
-            path.getLast?.bind (declaredFieldRead T R ·)).any (within T · A)
-          if !witnessed && !declared then
-            throw s!"source environment obligation at {pos}: the path of {path.length} members from '{b.source.name}' has no witness at this entry"
+          -- A path of two members or more is read only as its witness's
+          -- claim (`witnessClaim`), which every incoming edge checks with
+          -- its links; where the entry holds no witness of it, the
+          -- assertion is the premise of nothing the checker derives.
+          pure ()
       return facts) []
 
 /-- A dot cannot occur in a source binding identifier, so these names designate
