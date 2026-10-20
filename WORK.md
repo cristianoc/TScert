@@ -688,6 +688,15 @@ no worker failure on either. The branch adds 4 slices
   past "missing field elements" (the guard's `false` edge on a
   `BindingName`), now refused in search inside its `flatMap` callback.
 
+The census of a818552, which reads the sync API's `isUnionType` without its
+declared predicate, run after b7787b9's on the same machine (2026-10-20,
+load averages 10 to 18): 125 of 369 slices verify. Against b7787b9,
+`declaration-graph.mts#primitivesOf`, verified there at that predicate, is
+refused in the producer at `getTypes` after `isUnionType`
+(`invalid-compiler-api-sync-guard`), a loss by principle: no audited
+contract states the predicate. `compiler-api.mts#importsKey` replaces
+`#guardModule` and is refused in search at its return.
+
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:
 
