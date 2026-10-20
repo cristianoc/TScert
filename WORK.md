@@ -38,7 +38,7 @@ design, not its progress.
 | [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
 | [A family's installation](#family-installation) | open | a family description names its package's installation and digest, and the front end activates any active description's package by that data, as it does the compiler API's |
 | [Paths at an entry beyond one member](#paths-at-an-entry) | open | a statement entry carries the refinement of a path of two members or more, and a read of `n.expression.expression` past a statement boundary verifies |
-| [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | open: an investigation, cause unknown | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
+| [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
 | [A guard's false edge over a tag-set arm](#guard-false-edge-tag-sets) | open | where `ts.isToken(node)` answers `false`, `node` holds no `Token` arm |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
@@ -339,9 +339,20 @@ across the statement reads the declared type. A witness of a longer path
 needs the entry to state it through its prefix's witness.
 
 <a id="shadowing-locals-search"></a>
-**The search past 60 s on `shadowingLocals`.** In the census of ab51b0c the
-search for `fragment-support.mts#shadowingLocals`, refused in search on
-77ca829, did not finish within 60 s; which obligation grows is not known.
+**The search past 60 s on `shadowingLocals`.** The slice of
+`fragment-support.mts#shadowingLocals` holds that function and
+`bindingScope`, which it calls. Its search spends about 44 s on
+`bindingScope` and 19 s on `shadowingLocals`. On 77ca829 it spends 40 s on
+`bindingScope` and stops there, refused at `block(holder.parent)`, which
+the [stable-link rule](docs/HOST-FAMILIES.md#stable-members) derives; no
+judgment's cost grows between the two, and the search reaches the second
+function (measured 2026-10-20, the slice alone, load averages 2 to 7). The
+time is in subtype comparisons that fail: at a member read or a guard's
+call on a node, the receiver is compared with each pool type that has the
+member, about 74 of the family's arms in this slice, and each comparison of
+a union of 57 to 63 arms with one arm fails in about 70 ms. In
+`bindingScope`'s own slice the pool holds 41 such arms and each comparison
+takes about 7 ms: 2.5 s in all.
 
 <a id="family-identity-controls"></a>
 **Family identity controls.** Of the
