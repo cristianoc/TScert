@@ -531,6 +531,23 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const mismatch: unknown = await import(pathToFileURL(join(other, "invalid-compiler-api-guard-reexport-mismatch.ts")).href);
   assert.ok(isNamespace(mismatch) && unary(mismatch.name), "the fixture exports name");
   assert.equal(mismatch.name(statement), undefined, "the mismatched re-export reads text of no identifier");
+  // Family identity through program code (HOST-FAMILIES.md, "Identity
+  // through program code"): a record holding a node passed where a node is
+  // expected reads `pos` of no node; a spread's copy of a node has no
+  // `kind`; a callback of `forEachChild` asserting its argument an
+  // identifier returns the binary expression of `x + 1;`, whose `text` is
+  // `undefined`.
+  const boxed = await fixture("invalid-compiler-api-boxed-node");
+  assert.ok(unary(boxed.boxed), "the fixture exports boxed");
+  const anyNode = first(join(dir, "any.ts"), "x;\n", Number(syntaxKind.ExpressionStatement));
+  assert.equal(boxed.boxed(anyNode), undefined, "boxed returns undefined");
+  const spread = await fixture("invalid-compiler-api-node-spread");
+  assert.ok(unary(spread.copiedKind), "the fixture exports copiedKind");
+  assert.equal(spread.copiedKind(anyNode), undefined, "a spread's copy has no kind");
+  const callback = await fixture("invalid-compiler-api-node-callback-result");
+  assert.ok(unary(callback.firstName), "the fixture exports firstName");
+  const sum = first(join(dir, "sum.ts"), "x + 1;\n", Number(syntaxKind.ExpressionStatement));
+  assert.equal(callback.firstName(sum), undefined, "firstName returns the text of a binary expression");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier");
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind and a callback's asserted identifier's text are undefined");
 }

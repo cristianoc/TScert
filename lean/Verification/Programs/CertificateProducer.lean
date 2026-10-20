@@ -319,40 +319,45 @@ matching. Only the common comparison operation validates these choices. -/
       -- callback the target states as a definition of its own): the
       -- target's as the image of the one label whose image is not among the
       -- target's, which the image check accepts only when the two are
-      -- proved equal.
-      let respell (P Q : List ι) : InstTable ι :=
+      -- proved equal. The label's image is proposed as the target less the
+      -- other labels' images, and, where the instance shares those labels
+      -- (a result `undefined | T` at `T = undefined | number`), as the whole
+      -- target: each operand's alternatives, the patches their products.
+      let respell (P Q : List ι) : List (InstTable ι) :=
         match tyImg table κ₀ P with
         | some img =>
-          if PositiveRules.sameLabels img Q then [] else
+          if PositiveRules.sameLabels img Q then [[]] else
           let open_ := if P.length == 1 then P
             else P.filter fun l => !((entryImg table κ₀ l).getD []).all (· ∈ Q)
           match open_ with
           | [l] =>
             let others := (P.filter (· != l)).flatMap fun m => (entryImg table κ₀ m).getD []
-            [(l, κ₀, Q.filter (!others.contains ·))]
-          | _ => []
-        | none => []
-      let fixedPatch (p q : Arrow (List ι)) : InstTable ι :=
-        let operands := if receiverUniverse G p.receiver q.receiver then
+            let rest := Q.filter (!others.contains ·)
+            if rest == Q then [[(l, κ₀, Q)]] else [[(l, κ₀, rest)], [(l, κ₀, Q)]]
+          | _ => [[]]
+        | none => [[]]
+      let product (operands : List (List ι × List ι)) : List (InstTable ι) :=
+        operands.foldl (fun patches (P, Q) =>
+          patches.flatMap fun patch => (respell P Q).map (patch ++ ·)) [[]]
+      let fixedPatch (p q : Arrow (List ι)) : List (InstTable ι) :=
+        product <| if receiverUniverse G p.receiver q.receiver then
           (p.result :: p.arguments).zip (q.result :: q.arguments)
         else (p.receiver :: p.result :: p.arguments).zip (q.receiver :: q.result :: q.arguments)
-        operands.flatMap fun (P, Q) => respell P Q
-      let restPatch (p q : RestArrow (List ι)) : InstTable ι :=
-        let operands := if receiverUniverse G p.receiver q.receiver then
+      let restPatch (p q : RestArrow (List ι)) : List (InstTable ι) :=
+        product <| if receiverUniverse G p.receiver q.receiver then
           (p.arguments.2 :: p.result :: p.arguments.1).zip (q.arguments.2 :: q.result :: q.arguments.1)
         else (p.receiver :: p.arguments.2 :: p.result :: p.arguments.1).zip
           (q.receiver :: q.arguments.2 :: q.result :: q.arguments.1)
-        operands.flatMap fun (P, Q) => respell P Q
       -- Each target chooses one overload. Images of an unused overload need
       -- not equal that target's operands; the checker validates each choice.
       let patches := L.foldl (fun patches q => patches.flatMap fun patch =>
-        s.signatures.filterMap fun p =>
+        s.signatures.flatMap fun p =>
           if p.arguments.length == q.arguments.length && p.effect.covers q.effect then
-            some (patch ++ fixedPatch p q) else none) ([[]] : List (InstTable ι))
+            (fixedPatch p q).map (patch ++ ·) else []) ([[]] : List (InstTable ι))
       let patches := M.foldl (fun patches q => patches.flatMap fun patch =>
-        s.variadic.filterMap fun p =>
+        s.variadic.flatMap fun p =>
           if p.arguments.1.length == q.arguments.1.length && p.effect.covers q.effect then
-            some (patch ++ restPatch p q) else none) patches
+            (restPatch p q).map (patch ++ ·) else []) patches
       c :: (patches.filter (! ·.isEmpty)).map fun patch =>
         ⟨patch.eraseDups ++ table, θs, [], []⟩
   syntactic ++ (matchedInstance G fuel s L M).toList

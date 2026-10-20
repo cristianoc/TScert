@@ -3140,7 +3140,8 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // family contract", "Activation").
   // Each forgery returns the position of the claim it forges; the refusal
   // names an obligation whose span holds it.
-  const forgeries: [string, string, string, (text: string, function_: SourceClaims["functions"][number]) => number][] = [
+  type Unit = NonNullable<SourceClaims["init"]>;
+  const forgeries: [string, string, string, (text: string, function_: Unit) => number][] = [
     ["forged-excluded-arm", "compiler-api-kind-narrowing", "fileName", (text, f) => {
       const at = (start: number) => must(f.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + 1), `the claim at ${start}`);
       const excluded = text.indexOf("n.fileName");
@@ -3174,14 +3175,52 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
       claim.type = must(f.expressions.find((e) => e.pos[0] === node && e.pos[1] === node + 1), "the node's claim").type;
       return literal;
     }],
+    // Family identity through program code (HOST-FAMILIES.md, "Identity
+    // through program code"), each claim at the identifier shape the
+    // case's own guard gives: a callback of `forEachChild` returning the
+    // node it received, at a node type it did not receive; the node on the
+    // `false` edge of a guard a program module re-exports; and the node
+    // where a wrapper of a guard answers `true`, which the wrapper's own
+    // `boolean` does not narrow.
+    ["forged-callback-result", "compiler-api-node-callback", "%init%", (text, f) => {
+      const returned = text.indexOf("=> c;") + "=> ".length;
+      const interior = [...f.expressions, ...(f.arrows ?? []).flatMap((a) => a.rows.flatMap((r) => r.expressions))];
+      must(interior.find((e) => e.pos[0] === returned && e.pos[1] === returned + 1), "the callback's result").type =
+        identifierShape(text, "n.text");
+      return returned;
+    }],
+    ["forged-reexported-false-edge", "compiler-api-guard-calls", "reexportedOther", (text, f) => {
+      const read = text.indexOf("n.pos", text.indexOf("function reexportedOther"));
+      must(f.expressions.find((e) => e.pos[0] === read && e.pos[1] === read + 1), "the false edge's node").type =
+        identifierShape(text, "n.text");
+      return read;
+    }],
+    ["forged-guard-wrapper", "compiler-api-guard-calls", "wrappedRead", (text, f) => {
+      const read = text.indexOf("n.pos", text.indexOf("function wrappedRead"));
+      must(f.expressions.find((e) => e.pos[0] === read && e.pos[1] === read + 1), "the wrapper's node").type =
+        identifierShape(text, "n.text");
+      return read;
+    }],
   ];
+  // The claim of the node a guard's `true` edge reads at `read`, the first
+  // of the case: the identifier shape, by its label in the claims document.
+  let shapes: SourceClaims | null = null;
+  const identifierShape = (text: string, read: string): SourceClaims["functions"][number]["expressions"][number]["type"] => {
+    const at = text.indexOf(read);
+    const found = must(shapes, "the case's claims").functions.flatMap((f) => f.expressions)
+      .find((e) => e.pos[0] === at && e.pos[1] === at + 1);
+    return must(found, `the claim of the node at ${read}`).type;
+  };
   const locatedAt = (detail: string, position: number): boolean =>
     [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= position && position < Number(m[2]));
   for (const [name, file, function_, forge] of forgeries) {
     const artifacts = run(file);
     const text = readFileSync(join(artifacts, "source.ts"), "utf8");
     const claims = readClaims(artifacts);
-    const position = forge(text, must(claims.functions.find((f) => f.name === function_), `${function_}'s claims`));
+    shapes = claims;
+    const unit: Unit = function_ === "%init%" ? must(claims.init, "the initialization claims")
+      : must(claims.functions.find((f) => f.name === function_), `${function_}'s claims`);
+    const position = forge(text, unit);
     const forged = writeClaims(artifacts, name, claims);
     const searched = produceWith(artifacts, forged, name);
     const detail = searched.stdout + searched.stderr;
@@ -3194,7 +3233,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
       /evidence does not justify the extracted program and exact claims|evidence refusal at \[\d+,\d+\)/);
   }
-  process.stdout.write("forged family claims: the excluded arm on a kind test's and on a guard's false edge, a guard value's promise at the shapes it excludes, and a program allocation at a family type, refused by the search at the forged claim and by the checker against the case's evidence\n");
+  process.stdout.write("forged family claims: the excluded arm on a kind test's and on a guard's false edge, a guard value's promise at the shapes it excludes, a program allocation at a family type, a forEachChild callback's result at a node type it did not receive, the false edge of a re-exported guard and the node a guard's wrapper answers true of, each at the identifier shape, refused by the search at the forged claim and by the checker against the case's evidence\n");
 }
 {
   // Forged evidence of a guard's false entailments, offered with the case's

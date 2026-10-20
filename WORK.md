@@ -35,7 +35,8 @@ design, not its progress.
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
-| [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
+| [Family identity controls](docs/HOST-FAMILIES.md#identity-through-program-code) | closed: each control verifies or is refused as stated, the negatives with a counterexample run under Node, and forged claims of `{ node }`, of a callback's result, of a re-exported guard's `false` edge and of a guard's wrapper at a node type refused in search and in checking (2026-10-20) | — |
+| [A generic method's instance at a union of arms](#generic-instance-union-arms) | open: an investigation, cause unknown | `compiler-api-node-callback-inline` verifies |
 | [A family's installation](docs/HOST-FAMILIES.md#activation) | closed: each description names its package, installation and digest; the front end activates every active description's installation by that data, the compiler API's among them, refusing another digest, version or an installation Node does not find; the string-tagged stand-in activated by its description alone beside the compiler API's (2026-10-20) | — |
 | [Paths at an entry beyond one member](#paths-at-an-entry) | open | a statement entry carries the refinement of a path of two members or more, and a read of `n.expression.expression` past a statement boundary verifies |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | open: an investigation, cause unknown | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
@@ -332,22 +333,15 @@ needs the entry to state it through its prefix's witness.
 search for `fragment-support.mts#shadowingLocals`, refused in search on
 77ca829, did not finish within 60 s; which obligation grows is not known.
 
-<a id="family-identity-controls"></a>
-**Family identity controls.** Of the
-[identity controls](docs/HOST-FAMILIES.md#identity-through-program-code),
-the cases cover a program alias and a re-export of `Node`, a generic
-identity at `Identifier` and at `Node`, a verified wrapper, a record's
-field holding a node (`compiler-api-family-identity`), a program literal
-annotated as a node (`invalid-compiler-api-forged-node`), `{ node }` passed
-where a node is expected (`invalid-compiler-api-boxed-node`), `{ ...node }`
-(`invalid-compiler-api-node-spread`) and forged claims of a program
-allocation at a family type (`pipeline/test.mts`). Left: a callback of
-`forEachChild` reading its argument and one whose result is claimed at a
-node type it did not receive, which wait on a generic method called on a
-node (`compiler-api-node-callback`, a gap). A re-exported guard narrows,
-and a local function of a guard's name and a guard's wrapper are ordinary
-functions (`compiler-api-guard-calls`, `invalid-compiler-api-guard-wrapper`,
-`invalid-compiler-api-guard-local`).
+<a id="generic-instance-union-arms"></a>
+**A generic method's instance at a union of arms**, an investigation:
+`n.forEachChild((c: ts.Node): ts.Node => c)`, in a run whose selection
+reads `Node` as several arms, is refused in evidence search at the read of
+`forEachChild` ("No rule derives this readAt",
+`compiler-api-node-callback-inline`), where the same callback bound to a
+name, and the written callback in a run reading `Node` as one arm, verify.
+Which part of the instance's proposal or of its image check fails is not
+known.
 
 <a id="guard-false-edge-tag-sets"></a>
 **A guard's false edge over a tag-set arm.** A family guard's `false` edge

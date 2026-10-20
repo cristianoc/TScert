@@ -843,15 +843,30 @@ naming of a package type:
   program function calling a guard is an ordinary verified function, whose
   own promise, if it states one, is proved at its body.
 
-Controls, each with a forged-evidence counterpart refused in search and in
-checking: a program alias and a re-export of `Node` read as the family type;
-a generic identity function returning a node at `T`; a verified wrapper
-returning its node argument; `{ node }` passed where a node is expected
-(refused) and its field read as a node (verified); `{ ...node }` (refused at
-the spread); a program literal annotated as a node (refused); a callback of
-`forEachChild` reading its node argument's members, and one whose result is
-claimed at a node type it did not receive (refused); a re-exported guard
-narrowing; a wrapper of a guard, read at its own signature.
+Controls, the refused ones with their counterexample under Node where one
+exists (`tests/compiler-api.mts`):
+
+- verified: a program alias and a re-export of `Node` read as the family
+  type; a generic identity function returning a node at `T`; a verified
+  wrapper returning its node argument; a record's field holding a node read
+  as the node (`compiler-api-family-identity`); a callback of `forEachChild`
+  reading its node argument's members, and one returning the node it
+  received (`compiler-api-node-callback`); a re-exported guard narrowing on
+  both edges, a local function of a guard's name and a wrapper of a guard,
+  each read at its own signature (`compiler-api-guard-calls`);
+- refused: `{ node }` passed where a node is expected
+  (`invalid-compiler-api-boxed-node`); `{ ...node }`, at the spread
+  (`invalid-compiler-api-node-spread`); a program literal annotated as a node
+  (`invalid-compiler-api-forged-node`); a callback of `forEachChild` whose
+  result is asserted a node type it did not receive
+  (`invalid-compiler-api-node-callback-result`); a read narrowed only by a
+  guard's wrapper (`invalid-compiler-api-guard-wrapper`);
+- forged claims, bypassing the producer, refused by the search at the
+  forged claim and by the checker against the case's evidence
+  (`pipeline/test.mts`): `{ node }` claimed at the node it holds, a
+  callback's result claimed at the identifier shape it did not receive, and
+  the node on a re-exported guard's `false` edge and where a guard's wrapper
+  answers `true`, each claimed at the identifier shape.
 
 ## The family description
 
