@@ -603,9 +603,10 @@ first three items 2026-10-19):
   `ts.isIdentifier(m.name) && m.name.text` (7: `staticFieldOf`,
   `staticMethodOf`, `hasInstanceClass`, `hasInstanceAlong`, `localArrow`,
   `memberOf`, and `moduleFunction` through `memberMayBeWritten`;
-  2026-10-19, 829513e): a promise refines a name alone; the
-  [read-equality rule](docs/HOST-FAMILIES.md#stable-members), a design,
-  refines the path;
+  2026-10-19, 829513e): a promise refines a name alone; in the
+  [stable members](docs/HOST-FAMILIES.md#stable-members) design a guard
+  refines the slot of its argument's read, which a later read of the same
+  path is through the read link;
 - a contextual parameter typed `(node: TypeNodeBase) => TypeTerm` (17), the
   slices of `type-term.mts` past their optional method calls;
 - a callback's parameter written without a type is read at its contextual
