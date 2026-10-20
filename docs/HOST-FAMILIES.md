@@ -719,6 +719,13 @@ its heap holds $`v_0`$ there too:
      {\mathrm{SafePost}(T,\ \lambda h'\,v.\ Q(h',v)\land h'(\ell)=v_0,\ n{+}1,W,h,t)}\ \textsf{stable-frame}
 ```
 
+The semantic lemmas are `HeapOk.stable_value_future` in
+[Heaps.lean](../lean/Verification/Semantics/Heaps.lean) and
+`HeapObservations.stable_frame` in
+[HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean).
+Their premises state stability as `CtrStable c v₀`; they prove the frame
+property independently of declaration decoding and expression certification.
+
 So $`v_0=\rho(y)`$, the value the link observed, and the location holds it
 in every later heap. The root $`x`$ is a slot, which no step rebinds; a
 `let` root is a cell, read into a slot by a plain read link, which a call or
