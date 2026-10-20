@@ -685,6 +685,38 @@ no worker failure on either. The branch adds 4 slices
   past "missing field elements" (the guard's `false` edge on a
   `BindingName`), now refused in search inside its `flatMap` callback.
 
+<a id="census-stable-members"></a>
+The `tools/` census of 77ca829 (main) and of ab51b0c (stable members: linked
+reads, branch witnesses, stable links), run back to back on one machine
+(2026-10-20, load averages 3 to 18): 123 of 373 slices verify on main, 134
+of 373 on the branch; none verified on main fails on the branch.
+
+- verified on the branch only (11): seven read a member path after a test of
+  it (`array-prototype.mts#splitSeparators`, `fragment-support.mts#staticFieldOf`,
+  `#staticMethodOf`, `#unnamedMember`, `#typeParameterMentioned`,
+  `#bindingScope`, `written-applications.mts#literal`); four were refused in
+  search or at an edge (`declaration-graph.mts#typesOnly`,
+  `fragment-classes.mts#ownClass`, `fragment-statements.mts#patternDefaults`,
+  `type-term.mts#propertyKey`);
+- of the 26 slices refused at a path read on main, 6 verify (above), 17
+  move past it and 3 keep it: `fragment-expressions.mts#moduleFunction` and
+  `#memberMayBeWritten`, whose path's root `target` is no immutable binding,
+  and `fragment-statements.mts#pattern`, whose read follows a call of
+  `gate.fail` on the guard's `false` edge. Of the 17: the 8 slices reaching
+  `expr`'s negated bigint, where
+  `gate.span(node)` runs between the test and the read, now stop at
+  "missing field computed" (10456); `refuseReceiverForm`, `confined`,
+  `selfConstructs` and `assertsNothing` stop in search or at a write;
+  `knownLocal`, `localArrow`, `memberOf`, `guardOf` and `namespaceMembers` at
+  a later missing member;
+- beyond those 26: the 21 slices of `fragment-statements.mts` stopped at
+  "missing field elements" stop at "missing field text" (3593);
+  `hasInstanceClass`, `hasInstanceAlong` and `callableAssign`, refused in the
+  producer on main, stop in search;
+- a new timeout (1): `fragment-support.mts#shadowingLocals`, refused in
+  search on main, the search past 60 s on the branch;
+- otherwise the same refusal at another position or a path spelling.
+
 The census of a818552, which reads the sync API's `isUnionType` without its
 declared predicate, run after b7787b9's on the same machine (2026-10-20,
 load averages 10 to 18): 125 of 369 slices verify. Against b7787b9,
