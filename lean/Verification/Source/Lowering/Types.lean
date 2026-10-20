@@ -67,6 +67,34 @@ from its location. -/
   requireWithin T pos role A B reason
   requireWithin T pos role B A reason
 
+/-- The declared result of a named record property, including absence for an
+optional key. This only selects a persistent proof obligation. -/
+def declaredRead (c : PositiveNormalization.Clause (Ty Tree)) (fld : PropKey) : Option (Ty Tree) :=
+  match c with
+  | .refs W [] vs os _ _ =>
+    (W.lookup fld).orElse fun _ => (vs.lookup fld).orElse fun _ =>
+      (os.find? (fun o => o.key == fld)).map (fun o => o.type ++ [Labels.undef])
+  | .dict _ _ _ ds _ _ _ cs =>
+    ((ds ++ cs).find? (HeapExpressionRules.stringIndex · fld)).map (fun d => d.2 ++ [Labels.undef])
+  | _ => none
+
+/-- Existing field predicates and declared contracts retain their own entry
+checks. A witness carries a refinement that neither of those establishes. -/
+@[nospecialize] def witnessClaim (T : EquationStore.State) (fc : SourceClaims.Function Tree)
+    (pos : Nat) (root : String) (field : PropKey) : Option (Ty Tree) := do
+  let A ← ((fc.entryCurrent.lookup pos).getD []).lookup root >>= (·.lookup field)
+  let G := SourceTypes.graph T
+  if (HeapKnowledge.atoms G A).isSome then none else do
+    let raw ← ((fc.envs.lookup pos).getD []).lookup root
+    let R ← (SourceClaims.resolve T raw).toOption
+    let cs := PositiveRules.expand G R
+    let fields ← cs.mapM (fun c => declaredRead c field)
+    let C := fields.flatten.eraseDups
+    if within T C A || (HeapExpressionRules.fieldOperand cs field &&
+        [Tag.isUndef, .isNul, .isNullish].any
+          (fun tag => within T (BranchRefinement.tagSlice G C tag false) A)) then none
+    else some A
+
 @[nospecialize] private def envCore (T : EquationStore.State) (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
     Except String (List (Ty Tree)) := do
   let vars ← match fc.envs.lookup pos with
@@ -77,6 +105,9 @@ from its location. -/
     -- The slot holds the cell's identity. What the producer says `x` is now
     -- describes the contents, and is an observation, not this slot's type.
     let name := b.source.name
+    if let some (root, [field]) := b.witness then
+      if let some A := witnessClaim T fc pos root field then
+        return A
     if let some A := b.fixed then return A
     let some t := vars.lookup name | throw s!"missing claimed binding '{name}' at {pos}"
     let A ← (SourceClaims.resolve T t).mapError fun msg =>

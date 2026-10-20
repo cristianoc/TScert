@@ -539,6 +539,29 @@ theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     exact ⟨c, he, checkMapped_sound hc.1, hc.2.1, hc.2.2⟩
   · contradiction
 
+/-- A checked witness edge establishes both the saved value's type and the
+receiver and field from which that value was read. -/
+theorem witness_edge_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {P C Γ target p facts xs sources c ρ n W h receiver witness field optional A}
+    (checked : checkTargetUsing G images P C Γ target p facts xs sources = true)
+    (destination : C[target.label]? = some c)
+    (typed : (entry c)[witness]? = some A)
+    (linked : (⟨receiver,witness,false,field,false,valueField,optional⟩ : HeapLinks.Link) ∈ c.knowledge.links)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds facts ρ h) :
+    meaning G A n W (mapEnv target.mapping ρ witness) ∧
+      ∃ flds cls oid, mapEnv target.mapping ρ receiver = .objAt flds cls oid ∧
+        HeapFacts.ReadGave flds field h (mapEnv target.mapping ρ witness) := by
+  obtain ⟨d, hd, covers, knowledge, _⟩ := target_sound checked
+  have same : d = c := Option.some.inj (hd.symm.trans destination)
+  subst d
+  constructor
+  · exact (covers.env he).2 witness A typed
+  · have link := (HeapKnowledge.check_sound knowledge hk).2.2 _ linked
+    cases optional <;> simp only [Bool.false_eq_true, ite_false, ite_true] at link
+    · obtain ⟨flds, cls, oid, loc, obj, key, value⟩ := link
+      exact ⟨flds, cls, oid, obj, HeapFacts.ReadGave.present key value⟩
+    · exact link
+
 theorem branch_target_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {P C Γ q l p facts xs sources}
     (hc : checkBranchTargetUsing G images P C Γ q l p facts xs sources = true) :
     BranchTargetOk G C Γ q l facts xs sources := by

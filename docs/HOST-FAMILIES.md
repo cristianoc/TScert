@@ -628,24 +628,25 @@ next read of `m.name` is by `read-linked`. The guard's signature
 
 #### Entries
 
-A statement entry states a path's refinement as a current-content assertion
-of a binding's field at a type
-([current-content assertions](SOURCE-CLAIMS.md#current-content-assertions)),
-`{"name": "m", "type": […], "current": [["name", [Identifier]]]}`, the
-assertion a declared read result need not imply. The entry's environment holds
-a **witness**: a slot at the asserted type, with the read link from the
-binding's field to it. The witness holds a value the program already read;
-the executed terms are the program's. A path at an entry has length one.
+Branch scopes hold an administrative **witness** for each member path read
+by their condition. A read maps its result into the witness slot; a branch
+edge checks the refined type of that slot and projects its read links.
+A path not read on an incoming short-circuit edge has the top type and no
+read link on that edge. Witness names cannot occur in source identifiers.
+The slots contain saved values; a later source member read is checked by
+`read-linked`. Paths compose through the witnesses of their prefixes.
 
-A witness is checked machinery of its own: `current` with a nonprimitive
-type is otherwise justified only by the declared read result, and a cell
-fact's contents are primitive predicates, so neither states a value's type
-together with where it was read. Lean checks, on every incoming edge, a loop
-backedge and an exceptional edge included, both halves: the edge's slot the
-mapping selects for the witness is within the asserted type, and the edge's
-knowledge holds the read link from the slot the mapping selects for the
-binding, through the asserted field, to that witness slot. An edge failing
-either half is a located failure at the entry.
+A statement entry states a one-member path's refinement through the existing
+[current-content assertion](SOURCE-CLAIMS.md#current-content-assertions),
+`{"name": "m", "type": […], "current": [["name", [Identifier]]]}`.
+A refinement beyond the declared read contract and the supported field
+predicates uses a witness slot at the asserted type, with a required read
+link from the root binding through that field. Every incoming edge, including a loop
+backedge, checks both the mapped slot's type and that link's receiver and
+field. The rule is [witness-edge](PROGRAM-TYPING.md#witness-edges), proved
+by `ControlFlow.witness_edge_sound`. Calls and writes discard read links;
+closure entries and exceptional transfers establish none. A catch therefore
+cannot receive a witness link from the throwing computation.
 
 #### Stable keys
 

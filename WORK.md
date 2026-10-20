@@ -31,7 +31,7 @@ design, not its progress.
 | [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
 | [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 10.0 s of evidence search with candidate selection and the answered requests threaded through the document's search, 25.2 s without any reuse (user time, median of 3, 2026-10-19) | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
 | [Function declarations in bodies](docs/SOURCE-MODEL.md#lexical-bindings-before-initialization) | open | `function-declaration-in-body-refused` verifies: a function declared in a body is created at its block's entry, and a call of it before the block's bindings are initialized reaches their checked accesses |
-| [Optional-field truthiness over unions](#optional-field-truthiness) | open: an investigation, cause unknown | `optional-field-truthiness-union-refused` verifies |
+| [Optional-field truthiness over unions](#optional-field-truthiness) | closed: checked read witnesses (2026-10-20) | `optional-field-truthiness-union-refused` verifies |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
@@ -276,14 +276,9 @@ decodes the verifier's output with `decodeUnits`, which calls `fields` and
 states ([module composition](#module-composition)).
 
 <a id="optional-field-truthiness"></a>
-**Optional-field truthiness over unions**, an investigation: after
-`if (o.m)`, a read of `o.m` is of `m`'s type where `o` is one record leaving
-`m` optional. Where `o` is a union of records one of which requires `m` and
-one leaves it optional, the claim where the test fails, without the arm
-requiring `m`, is refused at the incoming edge
-(`optional-field-truthiness-union-refused`), and where
-each arm leaves `m` optional, the producer claims the read at `m`'s type or
-`undefined` (observed 2026-10-18).
+**Optional-field truthiness over unions** uses a saved read result and its
+receiver-and-field link, including where one record requires the field and
+another leaves it optional ([witness edges](docs/PROGRAM-TYPING.md#witness-edges)).
 
 <a id="exceptional-footprints"></a>
 **Exceptional footprints**: a call's promise that its footprint also holds

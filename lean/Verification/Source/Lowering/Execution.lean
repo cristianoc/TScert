@@ -595,32 +595,52 @@ mentions still denotes the binding it was recorded with: bound once in the
 scope, and by no entry from the binding's own to the newest. One name binds
 every optional chain's saved receiver (`Fragment.chainName`), and a mention of
 it recorded for an inner chain does not denote an outer chain's binding. -/
-@[nospecialize] private partial def executionPredicate (scope : List (ScopeBinding Tree))
+@[nospecialize] private partial def executionPredicate (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree)) (scope : List (ScopeBinding Tree))
     (origins : List (String × Fragment.Expr)) (e : Fragment.Expr) : Fragment.Expr :=
+  let witness := fun e => do
+    let i ← pathWitness scope e
+    if (HeapKnowledge.atoms G (Γ[i]?.getD [])).isSome then none else some i
+  let operand : Fragment.Expr → Fragment.Expr := fun (e : Fragment.Expr) =>
+    let read := match e with
+      | .var _ name => (originEntry name [] origins).map (fun (x : Fragment.Expr × List (String × Fragment.Expr) × List String) => x.1)
+      | _ => some e
+    match read with
+    | some (.read p f receiver) =>
+      match witness receiver with
+      | some i => .read p f (.var receiver.span ((scope[i]?).map
+          (fun (b : ScopeBinding Tree) => b.source.name) |>.getD ""))
+      | none => executionPredicate G Γ scope origins e
+    | _ => executionPredicate G Γ scope origins e
   match e with
   | .var p name =>
     let expanded := match originEntry name [] origins with
       | some (.var _ original, _, newer) =>
         if original != name && (valueSlot scope original).isSome then some (Fragment.Expr.var p original, newer)
         else none
+      | some (read@(.read ..), older, newer) =>
+        match witness read with
+        | some i => some (.var p ((scope[i]?).map (fun (b : ScopeBinding Tree) => b.source.name) |>.getD ""), newer)
+        | none => some (executionPredicate G Γ scope older read, newer)
       | some (predicate@(.not ..), older, newer) | some (predicate@(.shapeTest ..), older, newer)
         | some (predicate@(.tagMember ..), older, newer)
         | some (predicate@(.singletonTest ..), older, newer) | some (predicate@(.arith ..), older, newer)
-        | some (predicate@(.inKeys ..), older, newer) | some (predicate@(.read ..), older, newer) =>
-          some (executionPredicate scope older predicate, newer)
+        | some (predicate@(.inKeys ..), older, newer) =>
+          some (executionPredicate G Γ scope older predicate, newer)
       | _ => none
     match expanded with
     | some (x, newer) =>
       if x.freeNames.all fun n => !newer.contains n && ((names scope).filter (· == n)).length ≤ 1 then x else e
     | none => e
-  | .not p e => .not p (executionPredicate scope origins e)
-  | .shapeTest p tag eq e => .shapeTest p tag eq (executionPredicate scope origins e)
-  | .tagMember p d f ts e => .tagMember p d f ts (executionPredicate scope origins e)
-  | .singletonTest p tag eq side l r => .singletonTest p tag eq side
-      (executionPredicate scope origins l) (executionPredicate scope origins r)
-  | .arith p op l r => .arith p op (executionPredicate scope origins l) (executionPredicate scope origins r)
-  | .read p fld e => .read p fld (executionPredicate scope origins e)
-  | .inKeys p k e => .inKeys p (executionPredicate scope origins k) (executionPredicate scope origins e)
+  | .not p e => .not p (executionPredicate G Γ scope origins e)
+  | .shapeTest p tag eq e => .shapeTest p tag eq (executionPredicate G Γ scope origins e)
+  | .tagMember p d f ts e => .tagMember p d f ts (executionPredicate G Γ scope origins e)
+  | .singletonTest p tag eq side l r => .singletonTest p tag eq side (operand l) (operand r)
+  | .arith p op l r => .arith p op (operand l) (operand r)
+  | read@(.read p fld e) =>
+    match witness read with
+    | some i => .var p ((scope[i]?).map (fun (b : ScopeBinding Tree) => b.source.name) |>.getD "")
+    | none => .read p fld (executionPredicate G Γ scope origins e)
+  | .inKeys p k e => .inKeys p (executionPredicate G Γ scope origins k) (executionPredicate G Γ scope origins e)
   | _ => e
 
 private partial def executionBranches : SourceExecution.Plan → Bool
@@ -675,6 +695,23 @@ prepared predicate without replaying an effectful source operand. -/
 @[nospecialize] partial def executePlanTail (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
     (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree)) (plan : SourceExecution.Plan)
     (k : List (ScopeBinding Tree) → List (Ty Tree) → Fragment.Expr → Compiler Target) : Compiler Target := do
+  -- Defaults and expression bodies also enter here, without a statement
+  -- graph's ambient witnesses. Reserve the missing paths before their tests.
+  let missing := (testedPaths plan).eraseDups.filter fun p => !scope.any (·.witness == some p)
+  if !missing.isEmpty then
+    let source := match plan with
+      | .observe p _ | .atom p _ | .sequence p _ _ _ | .choose p _ _ _ _ _ _ => p
+    let top ← lower (SourceTypes.use .source)
+    let witnesses : List (ScopeBinding Tree) := missing.zipIdx.map fun (p,i) =>
+      { source := ⟨s!".path:{source.1}:{source.2}:{scope.length}:{i}", some source⟩,
+        fixed := some [top], witness := some p }
+    let mut target ← executePlanTail recursive fc (witnesses ++ scope)
+      (List.replicate witnesses.length [top] ++ Γ) plan k
+    for i in List.range witnesses.length do
+      target ← emitAt source .undef (.bind target)
+        (List.replicate (witnesses.length-i-1) [top] ++ Γ) [top]
+        "path-witness" (scope := witnesses.drop (i+1) ++ scope)
+    return target
   match plan with
   | .observe source evaluate =>
     executePlanTail recursive fc scope Γ evaluate fun scope' Δ origin => do
@@ -693,6 +730,8 @@ prepared predicate without replaying an effectful source operand. -/
       previous.filter fun (_, origin) => match origin with | .var .. => true | _ => false
     let next ← withExecutionOrigins retained do
       let origin ← match operation with
+        | .evaluate original@(.read ..) prepared .none =>
+          if (pathWitness scope original).isSome then pure original else comparisonsExpr fc prepared
         | .evaluate _ prepared _ => comparisonsExpr fc prepared
         | _ => pure (Fragment.Expr.var source "")
       let after ← executionAfterContext fc scope Γ operation
@@ -708,9 +747,21 @@ prepared predicate without replaying an effectful source operand. -/
       let after := match promiseNarrowing (SourceTypes.graph (← table)) scope after true called original with
         | some (j, T) => after.set j T
         | none => after
+      let changed := Γ != after
+      let witness := match operation with
+        | .evaluate original _ .none => pathWitness scope original
+        | _ => none
+      let after := match witness with | some i => after.set i A | none => after
       -- A rebound slot no longer holds what an alias saved of it.
-      withExecutionOrigins (if Γ != after || (rebound scope operation).isSome then [] else retained)
+      withExecutionOrigins (if changed || (rebound scope operation).isSome then [] else retained)
         (k (held ⟨"",some source⟩ :: scope) (A::after) origin)
+    let witness := match operation with
+      | .evaluate original _ .none => pathWitness scope original
+      | _ => none
+    let next := match witness with
+      | some i => ⟨next.label, some ((next.mapping.getD (List.range (scope.length+1))).map
+          fun j => if j == i+1 then 0 else j)⟩
+      | none => next
     compileExecutionOperation recursive fc scope Γ source operation next
   | .sequence _ binding evaluate next =>
     if executionBranches evaluate && executionBranches next then
@@ -729,7 +780,11 @@ prepared predicate without replaying an effectful source operand. -/
     executePlanTail recursive fc scope Γ evaluate fun scope' Δ origin => do
       let some A := Δ.head? | throw "internal execution plan: no sequence result"
       let previous ← executionBindings
-      let origin := executionPredicate scope' previous.origins origin
+      let G := SourceTypes.graph (← table)
+      let origin := match origin with
+        | .read .. => if (pathWitness scope' origin).isSome then origin
+            else executionPredicate G Δ scope' previous.origins origin
+        | _ => executionPredicate G Δ scope' previous.origins origin
       let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some A }
       withExecutionBindings ⟨(binding.name,A)::previous.types,(binding.name,origin)::previous.origins⟩
         (executePlanTail recursive fc (bound :: scope'.tail) Δ next k)
@@ -740,7 +795,7 @@ prepared predicate without replaying an effectful source operand. -/
       -- Its value expression must prove this equivalent expanded type.
       let A ← byClause result
       let previous ← executionBindings
-      let origin := executionPredicate scope' previous.origins origin
+      let origin := executionPredicate (SourceTypes.graph (← table)) Δ scope' previous.origins origin
       let G := SourceTypes.graph (← table)
       let tag := match test with
         | .truthy => Tag.truthy | .nullish => .isNullish | .defined => .isUndef
@@ -821,7 +876,7 @@ The final pure predicate uses the retained operands to justify refinements. -/
     let offset := Δ.length - Γ.length
     let adapt := fun (target : Target) =>
       ⟨target.label,some ((target.mapping.getD (List.range Γ.length)).map (·+offset))⟩
-    let predicate := executionPredicate inner (← executionOrigins) origin
+    let predicate := executionPredicate (SourceTypes.graph (← table)) Δ inner (← executionOrigins) origin
     let A := Δ.headD []
     let G := SourceTypes.graph (← table)
     if decide (Answers G A .truthy true) then

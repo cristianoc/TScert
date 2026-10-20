@@ -55,7 +55,12 @@ open S
       (* A read-result observation is claimed where every record arm names the key. *)
       let bindings = List.filter (fun (n,_) -> not (is_field n) ||
         (match List.assoc_opt (owner n) env with
-         | Some (Value t) -> record_field ~allow_optional:true declarations t (field_of n)
+         | Some (Value t) ->
+           let field = field_of n in
+           if is_path n then
+             List.length (String.split_on_char '\001' n) = 2 &&
+             record_field ~allow_optional:true declarations t (String.sub field 1 (String.length field - 1))
+           else record_field ~allow_optional:true declarations t field
          | _ -> false)) env in
       publish_entry start bindings
     | [] -> Json.fail "empty source span"

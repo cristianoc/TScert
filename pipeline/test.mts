@@ -3712,3 +3712,128 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.match(unread.stderr, /^error: /);
   process.stdout.write("step failures: an exit without a complete refusal, and a failed --explain, are tool failures\n");
 }
+
+{
+  // Constant returns isolate the entry obligation from subsequent read typing.
+  // Evidence edits include contexts, expression proofs, knowledge and outputs;
+  // each edit checks its honest input. The patches come from evidence production
+  // with mapped/observed edge coverage and heap-link checks bypassed; the
+  // root-reassignment edit also supplies its required cell observation.
+  // Mutation check: disabling coverage alone accepts predecessor; disabling
+  // links alone accepts receiver, field, afterCall and read. before and caught
+  // need both bypasses. afterRoot is a cell observation: bypassing cell knowledge
+  // as well accepts it. All mutations are temporary and restored before suites.
+  const artifacts = run("path-witness-controls");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const honest = readClaims(artifacts);
+  const before = must(honest.functions.find(f => f.name === "before"), "witness before");
+  const refined = must(before.entries.find(e => source.startsWith("return 1;", e.start)), "refined entry");
+  const current = must(must(refined.bindings.find(b => b.name === "holder"), "holder").current, "witness type");
+  const type = must(current.find(([field]) => field === "value"), "value field")[1];
+  const object = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  const patches: unknown = JSON.parse(readFileSync(join(here, "path-witness-evidence.json"), "utf8"));
+  assert.ok(object(patches));
+  const patchedEvidence = (name: string): string => {
+    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    assert.ok(object(evidence));
+    const edits = patches[name];
+    assert.ok(Array.isArray(edits), `${name}: evidence edits`);
+    for (const edit of edits) {
+      assert.ok(object(edit) && Array.isArray(edit.path) && edit.path.length > 0);
+      let target: unknown = evidence;
+      for (const key of edit.path.slice(0, -1)) {
+        if (typeof key === "number") {
+          assert.ok(Array.isArray(target));
+          target = target[key];
+        } else {
+          assert.ok(typeof key === "string" && object(target));
+          target = target[key];
+        }
+      }
+      const key: unknown = edit.path.at(-1);
+      if (typeof key === "number") {
+        assert.ok(Array.isArray(target));
+        assert.deepEqual(target[key], edit.before, `${name}: honest evidence at ${edit.path.join(".")}`);
+        target[key] = edit.after;
+      } else {
+        assert.ok(typeof key === "string" && object(target));
+        assert.deepEqual(target[key], edit.before, `${name}: honest evidence at ${edit.path.join(".")}`);
+        target[key] = edit.after;
+      }
+    }
+    const path = join(artifacts, `forged-witness-${name}-evidence.json`);
+    writeFileSync(path, JSON.stringify(evidence));
+    return path;
+  };
+  for (const [name, functionName, marker, failure] of [
+    ["before", "before", "if (holder.value", "type coverage"],
+    ["afterCall", "afterCall", "return 0;", "heap knowledge"],
+    ["afterRoot", "afterRoot", "return 0;", "type coverage"],
+    ["caught", "caught", "return /* caught */ 0;", "heap knowledge"],
+    ["predecessor", "before", "return 0;", "type coverage"],
+    ["read", "afterCallRead", "return holder.value;", "heap knowledge"],
+  ]) {
+    const claims = structuredClone(honest);
+    const fn = must(claims.functions.find(f => f.name === functionName), name);
+    const at = must(fn.entries.filter(e => source.startsWith(marker, e.start)).sort((a, b) => a.start - b.start)[0], `${name}: forged entry`);
+    must(at.bindings.find(b => b.name === "holder"), "holder").current = [["value", type]];
+    if (name === "read") {
+      const expression = must(fn.expressions.find(e => e.pos[0] === at.start + "return ".length &&
+        e.pos[1] === at.start + "return holder.value".length), "read past call");
+      expression.type = type;
+    }
+    const input = writeClaims(artifacts, `forged-witness-${name}`, claims);
+    const obligation = `source incoming edge obligation at [${at.start},${source.indexOf(";", at.start) + 1})`;
+    refusedAt(artifacts, input, `forged-witness-${name}`, obligation);
+    const checked = invoke(input, patchedEvidence(name), artifacts);
+    assert.ok(checked.includes(`${obligation}: evidence fails ${failure} from node `), checked);
+  }
+
+  // Both paths have been read and refined to the same type. The false relation
+  // is added at a non-cut return node, so the source entry's exact interface
+  // stays intact. Its output carries the same added link in the pushed frame.
+  // Only the incoming read-link obligation can reject this evidence.
+  type Link = { cell: number; value: number; alias: boolean; distinct: boolean;
+    field: string; other: string; optional: boolean };
+  type WitnessNode = { expression: { node: { claim: { term: unknown; context: number[][] } } };
+    knowledge: { links: Link[] }; output: { links: Link[] } };
+  for (const name of ["receiver", "field"]) {
+    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
+    const index = honest.functions.findIndex(f => f.name === name);
+    const fn = must(honest.functions[index], name);
+    const entry = must(fn.entries.find(e => source.startsWith("return 1;", e.start)), "both paths refined");
+    for (const [root, field] of name === "receiver" ? [["holder", "value"], ["other", "value"]] : [["holder", "value"], ["holder", "other"]]) {
+      const binding = must(entry.bindings.find(b => b.name === root), root);
+      assert.deepEqual(must(binding.current, "refined path").find(([f]) => f === field)?.[1], type);
+    }
+    const unit: unknown = evidence.main.functions[index];
+    assert.ok(object(unit) && Array.isArray(unit.certificate));
+    const certificate = unit.certificate as WitnessNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
+    const node = must(certificate.find(c => {
+      const links = c.knowledge.links.filter(l => !l.alias && !l.distinct);
+      return JSON.stringify(c.expression.node.claim.term) === JSON.stringify({ var: { i: 0 } }) &&
+        links.length === 2 && links.every(l => l.cell > 0 && l.value > 0) &&
+        JSON.stringify(c.expression.node.claim.context[links[0].value]) === JSON.stringify(c.expression.node.claim.context[links[1].value]);
+    }), `${name}: two refined witnesses at a non-cut return`);
+    const [first, second] = node.knowledge.links.filter(l => !l.alias && !l.distinct);
+    if (name === "receiver") {
+      assert.notEqual(first.cell, second.cell);
+      assert.equal(first.field, second.field);
+    } else {
+      assert.equal(first.cell, second.cell);
+      assert.notEqual(first.field, second.field);
+    }
+    const forged = name === "receiver" ? { ...first, cell: second.cell } : { ...first, field: second.field };
+    assert.ok(!node.knowledge.links.some(l => JSON.stringify(l) === JSON.stringify(forged)), "a false origin, not a duplicate link");
+    node.knowledge.links.push(forged);
+    node.output.links.push({ ...forged, cell: forged.cell + 1, value: forged.value + 1 });
+    const path = join(artifacts, `forged-witness-${name}-evidence.json`);
+    writeFileSync(path, JSON.stringify(evidence));
+    const start = entry.start + "return ".length;
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    assert.ok(checked.includes(`source incoming edge obligation at [${start},${start + 1}): evidence fails heap knowledge`), checked);
+  }
+  process.stdout.write("path witnesses: exact forged evidence refused at incoming edges; wrong receiver/field isolate links, false predecessor isolates type coverage\n");
+}

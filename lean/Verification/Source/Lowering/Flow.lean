@@ -245,11 +245,23 @@ set_option maxHeartbeats 1000000
     | _ => throw "internal flow error: malformed action"
   completeFlowEntry reserved target
   let facts ← entryFacts fc node.source.1 scope
-  let links := distinctLinks (SourceTypes.graph (← table)) scope Γ
+  let links := distinctLinks (SourceTypes.graph (← table)) scope Γ ++ witnessLinks (← table) Γ fc node.source.1 scope
   if !facts.isEmpty || !links.isEmpty then
     recordAssertion reserved ⟨facts, [], links⟩
   recordCut reserved
   return ← jumpTo incoming reserved scope
+
+private def actionPaths (a : SourceFlow.Action) : List (String × List PropKey) :=
+  let expressions := match a with
+    | .branch (.ite _ e _ _) _ _ | .branch (.loop _ e _ _) _ _
+    | .returnValue (.ret _ e) | .saveReturn (.ret _ e) _ _
+    | .statement (.effect _ e) _ | .statement (.throw _ e) _
+    | .iteratorStart (.forOf _ _ _ _ e _) _ _ => [e]
+    | .declaration _ _ b _ => [b.init]
+    | _ => []
+  expressions.flatMap fun e => match a with
+    | .branch .. => planPaths (SourceExecution.buildCondition e)
+    | _ => testedPaths (SourceExecution.build e)
 
 /-- Typed lowering consumes the same claim-independent graph exported to the
     producer. Each recursive body owns a separate memo of cyclic entries. -/
@@ -257,8 +269,22 @@ set_option maxHeartbeats 1000000
     (scope : List (ScopeBinding Tree)) (stmts : List Fragment.Stmt) : Compiler Target := do
   let graph ← liftSource (SourceFlow.build owner [] stmts)
   -- The module's initialization is the body whose owner is `(0,0)`.
-  withLocalCells (cellLocals [] stmts (module := owner == (0,0)))
-    (withFreshFlowTargets (flowNode recursive graph scope fc R scope graph.entry))
+  let paths := (graph.nodes.toList.flatMap fun n => actionPaths n.action).eraseDups
+  let top ← lower (SourceTypes.use .source)
+  let witnesses : List (ScopeBinding Tree) := paths.zipIdx.map fun (p,i) =>
+    { source := ⟨s!".path:{i}", some owner⟩, fixed := some [top], witness := some p }
+  let inner := witnesses ++ scope
+  let start ← withLocalCells (cellLocals [] stmts (module := owner == (0,0)))
+    (withFreshFlowTargets (flowNode recursive graph inner fc R inner graph.entry))
+  let mut target := start
+  let some entry := graph.nodes[graph.entry]? | throw "internal flow error: missing entry"
+  let Γ ← env (fc.atPoint (SourceFlow.pointId graph.owner graph.entry)) entry.source.1 scope
+  for i in List.range witnesses.length do
+    let remaining := witnesses.drop (i+1) ++ scope
+    target ← emitAt owner .undef (.bind target)
+      (List.replicate (witnesses.length-i-1) [top] ++ Γ) [top]
+      "path-witness" (scope := remaining)
+  return target
 
 end LoweringFlow
 end Verification.SourceExtraction

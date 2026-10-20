@@ -378,7 +378,8 @@ of it is then of a location of the object, or, where the key is absent,
 `undefined`, since such an object has no prototype. -/
 def optionalOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
   !cs.isEmpty && cs.all fun c => match c with
-    | .refs a _ _ os _ _ => a.any (fun p => decide (p.1 = fld)) || os.any (fun o => decide (o.key = fld))
+    | .refs a _ vs os _ _ => a.any (fun p => decide (p.1 = fld)) ||
+      vs.any (fun p => p.1 != lengthKey && decide (p.1 = fld)) || os.any (fun o => decide (o.key = fld))
     | .dict _ _ _ ds _ _ _ cs => (ds ++ cs).any (stringIndex · fld)
     | _ => false
 
@@ -399,25 +400,36 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
   have hb := hr.2 c hm
   cases c with
   | refs a bs vs os ms ks =>
-    simp only [Bool.or_eq_true, List.any_eq_true, decide_eq_true_eq] at hb
+    simp only [Bool.or_eq_true, List.any_eq_true, decide_eq_true_eq, Bool.and_eq_true, bne_iff_ne] at hb
     obtain ⟨⟨flds, oid, hvf, hrec⟩, _⟩ := hc.1
     subst hvf
     refine ⟨flds, oid, rfl, ?_, ?_⟩
     · intro l hl
-      rcases hb with ⟨⟨g, El⟩, hmem, rfl⟩ | ⟨o, hmem, rfl⟩
+      rcases hb with (⟨⟨g, El⟩, hmem, rfl⟩ | ⟨⟨g, El⟩, hmem, hne, rfl⟩) | ⟨o, hmem, rfl⟩
       · obtain ⟨l', c', hl', hw, hag⟩ := hrec g (meaning G El)
           (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩)
         rw [hl] at hl'
         cases hl'
         exact ⟨c', hw, fun W' u hu => meaning_valOnly G El 0 W' u ((hag 0 (by omega) W' u).mp hu)⟩
+      · obtain ⟨flds', loc, ctr, oid', obj, key, hw, imp⟩ :=
+          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hne hc.2.1
+        cases obj
+        rw [hl] at key
+        cases key
+        exact ⟨ctr, hw, fun W' u hu => meaning_valOnly G El 0 W' u (imp 0 (by omega) W' u hu)⟩
       · obtain ⟨c', hw, hsc⟩ := optT_present (List.mem_map.mpr ⟨o, hmem, rfl⟩) hc.2.2.1 hl
         exact ⟨c', hw, fun W' u hu => meaning_valOnly G o.type 0 W' u ((hsc 0 (by omega) W' u).1 hu)⟩
     · intro hl
-      rcases hb with ⟨⟨g, El⟩, hmem, rfl⟩ | ⟨o, hmem, rfl⟩
+      rcases hb with (⟨⟨g, El⟩, hmem, rfl⟩ | ⟨⟨g, El⟩, hmem, hne, rfl⟩) | ⟨o, hmem, rfl⟩
       · obtain ⟨l', c', hl', _⟩ := hrec g (meaning G El)
           (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩)
         rw [hl] at hl'
         cases hl'
+      · obtain ⟨flds', loc, ctr, oid', obj, key, _⟩ :=
+          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hne hc.2.1
+        cases obj
+        rw [hl] at key
+        cases key
       · exact optT_no_proto (List.mem_map.mpr ⟨o, hmem, rfl⟩) hc.2.2.1 hl
   | dict a bs vs ds os ms ks cs =>
     obtain ⟨d, hd, hidx⟩ := List.any_eq_true.mp hb

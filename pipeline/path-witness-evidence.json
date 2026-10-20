@@ -1,0 +1,4073 @@
+{
+  "before": [
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        0,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        0,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 0, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 0, "output", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        30,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        30,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 30, "knowledge", "links"],
+      "before": [
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 30, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": true,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 31, "effect"],
+      "before": {
+        "typedRead": {
+          "proof": {
+            "node": {
+              "claim": {
+                "context": [[4], [4], [16], [16], [4]],
+                "term": {
+                  "readAt": {
+                    "a": {
+                      "var": {
+                        "i": 0
+                      }
+                    },
+                    "field": "value"
+                  }
+                },
+                "type": [6, 7]
+              },
+              "premises": [
+                {
+                  "node": {
+                    "claim": {
+                      "context": [[4], [4], [16], [16], [4]],
+                      "term": {
+                        "var": {
+                          "i": 0
+                        }
+                      },
+                      "type": [4]
+                    },
+                    "premises": [],
+                    "rule": "var"
+                  }
+                }
+              ],
+              "rule": "read"
+            }
+          },
+          "slot": 0
+        }
+      },
+      "after": {
+        "linkedRead": {
+          "slot": 0,
+          "sub": {
+            "instantiation": null,
+            "members": []
+          },
+          "value": 2
+        }
+      }
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        31,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        31,
+        "expression",
+        "node",
+        "premises",
+        0,
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 31, "knowledge", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 31, "output", "links"],
+      "before": [
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        },
+        {
+          "alias": true,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        },
+        {
+          "alias": true,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        32,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        32,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 32, "knowledge", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 32, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        33,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        33,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 33, "knowledge", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 33, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        34,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        34,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 34, "knowledge", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 34, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        35,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        35,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 35, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 0, "certificate", 35, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "afterCall": [
+    {
+      "path": [
+        "main",
+        "functions",
+        3,
+        "certificate",
+        2,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        3,
+        "certificate",
+        2,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 3, "certificate", 2, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 3, "certificate", 2, "output", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        3,
+        "certificate",
+        3,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        3,
+        "certificate",
+        3,
+        "expression",
+        "node",
+        "premises",
+        0,
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 3, "certificate", 3, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 3, "certificate", 3, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        3,
+        "certificate",
+        4,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 3, "certificate", 4, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 3, "certificate", 4, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        3,
+        "certificate",
+        5,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 3, "certificate", 5, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 3, "certificate", 5, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        3,
+        "certificate",
+        6,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        3,
+        "certificate",
+        6,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 3, "certificate", 6, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 3, "certificate", 6, "output", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "caught": [
+    {
+      "path": [
+        "main",
+        "functions",
+        6,
+        "certificate",
+        1,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        6,
+        "certificate",
+        1,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 6, "certificate", 1, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 6, "certificate", 1, "output", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        6,
+        "certificate",
+        2,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        6,
+        "certificate",
+        2,
+        "expression",
+        "node",
+        "premises",
+        0,
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 6, "certificate", 2, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 6, "certificate", 2, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        6,
+        "certificate",
+        3,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 6, "certificate", 3, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 6, "certificate", 3, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        6,
+        "certificate",
+        4,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 6, "certificate", 4, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 6, "certificate", 4, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        6,
+        "certificate",
+        5,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        6,
+        "certificate",
+        5,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 6, "certificate", 5, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 6, "certificate", 5, "output", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    }
+  ],
+  "predecessor": [
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        6,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 7,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        6,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 7,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        7,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 7,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        7,
+        "expression",
+        "node",
+        "premises",
+        0,
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 7,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        8,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 7,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        9,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 7,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        10,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 7,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        0,
+        "certificate",
+        10,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 7,
+      "after": 6
+    }
+  ],
+  "read": [
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        2,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        2,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 2, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 2, "output", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        3,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        3,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        3,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "premises"
+      ],
+      "before": [],
+      "after": [
+        {
+          "node": {
+            "claim": {
+              "context": [[6], [6], [16], [4], [12]],
+              "term": {
+                "var": {
+                  "i": 0
+                }
+              },
+              "type": [6]
+            },
+            "premises": [],
+            "rule": "var"
+          }
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        3,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "rule"
+      ],
+      "before": "var",
+      "after": {
+        "sub": {
+          "proof": {
+            "instantiation": null,
+            "members": []
+          }
+        }
+      }
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        3,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        3,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        3,
+        "expression",
+        "node",
+        "premises"
+      ],
+      "before": [],
+      "after": [
+        {
+          "node": {
+            "claim": {
+              "context": [[6], [6], [16], [4], [12]],
+              "term": {
+                "var": {
+                  "i": 0
+                }
+              },
+              "type": [6]
+            },
+            "premises": [],
+            "rule": "var"
+          }
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        3,
+        "expression",
+        "node",
+        "rule"
+      ],
+      "before": "var",
+      "after": {
+        "sub": {
+          "proof": {
+            "instantiation": null,
+            "members": []
+          }
+        }
+      }
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        4,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        4,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        2
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        4,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "type"
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        4,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        4,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        4,
+        "expression",
+        "node",
+        "claim",
+        "type"
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        5,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        5,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        5,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "type"
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        5,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        5,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        5,
+        "expression",
+        "node",
+        "claim",
+        "type"
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 5, "knowledge", "links"],
+      "before": [
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 5, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": true,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 6, "effect"],
+      "before": {
+        "typedRead": {
+          "proof": {
+            "node": {
+              "claim": {
+                "context": [[4], [4], [16], [16], [4], [12]],
+                "term": {
+                  "readAt": {
+                    "a": {
+                      "var": {
+                        "i": 0
+                      }
+                    },
+                    "field": "value"
+                  }
+                },
+                "type": [6, 7]
+              },
+              "premises": [
+                {
+                  "node": {
+                    "claim": {
+                      "context": [[4], [4], [16], [16], [4], [12]],
+                      "term": {
+                        "var": {
+                          "i": 0
+                        }
+                      },
+                      "type": [4]
+                    },
+                    "premises": [],
+                    "rule": "var"
+                  }
+                }
+              ],
+              "rule": "read"
+            }
+          },
+          "slot": 0
+        }
+      },
+      "after": {
+        "linkedRead": {
+          "slot": 0,
+          "sub": {
+            "instantiation": null,
+            "members": []
+          },
+          "value": 2
+        }
+      }
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        6,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        6,
+        "expression",
+        "node",
+        "claim",
+        "type"
+      ],
+      "before": [6, 7],
+      "after": [6]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        6,
+        "expression",
+        "node",
+        "premises"
+      ],
+      "before": [
+        {
+          "node": {
+            "claim": {
+              "context": [[4], [4], [16], [16], [4], [12]],
+              "term": {
+                "var": {
+                  "i": 0
+                }
+              },
+              "type": [4]
+            },
+            "premises": [],
+            "rule": "var"
+          }
+        }
+      ],
+      "after": []
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        6,
+        "expression",
+        "node",
+        "rule"
+      ],
+      "before": "read",
+      "after": "var"
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 6, "knowledge", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 6, "output", "links"],
+      "before": [
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        },
+        {
+          "alias": true,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        },
+        {
+          "alias": true,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 5
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        },
+        {
+          "alias": false,
+          "cell": 5,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        7,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        7,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 7, "knowledge", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 7, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        8,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        8,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 8, "knowledge", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 8, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        9,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        9,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 9, "knowledge", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 9, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": true,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 4
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 1,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        },
+        {
+          "alias": false,
+          "cell": 4,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        10,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        7,
+        "certificate",
+        10,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        0,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 10, "knowledge", "links"],
+      "before": [],
+      "after": [
+        {
+          "alias": false,
+          "cell": 2,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 7, "certificate", 10, "output", "links"],
+      "before": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        }
+      ],
+      "after": [
+        {
+          "alias": true,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 3
+        },
+        {
+          "alias": false,
+          "cell": 0,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        },
+        {
+          "alias": false,
+          "cell": 3,
+          "distinct": false,
+          "field": "value",
+          "optional": false,
+          "other": "value",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "afterRoot": [
+    {
+      "path": [
+        "main",
+        "functions",
+        4,
+        "certificate",
+        3,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        4,
+        "certificate",
+        3,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 4, "certificate", 3, "knowledge", "cells"],
+      "before": [],
+      "after": [
+        {
+          "slot": 0,
+          "field": "value",
+          "contents": [
+            {
+              "tag": {
+                "test": "isArray",
+                "answer": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 4, "certificate", 3, "output", "cells"],
+      "before": [],
+      "after": [
+        {
+          "slot": 1,
+          "field": "value",
+          "contents": [
+            {
+              "tag": {
+                "test": "isArray",
+                "answer": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        4,
+        "certificate",
+        4,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 4, "certificate", 4, "knowledge", "cells"],
+      "before": [],
+      "after": [
+        {
+          "slot": 1,
+          "field": "value",
+          "contents": [
+            {
+              "tag": {
+                "test": "isArray",
+                "answer": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 4, "certificate", 4, "output", "cells"],
+      "before": [],
+      "after": [
+        {
+          "slot": 2,
+          "field": "value",
+          "contents": [
+            {
+              "tag": {
+                "test": "isArray",
+                "answer": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        4,
+        "certificate",
+        5,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 4, "certificate", 5, "knowledge", "cells"],
+      "before": [],
+      "after": [
+        {
+          "slot": 1,
+          "field": "value",
+          "contents": [
+            {
+              "tag": {
+                "test": "isArray",
+                "answer": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 4, "certificate", 5, "output", "cells"],
+      "before": [],
+      "after": [
+        {
+          "slot": 2,
+          "field": "value",
+          "contents": [
+            {
+              "tag": {
+                "test": "isArray",
+                "answer": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        4,
+        "certificate",
+        6,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        2,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 4, "certificate", 6, "knowledge", "cells"],
+      "before": [],
+      "after": [
+        {
+          "slot": 1,
+          "field": "value",
+          "contents": [
+            {
+              "tag": {
+                "test": "isArray",
+                "answer": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 4, "certificate", 6, "output", "cells"],
+      "before": [],
+      "after": [
+        {
+          "slot": 2,
+          "field": "value",
+          "contents": [
+            {
+              "tag": {
+                "test": "isArray",
+                "answer": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        4,
+        "certificate",
+        7,
+        "effect",
+        "pure",
+        "proof",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": [
+        "main",
+        "functions",
+        4,
+        "certificate",
+        7,
+        "expression",
+        "node",
+        "claim",
+        "context",
+        1,
+        0
+      ],
+      "before": 16,
+      "after": 6
+    },
+    {
+      "path": ["main", "functions", 4, "certificate", 7, "knowledge", "cells"],
+      "before": [],
+      "after": [
+        {
+          "slot": 0,
+          "field": "value",
+          "contents": [
+            {
+              "tag": {
+                "test": "isArray",
+                "answer": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": ["main", "functions", 4, "certificate", 7, "output", "cells"],
+      "before": [],
+      "after": [
+        {
+          "slot": 1,
+          "field": "value",
+          "contents": [
+            {
+              "tag": {
+                "test": "isArray",
+                "answer": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
