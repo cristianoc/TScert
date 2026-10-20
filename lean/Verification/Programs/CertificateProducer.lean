@@ -290,6 +290,22 @@ scheme row, its binders standing for the other's. Untrusted:
   some ⟨final.table, θs, D, V⟩
 
 
+/-- Maximum accumulated instance patches across all fixed and rest targets.
+This bounds untrusted search only; every candidate requires certification. -/
+def instancePatchLimit : Nat := 64
+
+/-- Extend accumulated patches, stopping before constructing a combination
+beyond the global budget. Duplicate patches consume no additional slot. -/
+@[nospecialize] def extendInstancePatches [DecidableEq ι]
+    (patches choices : List (InstTable ι)) : List (InstTable ι) := Id.run do
+  let mut result : Array (InstTable ι) := #[]
+  for patch in patches do
+    for choice in choices do
+      if result.size ≥ instancePatchLimit then return result.toList
+      let candidate := patch ++ choice
+      if !result.contains candidate then result := result.push candidate
+  return result.toList
+
 /-- Untrusted instance alternatives from syntax, equivalent spellings and row
 matching. Only the common comparison operation validates these choices. -/
 @[nospecialize] def instanceCandidates [DecidableEq ι] [Hashable ι] [Instantiates ι]
@@ -358,14 +374,14 @@ matching. Only the common comparison operation validates these choices. -/
           (q.receiver :: q.arguments.2 :: q.result :: q.arguments.1)
       -- Each target chooses one overload. Images of an unused overload need
       -- not equal that target's operands; the checker validates each choice.
-      let patches := L.foldl (fun patches q => (patches.flatMap fun patch =>
+      let patches := L.foldl (fun patches q => extendInstancePatches patches <|
         s.signatures.flatMap fun p =>
           if p.arguments.length == q.arguments.length && p.effect.covers q.effect then
-            (fixedPatch p q).map (patch ++ ·) else []).eraseDups) ([[]] : List (InstTable ι))
-      let patches := M.foldl (fun patches q => (patches.flatMap fun patch =>
+            fixedPatch p q else []) ([[]] : List (InstTable ι))
+      let patches := M.foldl (fun patches q => extendInstancePatches patches <|
         s.variadic.flatMap fun p =>
           if p.arguments.1.length == q.arguments.1.length && p.effect.covers q.effect then
-            (restPatch p q).map (patch ++ ·) else []).eraseDups) patches
+            restPatch p q else []) patches
       c :: (patches.filter (! ·.isEmpty)).map fun patch =>
         ⟨patch.eraseDups ++ table, θs, [], []⟩
   syntactic ++ (matchedInstance G fuel s L M).toList

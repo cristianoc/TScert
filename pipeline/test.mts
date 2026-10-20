@@ -13,7 +13,7 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
-import { compilerApiFamily } from "../tools/compiler-api.mts";
+import { compilerApiFamily, hostEnums } from "../tools/compiler-api.mts";
 import { useFamiliesForTests } from "../tools/family-activation.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { stringFamily } from "./string-family.mts";
@@ -36,6 +36,54 @@ import { decodeFlowDocument, type ExecutionPlan, type ExecutionOperation } from 
 import { runExample } from "./run-example.mts";
 import { checkMutation, forgedEvidence } from "./evidence-mutations.mts";
 const here = import.meta.dirname;
+
+{
+  // Every allowed compiler enum uses the same Node binding identity check as
+  // family tags, including named program re-exports. TypeScript's paths read
+  // the audited declarations while the negative runtime exports other values.
+  const audited = resolve(here, "../tools/node_modules/typescript");
+  for (const reexport of [false, true]) {
+    for (const mismatched of [false, true]) {
+      const dir = runDirectory("tscert-compiler-enum-binding-");
+      const installed = join(dir, "node_modules", "typescript");
+      mkdirSync(join(dir, "node_modules"));
+      if (mismatched) {
+        mkdirSync(installed);
+        writeFileSync(join(installed, "package.json"), JSON.stringify({ name: "typescript", type: "module",
+          exports: { "./unstable/ast": "./enums.js", "./unstable/sync": "./enums.js" } }));
+        writeFileSync(join(installed, "enums.js"), hostEnums.map(({ name }) =>
+          `export const ${name} = { ${name === "SyntaxKind" ? "Identifier" : name === "NodeFlags" ? "Const" : name === "TypeFlags" ? "Union" : name === "SymbolFlags" ? "Alias" : name === "SignatureKind" ? "Call" : name === "ElementFlags" ? "Required" : "Error"}: -123 };`).join("\n"));
+      } else symlinkSync(audited, installed);
+      writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+        module: "preserve", moduleResolution: "bundler", target: "es2022", lib: ["es2022"], types: [],
+        allowImportingTsExtensions: true, paths: {
+          "typescript/unstable/ast": [join(audited, "dist/ast/index.d.ts")],
+          "typescript/unstable/sync": [join(audited, "dist/api/sync/api.d.ts")],
+        } }, include: ["*.ts"] }));
+      for (const { name } of hostEnums) {
+        const member = name === "SyntaxKind" ? "Identifier" : name === "NodeFlags" ? "Const" :
+          name === "TypeFlags" ? "Union" : name === "SymbolFlags" ? "Alias" :
+          name === "SignatureKind" ? "Call" : name === "ElementFlags" ? "Required" : "Error";
+        const entry = name === "SyntaxKind" || name === "NodeFlags" ? "ast" : "sync";
+        writeFileSync(join(dir, "barrel.ts"), `export { ${name} as Enum } from "typescript/unstable/${entry}";\n`);
+        const file = join(dir, "value.ts");
+        writeFileSync(file, `import { ${reexport ? "Enum" : name + " as Enum"} } from "${reexport ? "./barrel.ts" : "typescript/unstable/" + entry}";\nexport function value(): Enum.${member} { return Enum.${member}; }\n`);
+        const outcome = check(file, tsconfigOf(dir));
+        assert.equal(outcome.status, mismatched ? "unsupported" : "verified", `${name}, reexport=${reexport}: ${JSON.stringify(outcome)}`);
+        if (mismatched) {
+          assert.equal(outcome.status, "unsupported");
+          assert.match(outcome.detail, /the host enum/);
+          const ran = spawnSync(process.execPath, ["--input-type=module", "-e",
+            `import { value } from ${JSON.stringify(pathToFileURL(file).href)}; console.log(value());`], { encoding: "utf8", cwd: dir });
+          assert.equal(ran.status, 0, ran.stderr);
+          assert.equal(ran.stdout.trim(), "-123", `${name}: Node returns the other installation's value`);
+        }
+      }
+    }
+  }
+  process.stdout.write("compiler enum binding: all 7 enums, direct and re-exported; 14 audited bindings verified, 14 mismatched bindings refused and counterexamples executed under Node\n");
+}
+
 
 function must<T>(value: T | null | undefined, message: string): T {
   assert.ok(value !== null && value !== undefined, message);

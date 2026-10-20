@@ -977,7 +977,8 @@ The mechanism is explicit, and nothing activates it by spelling:
   from the importing module and through a program module's re-export as a
   guard's is ([calls](#calls)), binds that very object. Any other enum of a family's installation is read as a
   value only where its package's contract lists it, as the compiler API's
-  `hostEnums`.
+  `hostEnums`, with the same resolved binding identity requirement against
+  the object its contract checks.
 - **Membership:** a value is a family member only through the marker, which
   the host supplies for the objects its entry points give as family members
   (F1); no allocation of the program owns `[[host]]`.

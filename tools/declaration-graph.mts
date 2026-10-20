@@ -25,7 +25,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { compareTags, familyTable, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
-import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, isHostFile, selectionGuard, tagEnumMatches, tagEnumObject } from "./family-activation.mts";
+import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -759,9 +759,9 @@ export function collectDeclarations(file: string, options: {
     // members are those of the runtime object the family's activated entry
     // point exports (`tagEnumMatches`); where the object itself is read,
     // `bound`, the import that reads it binds that object as Node resolves
-    // it (`boundTagEnum`).
+    // it (`boundHostEnum`).
     const readableHostEnum = (enums: readonly ts.EnumDeclaration[], name: string, bound: boolean | null): boolean => {
-      if (enums.every(e => compilerApiFile(e.getSourceFile().fileName)) && hostEnums.some(h => h.name === name)) return true;
+      if (enums.every(e => compilerApiFile(e.getSourceFile().fileName)) && hostEnums.some(h => h.name === name)) return bound !== false;
       const [first] = enums;
       const description = first ? familyOfFile(first.getSourceFile().fileName) : null;
       return !!description && description.tag.constants.enum === name && bound !== false &&
@@ -1863,16 +1863,16 @@ export function collectDeclarations(file: string, options: {
       const bound = binding.typeOnly ? null : reexported(client, binding.specifier, binding.imported, 0);
       return bound ? guardOfExport(bound.description, bound.value) : null;
     };
-    // Whether an import of a family's tag enum binds, as Node resolves it,
-    // the very object whose members activation compared with the
-    // declaration's (`tagEnumObject`), of the family whose installation
+    // Whether an import of a host enum binds, as Node resolves it,
+    // the object whose members the host contract checks against the
+    // declaration (`hostEnumObject`), of the family whose installation
     // declares the enum.
-    const boundTagEnum = (binding: { specifier: string; imported: string; typeOnly: boolean },
+    const boundHostEnum = (binding: { specifier: string; imported: string; typeOnly: boolean },
         enums: readonly ts.EnumDeclaration[]): boolean => {
       const [first] = enums;
       const description = first ? familyOfFile(first.getSourceFile().fileName) : null;
       const bound = binding.typeOnly ? null : reexported(client, binding.specifier, binding.imported, 0);
-      return !!description && !!bound && bound.description === description && bound.value === tagEnumObject(description);
+      return !!description && !!bound && bound.description === description && bound.value !== undefined && bound.value === hostEnumObject(description, first?.name.text ?? "");
     };
     for (const binding of importBindings(client, options.namespaceMembers ?? [])) {
       try {
@@ -1884,7 +1884,7 @@ export function collectDeclarations(file: string, options: {
           options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name));
           if (!binding.typeOnly)
             values.push({ binding: { local: binding.name, imported: binding.imported,
-              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name, bindingGuard(binding), boundTagEnum(binding, enums)) });
+              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name, bindingGuard(binding), boundHostEnum(binding, enums)) });
           continue;
         }
         const reviewed = moduleEntries(binding.specifier, binding.imported);

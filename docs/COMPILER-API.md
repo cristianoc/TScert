@@ -220,7 +220,9 @@ are ordinary types.
    type `E` at a position of a host declaration is `number`, since
    TypeScript admits any number at a numeric enum type and the flag enums
    hold combinations there. A literal member type `SyntaxKind.Identifier`
-   is the literal.
+   is the literal. Reading an enum as a value requires the import, resolved
+   by Node from each importing module through program re-exports, to bind
+   the object C1 checks, by the [host enum binding rule](HOST-FAMILIES.md#activation).
 4. **Named views.** A host class (`Checker`, `Program`, `Snapshot`,
    `Project`, `API`, `Symbol`, `NodeHandle`, `Type`) is read through a view
    that `compiler-api.mts` names and lists: the members the front end uses,

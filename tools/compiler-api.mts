@@ -11,6 +11,7 @@ import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import type { FamilyDescription } from "./host-families.mts";
 import { compilerApiGuards } from "./compiler-api-guards.mts";
 import * as ts from "typescript/unstable/ast";
+import * as sync from "typescript/unstable/sync";
 import type { Node } from "typescript/unstable/ast";
 import { nameOf } from "./syntax.mts";
 
@@ -44,6 +45,13 @@ export const hostEnums: readonly { name: string; file: string }[] = [
   { name: "SignatureKind", file: "signatureKind" },
   { name: "ElementFlags", file: "elementFlags" },
   { name: "DiagnosticCategory", file: "diagnosticCategory" },
+];
+
+/** The entry points whose enum exports C1 compares with the audited objects.
+ * Binding recognition resolves imports to these modules through Node. */
+export const hostEnumModules: readonly { specifier: string; namespace: Readonly<Record<string, unknown>> }[] = [
+  { specifier: "typescript/unstable/ast", namespace: ts },
+  { specifier: "typescript/unstable/sync", namespace: sync },
 ];
 
 /** The compiler API's family description (HOST-FAMILIES.md, "The compiler

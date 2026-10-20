@@ -1,16 +1,16 @@
 /** Family activation (HOST-FAMILIES.md, "Activation"): the active family
  * descriptions, each one's installation as Node resolves it from the
  * description's data and checked against the description's digest (C0), and
- * its guard table activated over that installation. Nothing here names a
- * package: every family, the compiler API's among them, is activated by its
- * description alone. */
+ * its guard table activated over that installation. Every family activates
+ * through its description; the compiler contract additionally supplies the
+ * entry points whose enum exports C1 audits. */
 import { createHash } from "node:crypto";
 import { createRequire, findPackageJSON, registerHooks } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, relative, resolve, sep } from "node:path";
 import type { FamilyDescription, GuardEntry, GuardTable } from "./host-families.mts";
 import { guardClosure } from "./guard-closure.mts";
-import { compilerApiFamily } from "./compiler-api.mts";
+import { compilerApiFamily, hostEnumModules } from "./compiler-api.mts";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
@@ -494,8 +494,8 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
 /** What Node binds when the module at `from` imports `imported` from
  * `specifier`, read without loading anything: Node's own resolver resolves
  * the specifier from that module to a URL, with no query or fragment. Where
- * that URL is one of the modules an active family's activation loaded and
- * checked, the binding is a listed guard where its export there is the very
+ * that URL is one of the modules an active family's contract checks, the
+ * binding is a listed guard where its export there is the very
  * function activation checked (`entry`, else `null`); any other file of an
  * active installation binds nothing (`null`), unloaded; a module outside
  * every installation is named by its real path (`program`), which may
@@ -507,8 +507,8 @@ export function importedGuard(from: string, specifier: string, imported: string)
 }
 
 /** What Node binds for an import, read as `importedGuard` reads it: where
- * Node resolves the specifier to a module an active family's activation
- * loaded, the value that module exports under `imported`, with the family;
+ * Node resolves the specifier to a module in the family's checked inventory,
+ * the value that module exports under `imported`, with the family;
  * a module outside every installation by its real path (`program`); any
  * other binding none. */
 export function importedExport(from: string, specifier: string, imported: string):
@@ -521,10 +521,36 @@ export function importedExport(from: string, specifier: string, imported: string
     const root = installationRoot(description);
     if (relative(root, path).split(sep)[0] === "..") continue;
     checkedInstallation(description);
-    const namespace = loadedGuards(description.guards, root)?.modules.get(resolved);
+    const namespace = activatedModules(description).get(resolved);
     return namespace && Object.hasOwn(namespace, imported) ? { description, value: namespace[imported] } : null;
   }
   return { program: path };
+}
+
+/** Activated family modules, including the compiler entry points whose enum
+ * exports C1 audits. All binding recognition uses this one module inventory. */
+function activatedModules(description: FamilyDescription): ReadonlyMap<string, Readonly<Record<string, unknown>>> {
+  const root = checkedInstallation(description);
+  const modules = new Map(loadedGuards(description.guards, root)?.modules);
+  if (description === compilerApiFamily) {
+    for (const { specifier, namespace } of hostEnumModules) {
+      const url = nodeResolve(specifier, import.meta.filename);
+      if (url !== null) modules.set(url, namespace);
+    }
+  }
+  return modules;
+}
+
+/** The audited enum object exported by an activated module. Compiler enums
+ * are compared with their declarations by C1; family tags by tagEnumMatches. */
+export function hostEnumObject(description: FamilyDescription, name: string): unknown {
+  checkedInstallation(description);
+  if (description === compilerApiFamily) {
+    for (const { namespace } of hostEnumModules)
+      if (Object.hasOwn(namespace, name)) return namespace[name];
+  }
+  if (name !== description.tag.constants.enum) return undefined;
+  return tagEnumObject(description);
 }
 
 /** The listed guard of a family whose function activation checked is
