@@ -40,7 +40,7 @@ design, not its progress.
 | [Paths at an entry beyond one member](docs/HOST-FAMILIES.md#entries) | closed: an entry's witness of a path reads from its prefix's, one checked link per segment; `compiler-api-entry-path` verifies, the forged chains are refused, each accepted with its check disabled (2026-10-20) | — |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | open: an investigation, cause unknown | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
-| [A guard's false edge over a tag-set arm](#guard-false-edge-tag-sets) | open | where `ts.isToken(node)` answers `false`, `node` holds no `Token` arm |
+| [A guard's false edge over a tag-set arm](docs/PROGRAM-TYPING.md#a-membership-test) | closed: the false slice drops arms the guard's set covers and reads a partly covered arm with a stable tag at the rest of its set; `compiler-api-guard-false-sets` verifies, its forged claims are refused, each accepted with coverage disabled (2026-10-20) | — |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -352,14 +352,6 @@ node (`compiler-api-node-callback`, a gap). A re-exported guard narrows,
 and a local function of a guard's name and a guard's wrapper are ordinary
 functions (`compiler-api-guard-calls`, `invalid-compiler-api-guard-wrapper`,
 `invalid-compiler-api-guard-local`).
-
-<a id="guard-false-edge-tag-sets"></a>
-**A guard's false edge over a tag-set arm.** A family guard's `false` edge
-drops an object arm whose tag is one of the guard's tags, each tag decided
-alone ([a membership test](docs/PROGRAM-TYPING.md#a-membership-test)); an
-arm whose tag is a set of several values all in the guard's set, `Token`
-under `isToken`, stays, since no one tag excludes it. A slice of the whole
-set, its soundness proved over the set clauses, removes it.
 
 <a id="corrected-members"></a>
 **Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)

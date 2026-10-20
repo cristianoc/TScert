@@ -2520,7 +2520,11 @@ split rests on stability: the location of a stable key holds one value at
 every level and world of its contract, the current one, an element of
 $`K`$ no tag of $`S`$ covers, so a literal of $`K'`$; the view at $`K'`$
 then holds of every value the contract admits. Without the stable key, an
-arm partly covered is kept. The rule:
+arm partly covered is kept. `BranchRefinement.uncovered_sound`,
+`uncoveredField_sound` and `restricts_sound` prove the removal and the
+split, and `memberYield_sound` composes them with the tag slices
+(`memberSlotSlice`, `memberFieldSlice`); the search reads the split arm's
+label from the claims. The rule:
 
 ```math
 \frac{

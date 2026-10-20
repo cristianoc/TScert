@@ -3951,6 +3951,71 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
 }
 
 {
+  // A guard's false edge over tag-set arms (PROGRAM-TYPING.md, "A
+  // membership test", member-split). Over `Node`, where `isToken` answers
+  // false, the claim the checker accepts names no `Token` application. At
+  // a constant return past each guard's false edge, a forged claim of the
+  // arm `isToken` covers alone, and one reading the split arm at the tag
+  // `isDotToken` took out, are refused by type coverage, in search and in
+  // checking, each accepted with that check disabled; their neighbours, the
+  // honest claims and a claim keeping the covered arm beside the computed
+  // name, are accepted.
+  const artifacts = run("compiler-api-guard-false-sets");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const honest = readClaims(artifacts);
+  const fragment = readFragmentFile(join(artifacts, "fragment.json"));
+  const names = must(fragment.declarations, "the declarations").definitions.map(d => d.declaration.name);
+  const declOf = (name: string): number => {
+    const i = names.indexOf(name);
+    assert.ok(i >= 0, name);
+    return i;
+  };
+  const entryOf = (claims: SourceClaims, fn: string, marker: string) => {
+    const unit = must(claims.functions.find(f => f.name === fn), fn);
+    const from = source.indexOf(`function ${fn}(`);
+    return must(unit.entries.filter(e => e.start > from && source.startsWith(marker, e.start))
+      .sort((a, b) => a.start - b.start)[0], `${fn}: ${marker}`);
+  };
+  const nOf = (claims: SourceClaims, fn: string, marker: string) =>
+    must(entryOf(claims, fn, marker).bindings.find(b => b.name === "n"), `${fn}: n`);
+  const token = declOf("Token");
+  const anyNode = nOf(honest, "anyNode", "return n.pos;").type;
+  assert.ok(Array.isArray(anyNode) && !JSON.stringify(anyNode).includes(`{"decl":${token}`), JSON.stringify(anyNode));
+  const split = nOf(honest, "afterDotConstant", "return 1;").type;
+  assert.ok(Array.isArray(split) && split.some(l => typeof l === "object" && "decl" in l && l.decl === token), JSON.stringify(split));
+  const computed = { decl: declOf("ComputedPropertyName") };
+  const punctuation = { decl: declOf("Punctuation") };
+  for (const [name, fn, type, accepted] of [
+    ["covered", "nonTokenConstant", [punctuation], false],
+    ["kept", "nonTokenConstant", [computed, punctuation], true],
+    ["taken", "afterDotConstant", "dot", false],
+  ] as const) {
+    const claims = structuredClone(honest);
+    const at = entryOf(claims, fn, "return 1;");
+    const binding = must(at.bindings.find(b => b.name === "n"), "n");
+    binding.type = type === "dot"
+      ? [{ decl: token, args: [[rowOf(claims, { numLit: { bits: "4627448617123184640" } })]] }, computed]
+      : [...type];
+    const input = writeClaims(artifacts, `forged-false-set-${name}`, claims);
+    if (accepted) {
+      const searched = produceWith(artifacts, input, `forged-false-set-${name}`);
+      assert.equal(searched.status, 0, searched.stdout + searched.stderr);
+      continue;
+    }
+    // The search reports one of the guard node's two edges.
+    const obligation = `source incoming edge obligation at [${at.start},${at.start + "return 1;".length})`;
+    const truthy = entryOf(claims, fn, "return 0;");
+    const searched = produceWith(artifacts, input, `forged-false-set-${name}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok([obligation, `source incoming edge obligation at [${truthy.start},${truthy.start + "return 0;".length})`]
+      .some(o => (searched.stdout + searched.stderr).includes(o)), searched.stdout + searched.stderr);
+    const checked = invoke(input, forgedEvidence(artifacts, input, `forged-false-set-${name}`, "coverage"), artifacts);
+    assert.ok(checked.includes(`${obligation}: evidence fails type coverage from node `), checked);
+  }
+  process.stdout.write("tag-set false edges: no Token arm past isToken over Node; a claim of the covered arm alone and one of the taken tag refused in search and checking, accepted with coverage disabled; a claim keeping the covered arm accepted\n");
+}
+
+{
   // Stable keys in the declaration document (HOST-FAMILIES.md, "Stable
   // keys"): the decoder accepts them as required readonly members of a
   // marked family shape alone. Each forged document is refused by the

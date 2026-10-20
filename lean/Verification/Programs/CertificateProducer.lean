@@ -1356,7 +1356,7 @@ where
     let slot ← answers.filterMapM fun q => match Γ[i]? with
       | none => pure none
       | some A =>
-        let sliced := PromiseCalls.memberSlice (BranchRefinement.tagSlice G) A ts q
+        let sliced := PromiseCalls.memberSlotSlice G A ts q
         if sliced == A then pure none else
         pure (some { conditional := q, onFalse := !q, target := i, type := sliced, evidence := some {} })
     let fields ← (answers.flatMap fun q => k.links.map (q, ·)).filterMapM fun (q, g) =>
@@ -1364,7 +1364,9 @@ where
         match Γ[g.cell]? with
         | none => pure none
         | some A =>
-          let sliced := PromiseCalls.memberSlice (fun B t q => BranchRefinement.fieldSlice G B g.field t q) A ts q
+          -- A partly covered arm is read at a label of the pool its
+          -- record restricts to (member-split): the claims name it.
+          let sliced := PromiseCalls.memberFieldSlice G A g.field ts q pool.flatten.eraseDups
           if sliced == A then pure none else
           pure (some { conditional := q, onFalse := !q, target := g.cell, type := sliced, evidence := some {} })
     pure (fewestLast (slot ++ fields))

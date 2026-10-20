@@ -87,6 +87,19 @@ element; the two zeros of a set answer a test against `+0` alike, `true`. -/
 #guard tagClause .truthy (Clause.numIn [0, 0x7ff8000000000000, 0x8000000000000000] : Clause Nat) == some false
 #guard tagClause (.numEq 0) (Clause.numIn [0, 0x8000000000000000] : Clause Nat) == some true
 
+/-! What a membership test's `false` answer covers (member-split): a set of
+the two zeros is covered by a test against `+0` alone; a set holding a NaN
+by no test, the NaN equal to nothing; a set is covered by the tests of its
+elements together, not by one of them. -/
+
+#guard BranchRefinement.coveredBy [.numEq 0] (Clause.numIn [0, 0x8000000000000000] : Clause Nat)
+#guard !BranchRefinement.coveredBy [.numEq 0x3ff0000000000000, .numEq 0x7ff8000000000000]
+  (Clause.numIn [0x3ff0000000000000, 0x7ff8000000000000] : Clause Nat)
+#guard BranchRefinement.coveredBy [.numEq 0x3ff0000000000000, .numEq 0x4000000000000000]
+  (Clause.numIn [0x3ff0000000000000, 0x4000000000000000] : Clause Nat)
+#guard !BranchRefinement.coveredBy [.numEq 0x3ff0000000000000]
+  (Clause.numIn [0x3ff0000000000000, 0x4000000000000000] : Clause Nat)
+
 /-! The bitwise operators on numbers, each case's expected value Node's:
 `5 & 3`, `-1 & 255`, `5 | 3`, `-8 | 3`, `1 << 31`, `1 << 32`, `1 << -1`,
 `-8 >> 1`, `-(2 ** 31) >> 31`, `-1 >>> 0`, `-8 >>> 28`, `(2 ** 32 + 5) & 7`,

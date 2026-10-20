@@ -804,6 +804,8 @@ export const cases: Case[] = [
     /missing field a at/),
   { ...positive("compiler-api-guard-false-branch", "a listed guard's call is the test of the node's kind against its tag set, which narrows the `false` edge too: a `BindingName` that is no identifier has `elements`"),
     project: "pipeline/compiler-api-project" },
+  { ...positive("compiler-api-guard-false-sets", "a guard's false edge over an arm whose tag is a set: `isToken`'s drops a `Token` arm of tags all in its set, `isDotToken`'s reads `Token<DotToken | CommaToken>` at `CommaToken`, the tag a stable member (PROGRAM-TYPING.md, \"A membership test\")"),
+    project: "pipeline/compiler-api-project" },
   { ...positive("compiler-api-guards", "listed guards through a namespace and a named import, under `!`, `&&` and a conditional, of one tag and of 167 (`isToken`), each narrowing both edges; a tag guard narrows the tag"),
     project: "pipeline/compiler-api-project" },
   { ...positive("compiler-api-guard-values", "a listed guard as a value: at its entry's signature it meets a parameter of a guard type, a call of a name holding it narrows its argument, and `filter` passes it an index and the array, which change no answer; a tag guard's value meets a parameter promising a union of literals"),

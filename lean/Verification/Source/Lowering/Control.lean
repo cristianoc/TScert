@@ -145,8 +145,8 @@ alone, which `tagMember` checks on the edge. -/
     | some i =>
       let A := Γ[i]?.getD []
       Γ.set i (match field with
-        | none => PromiseCalls.memberSlice (BranchRefinement.tagSlice G) A tags answer
-        | some f => PromiseCalls.memberSlice (fun B t q => BranchRefinement.fieldSlice G B f t q) A tags answer)
+        | none => PromiseCalls.memberSlotSlice G A tags answer
+        | some f => PromiseCalls.memberFieldSlice G A f tags answer [])
   | _ =>
     if let (true, some (j, T)) := (answer, promiseNarrowing G scope Γ false cond original) then Γ.set j T
     else if let some (i, tag, equal) := conditionTag G scope Γ cond then
