@@ -3527,6 +3527,11 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     // its declared `"literal"`.
     const kinds = check(example("kinds"), project);
     assert.equal(kinds.status, "verified", JSON.stringify(kinds));
+    // The compiler API's named views apply to its installation alone: the
+    // stand-in's `Program` and `API`, of the views' names, are read by their
+    // own declarations.
+    const views = check(example("views"), project);
+    assert.equal(views.status, "verified", JSON.stringify(views));
     {
       const copy = runDirectory("tscert-tag-enum-");
       const installed = join(copy, "node_modules", "string-family-fixture");
@@ -3686,7 +3691,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   } finally {
     useFamiliesForTests(null);
   }
-  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs and where Node binds the import to such a copy while TypeScript reads the audited declarations (Node returns it); a guard Node binds to another family's function, of the same name and domain, no guard (Node returns the excluded tag); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
+  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its declarations of the compiler API's view names read as declared; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs and where Node binds the import to such a copy while TypeScript reads the audited declarations (Node returns it); a guard Node binds to another family's function, of the same name and domain, no guard (Node returns the excluded tag); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
 }
 {
   // Each correction of the compiler API's family (COMPILER-API.md,

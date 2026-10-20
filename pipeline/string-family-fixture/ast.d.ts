@@ -22,6 +22,15 @@ export interface Literal extends Unit {
   readonly type: UnitType.Literal;
   readonly value: string;
 }
+// Declarations named as the compiler API's named views are, with members
+// those views do not list: read by their own declarations.
+export interface Program {
+  readonly files: readonly string[];
+  readonly extra: number;
+}
+export declare class API {
+  readonly name: string;
+}
 export declare function isName(node: Unit): node is Name;
 export declare function isExpression(node: Unit): node is Name | Call;
 export declare function isNameLoosely(

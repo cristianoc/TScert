@@ -10,7 +10,7 @@ import type { FamilyDescription } from "../tools/host-families.mts";
 export const stringFamily: FamilyDescription = {
   package: { name: "string-family-fixture", version: "1.0.0" },
   installation: { from: "pipeline/string-family-fixture-project",
-    digest: "9da785badc130abf82a69bf2a5733c33c54afe2b5943b3c10b22687fcfc85d5f" },
+    digest: "9c12a1ea6dc3576cfdb24ac1d957be617209fefb29aba00ef6347e6e308659cc" },
   marker: "StringFixture",
   root: { name: "Unit", form: "inheritance", text: "export interface Unit {" },
   tag: { field: "type", primitive: "string", constants: { enum: "UnitType" } },

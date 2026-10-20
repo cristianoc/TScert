@@ -939,6 +939,12 @@ The mechanism is explicit, and nothing activates it by spelling:
   per process before any of its declarations is read. Its guard table is
   [activated](#the-guard-table) over that installation, with the table's own
   checks.
+- **A package's own contract:** the compiler API's tables by name (its
+  named views, branded strings, enums read as values, node list and type
+  roots, [COMPILER-API.md](COMPILER-API.md#reading-rules)) apply to its own
+  installation alone; another family's declarations of those names are read
+  as they declare them, under the host reading rules every installation
+  shares.
 - **The tag enum as a value:** a program reads the description's tag enum
   as a value, each member at its literal type, where its declaration's
   members are those of the runtime object the activated entry point exports

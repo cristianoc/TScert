@@ -631,7 +631,7 @@ export function collectDeclarations(file: string, options: {
         const declarations = (checker.getTypeAtLocation(node.expression)?.getSymbol()?.declarations ?? [])
           .map(d => d.resolve()).filter((d): d is TypeDeclaration => !!d && isTypeDeclaration(d));
         for (const d of declarations) {
-          if (!(ts.isClassDeclaration(d) || ts.isInterfaceDeclaration(d)) || !isHostFile(d.getSourceFile().fileName)) continue;
+          if (!(ts.isClassDeclaration(d) || ts.isInterfaceDeclaration(d)) || !compilerApiFile(d.getSourceFile().fileName)) continue;
           const owner = d.name?.text ?? "";
           const view = hostViews.find(v => v.owner === owner);
           if (!view && !ts.isClassDeclaration(d)) continue;
@@ -3112,7 +3112,7 @@ export function collectDeclarations(file: string, options: {
         // A host class's members are its view's (reading rule 4).
         admits: member => member.declarations.length === 0 || member.declarations.some(d => {
           const owner = d.parent;
-          if (!owner || !ts.isClassDeclaration(owner) || !isHostFile(d.getSourceFile().fileName)) return true;
+          if (!owner || !ts.isClassDeclaration(owner) || !compilerApiFile(d.getSourceFile().fileName)) return true;
           const view = hostViews.find(v => v.owner === owner.name?.text)?.members ?? [];
           return view.some(entry => d.getText(d.getSourceFile()).trim() === entry.text);
         }),
@@ -4216,8 +4216,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // A host class, and a host interface the contract names a view for, is
     // read through its named view (reading rule 4): the members the contract
     // lists, each as its reviewed text declares it.
-    const named = isHostFile(source.fileName) ? hostViews.find(v => v.owner === node.name?.text) : undefined;
-    const view = ts.isClassDeclaration(node) && isHostFile(source.fileName) ? named?.members ?? []
+    const named = compilerApiFile(source.fileName) ? hostViews.find(v => v.owner === node.name?.text) : undefined;
+    const view = ts.isClassDeclaration(node) && compilerApiFile(source.fileName) ? named?.members ?? []
       : ts.isInterfaceDeclaration(node) ? named?.members ?? null : null;
     if (view && (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)))
       for (const entry of view)
