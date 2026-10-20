@@ -410,10 +410,13 @@ constant. The contract, every condition checked on the resolved files:
   data property holding a primitive;
 - the body declares nothing but $`y`$ and assigns nothing.
 
-The generator computes $`K_g`$ by evaluating $`c`$ over $`\mathcal T_F`$.
-A function outside the contract, or one whose bindings do not resolve, gets
-no entry: it loses its predicate and any preservation effect. The
-generator's output is compared with the reviewed table in a fast check,
+The generator (`dev/guard-table.mts`) reads a description's entry point, tag
+field and tag enum, and computes $`K_g`$ by evaluating $`c`$ over
+$`\mathcal T_F`$, the values of the enum the entry point exports as Node
+loads it. A function outside the contract, or one whose bindings do not
+resolve, gets no entry: it loses its predicate and any preservation effect.
+The generator's output is compared with each family's reviewed table in a
+fast check (`tests/compiler-api-guards.mts`),
 and a Node run of every entry on an object of each tag compares its answers
 with $`K_g`$; both are regression evidence for the review, not proofs of
 the entry's statement.
@@ -1040,7 +1043,8 @@ Its rows are T1 (F1 and F2), T1′ (F1′), T2 (F3) and T4, which includes F4
 A stand-in package, `string-family-fixture` (`pipeline/string-family-fixture/`),
 shows the mechanism general over the package and the tag's primitive:
 `pipeline/test.mts` activates it beside the compiler API's description by a
-description of its own, which names its package, its installation (the
+description of its own (`pipeline/string-family.mts`, its guard table the
+generator's output), which names its package, its installation (the
 package Node finds from `pipeline/string-family-fixture-project/`, through
 the fixture link `node_modules/string-family-fixture`) and its digest, and
 nothing else; under a description of another digest, or of an installation

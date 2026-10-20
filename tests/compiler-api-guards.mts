@@ -1,58 +1,79 @@
-// C2, the compiler API's guard table (COMPILER-API.md, "Binding the contract
-// to the implementation"), regression evidence for its review: the
-// generator's output is the reviewed table (`dev/guard-table.mts --check`),
-// and every entry, run under Node on an object of each tag value (a tag
-// guard on every number around the tag values), answers exactly its tag
-// set, and the same with further arguments and another receiver, as a
-// callback receives them.
+// C2, a family's guard table (HOST-FAMILIES.md, "The guard table";
+// COMPILER-API.md, "Binding the contract to the implementation"), regression
+// evidence for its review, of the compiler API's table and the string-tagged
+// stand-in's alike: the generator's output is the reviewed table
+// (`dev/guard-table.mts`, `--check` for the compiler API's module), and every
+// entry, run under Node on an object of each tag value (a tag guard on every
+// value around the tag values), answers exactly its tag set, and the same
+// with further arguments and another receiver, as a callback receives them.
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runDirectory } from "../pipeline/run-directory.mts";
+import { linkFixtures } from "../pipeline/fixture-links.mts";
+import { stringFamily } from "../pipeline/string-family.mts";
+import { guardTable } from "../dev/guard-table.mts";
 import { compilerApiGuards } from "../tools/compiler-api-guards.mts";
 import { compilerApiFamily, hostPackage } from "../tools/compiler-api.mts";
-import { activeGuards, importedGuard, useFamiliesForTests } from "../tools/family-activation.mts";
-import type { GuardEntry, GuardTable } from "../tools/host-families.mts";
+import { activeGuards, importedGuard, installationRoot, useFamiliesForTests } from "../tools/family-activation.mts";
+import { close as closeParser } from "../tools/fragment-parse.mts";
+import type { FamilyDescription, GuardEntry, GuardTable } from "../tools/host-families.mts";
 
 const repository = resolve(import.meta.dirname, "..");
 const generated = spawnSync(process.execPath, [join(repository, "dev", "guard-table.mts"), "--check"], { encoding: "utf8" });
 assert.equal(generated.status, 0, generated.stdout + generated.stderr);
+linkFixtures();
+assert.ok(isDeepStrictEqual(await guardTable(stringFamily), stringFamily.guards), "the stand-in's table is the generator's output");
+closeParser();
 
 const root = dirname(createRequire(resolve(repository, "tools/package.json")).resolve(`${hostPackage.name}/package.json`));
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
-const entry: unknown = await import(pathToFileURL(join(root, compilerApiGuards.entryModule)).href);
-assert.ok(isRecord(entry) && isRecord(entry.SyntaxKind), "the entry point exports SyntaxKind");
-const syntaxKind = entry.SyntaxKind;
-const value = (name: string): number => {
-  const v = syntaxKind[name];
-  assert.ok(typeof v === "number", `SyntaxKind.${name}`);
-  return v;
-};
-const tagValues = [...new Set(Object.values(syntaxKind).filter((v): v is number => typeof v === "number"))].sort((a, b) => a - b);
-const max = Math.max(...tagValues);
-const numbers = [...Array.from({ length: max + 5 }, (_, i) => i - 2), 0.5, -0, Number.NaN];
-let calls: number = 0;
 const isCallable = (v: unknown): v is (this: unknown, ...args: unknown[]) => unknown => typeof v === "function";
-for (const guard of compilerApiGuards.guards) {
-  const f: unknown = entry[guard.name];
-  assert.ok(isCallable(f), `${guard.name} is exported`);
-  const call = (receiver: unknown, args: unknown[]): unknown => f.call(receiver, ...args);
-  const tags = new Set(guard.tags.map(value));
-  const inputs: [unknown, boolean][] = guard.kind === "node"
-    ? tagValues.map((t) => [{ kind: t }, tags.has(t)])
-    : numbers.map((n) => [n, tags.has(n)]);
-  const other = { kind: -1 };
-  for (const [input, expected] of inputs) {
-    assert.equal(call(undefined, [input]), expected, `${guard.name}(${JSON.stringify(input)})`);
-    assert.equal(call(other, [input, 1, [input]]), expected, `${guard.name} with further arguments and a receiver`);
-    calls += 2;
+/** Every entry of a family's table under Node, on an object of each tag
+ * value and, for a tag guard, on every value around them; the calls made. */
+const runEntries = async (description: FamilyDescription): Promise<number> => {
+  const table = description.guards;
+  const entry: unknown = await import(pathToFileURL(join(installationRoot(description), table.entryModule)).href);
+  const enumName = description.tag.constants.enum;
+  const tagEnum: unknown = isRecord(entry) ? entry[enumName] : undefined;
+  assert.ok(isRecord(entry) && isRecord(tagEnum), `the entry point exports ${enumName}`);
+  const value = (name: string): unknown => {
+    const v = tagEnum[name];
+    assert.ok(typeof v === description.tag.primitive, `${enumName}.${name}`);
+    return v;
+  };
+  const tagValues = [...new Set(Object.values(tagEnum).filter((v) => typeof v === description.tag.primitive))];
+  const numeric = tagValues.filter((v): v is number => typeof v === "number");
+  const around: unknown[] = description.tag.primitive === "number"
+    ? [...Array.from({ length: Math.max(...numeric) + 5 }, (_, i) => i - 2), 0.5, -0, Number.NaN]
+    : [...tagValues, "", "other", ...Object.keys(tagEnum)];
+  let calls = 0;
+  for (const guard of table.guards) {
+    const f: unknown = entry[guard.name];
+    assert.ok(isCallable(f), `${guard.name} is exported`);
+    const call = (receiver: unknown, args: unknown[]): unknown => f.call(receiver, ...args);
+    const tags = new Set(guard.tags.map(value));
+    const inputs: [unknown, boolean][] = guard.kind === "node"
+      ? tagValues.map((t) => [{ [description.tag.field]: t }, tags.has(t)])
+      : around.map((n) => [n, tags.has(n)]);
+    const other = { [description.tag.field]: -1 };
+    for (const [input, expected] of inputs) {
+      assert.equal(call(undefined, [input]), expected, `${guard.name}(${JSON.stringify(input)})`);
+      assert.equal(call(other, [input, 1, [input]]), expected, `${guard.name} with further arguments and a receiver`);
+      calls += 2;
+    }
   }
+  return calls;
+};
+for (const description of [compilerApiFamily, stringFamily]) {
+  const calls = await runEntries(description);
+  console.log(`C2, ${description.marker}: ${description.guards.guards.length} guards as generated, ${calls} calls under Node, each answering exactly its tag set; ` +
+    `${description.guards.excluded.length} declared guards outside the contract: ${description.guards.excluded.map(([n]) => n).join(", ")}`);
 }
-console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under Node, each answering exactly its tag set; ` +
-  `${compilerApiGuards.excluded.length} declared guards outside the contract: ${compilerApiGuards.excluded.map(([n]) => n).join(", ")}`);
 
 // The table's activation (HOST-FAMILIES.md, "The guard table"): the reviewed
 // table resolves as recorded over the installation, every entry; a table

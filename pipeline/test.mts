@@ -14,8 +14,9 @@ import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcom
 import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { compilerApiFamily } from "../tools/compiler-api.mts";
-import { runtimeConditions, useFamiliesForTests } from "../tools/family-activation.mts";
+import { useFamiliesForTests } from "../tools/family-activation.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
+import { stringFamily } from "./string-family.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
 import { linkFixtures } from "./fixture-links.mts";
@@ -3495,41 +3496,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // depends on an option argument has no entry and narrows nothing.
   const project = tsconfigOf(join(import.meta.dirname, "string-family-fixture-project"));
   const example = (file: string): string => join(import.meta.dirname, "string-family-fixture-project", `${file}.ts`);
-  const helper = "function isExpressionKind(type) {\n    return type === UnitType.Name\n        || type === UnitType.Call;\n}";
-  const strings: FamilyDescription = {
-    package: { name: "string-family-fixture", version: "1.0.0" },
-    installation: { from: "pipeline/string-family-fixture-project",
-      digest: "9da785badc130abf82a69bf2a5733c33c54afe2b5943b3c10b22687fcfc85d5f" },
-    marker: "StringFixture",
-    root: { name: "Unit", form: "inheritance", text: "export interface Unit {" },
-    tag: { field: "type", primitive: "string", constants: { enum: "UnitType" } },
-    table: [{ rule: "literal" }],
-    corrections: [],
-    allocating: [],
-    stable: { excluded: [] },
-    guards: {
-      entryPoint: "./ast",
-      conditions: runtimeConditions(),
-      entryModule: "ast.js",
-      closure: {
-        files: {
-          "ast.js": "ec36559dd989abd248cf999d4c3b2bb750799046b0d88b1630a9d53a3ad0056c",
-          "kinds.js": "7cb37e251aae0c597bb7f572bd109efb935cc15860ae9e892521adf431f70e6d",
-        },
-        edges: [["ast.js", "UnitType", "kinds.js", "UnitType", [], "import"]],
-      },
-      helpers: { "ast.js#isExpressionKind": helper },
-      guards: [
-        { name: "isName", kind: "node", domain: "Unit", tags: ["Name"], module: "ast.js",
-          helpers: [], edges: [["ast.js", "UnitType", "kinds.js", "UnitType"]],
-          text: "export function isName(node) {\n    return node.type === UnitType.Name;\n}" },
-        { name: "isExpression", kind: "node", domain: "Unit", tags: ["Name", "Call"], module: "ast.js",
-          helpers: ["ast.js#isExpressionKind"], edges: [["ast.js", "UnitType", "kinds.js", "UnitType"]],
-          text: "export function isExpression(node) {\n    return isExpressionKind(node.type);\n}" },
-      ],
-      excluded: [["isNameLoosely", "two parameters"]],
-    },
-  };
+  const strings: FamilyDescription = stringFamily;
   // The stand-in's description beside the compiler API's: the active
   // descriptions, the whole of what the run is given.
   const activate = (description: FamilyDescription): void => useFamiliesForTests([compilerApiFamily, description]);
@@ -3546,7 +3513,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
       }
     };
     visit(JSON.parse(readFileSync(join(kept.artifacts, "fragment.json"), "utf8")));
-    assert.ok(tagSets.includes(JSON.stringify([{ a: "stringlit", v: "name" }, { a: "stringlit", v: "call" }]) ?? ""),
+    assert.ok(tagSets.includes(JSON.stringify([{ a: "stringlit", v: "call" }, { a: "stringlit", v: "name" }]) ?? ""),
       `isExpression's call tests the family's string constants: ${tagSets.join(" ")}`);
     const file = example("invalid-loose");
     const refused = check(file, project);
