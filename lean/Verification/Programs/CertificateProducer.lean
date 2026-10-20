@@ -1229,8 +1229,11 @@ read/value rule may succeed when ordinary derivation search cannot. -/
   | .readAt fld (.var i) =>
     choices := (k.cells.filter fun f => f.slot == i && f.field == fld).map
       fun f => .observedRead i f.contents
-    -- A read a live read link answers: the linked slot's value, at its type.
-    for g in k.links do
+    -- A read a live read link answers: the linked slot's value, at its type;
+    -- first a slot read links leave from, so that a read of a longer path
+    -- finds its next link (a path's witnesses, HOST-FAMILIES.md, "Entries").
+    let onward := fun (y : Nat) => k.links.any fun g => g.cell == y && !g.alias && !g.distinct
+    for g in k.links.filter (onward ·.value) ++ k.links.filter (!onward ·.value) do
       if (HeapLinks.aliases k.links i).contains g.cell && g.field == fld && !g.alias && !g.distinct then
         if let some B := j.context[g.value]? then
           let compared ← (subtypeUsing G images B j.type).result
@@ -1353,7 +1356,7 @@ where
     let slot ← answers.filterMapM fun q => match Γ[i]? with
       | none => pure none
       | some A =>
-        let sliced := PromiseCalls.memberSlice (BranchRefinement.tagSlice G) A ts q
+        let sliced := PromiseCalls.memberSlotSlice G A ts q
         if sliced == A then pure none else
         pure (some { conditional := q, onFalse := !q, target := i, type := sliced, evidence := some {} })
     let fields ← (answers.flatMap fun q => k.links.map (q, ·)).filterMapM fun (q, g) =>
@@ -1361,7 +1364,9 @@ where
         match Γ[g.cell]? with
         | none => pure none
         | some A =>
-          let sliced := PromiseCalls.memberSlice (fun B t q => BranchRefinement.fieldSlice G B g.field t q) A ts q
+          -- A partly covered arm is read at a label of the pool its
+          -- record restricts to (member-split): the claims name it.
+          let sliced := PromiseCalls.memberFieldSlice G A g.field ts q pool.flatten.eraseDups
           if sliced == A then pure none else
           pure (some { conditional := q, onFalse := !q, target := g.cell, type := sliced, evidence := some {} })
     pure (fewestLast (slot ++ fields))

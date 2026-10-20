@@ -396,13 +396,17 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const holder: { node: object } = { node: { name: { kind: identifier, text: "a" } } };
   assert.equal(record(holder, () => { holder.node = { name: { kind: computed } }; }), undefined,
     "invalid-compiler-api-stable-record: the call replaces the holder's node");
+  const chain = await load("invalid-compiler-api-entry-path-record");
+  const box: { node: object } = { node: { name: { kind: identifier, text: "a" } } };
+  assert.equal(chain({ box }, () => { box.node = { name: { kind: computed } }; }), undefined,
+    "invalid-compiler-api-entry-path-record: the call replaces the middle member's node");
   const captured = await load("invalid-compiler-api-stable-let");
   assert.equal(captured({ name: { kind: identifier, text: "a" } }, { name: { kind: computed } }), undefined,
     "invalid-compiler-api-stable-let: the callback replaces the let root");
   const cell = await load("invalid-compiler-api-stable-let-cell");
   assert.equal(cell({ name: { kind: identifier, text: "a" } }, { name: { kind: computed } }), undefined,
     "invalid-compiler-api-stable-let-cell: the callback replaces the mutable name");
-  console.log("stable links: a record's member, a mixed path's first member and a let root replaced by the call, each read returns undefined under Node");
+  console.log("stable links: a record's member, a mixed path's first member, a chain's middle member and a let root replaced by the call, each read returns undefined under Node");
 }
 
 // The guards' fixtures under Node (HOST-FAMILIES.md, "Guard recognition"):

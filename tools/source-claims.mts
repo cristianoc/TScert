@@ -60,11 +60,12 @@ type ClaimType<L = Label> =
  * What a producer believes at one site: the type it claims, and — where the
  * site names a record and the producer tracks its contents — what each named
  * field holds at that point. An object has one location per field, so the
- * assertion names the field it is about. `current` is required and explicitly
- * `null` where no such assertion is made, so silence is stated rather than
- * inferred.
+ * assertion names the field it is about, or the path of fields read in turn
+ * from the point's value, a path of two or more only at a statement entry
+ * (HOST-FAMILIES.md, "Entries"). `current` is required and explicitly `null`
+ * where no such assertion is made, so silence is stated rather than inferred.
  */
-type CurrentFields<L = Label> = [name: string, labels: Labels<L>][];
+type CurrentFields<L = Label> = [fields: [string, ...string[]], labels: Labels<L>][];
 
 interface Point<L = Label> {
   type: ClaimType<L>;

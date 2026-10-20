@@ -96,9 +96,12 @@ partial def ClaimType.ground [Labels ι] : ClaimType ι → Except String (Ty ι
   | .scheme .. => .error "quantified callable requires scheme checking"
   | .unavailable reason => .error reason
 
-/-- Proposed current property-read results, field by field. Optional fields
-include the absent-key result. A point that names no record carries none. -/
-abbrev CurrentFields (ι : Type) := List (PropKey × List ι)
+/-- Proposed current property-read results, path by path: a nonempty list
+of fields read in turn from the point's value. Optional fields include the
+absent-key result. A point that names no record carries none. A path of two
+fields or more is a statement entry's witness of a member path
+(HOST-FAMILIES.md, "Entries"). -/
+abbrev CurrentFields (ι : Type) := List (List PropKey × List ι)
 
 structure Binding (ι : Type) where
   name : String
@@ -227,7 +230,9 @@ private def pointData (entries : List (Entry ι)) (expressions : List (Expressio
   { envs := entries.map (fun e => (e.start,e.bindings.map (fun b => (b.name,b.type.ground))))
     exprs := expressions.map (fun e => (e.pos,e.type.ground))
     entryCurrent := entries.map (fun e => (e.start,e.bindings.filterMap fun b => b.current.map (b.name,·)))
-    exprCurrent := expressions.filterMap (fun e => e.current.map (e.pos,·)) }
+    -- An expression's assertion is of one field each (`validCurrent`).
+    exprCurrent := expressions.filterMap (fun e => e.current.map fun fs =>
+      (e.pos, fs.filterMap fun (p, A) => match p with | [k] => some (k, A) | _ => none)) }
 
 private def pointTable (entries : List (Entry ι)) (expressions : List (Expression ι)) :
     List (String × SourceClaims.PointData ι) :=
@@ -263,28 +268,33 @@ private partial def validType (T : EquationStore.State) : ClaimType Tree → Boo
       validType T result
   | .unavailable reason => !reason.isEmpty
   | .labels A => validTy (StoreView.valid T) A && A == A.mergeSort Labels.le && A.eraseDups == A
-/-- Every asserted field is one the point's own record contract names, each at
-most once, at a type this table has. The asserted type need not be finite: a
+/-- Every asserted path is nonempty and asserted at most once, its first
+field one the point's own record contract names, at a type this table has.
+A path of two fields or more only at a statement entry (`paths`), whose
+lowering reads its later fields. The asserted type need not be finite: a
 field the extractor cannot turn into a literal assertion becomes an obligation
 that the storage contract already implies it. -/
-private def validCurrent (T : EquationStore.State) (A : ClaimType Tree) (current : Option (CurrentFields Tree)) : Bool :=
+private def validCurrent (T : EquationStore.State) (A : ClaimType Tree) (current : Option (CurrentFields Tree))
+    (paths : Bool := false) : Bool :=
   match current with
   | none => true
   | some fs =>
     !fs.isEmpty && (fs.map Prod.fst).eraseDups.length == fs.length &&
-    -- Every record arm names the field, required or optional, or is a
+    fs.all (fun p => !p.1.isEmpty && (paths || p.1.length == 1)) &&
+    -- Every record arm names the first field, required or optional, or is a
     -- dictionary whose string index reaches it.
+    let firsts := fs.filterMap (·.1.head?)
     (match PositiveRules.expand (SourceTypes.graph T) (A.ground.toOption.getD []) with
       | [] => false
       | cs => cs.all fun
-        | .refs contract [] vs os _ _ _ => fs.all (fun p => (contract.lookup p.1).isSome ||
-            (vs.lookup p.1).isSome || os.any (fun o => o.key == p.1))
-        | .dict _ _ _ ds _ _ _ cells _ => fs.all (fun p => (ds ++ cells).any (HeapExpressionRules.stringIndex · p.1))
+        | .refs contract [] vs os _ _ _ => firsts.all (fun k => (contract.lookup k).isSome ||
+            (vs.lookup k).isSome || os.any (fun o => o.key == k))
+        | .dict _ _ _ ds _ _ _ cells _ => firsts.all (fun k => (ds ++ cells).any (HeapExpressionRules.stringIndex · k))
         | _ => false) &&
     fs.all (fun p => validType T (.labels p.2))
 private def validBindings (T : EquationStore.State) (bs : List (Binding Tree)) : Bool :=
   (bs.map (·.name)).eraseDups.length == bs.length &&
-    bs.all (fun b => !b.name.isEmpty && validType T b.type && validCurrent T b.type b.current)
+    bs.all (fun b => !b.name.isEmpty && validType T b.type && validCurrent T b.type b.current (paths := true))
 private def validSpan (p : Span) : Bool := p.1 < p.2
 private def validInterior (T : EquationStore.State) (entries : List (Entry Tree))
     (expressions : List (Expression Tree)) : Bool :=

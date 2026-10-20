@@ -1226,7 +1226,7 @@ for (const [artifacts, arity, refusal] of [
       : f.entries.filter((e) => e.start === at).flatMap((e) => e.bindings.filter((b) => b.name === "cell"));
     assert.equal(points.length, 1, `one point observed in ${fn} at ${at}`);
     for (const p of points) {
-      p.current = [["value", pick(l)]];
+      p.current = [[["value"], pick(l)]];
       if (narrowed) p.type = [l.nullArm];
     }
     return writeClaims(cellUnion, name, claims);
@@ -1536,11 +1536,11 @@ for (const [artifacts, arity, refusal] of [
   const fn = must(claims.functions.find((f) => f.name === "observeOnly"), "optional observation function");
   const undef = rowOf(claims, "undef");
   const entry = must(fn.entries.find((e) => e.bindings.some((b) =>
-    b.name === "obj" && b.current?.some(([key, type]) => key === "val" &&
+    b.name === "obj" && b.current?.some(([[key], type]) => key === "val" &&
       type.length === 1 && type[0] === undef))), "undefined branch entry");
   const object = must(entry.bindings.find((b) => b.name === "obj"), "observed object");
   // The undefined branch cannot establish a number-valued read observation.
-  object.current = [["val", [rowOf(claims, "num")]]];
+  object.current = [[["val"], [rowOf(claims, "num")]]];
   const forged = writeClaims(artifacts, "forged-optional-read-result", claims);
   refusedAt(artifacts, forged, "forged-optional-read-result", "source incoming edge obligation");
   invoke(forged, join(artifacts, "evidence.json"), artifacts);
@@ -2325,7 +2325,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
       must(at.bindings.find(b => b.name === "t"), `${name}: t at the read`).current = fact;
       const read = must(fn.expressions.find(e => e.pos[0] === ret + "return ".length && e.pos[1] === ret + "return t.mapping".length),
         `${name}: the read's claim`);
-      read.type = must(fact.find(([field]) => field === "mapping"), `${name}: the mapping's fact`)[1];
+      read.type = must(fact.find(([[field]]) => field === "mapping"), `${name}: the mapping's fact`)[1];
       const input = writeClaims(artifacts, `forged-field-tag-${name}`, claims);
       const produce = produceWith(artifacts, input, `forged-field-tag-${name}`);
       assert.ifError(produce.error);
@@ -3763,7 +3763,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const before = must(honest.functions.find(f => f.name === "before"), "witness before");
   const refined = must(before.entries.find(e => source.startsWith("return 1;", e.start)), "refined entry");
   const current = must(must(refined.bindings.find(b => b.name === "holder"), "holder").current, "witness type");
-  const type = must(current.find(([field]) => field === "value"), "value field")[1];
+  const type = must(current.find(([[field]]) => field === "value"), "value field")[1];
   const object = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
   for (const [name, functionName, marker, failure] of [
@@ -3777,7 +3777,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const claims = structuredClone(honest);
     const fn = must(claims.functions.find(f => f.name === functionName), name);
     const at = must(fn.entries.filter(e => source.startsWith(marker, e.start)).sort((a, b) => a.start - b.start)[0], `${name}: forged entry`);
-    must(at.bindings.find(b => b.name === "holder"), "holder").current = [["value", type]];
+    must(at.bindings.find(b => b.name === "holder"), "holder").current = [[["value"], type]];
     if (name === "read") {
       const expression = must(fn.expressions.find(e => e.pos[0] === at.start + "return ".length &&
         e.pos[1] === at.start + "return holder.value".length), "read past call");
@@ -3808,7 +3808,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const entry = must(fn.entries.find(e => source.startsWith("return 1;", e.start)), "both paths refined");
     for (const [root, field] of name === "receiver" ? [["holder", "value"], ["other", "value"]] : [["holder", "value"], ["holder", "other"]]) {
       const binding = must(entry.bindings.find(b => b.name === root), root);
-      assert.deepEqual(must(binding.current, "refined path").find(([f]) => f === field)?.[1], type);
+      assert.deepEqual(must(binding.current, "refined path").find(([[f]]) => f === field)?.[1], type);
     }
     const unit: unknown = evidence.main.functions[index];
     assert.ok(object(unit) && Array.isArray(unit.certificate));
@@ -3839,6 +3839,162 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     assert.ok(checked.includes(`source incoming edge obligation at [${start},${start + 1}): evidence fails heap knowledge`), checked);
   }
   process.stdout.write("path witnesses: exact forged evidence refused at incoming edges; wrong receiver/field isolate links, false predecessor isolates type coverage\n");
+}
+
+{
+  // Paths of two members at a statement entry (HOST-FAMILIES.md, "Entries"):
+  // the witness of `holder.mid.leaf` is read from the witness of
+  // `holder.mid` through `leaf`, and every incoming edge checks that second
+  // segment's link as it checks the first's. The honest document, the
+  // neighbour of each forged one, is accepted. A forged entry claim at an
+  // unjustified predecessor is refused by type coverage, one past a call by
+  // the links the call ends; a forged second-segment link of another
+  // receiver or another field is refused by heap knowledge. Each forged
+  // document is accepted with exactly the check it isolates disabled.
+  const artifacts = run("path-chain-controls");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const honest = readClaims(artifacts);
+  const accepted = spawnSync(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), join(artifacts, "claims.json"),
+    join(artifacts, "source.ts"), join(artifacts, "evidence.json")], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  const chain = (path: readonly string[]): boolean => path.length === 2 && path[0] === "mid" && path[1] === "leaf";
+  const before = must(honest.functions.find(f => f.name === "before"), "chain before");
+  const refined = must(before.entries.find(e => source.startsWith("return 1;", e.start)), "chain refined entry");
+  const current = must(must(refined.bindings.find(b => b.name === "holder"), "holder").current, "chain witness type");
+  const type = must(current.find(([path]) => chain(path)), "the two-member path")[1];
+  for (const [name, functionName, marker, failure, mutations] of [
+    ["predecessor", "before", "return 0;", "type coverage", "coverage"],
+    ["afterCall", "afterCall", "return 0;", "heap knowledge", "links"],
+  ]) {
+    const claims = structuredClone(honest);
+    const fn = must(claims.functions.find(f => f.name === functionName), name);
+    const at = must(fn.entries.filter(e => source.startsWith(marker, e.start)).sort((a, b) => a.start - b.start)[0], `${name}: forged chain entry`);
+    must(at.bindings.find(b => b.name === "holder"), "holder").current = [[["mid", "leaf"], type]];
+    const input = writeClaims(artifacts, `forged-chain-${name}`, claims);
+    const obligation = `source incoming edge obligation at [${at.start},${source.indexOf(";", at.start) + 1})`;
+    refusedAt(artifacts, input, `forged-chain-${name}`, obligation);
+    const checked = invoke(input, forgedEvidence(artifacts, input, `forged-chain-${name}`, mutations), artifacts);
+    assert.ok(checked.includes(`${obligation}: evidence fails ${failure} from node `), checked);
+  }
+
+  // A second-segment link, from a prefix's witness to the path's, added at
+  // a non-cut return node beside the honest ones: of the other prefix's
+  // witness (`receiver`), or through the prefix's other field (`field`).
+  type Link = { cell: number; value: number; alias: boolean; distinct: boolean;
+    field: string; other: string; optional: boolean };
+  type WitnessNode = { expression: { node: { claim: { term: unknown; context: number[][] } } };
+    knowledge: { links: Link[] }; output: { links: Link[] } };
+  const object = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  for (const name of ["receiver", "field"]) {
+    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
+    const index = honest.functions.findIndex(f => f.name === name);
+    const fn = must(honest.functions[index], name);
+    const entry = must(fn.entries.find(e => source.startsWith("return 1;", e.start)), "both chains refined");
+    const second = name === "receiver" ? ["alt", "leaf"] : ["mid", "other"];
+    const binding = must(entry.bindings.find(b => b.name === "holder"), "holder");
+    for (const path of [["mid", "leaf"], second])
+      assert.deepEqual(must(binding.current, "refined chains").find(([p]) => p.join(".") === path.join("."))?.[1], type);
+    const unit: unknown = evidence.main.functions[index];
+    assert.ok(object(unit) && Array.isArray(unit.certificate));
+    const certificate = unit.certificate as WitnessNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
+    // The second segments: links whose receiver is the value of another link.
+    const segments = (c: WitnessNode): Link[] => {
+      const links = c.knowledge.links.filter(l => !l.alias && !l.distinct);
+      return links.filter(l => links.some(r => r.value === l.cell));
+    };
+    const node = must(certificate.find(c => {
+      const links = segments(c);
+      return JSON.stringify(c.expression.node.claim.term) === JSON.stringify({ var: { i: 0 } }) &&
+        links.length === 2 && links.every(l => l.cell > 0 && l.value > 0) &&
+        JSON.stringify(c.expression.node.claim.context[links[0].value]) === JSON.stringify(c.expression.node.claim.context[links[1].value]);
+    }), `${name}: two refined chains at a non-cut return`);
+    const [first, other] = segments(node);
+    if (name === "receiver") {
+      assert.notEqual(first.cell, other.cell);
+      assert.equal(first.field, other.field);
+    } else {
+      assert.equal(first.cell, other.cell);
+      assert.notEqual(first.field, other.field);
+    }
+    const forged = name === "receiver" ? { ...first, cell: other.cell } : { ...first, field: other.field };
+    assert.ok(!node.knowledge.links.some(l => JSON.stringify(l) === JSON.stringify(forged)), "a false origin, not a duplicate link");
+    node.knowledge.links.push(forged);
+    node.output.links.push({ ...forged, cell: forged.cell + 1, value: forged.value + 1 });
+    const path = join(artifacts, `forged-chain-${name}-evidence.json`);
+    writeFileSync(path, JSON.stringify(evidence));
+    checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
+    const start = entry.start + "return ".length;
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    assert.ok(checked.includes(`source incoming edge obligation at [${start},${start + 1}): evidence fails heap knowledge`), checked);
+  }
+  process.stdout.write("path chains: the honest document accepted; a forged predecessor refused by type coverage, a chain past a call and a second segment's wrong receiver or field by heap knowledge, each accepted with that check disabled\n");
+}
+
+{
+  // A guard's false edge over tag-set arms (PROGRAM-TYPING.md, "A
+  // membership test", member-split). Over `Node`, where `isToken` answers
+  // false, the claim the checker accepts names no `Token` application. At
+  // a constant return past each guard's false edge, a forged claim of the
+  // arm `isToken` covers alone, and one reading the split arm at the tag
+  // `isDotToken` took out, are refused by type coverage, in search and in
+  // checking, each accepted with that check disabled; their neighbours, the
+  // honest claims and a claim keeping the covered arm beside the computed
+  // name, are accepted.
+  const artifacts = run("compiler-api-guard-false-sets");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const honest = readClaims(artifacts);
+  const fragment = readFragmentFile(join(artifacts, "fragment.json"));
+  const names = must(fragment.declarations, "the declarations").definitions.map(d => d.declaration.name);
+  const declOf = (name: string): number => {
+    const i = names.indexOf(name);
+    assert.ok(i >= 0, name);
+    return i;
+  };
+  const entryOf = (claims: SourceClaims, fn: string, marker: string) => {
+    const unit = must(claims.functions.find(f => f.name === fn), fn);
+    const from = source.indexOf(`function ${fn}(`);
+    return must(unit.entries.filter(e => e.start > from && source.startsWith(marker, e.start))
+      .sort((a, b) => a.start - b.start)[0], `${fn}: ${marker}`);
+  };
+  const nOf = (claims: SourceClaims, fn: string, marker: string) =>
+    must(entryOf(claims, fn, marker).bindings.find(b => b.name === "n"), `${fn}: n`);
+  const token = declOf("Token");
+  const anyNode = nOf(honest, "anyNode", "return n.pos;").type;
+  assert.ok(Array.isArray(anyNode) && !JSON.stringify(anyNode).includes(`{"decl":${token}`), JSON.stringify(anyNode));
+  const split = nOf(honest, "afterDotConstant", "return 1;").type;
+  assert.ok(Array.isArray(split) && split.some(l => typeof l === "object" && "decl" in l && l.decl === token), JSON.stringify(split));
+  const computed = { decl: declOf("ComputedPropertyName") };
+  const punctuation = { decl: declOf("Punctuation") };
+  for (const [name, fn, type, accepted] of [
+    ["covered", "nonTokenConstant", [punctuation], false],
+    ["kept", "nonTokenConstant", [computed, punctuation], true],
+    ["taken", "afterDotConstant", "dot", false],
+  ] as const) {
+    const claims = structuredClone(honest);
+    const at = entryOf(claims, fn, "return 1;");
+    const binding = must(at.bindings.find(b => b.name === "n"), "n");
+    binding.type = type === "dot"
+      ? [{ decl: token, args: [[rowOf(claims, { numLit: { bits: "4627448617123184640" } })]] }, computed]
+      : [...type];
+    const input = writeClaims(artifacts, `forged-false-set-${name}`, claims);
+    if (accepted) {
+      const searched = produceWith(artifacts, input, `forged-false-set-${name}`);
+      assert.equal(searched.status, 0, searched.stdout + searched.stderr);
+      continue;
+    }
+    // The search reports one of the guard node's two edges.
+    const obligation = `source incoming edge obligation at [${at.start},${at.start + "return 1;".length})`;
+    const truthy = entryOf(claims, fn, "return 0;");
+    const searched = produceWith(artifacts, input, `forged-false-set-${name}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok([obligation, `source incoming edge obligation at [${truthy.start},${truthy.start + "return 0;".length})`]
+      .some(o => (searched.stdout + searched.stderr).includes(o)), searched.stdout + searched.stderr);
+    const checked = invoke(input, forgedEvidence(artifacts, input, `forged-false-set-${name}`, "coverage"), artifacts);
+    assert.ok(checked.includes(`${obligation}: evidence fails type coverage from node `), checked);
+  }
+  process.stdout.write("tag-set false edges: no Token arm past isToken over Node; a claim of the covered arm alone and one of the taken tag refused in search and checking, accepted with coverage disabled; a claim keeping the covered arm accepted\n");
 }
 
 {
@@ -4007,7 +4163,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     if (kind === "mixed" || kind === "catch") {
       const entry = must(fn.entries.find(e => e.start === statement.pos[0]), "post-call/handler entry");
       assert.equal(entry.start, kind === "catch" ? 405 : 500);
-      must(entry.bindings.find(b => b.name === "m"), "m at the entry").current = [["name", refined]];
+      must(entry.bindings.find(b => b.name === "m"), "m at the entry").current = [[["name"], refined]];
     }
     assert.deepEqual(fn.expressions.filter(e => e.pos[1] <= at), prefix);
     const forged = writeClaims(artifacts, `isolated-stable-${kind}`, claims);

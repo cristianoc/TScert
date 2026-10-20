@@ -37,10 +37,10 @@ design, not its progress.
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
 | [A family's installation](#family-installation) | open | a family description names its package's installation and digest, and the front end activates any active description's package by that data, as it does the compiler API's |
-| [Paths at an entry beyond one member](#paths-at-an-entry) | open | a statement entry carries the refinement of a path of two members or more, and a read of `n.expression.expression` past a statement boundary verifies |
+| [Paths at an entry beyond one member](docs/HOST-FAMILIES.md#entries) | closed: an entry's witness of a path reads from its prefix's, one checked link per segment; `compiler-api-entry-path` verifies, the forged chains are refused, each accepted with its check disabled (2026-10-20) | — |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
-| [A guard's false edge over a tag-set arm](#guard-false-edge-tag-sets) | open | where `ts.isToken(node)` answers `false`, `node` holds no `Token` arm |
+| [A guard's false edge over a tag-set arm](docs/PROGRAM-TYPING.md#a-membership-test) | closed: the false slice drops arms the guard's set covers and reads a partly covered arm with a stable tag at the rest of its set; `compiler-api-guard-false-sets` verifies, its forged claims are refused, each accepted with coverage disabled (2026-10-20) | — |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -331,13 +331,6 @@ through the test-only stand-in channel. A second real family needs its
 package, installation and digest stated in its description and resolved by
 the same code.
 
-<a id="paths-at-an-entry"></a>
-**Paths at an entry beyond one member.** A statement entry states a path's
-refinement as a current-content assertion of a binding's field, so a path
-of one member: `if (!ts.isCallExpression(n) || …) return; n.expression.expression.text`
-across the statement reads the declared type. A witness of a longer path
-needs the entry to state it through its prefix's witness.
-
 <a id="shadowing-locals-search"></a>
 **The search past 60 s on `shadowingLocals`.** The slice of
 `fragment-support.mts#shadowingLocals` holds that function and
@@ -370,14 +363,6 @@ node (`compiler-api-node-callback`, a gap). A re-exported guard narrows,
 and a local function of a guard's name and a guard's wrapper are ordinary
 functions (`compiler-api-guard-calls`, `invalid-compiler-api-guard-wrapper`,
 `invalid-compiler-api-guard-local`).
-
-<a id="guard-false-edge-tag-sets"></a>
-**A guard's false edge over a tag-set arm.** A family guard's `false` edge
-drops an object arm whose tag is one of the guard's tags, each tag decided
-alone ([a membership test](docs/PROGRAM-TYPING.md#a-membership-test)); an
-arm whose tag is a set of several values all in the guard's set, `Token`
-under `isToken`, stays, since no one tag excludes it. A slice of the whole
-set, its soundness proved over the set clauses, removes it.
 
 <a id="corrected-members"></a>
 **Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)

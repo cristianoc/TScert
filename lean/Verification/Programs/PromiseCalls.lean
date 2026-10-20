@@ -370,6 +370,22 @@ where `false`, those every tag's failing slice keeps, one after another. -/
 def memberSlice (slice : Ty ι → Tag → Bool → Ty ι) (A : Ty ι) (ts : List Tag) (q : Bool) : Ty ι :=
   if q then (ts.flatMap fun t => slice A t true).eraseDups else ts.foldl (fun B t => slice B t false) A
 
+/-- What a membership test's answer `q` leaves of a slot's type: by each tag's
+slice (`memberSlice`), and where it answered `false`, less the labels the
+whole set covers (`uncovered`, PROGRAM-TYPING.md, "A membership test"). -/
+def memberSlotSlice (G : NormalGraph ι) (A : Ty ι) (ts : List Tag) (q : Bool) : Ty ι :=
+  if q then memberSlice (tagSlice G) A ts true
+  else BranchRefinement.uncovered G (memberSlice (tagSlice G) A ts false) ts
+
+/-- What a membership test's answer `q` of an object's field `f` leaves of
+the object's type: by each tag's field slice, and where it answered `false`,
+less the arms the whole set covers and with an arm partly covered at a stable
+key read as a label of `candidates` (`uncoveredField`, member-split). -/
+def memberFieldSlice (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (ts : List Tag) (q : Bool)
+    (candidates : Ty ι) : Ty ι :=
+  if q then memberSlice (fun B t q => fieldSlice G B f t q) A ts true
+  else BranchRefinement.uncoveredField G (memberSlice (fun B t q => fieldSlice G B f t q) A ts false) f ts candidates
+
 /-- A membership test's yield (`memberOn`) about the tested slot, or about
 the object a current read link says its value was read from: where the test
 answered `q`, the labels `memberSlice` keeps of the slot's or the object's
@@ -382,12 +398,12 @@ is conditional; one of `false` is stated of that answer (`onFalse`). -/
   | none => false
   | some p =>
     (y.target == i && match Γ[i]? with
-      | some A => PositiveCertificates.checkUsing G images (memberSlice (tagSlice G) A ts !y.onFalse) y.type p
+      | some A => PositiveCertificates.checkUsing G images (memberSlotSlice G A ts !y.onFalse) y.type p
       | none => false) ||
     links.any fun g => !g.distinct && !g.alias && !g.optional && g.value == i && g.cell == y.target &&
       match Γ[g.cell]? with
       | some A => PositiveCertificates.checkUsing G images
-          (memberSlice (fun B t q => fieldSlice G B g.field t q) A ts !y.onFalse) y.type p
+          (memberFieldSlice G A g.field ts (!y.onFalse) y.type) y.type p
       | none => false
 
 /-- Whether a yield follows from a node's membership test (`memberYield`). -/
@@ -577,7 +593,15 @@ theorem memberYield_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
           (q := !y.onFalse) (ts := ts) (he.2 _ A hA)
           (fun ho => (hyes ho).imp fun t ⟨ht, hq'⟩ => ⟨ht, tagHolds_of_heap hq'⟩)
           (fun ho t ht => tagHolds_of_heap (hno ho t ht))
-        exact PositiveCertificates.acceptedUsing hc _ _ _ hs
+        -- Where every tag answered `false`, a covered label holds no value.
+        have hs' : meaning G (memberSlotSlice G A ts !y.onFalse) (m+1) W (ρ y.target) := by
+          unfold memberSlotSlice
+          cases hq : (!y.onFalse)
+          · rw [hq] at hs
+            exact BranchRefinement.uncovered_sound hs (fun t ht => tagHolds_of_heap (hno hq t ht))
+          · rw [hq] at hs
+            exact hs
+        exact PositiveCertificates.acceptedUsing hc _ _ _ hs'
       · cases hc
     · obtain ⟨g, hg, hc⟩ := List.any_eq_true.mp hc
       simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, beq_iff_eq] at hc
@@ -594,8 +618,18 @@ theorem memberYield_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
           (q := !y.onFalse) (ts := ts) (he.2 _ A hA)
           (fun ho => (hyes ho).imp fun t ⟨ht, hq'⟩ => ⟨ht, tagHolds_of_heap (hv ▸ hq')⟩)
           (fun ho t ht => tagHolds_of_heap (hv ▸ hno ho t ht))
+        -- Where every tag answered `false`, an arm the set covers holds no
+        -- object, and one it partly covers at a stable key is its rest.
+        have hs' : meaning G (memberFieldSlice G A g.field ts (!y.onFalse) y.type) (m+1) W (ρ g.cell) := by
+          unfold memberFieldSlice
+          cases hq : (!y.onFalse)
+          · rw [hq] at hs
+            exact BranchRefinement.uncoveredField_sound hs hh hobj hlk hu
+              (fun t ht => tagHolds_of_heap (hv ▸ hno hq t ht))
+          · rw [hq] at hs
+            exact hs
         rw [← hcell]
-        exact PositiveCertificates.acceptedUsing hp' _ _ _ hs
+        exact PositiveCertificates.acceptedUsing hp' _ _ _ hs'
       · cases hp'
 
 
