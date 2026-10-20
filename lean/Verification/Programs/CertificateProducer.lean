@@ -1323,7 +1323,8 @@ type, a type of the pool the test decides. Untrusted: the checker decides. -/
     (out k : HeapKnowledge.Knowledge) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=
   match PromiseCalls.promiseOf G e with
   | some (effect, a, T) =>
-    if out == HeapExpressionRules.ordinaryOutput k then
+    if out == HeapExpressionRules.ordinaryOutput k ||
+        out == HeapExpressionRules.withStable G Γ k (HeapExpressionRules.ordinaryOutput k) then
       pure [{ conditional := match effect.promise with | some (.guards _) => true | _ => false, target := a, type := T }]
     else pure []
   | none =>

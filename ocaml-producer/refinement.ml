@@ -180,6 +180,41 @@ let record_field ?(allow_optional=false) declarations t field =
     | Some (Union ts) -> ts <> [] && List.for_all (has seen) ts
     | _ -> false in
   has [] t
+(* Whether every record arm states the field a stable member (HOST-FAMILIES.md,
+   "Stable keys"): a required member its declaration document states stable. *)
+let stable_member declarations t field =
+  let rec has seen t = match (try Some (declared_head declarations seen t) with Json.Error _ -> None) with
+    | Some (Atoms (_::_ as atoms)) -> List.for_all (function
+        | Shape {fields;calls=[];elements=None;indexes=[]} ->
+          List.exists (fun (f:Semantic.field) -> f.name = Name field && f.stable && not f.optional) fields
+        | Named (id,args) when not (List.mem id seen) ->
+          (try has (id::seen) (definition declarations id args) with Json.Error _ -> false)
+        | _ -> false) atoms
+    | Some (Union ts) -> ts <> [] && List.for_all (has seen) ts
+    | _ -> false in
+  has [] t
+(* Whether a path entry survives a step that may write cells: each member
+   of the path stable in every arm of what its receiver holds, the root's
+   type or the refinement its prefix's entry states (Lean's stable links,
+   `HeapExpressionRules.withStable`). *)
+let stable_path declarations env n =
+  is_path n &&
+  match String.split_on_char '\001' (field_of n) with
+  | "" :: fields ->
+    (match List.assoc_opt (owner n) env with
+     | Some (Value root) ->
+       let rec walk t prefix = function
+         | [] -> true
+         | f :: rest ->
+           stable_member declarations t f &&
+           let here = prefix @ [f] in
+           let next = match List.assoc_opt (path_key (owner n) here) env with
+             | Some (Value t') -> Some t'
+             | _ -> (try Some (field_type [] declarations [] t (Name f)) with Json.Error _ -> None) in
+           (match next with Some t' -> walk t' here rest | None -> rest = [])
+       in walk root [] fields
+     | _ -> false)
+  | _ -> false
 (* A guard on a field of an immutable binding's object: what the field holds
    is known until a step may write it. *)
 (* The atoms of a field's type some of the known contents may be: a

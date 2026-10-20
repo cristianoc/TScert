@@ -3501,11 +3501,22 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const refused = check(file, project);
     const at = readFileSync(file, "utf8").lastIndexOf("n.name");
     assert.ok(refused.status === "unsupported" && refused.detail.includes(`at [${at},`), JSON.stringify(refused));
+    // Stable members through the same code (HOST-FAMILIES.md, "Stable
+    // keys"): every property member of the stand-in is stable, so a callee
+    // tested and read past a call is the tested value; the description
+    // excluding `Call.callee`, the one thing changed, refuses the read.
+    const stable = check(example("stable"), project);
+    assert.equal(stable.status, "verified", JSON.stringify(stable));
+    useFamilyDescriptionForTests({ ...strings,
+      stable: { excluded: [{ owner: "Call", member: "callee", text: "readonly callee: Unit;" }] } });
+    const excluded = check(example("stable"), project);
+    const read = readFileSync(example("stable"), "utf8").lastIndexOf("c.callee.name");
+    assert.ok(excluded.status !== "verified" && excluded.detail.includes(`at [${read},`), JSON.stringify(excluded));
   } finally {
     useFamilyDescriptionForTests(null);
     useHostInstallationForTests(null);
   }
-  process.stdout.write("string-tagged family: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing\n");
+  process.stdout.write("string-tagged family: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; a stable member's test read past a call, refused where the description excludes the member\n");
 }
 {
   // Each correction of the compiler API's family (COMPILER-API.md,
@@ -3893,4 +3904,39 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const unmarkedNeighbour = searchWith("stable-unmarked-neighbour", o => { delete o.host; delete o.stable; });
   assert.doesNotMatch(unmarkedNeighbour, decoder, unmarkedNeighbour);
   process.stdout.write("stable keys: an optional, an absent and an unmarked stable key refused by the decoder, each beside its decoded neighbour\n");
+}
+
+{
+  // Stable links (HOST-FAMILIES.md, "Stable links"): a read link through a
+  // member every arm states stable survives a call. The positive case's
+  // document with the tested member's stable key dropped from its shape,
+  // the one thing the rule reads, is refused in search with the case's own
+  // claims and in checking with its own evidence, at the read past the call;
+  // the honest document is accepted.
+  const artifacts = run("compiler-api-stable-link");
+  const forged = (file: string, keys: (stable: readonly string[]) => string[] | undefined): string => {
+    const fragment: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+    for (const d of must(fragment.declarations, "the declarations").definitions) {
+      const e = d.expression;
+      if (e?.k !== "object" || e.host === undefined || e.stable === undefined) continue;
+      if (!e.fields.some(f => f.name === "initializer")) continue;
+      const next = keys(e.stable);
+      if (next && next.length) e.stable = next;
+      else delete e.stable;
+    }
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    return path;
+  };
+  const honest = forged("stable-link-honest", s => [...s]);
+  const accepted = spawnSync(verifier, ["--check-source-claims", honest, join(artifacts, "claims.json"),
+    join(artifacts, "source.ts"), join(artifacts, "evidence.json")], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  const unstable = forged("forged-stable-link", s => s.filter(k => k !== "name"));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-stable-link", unstable);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /obligation at \[\d+,\d+\)/, searched.stdout + searched.stderr);
+  const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, unstable);
+  assert.match(checked, /refusal at \[\d+,\d+\)|obligation at \[\d+,\d+\)/, checked);
+  process.stdout.write("stable links: the document without the tested member's stable key refused in search and in checking, the honest one accepted\n");
 }

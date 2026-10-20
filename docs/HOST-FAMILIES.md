@@ -17,9 +17,8 @@ which reads the description; no part names a family. The
 implements [tag sets](#tag-sets), with their Lean proofs,
 [the family contract](#the-family-contract) in the front end, whose readings
 the checker reads by its ordinary rules, and
-[guard recognition](#guard-recognition); [stable members](#stable-members)
-are a design, which the pipeline does not implement, and its Lean
-obligations are unproved.
+[guard recognition](#guard-recognition) and
+[stable members](#stable-members), with their Lean proofs.
 
 ## The parts
 
@@ -736,8 +735,12 @@ The semantic lemmas are `HeapOk.stable_value_future` in
 [Heaps.lean](../lean/Verification/Semantics/Heaps.lean) and
 `HeapObservations.stable_frame` in
 [HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean).
-Their premises state stability as `CtrStable c v₀`; they prove the frame
-property independently of declaration decoding and expression certification.
+The checker applies the rule to every step: each step's output keeps the
+input's read links through a member every clause of the receiver's type
+states stable (`HeapExpressionRules.withStable`, proved by
+`withStable_sound` from `stable_frame`), the one place every expression
+checker passes through (`Checker.keepingStable`). The rule is
+[stable-link](PROGRAM-TYPING.md#checked-expression-postconditions).
 
 So $`v_0=\rho(y)`$, the value the link observed, and the location holds it
 in every later heap. The root $`x`$ is a slot, which no step rebinds; a
@@ -765,6 +768,29 @@ A stable member is the [effects vision](#guard-recognition) at its
 strongest: an operation whose result no step changes. A refinement of a
 stable path survives every call, as a fact of an immutable value does, so
 no call's footprint has to keep it.
+
+#### What a family supplies, what it gets
+
+Stable members are one mechanism, in which no family is named: the
+stable-contract notion, the clause's stable keys and their subtyping, the
+decoder's checks and the stable-link rule read no package, member or tag
+name. A family supplies, in its description, data alone:
+
+- the marker, which the decoder requires of a shape stating stable keys;
+- the stable-member rule's exclusions, each a property member its owner
+  declares, checked against the declaration as reviewed.
+
+It gets, for every required property member of its shapes the rule does
+not exclude, the tag included, a stable key in the declaration document,
+and with it the stable-link rule: a test of a path through such members
+holds past every call and write. A host view of the package, a node list,
+an optional or corrected member, and a member of a program record state
+none, by the same rule. The compiler API's description excludes no member
+(its allocating `jsDoc` is no member of any shape,
+[reading rule 1](COMPILER-API.md#reading-rules)); the
+[string-tagged stand-in](#a-string-tagged-stand-in) excludes none, and a
+run under a description excluding `Call.callee` refuses the read its run
+without the exclusion verifies (`pipeline/test.mts`).
 
 #### Limits
 
@@ -951,8 +977,9 @@ The description of `typescript` 7.0.2's syntax trees
   `base` `NodeBase` (`JSTypeAliasDeclaration`, `JSImportDeclaration`);
 - corrections: the [corrections](COMPILER-API.md#corrections) table;
 - marker: `"RemoteNode"`;
-- stable members: every required property member of a shape; `jsDoc`,
-  which allocates, is no member (reading rule 1); checked by C4;
+- stable members: every required property member of a shape, no
+  exclusion; `jsDoc`, which allocates, is no member (reading rule 1);
+  checked by C4;
 - guards: the table of the exports of `typescript/unstable/ast` whose
   functions, in `dist/ast/is.generated.js` and `dist/ast/is.js`, meet the
   recognition contract; `isLeftHandSideExpression` and `isUnaryExpression`,
@@ -971,10 +998,12 @@ lists `isName`, an equality, and `isExpression`, through a helper of its
 tag, each activated over the stand-in's own modules; `isNameLoosely`, whose
 answer depends on an option argument, takes two parameters and has no
 entry. Each listed guard's call is the membership test of the family's
-string constants and narrows both edges; the unlisted one narrows nothing
-(`pipeline/string-family-fixture-project/`, whose `node_modules/typescript`
-links the stand-in, so that Node and TypeScript resolve its specifier
-alike).
+string constants and narrows both edges; the unlisted one narrows nothing.
+Its description states no stable-member exclusion, so a callee tested and
+read past a call verifies; under one excluding `Call.callee` the same read
+is refused (`pipeline/string-family-fixture-project/`, whose
+`node_modules/typescript` links the stand-in, so that Node and TypeScript
+resolve its specifier alike).
 
 ### A second instance: a readonly Babel interface
 

@@ -2968,6 +2968,22 @@ It computes a guaranteed output, not an assumed postcondition:
 | Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
+Every step keeps, past its result, the read links of its input through a
+member every clause of the receiver's type states a stable key
+([stable keys](POSITIVE-TYPES.md#records)), whatever the step: a call, a
+write, a closure's run. On normal return the location holds its one value
+in every heap a run reaches (`stable_frame`), so the link holds there:
+
+```math
+\frac{x.f\mapsto y\in\Sigma\quad \forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)\quad
+      \Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\Sigma'}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\ \Sigma',\ x.f\mapsto y}\ \textsf{stable-link}
+```
+
+(`withStable_sound`, applied by `Checker.keepingStable`). An exceptional
+edge keeps none: a handler's facts are `handlerFacts`, the heap-independent
+part of the input.
+
 `typedRead_sound`, `slicedRead_sound`, `linkedRead_sound`, `read_sound`, `reading_sound` (by
 `read_frame`), `alloc_sound` (with `merge_alloc_sound` and
 `store_alloc_sound`) and `write_sound` prove the read, allocation and write

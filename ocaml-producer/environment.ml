@@ -82,8 +82,8 @@ let fact ?(answer = false) env key contract t =
 let widen_locals ?(only = fun _ -> true) env = List.map (fun (n,b) -> match b with
   | Local (contract,_) when only n -> n,Local (contract,contract)
   | _ -> n,b) env
-let forget ?only env = List.filter_map (fun (n,b) -> match b,only with
-  | _,None when is_field n -> None
+let forget ?only ?(keep = fun _ -> false) env = List.filter_map (fun (n,b) -> match b,only with
+  | _,None when is_field n -> if keep n then Some (n,b) else None
   | Storage (contract,_),None -> Some (n,cell contract)
   | Storage (contract,_),Some only when only n -> Some (n,cell contract)
   | _ -> Some (n,b)) env

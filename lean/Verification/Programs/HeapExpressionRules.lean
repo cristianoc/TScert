@@ -1552,7 +1552,120 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       · contradiction
     · contradiction
 
-@[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
+/-! ### Stable links (HOST-FAMILIES.md, "Stable links")
+
+A read link through a member every clause of its receiver's type states a
+stable key holds through every step: the location's contract admits one
+value, which every heap a run reaches holds there. -/
+
+/-- Every clause of `A` states `fld` a stable key. -/
+def stableField (G : NormalGraph ι) (A : Ty ι) (fld : PropKey) : Bool :=
+  G.plainTy A && !(expand G A).isEmpty && (expand G A).all fun c => c.stableKeys.contains fld
+
+theorem stableField_at {G : NormalGraph ι} {A : Ty ι} {fld : PropKey} {n W v}
+    (hs : stableField G A fld = true) (hv : meaning G A n W v) :
+    ∃ (flds : List (PropKey × Nat)) (oid l : Nat) (ct : Ctr n) (value : Val),
+      v = .objAt flds .absent oid ∧ flds.lookup fld = some l ∧
+        lookup W l = some ct ∧ CtrStable ct value := by
+  simp only [stableField, Bool.and_eq_true, List.all_eq_true] at hs
+  obtain ⟨⟨hplain, -⟩, hall⟩ := hs
+  obtain ⟨c, hc, hsem, -⟩ := (expand_sem G A hplain n W v).mp hv
+  exact semWithArgs_stable hsem (List.contains_iff_mem.mp (hall c hc))
+
+/-- The read links a step keeps through its every effect: those through a
+member every clause of the receiver's type states stable. -/
+def stableLinks (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : HeapLinks.Links :=
+  k.links.filter fun g => !g.alias && !g.distinct && !g.optional &&
+    match Γ[g.cell]? with
+    | some A => stableField G A g.field
+    | none => false
+
+/-- A step's output with the input's stable links, past the result slot,
+each once. -/
+def withStable (G : NormalGraph ι) (Γ : List (Ty ι)) (k out : Knowledge) : Knowledge :=
+  { out with links := out.links ++
+      (HeapLinks.pull (stableLinks G Γ k) (fun i => [i+1])).filter fun g => !out.links.contains g }
+
+/-- What a kept link says of a heap. -/
+private def LinkAt (ρ : Env) (h : Heap) (g : HeapLinks.Link) : Prop :=
+  ∃ flds c oid l, ρ g.cell = .objAt flds c oid ∧ flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value)
+
+private theorem stable_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {ρ n W h t}
+    {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h) :
+    ∀ (S : HeapLinks.Links), (∀ g ∈ S, g ∈ stableLinks G Γ k) →
+      SafePost (excOf G) T Q n W h t →
+      SafePost (excOf G) T (fun h' v => Q h' v ∧ ∀ g ∈ S, LinkAt ρ h' g) n W h t := by
+  intro S
+  induction S with
+  | nil =>
+    intro _ hs
+    exact consequence (fun _ _ _ h => h) (fun _ _ hq => ⟨hq, fun _ hg => by cases hg⟩) hs
+  | cons g S ih =>
+    intro hS hs
+    have rest := ih (fun x hx => hS x (List.mem_cons_of_mem _ hx)) hs
+    have hg := hS g List.mem_cons_self
+    simp only [stableLinks, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at hg
+    obtain ⟨hmem, ⟨⟨ha, hd⟩, ho⟩, hty⟩ := hg
+    have hlink := hk.2.2 g hmem
+    simp only [hd, ha, ho, Bool.false_eq_true, if_false] at hlink
+    obtain ⟨flds, c, oid, l, hcell, hl, hv⟩ := hlink
+    split at hty
+    · rename_i A hA
+      obtain ⟨flds', oid', l', ct, value, hcell', hl', hw, hc⟩ := stableField_at hty (he.2 g.cell A hA)
+      rw [hcell] at hcell'
+      cases hcell'
+      rw [hl] at hl'
+      cases hl'
+      cases n with
+      | zero => trivial
+      | succ n =>
+        have hval : h[l]? = some value := hh.stable_value (Nat.zero_lt_succ n) hw hc
+        rw [hv] at hval
+        cases hval
+        refine consequence (fun _ _ _ h => h) (fun h' u hq => ?_) (stable_frame hw hc hh rest)
+        obtain ⟨⟨hq, hall⟩, hl'⟩ := hq
+        refine ⟨hq, fun x hx => ?_⟩
+        rcases List.mem_cons.mp hx with rfl | hx
+        · exact ⟨flds, _, oid, l, hcell, hl, hl'⟩
+        · exact hall x hx
+    · cases hty
+
+/-- **Stable links survive every step.** Whatever a step's postcondition, its
+input's stable links hold of every heap it returns in. -/
+theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowledge} {ρ n W h t} {T : Fam}
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
+    (hs : SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h t) :
+    SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds (withStable G Γ k out) (push v ρ) h') n W h t := by
+  refine consequence (fun _ _ _ h => h) (fun h' v hq => ?_)
+    (stable_frames he hk hh (stableLinks G Γ k) (fun _ hg => hg) hs)
+  obtain ⟨hout, hall⟩ := hq
+  have hS : HeapLinks.Holds (stableLinks G Γ k) ρ h' := by
+    intro g hg
+    have hg' := hg
+    simp only [stableLinks, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at hg'
+    obtain ⟨-, ⟨⟨ha, hd⟩, ho⟩, -⟩ := hg'
+    simp only [hd, ha, ho, Bool.false_eq_true, if_false]
+    exact hall g hg
+  have hpull := HeapLinks.pull_holds (pre := fun i => [i+1]) (τ := push v ρ) hS
+    (fun i j hj => by simp at hj; subst hj; rfl)
+  refine ⟨hout.1, hout.2.1, fun g hg => ?_⟩
+  rcases List.mem_append.mp hg with hg | hg
+  · exact hout.2.2 g hg
+  · exact hpull g (List.mem_filter.mp hg).1
+
+/-- A checker whose every step also keeps its input's stable links. -/
+@[nospecialize] def Checker.keepingStable [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    (base : Checker G images) : Checker G images where
+  run := fun j k e codes => (base.run j k e codes).map (withStable G j.context k)
+  select := fun j k e codes => (base.select j k e codes).map (withStable G j.context k)
+  sound := by
+    intro j k e out codes hc hcodes ρ n W h he hk hw hh
+    simp only [CheckResult.map, Option.map_eq_some_iff] at hc
+    obtain ⟨out0, h0, rfl⟩ := hc
+    exact withStable_sound he hk hh (base.sound h0 hcodes he hk hw hh)
+
+/-- The steps' own rules, without the stable links every step keeps. -/
+@[nospecialize] def Checker.steps [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) : Checker G images where
   run := fun j k e codes => checkStepResult G images j k e codes
   select := fun j k e codes => checkStepResult G images j k e codes (tree := false)
@@ -1560,9 +1673,14 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     intro j k e out codes hc hcodes ρ n W h he hk hw hh
     exact checkStep_sound hc hcodes he hk hw hh
 
+/-- The steps' rules, each keeping its input's stable links. -/
+@[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) : Checker G images :=
+  (Checker.steps G images).keepingStable
+
 /-- Descriptor-aware ordinary expressions use the same heap-forgetting rule
 as ordinary calls. Other effect rules retain their existing checks. -/
-@[nospecialize] def Checker.withSubtyping [DecidableEq ι] (G : NormalGraph ι)
+@[nospecialize] def Checker.subtypingSteps [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (subtyping : BodySubtyping G) : Checker G images where
   run := fun j k step codes => match step with
     | .ordinary e =>
@@ -1585,5 +1703,10 @@ as ordinary calls. Other effect rules retain their existing checks. -/
         exact ordinary_sound typed he hk hw hh
       · cases checked
     | _ => exact checkStep_sound checked hcodes he hk hw hh
+
+/-- Descriptor-aware steps, each keeping its input's stable links. -/
+@[nospecialize] def Checker.withSubtyping [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (subtyping : BodySubtyping G) : Checker G images :=
+  (Checker.subtypingSteps G images subtyping).keepingStable
 
 end Verification.HeapExpressionRules

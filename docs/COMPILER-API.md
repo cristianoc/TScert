@@ -1088,15 +1088,17 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
 - `invalid-compiler-api-guard-argument`: `isIdentifier(next())` with `next`
   counting its calls, the count after the guard asserted 1 in a positive
   case, and a forged claim reading the argument twice refused;
-- stable paths, the controls of [stable members](HOST-FAMILIES.md#implementation-plan)
-  (step 4): positive, `ts.isIdentifier(m.name) && m.name.text`, the same
-  across a statement, a test of `node.operand` read past an unrelated call,
-  and a `let` root's path read before its next write; refused: a readonly
-  program record's path past a call or a write through an alias; a root
-  written directly and from a closure the program runs between test and
-  read; a mixed path past its first program-record segment; a segment read
-  off a `Type` past a call; forged claims stating the refined read before
-  the test and after the root's write;
+- stable paths ([stable members](HOST-FAMILIES.md#stable-members)):
+  positive `compiler-api-path-witness`, guard and kind tests on a path and
+  the statement split, and `compiler-api-stable-link`, a path's test read
+  past an unrelated call, past an external call receiving the node and past
+  a write of a program record; refused `invalid-compiler-api-stable-mixed`
+  (an arm of a program record), `invalid-compiler-api-stable-record` (a
+  mixed path past its first program-record member), both run under Node,
+  `invalid-compiler-api-stable-catch` (a handler) and
+  `invalid-compiler-api-stable-view` (a host view's member past a call);
+  the case's document without the tested member's stable key refused in
+  search and in checking; malformed stable keys refused by the decoder;
 - host provenance, each refused: a node assigned to a variable of a mutable
   structural type and written; `{ ...node }` and `Object.assign({}, node)`
   passed to `getTypeAtLocation`; a node widened to `unknown`, refined by

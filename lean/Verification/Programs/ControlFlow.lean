@@ -264,7 +264,9 @@ expression's; without one, by those of a slot read and of a tag test. -/
   match PromiseCalls.promiseOf G c.expression with
   | some (effect, a, T) => checkTreeUsing G images c.expression codes &&
       PromiseCalls.promiseYields G (result c) effect a T c.yields &&
-      decide (c.output = HeapExpressionRules.ordinaryOutput c.knowledge)
+      (decide (c.output = HeapExpressionRules.ordinaryOutput c.knowledge) ||
+        decide (c.output = HeapExpressionRules.withStable G (entry c) c.knowledge
+          (HeapExpressionRules.ordinaryOutput c.knowledge)))
   | none => c.yields.all (PromiseCalls.yieldFollows G images (entry c) c.implies c.knowledge.links
       (claim c.expression).term)
 
@@ -638,10 +640,15 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     unfold checkYields at hy
     split at hy
     · rename_i effect a T hp
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at hy
+      simp only [Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq] at hy
       have hs := PromiseCalls.promiseCall_sound hp hy.1.1 hcodes hy.1.2 he hf hw hh
-      rw [hy.2]
-      simpa only [entry, result, hterm] using hs
+      rcases hy.2 with ho | ho
+      · rw [ho]
+        simpa only [entry, result, hterm] using hs
+      · rw [ho]
+        have hs' := HeapExpressionRules.withStable_sound (Γ := entry c) (out := HeapExpressionRules.ordinaryOutput c.knowledge)
+          he hf hh (by simpa only [entry] using hs)
+        simpa only [entry, result, hterm] using hs'
     · have ht := checker.sound hc.1.1.2 hcodes he hf hw hh
       have ht' := PromiseCalls.yieldFollows_sound hy he hi hh hf.2.2 ht
       simpa only [entry, result, hterm] using ht'

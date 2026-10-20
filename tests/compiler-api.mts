@@ -365,6 +365,40 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   console.log(`corrections: the ${corrected.length} corrected members' fixtures return undefined under Node`);
 }
 
+// Stable links under Node (HOST-FAMILIES.md, "Stable links"): where a path's
+// first member is a program record's, a call between the test and the read
+// may replace it, and the read returns `undefined` where a string is
+// promised. Each fixture is called with program objects at the declared
+// shapes' members the guard reads: an identifier's `kind`, and another's.
+{
+  const dir = runDirectory("tscert-stable-");
+  mkdirSync(join(dir, "node_modules"));
+  symlinkSync(root, join(dir, "node_modules", hostPackage.name));
+  const load = async (name: string): Promise<(...args: unknown[]) => unknown> => {
+    const fixture = join(dir, `${name}.ts`);
+    copyFileSync(resolve(import.meta.dirname, `../pipeline/examples/${name}.ts`), fixture);
+    const module: unknown = await import(pathToFileURL(fixture).href);
+    assert.ok(isNamespace(module), `${name} is a module`);
+    const nameText: unknown = Reflect.get(module, "nameText");
+    const callable = (f: unknown): f is (...args: unknown[]) => unknown => typeof f === "function";
+    assert.ok(callable(nameText), `${name} exports nameText`);
+    return nameText;
+  };
+  const kinds: unknown = Reflect.get(ast, "SyntaxKind");
+  assert.ok(isNamespace(kinds), "the package exports SyntaxKind");
+  const identifier: unknown = Reflect.get(kinds, "Identifier");
+  const computed: unknown = Reflect.get(kinds, "ComputedPropertyName");
+  const mixed = await load("invalid-compiler-api-stable-mixed");
+  const named: { name: object } = { name: { kind: identifier, text: "a" } };
+  assert.equal(mixed(named, () => { named.name = { kind: computed }; }), undefined,
+    "invalid-compiler-api-stable-mixed: the call replaces the record's name");
+  const record = await load("invalid-compiler-api-stable-record");
+  const holder: { node: object } = { node: { name: { kind: identifier, text: "a" } } };
+  assert.equal(record(holder, () => { holder.node = { name: { kind: computed } }; }), undefined,
+    "invalid-compiler-api-stable-record: the call replaces the holder's node");
+  console.log("stable links: a record's member and a mixed path's first member replaced by the call, each read returns undefined under Node");
+}
+
 // The guards' fixtures under Node (HOST-FAMILIES.md, "Guard recognition"):
 // `invalid-compiler-api-js-alias` returns 345 on a JSDoc `@typedef`, which
 // `isTypeAliasDeclaration` accepts; `compiler-api-guard-argument` evaluates
