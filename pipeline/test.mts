@@ -3420,7 +3420,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const project = tsconfigOf(join(import.meta.dirname, "family-fixture-project"));
   const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
   useHostInstallationForTests(join(import.meta.dirname, "family-fixture"));
-  useFamilyDescriptionForTests({ ...compilerApiFamily, table: [{ rule: "literal" }], corrections: [] });
+  useFamilyDescriptionForTests({ ...compilerApiFamily, table: [{ rule: "literal" }], corrections: [], allocating: [] });
   try {
     const kept = check(example("family-fixture-optional-method"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
@@ -3457,6 +3457,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     tag: { field: "type", primitive: "string", constants: { enum: "SyntaxKind" } },
     table: [{ rule: "literal" }],
     corrections: [],
+    allocating: [],
     stable: { excluded: [] },
     guards: {
       entryPoint: "./ast",
@@ -3512,11 +3513,36 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const excluded = check(example("stable"), project);
     const read = readFileSync(example("stable"), "utf8").lastIndexOf("c.callee.name");
     assert.ok(excluded.status !== "verified" && excluded.detail.includes(`at [${read},`), JSON.stringify(excluded));
+    // The tag's stability follows its declarations, a residual's too: with
+    // `Literal.type` excluded, the residual standing for `Literal` states no
+    // stable tag, while `Name`'s shape keeps its own.
+    useFamilyDescriptionForTests({ ...strings,
+      stable: { excluded: [{ owner: "Literal", member: "type", text: "readonly type: SyntaxKind.Literal;" }] } });
+    const tagged = check(example("guards"), project);
+    assert.equal(tagged.status, "verified", JSON.stringify(tagged));
+    const shapes = must(readFragmentFile(join(tagged.artifacts, "fragment.json")).declarations, "the declarations").definitions
+      .flatMap(d => d.expression?.k === "object" && d.expression.host !== undefined ? [{ name: d.declaration.name, term: d.expression }] : []);
+    const residuals = shapes.filter(s => s.name.includes(" tags "));
+    assert.ok(residuals.length > 0, "a residual arm");
+    for (const r of residuals) assert.ok(!(r.term.stable ?? []).includes("type"), `${r.name}: no stable tag over an excluded one`);
+    const name = must(shapes.find(s => s.name === "Name"), "the Name shape");
+    assert.ok((name.term.stable ?? []).includes("type"), "Name's own tag stays stable");
+    // An allocating member (HOST-FAMILIES.md, "The family contract"): the
+    // description listing `Unit.notes`, the one thing changed, omits it from
+    // every shape, so its read is refused; without the entry it verifies.
+    useFamilyDescriptionForTests(strings);
+    const plain = check(example("notes"), project);
+    assert.equal(plain.status, "verified", JSON.stringify(plain));
+    useFamilyDescriptionForTests({ ...strings,
+      allocating: [{ owner: "Unit", member: "notes", text: "readonly notes: readonly string[];" }] });
+    const omitted = check(example("notes"), project);
+    const notesAt = readFileSync(example("notes"), "utf8").lastIndexOf("u.notes");
+    assert.ok(omitted.status !== "verified" && omitted.detail.includes(`at [${notesAt},`), JSON.stringify(omitted));
   } finally {
     useFamilyDescriptionForTests(null);
     useHostInstallationForTests(null);
   }
-  process.stdout.write("string-tagged family: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; a stable member's test read past a call, refused where the description excludes the member\n");
+  process.stdout.write("string-tagged family: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
 }
 {
   // Each correction of the compiler API's family (COMPILER-API.md,

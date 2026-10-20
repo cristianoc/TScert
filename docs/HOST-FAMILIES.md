@@ -778,10 +778,12 @@ name. A family supplies, in its description, data alone:
 
 - the marker, which the decoder requires of a shape stating stable keys;
 - the stable-member rule's exclusions, each a property member its owner
-  declares, checked against the declaration as reviewed.
+  declares, checked against the declaration as reviewed;
+- its allocating members, omitted from every shape and checked likewise.
 
 It gets, for every required property member of its shapes the rule does
-not exclude, the tag included, a stable key in the declaration document,
+not exclude, a stable key in the declaration document; the tag of a
+residual is stable where the tag member of every shape it stands for is,
 and with it the stable-link rule: a test of a path through such members
 holds past every call and write. A host view of the package, a node list,
 an optional or corrected member, and a member of a program record state
@@ -878,6 +880,9 @@ It states:
   - `base`: a named declaration;
 - **corrections:** the audited members the declarations state required and
   the runtime leaves absent, each read as optional, with its text;
+- **allocating members:** the members whose read allocates, each omitted
+  from every shape, with its text; no ordinary read or read link reaches
+  one, since two reads of it give two values;
 - **marker:** the value $`m_F`$ of `[[host]]`;
 - **stable members:** every required property member of a shape, the tag
   included, but the listed exclusions, with the regression check that reads
@@ -977,9 +982,10 @@ The description of `typescript` 7.0.2's syntax trees
   `base` `NodeBase` (`JSTypeAliasDeclaration`, `JSImportDeclaration`);
 - corrections: the [corrections](COMPILER-API.md#corrections) table;
 - marker: `"RemoteNode"`;
+- allocating members: `Node.jsDoc`, which builds a fresh array on each
+  read (reading rule 1);
 - stable members: every required property member of a shape, no
-  exclusion; `jsDoc`, which allocates, is no member (reading rule 1);
-  checked by C4;
+  exclusion; checked by C4;
 - guards: the table of the exports of `typescript/unstable/ast` whose
   functions, in `dist/ast/is.generated.js` and `dist/ast/is.js`, meet the
   recognition contract; `isLeftHandSideExpression` and `isUnaryExpression`,
@@ -1001,7 +1007,9 @@ entry. Each listed guard's call is the membership test of the family's
 string constants and narrows both edges; the unlisted one narrows nothing.
 Its description states no stable-member exclusion, so a callee tested and
 read past a call verifies; under one excluding `Call.callee` the same read
-is refused (`pipeline/string-family-fixture-project/`, whose
+is refused, under one excluding `Literal.type` no residual standing for
+`Literal` states its tag stable, and under one listing `Unit.notes` as
+allocating a read of it is refused (`pipeline/string-family-fixture-project/`, whose
 `node_modules/typescript` links the stand-in, so that Node and TypeScript
 resolve its specifier alike).
 

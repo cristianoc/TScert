@@ -7,6 +7,8 @@ export { SyntaxKind };
 export interface Unit {
   readonly type: SyntaxKind;
   readonly start: number;
+  /** A fresh array on each read: the stand-in's allocating member. */
+  readonly notes: readonly string[];
 }
 export interface Name extends Unit {
   readonly type: SyntaxKind.Name;

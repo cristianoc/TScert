@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { allocatingMembers, compilerApiFamily, hostPackage } from "../tools/compiler-api.mts";
+import { compilerApiFamily, hostPackage } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { familyTable, type FamilyGraph, type FlatMember, type TagValue } from "../tools/host-families.mts";
 import { syntax as ts } from "../tools/syntax.mts";
@@ -91,7 +91,6 @@ const graph: FamilyGraph = {
       n.typeName.text === parameter) || (n.forEachChild(visit) ?? false);
     return visit(m);
   },
-  omitted: (owner, name) => allocatingMembers.some((m) => m.owner === owner && m.name === name),
   fail: (message) => { throw Error(message); },
 };
 const table = familyTable(compilerApiFamily, graph);
