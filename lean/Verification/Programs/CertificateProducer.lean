@@ -336,9 +336,17 @@ matching. Only the common comparison operation validates these choices. -/
             if rest == Q then [[(l, κ₀, Q)]] else [[(l, κ₀, rest)], [(l, κ₀, Q)]]
           | _ => [[]]
         | none => [[]]
+      -- One patch of every operand's first proposal, and one more for each
+      -- operand with a second, that operand's second beside the others'
+      -- first: linear in the operands, each distinct once.
       let product (operands : List (List ι × List ι)) : List (InstTable ι) :=
-        operands.foldl (fun patches (P, Q) =>
-          patches.flatMap fun patch => (respell P Q).map (patch ++ ·)) [[]]
+        let choices := operands.map fun (P, Q) => respell P Q
+        let indexed := choices.zip (List.range choices.length)
+        let primary := choices.flatMap fun c => c.headD []
+        let swapped := indexed.filterMap fun (c, i) => match c with
+          | [_, second] => some (indexed.flatMap fun (d, j) => if j == i then second else d.headD [])
+          | _ => none
+        (primary :: swapped).eraseDups
       let fixedPatch (p q : Arrow (List ι)) : List (InstTable ι) :=
         product <| if receiverUniverse G p.receiver q.receiver then
           (p.result :: p.arguments).zip (q.result :: q.arguments)
@@ -350,14 +358,14 @@ matching. Only the common comparison operation validates these choices. -/
           (q.receiver :: q.arguments.2 :: q.result :: q.arguments.1)
       -- Each target chooses one overload. Images of an unused overload need
       -- not equal that target's operands; the checker validates each choice.
-      let patches := L.foldl (fun patches q => patches.flatMap fun patch =>
+      let patches := L.foldl (fun patches q => (patches.flatMap fun patch =>
         s.signatures.flatMap fun p =>
           if p.arguments.length == q.arguments.length && p.effect.covers q.effect then
-            (fixedPatch p q).map (patch ++ ·) else []) ([[]] : List (InstTable ι))
-      let patches := M.foldl (fun patches q => patches.flatMap fun patch =>
+            (fixedPatch p q).map (patch ++ ·) else []).eraseDups) ([[]] : List (InstTable ι))
+      let patches := M.foldl (fun patches q => (patches.flatMap fun patch =>
         s.variadic.flatMap fun p =>
           if p.arguments.1.length == q.arguments.1.length && p.effect.covers q.effect then
-            (restPatch p q).map (patch ++ ·) else []) patches
+            (restPatch p q).map (patch ++ ·) else []).eraseDups) patches
       c :: (patches.filter (! ·.isEmpty)).map fun patch =>
         ⟨patch.eraseDups ++ table, θs, [], []⟩
   syntactic ++ (matchedInstance G fuel s L M).toList
