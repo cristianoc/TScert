@@ -342,8 +342,18 @@ the package as Node loads it, once per process, reading the package's
 modules with a compiler of its own. The table's conditions must be the ones
 Node enables in the running process, read through a resolve hook, and no
 flag may preserve symlinks. The entry point, by the package's name,
-resolves through Node's own resolver to the recorded module, which Node
-then loads, in the front end's own process: each entry's export is a
+resolves through Node's own resolver to the recorded module. Before loading
+it, the front end reads and parses its complete executable closure from disk.
+Every static import and export-from, including its attributes, resolves from
+its importing module through Node's resolver; errors, queries and fragments
+refuse the table. The module set, SHA-256 file digests and binding edges
+(importing module, local name, target module, exported name, attributes and
+import/export form) equal the table's reviewed closure. Dynamic imports,
+require/createRequire, import.meta, await and eval/Function capabilities are
+outside the recorded loading forms and refused. The file digests bind other
+indirect execution to the reviewed code. A closure mismatch leaves every
+module unevaluated by activation. Over the unchanged installation, Node then
+loads the entry in the front end's own process: each entry's export is a
 function whose text is the entry's, the very function the recorded module
 exports, which declares it with that text and assigns it nowhere. The
 function's dependency closure, each free name a function of its module or
@@ -722,6 +732,12 @@ bind them to the reviewed files.
   the verifying process's Node; F3 assumes the program runs under the same
   Node configuration (its conditions), through ES module resolution, over
   the unchanged installation, with no hook or loader altering resolution.
+  The installation is trusted code: the front end executes it to parse the
+  program before activation runs. Activation establishes that the reviewed
+  table describes that installation as Node loads it, a consistency check
+  under these assumptions; it is no defence against an installation
+  modified before the front end starts, or a process whose loaded modules
+  differ from their files.
 - **F5 (unwritten constants).** The enum objects and the module bindings in
   the guard table's recorded dependency closure are never written after the
   package loads, by the program or by external code.

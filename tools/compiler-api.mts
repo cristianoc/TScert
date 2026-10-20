@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, relative, sep } from "node:path";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import type { FamilyDescription, GuardEntry, GuardTable } from "./host-families.mts";
+import { guardClosure } from "./guard-closure.mts";
 import { compilerApiGuards } from "./compiler-api-guards.mts";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
@@ -384,7 +385,9 @@ function loadedGuards(table: GuardTable, root: string): Loaded | null {
   } });
   const parse = (path: string, text: string): ts.SourceFile => {
     contents.set(path, text);
-    const file = api.updateSnapshot({ openFiles: [path] }).getDefaultProjectForFile(path)?.program.getSourceFile(path);
+    const program = api.updateSnapshot({ openFiles: [path] }).getDefaultProjectForFile(path)?.program;
+    if (program?.getSyntacticDiagnostics(path).length) throw Error(`invalid module syntax in ${path}`);
+    const file = program?.getSourceFile(path);
     if (!file) throw Error(`the compiler produced no tree for ${path}`);
     return file;
   };
@@ -483,6 +486,7 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   const urlOf = (module: string): string => pathToFileURL(join(realRoot, module)).href;
   const modules = new Map<string, Record<string, unknown>>();
   const load = (module: string): Record<string, unknown> | null => {
+    if (!Object.hasOwn(table.closure.files, module)) return null;
     const known = modules.get(urlOf(module));
     if (known) return known;
     try {
@@ -503,8 +507,6 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   };
   const entryPoint = table.entryPoint === "." ? name : `${name}${table.entryPoint.slice(1)}`;
   if (resolveSpecifier("package.json", entryPoint) !== table.entryModule) return null;
-  const entryLoaded = load(table.entryModule);
-  if (!entryLoaded) return null;
   const trees = new Map<string, ts.SourceFile>();
   const tree = (module: string): ts.SourceFile => {
     const known = trees.get(module);
@@ -513,6 +515,21 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
     trees.set(module, parsed);
     return parsed;
   };
+  // Complete executable closure, checked before Node evaluates any module.
+  // The installation stays unchanged between this check and loading (T2).
+  try {
+    const closure = guardClosure(table.entryModule, module => readBytes(join(realRoot, module)),
+      (module, text) => {
+        const parsed = parse(join(realRoot, module), text);
+        trees.set(module, parsed);
+        return parsed;
+      }, resolveSpecifier);
+    if (!closure || JSON.stringify(closure) !== JSON.stringify(table.closure)) return null;
+  } catch { return null; }
+  // Post-load checks may only load modules in the checked closure, including
+  // when a malformed table names a different declaring module or helper.
+  const entryLoaded = load(table.entryModule);
+  if (!entryLoaded) return null;
   // The names a module assigns anywhere: an assignment, compound or not, or
   // an update of a plain name.
   const assignedIn = new Map<string, Set<string>>();

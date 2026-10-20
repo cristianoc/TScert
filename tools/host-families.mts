@@ -8,6 +8,7 @@
  * them, through `FamilyGraph`, which the declaration reader supplies from
  * the compiler's resolution; the reader then reads each member the reading
  * keeps by its ordinary rules. */
+import type { GuardClosure } from "./guard-closure.mts";
 import { createHash } from "node:crypto";
 import type { InterfaceDeclaration, TypeElement, TypeNode } from "typescript/unstable/ast";
 
@@ -55,7 +56,8 @@ export type GuardEntry = {
   text: string;
 };
 /** A family's guard table: the entry point and the resolution conditions
- * its entries were resolved under, the entry point's module, the helpers'
+ * its entries were resolved under, the entry point's module and complete
+ * executable closure (file digests and static edges), the helpers'
  * texts, the entries, and
  * the guards the package declares that the recognition contract excludes,
  * each with its reason. */
@@ -63,6 +65,7 @@ export type GuardTable = {
   entryPoint: string;
   conditions: readonly string[];
   entryModule: string;
+  closure: GuardClosure;
   helpers: { readonly [helper: string]: string };
   guards: readonly GuardEntry[];
   excluded: readonly (readonly [string, string])[];

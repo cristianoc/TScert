@@ -75,6 +75,10 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
   const one = (entry: GuardEntry): GuardTable => ({ ...compilerApiGuards, guards: [entry] });
   const mismatches: [string, GuardTable][] = [
     ["another entry module", { ...compilerApiGuards, entryModule: "dist/ast/is.js" }],
+    ["an executable module less", { ...compilerApiGuards, closure: { ...compilerApiGuards.closure, files: {} } }],
+    ["an executable edge less", { ...compilerApiGuards, closure: { ...compilerApiGuards.closure, edges: compilerApiGuards.closure.edges.slice(1) } }],
+    ["another executable digest", { ...compilerApiGuards, closure: { ...compilerApiGuards.closure,
+      files: { ...compilerApiGuards.closure.files, [compilerApiGuards.entryModule]: "0".repeat(64) } } }],
     ["other conditions", { ...compilerApiGuards, conditions: ["browser"] }],
     ["another module", one({ ...identifier, module: "dist/ast/is.js" })],
     ["another text", one({ ...identifier, text: identifier.text.replace("===", "!==") })],
@@ -149,6 +153,26 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
     assert.equal(activeGuards(compilerApiGuards, dir)?.size === compilerApiGuards.guards.length, nodes,
       `${what}: activated exactly where Node resolves the reviewed module`);
   }
+  // Each rejected activation must leave the unchecked module unevaluated.
+  for (const form of ["manifest redirect", "extra static import", "dynamic import"] as const) {
+    const dir = copy(form === "manifest redirect"
+      ? imports({ "#enums/syntaxKind": "./dist/effect.js" }) : m => m);
+    const marker = join(dir, "marker");
+    writeFileSync(join(dir, "dist/effect.js"),
+      'import { writeFileSync } from "node:fs";\n' +
+      `writeFileSync(${JSON.stringify(marker)}, "ran");\n` +
+      'export { SyntaxKind } from "./enums/syntaxKind.js";\n');
+    if (form !== "manifest redirect") {
+      const path = join(dir, "dist/ast/ast.js");
+      writeFileSync(path, readFileSync(path, "utf8") + (form === "extra static import"
+        ? '\nimport "../effect.js";\n' : '\nimport("../effect.js");\n'));
+    }
+    assert.equal(activeGuards(compilerApiGuards, dir), null, `${form}: no table`);
+    // Dynamic import's evaluation is asynchronous; give it a turn to run.
+    await new Promise<void>(done => setTimeout(done, 50));
+    assert.ok(!existsSync(marker), `${form}: unchecked top-level code did not run`);
+  }
+  console.log("pre-load closure: manifest redirect, extra static import and dynamic import refused; all three markers absent");
   assert.equal(activeGuards({ ...compilerApiGuards, conditions: ["node", "import", "default"] }), null,
     "conditions other than the running Node's: no table");
   // Symlink-preserving resolution, by a flag or NODE_OPTIONS, activates no

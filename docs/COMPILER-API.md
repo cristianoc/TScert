@@ -931,7 +931,18 @@ the corpus runs are regression evidence, not proofs.
   the tag the only member read, no other effect, and an answer independent
   of further arguments and of the receiver; and the package's enum objects
   and its guards' and helpers' bindings are never written, by the program
-  or by external code (F5). No guard's declared predicate is trusted: a
+  or by external code (F5). Activation checks the complete executable closure
+  before loading the entry: disk sources are parsed without execution, static
+  imports and export-from declarations (including attributes) are resolved by
+  Node, and their module set, binding edges and per-file SHA-256 digests must
+  equal the reviewed table. Resolution errors, queries, fragments and
+  unrecorded loading forms (dynamic import, require/createRequire, import.meta,
+  await and eval/Function capabilities) refuse the table before any closure
+  module is evaluated. Post-load function and binding identity checks bind the
+  table to the loaded instances. These checks establish consistency between
+  the reviewed table and the trusted installation the front end itself runs
+  (F3); they are no defence against an installation modified before the
+  front end starts. No guard's declared predicate is trusted: a
   listed guard narrows by its entry, and an unlisted one narrows nothing.
 - **T3 (node methods).** The node methods make no server request, run no
   client code but `forEachChild`'s visitors, which they call synchronously,

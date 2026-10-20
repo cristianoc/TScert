@@ -11,6 +11,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { guardClosure } from "../tools/guard-closure.mts";
 import { hostPackage, nodeResolve, runtimeConditions } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
@@ -281,6 +282,9 @@ for (const [name, { domain, tagged }] of [...declared].sort(([a], [b]) => a < b 
     excluded.push([name, error.message]);
   }
 }
+const closure = guardClosure(entryFile, path => readFileSync(join(root, path)),
+  path => moduleOf(path), (from, specifier) => resolveSpecifier(from, specifier)?.module ?? null);
+if (!closure) throw Error("the executable closure contains an unrecordable loading form");
 closeParser();
 
 const json = (v: unknown): string => JSON.stringify(v) ?? "";
@@ -294,6 +298,7 @@ export const compilerApiGuards: GuardTable = {
   entryPoint: ${json(entryPoint)},
   conditions: ${json(conditions)},
   entryModule: ${json(relative(root, join(root, entryFile)))},
+  closure: ${json(closure)},
   helpers: {
 ${[...helperTexts].sort(([a], [b]) => a < b ? -1 : 1).map(([k, t]) => `    ${json(k)}: ${json(t)},`).join("\n")}
   },

@@ -3461,6 +3461,13 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
       entryPoint: "./ast",
       conditions: runtimeConditions(),
       entryModule: "ast.js",
+      closure: {
+        files: {
+          "ast.js": "21bb112accb1949b4e171a8dc7daca0413931b3274be46a76304adc987655604",
+          "kinds.js": "47ec99b8f2ea2b11c81af40225a2daa9fb5b2c51421cd6a182d8ad0c03d2e8c2",
+        },
+        edges: [["ast.js", "SyntaxKind", "kinds.js", "SyntaxKind", [], "import"]],
+      },
       helpers: { "ast.js#isExpressionKind": helper },
       guards: [
         { name: "isName", kind: "node", domain: "Unit", tags: ["Name"], module: "ast.js",
