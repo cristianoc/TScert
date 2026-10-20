@@ -884,11 +884,16 @@ It states:
   manifest states;
 - **installation:** the audited installation, the package of that name as
   Node's package resolution finds it from a directory of the repository,
-  and the digest of its declarations, the SHA-256 of its version and every
-  `.d.ts` file under it outside a nested `node_modules` (the binding check
-  C0 of the
+  and the digest of its declarations, the SHA-256 of its version and its
+  inventory: every `.d.ts`, `.d.mts` and `.d.cts` file under its real
+  directory, reached without following a symbolic link, outside a nested
+  `node_modules` (the binding check C0 of the
   [compiler API](COMPILER-API.md#binding-the-contract-to-the-implementation),
-  of every family); the guard table pins its executable closure;
+  of every family). The family's declarations are exactly that inventory,
+  by real path: a dependency's declaration and one reached through a link
+  are read by the ordinary rules, and a declaration of an arbitrary
+  extension (`.d.<ext>.ts`) refuses the installation. The guard table pins
+  its executable closure;
 - **root:** the root declaration and its form, `inheritance` or `union`;
 - **tag:** the tag field $`\tau`$, its primitive, and the source of its
   constants: an enum declaration, which the binding check compares with its

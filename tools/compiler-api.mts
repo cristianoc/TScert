@@ -57,7 +57,7 @@ export const compilerApiFamily: FamilyDescription = {
   package: hostPackage,
   // The installation the tools themselves resolve (`tools/package-lock.json`
   // pins it), and its declarations' digest (C0).
-  installation: { from: "tools", digest: "0e951d0fad89f87f964d4cfbfbb946f9f5fffdf97e85f59eb0dbb5e8b35ad125" },
+  installation: { from: "tools", digest: "d4dd6af2e526953d47e88c50064e92375286e4ac30c9dfa80f9edff1d0954a9a" },
   marker: "RemoteNode",
   root: { name: "Node", form: "inheritance", text: "export interface Node extends ReadonlyTextRange {" },
   tag: { field: "kind", primitive: "number", constants: { enum: "SyntaxKind" } },

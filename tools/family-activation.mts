@@ -42,28 +42,46 @@ export function activeFamilies(): readonly FamilyDescription[] {
  * named. */
 const repository = resolve(import.meta.dirname, "..");
 
-/** The digest of the declarations of the package installed at `root` (C0):
- * the SHA-256 of the package's version, a NUL, then every `.d.ts` file under
- * the package's directory outside a nested `node_modules`, each its path from
- * the package root, a NUL, its bytes and a NUL, in path order. */
-export function declarationsDigest(root: string): string {
-  const hash = createHash("sha256");
-  const manifest: unknown = JSON.parse(readText(join(root, "package.json")));
-  const version = typeof manifest === "object" && manifest !== null && "version" in manifest ? String(manifest.version) : "";
-  hash.update(`${version}\0`);
+/** The declaration files of the package installed at `root`, the
+ * installation's inventory: every `.d.ts`, `.d.mts` and `.d.cts` file under
+ * the package's real directory, reached without following a symbolic link
+ * and outside a nested `node_modules`, each its path from the package root.
+ * A declaration of an arbitrary extension (`.d.<ext>.ts`) is refused: no
+ * reading rule covers its module. */
+function declarationInventory(root: string): string[] {
+  const real = realPath(root);
   const files: string[] = [];
   const walk = (directory: string): void => {
     for (const entry of listDirectory(directory)) {
       const path = join(directory, entry.name);
+      if (entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
         if (entry.name !== "node_modules") walk(path);
-      } else if (entry.name.endsWith(".d.ts")) files.push(relative(root, path).split(sep).join("/"));
+      } else if (/\.d\.[^./]+\.ts$/.test(entry.name))
+        throw Error(`the package at ${real} holds ${relative(real, path)}, a declaration of an arbitrary extension, which no reading rule covers`);
+      else if (/\.d\.[mc]?ts$/.test(entry.name)) files.push(relative(real, path).split(sep).join("/"));
     }
   };
-  walk(root);
-  for (const file of files.sort()) {
+  walk(real);
+  return files.sort();
+}
+
+/** The digest of the declarations of the package installed at `root` (C0):
+ * the SHA-256 of the package's version, a NUL, then every file of its
+ * inventory (`declarationInventory`), its path from the package root, a NUL,
+ * its bytes and a NUL, in path order. */
+export function declarationsDigest(root: string): string {
+  const real = realPath(root);
+  return digestOf(real, declarationInventory(real));
+}
+function digestOf(real: string, inventory: readonly string[]): string {
+  const hash = createHash("sha256");
+  const manifest: unknown = JSON.parse(readText(join(real, "package.json")));
+  const version = typeof manifest === "object" && manifest !== null && "version" in manifest ? String(manifest.version) : "";
+  hash.update(`${version}\0`);
+  for (const file of inventory) {
     hash.update(`${file}\0`);
-    hash.update(readBytes(join(root, file)));
+    hash.update(readBytes(join(real, file)));
     hash.update("\0");
   }
   return hash.digest("hex");
@@ -93,29 +111,40 @@ export function installationRoot(description: FamilyDescription): string {
   return root;
 }
 
-/** The installations checked, by root and the digest checked against. */
-const checkedInstallations = new Set<string>();
+/** The installations checked, by root and the digest checked against: the
+ * real paths of the inventory hashed. */
+const checkedInstallations = new Map<string, ReadonlySet<string>>();
 
 /** A description's installation, checked once per process: its manifest
  * names the description's package and version, and its declarations have the
  * description's digest. A mismatch refuses every use of the family, as a
  * package other than the one reviewed. */
 export function checkedInstallation(description: FamilyDescription): string {
+  checkedInventory(description);
+  return installationRoot(description);
+}
+
+/** The real paths of a checked installation's inventory, the declarations
+ * its digest covers. */
+function checkedInventory(description: FamilyDescription): ReadonlySet<string> {
   const root = installationRoot(description);
   const key = `${root}\0${description.package.name}\0${description.package.version}\0${description.installation.digest}`;
-  if (checkedInstallations.has(key)) return root;
+  const known = checkedInstallations.get(key);
+  if (known) return known;
   const manifest: unknown = JSON.parse(readText(join(root, "package.json")));
   const name = typeof manifest === "object" && manifest !== null && "name" in manifest ? manifest.name : null;
   const version = typeof manifest === "object" && manifest !== null && "version" in manifest ? manifest.version : null;
   if (name !== description.package.name || version !== description.package.version)
     throw Error(`the package at ${root} is not the family ${description.marker}'s ${description.package.name} ` +
       `${description.package.version}: its manifest names ${String(name)} ${String(version)}`);
-  const digest = declarationsDigest(root);
+  const inventory = declarationInventory(root);
+  const digest = digestOf(root, inventory);
   if (digest !== description.installation.digest)
     throw Error(`the package at ${root} is not the one the family ${description.marker} was reviewed against: ` +
       `its declarations' digest is ${digest}, the description's ${description.installation.digest}`);
-  checkedInstallations.add(key);
-  return root;
+  const files = new Set(inventory.map(file => join(root, ...file.split("/"))));
+  checkedInstallations.set(key, files);
+  return files;
 }
 
 /** The active descriptions with their installations' roots, each marker and
@@ -133,8 +162,10 @@ function installations(): readonly { description: FamilyDescription; root: strin
   return found;
 }
 
-/** The active description whose installation holds `file`, its installation
- * checked; null for a file of no installation. */
+/** The active description whose installation's inventory holds `file`, by
+ * its real path, the installation checked; null for any other file, a
+ * dependency in a nested `node_modules` or a file reached only through a
+ * symbolic link inside the package among them. */
 export function familyOfFile(file: string): FamilyDescription | null {
   // A path that names nothing is in no installation; any other failure
   // resolving it is the tool's.
@@ -142,8 +173,7 @@ export function familyOfFile(file: string): FamilyDescription | null {
   if (real === null) return null;
   const found = installations().find(i => real.startsWith(i.root + sep));
   if (!found) return null;
-  checkedInstallation(found.description);
-  return found.description;
+  return checkedInventory(found.description).has(real) ? found.description : null;
 }
 
 /** Whether `file` is a declaration of a host package: a file of an active

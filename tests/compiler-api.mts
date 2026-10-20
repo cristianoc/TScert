@@ -26,6 +26,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { compilerApiFamily, hostViews, hostEnums, hostPackage } from "../tools/compiler-api.mts";
 import { declarationsDigest, installationRoot, isHostFile, reviewedFamilies, useFamiliesForTests } from "../tools/family-activation.mts";
+import { stringFamily } from "../pipeline/string-family.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 
@@ -77,7 +78,39 @@ assert.ok(!isHostFile(lookalike), "a lookalike package with the host's manifest 
   } finally {
     useFamiliesForTests(null);
   }
-  console.log("C0: each reviewed description's installation has its digest; a description of another digest, version or installation, or one whose installation Node does not find, refuses the package's declarations");
+  // Ownership is the inventory the digest covers: in a copy of the
+  // string-tagged stand-in, linked into a project as Node finds it, a
+  // dependency's declaration in a nested `node_modules` and a declaration
+  // reached through a symbolic link inside the package are no host files,
+  // and leave the digest unchanged; the package's own declarations are, by
+  // their real paths through the link; a declaration of an arbitrary
+  // extension refuses the installation.
+  const project = runDirectory("tscert-inventory-");
+  const copy = join(project, "package");
+  cpSync(resolve(import.meta.dirname, "../pipeline/string-family-fixture"), copy, { recursive: true });
+  mkdirSync(join(copy, "node_modules", "dep"), { recursive: true });
+  writeFileSync(join(copy, "node_modules", "dep", "index.d.ts"), "export interface Unit { readonly type: string; }\n");
+  writeFileSync(join(project, "outside.d.ts"), "export interface Unit { readonly type: string; }\n");
+  symlinkSync(join(project, "outside.d.ts"), join(copy, "linked.d.ts"));
+  mkdirSync(join(project, "node_modules"));
+  symlinkSync(copy, join(project, "node_modules", stringFamily.package.name));
+  const copied = { ...stringFamily, installation: { ...stringFamily.installation, from: project } };
+  useFamiliesForTests([compilerApiFamily, copied]);
+  try {
+    assert.ok(isHostFile(join(project, "node_modules", stringFamily.package.name, "ast.d.ts")), "the package's own declaration, through the link");
+    assert.ok(!isHostFile(join(copy, "node_modules", "dep", "index.d.ts")), "a nested dependency's declaration is no host file");
+    assert.ok(!isHostFile(join(copy, "linked.d.ts")), "a declaration reached through a symbolic link is no host file");
+  } finally {
+    useFamiliesForTests(null);
+  }
+  const extended = runDirectory("tscert-inventory-extension-");
+  cpSync(resolve(import.meta.dirname, "../pipeline/string-family-fixture"), join(extended, "node_modules", stringFamily.package.name),
+    { recursive: true });
+  writeFileSync(join(extended, "node_modules", stringFamily.package.name, "styles.d.css.ts"), "declare const styles: string;\nexport default styles;\n");
+  refusedUnder({ ...stringFamily, installation: { ...stringFamily.installation, from: extended } },
+    join(extended, "node_modules", stringFamily.package.name, "ast.d.ts"),
+    /a declaration of an arbitrary extension, which no reading rule covers/, "an arbitrary-extension declaration");
+  console.log("C0: each reviewed description's installation has its digest; a description of another digest, version or installation, or one whose installation Node does not find, refuses the package's declarations; a nested dependency's declaration and one reached through a symbolic link are no host files; an arbitrary-extension declaration refuses the installation");
 }
 
 // `#enums/*` under the `default` condition, as the manifest's `imports` map
