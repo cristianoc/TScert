@@ -50,6 +50,7 @@ const description: FamilyDescription = {
   tag: { field: "kind", primitive: "number", constants: { enum: "K" } },
   table: [{ rule: "literal" }, { rule: "generic", declarations: ["Tok", "Tagged"] }, { rule: "base", declaration: "Base" }],
   corrections: [],
+  stable: { excluded: [] },
   guards: { entryPoint: "", conditions: [], entryModule: "", closure: { files: {}, edges: [] }, helpers: {}, guards: [], excluded: [] },
 };
 const graph = (declarations: readonly ts.InterfaceDeclaration[]): FamilyGraph => ({
@@ -104,6 +105,21 @@ const [residual, ...others] = table.arms(node, new Set());
 assert.ok(residual?.k === "synthetic" && !others.length, "one residual arm");
 assert.deepEqual(residual.values, [0, 1, 2, 3, 4, 5]);
 assert.deepEqual(residual.fields.map(f => `${f.name}${f.optional ? "?" : ""}`), ["note?", "parent"]);
+
+// The stable-member rule (HOST-FAMILIES.md, "Stable keys"): every property
+// member is stable but the exclusions, each a member its owner declares as
+// reviewed; an exclusion naming no member, or at another text, is refused.
+const litX = table.flatten(lit).find(f => f.name === "x");
+assert.ok(litX && table.stable(litX), "a member no exclusion names is stable");
+const excluding = familyTable({ ...description,
+  stable: { excluded: [{ owner: "Lit", member: "x", text: "readonly x: number;" }] } }, graph(interfaces));
+assert.ok(!excluding.stable(litX), "an excluded member is not stable");
+assert.throws(() => familyTable({ ...description,
+  stable: { excluded: [{ owner: "Lit", member: "y", text: "readonly y: number;" }] } }, graph(interfaces)),
+  /the stable-member rule excludes Lit\.y, which is not declared as reviewed/);
+assert.throws(() => familyTable({ ...description,
+  stable: { excluded: [{ owner: "Lit", member: "x", text: "readonly x: string;" }] } }, graph(interfaces)),
+  /the stable-member rule excludes Lit\.x, which is not declared as reviewed/);
 closeParser();
 
 // A generic shape with a parameter beside its tag parameter, which the
@@ -156,4 +172,5 @@ export interface Both extends Left, Right { readonly kind: K.A; }
   closeParser();
 }
 console.log("family interpreter: a tag-only generic merged at its tag set, a tag-dependent one kept per tag; " +
-  "a residual's common members; a refinement no shape; a generic with a parameter beside its tag, and an unrelated inherited name, refused");
+  "a residual's common members; a refinement no shape; a stable-member exclusion as reviewed, and one naming no member or another text refused; " +
+  "a generic with a parameter beside its tag, and an unrelated inherited name, refused");

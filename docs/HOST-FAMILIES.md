@@ -673,9 +673,11 @@ stable-contract requirement. `stableKeysT_at` supplies that contract;
 admissibility, forgetting keys and conjunction. The theorem
 `HeapObservations.stable_key_frame` in
 [HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean)
-frames the heap value at a stated key on normal return. These theorems concern
-the semantic predicate; record clauses and declaration decoding do not carry
-stable-key requirements.
+frames the heap value at a stated key on normal return. A record or
+dictionary clause states its stable keys (`Clause.refs`'s last part), whose
+meaning is `stableKeysT` (`semWithArgs_stable`). In the declaration document
+a marked object term states them as `"stable": [key, …]`, nonempty, which
+`objectClause` decodes.
 
 The program never introduces a stable key: an allocation's locations have
 the contracts of their types, which state no single value. A family's

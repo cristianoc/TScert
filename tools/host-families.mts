@@ -37,6 +37,9 @@ export type FamilyRule =
  * tag value (its constant), `owner` the declaration stating the member, and
  * `text` the member's declaration as reviewed. */
 export type FamilyCorrection = { kind: string; owner: string; member: string; text: string };
+/** A property member the stable-member rule leaves out (HOST-FAMILIES.md,
+ * "Stable keys"): its owner, its name and its text as reviewed. */
+export type StableExclusion = { owner: string; member: string; text: string };
 
 /** An entry of a guard table (HOST-FAMILIES.md, "The guard table"): the
  * export's name, a node guard or a tag guard, its declared domain, its exact
@@ -86,6 +89,9 @@ export type FamilyDescription = {
   tag: { field: string; primitive: "number" | "string"; constants: { enum: string } };
   table: readonly FamilyRule[];
   corrections: readonly FamilyCorrection[];
+  /** The stable-member rule: every required property member of a shape,
+   * the tag included, is stable but these. */
+  stable: { excluded: readonly StableExclusion[] };
   /** The guard table: the guards read from an audited entry, every other
    * guard of the family read without predicate. */
   guards: GuardTable;
@@ -171,6 +177,10 @@ export type FamilyTable = {
   /** Whether a flattened member is optional in a reading covering the tag
    * values `values`: so declared, or corrected at one of them. */
   optional: (member: FlatMember, values: readonly TagValue[]) => boolean;
+  /** Whether the stable-member rule names a flattened property member:
+   * every one the description does not exclude. A shape states it stable
+   * where it is required there. */
+  stable: (member: FlatMember) => boolean;
   /** The tag values a declaration's values can have: its literals, its tag
    * parameter's bound, or the members of an open declaration. */
   tagsOf: (declaration: InterfaceDeclaration) => readonly TagValue[];
@@ -319,6 +329,19 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
     if (value === undefined) graph.fail(`the correction of ${c.owner}.${c.member} names no tag ${c.kind}`);
     corrected.add(`${value}:${c.owner}.${c.member}`);
   }
+  // The stable-member rule's exclusions, each checked against the
+  // declaration it was reviewed at: a property member that declaration
+  // states.
+  const unstable = new Set<string>();
+  for (const x of description.stable.excluded) {
+    const owner = named(x.owner);
+    const members = owner.members.filter(m => graph.name(m) === x.member);
+    const [only] = members;
+    if (!only || members.length !== 1 || graph.text(only) !== x.text)
+      graph.fail(`the stable-member rule excludes ${x.owner}.${x.member}, which is not declared as reviewed: ${x.text}`);
+    unstable.add(`${x.owner}.${x.member}`);
+  }
+  const stable = (f: FlatMember): boolean => !unstable.has(`${f.owner.name.text}.${f.name}`);
   const optional = (f: FlatMember, values: readonly TagValue[]): boolean =>
     f.members.some(graph.questioned) || values.some(v => corrected.has(`${v}:${f.owner.name.text}.${f.name}`));
   const tagsOf = (d: InterfaceDeclaration): readonly TagValue[] => {
@@ -394,5 +417,5 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
     return result;
   };
   for (const d of graph.interfaces) if (!family.has(d)) graph.fail("a family interface outside the family");
-  return { description, tagOf, flatten, optional, tagsOf, shapes, membersOf, arms };
+  return { description, tagOf, flatten, optional, stable, tagsOf, shapes, membersOf, arms };
 }

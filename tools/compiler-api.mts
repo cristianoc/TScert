@@ -94,6 +94,9 @@ export const compilerApiFamily: FamilyDescription = {
     { kind: "TaggedTemplateExpression", owner: "TaggedTemplateExpression", member: "questionDotToken", text: "readonly questionDotToken: QuestionDotToken;" },
     { kind: "JSDocTemplateTag", owner: "JSDocTemplateTag", member: "constraint", text: "readonly constraint: Node;" },
   ],
+  // Every required property member is stable (reading rule 1, checked by C4);
+  // `jsDoc`, whose read allocates, is no member of any shape.
+  stable: { excluded: [] },
   guards: compilerApiGuards,
 };
 

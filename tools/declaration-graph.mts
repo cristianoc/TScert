@@ -4198,7 +4198,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           type: hostBrands(type, true, context.isBrand,
             message => { throw Error(`${message} in ${identity.module}#${identity.name}.${f.name}`); }) };
       };
-      const shape = (fields: Field[]): TypeTerm => ({ k: "object", fields, stringIndex: null, calls: [], span, host: marker });
+      // A shape's stable members: its required property members the
+      // stable-member rule names, the tag among them (HOST-FAMILIES.md,
+      // "Stable keys").
+      const shape = (fields: Field[], stable: readonly string[]): TypeTerm => {
+        const keys = fields.flatMap(f => typeof f.name === "string" && !f.optional && stable.includes(f.name) ? [f.name] : []);
+        return { k: "object", fields, stringIndex: null, calls: [], span, host: marker, ...(keys.length ? { stable: keys } : {}) };
+      };
       const reference = (target: TypeDeclaration, args: TypeTerm[]): TypeTerm => {
         queue.push(target);
         const id = identityOf(target);
@@ -4242,6 +4248,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         const made = synthetic(a.name);
         if (made.fresh) {
           const fields: Field[] = [{ name: table.description.tag.field, optional: false, readonly: true, type: tagTerm(a.values), span }];
+          const stable: string[] = [table.description.tag.field];
           const methods: FlatMember[] = [];
           // Every method's definition, in member order, whether or not the
           // residual shares it.
@@ -4268,9 +4275,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
             if (!one) continue;
             fields.push({ name: s.name, readonly: true, optional: s.optional || read.some(r => r.optional),
               type: types.length === 1 ? one : { k: "union", parts: types, span }, span });
+            if (s.sources.every(x => table.stable(x.member))) stable.push(s.name);
           }
           written.forEach(methodBase);
-          definitions.push({ declaration: made.id, parameters: [], bases: methodOwners(methods), expression: shape(fields) });
+          definitions.push({ declaration: made.id, parameters: [], bases: methodOwners(methods), expression: shape(fields, stable) });
         }
         return made.term;
       };
@@ -4305,7 +4313,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         // definitions alike.
         flat.filter(isMethod).forEach(methodBase);
         definitions.push({ declaration: identity, parameters, bases: methodOwners(flat.filter(f => shared(f, tags))),
-          expression: shape(flat.filter(f => !shared(f, tags)).map(f => readMember(f, tags, null))) });
+          expression: shape(flat.filter(f => !shared(f, tags)).map(f => readMember(f, tags, null)),
+            flat.filter(f => !shared(f, tags) && !isMethod(f) && table.stable(f)).map(f => f.name)) });
       }
       continue;
     }

@@ -3457,6 +3457,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     tag: { field: "type", primitive: "string", constants: { enum: "SyntaxKind" } },
     table: [{ rule: "literal" }],
     corrections: [],
+    stable: { excluded: [] },
     guards: {
       entryPoint: "./ast",
       conditions: runtimeConditions(),
@@ -3836,4 +3837,60 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     assert.ok(checked.includes(`source incoming edge obligation at [${start},${start + 1}): evidence fails heap knowledge`), checked);
   }
   process.stdout.write("path witnesses: exact forged evidence refused at incoming edges; wrong receiver/field isolate links, false predecessor isolates type coverage\n");
+}
+
+{
+  // Stable keys in the declaration document (HOST-FAMILIES.md, "Stable
+  // keys"): the decoder accepts them as required readonly members of a
+  // marked family shape alone. Each forged document is refused by the
+  // decoder; its neighbour, differing in the one thing the check reads, is
+  // decoded.
+  const artifacts = run("compiler-api-path-witness");
+  type Definition = TypeDefinition;
+  type ObjectTerm = Extract<TypeTerm, { k: "object" }>;
+  const shapeOf = (d: Definition): ObjectTerm => {
+    const e = d.expression;
+    assert(e?.k === "object");
+    return e;
+  };
+  const searchWith = (file: string, change: (o: ObjectTerm) => void): string => {
+    const fragment: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+    const definition = must(must(fragment.declarations, "the declarations").definitions.find(d =>
+      d.expression?.k === "object" && d.expression.host !== undefined && (d.expression.stable ?? []).length > 1 &&
+      d.expression.fields.some(f => f.name === "text")), "a marked shape with stable keys");
+    change(shapeOf(definition));
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    const searched = produceWith(artifacts, join(artifacts, "claims.json"), file, path);
+    return searched.stdout + searched.stderr;
+  };
+  const decoder = /stable key/;
+  const honest = searchWith("stable-honest", () => {});
+  assert.doesNotMatch(honest, decoder, honest);
+  // An optional member stated stable; its neighbour states the member
+  // optional and not stable.
+  const optional = searchWith("forged-stable-optional", o => {
+    must(o.fields.find(f => f.name === "text"), "text").optional = true;
+  });
+  assert.match(optional, /the stable key "text" is no required readonly member of its shape/, optional);
+  const optionalNeighbour = searchWith("stable-optional-neighbour", o => {
+    must(o.fields.find(f => f.name === "text"), "text").optional = true;
+    o.stable = (o.stable ?? []).filter(k => k !== "text");
+  });
+  assert.doesNotMatch(optionalNeighbour, decoder, optionalNeighbour);
+  // A key the shape does not state; its neighbour states the member.
+  const absent = searchWith("forged-stable-absent", o => { o.stable = [...(o.stable ?? []), "noSuchMember"]; });
+  assert.match(absent, /the stable key "noSuchMember" is no required readonly member of its shape/, absent);
+  const absentNeighbour = searchWith("stable-absent-neighbour", o => {
+    const text = must(o.fields.find(f => f.name === "text"), "text");
+    o.fields.push({ ...text, name: "noSuchMember" });
+    o.stable = [...(o.stable ?? []), "noSuchMember"];
+  });
+  assert.doesNotMatch(absentNeighbour, decoder, absentNeighbour);
+  // An unmarked shape stating stable keys; its neighbour states none.
+  const unmarked = searchWith("forged-stable-unmarked", o => { delete o.host; });
+  assert.match(unmarked, /a stable key is stated of a host family's marked shape alone/, unmarked);
+  const unmarkedNeighbour = searchWith("stable-unmarked-neighbour", o => { delete o.host; delete o.stable; });
+  assert.doesNotMatch(unmarkedNeighbour, decoder, unmarkedNeighbour);
+  process.stdout.write("stable keys: an optional, an absent and an unmarked stable key refused by the decoder, each beside its decoded neighbour\n");
 }

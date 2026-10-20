@@ -299,7 +299,7 @@ let added_contract declarations t name (rhs:Source.expr) value =
 let grown declarations t name c =
   match plain_arms declarations t with
   | Some atoms ->
-    let field = {name;optional=false;read=c;write=Some c;host=false;receivers=[]} in
+    let field = {name;optional=false;read=c;write=Some c;host=false;receivers=[];stable=false} in
     let add fs = List.filter (fun (f:Semantic.field) -> f.name<>name) fs @ [field] in
     Atoms (List.map (function
       | Shape s -> Shape {s with fields=add s.fields}

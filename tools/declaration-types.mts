@@ -101,7 +101,11 @@ export type TypeTerm =
        * stated by the family's reading only: the record also has a required
        * readonly view of the model's `[[host]]` at this string, which no
        * allocation of the program owns. */
-      host?: string }
+      host?: string;
+      /** The required readonly members a family's reading states stable
+       * (HOST-FAMILIES.md, "Stable keys"), stated with `host` only, never
+       * empty: each is owned at a location of one value. */
+      stable?: string[] }
   | { k: "function"; effect: CallEffect; receiver: TypeTerm | null; params: TypeTerm[];
       rest: TypeTerm | null; result: TypeTerm; span: Span }
   /** `new (params) => result`: a construct signature, which a class meets and
