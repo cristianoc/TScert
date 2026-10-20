@@ -485,11 +485,15 @@ argument. A member path narrows with [stable members](#stable-members).
 
 On the guard's admitted domain the test is exactly the guard: `true` on an
 argument whose tag is in $`K_g`$, `false` otherwise, by the entry. The
-`false` edge subtracts $`K_g`$ from what $`x`$ already holds: an arm of
-the object whose tag is one of the set's tags is dropped, and one whose tag
-is a set of several values stays (a `Token` arm of its tag set, under
-`isToken`'s `false`), since each tag is decided alone
-(`compiler-api-guard-false-branch`, `compiler-api-guards`).
+`false` edge subtracts $`K_g`$ from what $`x`$ already holds
+([member-split](PROGRAM-TYPING.md#a-membership-test)): an arm of the object
+whose tag is one of the set's tags, or a set of tags all in $`K_g`$, is
+dropped (a `Token` arm of its tag set, under `isToken`'s `false`); an arm
+whose tag set is partly in $`K_g`$ is read at the rest of its set, an
+application of its generic declaration at those tags, where its tag is a
+stable member, and is kept whole otherwise (`compiler-api-guard-false-sets`,
+with its forged claims in `pipeline/test.mts`; `compiler-api-guard-false-branch`,
+`compiler-api-guards`).
 
 A tag guard's call on an immutable name $`x`$ is the membership test of
 $`x`$ itself, $`\mathsf{member}(K_g, x)`$, with $`P`$ the tag's primitive,
@@ -642,17 +646,36 @@ read link on that edge. Witness names cannot occur in source identifiers.
 The slots contain saved values; a later source member read is checked by
 `read-linked`. Paths compose through the witnesses of their prefixes.
 
-A statement entry states a one-member path's refinement through the existing
-[current-content assertion](SOURCE-CLAIMS.md#current-content-assertions),
-`{"name": "m", "type": […], "current": [["name", [Identifier]]]}`.
-A refinement beyond the declared read contract and the supported field
-predicates uses a witness slot at the asserted type, with a required read
-link from the root binding through that field. Every incoming edge, including a loop
-backedge, checks both the mapped slot's type and that link's receiver and
-field. The rule is [witness-edge](PROGRAM-TYPING.md#witness-edges), proved
-by `ControlFlow.witness_edge_sound`. Calls and writes discard read links;
+A statement entry states a path's refinement through the
+[current-content assertion](SOURCE-CLAIMS.md#current-content-assertions) of
+its root, a path of one member or more:
+`{"name": "n", "type": […], "current": [[["expression"], [PropertyAccessExpression]], [["expression", "expression"], [Identifier]]]}`.
+A refinement of a path $`p = x.f_1\cdots f_n`$ beyond the declared read
+contract and the supported field predicates uses a witness slot $`w_p`$ at
+the asserted type, with a required read link $`r.f_n\mapsto w_p`$ whose
+receiver $`r`$ is the root binding's slot for $`n = 1`$ and the witness slot
+of the prefix $`p' = x.f_1\cdots f_{n-1}`$ otherwise. An entry holding a
+witness of $`p`$ holds one of each of its prefixes, at the prefix's asserted
+type or, where none is asserted, at its declared read from its own prefix's
+type, so a path is a chain of links, one per segment. Every incoming edge,
+including a loop backedge, checks each mapped witness's type and each link's
+receiver and field, segment by segment. The rule is
+[witness-edge](PROGRAM-TYPING.md#witness-edges), proved by
+`ControlFlow.witness_edge_sound` for any receiver slot. Calls and writes
+discard read links but those of [stable links](#stable-links), segment by
+segment, so a path's chain survives a call where every segment is stable;
 closure entries and exceptional transfers establish none. A catch therefore
-cannot receive a witness link from the throwing computation.
+cannot receive a witness link from the throwing computation. In a
+condition, a path's read whose receiver was read just before, into its
+prefix's witness as well, reads its field from that witness, which holds the
+same value, so the link it records is the one the entry states. Controls:
+`compiler-api-entry-path` (two and three members, a loop's backedge, past a
+call), `invalid-compiler-api-entry-path-record` (a middle member a call
+replaces, run under Node), and in `pipeline/test.mts` forged chains of
+`path-chain-controls`: a second segment's link of another receiver or another
+field, an unjustified predecessor and a chain past a call, each refused,
+with the honest document accepted. An assertion of a path of two members or
+more where the entry holds no witness of it is the premise of nothing.
 
 #### Stable keys
 
@@ -805,7 +828,7 @@ without the exclusion verifies (`pipeline/test.mts`).
 
 A closure's entry states no read link and no witness, so a callback reading
 `m.name.text` after a test of `m.name` outside the callback reads the
-member's declared type. A path at an entry has length one. A node list's
+member's declared type. A node list's
 element is no path segment.
 
 #### Trust

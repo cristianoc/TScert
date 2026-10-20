@@ -38,10 +38,10 @@ design, not its progress.
 | [Family identity controls](docs/HOST-FAMILIES.md#identity-through-program-code) | closed: each control verifies or is refused as stated, the negatives with a counterexample run under Node, and forged claims of `{ node }`, of a callback's result, of a re-exported guard's `false` edge and of a guard's wrapper at a node type refused in search and in checking (2026-10-20) | — |
 | [A generic method's instance at a union of arms](#generic-instance-union-arms) | open: an investigation, cause unknown | `compiler-api-node-callback-inline` verifies |
 | [A family's installation](docs/HOST-FAMILIES.md#activation) | closed: each description names its package, installation and digest; the front end activates every active description's installation by that data, the compiler API's among them, refusing another digest, version or an installation Node does not find; the string-tagged stand-in activated by its description alone beside the compiler API's (2026-10-20) | — |
-| [Paths at an entry beyond one member](#paths-at-an-entry) | open | a statement entry carries the refinement of a path of two members or more, and a read of `n.expression.expression` past a statement boundary verifies |
-| [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | open: an investigation, cause unknown | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
+| [Paths at an entry beyond one member](docs/HOST-FAMILIES.md#entries) | closed: an entry's witness of a path reads from its prefix's, one checked link per segment; `compiler-api-entry-path` verifies, the forged chains are refused, each accepted with its check disabled (2026-10-20) | — |
+| [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
-| [A guard's false edge over a tag-set arm](#guard-false-edge-tag-sets) | open | where `ts.isToken(node)` answers `false`, `node` holds no `Token` arm |
+| [A guard's false edge over a tag-set arm](docs/PROGRAM-TYPING.md#a-membership-test) | closed: the false slice drops arms the guard's set covers and reads a partly covered arm with a stable tag at the rest of its set; `compiler-api-guard-false-sets` verifies, its forged claims are refused, each accepted with coverage disabled (2026-10-20) | — |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -321,17 +321,21 @@ the producer, where the same constants narrow in an `===` test and literal
 labels narrow in a `switch` (`switch-enum-case-narrowing`, a gap). The
 compiler API's code switches on `node.kind` this way.
 
-<a id="paths-at-an-entry"></a>
-**Paths at an entry beyond one member.** A statement entry states a path's
-refinement as a current-content assertion of a binding's field, so a path
-of one member: `if (!ts.isCallExpression(n) || …) return; n.expression.expression.text`
-across the statement reads the declared type. A witness of a longer path
-needs the entry to state it through its prefix's witness.
-
 <a id="shadowing-locals-search"></a>
-**The search past 60 s on `shadowingLocals`.** In the census of ab51b0c the
-search for `fragment-support.mts#shadowingLocals`, refused in search on
-77ca829, did not finish within 60 s; which obligation grows is not known.
+**The search past 60 s on `shadowingLocals`.** The slice of
+`fragment-support.mts#shadowingLocals` holds that function and
+`bindingScope`, which it calls. Its search spends about 44 s on
+`bindingScope` and 19 s on `shadowingLocals`. On 77ca829 it spends 40 s on
+`bindingScope` and stops there, refused at `block(holder.parent)`, which
+the [stable-link rule](docs/HOST-FAMILIES.md#stable-members) derives; no
+judgment's cost grows between the two, and the search reaches the second
+function (measured 2026-10-20, the slice alone, load averages 2 to 7). The
+time is in subtype comparisons that fail: at a member read or a guard's
+call on a node, the receiver is compared with each pool type that has the
+member, about 74 of the family's arms in this slice, and each comparison of
+a union of 57 to 63 arms with one arm fails in about 70 ms. In
+`bindingScope`'s own slice the pool holds 41 such arms and each comparison
+takes about 7 ms: 2.5 s in all.
 
 <a id="generic-instance-union-arms"></a>
 **A generic method's instance at a union of arms**, an investigation:
@@ -342,14 +346,6 @@ reads `Node` as several arms, is refused in evidence search at the read of
 name, and the written callback in a run reading `Node` as one arm, verify.
 Which part of the instance's proposal or of its image check fails is not
 known.
-
-<a id="guard-false-edge-tag-sets"></a>
-**A guard's false edge over a tag-set arm.** A family guard's `false` edge
-drops an object arm whose tag is one of the guard's tags, each tag decided
-alone ([a membership test](docs/PROGRAM-TYPING.md#a-membership-test)); an
-arm whose tag is a set of several values all in the guard's set, `Token`
-under `isToken`, stays, since no one tag excludes it. A slice of the whole
-set, its soundness proved over the set clauses, removes it.
 
 <a id="corrected-members"></a>
 **Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)

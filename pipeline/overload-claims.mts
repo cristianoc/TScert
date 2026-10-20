@@ -63,7 +63,7 @@ export function checkOverloads(verifier: string, artifacts: string): void {
       (c) => {
         const e = c.functions[0]?.arrows?.[0]?.rows[0]?.expressions[0];
         assert(e);
-        e.current = [["value", [c.types.length]]];
+        e.current = [[["value"], [c.types.length]]];
       },
     ],
     [
@@ -76,7 +76,7 @@ export function checkOverloads(verifier: string, artifacts: string): void {
           ) ?? [];
         const cells = bindings.filter((b) => b.name === "cell");
         assert(cells.length > 0);
-        for (const cell of cells) cell.current = [["value", [1]]];
+        for (const cell of cells) cell.current = [[["value"], [1]]];
       },
     ],
     [

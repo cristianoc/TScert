@@ -236,6 +236,235 @@ theorem fieldSlice_absent {G : NormalGraph ι} {A : Ty ι} {f tag q n W v flds c
         cases hl'
     | _ => simp [fieldAnswers] at hans
 
+/-! ### What a membership test's `false` answer removes
+
+Where a membership test of the tags `ts` answered `false`, each tag's test
+answered `false` of the tested value, so the value is of no clause each of
+whose elements one of the tags answers `true` of (PROGRAM-TYPING.md, "A
+membership test", member-split). -/
+
+/-- Each element of a clause, a tag set's literals or the clause itself,
+answers `true` to one of the tags. -/
+def coveredBy (ts : List Tag) (c : Clause α) : Bool :=
+  c.elements.all fun e => ts.any fun t => tagClause t e == some true
+
+/-- No value of a covered clause is one every tag answers `false` of. -/
+theorem coveredBy_sound {Ξ : Fam} {S : α → Fam} {P : α → ArgFam} {ts : List Tag} {c : Clause α} {n W v}
+    (hc : coveredBy ts c = true) (hv : semWithArgs Ξ S P c n W v)
+    (hno : ∀ t ∈ ts, tagHolds t v = false ∨ protoFree t v = false) : False := by
+  obtain ⟨e, he, hev⟩ := (elements_sem Ξ S P c n W v).mpr hv
+  obtain ⟨t, ht, hte⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc e he)
+  have hq : tagClause t e = some true := beq_iff_eq.mp hte
+  rcases hno t ht with h | h
+  · rw [tagClause_sound hq hev] at h; cases h
+  · rw [tagClause_protoFree hq hev] at h; cases h
+
+/-- The labels of `A` a value may still have once every tag of `ts` answered
+`false` of it: a label all of whose clauses are covered is dropped. -/
+def uncovered (G : NormalGraph ι) (A : Ty ι) (ts : List Tag) : Ty ι :=
+  A.filter fun a => !(G.plain a && (expand G [a]).all (coveredBy ts))
+
+theorem uncovered_sound {G : NormalGraph ι} {A : Ty ι} {ts n W v} (hv : meaning G A n W v)
+    (hno : ∀ t ∈ ts, tagHolds t v = false ∨ protoFree t v = false) :
+    meaning G (uncovered G A ts) n W v := by
+  obtain ⟨a, ha, hva⟩ := hv
+  refine ⟨a, List.mem_filter.mpr ⟨ha, ?_⟩, hva⟩
+  cases hd : (G.plain a && (expand G [a]).all (coveredBy ts)) with
+  | false => rfl
+  | true =>
+    exfalso
+    simp only [Bool.and_eq_true, List.all_eq_true] at hd
+    have hm : meaning G [a] n W v := ⟨a, by simp, hva⟩
+    rw [expand_sem G [a] (by simp [NormalGraph.plainTy, hd.1])] at hm
+    obtain ⟨c, hc, hcv, -⟩ := hm
+    exact coveredBy_sound (hd.2 c hc) hcv hno
+
+/-- Whether a record clause fixes the field `f` at a type each clause of
+which `ts` covers: an invariant field or a readonly view. -/
+def fieldCovered (G : NormalGraph ι) (c : Clause (Ty ι)) (f : PropKey) (ts : List Tag) : Bool :=
+  match c with
+  | .refs a _ vs _ _ _ _ => (a ++ vs.filter (·.1 != lengthKey)).any fun p =>
+      decide (p.1 = f) && G.plainTy p.2 && (expand G p.2).all (coveredBy ts)
+  | _ => false
+
+/-- A clause whose value is one value at every level and world: a literal. -/
+def literalClause : Clause α → Bool
+  | .numLit _ | .strLit _ => true
+  | _ => false
+
+theorem literal_sem {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {e : Clause α} (he : literalClause e = true)
+    {n W v m U} (hv : semWithArgs Ξ X P e n W v) : semWithArgs Ξ X P e m U v := by
+  cases e <;> simp_all [literalClause, semWithArgs]
+
+/-- `c'` is the record clause `c` with its views of the stable key `f` at
+another type, each element of each clause of `c`'s type at `f` covered by
+`ts` or a literal clause of the other (member-split). -/
+def restricts [DecidableEq ι] (G : NormalGraph ι) (c c' : Clause (Ty ι)) (f : PropKey) (ts : List Tag) : Bool :=
+  match c, c' with
+  | .refs a bs vs os ms ks st, .refs a' bs' vs' os' ms' ks' st' =>
+    decide (a = a' ∧ bs = bs' ∧ os = os' ∧ ms = ms' ∧ ks = ks' ∧ st = st') && st.contains f &&
+      f != lengthKey && vs.length == vs'.length &&
+      (vs.zip vs').all fun (p, p') => p.1 == p'.1 && (p.2 == p'.2 || (p.1 == f && G.plainTy p.2 &&
+        G.plainTy p'.2 && (expand G p.2).all fun d => d.elements.all fun e =>
+          ts.any (fun t => tagClause t e == some true) || (literalClause e && (expand G p'.2).contains e)))
+  | _, _ => false
+
+theorem exists_zip_left {xs : List α} {ys : List β} (hl : xs.length = ys.length) {y : β} (hy : y ∈ ys) :
+    ∃ x, (x, y) ∈ xs.zip ys := by
+  obtain ⟨k, hk, rfl⟩ := List.mem_iff_getElem.mp hy
+  have hk' : k < xs.length := hl ▸ hk
+  exact ⟨xs[k], List.mem_iff_getElem.mpr ⟨k, by simp [hl, hk], by simp⟩⟩
+
+/-- A value of a record clause whose stable key `f` holds a value no tag of
+`ts` answers `true` of is a value of the clause `restricts` reads it at: the
+key's location holds that one value at every level and world, so the view
+at the other type holds of every value its contract admits. -/
+theorem restricts_sound [DecidableEq ι] {G : NormalGraph ι} {c c' : Clause (Ty ι)} {f : PropKey} {ts : List Tag}
+    {n W h v flds code oid l u}
+    (hr : restricts G c c' f ts = true) (hv : clauseSem G c (n+1) W v) (hh : HeapOk (n+1) W h)
+    (hl : v = .objAt flds code oid) (hf : flds.lookup f = some l) (hu : h[l]? = some u)
+    (hno : ∀ t ∈ ts, tagHolds t u = false ∨ protoFree t u = false) : clauseSem G c' (n+1) W v := by
+  cases c with
+  | refs a bs vs os ms ks st =>
+    cases c' with
+    | refs a' bs' vs' os' ms' ks' st' =>
+      simp only [restricts, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem,
+        bne_iff_ne, ne_eq, beq_iff_eq, List.all_eq_true] at hr
+      obtain ⟨⟨⟨⟨⟨rfl, rfl, rfl, rfl, rfl, rfl⟩, hst⟩, hlen⟩, hlen'⟩, hall⟩ := hr
+      obtain ⟨⟨hrefs, hviews, hopt, hmeth, hkeys, hstable⟩, hinv⟩ := hv
+      refine ⟨⟨hrefs, ?_, hopt, hmeth, hkeys, hstable⟩, by simpa [builtinInvariant, Clause.carriesInvariant] using hinv⟩
+      -- The stable location at `f`: the tested value is its one value.
+      obtain ⟨sflds, soid, sl, sc, value, hsv, hsl, hsc, hstab⟩ := stableKeysT_at hstable hst
+      have heq : flds = sflds ∧ code = .absent := by rw [hl] at hsv; cases hsv; exact ⟨rfl, rfl⟩
+      obtain ⟨rfl, rfl⟩ := heq
+      rw [hf] at hsl
+      cases hsl
+      have hvalue : u = value := by
+        have := HeapOk.stable_value hh (Nat.succ_pos n) hsc hstab
+        rw [hu] at this; exact Option.some.inj this
+      subst hvalue
+      intro g T hm
+      obtain ⟨i', hi', rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hm
+      obtain ⟨⟨g0, i⟩, hz⟩ := exists_zip_left (by simpa using hlen') hi'
+      have hpair := hall _ hz
+      simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hpair
+      obtain ⟨rfl, hsame | ⟨⟨⟨⟨rfl, hK⟩, hK'⟩, helems⟩⟩⟩ := hpair
+      · subst hsame
+        exact hviews g0 _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, (List.of_mem_zip hz).1, rfl⟩)
+      · -- The original view of `f`, at the stable location.
+        obtain ⟨vflds, vl, vc, void, hvv, hvl, hvc, himp⟩ :=
+          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨i, (List.of_mem_zip hz).1, rfl⟩) hlen hviews
+        rw [hl] at hvv
+        cases hvv
+        rw [hf] at hvl
+        cases hvl
+        rw [hsc] at hvc
+        cases hvc
+        refine .inl (viewT_single ⟨flds, l, sc, oid, hl ▸ rfl, hf, hsc, ?_⟩)
+        intro j hj U w hw
+        have hw' := hstab j hj U w hw
+        subst hw'
+        -- The value is of the original type at level zero, in one element.
+        obtain ⟨u0, hu0, hm0⟩ := hh.2 l sc hsc
+        rw [hu] at hu0
+        cases hu0
+        have hk := himp 0 (Nat.succ_pos n) _ _ (hm0 0 (Nat.succ_pos n))
+        rw [expand_sem G i hK] at hk
+        obtain ⟨d, hd, hdv, -⟩ := hk
+        obtain ⟨e, he, hev⟩ := (elements_sem _ _ _ d _ _ _).mpr hdv
+        have hcase := List.all_eq_true.mp (List.all_eq_true.mp helems d hd) e he
+        simp only [Bool.or_eq_true, Bool.and_eq_true, List.any_eq_true, beq_iff_eq,
+          List.contains_iff_mem] at hcase
+        rcases hcase with ⟨t, ht, hte⟩ | ⟨hlit, hmem⟩
+        · rcases hno t ht with h' | h'
+          · rw [tagClause_sound hte hev] at h'; cases h'
+          · rw [tagClause_protoFree hte hev] at h'; cases h'
+        · rw [expand_sem G i' hK']
+          refine ⟨e, hmem, literal_sem hlit hev, ?_⟩
+          exact builtinInvariant_of_withoutInvariant (by cases e <;> simp_all [literalClause, Clause.carriesInvariant]) _ _ _
+    | _ => simp [restricts] at hr
+  | _ => cases c' <;> simp [restricts] at hr
+
+/-- A label of `candidates` the one record clause of `a` restricts to the
+rest of its stable key `f`'s type (`restricts`). -/
+def restriction [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : PropKey) (ts : List Tag) (candidates : Ty ι) : Option ι :=
+  match expand G [a] with
+  | [c] => candidates.find? fun b => b != a && match expand G [b] with
+    | [c'] => restricts G c c' f ts
+    | _ => false
+  | _ => none
+
+theorem restriction_sound [DecidableEq ι] {G : NormalGraph ι} {a b : ι} {f : PropKey} {ts : List Tag} {candidates : Ty ι}
+    {n W h v flds code oid l u}
+    (hb : restriction G a f ts candidates = some b) (hv : meaning G [a] (n+1) W v) (hh : HeapOk (n+1) W h)
+    (hl : v = .objAt flds code oid) (hf : flds.lookup f = some l) (hu : h[l]? = some u)
+    (hno : ∀ t ∈ ts, tagHolds t u = false ∨ protoFree t u = false) : meaning G [b] (n+1) W v := by
+  unfold restriction at hb
+  split at hb
+  · rename_i c hx
+    have hp := List.find?_some hb
+    simp only [Bool.and_eq_true] at hp
+    obtain ⟨-, hfound⟩ := hp
+    split at hfound
+    · rename_i c' hb'
+      have hp := plain_of_mem_expand (G := G) (S := [a]) (c := c) (by simp [hx])
+      rw [expand_sem G [a] hp, hx] at hv
+      obtain ⟨c0, hc0, hcv⟩ := hv
+      simp only [List.mem_singleton] at hc0
+      subst hc0
+      have hpb := plain_of_mem_expand (G := G) (S := [b]) (c := c') (by simp [hb'])
+      rw [expand_sem G [b] hpb, hb']
+      exact ⟨c', by simp, restricts_sound hfound hcv hh hl hf hu hno⟩
+    · cases hfound
+  · cases hb
+
+/-- The labels of `A` an object may still have once every tag of `ts`
+answered `false` of the value of its field `f`: a label each of whose clauses
+fixes `f` at a covered type is dropped, and a label of one record clause a
+label of `candidates` restricts (`restriction`) is read as that label. -/
+def uncoveredField [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) (f : PropKey) (ts : List Tag) (candidates : Ty ι) : Ty ι :=
+  A.flatMap fun a =>
+    if G.plain a && (expand G [a]).all (fieldCovered G · f ts) then []
+    else [(restriction G a f ts candidates).getD a]
+
+theorem uncoveredField_sound [DecidableEq ι] {G : NormalGraph ι} {A : Ty ι} {f : PropKey} {ts : List Tag} {candidates : Ty ι}
+    {n W h v flds code oid l u}
+    (hv : meaning G A (n+1) W v) (hh : HeapOk (n+1) W h)
+    (hl : v = .objAt flds code oid) (hf : flds.lookup f = some l) (hu : h[l]? = some u)
+    (hno : ∀ t ∈ ts, tagHolds t u = false ∨ protoFree t u = false) :
+    meaning G (uncoveredField G A f ts candidates) (n+1) W v := by
+  obtain ⟨a, ha, hva⟩ := hv
+  have hm : meaning G [a] (n+1) W v := ⟨a, by simp, hva⟩
+  cases hd : (G.plain a && (expand G [a]).all (fieldCovered G · f ts)) with
+  | true =>
+    exfalso
+    simp only [Bool.and_eq_true, List.all_eq_true] at hd
+    rw [expand_sem G [a] (by simp [NormalGraph.plainTy, hd.1])] at hm
+    obtain ⟨c, hc, hcv, -⟩ := hm
+    have hans := hd.2 c hc
+    cases c with
+    | refs a' bs vs os ms ks =>
+      simp only [fieldCovered, List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hans
+      obtain ⟨⟨g, K⟩, hp, ⟨⟨rfl, hplain⟩, hall⟩⟩ := hans
+      have hK := field_value (c := .refs a' bs vs os ms ks _) (K := K) hp hcv hh hl hf hu
+      rw [expand_sem G K hplain] at hK
+      obtain ⟨d, hd', hdv, -⟩ := hK
+      exact coveredBy_sound (List.all_eq_true.mp hall d hd') hdv hno
+    | _ => simp [fieldCovered] at hans
+  | false =>
+    have hmem : (restriction G a f ts candidates).getD a ∈ uncoveredField G A f ts candidates :=
+      List.mem_flatMap.mpr ⟨a, ha, by simp [hd]⟩
+    cases hr : restriction G a f ts candidates with
+    | none =>
+      simp only [hr, Option.getD_none] at hmem
+      exact ⟨a, hmem, hva⟩
+    | some b =>
+      simp only [hr, Option.getD_some] at hmem
+      obtain ⟨b', hb', hbv⟩ := restriction_sound hr hm hh hl hf hu hno
+      simp only [List.mem_singleton] at hb'
+      subst hb'
+      exact ⟨b', hmem, hbv⟩
+
 /-! ### Exclusion by a field's observed contents
 
 A cell fact states that an object's field holds a value meeting one of its

@@ -539,15 +539,15 @@ let encode (proposal : Proposal_types.t) =
   let named (n,b) = point (binding_type b) ["name",String n]
   in
   (* A statement entry's bindings; a field's known contents are its object's
-     `current` assertion, one `[field, type]` pair per field. *)
+     `current` assertion, one `[path, type]` pair per field or member path. *)
   let bindings bs = Array (List.filter_map (fun (n,b) ->
     if Environment.is_field n then None else
     let fields = List.filter_map (fun (m,f) ->
       if Environment.is_field m && Environment.owner m = n &&
          (Environment.is_path m || not (List.mem_assoc (Environment.path_key n [Environment.field_of m]) bs)) then
         let field = Environment.field_of m in
-        let field = if Environment.is_path m then String.sub field 1 (String.length field - 1) else field in
-        Some (Array [String field; claim_type (binding_type f)])
+        let path = if Environment.is_path m then List.tl (String.split_on_char '\001' field) else [field] in
+        Some (Array [Array (List.map (fun f -> String f) path); claim_type (binding_type f)])
       else None) bs in
     Some (Object ["name",String n; "type",claim_type (binding_type b);
                   "current",(if fields = [] then Null else Array fields)])) bs)

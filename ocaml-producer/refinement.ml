@@ -413,9 +413,12 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
       else typeof_refine declarations shape (truth = equal)) in
     env
   (* A family guard's test of a name: its value, or its object's arms by
-     their field, as Lean's slices leave them (`PromiseCalls.memberSlice`):
-     where it answered `true`, each atom one of the tags may equal, kept as
-     it is; where `false`, each atom less the tags' values. *)
+     their field, as Lean's slices leave them (`PromiseCalls.memberSlotSlice`,
+     `memberFieldSlice`): where it answered `true`, each atom one of the tags
+     may equal, kept as it is; where `false`, each atom less the tags'
+     values, an arm whose field the tags' values cover dropped, and an arm of
+     a generic declaration at its stable tag, partly covered, read at the
+     rest of its tag (member-split). *)
   | TagMember (field,tags,tested) ->
     let atoms = List.filter_map (fun l -> singleton_atom (literal_type l)) tags in
     let rec passing t = match t with
@@ -431,11 +434,36 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
     let own t =
       if truth then passing t
       else List.fold_left (fun t a -> restrict ~declarations a false t) t atoms in
+    let rest field = List.fold_left (fun t a -> restrict ~declarations a false t) field atoms in
     let through field =
       if truth then passing field
-      else if List.exists (fun a -> restrict ~declarations a false field = Atoms []) atoms then Atoms []
+      else if rest field = Atoms [] then Atoms []
       else field in
-    let by_field f t = discriminate bounds declarations t (Name f) through in
+    let field_of atom f = try Some (field_type bounds declarations [] (Atoms [atom]) (Name f)) with Json.Error _ -> None in
+    let split f t =
+      if truth then t else
+      match (try Some (declared_head declarations [] t) with Json.Error _ -> None) with
+      | Some (Atoms atoms) ->
+        let arms = union_arms declarations atoms in
+        (* An alias of one application is that application. *)
+        let rec unalias seen atom = match atom with
+          | Named (id,args) when not (List.mem id seen) ->
+            (match (try Some (definition declarations id args) with Json.Error _ -> None) with
+             | Some (Atoms [Named _ as inner]) -> unalias (id :: seen) inner
+             | _ -> atom)
+          | _ -> atom in
+        let narrowed = List.map (fun arm -> match unalias [] arm with
+          | Named (id,[_]) as applied when stable_member declarations (Atoms [applied]) f ->
+            (match field_of applied f with
+             | Some field ->
+               let r = rest field in
+               let candidate = Named (id,[r]) in
+               if r <> field && r <> Atoms [] && field_of candidate f = Some r then candidate else arm
+             | None -> arm)
+          | _ -> arm) arms in
+        if narrowed = arms then t else Atoms narrowed
+      | _ -> t in
+    let by_field f t = split f (discriminate bounds declarations t (Name f) through) in
     (* A name, where it is held; a path, through the read the test refined
        (HOST-FAMILIES.md, "A guard on any argument"). *)
     (match tested.node,field with
