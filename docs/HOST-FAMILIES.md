@@ -912,6 +912,14 @@ The mechanism is explicit, and nothing activates it by spelling:
   per process before any of its declarations is read. Its guard table is
   [activated](#the-guard-table) over that installation, with the table's own
   checks.
+- **The tag enum as a value:** a program reads the description's tag enum
+  as a value, each member at its literal type, where its declaration's
+  members are those of the runtime object the activated entry point exports
+  under its name: each member an own data property holding its declared
+  value, every other own key the reverse mapping of a numeric member (C1, for
+  every family). Any other enum of a family's installation is read as a
+  value only where its package's contract lists it, as the compiler API's
+  `hostEnums`.
 - **Membership:** a value is a family member only through the marker, which
   the host supplies for the objects its entry points give as family members
   (F1); no allocation of the program owns `[[host]]`.

@@ -25,7 +25,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { compareTags, familyTable, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
-import { activeFamilies, familyOfFile, familyOfGuard, importedGuard, isHostFile, selectionGuard } from "./family-activation.mts";
+import { activeFamilies, familyOfFile, familyOfGuard, importedGuard, isHostFile, selectionGuard, tagEnumMatches } from "./family-activation.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -753,6 +753,19 @@ export function collectDeclarations(file: string, options: {
           return { name: m.name.text, value };
         });
       });
+    // Whether a host enum is read as a value: one the compiler-API contract
+    // lists (`hostEnums`, T5), in its installation; or the tag enum a
+    // family's description names, in that family's installation, whose
+    // members are those of the runtime object the family's activated entry
+    // point exports (`tagEnumMatches`).
+    const readableHostEnum = (enums: readonly ts.EnumDeclaration[], name: string): boolean => {
+      if (enums.every(e => compilerApiFile(e.getSourceFile().fileName)) && hostEnums.some(h => h.name === name)) return true;
+      const [first] = enums;
+      const description = first ? familyOfFile(first.getSourceFile().fileName) : null;
+      return !!description && description.tag.constants.enum === name &&
+        enums.every(e => familyOfFile(e.getSourceFile().fileName) === description) &&
+        tagEnumMatches(description, enumMembersOf(enums, name));
+    };
     // The host families (HOST-FAMILIES.md): each active description's, read
     // through it by `familyTable`, from the declarations of the description's
     // installation as TypeScript resolves them. Each family's table is built
@@ -1498,8 +1511,8 @@ export function collectDeclarations(file: string, options: {
         if (enums.some(e => e.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword)))
           throw Error(`the imported const enum ${what} has no object: its reads are its members' values, which TypeScript inlines`);
         const name = enums[0]?.name.text ?? what;
-        if (enums.some(e => isHostFile(e.getSourceFile().fileName)) && !(enums.every(e => compilerApiFile(e.getSourceFile().fileName)) && hostEnums.some(h => h.name === name)))
-          throw Error(`the host enum ${name} is not one the compiler-API contract reads (compiler-api.mts)`);
+        if (enums.some(e => isHostFile(e.getSourceFile().fileName)) && !readableHostEnum(enums, name))
+          throw Error(`the host enum ${name} is not one the compiler-API contract reads (compiler-api.mts), nor a family's tag enum its runtime object matches`);
         return { declaration: { module: idOf(source), name, span }, construct: false, typeParams: [],
           type: enumMembersTerm(enumMembersOf(enums, what), span) };
       }
@@ -2619,8 +2632,8 @@ export function collectDeclarations(file: string, options: {
       if (!member || !ts.isEnumMember(member) || !owner || !ts.isEnumDeclaration(owner))
         throw Error(`the contextual enum literal ${checker.typeToString(type)} names no enum member`);
       const name = owner.name.text;
-      if (isHostFile(owner.getSourceFile().fileName) && !(compilerApiFile(owner.getSourceFile().fileName) && hostEnums.some(h => h.name === name)))
-        throw Error(`the host enum ${name} is not one the compiler-API contract reads (compiler-api.mts)`);
+      if (isHostFile(owner.getSourceFile().fileName) && !readableHostEnum([owner], name))
+        throw Error(`the host enum ${name} is not one the compiler-API contract reads (compiler-api.mts), nor a family's tag enum its runtime object matches`);
       const value = enumMembersOf([owner], name)[owner.members.indexOf(member)]?.value;
       if (value === undefined)
         throw Error(`the enum member ${name}.${member.name.getText(owner.getSourceFile())} has no value TypeScript computes, so no literal type`);

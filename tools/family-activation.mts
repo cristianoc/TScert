@@ -483,6 +483,32 @@ export function importedGuard(from: string, specifier: string, imported: string)
   return { program: path };
 }
 
+/** Whether a family's tag enum, declared with the members `declared` (each
+ * its name and the value TypeScript computes), is the runtime object the
+ * family's activated entry point exports under the enum's name, as Node
+ * loaded it (HOST-FAMILIES.md, "Activation"; C1 of the compiler API, for
+ * every family): each member an own data property holding its value, and
+ * every other own key the reverse mapping of a numeric member. False where
+ * the family's guard table is not active, or the entry point exports no
+ * such object. */
+export function tagEnumMatches(description: FamilyDescription, declared: readonly { name: string; value: string | number | undefined }[]): boolean {
+  const root = checkedInstallation(description);
+  const table = description.guards;
+  const loaded = loadedGuards(table, root);
+  const entry = loaded?.modules.get(pathToFileURL(join(realPath(root), table.entryModule)).href);
+  const object: unknown = entry?.[description.tag.constants.enum];
+  if (typeof object !== "object" || object === null || !declared.length) return false;
+  const members = new Map<string, string | number>();
+  for (const { name, value } of declared) {
+    if (value === undefined) return false;
+    const property = Object.getOwnPropertyDescriptor(object, name);
+    if (!property || !("value" in property) || property.value !== value) return false;
+    members.set(name, value);
+  }
+  return Reflect.ownKeys(object).every(key => typeof key === "string" && (members.has(key) || [...members].some(([name, value]) =>
+    typeof value === "number" && String(value) === key && Object.getOwnPropertyDescriptor(object, key)?.value === name)));
+}
+
 /** The entry of the listed guard of a declaration's name, for the run's tag
  * selection alone, which a further tag only widens: the function `name` of
  * the declaration file `file`, which the entry's module declares, in the

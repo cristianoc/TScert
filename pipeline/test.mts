@@ -7,6 +7,8 @@ import { present } from "../tools/files.mts";
 import { join, resolve } from "node:path";
 import type { Ast, Expr } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
+import { createHash } from "node:crypto";
+import { pathToFileURL } from "node:url";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
@@ -3511,6 +3513,36 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const refused = check(file, project);
     const at = readFileSync(file, "utf8").lastIndexOf("n.name");
     assert.ok(refused.status === "unsupported" && refused.detail.includes(`at [${at},`), JSON.stringify(refused));
+    // The tag enum read as a value, by the description alone: its members
+    // are the runtime object the activated entry point exports. Over a copy
+    // whose `kinds.js` gives `Literal` another value, its guard table
+    // activated over the copy's own digests, the same program is refused at
+    // the read, and under Node `literalTag` returns the runtime value, not
+    // its declared `"literal"`.
+    const kinds = check(example("kinds"), project);
+    assert.equal(kinds.status, "verified", JSON.stringify(kinds));
+    {
+      const copy = runDirectory("tscert-tag-enum-");
+      const installed = join(copy, "node_modules", "string-family-fixture");
+      mkdirSync(join(copy, "node_modules"));
+      cpSync(join(import.meta.dirname, "string-family-fixture"), installed, { recursive: true });
+      const runtime = readFileSync(join(installed, "kinds.js"), "utf8").replace('UnitType["Literal"] = "literal"', 'UnitType["Literal"] = "lit"');
+      assert.ok(runtime.includes('"lit"'), "the copy's runtime enum differs");
+      writeFileSync(join(installed, "kinds.js"), runtime);
+      cpSync(join(import.meta.dirname, "string-family-fixture-project", "tsconfig.json"), join(copy, "tsconfig.json"));
+      cpSync(example("kinds"), join(copy, "kinds.ts"));
+      activate({ ...strings, installation: { ...strings.installation, from: copy },
+        guards: { ...strings.guards, closure: { ...strings.guards.closure, files: { ...strings.guards.closure.files,
+          "kinds.js": createHash("sha256").update(runtime).digest("hex") } } } });
+      const mismatched = check(join(copy, "kinds.ts"), tsconfigOf(copy));
+      assert.ok(mismatched.status === "unsupported" && /the host enum UnitType is not one .* nor a family's tag enum its runtime object matches/.test(mismatched.detail),
+        JSON.stringify(mismatched));
+      const ran = spawnSync(process.execPath, ["--input-type=module", "-e",
+        `import { literalTag } from ${JSON.stringify(pathToFileURL(join(copy, "kinds.ts")).href)};\nconsole.log(literalTag());\n`],
+        { encoding: "utf8", cwd: copy });
+      assert.equal(ran.stdout.trim(), "lit", `literalTag under Node: ${ran.stderr}`);
+      activate(strings);
+    }
     // Activation fails closed: under a description whose digest differs from
     // the stand-in's declarations, or whose installation Node does not find,
     // the same program is refused; with no stand-in description its guards
@@ -3565,7 +3597,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   } finally {
     useFamiliesForTests(null);
   }
-  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
+  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs (Node returns it); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
 }
 {
   // Each correction of the compiler API's family (COMPILER-API.md,
