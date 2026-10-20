@@ -3549,6 +3549,39 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
       assert.equal(ran.stdout.trim(), "lit", `literalTag under Node: ${ran.stderr}`);
       activate(strings);
     }
+    {
+      // The tag enum's binding is the object activation checked, as Node
+      // resolves the client's import: a project whose `paths` point
+      // TypeScript at the stand-in's audited declarations while Node loads a
+      // copy whose `Literal` is "lit" is refused at the read; with Node
+      // loading the audited installation, the same program verifies.
+      const bindingRun = (name: string, target: string, change: ((dir: string) => void) | null): { outcome: Outcome; dir: string } => {
+        const dir = runDirectory(`tscert-tag-binding-${name}-`);
+        writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+          module: "preserve", moduleResolution: "bundler", target: "es2022", lib: ["es2022"], types: [],
+          paths: { "string-family-fixture/ast": [join(import.meta.dirname, "string-family-fixture", "ast.d.ts")] } }, include: ["*.ts"] }));
+        mkdirSync(join(dir, "node_modules"));
+        const installed = join(dir, "node_modules", "string-family-fixture");
+        if (change) {
+          cpSync(target, installed, { recursive: true });
+          change(installed);
+        } else symlinkSync(target, installed);
+        cpSync(example("kinds"), join(dir, "kinds.ts"));
+        return { outcome: check(join(dir, "kinds.ts"), tsconfigOf(dir)), dir };
+      };
+      const audited = bindingRun("audited", join(import.meta.dirname, "string-family-fixture"), null);
+      assert.equal(audited.outcome.status, "verified", JSON.stringify(audited.outcome));
+      const other = bindingRun("other", join(import.meta.dirname, "string-family-fixture"), (installed) => {
+        const runtime = readFileSync(join(installed, "kinds.js"), "utf8").replace('UnitType["Literal"] = "literal"', 'UnitType["Literal"] = "lit"');
+        writeFileSync(join(installed, "kinds.js"), runtime);
+      });
+      assert.ok(other.outcome.status === "unsupported" && /the host enum UnitType is not one .* nor a family's tag enum its runtime object matches/.test(other.outcome.detail),
+        JSON.stringify(other.outcome));
+      const ran = spawnSync(process.execPath, ["--input-type=module", "-e",
+        `import { literalTag } from ${JSON.stringify(pathToFileURL(join(other.dir, "kinds.ts")).href)};\nconsole.log(literalTag());\n`],
+        { encoding: "utf8", cwd: other.dir });
+      assert.equal(ran.stdout.trim(), "lit", `literalTag under Node, its import bound to the copy: ${ran.stderr}`);
+    }
     // Activation fails closed: under a description whose digest differs from
     // the stand-in's declarations, or whose installation Node does not find,
     // the same program is refused; with no stand-in description its guards
@@ -3603,7 +3636,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   } finally {
     useFamiliesForTests(null);
   }
-  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs (Node returns it); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
+  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs and where Node binds the import to such a copy while TypeScript reads the audited declarations (Node returns it); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
 }
 {
   // Each correction of the compiler API's family (COMPILER-API.md,

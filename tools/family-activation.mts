@@ -498,6 +498,17 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
  * re-export one. */
 export function importedGuard(from: string, specifier: string, imported: string):
     { entry: GuardEntry | null } | { program: string } | null {
+  const bound = importedExport(from, specifier, imported);
+  return bound && "description" in bound ? { entry: guardOfExport(bound.description, bound.value) } : bound;
+}
+
+/** What Node binds for an import, read as `importedGuard` reads it: where
+ * Node resolves the specifier to a module an active family's activation
+ * loaded, the value that module exports under `imported`, with the family;
+ * a module outside every installation by its real path (`program`); any
+ * other binding none. */
+export function importedExport(from: string, specifier: string, imported: string):
+    { description: FamilyDescription; value: unknown } | { program: string } | null {
   const resolved = nodeResolve(specifier, from);
   if (resolved === null) return null;
   const path = orAbsent(realPath, fileURLToPath(resolved));
@@ -506,11 +517,26 @@ export function importedGuard(from: string, specifier: string, imported: string)
     const root = installationRoot(description);
     if (relative(root, path).split(sep)[0] === "..") continue;
     checkedInstallation(description);
-    const loaded = loadedGuards(description.guards, root);
-    const namespace = loaded?.modules.get(resolved);
-    return loaded && namespace ? { entry: loaded.functions.get(namespace[imported]) ?? null } : null;
+    const namespace = loadedGuards(description.guards, root)?.modules.get(resolved);
+    return namespace && Object.hasOwn(namespace, imported) ? { description, value: namespace[imported] } : null;
   }
   return { program: path };
+}
+
+/** The listed guard of a family whose function activation checked is
+ * `value`, or null. */
+export function guardOfExport(description: FamilyDescription, value: unknown): GuardEntry | null {
+  return loadedGuards(description.guards, installationRoot(description))?.functions.get(value) ?? null;
+}
+
+/** A family's tag enum object: the export of its name from the family's
+ * activated entry point, as Node loaded it; undefined where the guard table
+ * is not active. */
+export function tagEnumObject(description: FamilyDescription): unknown {
+  const root = checkedInstallation(description);
+  const table = description.guards;
+  const entry = loadedGuards(table, root)?.modules.get(pathToFileURL(join(realPath(root), table.entryModule)).href);
+  return entry?.[description.tag.constants.enum];
 }
 
 /** Whether a family's tag enum, declared with the members `declared` (each
@@ -522,11 +548,7 @@ export function importedGuard(from: string, specifier: string, imported: string)
  * the family's guard table is not active, or the entry point exports no
  * such object. */
 export function tagEnumMatches(description: FamilyDescription, declared: readonly { name: string; value: string | number | undefined }[]): boolean {
-  const root = checkedInstallation(description);
-  const table = description.guards;
-  const loaded = loadedGuards(table, root);
-  const entry = loaded?.modules.get(pathToFileURL(join(realPath(root), table.entryModule)).href);
-  const object: unknown = entry?.[description.tag.constants.enum];
+  const object = tagEnumObject(description);
   if (typeof object !== "object" || object === null || !declared.length) return false;
   const members = new Map<string, string | number>();
   for (const { name, value } of declared) {

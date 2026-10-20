@@ -25,7 +25,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { compareTags, familyTable, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
-import { activeFamilies, familyOfFile, familyOfGuard, importedGuard, isHostFile, selectionGuard, tagEnumMatches } from "./family-activation.mts";
+import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, isHostFile, selectionGuard, tagEnumMatches, tagEnumObject } from "./family-activation.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -757,12 +757,14 @@ export function collectDeclarations(file: string, options: {
     // lists (`hostEnums`, T5), in its installation; or the tag enum a
     // family's description names, in that family's installation, whose
     // members are those of the runtime object the family's activated entry
-    // point exports (`tagEnumMatches`).
-    const readableHostEnum = (enums: readonly ts.EnumDeclaration[], name: string): boolean => {
+    // point exports (`tagEnumMatches`); where the object itself is read,
+    // `bound`, the import that reads it binds that object as Node resolves
+    // it (`boundTagEnum`).
+    const readableHostEnum = (enums: readonly ts.EnumDeclaration[], name: string, bound: boolean | null): boolean => {
       if (enums.every(e => compilerApiFile(e.getSourceFile().fileName)) && hostEnums.some(h => h.name === name)) return true;
       const [first] = enums;
       const description = first ? familyOfFile(first.getSourceFile().fileName) : null;
-      return !!description && description.tag.constants.enum === name &&
+      return !!description && description.tag.constants.enum === name && bound !== false &&
         enums.every(e => familyOfFile(e.getSourceFile().fileName) === description) &&
         tagEnumMatches(description, enumMembersOf(enums, name));
     };
@@ -1440,8 +1442,8 @@ export function collectDeclarations(file: string, options: {
     // them (reading rule 5).
     const skipParenthesized = (e: Node): Node => ts.isParenthesizedExpression(e) ? skipParenthesized(e.expression) : e;
     // `guard` is the listed guard a client's import binds to (`bindingGuard`).
-    const valueOf = (declared: readonly Node[], what: string, guard: GuardEntry | null = null): Omit<ValueRoot, "binding"> => {
-      const read = valueRead(declared, what);
+    const valueOf = (declared: readonly Node[], what: string, guard: GuardEntry | null = null, bound: boolean = false): Omit<ValueRoot, "binding"> => {
+      const read = valueRead(declared, what, bound);
       return declared.some(n => isHostFile(n.getSourceFile().fileName))
         ? { ...read, type: guardReading(declared, hostBrands(read.type, true, isBrand, message => { throw Error(`${message} in ${what}`); }), guard) }
         : read;
@@ -1494,7 +1496,7 @@ export function collectDeclarations(file: string, options: {
         { ...one, effect: { ...emptyEffect, promise: { guards: { param: 0 } } }, result: promised },
         { ...plainForm, rest }] };
     };
-    const valueRead = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
+    const valueRead = (declared: readonly Node[], what: string, bound: boolean): Omit<ValueRoot, "binding"> => {
       const nodes = declared.filter(n => !ts.isInterfaceDeclaration(n) && !ts.isTypeAliasDeclaration(n));
       valueDeclarations.push(...nodes);
       const [node] = nodes;
@@ -1511,7 +1513,7 @@ export function collectDeclarations(file: string, options: {
         if (enums.some(e => e.modifiers?.some(m => m.kind === ts.SyntaxKind.ConstKeyword)))
           throw Error(`the imported const enum ${what} has no object: its reads are its members' values, which TypeScript inlines`);
         const name = enums[0]?.name.text ?? what;
-        if (enums.some(e => isHostFile(e.getSourceFile().fileName)) && !readableHostEnum(enums, name))
+        if (enums.some(e => isHostFile(e.getSourceFile().fileName)) && !readableHostEnum(enums, name, bound))
           throw Error(`the host enum ${name} is not one the compiler-API contract reads (compiler-api.mts), nor a family's tag enum its runtime object matches`);
         return { declaration: { module: idOf(source), name, span }, construct: false, typeParams: [],
           type: enumMembersTerm(enumMembersOf(enums, what), span) };
@@ -1832,15 +1834,16 @@ export function collectDeclarations(file: string, options: {
       const name = program.getSourceFileNames().find(n => orAbsent(realPath, n) === path);
       return name === undefined ? undefined : program.getSourceFile(name);
     };
-    const reexported = (from: SourceFile, specifier: string, imported: string, depth: number): GuardEntry | null => {
+    const reexported = (from: SourceFile, specifier: string, imported: string, depth: number):
+        { description: FamilyDescription; value: unknown } | null => {
       if (depth > 16) return null;
       const statements = from.statements.filter((s): s is ts.ImportDeclaration | ts.ExportDeclaration =>
         (ts.isImportDeclaration(s) || ts.isExportDeclaration(s)) && s.moduleSpecifier !== undefined &&
         ts.isStringLiteral(s.moduleSpecifier) && s.moduleSpecifier.text === specifier);
       if (statements.some(s => s.attributes)) return null;
-      const bound = importedGuard(from.fileName, specifier, imported);
+      const bound = importedExport(from.fileName, specifier, imported);
       if (!bound) return null;
-      if ("entry" in bound) return bound.entry;
+      if ("description" in bound) return bound;
       const module = programModule(bound.program);
       if (!module || module.isDeclarationFile || isHostFile(module.fileName)) return null;
       for (const s of module.statements) {
@@ -1851,8 +1854,21 @@ export function collectDeclarations(file: string, options: {
       }
       return null;
     };
-    const bindingGuard = (binding: { specifier: string; imported: string; typeOnly: boolean }): GuardEntry | null =>
-      binding.typeOnly ? null : reexported(client, binding.specifier, binding.imported, 0);
+    const bindingGuard = (binding: { specifier: string; imported: string; typeOnly: boolean }): GuardEntry | null => {
+      const bound = binding.typeOnly ? null : reexported(client, binding.specifier, binding.imported, 0);
+      return bound ? guardOfExport(bound.description, bound.value) : null;
+    };
+    // Whether an import of a family's tag enum binds, as Node resolves it,
+    // the very object whose members activation compared with the
+    // declaration's (`tagEnumObject`), of the family whose installation
+    // declares the enum.
+    const boundTagEnum = (binding: { specifier: string; imported: string; typeOnly: boolean },
+        enums: readonly ts.EnumDeclaration[]): boolean => {
+      const [first] = enums;
+      const description = first ? familyOfFile(first.getSourceFile().fileName) : null;
+      const bound = binding.typeOnly ? null : reexported(client, binding.specifier, binding.imported, 0);
+      return !!description && !!bound && bound.description === description && bound.value === tagEnumObject(description);
+    };
     for (const binding of importBindings(client, options.namespaceMembers ?? [])) {
       try {
         // A function with overloads is its several declarations; any other
@@ -1863,7 +1879,7 @@ export function collectDeclarations(file: string, options: {
           options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name));
           if (!binding.typeOnly)
             values.push({ binding: { local: binding.name, imported: binding.imported,
-              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name, bindingGuard(binding)) });
+              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name, bindingGuard(binding), boundTagEnum(binding, enums)) });
           continue;
         }
         const reviewed = moduleEntries(binding.specifier, binding.imported);
@@ -2632,7 +2648,7 @@ export function collectDeclarations(file: string, options: {
       if (!member || !ts.isEnumMember(member) || !owner || !ts.isEnumDeclaration(owner))
         throw Error(`the contextual enum literal ${checker.typeToString(type)} names no enum member`);
       const name = owner.name.text;
-      if (isHostFile(owner.getSourceFile().fileName) && !readableHostEnum([owner], name))
+      if (isHostFile(owner.getSourceFile().fileName) && !readableHostEnum([owner], name, null))
         throw Error(`the host enum ${name} is not one the compiler-API contract reads (compiler-api.mts), nor a family's tag enum its runtime object matches`);
       const value = enumMembersOf([owner], name)[owner.members.indexOf(member)]?.value;
       if (value === undefined)
