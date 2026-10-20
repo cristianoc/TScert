@@ -1382,34 +1382,36 @@ optionality adds, from which the written contract is not recovered
 (`closure-contextual-anonymous-instance-refused`,
 `closure-contextual-nested-instance-refused`). Each index signature is read
 by its key, string, number or symbol, with its capability. A method, an
-accessor, a symbol key, a call signature or an index of another key of such
+accessor, a symbol key or an index of another key of such
 a record is refused at the parameter (`closure-contextual-records`,
 `closure-contextual-method-refused`). A tuple with an optional position is refused, since TypeScript
 gives that position's type with `undefined` whether or not an annotation
-wrote it (`invalid-contextual-optional-tuple`). A function type is read as a
+wrote it (`invalid-contextual-optional-tuple`). A callable object is read
+through its signature before the member-by-member record reading. A function type is read as a
 record's type literal is: one the program writes, as written, by the
 annotation reader, where TypeScript gives it outside any generic declaration
 or at its declaration's own binders. Any other callable without members (a
-generic declaration's function type at an instance, a library's, a
+generic declaration's function type or callable type literal at an instance, a library's, a
 function's `typeof`) is read through the one call signature TypeScript
 instantiates, at the ordinary effect an annotation of it states, which
 assumes no preservation of the heap:
 
 ```math
-\frac{\tau\ \text{has exactly the call signature}\ (\mathit{this}{:}Q;\ x_1{:}A_1,\ldots,x_n{:}A_n,\ \ldots r{:}E)\Rightarrow B\ \text{and no binder}}
+\frac{\tau\ \text{has exactly the call signature}\ (\mathit{this}{:}Q;\ x_1{:}A_1,\ldots,x_n{:}A_n,\ \ldots r{:}E)\Rightarrow B\ \text{and no binder, other signature or member}}
      {\mathrm{ctx}(\tau)=(\mathrm{ctx}(Q);\ \mathrm{ctx}(A_1),\ldots,\mathrm{ctx}(A_n),\ \ldots\mathrm{ctx}(E))\to_{\mathsf{ord}}\mathrm{ctx}(B)}\ \textsf{contextual-callable}
 ```
 
 The receiver is read where the signature states one, an optional or
-defaulted parameter at the type TypeScript gives it, which holds the
-`undefined` the parameter admits, a rest at its array's element or its
+defaulted parameter at its signature's parameter type, which includes the
+`undefined` admitted by omission or an explicit argument, a rest at its array's element or its
 tuple's required positions, and a promise `x is T` or `asserts x is T` about
 a parameter as a second form at the promise's effect and type, as the
 annotation reader reads a guard. Refused at the parameter, as contracts the
 reading does not recover: type parameters
 (`closure-contextual-callable-generic-refused`), a promise about the
 receiver or without a type, a rest of another type, a construct signature, a
-second call signature and a member beside the call signature. The reading is
+second call signature and a member beside the call signature
+(`closure-contextual-callable-members-refused`). The reading is
 the annotation the closure is checked at, and the closure is checked where
 it flows at the signature it is offered: a closure calling its callable
 parameter with a number is no handler of a signature passing a function of

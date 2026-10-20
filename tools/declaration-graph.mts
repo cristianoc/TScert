@@ -2678,7 +2678,7 @@ export function collectDeclarations(file: string, options: {
     // no instantiation of its declaration's binders, and the instantiated
     // type carries the `undefined` optionality adds. Each index signature is
     // read at its key's kind and capability. A member no object contract
-    // states (a method, an accessor, a symbol key, a call signature, an index
+    // states (a method, an accessor, a symbol key, an index
     // of another key) is refused.
     const contextualRecord = (type: Type, span: Span): TypeTerm | null => {
       if (!(type.flags & TypeFlags.Object)) return null;
@@ -2752,11 +2752,11 @@ export function collectDeclarations(file: string, options: {
         ...(symbolIndex ? { symbolIndex } : {}), calls: [], span };
     };
     // A function's type (SOURCE-ELABORATION.md, "Source closures and their
-    // annotations"): a function type the program writes is read as written,
-    // by the annotation reader, where TypeScript gives it outside any generic
-    // declaration or at its declaration's own binders, as a record's type
-    // literal is. Any other callable without members (a generic declaration's
-    // function type at an instance, a library's, a function's `typeof`) is
+    // annotations"): a function type or callable type literal the program
+    // writes is read as written by the annotation reader, where TypeScript
+    // gives it outside any generic declaration or at its declaration's own
+    // binders, as a record's type literal is. Any other callable without members (a generic declaration's
+    // callable at an instance, a library's, a function's `typeof`) is
     // read through its one call signature as TypeScript instantiates it: its
     // receiver, each parameter at its type (an optional or defaulted one's
     // with the `undefined` that admits), a rest at its array's element or
@@ -2773,7 +2773,8 @@ export function collectDeclarations(file: string, options: {
       const declarations = (type.getSymbol()?.declarations ?? []).map(d => d.resolve());
       const [only, ...others] = declarations;
       const text = checker.typeToString(type);
-      if (only && !others.length && ts.isFunctionTypeNode(only) && !libraryFile(only.getSourceFile())) {
+      if (only && !others.length && (ts.isFunctionTypeNode(only) || ts.isTypeLiteralNode(only)) &&
+          !libraryFile(only.getSourceFile())) {
         const binders = enclosingBinders(only);
         if (!binders.length || checker.getTypeFromTypeNode(only)?.id === type.id)
           return computedContext.annotation(only, only, binders);
@@ -2796,7 +2797,11 @@ export function collectDeclarations(file: string, options: {
       let rest: TypeTerm | null = null;
       for (const [index, p] of parameters.entries()) {
         const declaration = p.declarations[0]?.resolve();
-        const parameter = checker.getTypeOfSymbol(p);
+        // The signature gives the argument contract, including `undefined`
+        // for a defaulted parameter. For a rest it gives one position's
+        // type; its symbol gives the aggregate array or tuple to expand.
+        const parameter = declaration && ts.isParameterDeclaration(declaration) && declaration.dotDotDotToken
+          ? checker.getTypeOfSymbol(p) : checker.getParameterType(signature, index);
         if (p.declarations.length !== 1 || !declaration || !ts.isParameterDeclaration(declaration) || !parameter)
           return refuse("a signature with a parameter no declaration states");
         const term = contextualTerm(parameter, span);
@@ -2891,10 +2896,10 @@ export function collectDeclarations(file: string, options: {
           }
           return { k: "tuple", presence: "dense", readonly: tuple.readonly, required, optional: [], rest, span };
         }
-        const record = contextualRecord(type, span);
-        if (record) return record;
         const callable = contextualCallable(type, span);
         if (callable) return callable;
+        const record = contextualRecord(type, span);
+        if (record) return record;
         // A library regex type (`RegExpExecArray` for a match's callback), as
         // `regexp.mts` reads it.
         const library = nodes.filter((n): n is InterfaceDeclaration => !!n && ts.isInterfaceDeclaration(n));

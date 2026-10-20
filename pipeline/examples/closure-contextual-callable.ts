@@ -2,7 +2,7 @@
 // one the program writes, read as written (a guard's promise included), and
 // a generic declaration's function type at an instance or a function's
 // `typeof`, read through its one call signature at the instantiated types:
-// an optional parameter with its `undefined`, a rest at its element, a
+// an optional or defaulted parameter with its `undefined`, a rest at its element, a
 // guard's promise as a second form.
 interface Scope {
   named(name: string, read: (text: string) => number): number;
@@ -71,4 +71,36 @@ export function runBox(): string {
 
 export function runTypeof(): number {
   return measured((f) => f("abc"));
+}
+
+function defaulted(x: number = 1): number {
+  return x;
+}
+
+function useDefaulted(cb: (f: typeof defaulted) => number): number {
+  return cb(defaulted);
+}
+
+export function runDefaulted(): number {
+  return useDefaulted((f) => f() + f(undefined));
+}
+
+interface LiteralBox<T> {
+  use(cb: { (x: T, at?: number): string }): string;
+  all(cb: { (...xs: T[]): number }): number;
+}
+
+function useLiteralBox(box: LiteralBox<string>): string {
+  return box.use((x, at) => x.slice(at ?? 0)) + box.all(count);
+}
+
+export function runLiteralBox(): string {
+  return useLiteralBox({
+    use(cb) {
+      return cb("text", 1) + cb("text");
+    },
+    all(cb) {
+      return cb("a", "b");
+    },
+  });
 }
