@@ -666,6 +666,17 @@ stable; an ordinary record states none, so a node remains below
 `{ readonly flags: number }`. A meet states the keys either operand states;
 a join, such as a [residual](#residuals), the keys every operand states.
 
+The semantic predicate `stableKeysT` in
+[Types.lean](../lean/Verification/Types/Types.lean) states the location and
+stable-contract requirement. `stableKeysT_at` supplies that contract;
+`stableKeysT_adm`, `stableKeysT_weaken` and `stableKeysT_append` prove
+admissibility, forgetting keys and conjunction. The theorem
+`HeapObservations.stable_key_frame` in
+[HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean)
+frames the heap value at a stated key on normal return. These theorems concern
+the semantic predicate; record clauses and declaration decoding do not carry
+stable-key requirements.
+
 The program never introduces a stable key: an allocation's locations have
 the contracts of their types, which state no single value. A family's
 reading is the one authorized introduction, at host values, by F1′. The

@@ -164,6 +164,49 @@ def viewT (fs : Fields) : Fam := fun k W v =>
       flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → T j W' u
 
+/-- The required own keys whose locations admit one fixed value throughout
+all worlds and levels of their contracts. -/
+def stableKeysT (keys : List PropKey) : Fam := fun n W v =>
+  ∀ key ∈ keys, ∃ (flds : List (PropKey × Nat)) (oid l : Nat)
+    (c : Ctr n) (value : Val),
+    v = .objAt flds .absent oid ∧ flds.lookup key = some l ∧
+      lookup W l = some c ∧ CtrStable c value
+
+/-- A stated stable key supplies the location and stable contract needed by
+`HeapObservations.stable_frame`. The location exists even at level zero. -/
+theorem stableKeysT_at {keys : List PropKey} {key : PropKey}
+    {n : Nat} {W : WorldT n} {v : Val}
+    (h : stableKeysT keys n W v) (hk : key ∈ keys) :
+    ∃ (flds : List (PropKey × Nat)) (oid l : Nat) (c : Ctr n) (value : Val),
+      v = .objAt flds .absent oid ∧ flds.lookup key = some l ∧
+        lookup W l = some c ∧ CtrStable c value := h key hk
+
+/-- Truncation restricts stable contracts; extension preserves them. -/
+theorem stableKeysT_adm (keys : List PropKey) : Adm (stableKeysT keys) := by
+  constructor
+  · intro n W v h key hk
+    obtain ⟨flds, oid, l, c, value, he, hf, hw, hs⟩ := h key hk
+    exact ⟨flds, oid, l, _, value, he, hf,
+      lookup_trunc (Nat.le_succ n) W l c hw, hs.restrict (Nat.le_succ n)⟩
+  · intro n W U hx v h key hk
+    obtain ⟨flds, oid, l, c, value, he, hf, hw, hs⟩ := h key hk
+    exact ⟨flds, oid, l, c, value, he, hf, WExt_lookup hx hw, hs⟩
+
+/-- Forgetting stable keys weakens their semantic requirement. -/
+theorem stableKeysT_weaken {source target : List PropKey}
+    (h : ∀ key ∈ target, key ∈ source) : FamLe (stableKeysT source) (stableKeysT target) :=
+  fun _ _ _ hs key hk => hs key (h key hk)
+
+/-- A conjunction states the stable keys of both operands. -/
+theorem stableKeysT_append (left right : List PropKey) (n : Nat) (W : WorldT n) (v : Val) :
+    stableKeysT (left ++ right) n W v ↔ stableKeysT left n W v ∧ stableKeysT right n W v := by
+  simp only [stableKeysT, List.mem_append, or_imp, forall_and]
+
+@[simp] theorem stableKeysT_nil (n : Nat) (W : WorldT n) (v : Val) :
+    stableKeysT [] n W v := by
+  intro key hk
+  simp at hk
+
 /-! ## Index keys -/
 
 /-- A **canonical numeric key**: a string some number's `ToString` spells.

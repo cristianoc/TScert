@@ -36,7 +36,7 @@ design, not its progress.
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
-| [Stable family members](docs/HOST-FAMILIES.md#stable-members) | open: singleton-contract restriction, future-heap preservation and the normal-return frame proved; stable keys and link retention absent from the checker | step 4b's declaration checks, stable-link rule and controls pass, including mutation checks |
+| [Stable family members](docs/HOST-FAMILIES.md#stable-members) | open: singleton-contract restriction, future-heap preservation, semantic stable-key requirements and their normal-return frame proved; clause representation, declaration checks, subtyping and link retention absent from the checker | step 4b's declaration checks, stable-link rule and controls pass, including mutation checks |
 | [A guard's false edge over a tag-set arm](#guard-false-edge-tag-sets) | open | where `ts.isToken(node)` answers `false`, `node` holds no `Token` arm |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
