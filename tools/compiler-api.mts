@@ -8,6 +8,7 @@
  * values. Each entry is checked against the installed package by
  * `tests/compiler-api.mts`. */
 import { createHash } from "node:crypto";
+import { registerHooks } from "node:module";
 import { dirname, join, relative, sep } from "node:path";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import type { FamilyDescription, GuardEntry, GuardTable } from "./host-families.mts";
@@ -394,8 +395,13 @@ export function activeGuards(table: GuardTable, root: string = installation().ro
  * through, and the text its `*` stands for (PACKAGE_IMPORTS_EXPORTS_RESOLVE):
  * a key equal to the specifier and holding no `*`; otherwise, of the keys
  * holding one `*` whose prefix and suffix the specifier extends, the one of
- * the longest prefix, then the longest key. */
+ * the longest prefix, then the longest key. A specifier Node refuses (`#`,
+ * one starting `#/` or ending `/`) has none, nor has a pattern's match whose
+ * text holds a backslash or a `%`, or a segment that is empty, `.`, `..` or
+ * `node_modules`: Node refuses those segments, or resolves them deprecated
+ * or decoded, and the table admits none of them. */
 export function importsKey(keys: readonly string[], specifier: string): { key: string; star: string | null } | null {
+  if (specifier === "#" || specifier.startsWith("#/") || specifier.endsWith("/")) return null;
   if (!specifier.includes("*") && keys.includes(specifier)) return { key: specifier, star: null };
   let best: { key: string; star: string } | null = null;
   for (const key of keys) {
@@ -409,7 +415,56 @@ export function importsKey(keys: readonly string[], specifier: string): { key: s
     }
     best = { key, star: specifier.slice(i, specifier.length - trailer.length) };
   }
+  if (best === null) return null;
+  const { star } = best;
+  if (star.includes("\\") || star.includes("%") ||
+      star.split("/").some(segment => ["", ".", "..", "node_modules"].includes(segment.toLowerCase()))) return null;
   return best;
+}
+
+/** The conditions Node's ES module resolution enables in this process
+ * (`node`, `import`, `module-sync` and `node-addons` by default, and any
+ * `--conditions`), read from the resolution itself through a resolve hook,
+ * with `default`, which every resolution admits. */
+let runtimeConditionsRead: readonly string[] | null = null;
+export function runtimeConditions(): readonly string[] {
+  if (runtimeConditionsRead) return runtimeConditionsRead;
+  const probe = "tscert:conditions";
+  const seen: { conditions: readonly string[] | null } = { conditions: null };
+  const hooks = registerHooks({
+    resolve: (specifier, context, next) => {
+      if (specifier !== probe) return next(specifier, context);
+      seen.conditions = context.conditions;
+      return { url: "data:text/javascript,", shortCircuit: true };
+    },
+  });
+  try {
+    import.meta.resolve(probe);
+  } finally {
+    hooks.deregister();
+  }
+  const read = seen.conditions;
+  if (read === null) throw Error("the resolve hook saw no resolution of the conditions probe");
+  runtimeConditionsRead = [...read, "default"];
+  return runtimeConditionsRead;
+}
+
+/** A mapping's target as Node's PACKAGE_TARGET_RESOLVE walks it under
+ * `conditions`: a string is the target; a conditional object's keys, in
+ * their order, the first enabled one whose value resolves, a key Node does
+ * not enable skipped; no key resolving is `none`. A fallback array, a `null`
+ * target and a subpath map met as a conditional object are `refused`. */
+export function conditionTarget(mapping: unknown, conditions: readonly string[]): { target: string } | "none" | "refused" {
+  if (typeof mapping === "string") return { target: mapping };
+  if (typeof mapping !== "object" || mapping === null || Array.isArray(mapping)) return "refused";
+  const entries = Object.entries(mapping);
+  if (entries.some(([key]) => key.startsWith("."))) return "refused";
+  for (const [key, value] of entries) {
+    if (!conditions.includes(key)) continue;
+    const found = conditionTarget(value, conditions);
+    if (found !== "none") return found;
+  }
+  return "none";
 }
 
 function checkedGuards(table: GuardTable, root: string, parse: (path: string, text: string) => ts.SourceFile):
@@ -419,12 +474,12 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   const { exports, imports } = manifest;
   const record = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
   if (!record(exports) || !record(imports)) return null;
+  // The table's conditions are the ones Node enables in this process.
+  const runtime = runtimeConditions();
+  if (table.conditions.length !== runtime.length || !runtime.every(c => table.conditions.includes(c))) return null;
   const target = (mapping: unknown): string | null => {
-    if (typeof mapping === "string") return mapping;
-    if (!record(mapping)) return null;
-    for (const [condition, value] of Object.entries(mapping))
-      if (table.conditions.includes(condition)) return target(value);
-    return null;
+    const found = conditionTarget(mapping, table.conditions);
+    return typeof found === "object" ? found.target : null;
   };
   const normal = (path: string): string => relative(root, join(root, path)).split(sep).join("/");
   const entryTarget = target(exports[table.entryPoint]);

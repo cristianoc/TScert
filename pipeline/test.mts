@@ -11,7 +11,7 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
-import { compilerApiFamily, useFamilyDescriptionForTests, useHostInstallationForTests } from "../tools/compiler-api.mts";
+import { compilerApiFamily, runtimeConditions, useFamilyDescriptionForTests, useHostInstallationForTests } from "../tools/compiler-api.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
@@ -3431,7 +3431,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     corrections: [],
     guards: {
       entryPoint: "./ast",
-      conditions: ["node", "import", "default"],
+      conditions: runtimeConditions(),
       entryModule: "ast.js",
       imports: {},
       helpers: { "ast.js#isExpressionKind": helper },

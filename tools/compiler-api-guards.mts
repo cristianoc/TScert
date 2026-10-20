@@ -6,7 +6,7 @@ import type { GuardTable } from "./host-families.mts";
 
 export const compilerApiGuards: GuardTable = {
   entryPoint: "./unstable/ast",
-  conditions: ["node","import","default"],
+  conditions: ["node","import","module-sync","node-addons","default"],
   entryModule: "dist/ast/index.js",
   imports: {"#enums/*":{"types":"./dist/enums/*.enum.d.ts","default":"./dist/enums/*.js"}},
   helpers: {

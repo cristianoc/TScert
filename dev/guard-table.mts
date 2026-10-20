@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { hostPackage, importsKey } from "../tools/compiler-api.mts";
+import { conditionTarget, hostPackage, importsKey, runtimeConditions } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
@@ -19,7 +19,9 @@ import { runDirectory } from "../pipeline/run-directory.mts";
 const repository = resolve(import.meta.dirname, "..");
 const root = dirname(createRequire(resolve(repository, "tools/package.json")).resolve(`${hostPackage.name}/package.json`));
 const entryPoint = "./unstable/ast";
-const conditions: readonly string[] = ["node", "import", "default"];
+// The conditions Node enables in this process, which activation compares
+// with the running Node's.
+const conditions: readonly string[] = runtimeConditions();
 
 type Manifest = { exports: Record<string, unknown>; imports: Record<string, unknown> };
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -27,14 +29,11 @@ const manifestValue: unknown = JSON.parse(readFileSync(join(root, "package.json"
 if (!isRecord(manifestValue) || !isRecord(manifestValue.exports) || !isRecord(manifestValue.imports))
   throw Error("the package's manifest states no exports and imports maps");
 const manifest: Manifest = { exports: manifestValue.exports, imports: manifestValue.imports };
-// A mapping's target under the admitted conditions: a string, or the first
-// admitted condition's target.
+// A mapping's target as Node walks it under the conditions
+// (`conditionTarget`).
 const target = (mapping: unknown): string | null => {
-  if (typeof mapping === "string") return mapping;
-  if (!isRecord(mapping)) return null;
-  for (const [condition, value] of Object.entries(mapping))
-    if (conditions.includes(condition)) return target(value);
-  return null;
+  const found = conditionTarget(mapping, conditions);
+  return typeof found === "object" ? found.target : null;
 };
 const entryFile = target(manifest.exports[entryPoint]);
 if (!entryFile) throw Error(`the manifest maps no ${entryPoint}`);

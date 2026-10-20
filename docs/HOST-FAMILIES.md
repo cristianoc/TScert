@@ -317,8 +317,9 @@ The trusted boundary is a **guard table** in the family description, pinned
 to the digest of the audited closure (C0). Each entry records:
 
 - the guard's **export identity** and its **resolution**: the package entry
-  point and export name; the resolution conditions (`import`, `node`,
-  `default`); the manifest mappings that apply (the `exports` entry of the
+  point and export name; the resolution conditions, those Node enables
+  (`node`, `import`, `module-sync`, `node-addons`, with `default`); the
+  manifest mappings that apply (the `exports` entry of the
   entry point, the `imports` entries the function's module uses); the
   re-export chain from the entry point to the module declaring the function,
   each module by its path in the package; the declaring module's local
@@ -341,10 +342,16 @@ beyond its one parameter (further arguments, a receiver).
 Before the table is activated, the front end resolves each entry again
 over the installation the run admits, once per process, reading the
 package's modules with a compiler of its own: the entry point's module from
-the manifest's `exports` under the table's conditions, the `imports`
-mappings as recorded, each `#` specifier through the key Node selects (a
-key equal to it before any pattern, then the pattern of the longest prefix,
-then the longest pattern), which must be one the table records; each export as the module linker resolves it, through
+the manifest's `exports` under the table's conditions, which must be the
+ones Node enables in the running process (read through a resolve hook), a
+conditional object walked in its key order as Node walks it, a key Node
+does not enable skipped and a fallback array or `null` refused; the
+`imports` mappings as recorded, each `#` specifier through the key Node
+selects (a key equal to it before any pattern, then the pattern of the
+longest prefix, then the longest pattern), which must be one the table
+records, a specifier Node refuses (`#`, `#/…`, a trailing `/`) and a
+pattern's match with a backslash, a `%` or an empty, `.`, `..` or
+`node_modules` segment resolving to nothing; each export as the module linker resolves it, through
 the module's own exports and its `export *` modules, a name two of them
 provide being no export, to the recorded function and chain, of exactly its
 reviewed text and assigned nowhere in its module; and the function's
