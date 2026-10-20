@@ -35,8 +35,11 @@ design, not its progress.
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
-| [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
-| [A family's installation](#family-installation) | open | a family description names its package's installation and digest, and the front end activates any active description's package by that data, as it does the compiler API's |
+| [Family identity controls](docs/HOST-FAMILIES.md#identity-through-program-code) | closed: each control verifies or is refused as stated, the negatives with a counterexample run under Node, and forged claims of `{ node }`, of a callback's result, of a re-exported guard's `false` edge and of a guard's wrapper at a node type refused in search and in checking (2026-10-20) | — |
+| [A generic method's instance at a union of arms](#generic-instance-union-arms) | open: an investigation, cause unknown | `compiler-api-node-callback-inline` verifies |
+| [Compiler enum binding identity](docs/HOST-FAMILIES.md#activation) | closed: all seven allowed enums require the audited runtime object through Node resolution, including program re-exports; 14 positive bindings verify and 14 mismatched bindings are refused with Node counterexamples (2026-10-20) | — |
+| [Instance candidate growth](lean/Verification/Tests/InstanceGrowthControls.lean) | closed: a shared 64-patch budget covers fixed and variadic targets before combinations are constructed; controls with 24 ambiguous targets produce at most 66 candidates (2026-10-20) | — |
+| [A family's installation](docs/HOST-FAMILIES.md#activation) | closed: each description names its package, installation and digest; the front end activates every active description's installation by that data, the compiler API's among them, refusing another digest, version or an installation Node does not find; the string-tagged stand-in activated by its description alone beside the compiler API's (2026-10-20) | — |
 | [Paths at an entry beyond one member](docs/HOST-FAMILIES.md#entries) | closed: an entry's witness of a path reads from its prefix's, one checked link per segment; `compiler-api-entry-path` verifies, the forged chains are refused, each accepted with its check disabled (2026-10-20) | — |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
@@ -320,17 +323,6 @@ the producer, where the same constants narrow in an `===` test and literal
 labels narrow in a `switch` (`switch-enum-case-narrowing`, a gap). The
 compiler API's code switches on `node.kind` this way.
 
-<a id="family-installation"></a>
-**A family's installation.** The checking mechanism of host families reads
-its family from the description alone (HOST-FAMILIES.md, "What a family
-supplies, what it gets"), but registering the package a description is
-about is the compiler API's: the front end resolves the installation of
-`typescript` the tools pin (`installation` in `tools/compiler-api.mts`)
-and checks its digest (C0), and another package is read as a host only
-through the test-only stand-in channel. A second real family needs its
-package, installation and digest stated in its description and resolved by
-the same code.
-
 <a id="shadowing-locals-search"></a>
 **The search past 60 s on `shadowingLocals`.** The slice of
 `fragment-support.mts#shadowingLocals` holds that function and
@@ -347,22 +339,15 @@ a union of 57 to 63 arms with one arm fails in about 70 ms. In
 `bindingScope`'s own slice the pool holds 41 such arms and each comparison
 takes about 7 ms: 2.5 s in all.
 
-<a id="family-identity-controls"></a>
-**Family identity controls.** Of the
-[identity controls](docs/HOST-FAMILIES.md#identity-through-program-code),
-the cases cover a program alias and a re-export of `Node`, a generic
-identity at `Identifier` and at `Node`, a verified wrapper, a record's
-field holding a node (`compiler-api-family-identity`), a program literal
-annotated as a node (`invalid-compiler-api-forged-node`), `{ node }` passed
-where a node is expected (`invalid-compiler-api-boxed-node`), `{ ...node }`
-(`invalid-compiler-api-node-spread`) and forged claims of a program
-allocation at a family type (`pipeline/test.mts`). Left: a callback of
-`forEachChild` reading its argument and one whose result is claimed at a
-node type it did not receive, which wait on a generic method called on a
-node (`compiler-api-node-callback`, a gap). A re-exported guard narrows,
-and a local function of a guard's name and a guard's wrapper are ordinary
-functions (`compiler-api-guard-calls`, `invalid-compiler-api-guard-wrapper`,
-`invalid-compiler-api-guard-local`).
+<a id="generic-instance-union-arms"></a>
+**A generic method's instance at a union of arms**, an investigation:
+`n.forEachChild((c: ts.Node): ts.Node => c)`, in a run whose selection
+reads `Node` as several arms, is refused in evidence search at the read of
+`forEachChild` ("No rule derives this readAt",
+`compiler-api-node-callback-inline`), where the same callback bound to a
+name, and the written callback in a run reading `Node` as one arm, verify.
+Which part of the instance's proposal or of its image check fails is not
+known.
 
 <a id="corrected-members"></a>
 **Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)

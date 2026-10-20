@@ -1,8 +1,8 @@
 {
   // A project of the stand-in string-tagged family's examples, beside the
-  // installation link `node_modules/typescript` to `../string-family-fixture/`
+  // installation link `node_modules/string-family-fixture` to `../string-family-fixture/`
   // (pipeline/fixture-links.mts), through which Node and TypeScript both
-  // resolve `typescript/ast`: the examples pipeline/test.mts reads.
+  // resolve `string-family-fixture/ast`: the examples pipeline/test.mts reads.
   "compilerOptions": {
     "strict": true,
     "noEmit": true,

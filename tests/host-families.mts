@@ -44,7 +44,8 @@ const literals = (type: ts.TypeNode): number[] | null => {
   return null;
 };
 const description: FamilyDescription = {
-  package: "fixture",
+  package: { name: "fixture", version: "0.0.0" },
+  installation: { from: "", digest: "" },
   marker: "Fixture",
   root: { name: "Node", form: "inheritance", text: "export interface Node { readonly kind: K; readonly parent: Node; }" },
   tag: { field: "kind", primitive: "number", constants: { enum: "K" } },

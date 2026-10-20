@@ -789,12 +789,17 @@ export const cases: Case[] = [
   { ...negative("invalid-compiler-api-forged-node", "an object literal with every member `Node` states is no node: no program allocation is a member of the family",
     /source expression obligation at \[[0-9]+,[0-9]+\): evidence search failed: no derivation of its node-typing claim/),
     project: "pipeline/compiler-api-project" },
-  { ...gap("compiler-api-node-callback", "a callback of `forEachChild` reading its node argument's members: a generic method called on a node has no derivation (WORK.md, family identity controls)", "unverified", "search",
-    /No rule derives this letE/), project: "pipeline/compiler-api-project" },
-  { ...negative("invalid-compiler-api-boxed-node", "a record holding a node is no node: passed where a node is expected, refused at the call (TypeScript refuses it too)",
+  { ...positive("compiler-api-node-callback", "a callback of `forEachChild` reads its node argument's members, the generic method's binder instantiated at a result holding `undefined`; a callback returning its argument returns that node"),
+    project: "pipeline/compiler-api-project" },
+  { ...gap("compiler-api-node-callback-inline", "a callback of `forEachChild` written in place returning its node, where the run reads `Node` as several arms: the binder's instance at that union has no derivation in evidence search (WORK.md, a generic method's instance at a union of arms)", "unverified", "search",
+    /source expression obligation at \[525,539\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this readAt/),
+    project: "pipeline/compiler-api-project" },
+  { ...negative("invalid-compiler-api-node-callback-result", "a callback of `forEachChild` whose result is asserted an `Identifier`, a node type it did not receive: refused at the assertion (run under Node: a binary expression's `text`, `undefined`)",
+    /closure expression claim at \[459,477\): evidence search failed/), project: "pipeline/compiler-api-project" },
+  { ...negative("invalid-compiler-api-boxed-node", "a record holding a node is no node: passed where a node is expected, refused at the call (TypeScript refuses it too; run under Node: the record's `pos`, `undefined`)",
     /source expression obligation at \[[0-9]+,[0-9]+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this invoke/),
     project: "pipeline/compiler-api-project", typescriptErrors: true },
-  { ...negative("invalid-compiler-api-node-spread", "a spread of a node copies own keys the model leaves unknown: refused at the spread",
+  { ...negative("invalid-compiler-api-node-spread", "a spread of a node copies own keys the model leaves unknown: refused at the spread (run under Node: the copy's `kind`, `undefined`)",
     /source expression obligation at \[[0-9]+,[0-9]+\): evidence search failed: no derivation of its node-typing claim\nobligation: No rule derives this merge/),
     project: "pipeline/compiler-api-project" },
   { ...positive("compiler-api-lookalike", "a look-alike the program declares is an ordinary record, narrowed by the ordinary rules; a node is one of a record's values that states members every node has"),
@@ -881,8 +886,9 @@ export const cases: Case[] = [
     project: "pipeline/compiler-api-project" },
   // `pipeline/host-fixture/` names the host package in its manifest and is
   // no installation of it: no host reading applies, so its `jsDoc` is an
-  // ordinary member. pipeline/test.mts reads it as the host package through
-  // the test-only stand-in, where every read of `jsDoc` is refused.
+  // ordinary member. pipeline/test.mts reads it as the host package under a
+  // description naming its installation, where every read of `jsDoc` is
+  // refused.
   { ...positive("host-fixture-lookalike", "a package whose manifest names the host package, outside the audited installation, gets no host reading: its `jsDoc` is read as declared"),
     project: "pipeline/host-fixture-project" },
   { ...positive("host-fixture-jsdoc-other-reads", "no read of the allocating member: a constant named `jsDoc` holding \"parent\" keys the read of `parent`; a node at a structural type stating only kept members; `\"jsDoc\" in n`, which reads no value"),

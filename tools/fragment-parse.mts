@@ -1009,7 +1009,7 @@ function parseModules(file: string, carriesContext: boolean, tsconfigPath: strin
   resolutionFile: string, seen: ((diagnostic: SeenDiagnostic) => void) | undefined): Ast {
   // One tag selection of each host family for the run (HOST-FAMILIES.md,
   // "Residuals"): the checked file's, every imported module lowered with it.
-  let selection: readonly TagValue[] | undefined;
+  let selection: ReadonlyMap<string, readonly TagValue[]> | undefined;
   const main = lowerFile(file, carriesContext, tsconfigPath, resolutionFile, seen, null, { selected: s => { selection = s; } });
   const modules: ModuleAst[] = [];
   const done = new Set<string>();
@@ -1072,7 +1072,7 @@ function renamedModule<T>(value: T, from: string, to: string): T {
 function lowerFile(file: string, carriesContext: boolean,
   tsconfigPath: string | undefined, resolutionFile: string,
   seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null,
-  family: { given?: readonly TagValue[]; selected?: (selection: readonly TagValue[]) => void }): Lowered {
+  family: { given?: ReadonlyMap<string, readonly TagValue[]>; selected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void }): Lowered {
   const absolute = resolve(file);
   const text = readText(absolute);
   const { file: source, checker } = openFile(absolute, text);

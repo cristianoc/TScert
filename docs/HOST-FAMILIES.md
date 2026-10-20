@@ -410,10 +410,13 @@ constant. The contract, every condition checked on the resolved files:
   data property holding a primitive;
 - the body declares nothing but $`y`$ and assigns nothing.
 
-The generator computes $`K_g`$ by evaluating $`c`$ over $`\mathcal T_F`$.
-A function outside the contract, or one whose bindings do not resolve, gets
-no entry: it loses its predicate and any preservation effect. The
-generator's output is compared with the reviewed table in a fast check,
+The generator (`dev/guard-table.mts`) reads a description's entry point, tag
+field and tag enum, and computes $`K_g`$ by evaluating $`c`$ over
+$`\mathcal T_F`$, the values of the enum the entry point exports as Node
+loads it. A function outside the contract, or one whose bindings do not
+resolve, gets no entry: it loses its predicate and any preservation effect.
+The generator's output is compared with each family's reviewed table in a
+fast check (`tests/compiler-api-guards.mts`),
 and a Node run of every entry on an object of each tag compares its answers
 with $`K_g`$; both are regression evidence for the review, not proofs of
 the entry's statement.
@@ -437,7 +440,11 @@ of the package in a nested `node_modules` (`pipeline/test.mts`). The
 fixture projects resolve the package as Node does, through installation
 links (`pipeline/fixture-links.mts`), with no `paths` for it. A
 same-named local function, a re-bound name, or a function wrapping a guard
-is an ordinary call, the wrapper an ordinary verified function. A call with
+is an ordinary call, the wrapper an ordinary verified function. The
+declaration TypeScript binds, the family of its parameter's type (or its
+tag enum's) and the function Node binds are one description's: a guard Node
+binds to another family's function of the same name and domain is an
+ordinary call (`pipeline/test.mts`). A call with
 a spread or more than one argument is refused.
 
 **A call on an immutable name** $`x`$, a binding the existing
@@ -804,11 +811,6 @@ name. A family supplies, in its description, data alone:
   declares, checked against the declaration as reviewed;
 - its allocating members, omitted from every shape and checked likewise.
 
-What the mechanism does not yet take from the description is the
-package's installation: the front end registers the compiler API's
-package, pinned by the tools, and reads another only through a test-only
-channel ([WORK.md](../WORK.md#family-installation)).
-
 It gets, for every required property member of its shapes the rule does
 not exclude, a stable key in the declaration document; the tag of a
 residual is stable where the tag member of every shape it stands for is,
@@ -871,15 +873,30 @@ naming of a package type:
   program function calling a guard is an ordinary verified function, whose
   own promise, if it states one, is proved at its body.
 
-Controls, each with a forged-evidence counterpart refused in search and in
-checking: a program alias and a re-export of `Node` read as the family type;
-a generic identity function returning a node at `T`; a verified wrapper
-returning its node argument; `{ node }` passed where a node is expected
-(refused) and its field read as a node (verified); `{ ...node }` (refused at
-the spread); a program literal annotated as a node (refused); a callback of
-`forEachChild` reading its node argument's members, and one whose result is
-claimed at a node type it did not receive (refused); a re-exported guard
-narrowing; a wrapper of a guard, read at its own signature.
+Controls, the refused ones with their counterexample under Node where one
+exists (`tests/compiler-api.mts`):
+
+- verified: a program alias and a re-export of `Node` read as the family
+  type; a generic identity function returning a node at `T`; a verified
+  wrapper returning its node argument; a record's field holding a node read
+  as the node (`compiler-api-family-identity`); a callback of `forEachChild`
+  reading its node argument's members, and one returning the node it
+  received (`compiler-api-node-callback`); a re-exported guard narrowing on
+  both edges, a local function of a guard's name and a wrapper of a guard,
+  each read at its own signature (`compiler-api-guard-calls`);
+- refused: `{ node }` passed where a node is expected
+  (`invalid-compiler-api-boxed-node`); `{ ...node }`, at the spread
+  (`invalid-compiler-api-node-spread`); a program literal annotated as a node
+  (`invalid-compiler-api-forged-node`); a callback of `forEachChild` whose
+  result is asserted a node type it did not receive
+  (`invalid-compiler-api-node-callback-result`); a read narrowed only by a
+  guard's wrapper (`invalid-compiler-api-guard-wrapper`);
+- forged claims, bypassing the producer, refused by the search at the
+  forged claim and by the checker against the case's evidence
+  (`pipeline/test.mts`): `{ node }` claimed at the node it holds, a
+  callback's result claimed at the identifier shape it did not receive, and
+  the node on a re-exported guard's `false` edge and where a guard's wrapper
+  answers `true`, each claimed at the identifier shape.
 
 ## The family description
 
@@ -890,11 +907,20 @@ as those contracts are: every entry carries the declaration text it was
 reviewed against, and a check compares each with the installed declaration.
 It states:
 
-- **package:** the host package's identity, its name, version and the
-  digest of its audited installation (the binding check C0 of the
-  [compiler API](COMPILER-API.md#binding-the-contract-to-the-implementation)
-  generalized: the SHA-256 of every module in the static closure of the
-  admitted entry points);
+- **package:** the host package's identity, the name and version its
+  manifest states;
+- **installation:** the audited installation, the package of that name as
+  Node's package resolution finds it from a directory of the repository,
+  and the digest of its declarations, the SHA-256 of its version and its
+  inventory: every `.d.ts`, `.d.mts` and `.d.cts` file under its real
+  directory, reached without following a symbolic link, outside a nested
+  `node_modules` (the binding check C0 of the
+  [compiler API](COMPILER-API.md#binding-the-contract-to-the-implementation),
+  of every family). The family's declarations are exactly that inventory,
+  by real path: a dependency's declaration and one reached through a link
+  are read by the ordinary rules, and a declaration of an arbitrary
+  extension (`.d.<ext>.ts`) refuses the installation. The guard table pins
+  its executable closure;
 - **root:** the root declaration and its form, `inheritance` or `union`;
 - **tag:** the tag field $`\tau`$, its primitive, and the source of its
   constants: an enum declaration, which the binding check compares with its
@@ -923,8 +949,36 @@ It states:
 The mechanism is explicit, and nothing activates it by spelling:
 
 - **The family:** a reviewed description in the trusted contracts turns a
-  family on, for the package its identity names. Without one, the package's
-  declarations are read by the ordinary rules.
+  family on, for the installation it names (`reviewedFamilies` in
+  `tools/family-activation.mts`). Without one, the package's declarations
+  are read by the ordinary rules. Several descriptions are active together,
+  each owning its marker and its installation; a declaration is read by the
+  description whose installation holds its file, and a run's
+  [selection](#the-runs-selection) is one per family.
+- **The installation:** Node's package resolution
+  (`module.findPackageJSON`) finds the description's package from the
+  description's directory; its manifest states the description's name and
+  version, and its declarations have the description's digest, checked once
+  per process before any of its declarations is read. Its guard table is
+  [activated](#the-guard-table) over that installation, with the table's own
+  checks.
+- **A package's own contract:** the compiler API's tables by name (its
+  named views, branded strings, enums read as values, node list and type
+  roots, [COMPILER-API.md](COMPILER-API.md#reading-rules)) apply to its own
+  installation alone; another family's declarations of those names are read
+  as they declare them, under the host reading rules every installation
+  shares.
+- **The tag enum as a value:** a program reads the description's tag enum
+  as a value, each member at its literal type, where its declaration's
+  members are those of the runtime object the activated entry point exports
+  under its name: each member an own data property holding its declared
+  value, every other own key the reverse mapping of a numeric member (C1, for
+  every family), and where the program's import of it, resolved by Node
+  from the importing module and through a program module's re-export as a
+  guard's is ([calls](#calls)), binds that very object. Any other enum of a family's installation is read as a
+  value only where its package's contract lists it, as the compiler API's
+  `hostEnums`, with the same resolved binding identity requirement against
+  the object its contract checks.
 - **Membership:** a value is a family member only through the marker, which
   the host supplies for the objects its entry points give as family members
   (F1); no allocation of the program owns `[[host]]`.
@@ -941,11 +995,13 @@ So:
   derivation, since the marker view admits no program object; a forged
   stable view is refused by the decoder; a forged guard call is an ordinary
   call, since recognition is by resolution.
-- An **unidentified package version**, whose installation's digest differs
-  from the description's, has no active family: its types are read as
-  declared, and its guards at their declared signatures. The binding check
-  fails the suite for the installation the front end itself uses, and the
-  description is reviewed again.
+- An **unidentified installation**, whose manifest or declarations' digest
+  differs from its description's, or which Node does not find, refuses every
+  run reading a declaration of the description's installation, until the
+  description is reviewed again (`tests/compiler-api.mts`, and the
+  stand-in's controls in `pipeline/test.mts`). A guard table that does not
+  match its installation leaves the family without guards, each read
+  without predicate.
 
 ## Trust rows
 
@@ -995,8 +1051,9 @@ bind them to the reviewed files.
 The description of `typescript` 7.0.2's syntax trees
 ([the node invariant](COMPILER-API.md#the-node-invariant)):
 
-- package: `typescript` 7.0.2, its audited installation and closure digest
-  (C0); entry point `typescript/unstable/ast`;
+- package: `typescript` 7.0.2; entry point `typescript/unstable/ast`;
+- installation: the package Node finds from `tools/`, and its declarations'
+  digest (C0);
 - root: `Node`, an inheritance root;
 - tag: `kind`, a number, its constants the enum `SyntaxKind` of
   `#enums/syntaxKind`, which C1 compares with the runtime object;
@@ -1024,10 +1081,16 @@ Its rows are T1 (F1 and F2), T1′ (F1′), T2 (F3) and T4, which includes F4
 
 ### A string-tagged stand-in
 
-A test-only stand-in package (`pipeline/string-family-fixture/`), which
-`pipeline/test.mts` installs as the host with a description of its own,
-shows the mechanism general over the tag's primitive: its units are tagged
-by `type`, a string, whose constants are a string enum; its guard table
+A stand-in package, `string-family-fixture` (`pipeline/string-family-fixture/`),
+shows the mechanism general over the package and the tag's primitive:
+`pipeline/test.mts` activates it beside the compiler API's description by a
+description of its own (`pipeline/string-family.mts`, its guard table the
+generator's output), which names its package, its installation (the
+package Node finds from `pipeline/string-family-fixture-project/`, through
+the fixture link `node_modules/string-family-fixture`) and its digest, and
+nothing else; under a description of another digest, or of an installation
+Node does not find, its programs are refused. Its units are tagged by
+`type`, a string, whose constants are the string enum `UnitType`; its guard table
 lists `isName`, an equality, and `isExpression`, through a helper of its
 tag, each activated over the stand-in's own modules; `isNameLoosely`, whose
 answer depends on an option argument, takes two parameters and has no
@@ -1037,9 +1100,8 @@ Its description states no stable-member exclusion, so a callee tested and
 read past a call verifies; under one excluding `Call.callee` the same read
 is refused, under one excluding `Literal.type` no residual standing for
 `Literal` states its tag stable, and under one listing `Unit.notes` as
-allocating a read of it is refused (`pipeline/string-family-fixture-project/`, whose
-`node_modules/typescript` links the stand-in, so that Node and TypeScript
-resolve its specifier alike).
+allocating a read of it is refused (`pipeline/string-family-fixture-project/`,
+where Node and TypeScript resolve the stand-in's specifier alike).
 
 ### A second instance: a readonly Babel interface
 

@@ -102,7 +102,7 @@ import { fileURLToPath } from "node:url";
 import { TypeFlags, isTypeReference, type Checker, type Program, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { Node, SourceFile } from "typescript/unstable/ast";
-import { isHostFile } from "./compiler-api.mts";
+import { isHostFile } from "./family-activation.mts";
 import { prelude, shadowText, type ReplacedInput } from "./shadow-contracts.mts";
 import { toolFailureOf } from "./thrown.mts";
 import { openCompiler } from "./compiler-channel.mts";

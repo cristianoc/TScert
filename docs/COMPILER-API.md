@@ -182,12 +182,12 @@ an identity the package's memoization keeps within a snapshot.
 
 A **host package** is a package the contract names: `typescript`, with the
 modules `unstable/ast` and `unstable/sync`. Its declarations are the files
-of the audited installation, the package the front end itself resolves
-(`tools/package-lock.json` pins it), whose `.d.ts` files have the reviewed
-digest (`hostDeclarationsDigest`, C0): a package elsewhere, whatever its
+of the audited installation, which the family description names
+([activation](HOST-FAMILIES.md#activation)): the package `typescript` Node
+resolves from `tools/` (`tools/package-lock.json` pins it), whose `.d.ts`
+files have the description's digest (C0): a package elsewhere, whatever its
 manifest names, gets no host reading, and a changed installation is refused
-until reviewed again. A test supplies a stand-in through a channel no entry
-point of the pipeline reaches (`useHostInstallationForTests`). A **host type** is a type the
+until reviewed again. A **host type** is a type the
 contract lists as introduced by the package alone: every node shape,
 `NodeArray`, `Type` and its sub-interfaces, `Symbol`, `Signature`,
 `NodeHandle`, and every class the package declares (`API`, `Snapshot`,
@@ -220,7 +220,9 @@ are ordinary types.
    type `E` at a position of a host declaration is `number`, since
    TypeScript admits any number at a numeric enum type and the flag enums
    hold combinations there. A literal member type `SyntaxKind.Identifier`
-   is the literal.
+   is the literal. Reading an enum as a value requires the import, resolved
+   by Node from each importing module through program re-exports, to bind
+   the object C1 checks, by the [host enum binding rule](HOST-FAMILIES.md#activation).
 4. **Named views.** A host class (`Checker`, `Program`, `Snapshot`,
    `Project`, `API`, `Symbol`, `NodeHandle`, `Type`) is read through a view
    that `compiler-api.mts` names and lists: the members the front end uses,
@@ -1173,17 +1175,21 @@ The pieces, by file:
 
 - `tools/compiler-api.mts`: the host package's name and modules; the host
   types and their views; the corrections; the allocating members; the
-  stated `Type` guards; the refused guards; the hashes of C0. Each entry
-  carries the declaration text reviewed, as in `library-globals.mts`.
+  stated `Type` guards; the refused guards; the installation and digest of
+  C0, in the family description. Each entry carries the declaration text
+  reviewed, as in `library-globals.mts`.
 - `tools/host-families.mts` and `compilerApiFamily` in
-  `tools/compiler-api.mts`: the family description and its interpreter.
+  `tools/compiler-api.mts`: the family description and its interpreter;
+  `tools/family-activation.mts`: the active descriptions, each
+  installation's resolution and digest check, and the guard tables'
+  activation.
 - `tools/declaration-graph.mts`: reading rules 1–5, the family's readings at
   the run's selection, host enums, method overloads in declared classes,
   private members skipped.
 - `tools/fragment-*.mts`: `host-guard` over the guard table, the
   membership test `tagMember`, namespace imports, bitwise operators; the
   table's generator is a review aid, outside the front end; the table's
-  activation, in `tools/compiler-api.mts`, reads the package's modules with
+  activation, in `tools/family-activation.mts`, reads the package's modules with
   a compiler of its own.
 - `tests/compiler-api.mts`: C0–C4; the suite wrapper of C5.
 - `docs/SOURCE-CONTRACTS.md`, `docs/SOURCE-FRAGMENT.md` and

@@ -24,24 +24,102 @@ import { copyFileSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSy
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { compilerApiFamily, hostViews, declarationsDigest, hostDeclarationsDigest, hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
+import { compilerApiFamily, hostViews, hostEnums, hostPackage } from "../tools/compiler-api.mts";
+import { declarationsDigest, installationRoot, isHostFile, reviewedFamilies, useFamiliesForTests } from "../tools/family-activation.mts";
+import { stringFamily } from "../pipeline/string-family.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 
 // The package the front end resolves, from tools/.
 const root = dirname(createRequire(resolve(import.meta.dirname, "../tools/package.json"))
   .resolve(`${hostPackage.name}/package.json`));
+assert.equal(installationRoot(compilerApiFamily), root, "the description's installation is the package the tools resolve");
 const manifest: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 assert.ok(typeof manifest === "object" && manifest !== null, "the host package's manifest is an object");
 assert.ok("name" in manifest && manifest.name === hostPackage.name && "version" in manifest &&
   manifest.version === hostPackage.version,
   `the installed host package is ${hostPackage.name} ${hostPackage.version}`);
 assert.ok(isHostFile(join(root, "dist", "ast", "index.d.ts")), "the package's declarations are host files");
-// C0, binding: the installed declarations have the reviewed digest, and a
-// package elsewhere whose manifest names the host package is no host.
-assert.equal(declarationsDigest(root), hostDeclarationsDigest, "the host declarations are the reviewed ones");
+// C0, binding: every reviewed description's installation has the
+// description's digest, and a package elsewhere whose manifest names the
+// host package is no host.
+for (const description of reviewedFamilies)
+  assert.equal(declarationsDigest(installationRoot(description)), description.installation.digest,
+    `the family ${description.marker}'s declarations are the reviewed ones`);
 const lookalike = resolve(import.meta.dirname, "../pipeline/host-fixture/ast.d.ts");
 assert.ok(!isHostFile(lookalike), "a lookalike package with the host's manifest is no host");
+// Activation fails closed (HOST-FAMILIES.md, "Activation"): a description
+// whose digest, version or installation differs from the package Node
+// resolves refuses every read of the package's declarations, each beside the
+// reviewed description, under which the same file is a host file.
+{
+  const file = join(root, "dist", "ast", "index.d.ts");
+  const refusedUnder = (description: typeof compilerApiFamily, at: string, refusal: RegExp, what: string): void => {
+    useFamiliesForTests([description]);
+    try {
+      assert.throws(() => isHostFile(at), refusal, what);
+    } finally {
+      useFamiliesForTests(null);
+    }
+  };
+  refusedUnder({ ...compilerApiFamily, installation: { ...compilerApiFamily.installation, digest: "0".repeat(64) } }, file,
+    /is not the one the family RemoteNode was reviewed against: its declarations' digest is/, "another digest");
+  refusedUnder({ ...compilerApiFamily, package: { ...compilerApiFamily.package, version: "7.0.1" } }, file,
+    /is not the family RemoteNode's typescript 7.0.1: its manifest names typescript 7.0.2/, "another version");
+  // The package of the same name and version Node finds from the stand-in's
+  // project (`pipeline/fixture-links.mts`), whose declarations differ.
+  refusedUnder({ ...compilerApiFamily, installation: { ...compilerApiFamily.installation, from: "pipeline/host-fixture-project" } },
+    lookalike, /is not the one the family RemoteNode was reviewed against/, "another installation of the package's name");
+  refusedUnder({ ...compilerApiFamily, installation: { ...compilerApiFamily.installation, from: "docs" } }, file,
+    /the family RemoteNode's package typescript does not resolve from docs/, "an installation Node does not find");
+  useFamiliesForTests([compilerApiFamily]);
+  try {
+    assert.ok(isHostFile(file), "the reviewed description, the one thing changed");
+  } finally {
+    useFamiliesForTests(null);
+  }
+  // Ownership is the inventory the digest covers: in a copy of the
+  // string-tagged stand-in, linked into a project as Node finds it, a
+  // dependency's declaration in a nested `node_modules` and a declaration
+  // reached through a symbolic link inside the package are no host files,
+  // and leave the digest unchanged; the package's own declarations are, by
+  // their real paths through the link; a declaration of an arbitrary
+  // extension refuses the installation.
+  const project = runDirectory("tscert-inventory-");
+  const copy = join(project, "package");
+  cpSync(resolve(import.meta.dirname, "../pipeline/string-family-fixture"), copy, { recursive: true });
+  mkdirSync(join(copy, "node_modules", "dep"), { recursive: true });
+  writeFileSync(join(copy, "node_modules", "dep", "index.d.ts"), "export interface Unit { readonly type: string; }\n");
+  writeFileSync(join(project, "outside.d.ts"), "export interface Unit { readonly type: string; }\n");
+  symlinkSync(join(project, "outside.d.ts"), join(copy, "linked.d.ts"));
+  mkdirSync(join(project, "node_modules"));
+  symlinkSync(copy, join(project, "node_modules", stringFamily.package.name));
+  const copied = { ...stringFamily, installation: { ...stringFamily.installation, from: project } };
+  useFamiliesForTests([compilerApiFamily, copied]);
+  try {
+    assert.ok(isHostFile(join(project, "node_modules", stringFamily.package.name, "ast.d.ts")), "the package's own declaration, through the link");
+    assert.ok(!isHostFile(join(copy, "node_modules", "dep", "index.d.ts")), "a nested dependency's declaration is no host file");
+    assert.ok(!isHostFile(join(copy, "linked.d.ts")), "a declaration reached through a symbolic link is no host file");
+  } finally {
+    useFamiliesForTests(null);
+  }
+  // Two active descriptions own no guard entry together, so a guard's
+  // family is its entry's.
+  useFamiliesForTests([stringFamily, { ...copied, marker: "StringFixtureCopy" }]);
+  try {
+    assert.throws(() => isHostFile(join(copy, "ast.d.ts")), /the families StringFixture and StringFixtureCopy share a guard entry/);
+  } finally {
+    useFamiliesForTests(null);
+  }
+  const extended = runDirectory("tscert-inventory-extension-");
+  cpSync(resolve(import.meta.dirname, "../pipeline/string-family-fixture"), join(extended, "node_modules", stringFamily.package.name),
+    { recursive: true });
+  writeFileSync(join(extended, "node_modules", stringFamily.package.name, "styles.d.css.ts"), "declare const styles: string;\nexport default styles;\n");
+  refusedUnder({ ...stringFamily, installation: { ...stringFamily.installation, from: extended } },
+    join(extended, "node_modules", stringFamily.package.name, "ast.d.ts"),
+    /a declaration of an arbitrary extension, which no reading rule covers/, "an arbitrary-extension declaration");
+  console.log("C0: each reviewed description's installation has its digest; a description of another digest, version or installation, or one whose installation Node does not find, refuses the package's declarations; a nested dependency's declaration and one reached through a symbolic link are no host files; an arbitrary-extension declaration refuses the installation");
+}
 
 // `#enums/*` under the `default` condition, as the manifest's `imports` map
 // states it.
@@ -498,6 +576,23 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const mismatch: unknown = await import(pathToFileURL(join(other, "invalid-compiler-api-guard-reexport-mismatch.ts")).href);
   assert.ok(isNamespace(mismatch) && unary(mismatch.name), "the fixture exports name");
   assert.equal(mismatch.name(statement), undefined, "the mismatched re-export reads text of no identifier");
+  // Family identity through program code (HOST-FAMILIES.md, "Identity
+  // through program code"): a record holding a node passed where a node is
+  // expected reads `pos` of no node; a spread's copy of a node has no
+  // `kind`; a callback of `forEachChild` asserting its argument an
+  // identifier returns the binary expression of `x + 1;`, whose `text` is
+  // `undefined`.
+  const boxed = await fixture("invalid-compiler-api-boxed-node");
+  assert.ok(unary(boxed.boxed), "the fixture exports boxed");
+  const anyNode = first(join(dir, "any.ts"), "x;\n", Number(syntaxKind.ExpressionStatement));
+  assert.equal(boxed.boxed(anyNode), undefined, "boxed returns undefined");
+  const spread = await fixture("invalid-compiler-api-node-spread");
+  assert.ok(unary(spread.copiedKind), "the fixture exports copiedKind");
+  assert.equal(spread.copiedKind(anyNode), undefined, "a spread's copy has no kind");
+  const callback = await fixture("invalid-compiler-api-node-callback-result");
+  assert.ok(unary(callback.firstName), "the fixture exports firstName");
+  const sum = first(join(dir, "sum.ts"), "x + 1;\n", Number(syntaxKind.ExpressionStatement));
+  assert.equal(callback.firstName(sum), undefined, "firstName returns the text of a binary expression");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier");
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind and a callback's asserted identifier's text are undefined");
 }

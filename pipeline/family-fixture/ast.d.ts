@@ -1,7 +1,7 @@
 // A stand-in host package with a tagged family whose root declares an
-// optional method, which no audited package does: pipeline/test.mts installs
-// it as the host through the test-only stand-ins, with a description of its
-// own. Each shape inherits `text` required and `describe` optional.
+// optional method, which no audited package does: pipeline/test.mts activates
+// it under a description of its own, which names its installation and
+// digest. Each shape inherits `text` required and `describe` optional.
 export declare enum SyntaxKind {
   First = 0,
   Second = 1,
