@@ -125,7 +125,7 @@ implications and argument slots must follow from them. -/
 
 /-- A context no environment meets: one of its slots has a type no value
 meets. -/
-def unsatisfiable (G : NormalGraph ι) (Γ : List (Ty ι)) : Bool :=
+@[nospecialize] def unsatisfiable (G : NormalGraph ι) (Γ : List (Ty ι)) : Bool :=
   Γ.any fun A => G.plainTy A && (expand G A).isEmpty
 
 theorem unsatisfiable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W}

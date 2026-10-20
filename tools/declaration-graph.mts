@@ -16,7 +16,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
-import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, restPositions, signature, signatures, substitute,
+import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, restPositions, restTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type MappedMember, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
@@ -2809,7 +2809,8 @@ export function collectDeclarations(file: string, options: {
           params.push(term);
           continue;
         }
-        const positions = index === parameters.length - 1 ? restPositions(term) : null;
+        const positions = index === parameters.length - 1
+          ? restPositions(restTerm(valueScope(declaration, text), term)) : null;
         if (!positions) return refuse("a signature with a rest that is not an array or a tuple of required positions");
         if ("positions" in positions) params.push(...positions.positions);
         else rest = positions.element;

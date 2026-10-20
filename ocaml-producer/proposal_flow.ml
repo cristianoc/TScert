@@ -30,7 +30,8 @@ type 'output callbacks = {
   publish_output: 'output -> unit;
   statement: environment -> Source.stmt -> environment;
   (* Whether the statement just transferred is an expression whose claimed
-     type is empty: it never completes normally, so it has no normal edge. *)
+     type is empty: its normal edge carries every value and local slot at the
+     empty type, with storage bindings unchanged. *)
   cannot_return_normally: Source.stmt -> bool;
   execute_bindings: environment -> Execution.binding_plan -> environment;
   expression: environment -> Source.expr -> ty;

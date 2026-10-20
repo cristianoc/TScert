@@ -104,3 +104,40 @@ export function runLiteralBox(): string {
     },
   });
 }
+
+type Args = [string];
+type Strings = string[];
+type Many<T> = T[];
+
+function tupleRest(...xs: Args): number {
+  return xs[0].length;
+}
+
+function arrayRest(...xs: Strings): number {
+  return xs.length;
+}
+
+function instantiatedRest(...xs: Many<string>): number {
+  return xs.length;
+}
+
+function useAliasedRests(
+  cb: (
+    tuple: typeof tupleRest,
+    array: typeof arrayRest,
+    instantiated: typeof instantiatedRest,
+  ) => number,
+): number {
+  return cb(tupleRest, arrayRest, instantiatedRest);
+}
+
+export function runAliasedRests(): number {
+  return useAliasedRests(
+    (tuple, array, instantiated) =>
+      tuple("abc") +
+      array() +
+      array("a", "b") +
+      instantiated() +
+      instantiated("c"),
+  );
+}
