@@ -1739,7 +1739,10 @@ discharges that enumeration obligation.
 ### Witness edges
 
 A path witness is a target slot $`w`$ at type $`A`$, together with a read
-link $`x.f\mapsto w`$. Its incoming edge uses the ordinary slot mapping
+link $`x.f\mapsto w`$ whose receiver $`x`$ is any slot of the target: the
+root binding's for a path of one member, the witness of the path's prefix
+for a longer one, so a path of $`n`$ members is $`n`$ links, each a
+witness edge of its own. Its incoming edge uses the ordinary slot mapping
 $`m`$ and checks both obligations:
 
 ```math

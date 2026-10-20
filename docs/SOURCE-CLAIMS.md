@@ -459,15 +459,19 @@ rest operation, using `instantiate` as other quantified calls do.
 A location has a fixed write contract and contents that can vary within it.
 `current` proposes property-read result facts at one execution point, with
 the meaning in [Semantics](SEMANTICS.md#what-is-asserted-and-what-a-heap-change-can-touch).
-It is `null`, or a nonempty list of distinct `[field,labels]` pairs.
-Each field must be named, required or optional, by every record alternative,
-and its labels name a valid type in the table. An empty inner label list denotes impossibility;
-it does not mean that the assertion is absent.
+It is `null`, or a nonempty list of distinct `[path,labels]` pairs, a path
+a nonempty list of field names. Each path's first field must be named,
+required or optional, by every record alternative, and its labels name a
+valid type in the table. An empty inner label list denotes impossibility;
+it does not mean that the assertion is absent. A path of two fields or more
+is asserted only of a statement entry's immutable binding, as the
+[witness of a member path](HOST-FAMILIES.md#entries); an expression's
+assertion and a cell's name one field each.
 
 For a table whose row 4 is a single invariant Boolean cell:
 
 ```json
-{"name":"cell","type":[4],"current":[["value",[1]]]}
+{"name":"cell","type":[4],"current":[[["value"],[1]]]}
 ```
 
 The binding has the Boolean write contract and currently contains `true`.
