@@ -8,7 +8,6 @@ export const compilerApiGuards: GuardTable = {
   entryPoint: "./unstable/ast",
   conditions: ["node","import","module-sync","node-addons","default"],
   entryModule: "dist/ast/index.js",
-  imports: {"#enums/*":{"types":"./dist/enums/*.enum.d.ts","default":"./dist/enums/*.js"}},
   helpers: {
     "dist/ast/is.generated.js#isAdditiveOperator": "export function isAdditiveOperator(kind) {\n    return kind === SyntaxKind.PlusToken\n        || kind === SyntaxKind.MinusToken;\n}",
     "dist/ast/is.generated.js#isAdditiveOperatorOrHigher": "export function isAdditiveOperatorOrHigher(kind) {\n    return isMultiplicativeOperatorOrHigher(kind)\n        || isAdditiveOperator(kind);\n}",

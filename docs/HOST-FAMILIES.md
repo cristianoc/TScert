@@ -319,8 +319,7 @@ to the digest of the audited closure (C0). Each entry records:
 - the guard's **export identity** and its **resolution**: the package entry
   point and export name; the resolution conditions, those Node enables
   (`node`, `import`, `module-sync`, `node-addons`, with `default`); the
-  manifest mappings that apply (the `exports` entry of the
-  entry point, the `imports` entries the function's module uses); the
+  module the entry point resolves to; the
   re-export chain from the entry point to the module declaring the function,
   each module by its path in the package; the declaring module's local
   binding; and the dependency edges, each helper and enum binding the
@@ -341,17 +340,14 @@ beyond its one parameter (further arguments, a receiver).
 
 Before the table is activated, the front end resolves each entry again
 over the installation the run admits, once per process, reading the
-package's modules with a compiler of its own: the entry point's module from
-the manifest's `exports` under the table's conditions, which must be the
-ones Node enables in the running process (read through a resolve hook), a
-conditional object walked in its key order as Node walks it, a key Node
-does not enable skipped and a fallback array or `null` refused; the
-`imports` mappings as recorded, each `#` specifier through the key Node
-selects (a key equal to it before any pattern, then the pattern of the
-longest prefix, then the longest pattern), which must be one the table
-records, a specifier Node refuses (`#`, `#/…`, a trailing `/`) and a
-pattern's match with a backslash, a `%` or an empty, `.`, `..` or
-`node_modules` segment resolving to nothing; each export as the module linker resolves it, through
+package's modules with a compiler of its own. The table's conditions must
+be the ones Node enables in the running process, read through a resolve
+hook. Every specifier is resolved by Node's own resolver, through the same
+hook, from the module that contains it: the entry point, by the package's
+name, to the recorded module, and each import a module of the chain or of
+the closure reads to the module the chain or the edge records; a
+resolution Node refuses, or a file outside the package, is a mismatch;
+each export as the module linker resolves it, through
 the module's own exports and its `export *` modules, a name two of them
 provide being no export, to the recorded function and chain, of exactly its
 reviewed text and assigned nowhere in its module; and the function's
@@ -710,7 +706,10 @@ bind them to the reviewed files.
   clients do after creation changes it.
 - **F3 (guard identity).** Each guard table entry's statement holds of the
   function Node runs for its export identity, resolved as the entry
-  records, under the audited digest.
+  records, under the audited digest. Activation reads that resolution from
+  the verifying process's Node; F3 assumes the program runs under the same
+  Node configuration (its conditions), through ES module resolution, over
+  the unchanged installation, with no hook or loader altering resolution.
 - **F5 (unwritten constants).** The enum objects and the module bindings in
   the guard table's recorded dependency closure are never written after the
   package loads, by the program or by external code.

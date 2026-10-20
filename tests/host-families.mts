@@ -50,7 +50,7 @@ const description: FamilyDescription = {
   tag: { field: "kind", primitive: "number", constants: { enum: "K" } },
   table: [{ rule: "literal" }, { rule: "generic", declarations: ["Tok", "Tagged"] }, { rule: "base", declaration: "Base" }],
   corrections: [],
-  guards: { entryPoint: "", conditions: [], entryModule: "", imports: {}, helpers: {}, guards: [], excluded: [] },
+  guards: { entryPoint: "", conditions: [], entryModule: "", helpers: {}, guards: [], excluded: [] },
 };
 const graph = (declarations: readonly ts.InterfaceDeclaration[]): FamilyGraph => ({
   interfaces: declarations,

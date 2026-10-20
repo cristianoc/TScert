@@ -56,15 +56,14 @@ export type GuardEntry = {
   text: string;
 };
 /** A family's guard table: the entry point and the resolution conditions
- * its entries were resolved under, the entry point's module and the
- * `imports` mappings their edges use, the helpers' texts, the entries, and
+ * its entries were resolved under, the entry point's module, the helpers'
+ * texts, the entries, and
  * the guards the package declares that the recognition contract excludes,
  * each with its reason. */
 export type GuardTable = {
   entryPoint: string;
   conditions: readonly string[];
   entryModule: string;
-  imports: { readonly [pattern: string]: string | { readonly [condition: string]: string } };
   helpers: { readonly [helper: string]: string };
   guards: readonly GuardEntry[];
   excluded: readonly (readonly [string, string])[];

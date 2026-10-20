@@ -7,13 +7,13 @@
 // callback receives them.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { compilerApiGuards } from "../tools/compiler-api-guards.mts";
-import { activeGuards, hostPackage, importsKey } from "../tools/compiler-api.mts";
+import { activeGuards, hostPackage } from "../tools/compiler-api.mts";
 import type { GuardEntry, GuardTable } from "../tools/host-families.mts";
 
 const repository = resolve(import.meta.dirname, "..");
@@ -76,7 +76,6 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
   const mismatches: [string, GuardTable][] = [
     ["another entry module", { ...compilerApiGuards, entryModule: "dist/ast/is.js" }],
     ["other conditions", { ...compilerApiGuards, conditions: ["browser"] }],
-    ["another imports mapping", { ...compilerApiGuards, imports: { "#enums/*": { default: "./dist/ast/*.js" } } }],
     ["another module", one({ ...identifier, module: "dist/ast/is.js" })],
     ["another chain", one({ ...identifier, chain: [compilerApiGuards.entryModule, identifier.module] })],
     ["another text", one({ ...identifier, text: identifier.text.replace("===", "!==") })],
@@ -87,54 +86,61 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
   ];
   for (const [what, table] of mismatches)
     assert.equal(activeGuards(table), null, `${what}: no table`);
-  // Manifest overrides: copies of the package, its own entries beside a
-  // manifest changed in one mapping, each resolved by Node from a module of
-  // the copy and activated or not as Node's choice is the reviewed module or
-  // not. An exact `#enums/syntaxKind` after the reviewed `#enums/*`, and a
-  // `node-addons` key before the entry point's module, are Node's choice
-  // and no table; a key Node does not enable is skipped by both.
-  const copy = (change: (manifest: Record<string, unknown>) => Record<string, unknown>): string => {
+  // Copies of the package, a manifest mapping or a module's import changed,
+  // each activated exactly where Node, run in the copy, resolves the
+  // specifier the change concerns to the module the table records: Node's
+  // answer is the table's, whether it resolves, throws or picks another
+  // file. Changes: an exact `#enums/syntaxKind` after `#enums/*`; a
+  // `node-addons` key, which Node enables, and a key it does not, before
+  // the entry point's module; an entry point target without `./`, or with a
+  // `..` segment; an integer condition key, which Node refuses even under a
+  // condition it skips; a module importing `#enums/syntaxKind/` through an
+  // exact key of that spelling, or `#enums/../enums/syntaxKind`.
+  const copy = (change: (manifest: Record<string, unknown>) => Record<string, unknown>,
+      imported: string = "#enums/syntaxKind"): string => {
     const dir = runDirectory("tscert-guard-manifest-");
-    for (const name of readdirSync(root)) if (name !== "package.json") symlinkSync(join(root, name), join(dir, name));
+    cpSync(root, dir, { recursive: true, dereference: true });
     const manifest: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
     assert.ok(isRecord(manifest) && isRecord(manifest.imports) && isRecord(manifest.exports), "the package's manifest");
     writeFileSync(join(dir, "package.json"), JSON.stringify(change(manifest)));
+    for (const module of ["dist/ast/is.js", "dist/ast/is.generated.js"]) {
+      const text = readFileSync(join(dir, module), "utf8");
+      writeFileSync(join(dir, module), text.replace('from "#enums/syntaxKind";', `from ${JSON.stringify(imported)};`));
+    }
     return dir;
   };
-  // What Node resolves `specifier` to from a module of the copy.
-  const nodeResolves = (dir: string, specifier: string): string => {
+  // The real path of what Node resolves `specifier` to from a module of the
+  // copy, or null where it throws.
+  const nodeResolves = (dir: string, specifier: string): string | null => {
     writeFileSync(join(dir, "probe.mjs"), `console.log(import.meta.resolve(${JSON.stringify(specifier)}));\n`);
     const resolved = spawnSync(process.execPath, [join(dir, "probe.mjs")], { encoding: "utf8" });
-    assert.equal(resolved.status, 0, resolved.stderr);
-    return resolved.stdout.trim();
+    return resolved.status === 0 ? realpathSync(fileURLToPath(resolved.stdout.trim())) : null;
   };
   const entry = (mapping: unknown) => (m: Record<string, unknown>): Record<string, unknown> =>
     ({ ...m, exports: { ...(isRecord(m.exports) ? m.exports : {}), [compilerApiGuards.entryPoint]: mapping } });
-  assert.ok(activeGuards(compilerApiGuards, copy((m) => m))?.size === compilerApiGuards.guards.length,
-    "the reviewed table resolves over the unchanged manifest's copy");
-  const overridden = copy((m) => ({ ...m, imports: { ...(isRecord(m.imports) ? m.imports : {}), "#enums/syntaxKind": "./dist/enums/tokenFlags.js" } }));
-  assert.match(nodeResolves(overridden, "#enums/syntaxKind"), /dist\/enums\/tokenFlags\.js$/, "Node resolves the exact key");
-  assert.equal(activeGuards(compilerApiGuards, overridden), null, "an exact imports key after the reviewed pattern: no table");
-  const addons = copy(entry({ "node-addons": "./dist/ast/is.js", default: "./dist/ast/index.js" }));
-  assert.match(nodeResolves(addons, `${hostPackage.name}/unstable/ast`), /dist\/ast\/is\.js$/, "Node enables node-addons");
-  assert.equal(activeGuards(compilerApiGuards, addons), null, "a node-addons key before the reviewed module: no table");
-  const skipped = copy(entry({ "tscert-other": "./dist/ast/is.js", default: "./dist/ast/index.js" }));
-  assert.match(nodeResolves(skipped, `${hostPackage.name}/unstable/ast`), /dist\/ast\/index\.js$/, "Node skips a key it does not enable");
-  assert.ok(activeGuards(compilerApiGuards, skipped)?.size === compilerApiGuards.guards.length, "a key Node does not enable, skipped");
+  const imports = (added: Record<string, unknown>) => (m: Record<string, unknown>): Record<string, unknown> =>
+    ({ ...m, imports: { ...(isRecord(m.imports) ? m.imports : {}), ...added } });
+  const point = `${hostPackage.name}${compilerApiGuards.entryPoint.slice(1)}`;
+  const variants: [string, string, boolean, (m: Record<string, unknown>) => Record<string, unknown>, string?][] = [
+    ["the unchanged manifest", point, true, (m) => m],
+    ["an exact imports key after #enums/*", "#enums/syntaxKind", false, imports({ "#enums/syntaxKind": "./dist/enums/tokenFlags.js" })],
+    ["a node-addons key", point, false, entry({ "node-addons": "./dist/ast/is.js", default: "./dist/ast/index.js" })],
+    ["a key Node does not enable", point, true, entry({ "tscert-other": "./dist/ast/is.js", default: "./dist/ast/index.js" })],
+    ["a target without ./", point, false, entry("dist/ast/index.js")],
+    ["a target with a .. segment", point, false, entry("./dist/ast/../ast/index.js")],
+    ["an integer condition key", point, false, entry({ node: { "0": "./unused.js" }, default: "./dist/ast/index.js" })],
+    ["a specifier ending /", "#enums/syntaxKind/", false, imports({ "#enums/syntaxKind/": "./dist/enums/syntaxKind.js" }), "#enums/syntaxKind/"],
+    ["a specifier with a .. segment", "#enums/../enums/syntaxKind", false, (m) => m, "#enums/../enums/syntaxKind"],
+  ];
+  for (const [what, specifier, expected, change, imported] of variants) {
+    const dir = copy(change, imported);
+    const reviewed = specifier === point ? compilerApiGuards.entryModule : "dist/enums/syntaxKind.js";
+    const nodes = nodeResolves(dir, specifier) === realpathSync(join(dir, reviewed));
+    assert.equal(nodes, expected, `${what}: Node resolves ${specifier} ${expected ? "to" : "elsewhere than"} ${reviewed}`);
+    assert.equal(activeGuards(compilerApiGuards, dir)?.size === compilerApiGuards.guards.length, nodes,
+      `${what}: activated exactly where Node resolves the reviewed module`);
+  }
   assert.equal(activeGuards({ ...compilerApiGuards, conditions: ["node", "import", "default"] }), null,
     "conditions other than the running Node's: no table");
-  // Internal specifiers Node refuses (`#`, `#/…`, a trailing `/`, a `..` or
-  // `node_modules` segment) have no key; a backslash, a `%` and an empty
-  // segment, which Node resolves decoded or deprecated, have none either;
-  // a plain match is Node's.
-  const specifiers = copy((m) => ({ ...m, imports: { "#x/": "./slash.js", "#x/*": "./*.js", "#": "./h.js", "#/*": "./h/*.js" } }));
-  const keys = ["#x/", "#x/*", "#", "#/*"];
-  for (const specifier of ["#x/", "#x/a/", "#", "#/a", "#x/../a", "#x/node_modules/a", "#x/%2e%2e/a"]) {
-    assert.throws(() => nodeResolves(specifiers, specifier), `Node refuses ${specifier}`);
-    assert.equal(importsKey(keys, specifier), null, `${specifier}: no key`);
-  }
-  for (const specifier of ["#x//a", "#x/a\\b"]) assert.equal(importsKey(keys, specifier), null, `${specifier}: no key`);
-  assert.match(nodeResolves(specifiers, "#x/a"), /\/a\.js$/, "Node resolves #x/a through #x/*");
-  assert.deepEqual(importsKey(keys, "#x/a"), { key: "#x/*", star: "a" }, "#x/a: the key Node selects");
-  console.log(`activation: the reviewed table resolves, every entry; ${mismatches.length} tables differing from the installation in one recorded fact each, a table of other conditions than the running Node's, and manifests whose exact imports key or node-addons key Node prefers, are none; internal specifiers Node refuses have no key`);
+  console.log(`activation: the reviewed table resolves, every entry; ${mismatches.length} tables differing from the installation in one recorded fact each, and a table of other conditions than the running Node's, are none; over ${variants.length} changed copies of the package, activated exactly where Node resolves the reviewed module`);
 }

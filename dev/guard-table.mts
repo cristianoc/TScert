@@ -1,17 +1,17 @@
 // The compiler API's guard table generator (HOST-FAMILIES.md, "The guard
 // table"): a review aid, outside the front end. It reads every export of
 // `typescript/unstable/ast` that the package declares with a type predicate,
-// resolved through the manifest's `exports` and `imports` maps and the
+// resolved by Node's own resolver through the manifest and the
 // re-export chain from the entry point, and accepts its function only under
 // the recognition contract; for each accepted guard it computes the exact tag
 // set by evaluating the body over every tag value. It prints the table module
 // `tools/compiler-api-guards.mts`; `--check` compares it with the reviewed one.
 //   node dev/guard-table.mts [--check]
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { conditionTarget, hostPackage, importsKey, runtimeConditions } from "../tools/compiler-api.mts";
+import { hostPackage, nodeResolve, runtimeConditions } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
@@ -22,32 +22,21 @@ const entryPoint = "./unstable/ast";
 // The conditions Node enables in this process, which activation compares
 // with the running Node's.
 const conditions: readonly string[] = runtimeConditions();
-
-type Manifest = { exports: Record<string, unknown>; imports: Record<string, unknown> };
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const manifestValue: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-if (!isRecord(manifestValue) || !isRecord(manifestValue.exports) || !isRecord(manifestValue.imports))
-  throw Error("the package's manifest states no exports and imports maps");
-const manifest: Manifest = { exports: manifestValue.exports, imports: manifestValue.imports };
-// A mapping's target as Node walks it under the conditions
-// (`conditionTarget`).
-const target = (mapping: unknown): string | null => {
-  const found = conditionTarget(mapping, conditions);
-  return typeof found === "object" ? found.target : null;
+if (!isRecord(manifestValue) || typeof manifestValue.name !== "string") throw Error("the package's manifest states no name");
+const realRoot = realpathSync(root);
+// A specifier as Node's own resolver resolves it from the module that
+// contains it (`nodeResolve`), its path in the package.
+const resolveSpecifier = (from: string, specifier: string): { module: string } | null => {
+  const resolved = nodeResolve(specifier, join(root, from));
+  if (resolved === null) return null;
+  const module = relative(realRoot, resolved);
+  return module.startsWith("..") ? null : { module };
 };
-const entryFile = target(manifest.exports[entryPoint]);
-if (!entryFile) throw Error(`the manifest maps no ${entryPoint}`);
-// A specifier of a module of the package: relative, or through `imports`.
-const resolveSpecifier = (from: string, specifier: string): { module: string; via: string | null } | null => {
-  if (specifier.startsWith("./") || specifier.startsWith("../"))
-    return { module: relative(root, resolve(dirname(join(root, from)), specifier)), via: null };
-  // The key Node selects: exact before patterns, the most specific pattern
-  // first (`importsKey`).
-  const match = importsKey(Object.keys(manifest.imports), specifier);
-  const to = match ? target(manifest.imports[match.key]) : null;
-  if (!match || !to) return null;
-  return { module: relative(root, join(root, match.star === null ? to : to.replaceAll("*", match.star))), via: match.key };
-};
+const entryResolved = resolveSpecifier("package.json", `${manifestValue.name}${entryPoint.slice(1)}`);
+if (!entryResolved) throw Error(`Node resolves no ${entryPoint}`);
+const entryFile = entryResolved.module;
 
 // The package's modules, parsed once each.
 const scratch = runDirectory("tscert-guard-table-");
@@ -300,7 +289,6 @@ export const compilerApiGuards: GuardTable = {
   entryPoint: ${json(entryPoint)},
   conditions: ${json(conditions)},
   entryModule: ${json(relative(root, join(root, entryFile)))},
-  imports: ${json(Object.fromEntries(Object.entries(manifest.imports).filter(([k]) => k === enumModule.via)))},
   helpers: {
 ${[...helperTexts].sort(([a], [b]) => a < b ? -1 : 1).map(([k, t]) => `    ${json(k)}: ${json(t)},`).join("\n")}
   },

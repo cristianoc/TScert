@@ -9,6 +9,7 @@
  * `tests/compiler-api.mts`. */
 import { createHash } from "node:crypto";
 import { registerHooks } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, relative, sep } from "node:path";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
 import type { FamilyDescription, GuardEntry, GuardTable } from "./host-families.mts";
@@ -347,10 +348,10 @@ export function isHostFile(file: string): boolean {
 
 /** A guard table checked against the installation the run admits, or the
  * package at `root`, once per table and root (HOST-FAMILIES.md, "The guard
- * table"). Its entry point is re-derived from the package's own manifest
- * under the table's conditions, and its `imports` mappings found as
- * recorded; a `#` specifier resolves through the key Node selects
- * (`importsKey`), which must be one the table records. Each entry's export is
+ * table"). Its conditions are the ones Node enables in this process; its
+ * entry point, through the package's name, and every import of a module it
+ * reads resolve as Node's own resolver resolves them from the module that
+ * contains them (`nodeResolve`), to the module the table records. Each entry's export is
  * resolved as the module linker resolves it, through each module's own
  * exports and its `export *` modules, a name two of those provide being no
  * export, to the function the entry records, of exactly its text and never
@@ -391,37 +392,6 @@ export function activeGuards(table: GuardTable, root: string = installation().ro
   tables.set(table, result);
   return result;
 }
-/** The key of a package's `imports` map that Node resolves `specifier`
- * through, and the text its `*` stands for (PACKAGE_IMPORTS_EXPORTS_RESOLVE):
- * a key equal to the specifier and holding no `*`; otherwise, of the keys
- * holding one `*` whose prefix and suffix the specifier extends, the one of
- * the longest prefix, then the longest key. A specifier Node refuses (`#`,
- * one starting `#/` or ending `/`) has none, nor has a pattern's match whose
- * text holds a backslash or a `%`, or a segment that is empty, `.`, `..` or
- * `node_modules`: Node refuses those segments, or resolves them deprecated
- * or decoded, and the table admits none of them. */
-export function importsKey(keys: readonly string[], specifier: string): { key: string; star: string | null } | null {
-  if (specifier === "#" || specifier.startsWith("#/") || specifier.endsWith("/")) return null;
-  if (!specifier.includes("*") && keys.includes(specifier)) return { key: specifier, star: null };
-  let best: { key: string; star: string } | null = null;
-  for (const key of keys) {
-    const i = key.indexOf("*");
-    if (i < 0 || key.lastIndexOf("*") !== i || !specifier.startsWith(key.slice(0, i))) continue;
-    const trailer = key.slice(i + 1);
-    if (specifier.length < key.length || !specifier.endsWith(trailer)) continue;
-    if (best !== null) {
-      const b: number = best.key.indexOf("*");
-      if (b > i || (b === i && best.key.length >= key.length)) continue;
-    }
-    best = { key, star: specifier.slice(i, specifier.length - trailer.length) };
-  }
-  if (best === null) return null;
-  const { star } = best;
-  if (star.includes("\\") || star.includes("%") ||
-      star.split("/").some(segment => ["", ".", "..", "node_modules"].includes(segment.toLowerCase()))) return null;
-  return best;
-}
-
 /** The conditions Node's ES module resolution enables in this process
  * (`node`, `import`, `module-sync` and `node-addons` by default, and any
  * `--conditions`), read from the resolution itself through a resolve hook,
@@ -449,57 +419,55 @@ export function runtimeConditions(): readonly string[] {
   return runtimeConditionsRead;
 }
 
-/** A mapping's target as Node's PACKAGE_TARGET_RESOLVE walks it under
- * `conditions`: a string is the target; a conditional object's keys, in
- * their order, the first enabled one whose value resolves, a key Node does
- * not enable skipped; no key resolving is `none`. A fallback array, a `null`
- * target and a subpath map met as a conditional object are `refused`. */
-export function conditionTarget(mapping: unknown, conditions: readonly string[]): { target: string } | "none" | "refused" {
-  if (typeof mapping === "string") return { target: mapping };
-  if (typeof mapping !== "object" || mapping === null || Array.isArray(mapping)) return "refused";
-  const entries = Object.entries(mapping);
-  if (entries.some(([key]) => key.startsWith("."))) return "refused";
-  for (const [key, value] of entries) {
-    if (!conditions.includes(key)) continue;
-    const found = conditionTarget(value, conditions);
-    if (found !== "none") return found;
+/** The file Node's own ES module resolver resolves `specifier` to from the
+ * module at `parent`, under the conditions it enables in this process, its
+ * real path; `null` where Node throws. Run through a resolve hook, which
+ * calls Node's resolution with that parent and resolves nothing else. */
+export function nodeResolve(specifier: string, parent: string): string | null {
+  const probe = "tscert:resolve";
+  const found: { url: string | null } = { url: null };
+  const hooks = registerHooks({
+    resolve: (requested, context, next) => {
+      if (requested !== probe) return next(requested, context);
+      try {
+        found.url = next(specifier, { ...context, parentURL: pathToFileURL(parent).href }).url;
+      } catch {
+        found.url = null;
+      }
+      return { url: "data:text/javascript,", shortCircuit: true };
+    },
+  });
+  try {
+    import.meta.resolve(probe);
+  } finally {
+    hooks.deregister();
   }
-  return "none";
+  const url = found.url;
+  if (url === null || !url.startsWith("file:")) return null;
+  return orAbsent(realPath, fileURLToPath(url));
 }
 
 function checkedGuards(table: GuardTable, root: string, parse: (path: string, text: string) => ts.SourceFile):
     ReadonlyMap<string, GuardEntry> | null {
+  // Every specifier is resolved by Node's own resolver, from the module that
+  // contains it: the entry point through the package's name, from its
+  // manifest; each import from its module. A module is its path in the
+  // package; a file outside it, or any error, is no table.
   const manifest: unknown = JSON.parse(readText(join(root, "package.json")));
-  if (typeof manifest !== "object" || manifest === null || !("exports" in manifest) || !("imports" in manifest)) return null;
-  const { exports, imports } = manifest;
-  const record = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-  if (!record(exports) || !record(imports)) return null;
+  const name = typeof manifest === "object" && manifest !== null && "name" in manifest ? manifest.name : null;
+  if (typeof name !== "string") return null;
   // The table's conditions are the ones Node enables in this process.
   const runtime = runtimeConditions();
   if (table.conditions.length !== runtime.length || !runtime.every(c => table.conditions.includes(c))) return null;
-  const target = (mapping: unknown): string | null => {
-    const found = conditionTarget(mapping, table.conditions);
-    return typeof found === "object" ? found.target : null;
-  };
-  const normal = (path: string): string => relative(root, join(root, path)).split(sep).join("/");
-  const entryTarget = target(exports[table.entryPoint]);
-  if (!entryTarget || normal(entryTarget) !== table.entryModule) return null;
-  for (const [pattern, mapping] of Object.entries(table.imports))
-    if (JSON.stringify(imports[pattern]) !== JSON.stringify(mapping)) return null;
+  const realRoot = realPath(root);
   const resolveSpecifier = (from: string, specifier: string): string | null => {
-    if (specifier.startsWith("./") || specifier.startsWith("../"))
-      return relative(root, join(root, dirname(from), specifier)).split(sep).join("/");
-    if (!specifier.startsWith("#")) return null;
-    // A specifier through `imports`: the manifest's mapping, which must be
-    // one the table records.
-    // The key Node selects, exact before patterns and the most specific
-    // pattern first, must be one the table records.
-    const match = importsKey(Object.keys(imports), specifier);
-    if (!match || !(match.key in table.imports)) return null;
-    const to = target(imports[match.key]);
-    if (!to) return null;
-    return normal(match.star === null ? to : to.replaceAll("*", match.star));
+    const resolved = nodeResolve(specifier, join(root, from));
+    if (resolved === null) return null;
+    const module = relative(realRoot, resolved).split(sep).join("/");
+    return module.startsWith("../") ? null : module;
   };
+  const entryPoint = table.entryPoint === "." ? name : `${name}${table.entryPoint.slice(1)}`;
+  if (resolveSpecifier("package.json", entryPoint) !== table.entryModule) return null;
   const trees = new Map<string, ts.SourceFile>();
   const tree = (module: string): ts.SourceFile => {
     const known = trees.get(module);
