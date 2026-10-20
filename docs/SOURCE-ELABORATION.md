@@ -279,7 +279,8 @@ its initial value's type widened:
 
 JavaScript reads and defaults the pattern's positions, then initializes the
 bindings, in that order either way; each cell is claimed at its name, where
-its initial value is. Such a pattern in a `for` head is refused. A `let` that is written and holds a union of objects is
+its initial value is. Such a pattern in a `for` head is refused. A written `let` held in a cell
+([slot or cell](#mutable-bindings-and-module-constants)) that holds a union of objects is
 not narrowed by a test of its object (a cell's known contents are primitive
 values, or that it holds no `undefined`, and a write between the test and the
 read may replace it); a read of a member only some arms state is refused
@@ -1210,6 +1211,31 @@ iteration follows a closure the iteration before created. The decision is
 syntactic and selects a lowering; the graph checker checks what either
 lowering states. The flow graph exported to the producer lists each body's
 cells (`cells`), so the producer and the lowering read one decision.
+
+A closure's parameter is decided by the same rule over the closure's own
+activation: for a parameter $`x`$ of $`\lambda\overline{y}.\,b`$,
+$`\mathrm{writes}(x)`$ are its initialization, at the argument or, where the
+argument is `undefined`, at its default's value, and the writes of $`x`$ in a
+run of $`b`$, and $`\mathrm{creates}(x)`$ the
+closures created in that run whose bodies mention $`x`$; the closure body's
+`cells` list it where $`\neg\mathrm{slot}(x)`$. A test of a slot narrows it as
+it narrows a constant, and the narrowing lasts until the next write, which
+rebinds the slot at what it writes:
+
+```math
+\frac{\mathrm{slot}(x)\quad \Gamma(x)=T\quad
+      \forall v\in T.\ \mathrm{test}(v)\Rightarrow v\in T_{+}\quad
+      \forall v\in T.\ \neg\mathrm{test}(v)\Rightarrow v\in T_{-}}
+     {\Gamma\vdash \mathrm{test}(x)\colon\ \Gamma[x\mapsto T_{+}]\ \text{on the true edge},\ \ \Gamma[x\mapsto T_{-}]\ \text{on the false edge}}
+\qquad
+\frac{\Gamma\vdash e\colon V\quad V\le C}{\Gamma\vdash x = e\colon\ \Gamma[x\mapsto V]}
+```
+
+A point claim for $`x`$ is checked on every incoming edge, a loop's back
+edge included, so the refinement holds at a point only where every path into
+it established it since the last write. A cell's point claim states only its
+current-content predicates, primitive refinements and nullish exclusions, so
+a test of the object a cell holds does not narrow it.
 
 A slot is part of the environment, which no heap step reaches: its type and
 value facts survive a call, a closure run and a throw. A `catch` is entered

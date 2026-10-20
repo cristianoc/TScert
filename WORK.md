@@ -46,6 +46,8 @@ design, not its progress.
 | [A guard's false edge over a tag-set arm](docs/PROGRAM-TYPING.md#a-membership-test) | closed: the false slice drops arms the guard's set covers and reads a partly covered arm with a stable tag at the rest of its set; `compiler-api-guard-false-sets` verifies, its forged claims are refused, each accepted with coverage disabled (2026-10-20) | — |
 | [A call returning `never`](docs/PROGRAM-TYPING.md#vacuous-edges) | closed: an edge out of a context with a slot of the empty type establishes any target claim, plain and branch edges alike; the producer keeps the normal edge out of an expression statement claimed at the empty type, carrying every value and local slot at the empty type with storage bindings unchanged; `never-call-narrowing` and `compiler-api-never-guard` verify, a returning call claimed at the empty type is refused (2026-10-20) | — |
 | [Contextual function types](docs/SOURCE-ELABORATION.md#source-closures-and-their-annotations) | closed: a closure parameter TypeScript types by a function type is read as written where the program writes it, else through its one call signature as instantiated; `closure-contextual-callable` and `compiler-api-contextual-callable` verify, `invalid-closure-contextual-callable` is refused (run under Node) (2026-10-20) | — |
+| [Assigned closure parameters](#assigned-closure-parameters) | closed: reads use a slot or cell by the flow graph's decision (2026-10-21, [slice measurement](#census-closure-parameter-slots)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past the `let`-union refusal |
+| [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -85,6 +87,33 @@ hand-written tags, all in library code, one tagging a non-promise
 one generated SDK class (`APIPromise`); and, for contrast, `extends Error`
 1,150 times in 236 packages, container subclasses in about 50. The
 repository's own code has none of the first three.
+
+<a id="assigned-closure-parameters"></a>
+**Assigned closure parameters.** A closure's assigned parameter is read as a
+slot or cell according to the flow graph's decision, under the
+[mutable-binding rules](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants).
+The [slice measurement](#census-closure-parameter-slots) records the refusals
+for `protocolPattern` and `patternStmt` in `fragment-statements.mts`.
+
+<a id="assigned-parameters-with-defaults"></a>
+**Investigation of assigned parameters with defaults.** The producer refuses
+assignment to a parameter with a default with "assignment to immutable
+binding", for function declarations and closures alike. A concrete example
+is the following function and its equivalent arrow closure:
+
+```typescript
+type Shape =
+  | { kind: "circle"; radius: number }
+  | { kind: "square"; side: number };
+function f(s: Shape = { kind: "square", side: 1 }): number {
+  if (s.kind === "circle") return 0;
+  s = { kind: "square", side: 2 };
+  return s.side;
+}
+```
+
+The investigation concerns the producer's treatment of the parameter's
+binding through default evaluation and subsequent assignment.
 
 <a id="constructor-rests"></a>
 **Constructor rests.** A constructor's rest parameter is refused: `new`
@@ -613,10 +642,14 @@ first three items 2026-10-19):
   refines the slot of its argument's read, which a later read of the same
   path is through the read link;
 - a pattern binding a `for...of` over a program's iterable (17), the slices
-  of `type-term.mts` past their contextual function types, and a member
-  read of a `let` holding a union of objects after a test of it (19), the
-  slices of `fragment-statements.mts` past `protocolPattern`'s call of
-  `gate.fail` (2026-10-20, [census](#census-never-callable));
+  of `type-term.mts` past their contextual function types (2026-10-20,
+  [census](#census-never-callable)); the slices of
+  `fragment-statements.mts` past `protocolPattern`'s call of `gate.fail`
+  read a closure's assigned parameter after a host guard, a
+  [slot](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)
+  of the closure's activation, and stop at `ts.SyntaxKind[s.kind]`, a
+  numeric enum's reverse lookup ("missing field 242",
+  [record](#census-closure-parameter-slots));
 - a callback's parameter written without a type is read at its contextual
   type, records, indexes and aliases without parameters included; no slice
   stops there;
@@ -751,6 +784,16 @@ read of a `let` holding a union of objects after a test of it, and
 Of `type-term.mts`, the 17 slices stopped at the contextual
 `(node: TypeNodeBase) => TypeTerm` stop at a pattern binding a `for...of`
 over a program's iterable.
+
+<a id="census-closure-parameter-slots"></a>
+Two slices of `fragment-statements.mts`, `protocolPattern` and
+`patternStmt`, which calls it, on a654145 (main) and on the branch reading a
+closure's assigned parameters by the flow graph's slot or cell decision
+(2026-10-21): neither verifies on either. On main both stop at "a read of
+expression on a `let` holding a union of objects" (`hoistTarget`'s `first`
+and `assignedNames`'s `targets`, `while (ts.isParenthesizedExpression(x))
+x = x.expression`); on the branch both stop at "missing field 242", the
+reverse lookup `ts.SyntaxKind[s.kind]` in `statements`.
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:
