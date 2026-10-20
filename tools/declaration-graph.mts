@@ -908,21 +908,26 @@ export function collectDeclarations(file: string, options: {
     // of the family its member type belongs to, or of the tag enum itself,
     // as the entry's domain names it.
     const guardConstants = (declaration: FunctionDeclaration, entry: GuardEntry): readonly EnumMemberValue[] => {
+      // The declaration, its parameter's family and the runtime guard are of
+      // one description.
       const familyDescription = familyOfGuard(entry);
+      if (familyOfFile(declaration.getSourceFile().fileName) !== familyDescription)
+        throw Error(`the guard ${entry.name} is declared outside the installation of its family ${familyDescription.marker}`);
       const type = declaration.parameters[0]?.type;
       const name = type && ts.isTypeReferenceNode(type) && !type.typeArguments?.length ? memberName(type.typeName) : null;
       if (!name || name.text !== entry.domain)
         throw Error(`the guard ${entry.name} takes a parameter its entry's domain ${entry.domain} does not name`);
       if (entry.kind === "tag") {
         const enums = enumsOf(name);
-        if (!enums || name.text !== familyDescription.tag.constants.enum)
-          throw Error(`the tag guard ${entry.name} takes no ${familyDescription.tag.constants.enum}`);
+        if (!enums || name.text !== familyDescription.tag.constants.enum ||
+            !enums.every(e => familyOfFile(e.getSourceFile().fileName) === familyDescription))
+          throw Error(`the tag guard ${entry.name} takes no ${familyDescription.tag.constants.enum} of the family ${familyDescription.marker}`);
         return enumMembersOf(enums, name.text);
       }
       for (const d of (targetOf(checker, name)?.declarations ?? []).map(x => x.resolve()))
         if (d && ts.isInterfaceDeclaration(d)) {
           const fam = familyFrom(d);
-          if (fam) return fam.constants;
+          if (fam && fam.table.description === familyDescription) return fam.constants;
         }
       throw Error(`the guard ${entry.name} takes no member of the family ${familyDescription.marker}`);
     };
@@ -1911,7 +1916,10 @@ export function collectDeclarations(file: string, options: {
         if (!binding.typeOnly && nodes.some(n => !ts.isTypeAliasDeclaration(n) && !ts.isInterfaceDeclaration(n))) {
           const guard = node && nodes.length === 1 && ts.isFunctionDeclaration(node) && node.name &&
             isHostFile(node.getSourceFile().fileName) ? bindingGuard(binding) : null;
-          const entry = guard && node && ts.isFunctionDeclaration(node) && node.name?.text === guard.name ? guard : null;
+          // A guard whose runtime function is of another family than its
+          // declaration is no guard.
+          const entry = guard && node && ts.isFunctionDeclaration(node) && node.name?.text === guard.name &&
+            familyOfGuard(guard) === familyOfFile(node.getSourceFile().fileName) ? guard : null;
           const value = valueOf(nodes, binding.name, entry);
           values.push({ binding: { local: binding.name, imported: binding.imported,
             specifier: binding.specifier, span: binding.span }, ...value });

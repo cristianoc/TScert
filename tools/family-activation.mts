@@ -158,6 +158,10 @@ function installations(): readonly { description: FamilyDescription; root: strin
         throw Error(`two active family descriptions own the marker ${a.description.marker}`);
       if (a.root === b.root || a.root.startsWith(b.root + sep) || b.root.startsWith(a.root + sep))
         throw Error(`the families ${a.description.marker} and ${b.description.marker} share the installation ${a.root}`);
+      // Each guard entry is one description's, so a guard's family is its
+      // entry's (`familyOfGuard`).
+      if (a.description.guards.guards.some(g => b.description.guards.guards.includes(g)))
+        throw Error(`the families ${a.description.marker} and ${b.description.marker} share a guard entry`);
     }
   return found;
 }

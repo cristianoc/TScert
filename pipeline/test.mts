@@ -3582,6 +3582,56 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
         { encoding: "utf8", cwd: other.dir });
       assert.equal(ran.stdout.trim(), "lit", `literalTag under Node, its import bound to the copy: ${ran.stderr}`);
     }
+    {
+      // Guard recognition stays within one family: a second family, a copy
+      // of the stand-in under another name and marker whose `UnitType.Name`
+      // is "nm", is active beside it, with guards and a domain of the same
+      // names. A project whose `paths` point TypeScript at the stand-in's
+      // declarations while Node binds `isName` to the copy's is no guard
+      // call, refused at the return of the `false` edge's tag; with Node binding the
+      // stand-in's, it verifies.
+      const source = 'import { isName, type Unit } from "string-family-fixture/ast";\n\n' +
+        'export function tagOf(n: Unit): "call" | "literal" | "" {\n  return isName(n) ? "" : n.type;\n}\n';
+      const project = (name: string): string => {
+        const dir = runDirectory(`tscert-guard-family-${name}-`);
+        writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+          module: "preserve", moduleResolution: "bundler", target: "es2022", lib: ["es2022"], types: [],
+          paths: { "string-family-fixture/ast": [join(import.meta.dirname, "string-family-fixture", "ast.d.ts")] } }, include: ["*.ts"] }));
+        writeFileSync(join(dir, "tag-of.ts"), source);
+        mkdirSync(join(dir, "node_modules"));
+        return dir;
+      };
+      const same = project("same");
+      symlinkSync(join(import.meta.dirname, "string-family-fixture"), join(same, "node_modules", "string-family-fixture"));
+      const crossed = project("crossed");
+      const copy = join(crossed, "node_modules", "string-family-fixture-b");
+      cpSync(join(import.meta.dirname, "string-family-fixture"), copy, { recursive: true });
+      const manifest: unknown = JSON.parse(readFileSync(join(copy, "package.json"), "utf8"));
+      assert.ok(typeof manifest === "object" && manifest !== null);
+      writeFileSync(join(copy, "package.json"), JSON.stringify({ ...manifest, name: "string-family-fixture-b" }));
+      const kinds = readFileSync(join(copy, "kinds.js"), "utf8").replace('UnitType["Name"] = "name"', 'UnitType["Name"] = "nm"');
+      writeFileSync(join(copy, "kinds.js"), kinds);
+      symlinkSync(copy, join(crossed, "node_modules", "string-family-fixture"));
+      const second: FamilyDescription = { ...strings, package: { ...strings.package, name: "string-family-fixture-b" },
+        installation: { ...strings.installation, from: crossed }, marker: "StringFixtureB",
+        guards: { ...structuredClone(strings.guards), closure: { ...strings.guards.closure, files: { ...strings.guards.closure.files,
+          "kinds.js": createHash("sha256").update(kinds).digest("hex") } } } };
+      useFamiliesForTests([compilerApiFamily, strings, second]);
+      try {
+        const verified = check(join(same, "tag-of.ts"), tsconfigOf(same));
+        assert.equal(verified.status, "verified", JSON.stringify(verified));
+        const refused = check(join(crossed, "tag-of.ts"), tsconfigOf(crossed));
+        const returned = source.indexOf("isName(n) ?");
+        assert.ok(refused.status !== "verified" && "detail" in refused && refused.detail.includes(`at [${returned},`) &&
+          refused.detail.includes('"" | "call" | "literal" | "name"'), JSON.stringify(refused));
+      } finally {
+        activate(strings);
+      }
+      const ran = spawnSync(process.execPath, ["--input-type=module", "-e",
+        `import { tagOf } from ${JSON.stringify(pathToFileURL(join(crossed, "tag-of.ts")).href)};\nconsole.log(tagOf({ type: "name" }));\n`],
+        { encoding: "utf8", cwd: crossed });
+      assert.equal(ran.stdout.trim(), "name", `tagOf under Node, isName bound to the copy: ${ran.stderr}`);
+    }
     // Activation fails closed: under a description whose digest differs from
     // the stand-in's declarations, or whose installation Node does not find,
     // the same program is refused; with no stand-in description its guards
@@ -3636,7 +3686,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   } finally {
     useFamiliesForTests(null);
   }
-  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs and where Node binds the import to such a copy while TypeScript reads the audited declarations (Node returns it); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
+  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs and where Node binds the import to such a copy while TypeScript reads the audited declarations (Node returns it); a guard Node binds to another family's function, of the same name and domain, no guard (Node returns the excluded tag); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
 }
 {
   // Each correction of the compiler API's family (COMPILER-API.md,

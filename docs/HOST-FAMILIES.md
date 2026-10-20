@@ -440,7 +440,11 @@ of the package in a nested `node_modules` (`pipeline/test.mts`). The
 fixture projects resolve the package as Node does, through installation
 links (`pipeline/fixture-links.mts`), with no `paths` for it. A
 same-named local function, a re-bound name, or a function wrapping a guard
-is an ordinary call, the wrapper an ordinary verified function. A call with
+is an ordinary call, the wrapper an ordinary verified function. The
+declaration TypeScript binds, the family of its parameter's type (or its
+tag enum's) and the function Node binds are one description's: a guard Node
+binds to another family's function of the same name and domain is an
+ordinary call (`pipeline/test.mts`). A call with
 a spread or more than one argument is refused.
 
 **A call on an immutable name** $`x`$, a binding the existing

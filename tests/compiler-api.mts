@@ -103,6 +103,14 @@ assert.ok(!isHostFile(lookalike), "a lookalike package with the host's manifest 
   } finally {
     useFamiliesForTests(null);
   }
+  // Two active descriptions own no guard entry together, so a guard's
+  // family is its entry's.
+  useFamiliesForTests([stringFamily, { ...copied, marker: "StringFixtureCopy" }]);
+  try {
+    assert.throws(() => isHostFile(join(copy, "ast.d.ts")), /the families StringFixture and StringFixtureCopy share a guard entry/);
+  } finally {
+    useFamiliesForTests(null);
+  }
   const extended = runDirectory("tscert-inventory-extension-");
   cpSync(resolve(import.meta.dirname, "../pipeline/string-family-fixture"), join(extended, "node_modules", stringFamily.package.name),
     { recursive: true });
