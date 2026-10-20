@@ -39,7 +39,7 @@ theorem restsT_of_restSigs {G : NormalGraph ι} {F : Ty ι} {s} (hs : s ∈ rest
 method, whose contract holds when it is invoked on the object it is read from. -/
 def memberOf (G : NormalGraph ι) (O : Ty ι) (k : PropKey) : Option (MethodMembers.Sig (Ty ι)) :=
   match expand G O with
-  | [.refs _ _ _ _ ms _] | [.dict _ _ _ _ _ ms _ _] => ms.find? (·.key == k)
+  | [.refs _ _ _ _ ms _ _] | [.dict _ _ _ _ _ ms _ _ _] => ms.find? (·.key == k)
   | _ => none
 
 /-- The quantified signatures of the member of key `k` of `O`: the schemes a
@@ -1042,8 +1042,8 @@ theorem fresh_store_safe {E : Fam} (ro : Bool) (presence : ArrayPresence) (hE : 
 /-- The named fields and readonly views of an object of one record operand:
 a record's, or a dictionary's, whose named members hold beside its index. -/
 def namedMembers : Clause α → Option (List (PropKey × α) × List (PropKey × α))
-  | .refs fs [] vs _ _ _ => some (fs, vs)
-  | .dict fs [] vs _ _ _ _ _ => some (fs, vs)
+  | .refs fs [] vs _ _ _ _ => some (fs, vs)
+  | .dict fs [] vs _ _ _ _ _ _ => some (fs, vs)
   | _ => none
 
 /-- A value of a type with named members holds each named field as a cell of
@@ -1055,16 +1055,16 @@ theorem namedMembers_sem {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
       viewsT (ReferenceConjunctions.famsOf (meaning G) vs) n W v := by
   have hs := (represents_raw hr n W v) h
   match c, hc with
-  | .refs _ [] _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
-  | .dict _ [] _ _ _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
+  | .refs _ [] _ _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
+  | .dict _ [] _ _ _ _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
 
 /-- A clause with named members is a record's or a dictionary's, which the
 builtins's invariant applies to. -/
 theorem namedMembers_carriesInvariant {c : Clause α} {fs vs : List (PropKey × α)}
     (hc : namedMembers c = some (fs, vs)) : c.carriesInvariant = true := by
   match c, hc with
-  | .refs _ [] _ _ _ _, rfl => rfl
-  | .dict _ [] _ _ _ _ _ _, rfl => rfl
+  | .refs _ [] _ _ _ _ _, rfl => rfl
+  | .dict _ [] _ _ _ _ _ _ _, rfl => rfl
 
 /-- **`length`, read where the object may be an array**: an array's is its
 store's length, any other object's its own property's. -/

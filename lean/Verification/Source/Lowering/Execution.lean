@@ -234,7 +234,7 @@ copy takes: the copy of such an object holds all of it. -/
 @[nospecialize] private def listsCopiedKeys (G : PositiveGraphs.NormalGraph Tree) (X : Ty Tree) : Bool :=
   let cs := PositiveRules.expand G X
   !cs.isEmpty && cs.all fun c => match c with
-    | .refs _ _ _ _ _ ks | .dict _ _ _ _ _ _ ks _ => ks.any fun K => K.among && K.keys.all copiedKey
+    | .refs _ _ _ _ _ ks _ | .dict _ _ _ _ _ _ ks _ _ => ks.any fun K => K.among && K.keys.all copiedKey
     | _ => false
 
 /-- Whether no value of a type is an object or `null`, which the prototype's
@@ -333,7 +333,7 @@ copy takes: the copy of such an object holds all of it. -/
       | _ => none
     let classes := (cs.filterMap keyClass).eraseDups
     let cellType : Option (Ty Tree) := match PositiveRules.expand G X with
-      | [.dict _ _ _ _ _ _ _ cells] =>
+      | [.dict _ _ _ _ _ _ _ cells _] =>
         let ts := classes.map fun K => (cells.find? fun y => IndexKeys.within K y.1).map (·.2)
         match (ts.filterMap id).eraseDups with
         | [V] => if ts.all Option.isSome then some V else none

@@ -27,8 +27,8 @@ clauses are not proto-free. -/
 def clause {α : Type} : Clause α → Bool
   | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _
   | .str | .strLit _ | .strIn _ | .bigint | .bigintLit _ | .symbol | .symbolLit _ => true
-  | .dict _ _ _ ds _ _ ks cs => !ds.isEmpty || !cs.isEmpty || ks.any excludesProto
-  | .refs _ _ _ _ _ ks => ks.any excludesProto
+  | .dict _ _ _ ds _ _ ks cs _ => !ds.isEmpty || !cs.isEmpty || ks.any excludesProto
+  | .refs _ _ _ _ _ ks _ => ks.any excludesProto
   | _ => false
 
 private theorem ownKeys_excludes {b : KeyBound} (hb : excludesProto b = true) {n W v}
@@ -82,9 +82,9 @@ theorem clause_sound {α : Type} {Ξ : Fam} {X : α → Fam} {P : α → ArgFam}
   | .numIn _, _, h | .strIn _, _, h =>
     exact notObj fun _ _ _ he => by
       simp only [semWithArgs] at h; obtain ⟨_, _, rfl⟩ := h; cases he
-  | .refs _ _ _ _ _ ks, hc, h => exact bounds_exclude (by simpa [clause] using hc) h.2.2.2.2
-  | .dict _ _ _ ds _ _ ks cs, hc, h =>
-    obtain ⟨_, _, ⟨hd, hcs⟩, _, _, hks⟩ := h
+  | .refs _ _ _ _ _ ks _, hc, h => exact bounds_exclude (by simpa [clause] using hc) h.2.2.2.2.1
+  | .dict _ _ _ ds _ _ ks cs _, hc, h =>
+    obtain ⟨_, _, ⟨hd, hcs⟩, _, _, hks, -⟩ := h
     simp only [clause, Bool.or_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff] at hc
     rcases hc with (hc | hc) | hc
     · obtain ⟨d, hd'⟩ := List.exists_mem_of_ne_nil ds hc

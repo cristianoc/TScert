@@ -961,14 +961,14 @@ by the host. -/
 /-- The field or view a type's one record clause holds under a key. -/
 @[nospecialize] def viewOf (G : NormalGraph ι) (P : List ι) (k : PropKey) : Option (List ι) :=
   match expand G P with
-  | [.refs a bs vs _ _ _] => (((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)).find? (·.1 == k)).map (·.2)
+  | [.refs a bs vs _ _ _ _] => (((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)).find? (·.1 == k)).map (·.2)
   | _ => none
 
 /-- Whether a type's one record clause has an own-key bound excluding a key:
 its members lack it. -/
 @[nospecialize] def lacksKey (G : NormalGraph ι) (P : List ι) (k : PropKey) : Prop :=
   match expand G P with
-  | [.refs _ _ _ _ _ ks] => Excludes ks k
+  | [.refs _ _ _ _ _ ks _] => Excludes ks k
   | _ => False
 
 /-- A prototype type holds a method signature's key at a field or view that
@@ -1313,28 +1313,28 @@ checks over the supplied subtype relation. -/
   | .bigintLit a, .bigintLit b => a = b
   | .symbolLit _, .symbol => True
   | .symbolLit a, .symbolLit b => a = b
-  | .refs a bs vs os ms ks, .refs c ds ws ps ns ls => CoversFields R (a :: bs) (c :: ds) ∧
+  | .refs a bs vs os ms ks st, .refs c ds ws ps ns ls su => CoversFields R (a :: bs) (c :: ds) ∧
       CoversViews G R (a :: bs) vs ws ∧ CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G sub R known self ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)) ks ms ns ∧
-      CoversBounds (!(a :: bs).flatten.isEmpty) ks ls
+      CoversBounds (!(a :: bs).flatten.isEmpty) ks ls ∧ ∀ k ∈ su, k ∈ st
   -- A record whose own keys are bounded meets a dictionary's index contracts
   -- through the bound (`CoversKeys`), and its named members as a record's. It
   -- meets a writable index only at an uninhabited contract: a holder of one
   -- may add a key the bound says is absent.
-  | .refs a bs vs os ms ks, .dict c ds ws iy ps ns ls cy =>
+  | .refs a bs vs os ms ks st, .dict c ds ws iy ps ns ls cy su =>
       CoversKeys R (a :: bs).flatten (vs.filter (·.1 != lengthKey)) ks iy cy ∧
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews G R (a :: bs) vs ws ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G sub R known self ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)) ks ms ns ∧
       CoversBounds (!(a :: bs).flatten.isEmpty) ks ls ∧
-      ∀ y ∈ cy, Uninhabited G y.2
+      (∀ y ∈ cy, Uninhabited G y.2) ∧ ∀ k ∈ su, k ∈ st
   -- A dictionary meets a record's members as a record does; the record has
   -- no index, so the dictionary's index contracts are forgotten.
-  | .dict a bs vs ix os ms ks cx, .refs c ds ws ps ns ls =>
+  | .dict a bs vs ix os ms ks cx st, .refs c ds ws ps ns ls su =>
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews G R (a :: bs) vs ws ∧
       CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G sub R known self ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)) ks ms ns ∧
-      CoversBounds (!(a :: bs).flatten.isEmpty || !(ix ++ cx).isEmpty) ks ls
+      CoversBounds (!(a :: bs).flatten.isEmpty || !(ix ++ cx).isEmpty) ks ls ∧ ∀ k ∈ su, k ∈ st
   -- A target index view is within some source index view over as many keys
   -- (`IndexKeys.within`); a writable target index needs a writable source
   -- index over as many keys of an equivalent contract, as an invariant field
@@ -1346,7 +1346,7 @@ checks over the supplied subtype relation. -/
   -- and every source own-key bound must keep the class (`KeepsKeys`): none
   -- may say a key the holder can add is absent, unless no value meets the
   -- contract, so none is added.
-  | .dict a bs vs ix os ms ks cx, .dict c ds ws iy ps ns ls cy =>
+  | .dict a bs vs ix os ms ks cx st, .dict c ds ws iy ps ns ls cy su =>
       CoversFields R (a :: bs) (c :: ds) ∧ CoversViews G R (a :: bs) vs ws ∧
       ((∀ y ∈ iy, ∃ x ∈ ix, y.1.within x.1 = true ∧ R x.2 y.2) ∧
         ∀ y ∈ cy, (∃ x ∈ cx, y.1.within x.1 = true ∧ R x.2 y.2 ∧ R y.2 x.2) ∧
@@ -1355,7 +1355,7 @@ checks over the supplied subtype relation. -/
       CoversOptional R (a :: bs) vs os ks ps ∧
       CoversMethods G sub R known self ((a :: bs).flatten ++ vs.filter (·.1 != lengthKey)) ks ms ns ∧
       CoversBounds (!(a :: bs).flatten.isEmpty || !(ix ++ cx).isEmpty) ks ls ∧
-      KeepsKeys G ks cy
+      KeepsKeys G ks cy ∧ ∀ k ∈ su, k ∈ st
   | .arrs L S, .arrs M T | .callable _ _ L S, .arrs M T =>
       arrows L S M ∧
       ∀ t ∈ T, (∃ s ∈ S, RestCovers (restElem G) R s t) ∨ ∃ p ∈ L, FixedCallsPack G R p t
@@ -2545,8 +2545,8 @@ theorem viewOf_at {G : NormalGraph ι} {η : MixedAssignment ι} {P F : List ι}
       ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u → mixedValues G η F j U u := by
   unfold viewOf at hF
   split at hF
-  · rename_i a bs vs os ms ks hE
-    have hplain := plain_of_mem_expand (G := G) (S := P) (c := .refs a bs vs os ms ks) (by simp [hE])
+  · rename_i a bs vs os ms ks st hE
+    have hplain := plain_of_mem_expand (G := G) (S := P) (c := .refs a bs vs os ms ks st) (by simp [hE])
     obtain ⟨c', hc', hsem, -⟩ := (mixed_expand η hplain n W p).mp hp
     rw [hE, List.mem_singleton] at hc'
     subst hc'
@@ -2562,15 +2562,15 @@ theorem lacksKey_at {G : NormalGraph ι} {η : MixedAssignment ι} {P : List ι}
     ∃ (flds : List (PropKey × Nat)) (oid : Nat), p = .objAt flds .absent oid ∧ flds.lookup k = none := by
   unfold lacksKey at hk
   split at hk
-  · rename_i a bs vs os ms ks hE
-    have hplain := plain_of_mem_expand (G := G) (S := P) (c := .refs a bs vs os ms ks) (by simp [hE])
+  · rename_i a bs vs os ms ks st hE
+    have hplain := plain_of_mem_expand (G := G) (S := P) (c := .refs a bs vs os ms ks st) (by simp [hE])
     obtain ⟨c', hc', hsem, -⟩ := (mixed_expand η hplain n W p).mp hp
     rw [hE, List.mem_singleton] at hc'
     subst hc'
     obtain ⟨K, hK, hnot⟩ := hk
-    have hown := hsem.2.2.2.2 K hK
+    have hown := hsem.2.2.2.2.1 K hK
     obtain ⟨flds, oid, rfl, -⟩ := hown
-    exact ⟨flds, oid, rfl, ownKeysT_lookup (hsem.2.2.2.2 K hK) hnot⟩
+    exact ⟨flds, oid, rfl, ownKeysT_lookup (hsem.2.2.2.2.1 K hK) hnot⟩
   · exact hk.elim
 
 /-- A prototype found along the chain holds the member: every member of the
@@ -3136,44 +3136,46 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
   case strIn.str => rintro ⟨s, -, rfl⟩; exact ⟨s, rfl⟩
   case strLit.strIn a S => intro hv; cases hv; exact ⟨a, hc, rfl⟩
   case strIn.strIn S T => rintro ⟨s, hs, rfl⟩; exact ⟨s, hc s hs, rfl⟩
-  case refs.dict a bs vs os ms ks c ds ws iy ps ns ls cy =>
+  case refs.dict a bs vs os ms ks st c ds ws iy ps ns ls cy su =>
     intro hv
     exact ⟨covers_fields_sound hc.2.1 n hr W v hv.1, covers_views_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
-      covers_keys_sound hc.1 n hr W v hv.1 hv.2.1 hv.2.2.2.2,
-      covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.1⟩ hv.2.2.2.2,
-      covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa hre W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
+      covers_keys_sound hc.1 n hr W v hv.1 hv.2.1 hv.2.2.2.2.1,
+      covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.1⟩ hv.2.2.2.2.1,
+      covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa hre W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.1
         hv.2.2.2.1,
-      covers_bounds_sound hc.2.2.2.2.2.1 (recT_obj hv.1.1) hv.2.2.2.2 (refs_noHost hv.1)⟩
-  case dict.refs a bs vs ix os ms ks cx c ds ws ps ns ls =>
+      covers_bounds_sound hc.2.2.2.2.2.1 (recT_obj hv.1.1) hv.2.2.2.2.1 (refs_noHost hv.1),
+      stableKeysT_weaken hc.2.2.2.2.2.2.2 n W v hv.2.2.2.2.2⟩
+  case dict.refs a bs vs ix os ms ks cx st c ds ws ps ns ls su =>
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
-      covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.2.1⟩ hv.2.2.2.2.2,
-      covers_methods_sound hc.2.2.2.1 hknown n hr hpa hre W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
+      covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.2.1⟩ hv.2.2.2.2.2.1,
+      covers_methods_sound hc.2.2.2.1 hknown n hr hpa hre W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2.1
         hv.2.2.2.2.1,
-      covers_bounds_sound hc.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2.2 (dict_noHost hv.1 hv.2.2.1)⟩
+      covers_bounds_sound hc.2.2.2.2.1 (recT_obj hv.1.1) hv.2.2.2.2.2.1 (dict_noHost hv.1 hv.2.2.1),
+      stableKeysT_weaken hc.2.2.2.2.2 n W v hv.2.2.2.2.2.2⟩
   case ctors.ctors L S a bs vs M T c ds ws =>
     exact covers_ctors_sound (sub := sub) (known := known) (self := self)
       (arrows := fun L S M => ∀ p ∈ M, CallArrow (compatible G) (restElem G) R L S p)
       (by unfold CoversWith; exact hc) n hr hpa W v
   · exact id
   · exact id
-  · rename_i a bs vs os ms ks c ds ws ps ns ls
+  · rename_i a bs vs os ms ks st c ds ws ps ns ls su
     intro hv
     exact ⟨covers_fields_sound hc.1 n hr W v hv.1, covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩,
-      covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.1⟩ hv.2.2.2.2,
-      covers_methods_sound hc.2.2.2.1 hknown n hr hpa hre W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2
+      covers_optional_sound hc.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.1⟩ hv.2.2.2.2.1,
+      covers_methods_sound hc.2.2.2.1 hknown n hr hpa hre W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.1
         hv.2.2.2.1,
-      covers_bounds_sound hc.2.2.2.2 (recT_obj hv.1.1) hv.2.2.2.2 (refs_noHost hv.1)⟩
-  · rename_i a bs vs ix os ms ks cx c ds ws iy ps ns ls cy
+      covers_bounds_sound hc.2.2.2.2.1 (recT_obj hv.1.1) hv.2.2.2.2.1 (refs_noHost hv.1),
+      stableKeysT_weaken hc.2.2.2.2.2 n W v hv.2.2.2.2.2⟩
+  · rename_i a bs vs ix os ms ks cx st c ds ws iy ps ns ls cy su
     intro hv
     refine ⟨covers_fields_sound hc.1 n hr W v hv.1,
       covers_views_sound hc.2.1 n hr W v ⟨hv.1, hv.2.1⟩, ⟨?_, ?_⟩,
-      covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.2.1⟩ hv.2.2.2.2.2,
-
-
-      covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa hre W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2
+      covers_optional_sound hc.2.2.2.1 n hr W v ⟨hv.1, hv.2.1, hv.2.2.2.1⟩ hv.2.2.2.2.2.1,
+      covers_methods_sound hc.2.2.2.2.1 hknown n hr hpa hre W v hself (fields_at hv.1 hv.2.1) hv.2.2.2.2.2.1
         hv.2.2.2.2.1,
-      covers_bounds_sound hc.2.2.2.2.2.1 (recT_obj hv.1.1) hv.2.2.2.2.2 (dict_noHost hv.1 hv.2.2.1)⟩
+      covers_bounds_sound hc.2.2.2.2.2.1 (recT_obj hv.1.1) hv.2.2.2.2.2.1 (dict_noHost hv.1 hv.2.2.1),
+      stableKeysT_weaken hc.2.2.2.2.2.2.2 n W v hv.2.2.2.2.2.2⟩
     · intro y hy
       obtain ⟨x, hx, hw, hxy⟩ := hc.2.2.1.1 y hy
       obtain ⟨flds, oid, he, hp, hfs⟩ := dictViewT_within hw (hv.2.2.1.1 x hx)

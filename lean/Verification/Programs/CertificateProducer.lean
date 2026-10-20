@@ -377,10 +377,10 @@ instances whose signatures are the method's with either host as receiver. -/
     (fuel : Nat) (table : Table ι) : KnownInstances ι :=
   (table.flatMap fun (A, B) =>
     let methods := (expand G B).flatMap fun c => match c with
-      | .refs _ _ _ _ ns _ | .dict _ _ _ _ _ ns _ _ => ns
+      | .refs _ _ _ _ ns _ _ | .dict _ _ _ _ _ ns _ _ _ => ns
       | _ => []
     (expand G A).flatMap fun c => match c with
-      | .refs a bs vs _ _ _ =>
+      | .refs a bs vs _ _ _ _ =>
         match ((a :: bs).flatten ++ vs).lookup CallArguments.protoField with
         | some P => (PositiveCertificates.protoChain G PositiveRules.protoChainDepth P).flatMap fun P => methods.flatMap fun q =>
             match PositiveRules.viewOf G P q.key with
@@ -858,7 +858,7 @@ came from a different context. No execution budget is inspected. -/
       -- through a string index, a number through a number or string index, a
       -- symbol through a symbol index.
       return (A :: pool).findSearch? fun R => do
-        let [.dict _ [] _ ix _ _ _ _] := expand G R | none
+        let [.dict _ [] _ ix _ _ _ _ _] := expand G R | none
         ix.findSearch? fun (Kx, E) =>
         [IndexKeys.strings, .numeric, .symbols].findSearch? fun KK => do
           if !KK.within Kx then none else do
@@ -877,7 +877,7 @@ came from a different context. No execution budget is inspected. -/
         -- an optional field, writable or readonly, at its type or `undefined`; a key a
         -- bound does not admit at the prototype's field or view.
         let (B,r) ← (show Option (Ty ι × Rule ι) from match expand G R with
-          | [.refs fs [] vs os _ ks] =>
+          | [.refs fs [] vs os _ ks _] =>
             (fs.lookup f).map (·,Rule.read) <|>
               ((vs.lookup f).bind fun B => if f == lengthKey && !lengthExcluded G B then none else some (B, Rule.readView)) <|>
               (((os.find? (·.key == f)).map (·.type)).bind fun E => pool.findSome? fun U =>
@@ -885,7 +885,7 @@ came from a different context. No execution budget is inspected. -/
               (if ks.any (fun K => !K.admits f) then
                 ((fs ++ vs).lookup CallArguments.protoField).bind fun P =>
                   match expand G P with
-                  | [.refs gs [] ws _ _ _] =>
+                  | [.refs gs [] ws _ _ _ _] =>
                     ((gs ++ ws.filter (·.1 != lengthKey)).lookup f).map (·, Rule.readProto P)
                   | _ => none
               else none)
@@ -893,7 +893,7 @@ came from a different context. No execution budget is inspected. -/
           | [.ctors _ _ fs _ vs] => (fs.lookup f).map (·,Rule.readCallable) <|> (vs.lookup f).map (·,Rule.readBagView)
           -- A dictionary's named field or view, else its index, which may miss.
           -- The index holds of every present field, an optional one included.
-          | [.dict fs [] vs ix _ _ _ _] =>
+          | [.dict fs [] vs ix _ _ _ _ _] =>
             (fs.lookup f).map (·,Rule.read) <|>
             ((vs.lookup f).bind fun B => if f == lengthKey && !lengthExcluded G B then none else some (B, Rule.readView)) <|>
             (numericFirst ix).findSome? fun (K, B) => if !K.surely f then none else
@@ -1249,8 +1249,8 @@ read/value rule may succeed when ordinary derivation search cannot. -/
       -- The contract the read is typed at: the record's field, or a
       -- dictionary's index, with `undefined` where the key is absent.
       let contract : Option (Ty ι) := match expand G Ref with
-        | [.refs fs _ vs _ _ _] => if HeapExpressionRules.fieldOperand (expand G Ref) fld then fs.lookup fld <|> vs.lookup fld else none
-        | [.dict _ _ _ ds _ _ _ cs] =>
+        | [.refs fs _ vs _ _ _ _] => if HeapExpressionRules.fieldOperand (expand G Ref) fld then fs.lookup fld <|> vs.lookup fld else none
+        | [.dict _ _ _ ds _ _ _ cs _] =>
           if HeapExpressionRules.optionalOperand (expand G Ref) fld then
             -- The graph's `undefined` row, among the labels the search knows.
             let undef := (j.type :: own ++ pool).findSome? fun T => T.find? fun l =>

@@ -417,8 +417,8 @@ structure Obj (ι : Type) where
   plain : Bool
 
 @[nospecialize] def objOf : Clause (List ι) → Option (Obj ι)
-  | .refs a bs vs os _ ks => some ⟨(a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, [], ks, false⟩
-  | .dict a bs vs ds os _ ks cs => some ⟨(a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, ds ++ cs, ks, !(ds ++ cs).isEmpty⟩
+  | .refs a bs vs os _ ks _ => some ⟨(a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, [], ks, false⟩
+  | .dict a bs vs ds os _ ks cs _ => some ⟨(a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, ds ++ cs, ks, !(ds ++ cs).isEmpty⟩
   | _ => none
 
 /-- A clause whose values own no enumerable property: `null`, `undefined`,
@@ -476,9 +476,9 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
   obtain ⟨hv, hinv⟩ := hv
   unfold objOf at ho
   split at ho
-  · rename_i a bs vs os ms ks
+  · rename_i a bs vs os ms ks st
     cases ho
-    obtain ⟨hr, hw, hopt, -, hb⟩ := hv
+    obtain ⟨hr, hw, hopt, -, hb, -⟩ := hv
     obtain ⟨fs, oid, rfl, -⟩ := hr.1
     refine ⟨fs, oid, rfl, ⟨fun p hp => ?_, fun q hq l hl => ?_, fun x hx => by simp at hx,
       fun K hK => ownKeysT_reid (hb K hK),
@@ -492,9 +492,9 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
       cases he
       obtain ⟨c, hc, hag⟩ := hall _ (List.mem_map_of_mem hq) l hl
       exact ⟨c, hc, fun j hj U u hu => (hag j hj U u).1 hu⟩
-  · rename_i a bs vs ds os ms ks cs
+  · rename_i a bs vs ds os ms ks cs st
     cases ho
-    obtain ⟨hr, hw, ⟨hd, hcs⟩, hopt, -, hb⟩ := hv
+    obtain ⟨hr, hw, ⟨hd, hcs⟩, hopt, -, hb, -⟩ := hv
     obtain ⟨fs, oid, rfl, -⟩ := hr.1
     have hview : ∀ x ∈ ds ++ cs, dictViewT x.1 (meaning G x.2) n W (.objAt fs .absent oid) := by
       intro x hx
@@ -625,8 +625,8 @@ keys a bound lists without the host key, a callable, whose objects carry code,
 or a clause of primitives. A merge reads only operands of such clauses, since
 its copy is stuck on a host object. -/
 @[nospecialize] def hostFree : Clause (List ι) → Bool
-  | .refs a bs _ _ _ ks => !(a :: bs).flatten.isEmpty || ks.any KeyBound.closed
-  | .dict a bs _ ds _ _ ks cs => !(ds ++ cs).isEmpty || !(a :: bs).flatten.isEmpty || ks.any KeyBound.closed
+  | .refs a bs _ _ _ ks _ => !(a :: bs).flatten.isEmpty || ks.any KeyBound.closed
+  | .dict a bs _ ds _ _ ks cs _ => !(ds ++ cs).isEmpty || !(a :: bs).flatten.isEmpty || ks.any KeyBound.closed
   | .arrs .. | .callable .. | .ctors .. => true
   | c => emptyClause c || stringClause c
 
@@ -638,14 +638,14 @@ theorem hostFree_sound {G : NormalGraph ι} {c : Clause (List ι)} (hc : hostFre
   subst he
   cases c with
   | refs a bs vs os ms ks =>
-    obtain ⟨hr, -, -, -, hb⟩ := hv
+    obtain ⟨hr, -, -, -, hb, -⟩ := hv
     simp only [hostFree, Bool.or_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
       List.any_eq_true] at hc
     rcases hc with hne | ⟨K, hK, hc⟩
     · exact ReferenceConjunctions.noHost hr (ReferenceConjunctions.famsOf_flatten_ne hne) flds oid rfl
     · exact KeyBound.closed_lookup hc (hb K hK)
   | dict a bs vs ds os ms ks cs =>
-    obtain ⟨hr, -, ⟨hd, hcs⟩, -, -, hb⟩ := hv
+    obtain ⟨hr, -, ⟨hd, hcs⟩, -, -, hb, -⟩ := hv
     simp only [hostFree, Bool.or_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
       List.any_eq_true] at hc
     rcases hc with (hix | hne) | ⟨K, hK, hc⟩
@@ -1763,7 +1763,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       ⟨_, hcr, ?_, builtinInvariant_of_lookup hstore⟩
     rcases hshape with rfl | ⟨rfl, hne⟩
     · simp only [semWithArgs]
-      exact ⟨hrefs, viewsT_of_viewT hviews, hopt, MethodMembers.methodT_nil _ _ _, hbounds⟩
+      exact ⟨hrefs, viewsT_of_viewT hviews, hopt, MethodMembers.methodT_nil _ _ _, hbounds, stableKeysT_nil _ _ _⟩
     · simp only [semWithArgs]
       -- What a location under a key an index class admits holds: exactly
       -- the type of a writable index admitting it, and within the index's
@@ -1817,7 +1817,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
         rw [hnp hne] at hv; cases hv
       refine ⟨hrefs, viewsT_of_viewT hviews, ⟨fun x hx => ⟨_, _, rfl, ⟨hnoproto, hnohost⟩, fun f l hl hxf => ?_⟩,
         fun x hx => ⟨_, _, rfl, ⟨hnoproto, hnohost⟩, fun f l hl hxf => ?_⟩⟩, hopt, MethodMembers.methodT_nil _ _ _,
-        hbounds⟩
+        hbounds, stableKeysT_nil _ _ _⟩
       · obtain ⟨c, hU, -, himp⟩ := hkey x (List.mem_append_left _ hx) f l hl hxf
         exact ⟨c, hU, himp⟩
       · obtain ⟨c, hU, hiff, -⟩ := hkey x (List.mem_append_right _ hx) f l hl hxf

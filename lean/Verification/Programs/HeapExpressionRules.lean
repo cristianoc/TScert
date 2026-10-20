@@ -247,7 +247,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
 
 /-- A clause's first invariant bag operand, independent of callability. -/
 def clauseBagOperand : PositiveNormalization.Clause α → Option (List (PropKey × α))
-  | .refs B _ _ _ _ _ | .callable B _ _ _ => some B
+  | .refs B _ _ _ _ _ _ | .callable B _ _ _ => some B
   | _ => none
 
 /-- Whether a clause states the field `fld` of a location: in its first
@@ -258,7 +258,7 @@ def clauseField (c : PositiveNormalization.Clause α) (fld : PropKey) : Bool :=
     | some B => B.any fun p => decide (p.1 = fld)
     | none => false) ||
   (match c with
-    | .refs _ _ vs _ _ _ => fld != lengthKey && vs.any fun p => decide (p.1 = fld)
+    | .refs _ _ vs _ _ _ _ => fld != lengthKey && vs.any fun p => decide (p.1 = fld)
     | _ => false)
 
 /-- Whether every alternative is a record stating the field `fld`, an
@@ -378,9 +378,9 @@ of it is then of a location of the object, or, where the key is absent,
 `undefined`, since such an object has no prototype. -/
 def optionalOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
   !cs.isEmpty && cs.all fun c => match c with
-    | .refs a _ vs os _ _ => a.any (fun p => decide (p.1 = fld)) ||
+    | .refs a _ vs os _ _ _ => a.any (fun p => decide (p.1 = fld)) ||
       vs.any (fun p => p.1 != lengthKey && decide (p.1 = fld)) || os.any (fun o => decide (o.key = fld))
-    | .dict _ _ _ ds _ _ _ cs => (ds ++ cs).any (stringIndex · fld)
+    | .dict _ _ _ ds _ _ _ cs _ => (ds ++ cs).any (stringIndex · fld)
     | _ => false
 
 /-- What such a read finds: the object, and, where it has the key, a
@@ -1098,7 +1098,7 @@ theorem store_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {k A ρ n W h}
 distinctness is stated at, since a later claim can name no other. -/
 def namedKeys [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) : List PropKey :=
   ((expand G A).flatMap fun c => match c with
-    | .refs fs rs vs os _ _ => ((fs :: rs).flatten ++ vs).map Prod.fst ++ os.map (·.key)
+    | .refs fs rs vs os _ _ _ => ((fs :: rs).flatten ++ vs).map Prod.fst ++ os.map (·.key)
     | _ => []).eraseDups
 
 theorem writeSlots_eq {t f i v} (h : writeSlots t = some (f, i, v)) :

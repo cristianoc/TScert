@@ -31,7 +31,7 @@ new observation of their source expression. -/
       let invariant := fun (fld : PropKey) => do
         if clauses.isEmpty then none
         let ws ← clauses.mapM fun (c : PositiveNormalization.Clause (Ty Tree)) => match c with
-          | PositiveNormalization.Clause.refs W [] [] [] [] [] => W.lookup fld
+          | PositiveNormalization.Clause.refs W [] [] [] [] [] [] => W.lookup fld
           | _ => none
         some ws.flatten.eraseDups
       let (uniform, pointwise) := asserted.partition fun (fld, R) =>

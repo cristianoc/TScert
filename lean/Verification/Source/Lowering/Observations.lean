@@ -59,7 +59,7 @@ so it fails here rather than reaching a message. -/
 record naming them, the locations of an object of the type. -/
 @[nospecialize] private def commonFields (G : Verification.PositiveGraphs.NormalGraph ι) (A : Ty ι) : List PropKey :=
   match PositiveRules.expand G A with
-  | .refs fs _ _ _ _ _ :: _ =>
+  | .refs fs _ _ _ _ _ _ :: _ =>
     (fs.map Prod.fst).eraseDups.filter (HeapExpressionRules.fieldOperand (PositiveRules.expand G A))
   | _ => []
 

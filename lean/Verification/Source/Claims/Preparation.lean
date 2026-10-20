@@ -208,7 +208,7 @@ def instancePack (T : EquationStore.State) (X : List Tree) (n : String) :
   let G := SourceTypes.graph T
   let refuse := s!"the instance of '{n}', a type parameter typing a value and a rest's argument list, " ++
     "is no array or tuple type: the argument lists are an array or tuple type's, whose fresh arrays are its values"
-  let [c@(.refs fs [] vs _ _ _)] := PositiveRules.expand G X | throw refuse
+  let [c@(.refs fs [] vs _ _ _ _)] := PositiveRules.expand G X | throw refuse
   let some [s] := fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField | throw refuse
   if c != SourceTypes.arrayOf T s false && c != SourceTypes.arrayOf T s true then throw refuse
   let [.list τ []] := PositiveRules.expand G [s] | throw refuse

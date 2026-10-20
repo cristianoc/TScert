@@ -313,7 +313,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     let r ← closureExpr recursive fc scope Γ receiver
     let k ← closureExpr recursive fc (held ⟨"",some receiver.span⟩ :: scope) (r.type::Γ) key
     let G := SourceTypes.graph (← table)
-    let [.dict _ [] _ ix [] [] [] _] := PositiveRules.expand G r.type
+    let [.dict _ [] _ ix [] [] [] _ _] := PositiveRules.expand G r.type
       | throw "a dynamic index requires a dictionary receiver"
     -- The key's clause names the keys it reaches: a string any string key, a
     -- number a canonical numeric one, a symbol a symbol key. An index over
