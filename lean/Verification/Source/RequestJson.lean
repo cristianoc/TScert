@@ -363,6 +363,7 @@ decreasing_by
     validEvidence ok e
   | .slicedRead _ _ _ e p => validEvidence ok e && (subtypeChoiceTypes p).all (validTy ok)
   | .observedRead _ _ | .knownValue _ _ => true
+  | .linkedRead _ _ p => (subtypeChoiceTypes p).all (validTy ok)
 
 @[nospecialize] def validCertificate (ok : ι → Bool) (C : ControlFlow.Certificate ι) : Bool :=
   C.all (fun n =>

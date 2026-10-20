@@ -1229,6 +1229,14 @@ read/value rule may succeed when ordinary derivation search cannot. -/
   | .readAt fld (.var i) =>
     choices := (k.cells.filter fun f => f.slot == i && f.field == fld).map
       fun f => .observedRead i f.contents
+    -- A read a live read link answers: the linked slot's value, at its type.
+    for g in k.links do
+      if (HeapLinks.aliases k.links i).contains g.cell && g.field == fld && !g.alias && !g.distinct then
+        if let some B := j.context[g.value]? then
+          let compared ← (subtypeUsing G images B j.type).result
+          incomplete := incomplete <|> compared.exhaustion
+          if let some p := compared.value then
+            choices := choices ++ [.linkedRead i g.value p]
     -- Read at the fixed contract once, then try each answer the location's
     -- facts give: a nullish exclusion's, and an observed tag's.
     if let some Ref := j.context[i]? then

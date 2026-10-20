@@ -432,11 +432,14 @@ export function expr(this: Gate, node: Expression): Expr {
     const [tested] = node.arguments;
     if (gate.globalTests.has(gate.span(node).join(":")) && tested)
       return { k: "arrayTest", pos: gate.span(node), e: gate.expr(tested) };
-    // A listed guard of the compiler API's family (HOST-FAMILIES.md,
-    // "Calls"): of an immutable name, the test of its value, or of its
+    // A listed guard of the compiler API's family (HOST-FAMILIES.md, "A
+    // guard on any argument"): the test of its argument's value, or of its
     // object's tag field, against the entry's exact tag set, after the
-    // obligation that the name is within the guard's domain. Of any other
-    // argument it is an ordinary call, at the guard's plain signature.
+    // obligation that the argument is within the guard's domain. An
+    // immutable name is tested where it is held; any other argument but a
+    // name is evaluated once, into a slot of its own. A name that is
+    // assigned, may throw on its read or is a library value is an ordinary
+    // call's argument, at the guard's plain signature.
     const callee = ts.isPropertyAccessExpression(node.expression) ? gate.namespaceMember(node.expression)
       : ts.isIdentifier(node.expression) ? gate.local(node.expression) : undefined;
     const guard = callee === undefined ? undefined : gate.hostGuards.get(callee);
@@ -450,6 +453,10 @@ export function expr(this: Gate, node: Expression): Expr {
       return { k: "tagMember", pos: gate.span(node), domain: guard.domain, field: guard.field,
         tags: guard.tags.map((t): Atom => typeof t === "number" ? { a: "numberlit", v: String(t) } : { a: "stringlit", v: t }),
         e: { k: "id", pos: gate.span(argument), name: gate.local(argument) } };
+    if (guard && argument && !ts.isIdentifier(argument) && !node.questionDotToken)
+      return { k: "tagMember", pos: gate.span(node), domain: guard.domain, field: guard.field,
+        tags: guard.tags.map((t): Atom => typeof t === "number" ? { a: "numberlit", v: String(t) } : { a: "stringlit", v: t }),
+        e: gate.expr(argument) };
     // `Promise.resolve(v)` and the like, which the overlay reads as a call
     // of the intrinsic stating the same step, read at the member's name.
     const intrinsic = gate.globalIntrinsics.get(gate.span(node).join(":"));

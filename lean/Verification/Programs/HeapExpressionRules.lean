@@ -27,6 +27,10 @@ inductive StepEvidence (ι : Type) where
   for, `Array.isArray`'s). -/
   | slicedRead (tag : Tag) (answer : Bool) (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.SubtypeChoices ι)
   | knownValue (slot : Nat) (contents : List Atom)
+  /-- A read of `slot`'s field where a read link says the field holds the
+  value of `value` (HOST-FAMILIES.md, "Linked reads"): the read gives that
+  value, at its type, below the claim by `sub`. -/
+  | linkedRead (slot value : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
   /-- The fields, their slots and their contents are read off the term and the
   state, so this carries only the ordinary derivation it stands beside. -/
   | allocated (proof : ProgramCertificates.Evidence ι)
@@ -486,6 +490,43 @@ theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     obtain ⟨a,_,ha⟩ := hv; exact Atom.isValue ha
   exact HeapObservations.value hval (includes_sound hc hv n W)
     (result_holds (copy_holds hk) hv)
+
+/-- A read link from `i`, or a slot an alias link equates with it, through
+`fld` to `y`: the link a read records. -/
+def linksField (k : Knowledge) (i y : Nat) (fld : PropKey) : Bool :=
+  k.links.any fun g => (HeapLinks.aliases k.links i).contains g.cell && g.value == y &&
+    !g.alias && !g.distinct && g.field == fld
+
+/-- **A linked read.** Where a read link says the object in `i` holds the
+value of `y` at its field, the read gives that value, which has `y`'s type. -/
+theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
+    (hl : linksField k i y fld = true) (hB : Γ[y]? = some B)
+    (hsub : FamLe (meaning G B) (meaning G A))
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (copy k y) (push v ρ) h') n W h (.readAt fld (ρ i)) := by
+  obtain ⟨g,hg,hm⟩ := List.any_eq_true.mp hl
+  simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.contains_iff_mem] at hm
+  obtain ⟨⟨⟨⟨hal,hv⟩,ha⟩,hd⟩,hf⟩ := hm
+  have hc : ρ g.cell = ρ i := HeapLinks.aliases_eq hk.2.2 hal
+  have hgl := hk.2.2 g hg
+  simp only [hd, ha, Bool.false_eq_true, if_false] at hgl
+  have hread : ∃ flds c oid, ρ i = .objAt flds c oid ∧ ReadGave flds fld h (ρ y) := by
+    split at hgl
+    · obtain ⟨flds,c,oid,ho,hr⟩ := hgl
+      exact ⟨flds,c,oid,hc ▸ ho,hf ▸ hv ▸ hr⟩
+    · obtain ⟨flds,c,oid,l,ho,hlk,hl⟩ := hgl
+      exact ⟨flds,c,oid,hc ▸ ho,ReadGave.present (hf ▸ hlk) (hv ▸ hl)⟩
+  obtain ⟨flds,c,oid,ho,hr⟩ := hread
+  have hty := he.2 y B hB
+  have hval := (meaning_value hty).1
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rw [ho]
+    exact .inr ⟨trunc n (Nat.le_succ n) W, h, ρ y, WExt_refl _, WorldAdm_trunc _ hw, hr.step,
+      HeapOk_trunc n W h hh,
+      HeapObservations.value hval (hsub _ _ _ ((meaning_adm G B).down n W _ hty)) (copy_holds hk)⟩
 
 /-- Ordinary calls and arbitrary expressions retain immutable snapshots, but no
 heap observation without a specific proved effect rule. -/
@@ -1128,6 +1169,12 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     CheckResult.fromOption (if j.term = .var i ∧ i < j.context.length ∧
       valuesAt G j.context k i = some R ∧ includes G j.type R = true
       then some (withResult (copy k i) R) else none)
+  | .linkedRead i y p =>
+    match readSlot j.term, j.context[y]? with
+    | some (fld, i'), some B =>
+      (CheckResult.ofBool (decide (i' = i ∧ linksField k i y fld = true))).bind fun _ =>
+        (ProgramCertificates.checkSubtypeUsing G images B j.type p).map fun _ => copy k y
+    | _, _ => failure
   | .allocated e =>
     match allocationSlots j.term with
     | some slots =>
@@ -1216,6 +1263,12 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     if j.term = .var i ∧ i < j.context.length ∧
         valuesAt G j.context k i = some R ∧ includes G j.type R = true
     then some (withResult (copy k i) R) else none
+  | .linkedRead i y p =>
+    match readSlot j.term, j.context[y]? with
+    | some (fld, i'), some B =>
+      if i' = i ∧ linksField k i y fld = true ∧ PositiveCertificates.checkUsing G images B j.type p = true
+      then some (copy k y) else none
+    | _, _ => none
   | .allocated e =>
     match allocationSlots j.term with
     | some slots =>
@@ -1251,6 +1304,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
         checkedOutput_value, CheckResult.value_bind_const, CheckResult.value_map_const,
         CheckResult.value_orElse, CheckResult.accepted_ofBool,
         BranchRefinement.checkObservedSubResult_accepted,
+        ProgramCertificates.checkSubtypeUsing_accepted,
         checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, and_assoc, and_left_comm, and_comm]
     | split
   all_goals (try simp_all) <;> congr
@@ -1398,6 +1452,19 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       cases hc
       rw [ht]
       simpa [instantiate] using value_sound hr hi he hk
+    · contradiction
+  | linkedRead i y p =>
+    simp only [checkStepUsing_eq] at hc
+    split at hc
+    · rename_i fld i' B hslot hB
+      split at hc
+      · rename_i hp
+        obtain ⟨rfl,hl,hs⟩ := hp
+        cases hc
+        rw [readSlot_eq hslot]
+        simpa [instantiate] using
+          linkedRead_sound hl hB (PositiveCertificates.acceptedUsing hs) he hk hw hh
+      · contradiction
     · contradiction
   | allocated e =>
     simp only [checkStepUsing_eq] at hc
