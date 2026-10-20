@@ -2,18 +2,20 @@
 // documents and claims no case can make. The controls needing no build are
 // node-runs.mts and trusted-inputs.mts, among the fast checks.
 import assert from "node:assert/strict";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
-import { compilerApiFamily, useFamilyDescriptionForTests, useHostInstallationForTests } from "../tools/compiler-api.mts";
+import { compilerApiFamily, runtimeConditions, useFamilyDescriptionForTests, useHostInstallationForTests } from "../tools/compiler-api.mts";
+import type { FamilyDescription } from "../tools/host-families.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
+import { linkFixtures } from "./fixture-links.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { decodeGraph, emptyEffect, emptyFootprint, footprintEffect, ordinaryEffect, type ClosedFootprint } from "../tools/type-graph.mts";
@@ -75,6 +77,7 @@ const writeClaims = (artifacts: string, name: string, claims: SourceClaims): str
   return path;
 };
 
+linkFixtures();
 const outcomes = await pooled(cases, runCase);
 const artifactsOf = new Map<string, string>();
 let verifiedFunctions: number = 0;
@@ -3139,6 +3142,25 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
       at(read).type = at(excluded).type;
       return read;
     }],
+    // A guard's false edge (HOST-FAMILIES.md, "Calls"): the argument
+    // claimed at the shape its true edge leaves, which every input reaching
+    // the false edge contradicts.
+    ["forged-guard-false-edge", "compiler-api-guard-false-branch", "count", (text, f) => {
+      const at = (start: number) => must(f.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + "node".length), `the claim at ${start}`);
+      const read = text.lastIndexOf("node.elements");
+      at(read).type = at(text.indexOf("node.text")).type;
+      return read;
+    }],
+    // A guard value's promise (HOST-FAMILIES.md, "Guards as values"): where
+    // a call of a name holding it answers `true`, the argument claimed at
+    // what its `false` answer leaves, which excludes every input answering
+    // `true`.
+    ["forged-guard-value-promise", "compiler-api-guard-values", "stored", (text, f) => {
+      const at = (start: number) => must(f.expressions.find((e) => e.pos[0] === start && e.pos[1] === start + "node".length), `the claim at ${start}`);
+      const read = text.indexOf("node.text", text.indexOf("g(node)"));
+      at(read).type = at(text.indexOf("node.pos", read)).type;
+      return read;
+    }],
     ["forged-family-member", "compiler-api-family-identity", "held", (text, f) => {
       const literal = text.indexOf("{ node: n }");
       const node = text.indexOf("n }", literal);
@@ -3161,11 +3183,161 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     assert.ok(/evidence search failed/.test(detail) && locatedAt(detail, position), `${name}: refused at the forged claim: ${detail}`);
     // The case's evidence, offered for the forged claims, is refused: the
     // checker names the first node whose evidence does not establish its
-    // claim, or the evidence as a whole, not the forged claim.
+    // claim, or the evidence as a whole, not the forged claim. The guards'
+    // own rules are reached by forged evidence (below).
     assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts),
       /evidence does not justify the extracted program and exact claims|evidence refusal at \[\d+,\d+\)/);
   }
-  process.stdout.write("forged family claims: the excluded arm on a false edge and a program allocation at a family type, refused by the search at the forged claim and by the checker against the case's evidence\n");
+  process.stdout.write("forged family claims: the excluded arm on a kind test's and on a guard's false edge, a guard value's promise at the shapes it excludes, and a program allocation at a family type, refused by the search at the forged claim and by the checker against the case's evidence\n");
+}
+{
+  // Forged evidence of a guard's false entailments, offered with the case's
+  // own claims, so that only the forged yields differ and the checker's
+  // refusal is the yield's rule, located at the guard's call: a membership
+  // test's `false` edge stating the argument at what its `true` edge leaves
+  // (`member-yield`), and a guard value's promise stating that no argument
+  // answers `true` (`promise-call`).
+  type Certificate = { yields: { conditional: boolean; onFalse: boolean; target: number; type: unknown }[] }[];
+  const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+  const forgeries: [string, string, string, string, (certificate: Certificate) => void][] = [
+    ["forged-member-false-yield", "compiler-api-guard-false-branch", "count", "ts.isIdentifier(node)", (certificate) => {
+      for (const node of certificate)
+        for (const y of node.yields)
+          if (y.onFalse) y.type = must(node.yields.find((z) => !z.onFalse && z.target === y.target), "the true edge's yield").type;
+    }],
+    ["forged-promise-yield", "compiler-api-guard-values", "stored", "g(node)", (certificate) => {
+      for (const node of certificate) for (const y of node.yields) if (y.conditional) y.type = [];
+    }],
+  ];
+  for (const [name, file, function_, call, forge] of forgeries) {
+    const artifacts = run(file);
+    const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const index = readClaims(artifacts).functions.findIndex((f) => f.name === function_);
+    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    assert.ok(isObject(evidence) && isObject(evidence.main) && Array.isArray(evidence.main.functions), "the case's evidence");
+    const unit: unknown = evidence.main.functions[index];
+    assert.ok(isObject(unit) && Array.isArray(unit.certificate), `${function_}'s certificate`);
+    const before = JSON.stringify(unit.certificate);
+    forge(unit.certificate as Certificate); // asserted: a certificate of the case's evidence, decoded by Lean; the forgery writes yields only
+    assert.notEqual(JSON.stringify(unit.certificate), before, `${name}: a yield forged`);
+    const path = join(artifacts, `${name}-evidence.json`);
+    writeFileSync(path, JSON.stringify(evidence));
+    const start = text.indexOf(call);
+    assert.ok(start >= 0, `${name}: the call`);
+    assert.match(invoke(join(artifacts, "claims.json"), path, artifacts),
+      new RegExp(`^reject: source evidence refusal at \\[${start},${start + call.length}\\): the evidence does not establish this node's typing`),
+      `${name}: refused at the guard's call`);
+  }
+  process.stdout.write("forged guard evidence: a membership test's false edge at its true edge's slice, and a guard value's promise excluding every true answer, refused by the checker at the guard's call\n");
+}
+{
+  // The domain obligation (HOST-FAMILIES.md, "Calls"): a parser document
+  // stating a guard's call at a domain its argument's claim is not within
+  // (`never`), with the entry's tags and with none, is refused at the call
+  // by Lean's `guard-domain` obligation, whatever the producer claims: in
+  // search, and by the checker against the case's evidence, whose proof of
+  // the obligation at the reviewed domain is the only part that differs.
+  // The calls: a condition the executable lowering tests
+  // (`compiler-api-guard-false-branch`), a callback's body
+  // (`compiler-api-guard-values`), and a negated condition, which the
+  // closure lowering also plans, each plan stating the obligation
+  // (`compiler-api-guards`; without the executable lowering's obligation,
+  // only this call's forged domain is refused). One stating no domain is
+  // refused by the decoder.
+  const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+  const calls: [string, string][] = [
+    ["compiler-api-guard-false-branch", "ts.isIdentifier(node)"],
+    ["compiler-api-guard-values", "ts.isIdentifier(n)"],
+    ["compiler-api-guards", "isStringLiteral(node)"],
+  ];
+  for (const [file, text] of calls) {
+    const artifacts = run(file);
+    const start = readFileSync(join(artifacts, "source.ts"), "utf8").indexOf(text);
+    const document: unknown = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
+    const found: Record<string, unknown>[] = [];
+    const visit = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(visit);
+      else if (isObject(v)) {
+        if (v.k === "tagMember" && Array.isArray(v.pos) && v.pos[0] === start) found.push(v);
+        Object.values(v).forEach(visit);
+      }
+    };
+    visit(document);
+    const [call] = found;
+    assert.ok(call && found.length === 1 && Array.isArray(call.pos), `${file}: the guard's call ${text}`);
+    const { domain, tags } = call;
+    const forgedDocument = (name: string, replaced: unknown, replacedTags: unknown): string => {
+      call.domain = replaced;
+      call.tags = replacedTags;
+      const path = join(artifacts, `${name}.fragment.json`);
+      writeFileSync(path, JSON.stringify(document) ?? "");
+      call.domain = domain;
+      call.tags = tags;
+      return path;
+    };
+    const claims = join(artifacts, "claims.json");
+    const at = `at [${call.pos.join(",")})`;
+    const never = { k: "atom", name: "never", span: call.pos };
+    const variants: [string, unknown][] = [["entry", tags], ["empty", []]];
+    for (const [variant, replacedTags] of variants) {
+      const name = `forged-guard-domain-${variant}`;
+      const narrowed = forgedDocument(name, never, replacedTags);
+      const searched = produceWith(artifacts, claims, name, narrowed);
+      const detail = searched.stdout + searched.stderr;
+      assert.equal(searched.status, 1, detail);
+      assert.ok(detail.includes(at), `${file}, ${variant} tags: the narrowed domain refused at the call in search: ${detail}`);
+      assert.ok(invoke(claims, join(artifacts, "evidence.json"), artifacts, narrowed).startsWith(
+        `reject: source evidence refusal ${at}: the evidence does not establish this obligation's claim`),
+        `${file}, ${variant} tags: the narrowed domain refused at the call by the checker`);
+    }
+    const absent = produceWith(artifacts, claims, "forged-guard-no-domain", forgedDocument("forged-guard-no-domain", null, tags));
+    assert.equal(absent.status, 1, absent.stdout + absent.stderr);
+    assert.match(absent.stdout + absent.stderr, /a family guard's call states its guard's domain/);
+  }
+  process.stdout.write("forged guard domains: a domain the argument is not within, with the entry's tags and with none, in a condition, a callback's body and a negated condition, refused at the call by the search and by the checker against the case's evidence; a call without its domain by the decoder\n");
+}
+{
+  // A guard binds by what Node loads for the client's own import
+  // (HOST-FAMILIES.md, "Calls"). A project whose `paths` point TypeScript at
+  // the audited declarations, beside a `node_modules/typescript` Node loads:
+  // a link to the audited installation, whose `isIdentifier` is the checked
+  // function, narrows; a copy of the package, another instance of the same
+  // code, is no guard.
+  const installation = resolve(import.meta.dirname, "..", "tools", "node_modules", "typescript");
+  const nested = (name: string, place: (target: string) => void): Outcome => {
+    const dir = runDirectory(`tscert-nested-${name}-`);
+    writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+      module: "preserve", moduleResolution: "bundler", target: "es2022", verbatimModuleSyntax: true, types: [],
+      paths: { "typescript/unstable/ast": [join(installation, "dist", "ast", "index.d.ts")] } }, include: ["*.ts"] }));
+    const source = join(dir, "name.ts");
+    writeFileSync(source, 'import * as ts from "typescript/unstable/ast";\n\n' +
+      "export function name(n: ts.Node): string {\n  return ts.isIdentifier(n) ? n.text : \"\";\n}\n");
+    mkdirSync(join(dir, "node_modules"));
+    place(join(dir, "node_modules", "typescript"));
+    return check(source, tsconfigOf(dir));
+  };
+  const linked = nested("linked", (target) => symlinkSync(installation, target));
+  assert.equal(linked.status, "verified", JSON.stringify(linked));
+  const copied = nested("copied", (target) => cpSync(installation, target, { recursive: true, dereference: true }));
+  assert.ok(copied.status === "unsupported" && copied.detail.includes("missing field text"), JSON.stringify(copied));
+  process.stdout.write("nested installations: the audited package linked narrows, a copy of it in the client's node_modules is no guard\n");
+}
+{
+  // F5 (HOST-FAMILIES.md, "Trust"): the package's enum objects are never
+  // written. Claims bypassing the producer that read `ts.SyntaxKind` at the
+  // writable record its alias is bound to are refused by the search at that
+  // read: the enum object's type is its declaration's, whatever is claimed.
+  const artifacts = run("invalid-compiler-api-enum-field-write");
+  const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const claims = readClaims(artifacts);
+  const expressions = must(claims.functions[0], "rewrite's claims").expressions;
+  const at = (start: number, length: number) =>
+    must(expressions.find((e) => e.pos[0] === start && e.pos[1] === start + length), `the claim at ${start}`);
+  const read = text.indexOf("ts.SyntaxKind;");
+  at(read, "ts.SyntaxKind".length).type = at(text.indexOf("kinds.Identifier"), "kinds".length).type;
+  const forged = writeClaims(artifacts, "forged-enum-writable-alias", claims);
+  refusedAt(artifacts, forged, "forged-enum-writable-alias", `at [${read},${read + "ts.SyntaxKind".length})`);
+  process.stdout.write("forged enum claims: the tag enum read at a writable record, refused at the read\n");
 }
 {
   // A correction of a method to absent (HOST-FAMILIES.md, "The family
@@ -3266,6 +3438,73 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     useHostInstallationForTests(null);
   }
   process.stdout.write("declared-optional method: each shape's own optional member, the required one shared, its call refused\n");
+}
+{
+  // A second family (HOST-FAMILIES.md, "Instances"): a stand-in package of
+  // string-tagged units, read through a description whose tag is `type`,
+  // a string, with a guard table of its own, which activates over the
+  // stand-in's own modules. A guard of one tag and one through a helper of
+  // its tag narrow both edges, each call a membership test of the family's
+  // string constants; a guard whose answer depends on an option argument
+  // has no entry and narrows nothing.
+  const project = tsconfigOf(join(import.meta.dirname, "string-family-fixture-project"));
+  const example = (file: string): string => join(import.meta.dirname, "string-family-fixture-project", `${file}.ts`);
+  const helper = "function isExpressionKind(type) {\n    return type === SyntaxKind.Name\n        || type === SyntaxKind.Call;\n}";
+  const strings: FamilyDescription = {
+    package: "string-family-fixture",
+    marker: "StringFixture",
+    root: { name: "Unit", form: "inheritance", text: "export interface Unit {" },
+    tag: { field: "type", primitive: "string", constants: { enum: "SyntaxKind" } },
+    table: [{ rule: "literal" }],
+    corrections: [],
+    guards: {
+      entryPoint: "./ast",
+      conditions: runtimeConditions(),
+      entryModule: "ast.js",
+      closure: {
+        files: {
+          "ast.js": "21bb112accb1949b4e171a8dc7daca0413931b3274be46a76304adc987655604",
+          "kinds.js": "47ec99b8f2ea2b11c81af40225a2daa9fb5b2c51421cd6a182d8ad0c03d2e8c2",
+        },
+        edges: [["ast.js", "SyntaxKind", "kinds.js", "SyntaxKind", [], "import"]],
+      },
+      helpers: { "ast.js#isExpressionKind": helper },
+      guards: [
+        { name: "isName", kind: "node", domain: "Unit", tags: ["Name"], module: "ast.js",
+          helpers: [], edges: [["ast.js", "SyntaxKind", "kinds.js", "SyntaxKind"]],
+          text: "export function isName(node) {\n    return node.type === SyntaxKind.Name;\n}" },
+        { name: "isExpression", kind: "node", domain: "Unit", tags: ["Name", "Call"], module: "ast.js",
+          helpers: ["ast.js#isExpressionKind"], edges: [["ast.js", "SyntaxKind", "kinds.js", "SyntaxKind"]],
+          text: "export function isExpression(node) {\n    return isExpressionKind(node.type);\n}" },
+      ],
+      excluded: [["isNameLoosely", "two parameters"]],
+    },
+  };
+  useHostInstallationForTests(join(import.meta.dirname, "string-family-fixture"));
+  useFamilyDescriptionForTests(strings);
+  try {
+    const kept = check(example("guards"), project);
+    assert.equal(kept.status, "verified", JSON.stringify(kept));
+    const tagSets: string[] = [];
+    const visit = (v: unknown): void => {
+      if (Array.isArray(v)) v.forEach(visit);
+      else if (typeof v === "object" && v !== null) {
+        if ("k" in v && v.k === "tagMember" && "tags" in v) tagSets.push(JSON.stringify(v.tags) ?? "");
+        Object.values(v).forEach(visit);
+      }
+    };
+    visit(JSON.parse(readFileSync(join(kept.artifacts, "fragment.json"), "utf8")));
+    assert.ok(tagSets.includes(JSON.stringify([{ a: "stringlit", v: "name" }, { a: "stringlit", v: "call" }]) ?? ""),
+      `isExpression's call tests the family's string constants: ${tagSets.join(" ")}`);
+    const file = example("invalid-loose");
+    const refused = check(file, project);
+    const at = readFileSync(file, "utf8").lastIndexOf("n.name");
+    assert.ok(refused.status === "unsupported" && refused.detail.includes(`at [${at},`), JSON.stringify(refused));
+  } finally {
+    useFamilyDescriptionForTests(null);
+    useHostInstallationForTests(null);
+  }
+  process.stdout.write("string-tagged family: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing\n");
 }
 {
   // Each correction of the compiler API's family (COMPILER-API.md,

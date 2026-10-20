@@ -251,13 +251,27 @@ theorem fieldYield_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (y :
   simp only [check_fun_reassign]
   rfl
 
+theorem memberYield_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (y : PromiseCalls.Yield ι)
+    (ts : List Tag) (i : Nat) :
+    PromiseCalls.memberYield (reassign G η) (images.reassign η) Γ links y ts i =
+      PromiseCalls.memberYield G images Γ links y ts i := by
+  unfold PromiseCalls.memberYield
+  simp only [check_fun_reassign]
+  rfl
+
+theorem memberFollows_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (t : Tm) (y : PromiseCalls.Yield ι) :
+    PromiseCalls.memberFollows (reassign G η) (images.reassign η) Γ links t y =
+      PromiseCalls.memberFollows G images Γ links t y := by
+  unfold PromiseCalls.memberFollows
+  simp only [memberYield_reassign]
+
 theorem yieldFollows_reassign (Γ : List (List ι)) (xs : List (PromiseCalls.Implication ι))
     (links : HeapLinks.Links) (t : Tm) :
     PromiseCalls.yieldFollows (reassign G η) (images.reassign η) Γ xs links t =
       PromiseCalls.yieldFollows G images Γ xs links t := by
   funext y
   unfold PromiseCalls.yieldFollows PromiseCalls.yieldFollows.observed
-  simp only [checkObservedSub_reassign, fieldYield_reassign]
+  simp only [checkObservedSub_reassign, fieldYield_reassign, memberFollows_reassign]
 
 theorem promiseOf_reassign (e : ProgramCertificates.Evidence ι) :
     PromiseCalls.promiseOf (reassign G η) e = PromiseCalls.promiseOf G e := rfl

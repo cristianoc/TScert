@@ -1,7 +1,10 @@
 {
   // The compiler-API examples import the host package `typescript`, the one
-  // the front end pins (tools/package-lock.json), through `paths`; inside the
-  // package its own `imports` map resolves `#enums/*`.
+  // the front end pins (tools/package-lock.json), through the installation
+  // link `../examples/node_modules` (pipeline/fixture-links.mts), as Node
+  // does; inside the package its own `imports` map resolves `#enums/*`. One
+  // path, `typescript/unstable/other`, points TypeScript at the guards'
+  // declarations without redirecting Node (`invalid-compiler-api-guard-subpath`).
   "compilerOptions": {
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -10,13 +13,11 @@
     "target": "es2022",
     "verbatimModuleSyntax": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": [],
     "paths": {
-      "typescript/unstable/ast": [
+      "typescript/unstable/other": [
         "../../tools/node_modules/typescript/dist/ast/index.d.ts"
-      ],
-      "typescript/unstable/sync": [
-        "../../tools/node_modules/typescript/dist/api/sync/api.d.ts"
       ],
       "@fixture/node-names": ["./node-names.ts"],
       "@fixture/node-types": ["./node-types.ts"]

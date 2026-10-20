@@ -10,10 +10,11 @@ REV ?= HEAD
 help: ## list the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | expand -t 16
 
-setup: ## install the node dependencies (tools, the library fixture's Node types, Prettier)
+setup: ## install the node dependencies (tools, the library fixture's Node types, Prettier) and link the fixtures' installations
 	npm ci --prefix tools
 	npm ci --prefix pipeline/library-project
 	npm install --no-save
+	node pipeline/fixture-links.mts
 
 build: build-lean build-producer ## build the Lean verifier and the OCaml producer
 

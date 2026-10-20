@@ -36,6 +36,7 @@ design, not its progress.
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
+| [A guard's false edge over a tag-set arm](#guard-false-edge-tag-sets) | open | where `ts.isToken(node)` answers `false`, `node` holds no `Token` arm |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -332,8 +333,18 @@ where a node is expected (`invalid-compiler-api-boxed-node`), `{ ...node }`
 allocation at a family type (`pipeline/test.mts`). Left: a callback of
 `forEachChild` reading its argument and one whose result is claimed at a
 node type it did not receive, which wait on a generic method called on a
-node (`compiler-api-node-callback`, a gap); a re-exported guard and a
-guard's wrapper, which wait on guard recognition.
+node (`compiler-api-node-callback`, a gap). A re-exported guard narrows,
+and a local function of a guard's name and a guard's wrapper are ordinary
+functions (`compiler-api-guard-calls`, `invalid-compiler-api-guard-wrapper`,
+`invalid-compiler-api-guard-local`).
+
+<a id="guard-false-edge-tag-sets"></a>
+**A guard's false edge over a tag-set arm.** A family guard's `false` edge
+drops an object arm whose tag is one of the guard's tags, each tag decided
+alone ([a membership test](docs/PROGRAM-TYPING.md#a-membership-test)); an
+arm whose tag is a set of several values all in the guard's set, `Token`
+under `isToken`, stays, since no one tag excludes it. A slice of the whole
+set, its soundness proved over the set clauses, removes it.
 
 <a id="corrected-members"></a>
 **Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)
@@ -645,6 +656,46 @@ the gate on a `TransformOptions` declaration. Of the 350 common slices:
   client cannot decode ("Expected fixed 3-element array (0x93), received:
   0x69"), seen once; two runs of the slice alone on 0337c3f exceeded the
   call stack, and the failing query's arguments and stack were not kept.
+
+<a id="census-guard-recognition"></a>
+The `tools/` census of ed81b46 (main) and of b7787b9 (guard recognition),
+run back to back on one machine (2026-10-20, load averages 3 to 18): 127 of
+365 slices verify on main, 126 of 369 on the branch, with no timeout and
+no worker failure on either. The branch adds 4 slices
+(`compiler-api.mts#activeGuards`, `#checkedGuards`, `#guardEntry`,
+`#guardModule`), each refused at the gate on `node:path`'s `sep`. Of the
+365 common slices:
+
+- verified on the branch only (1): `declaration-graph.mts#boundedArguments`,
+  `call.arguments.some(ts.isSpreadElement)`, a guard passed as a value;
+- verified on main only (2), at `ts.isTypeNode`'s declared predicate,
+  where its entry also accepts `ExpressionWithTypeArguments` (kind 234),
+  which `TypeNode` does not declare:
+  `declaration-graph.mts#typeNodeAt` returns a node `isTypeNode` accepted
+  at `TypeNode`, an acceptance of a program that is not safe, refused at
+  its return (`invalid-compiler-api-type-node`, run under Node, returns
+  the node of kind 234); `#computedAt` passes such a node to
+  `computedForm`, whose parameter is a `TypeNode`, and that argument
+  obligation fails; it returns the node only where `computedForm` answers
+  or `isTypeReferenceNode` holds, both `null` or `false` under Node on kind
+  234, so no return outside `TypeNode` is shown, and the census reports its
+  return, whose claim keeps the arm of kind 234. Each source repairs its
+  refusal by excluding kind 234 first;
+- a changed failure (2): `declaration-graph.mts#statementsOnPath`, refused
+  in search on main, refused in the producer on the branch at
+  `moduleSpecifier` after `isImportDeclaration`, which also accepts
+  `JSImportDeclaration`, a node without it; `fragment-statements.mts#patternDefaults`,
+  past "missing field elements" (the guard's `false` edge on a
+  `BindingName`), now refused in search inside its `flatMap` callback.
+
+The census of a818552, which reads the sync API's `isUnionType` without its
+declared predicate, run after b7787b9's on the same machine (2026-10-20,
+load averages 10 to 18): 125 of 369 slices verify. Against b7787b9,
+`declaration-graph.mts#primitivesOf`, verified there at that predicate, is
+refused in the producer at `getTypes` after `isUnionType`
+(`invalid-compiler-api-sync-guard`), a loss by principle: no audited
+contract states the predicate. `compiler-api.mts#importsKey` replaces
+`#guardModule` and is refused in search at its return.
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:

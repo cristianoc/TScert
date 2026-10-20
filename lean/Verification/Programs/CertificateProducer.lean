@@ -768,7 +768,9 @@ came from a different context. No execution budget is inspected. -/
         return ProgramCertificates.Evidence.node ⟨Γ,t,A⟩ .letE [ea,eb])
     | .invoke f recv args =>
       -- A callee read from a slot is tried first at the slot's own type, a
-      -- fixed signature before any variadic one of the pool: coercing it to
+      -- fixed signature of it before its variadic ones (a call of a guard at
+      -- its promise signature, beside one taking further arguments), and
+      -- those before any variadic one of the pool: coercing it to
       -- each of those first, where its own type is fixed, fails at the cost
       -- of a table over the pool each time. Order only; every premise is
       -- still proved.
@@ -830,7 +832,7 @@ came from a different context. No execution budget is inspected. -/
             let eus ← omitted.mapM fun D => recur Γ .undef D
             pure (coerceBy sub (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A)
       -- A callee or, for a method dispatched on its object, the receiver.
-      return (variadic own <|> direct own <|> variadic pool <|> direct pool).firstOr
+      return (direct own <|> variadic own <|> variadic pool <|> direct pool).firstOr
         (splitReceiver f <|> splitReceiver recv)
     | .makeAt .absent ns inits =>
       return (A :: pool).findSearch? fun R => do
@@ -1323,13 +1325,41 @@ type, a type of the pool the test decides. Untrusted: the checker decides. -/
     | .ite (.test tag (.var i)) .tru .fls => do
       let ys ← tested i tag true
       let zs ← throughFields i tag true
-      pure (ys ++ zs)
+      let ns ← memberYields [tag] i [false]
+      pure (fewestLast (ys ++ zs) ++ ns)
     | .ite (.test tag (.var i)) .fls .tru => do
       let ys ← tested i tag false
       let zs ← throughFields i tag false
-      pure (ys ++ zs)
-    | _ => pure []
+      pure (fewestLast (ys ++ zs))
+    | t => match PromiseCalls.memberParts t with
+      | some (ts, i) => if PromiseCalls.isMemberOn ts i t then memberYields ts i [true, false] else pure []
+      | none => pure []
 where
+  /-- A membership test's yields (`PromiseCalls.memberYield`): for each
+  answer, the tested slot's type and the objects' a current read link says
+  its value was read from, as the answer leaves them, where it leaves less;
+  each yield's type is its slice, which the empty choices relate to itself
+  without a search. -/
+  memberYields (ts : List Tag) (i : Nat) (answers : List Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) := do
+    let slot ← answers.filterMapM fun q => match Γ[i]? with
+      | none => pure none
+      | some A =>
+        let sliced := PromiseCalls.memberSlice (BranchRefinement.tagSlice G) A ts q
+        if sliced == A then pure none else
+        pure (some { conditional := q, onFalse := !q, target := i, type := sliced, evidence := some {} })
+    let fields ← (answers.flatMap fun q => k.links.map (q, ·)).filterMapM fun (q, g) =>
+      if g.distinct || g.alias || g.optional || g.value != i then pure none else
+        match Γ[g.cell]? with
+        | none => pure none
+        | some A =>
+          let sliced := PromiseCalls.memberSlice (fun B t q => BranchRefinement.fieldSlice G B g.field t q) A ts q
+          if sliced == A then pure none else
+          pure (some { conditional := q, onFalse := !q, target := g.cell, type := sliced, evidence := some {} })
+    pure (fewestLast (slot ++ fields))
+  /-- The edge sets each slot an alias link relates to every yield of its
+  class, in order: a slice of fewer labels last, the one the edge keeps. -/
+  fewestLast (ys : List (PromiseCalls.Yield ι)) : List (PromiseCalls.Yield ι) :=
+    ys.mergeSort fun a b => a.type.length ≥ b.type.length
   /-- The objects a current read link says the tested slot's value was read
   from: each at the arms whose field answers the test so. -/
   throughFields (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=
@@ -1437,7 +1467,7 @@ promise's evidence. -/
     | .branch y n => (target (keptRefine conditional) y 0).bind (fun py =>
         (target (keptRefine unconditional) n 1).map (fun pn => [py,pn]))
     | .branchBind y n => (branchTarget (pushedRefine conditional) (.boolean true) y 0).bind (fun py =>
-        (branchTarget (pushedRefine unconditional) (.boolean false) n 1).map (fun pn => [py,pn]))
+        (branchTarget (pushedRefine (PromiseCalls.yieldFacts ys false true)) (.boolean false) n 1).map (fun pn => [py,pn]))
     | .tagBind t y n => (branchTarget (pushedRefine
         (PromiseCalls.yieldFacts ys (ControlFlow.truthyBoolean G t c.type))) (.tag t true) y 0).bind (fun py =>
         (branchTarget (pushedRefine unconditional) (.tag t false) n 1).map (fun pn => [py,pn])) : ProduceM ι (List (EdgeEvidence ι)))
@@ -1523,7 +1553,7 @@ def edgeContextOf [DecidableEq ι] (G : NormalGraph ι) (previous : NodeEvidence
     List (Ty ι) :=
   let Γ := (claim previous.expression).context
   let A := (claim previous.expression).type
-  let facts := PromiseCalls.yieldFacts previous.yields
+  let facts := fun answered => PromiseCalls.yieldFacts previous.yields answered
   let pushed := fun fs => PromiseCalls.refineBy (A :: Γ) (PromiseCalls.aliasFacts previous.output.links fs 1) 0
   let kept := fun fs => PromiseCalls.refineBy Γ
     (PromiseCalls.aliasFacts (HeapKnowledge.dropResult previous.output).links fs 0) 0
@@ -1532,7 +1562,7 @@ def edgeContextOf [DecidableEq ι] (G : NormalGraph ι) (previous : NodeEvidence
   | .tagBind t _ _ => pushed (facts (index == 0 && ControlFlow.truthyBoolean G t A))
   | .effect _ => kept (facts false)
   | .branch _ _ => kept (facts (index == 0))
-  | .branchBind _ _ => pushed (facts (index == 0))
+  | .branchBind _ _ => pushed (PromiseCalls.yieldFacts previous.yields (index == 0) (index != 0))
   | .ret => Γ
 
 /-- The slots holding the promised argument at each node: the goal's slot at

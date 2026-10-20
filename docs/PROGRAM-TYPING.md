@@ -2424,6 +2424,67 @@ arbitrary mixed-shape type labels.
 [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) shows the model's `in` finding a key on the prototype chain, which an
 instance does not own.
 
+#### A membership test
+
+A family guard's call is a test of a value against a finite set of tags
+$`S = \{t_1,\dots,t_n\}`$, written as the calculus's own tests in turn
+(`PromiseCalls.memberOn`):
+
+```math
+\mathsf{member}(S, x) \;=\;
+\mathsf{ite}(\mathsf{test}_{t_1}\,x,\ \mathsf{true},\ \dots\ \mathsf{ite}(\mathsf{test}_{t_n}\,x,\ \mathsf{true},\ \mathsf{false})\dots).
+```
+
+Its run in heap $`h`$ returns at once, `true` exactly where some
+$`\mathsf{tagHoldsIn}_h(t_i, x)`$ holds and `false` where none does
+(`member_run`). Its derivation is one `ifBool` and one `test` per tag,
+whatever $`x`$'s type (`memberPlan`), so its size is linear in $`S`$ and
+independent of how many labels the tested type has.
+
+A node whose term is $`\mathsf{member}(S, x_i)`$ yields both refinements
+together (`memberYield`): where it answers $`q`$, the slot $`i`$, or an
+object slot $`k`$ a current read link says $`x_i`$ was read from through
+field $`f`$, holds a value of the slice
+
+```math
+\mathsf{slice}_q(A) \;=\;
+\begin{cases}
+\bigcup_{t\in S} \sigma(A, t, \mathsf{true}) & q = \mathsf{true}\\
+\sigma(\dots\sigma(\sigma(A, t_1, \mathsf{false}), t_2, \mathsf{false})\dots, t_n, \mathsf{false}) & q = \mathsf{false}
+\end{cases}
+```
+
+with $`\sigma`$ the tag slice of the slot ($`\mathsf{tagSlice}_G`$) or the
+field slice of the object ($`F^{f}`$), each sound for one tag
+(`tagSlice_sound`, `fieldSlice_sound`). The rule:
+
+```math
+\frac{
+ e = \mathsf{member}(S, x_i)
+ \quad \Gamma(k) = A
+ \quad \mathsf{slice}_q(A) \le T
+ \quad k = i \;\lor\; (k, f, i) \in \mathit{links}
+}{
+ e \text{ yields } x_k : T \text{ where it answers } q
+}
+\quad(\textsf{member-yield}).
+```
+
+A yield where the answer is `true` is `conditional`; one where it is `false`
+is `onFalse`. A `branchBind` edge on `false` refines its context by the
+`onFalse` yields as its `true` edge does by the conditional ones; every other
+edge leaves them out, and an implication on the pushed Boolean is made of a
+conditional yield alone. `memberYield_sound` proves the rule from
+`member_run` and the slices' soundness; `yieldFollows_sound` carries it to
+`checkJson_safe`. The false slice subtracts each tag from what the slot
+already holds: a broad `number` stays `number`, since no tag test
+contradicts it, and a slot is never replaced by a family's other tags.
+Numbers are compared by `numberEqual`, JavaScript's equality, under which
+`0` and `-0` are one value and `NaN` equals none: a slice drops a label only
+where the tag's test answers so for every value of it (`tagClause_sound`),
+so it agrees with the run whichever zero a set or a value holds, and the
+Fragment refuses `NaN` as a tag.
+
 #### Statement forms as graphs
 
 The [statement forms](SOURCE-CONTRACTS.md#statement-forms) add no node

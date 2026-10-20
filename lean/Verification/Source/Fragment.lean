@@ -208,6 +208,11 @@ inductive Expr where
   `?.` token) is the receiver's value. -/
   | optional (pos mark : Span) (receiver body : Expr)
   | shapeTest (pos : Span) (tag : Tag) (equal : Bool) (e : Expr)
+  /-- A family guard's call of an immutable name (HOST-FAMILIES.md, "Calls"):
+  the operand, at one more obligation, its guard's domain, then the test of
+  its value, or of its field `field`, against each tag of the set in turn,
+  `true` where one holds (`PromiseCalls.memberOn`). The field is read once. -/
+  | tagMember (pos : Span) (domain : Json) (field : Option PropKey) (tags : List Tag) (e : Expr)
   /-- Strict equality awaiting a checked singleton operand from source claims. -/
   | equality (pos : Span) (equal : Bool) (left right : Expr)
   | singletonTest (pos : Span) (tag : Tag) (equal testLeft : Bool) (left right : Expr)
@@ -431,7 +436,7 @@ partial def Expr.freeNames : Expr → List String
     -- An ordinary function binds its own `this`; an arrow captures it.
     ((ds.flatMap fun d => d.2.freeNames) ++ b.freeNames).filter
       (fun n => !(ps.map Prod.fst).contains n && (receiver.isNone || n != "this"))
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e => e.freeNames
+  | .shapeTest _ _ _ e | .tagMember _ _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e => e.freeNames
   | .ctor _ e fs => e.freeNames ++ fs.flatMap (·.2.freeNames)
   | .construct _ f args _ _ => f.freeNames ++ args.flatMap Expr.freeNames
   | .alloc _ _ es | .build _ _ es | .arrayLit _ es _ => es.flatMap Expr.freeNames
@@ -467,7 +472,7 @@ partial def Expr.callees : Expr → List (Span × Span × String × List Json)
   -- A read off a name instantiates it, as a call does, where it is a
   -- generic class value whose static field it reads.
   | .read p _ (.var q n) => [(p, q, n, [])]
-  | .shapeTest _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e => e.callees
+  | .shapeTest _ _ _ e | .tagMember _ _ _ _ e | .not _ e | .unary _ _ e | .cast _ _ e | .read _ _ e => e.callees
   | .ctor _ e fs => e.callees ++ fs.flatMap (·.2.callees)
   | .construct p f args _ ts =>
     (match f with | .var q n => [(p, q, n, ts)] | _ => []) ++ f.callees ++ args.flatMap Expr.callees
@@ -594,7 +599,7 @@ def Expr.span : Expr → Span
   | .index p _ _ _ | .indexWrite p _ _ _ _ | .arith p _ _ _ | .update p _ _ _ _ | .logicalAssign p _ _ _ => p
   | .comma p _ _ | .inKeys p _ _ | .optional p _ _ _ | .block p _ => p
   | .arrayLit p _ _ | .elemAt p _ _ | .elemWrite p _ _ _ | .arrayAssign p _ _ _ => p
-  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
+  | .var p _ | .lit p _ | .shapeTest p _ _ _ | .tagMember p _ _ _ _ | .not p _ | .unary p _ _ | .cast p _ _ | .alloc p _ _ | .build p _ _ | .read p _ _ | .write p _ _ _ | .assign p _ _ _ | .nullishAssign p _ _ _ | .withValue p _ _ _ _ | .objectAssign p _ _ | .lambda p _ _ _ _ _ _ _ _ | .call p _ _ _ _ | .invoke p _ _ _ _ | .callWithReceiver p _ _ _ | .bindWithReceiver p _ _ _ | .applyWithReceiver p _ _ _ | .ctor p _ _ | .construct p _ _ _ _ => p
 
 /-- What evaluating an assignment target's reference evaluates: a field's
 receiver, then its key; nothing for a local. -/
@@ -819,6 +824,25 @@ partial def decodeExpr (j : Json) : Except String Expr := do
           selfBindingOf cls == binding && classKeyOf cls == key) do
       throw s!"`instanceof` tests '{key}', not the key of the prototype '{binding}'"
     return .singletonTest p (.hasKey (.str key)) true true (← decodeExpr (← jField j "e")) proto
+  | "tagMember" => do
+    -- A family guard's call, which the parser writes only for a guard of the
+    -- audited table at its exact tag set, of an immutable name.
+    fieldsExactly j ["k","pos","domain","field","tags","e"]
+    let d ← jField j "domain"
+    if d == .null then throw "a family guard's call states its guard's domain"
+    let field ← match ← jField j "field" with
+      | .null => pure none
+      | f => some <$> PropKey.decode f
+    let tags ← (← jArr j "tags").mapM fun t => do
+      match ← decodeVal t with
+      | .vnum b =>
+        if !numberEqual b b then throw "a tag set holds no NaN, which equals no value"
+        pure (Tag.numEq b)
+      | .vstr s => pure (Tag.strEq s)
+      | _ => throw "a tag is a number or a string"
+    let e ← decodeExpr (← jField j "e")
+    let .var _ _ := e | throw "a family guard's test is of a name"
+    return .tagMember p d field tags.eraseDups e
   | "arrayTest" => do
     -- `Array.isArray(e)`, which the parser writes only for the standard
     -- library's `Array` through its reviewed overlay entry.

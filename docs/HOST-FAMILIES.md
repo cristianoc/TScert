@@ -286,10 +286,90 @@ keeps its statement.
 
 ### Guard recognition
 
-A guard of $`F`$ is an export of the family's package whose whole function,
-parameter initialization included, the **guard check** reads with the front
-end's parser from the module the package's `exports` map resolves, and
-accepts in this syntax:
+A guard of a family is read from an audited table of what its code does,
+never from its name or its declared predicate. A declaration such as
+`isTypeAliasDeclaration(node: Node): node is TypeAliasDeclaration` is the
+package author's statement, and it is false: the function also accepts
+`JSTypeAliasDeclaration`, a JSDoc `@typedef`, whose kind is 345 where
+`TypeAliasDeclaration`'s is 266. Read at that predicate, as an imported
+guard's declared type is
+([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)), the program
+`isTypeAliasDeclaration(n) ? n.kind : undefined` typed
+`SyntaxKind.TypeAliasDeclaration | undefined` verifies and returns 345 under
+Node. No guard of a family is read at its declared predicate: a guard the
+table lists narrows by its entry, and every other is read at its declared
+parameters and result without predicate, narrowing nothing. So is every
+other function of the host package declaring a predicate, the sync API's
+`isUnionType(type: Type)` among them (`invalid-compiler-api-sync-guard`):
+a predicate of the package narrows only by an audited entry.
+
+It is an instance of the [effects vision](#stable-members): an operation
+proved stable for a structure makes the effect-free rule sound for code
+using only it. A listed guard, called on an established member of the
+family, reads one member of its argument, the tag, which is stable (F2) and
+whose read runs no code (F4); the call has no other effect, so code calling
+only listed guards and reading stable members, a callback among it, is
+checked by the rules for code without calls.
+
+#### The guard table
+
+The trusted boundary is a **guard table** in the family description, pinned
+to the digest of the audited closure (C0). Each entry records:
+
+- the guard's **export identity** and its **resolution**: the package entry
+  point and export name; the resolution conditions, those Node enables
+  (`node`, `import`, `module-sync`, `node-addons`, with `default`); the
+  module the entry point resolves to; the module declaring the function, by
+  its path in the package; and the dependency edges, each helper and enum
+  binding the function reads, by its importing module, local name, the
+  module it resolves to and the name that module exports; with the reviewed
+  text of the function and of each helper;
+- its **kind**: a *node guard*, whose one parameter is a member of the
+  family, or a *tag guard*, whose one parameter is a tag value;
+- its **domain**: for a node guard the family type its parameter is
+  declared at, for a tag guard the tag's primitive;
+- its exact tag set $`K_g\subseteq\mathcal T_F`$: the tags for which the
+  guard returns `true`, for every member of the domain.
+
+The entry states that, for every argument in its domain, the guard
+returns `true` exactly when the argument's tag (a tag guard: the argument)
+is in $`K_g`$, reads nothing of its argument but the tag, runs no other
+code, throws nothing, and returns the same answer whatever it receives
+beyond its one parameter (further arguments, a receiver).
+
+Before the table is activated, the front end checks each entry against
+the package as Node loads it, once per process, reading the package's
+modules with a compiler of its own. The table's conditions must be the ones
+Node enables in the running process, read through a resolve hook, and no
+flag may preserve symlinks. The entry point, by the package's name,
+resolves through Node's own resolver to the recorded module. Before loading
+it, the front end reads and parses its complete executable closure from disk.
+Every static import and export-from, including its attributes, resolves from
+its importing module through Node's resolver; errors, queries and fragments
+refuse the table. The module set, SHA-256 file digests and binding edges
+(importing module, local name, target module, exported name, attributes and
+import/export form) equal the table's reviewed closure. Dynamic imports,
+require/createRequire, import.meta, await and eval/Function capabilities are
+outside the recorded loading forms and refused. The file digests bind other
+indirect execution to the reviewed code. A closure mismatch leaves every
+module unevaluated by activation. Over the unchanged installation, Node then
+loads the entry in the front end's own process: each entry's export is a
+function whose text is the entry's, the very function the recorded module
+exports, which declares it with that text and assigns it nowhere. The
+function's dependency closure, each free name a function of its module or
+a named import without attributes that Node resolves from the importing
+module to a module of the package and that the loaded module exports, has
+exactly the entry's helpers and binding edges, each helper of exactly its
+reviewed text, as loaded where it is exported. A mismatch, or a load Node
+refuses, like a digest
+mismatch, leaves the family without guards, each read without predicate. File digests alone do not pin
+resolution, since a manifest or a re-export can select other code among
+files already hashed.
+
+The table is **generated and reviewed**, not computed by the front end at
+run time. A generator reads each export's function with the front end's
+parser and accepts it only in this syntax, whose recognition contract is
+complete and fails closed:
 
 ```math
 \begin{aligned}
@@ -299,44 +379,170 @@ e &::= x.\tau \mid y \mid x
 \end{aligned}
 ```
 
-with $`\tau`$ the family's tag field, $`x`$ the guard's one parameter and
-$`\kappa`$ a tag constant: a literal, or a member of the tag enum the
-description names, read through the module's import binding of it. The side
-conditions, each checked on the resolved files: the enum binding and every
-helper $`h`$ are the module's own bindings, never reassigned; a helper is a
-function declaration whose body is again in this syntax; the helper graph
-is acyclic; the body declares nothing but $`y`$, assigns nothing, and reads
-only its parameter's tag, or the parameter itself for a guard taking a tag
-value. Any other effect is outside the syntax. The result is a function of
-the tag: the check computes $`K_g\subseteq\mathcal T_F`$ by evaluating $`c`$
-over $`\mathcal T_F`$, and a guard taking a tag value must be built from
-equalities alone. The description lists the guards outside the syntax, with
-their texts; such a guard is read at its declared signature.
+with $`\tau`$ the tag field, $`x`$ the one parameter and $`\kappa`$ a tag
+constant. The contract, every condition checked on the resolved files:
 
-A call is recognized by **resolution**: its callee resolves, through the
-unit's import binding and any re-exports, to the checked export of the
-identified package. A same-named local function, a re-bound name, or a
-function wrapping a guard is an ordinary call, the wrapper an ordinary
-verified function. Where the argument's claimed type is a family type, so
-that its marker is stated, the parser writes the call as one evaluation of
-the argument followed by the test of its tag:
+- a plain function declaration with one plain parameter: no rest
+  parameter, no initializer, no optional second parameter, not `async`,
+  not a generator; its body reads neither `this` nor `arguments`;
+- a node guard reads only $`x.\tau`$; a tag guard reads only $`x`$;
+- a **public tag guard**, an export whose parameter is a tag value a
+  program may pass any number of its primitive, is built from equalities
+  alone, transitively through its helpers, so its answer is `true` exactly
+  on the literals of $`K_g`$ for every value of the primitive;
+- a **family helper**, a tag-taking function called only by guards of the
+  table on $`x.\tau`$ of a family member, may also test ranges ($`e\
+  \mathtt{>=}\ \kappa`$, $`e\ \mathtt{<=}\ \kappa`$) over the tag's
+  numeric order (`isTypeNodeKind`), since its domain is the finite
+  $`\mathcal T_F`$ (T1) and the table records the exact set the range
+  selects there; called with any other argument it is a public tag guard,
+  and the contract above applies;
+- every helper $`h`$ is a function declaration, of the module or imported
+  from a module of the package through a binding the entry's dependency
+  edges record, itself under this contract, called with an argument of its
+  own domain: a node guard's helper on $`x.\tau`$ is a family helper or a
+  tag guard, on $`x`$ a node guard; the helper graph is acyclic; a helper's
+  binding is stable: a function declaration no statement of its module
+  assigns, or an import binding whose exporting binding is stable under F5;
+- every constant $`\kappa`$ is a literal or a member of the tag enum read
+  through an import binding the entry's edges record, resolving to the
+  enum's audited runtime object, each member of which C1 checks is an own
+  data property holding a primitive;
+- the body declares nothing but $`y`$ and assigns nothing.
+
+The generator computes $`K_g`$ by evaluating $`c`$ over $`\mathcal T_F`$.
+A function outside the contract, or one whose bindings do not resolve, gets
+no entry: it loses its predicate and any preservation effect. The
+generator's output is compared with the reviewed table in a fast check,
+and a Node run of every entry on an object of each tag compares its answers
+with $`K_g`$; both are regression evidence for the review, not proofs of
+the entry's statement.
+
+#### Calls
+
+A call is recognized by **the loaded binding**: Node's own resolver
+resolves the unit's import from the unit's module, loading nothing, to a
+URL; where that URL, with no query or fragment, is one of the modules
+activation loaded and checked, the export there must be the very function
+activation checked. Where Node resolves a module of the program, that
+module's `export { g } from "…"` is resolved the same way, from that
+module. Any other file of the installation is refused unloaded, so its code
+never runs in the front end. An import or a re-export with attributes, a
+resolution Node refuses, a module Node resolves that the program does not
+hold, and any other binding are no guard: a declaration TypeScript
+reaches through another subpath (`invalid-compiler-api-guard-subpath`),
+through a re-export whose file Node does not load
+(`invalid-compiler-api-guard-reexport-mismatch`), or through another copy
+of the package in a nested `node_modules` (`pipeline/test.mts`). The
+fixture projects resolve the package as Node does, through installation
+links (`pipeline/fixture-links.mts`), with no `paths` for it. A
+same-named local function, a re-bound name, or a function wrapping a guard
+is an ordinary call, the wrapper an ordinary verified function. A call with
+a spread or more than one argument is refused.
+
+**A call on an immutable name** $`x`$, a binding the existing
+classification calls immutable (a `const`, or a parameter no statement
+assigns), is written as the Fragment's membership test, `tagMember`, of
+$`x`$, or of its tag field, against the entry's exact tag set, after the
+obligation that $`x`$ is within the guard's declared parameter type $`P`$:
 
 ```math
-\frac{g\ \text{a checked guard of}\ F,\quad K_g=\{t_1,\ldots,t_n\},\quad e\ \text{at a family type of}\ F}
-     {g(e)\ \leadsto\ \mathsf{let}\ y=e\ \mathsf{in}\ y.\tau\equiv t_1\lor\cdots\lor y.\tau\equiv t_n}\ \textsf{host-guard}
+\frac{g\ \text{a node guard of}\ F,\quad K_g=\{t_1,\ldots,t_n\},\quad x\ \text{an immutable name}}
+     {g(x)\ \leadsto\ x : P\ \text{checked};\ \ \mathsf{member}(K_g,\ x.\tau)}\ \textsf{host-guard}
 ```
 
-with $`y`$ fresh, or $`y`$ the binding itself where $`e`$ is an immutable
-name. A call with a spread or with an argument past the guard's parameter is
-refused. The guard reads $`\tau`$ once; the chain reads it $`n`$ times. They
-agree because the tag is a stable member of every family (F2 holds of
-$`\tau`$ in every description; a family whose tag may change has no guard
-recognition) and a read of it runs no code and throws nothing (F4), so the
-chain has the call's result, effects and exceptions. The fragment gains no
-form: Lean sees reads and tests, and narrows both edges by `if-field`
-through the family union, since the test is the guard's body. A guard of
-another argument type keeps its declared signature
-([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)).
+with $`\mathsf{member}`$ the calculus's tests of each tag in turn,
+`true` where one holds
+([a membership test](PROGRAM-TYPING.md#a-membership-test)). Lean lowers it
+to a read of $`x.\tau`$ into a slot of its own, then the test of that
+slot, at the `member-yield` rule: where the test answers `true`, $`x`$'s
+object is at the arms of its type whose tag meets $`K_g`$; where `false`,
+at those every tag of $`K_g`$ leaves, one after another. The derivation is
+one node per tag, whatever the number of arms. Reading a name has no effect
+and throws nothing, so the call's single evaluation of its argument is
+kept, and the tag is read once, as the guard reads it.
+
+**The domain obligation.** Lean emits a `guard-domain` obligation for each
+`tagMember`, checking $`x`$'s claim at $`P`$, the family type with its
+marker, whatever the producer claims; a value the checker cannot type there
+(an `unknown`, `null`, an arbitrary object) refuses the call, located at the
+call. The Fragment decoder refuses a `tagMember` without its domain, an
+empty $`K_g`$ included.
+
+**A call on any other argument** (a call's result, a member path) is an
+ordinary call of the guard at the signature its entry gives
+(`guard-value`, below): the call evaluates the argument once and
+propagates its exception, Lean's call rule checks the argument at the
+domain, and the promise narrows no binding, since no name holds the
+argument. A member path narrows with [stable members](#stable-members).
+
+On the guard's admitted domain the test is exactly the guard: `true` on an
+argument whose tag is in $`K_g`$, `false` otherwise, by the entry. The
+`false` edge subtracts $`K_g`$ from what $`x`$ already holds: an arm of
+the object whose tag is one of the set's tags is dropped, and one whose tag
+is a set of several values stays (a `Token` arm of its tag set, under
+`isToken`'s `false`), since each tag is decided alone
+(`compiler-api-guard-false-branch`, `compiler-api-guards`).
+
+A tag guard's call on an immutable name $`x`$ is the membership test of
+$`x`$ itself, $`\mathsf{member}(K_g, x)`$, with $`P`$ the tag's primitive,
+and refines $`x`$ on both edges (`isModifierKind(kind)`); a broad number
+stays a number on the `false` edge. On any other argument it is an ordinary
+call at `tag-guard-value`.
+
+#### Guards as values
+
+A listed guard **used as a value** (`statements.filter(ts.isImportDeclaration)`,
+a guard passed to a function) is read at the signature its entry gives, in
+place of its declared type. A node guard:
+
+```math
+\frac{g\ \text{a node guard of}\ F,\quad K_g,\quad A\ \text{the reading of its domain}}
+     {g : (A)\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}\ \land\ (A)\to\textstyle\bigcup_{t\in K_g} S_t\,[\mathsf{guards}\ 0]\ \land\ (A,\ \ldots\mathtt{unknown}[])\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}}\ \textsf{guard-value}
+```
+
+A tag guard promises a union of literals, its domain the tag's primitive
+$`P`$:
+
+```math
+\frac{g\ \text{a tag guard of}\ F,\quad K_g}
+     {g : (P)\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}\ \land\ (P)\to\textstyle\bigcup_{t\in K_g}\{t\}\,[\mathsf{guards}\ 0]\ \land\ (P,\ \ldots\mathtt{unknown}[])\to\mathtt{boolean}\ \{\mathsf{keep},\mathsf{keep}\}}\ \textsf{tag-guard-value}
+```
+
+with $`\{\mathsf{keep},\mathsf{keep}\}`$ the footprint that changes no value
+and no store, $`\bigcup_{t\in K_g} S_t`$ the union of the root's arms under
+the run's selection whose tags meet $`K_g`$ (the family's definition
+`guard.g`, of one arm per tag of $`K_g`$ where the selection gives each its
+own, an arm covering several tags otherwise), and the promise signature of
+[user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards), which
+narrows the `true` edge. The parameter is the domain: a callback receives
+the guard only where its argument type is within $`A`$ (or $`P`$), so its
+marker is established at every call; the entry states that further
+arguments (an index, the array) and a receiver change no answer, which the
+third signature states, so the guard meets a callback of more parameters
+(`nodes.filter(ts.isIdentifier)`, `compiler-api-guard-values`). The
+declaration document states this signature for the guard's import, so Lean
+reads it as any import's declared type; what it rests on is the table.
+
+The run's [selection](#the-runs-selection) includes $`K_g`$ for every
+listed node guard its candidate modules call or use as a value, so the
+shapes a guard tests are arms of the union it narrows.
+
+#### Trust
+
+The table keeps, for each entry, the statement above (exact $`K_g`$, the
+tag the only member read, no other effect, independence of further
+arguments and of the receiver), under F2 and F4 of the family, F3 of the
+binding, and F5: the enum objects and the module bindings in the table's
+recorded dependency closure are never written, by the program or by
+external code
+(the package builds its enums as ordinary mutable objects and freezes
+nothing). A source write to them is refused by the existing rules: a write
+through a record or dictionary view of an enum object, `Object.assign` onto
+it, and a write of a namespace member or an import binding, each pinned by
+a control. It removes the import assumption of every family guard's
+declared predicate. The front end's generator and analysis are no part of
+the trusted base; the table and its review are.
 
 ### Stable members
 
@@ -465,8 +671,8 @@ It states:
 - **stable members:** every property member of a shape, the tag included, but
   the listed exclusions, with the regression check that reads each twice on
   a corpus;
-- **guards:** the modules holding guard bodies, as the `exports` map
-  resolves them, and the guards outside the syntax, with their texts.
+- **guards:** the [guard table](#the-guard-table), each entry an export's
+  identity and reviewed text, its kind, domain and exact tag set.
 
 ## Activation
 
@@ -520,9 +726,21 @@ bind them to the reviewed files.
 - **F2 (runtime stability).** Each stable member, the tag among them,
   returns the same value on every read, and nothing the package or its
   clients do after creation changes it.
-- **F3 (guard identity).** The guard bodies the guard check reads are the
-  functions Node runs for the package's exports, under the bindings the
-  check resolved.
+- **F3 (guard identity).** Each guard table entry's statement holds of the
+  function Node runs for its export identity, resolved as the entry
+  records, under the audited digest. Activation reads that resolution from
+  the verifying process's Node; F3 assumes the program runs under the same
+  Node configuration (its conditions), through ES module resolution, over
+  the unchanged installation, with no hook or loader altering resolution.
+  The installation is trusted code: the front end executes it to parse the
+  program before activation runs. Activation establishes that the reviewed
+  table describes that installation as Node loads it, a consistency check
+  under these assumptions; it is no defence against an installation
+  modified before the front end starts, or a process whose loaded modules
+  differ from their files.
+- **F5 (unwritten constants).** The enum objects and the module bindings in
+  the guard table's recorded dependency closure are never written after the
+  package loads, by the program or by external code.
 - **F4 (transparent tag reads).** A read of the tag runs no code and throws
   nothing.
 
@@ -550,11 +768,28 @@ The description of `typescript` 7.0.2's syntax trees
 - marker: `"RemoteNode"`;
 - stable members: every property member of a shape but `jsDoc`, which
   allocates (reading rule 1), checked by C4;
-- guards: `dist/ast/is.generated.js` and `dist/ast/is.js`; outside the
-  syntax, `isLeftHandSideExpression` and `isUnaryExpression`.
+- guards: the table of the exports of `typescript/unstable/ast` whose
+  functions, in `dist/ast/is.generated.js` and `dist/ast/is.js`, meet the
+  recognition contract; `isLeftHandSideExpression` and `isUnaryExpression`,
+  which read `expression`, get no entry.
 
 Its rows are T1 (F1 and F2), T1′ (F1′), T2 (F3) and T4, which includes F4
 ([the compiler API's trust](COMPILER-API.md#trust)).
+
+### A string-tagged stand-in
+
+A test-only stand-in package (`pipeline/string-family-fixture/`), which
+`pipeline/test.mts` installs as the host with a description of its own,
+shows the mechanism general over the tag's primitive: its units are tagged
+by `type`, a string, whose constants are a string enum; its guard table
+lists `isName`, an equality, and `isExpression`, through a helper of its
+tag, each activated over the stand-in's own modules; `isNameLoosely`, whose
+answer depends on an option argument, takes two parameters and has no
+entry. Each listed guard's call is the membership test of the family's
+string constants and narrows both edges; the unlisted one narrows nothing
+(`pipeline/string-family-fixture-project/`, whose `node_modules/typescript`
+links the stand-in, so that Node and TypeScript resolve its specifier
+alike).
 
 ### A second instance: a readonly Babel interface
 
@@ -608,12 +843,87 @@ the compiler API the first instance throughout.
    (`parent` of a source file), separate units, the JavaScript typedef, a
    look-alike interface, a forged claim stating a node at an arm its kind
    excludes, and the controls of [identity](#identity-through-program-code).
-3. **Guard recognition**: the guard check C2 over the description's modules,
-   recognition by resolution, the `host-guard` writing. Controls: one
-   evaluation of the argument (`invalid-compiler-api-guard-argument`, under
-   Node), a guard outside the syntax, a local function named as a guard, a
-   spread argument, `compiler-api-guard-false-branch` from gap to positive,
-   and forged claims. Measured: a long guard chain (`isExpression`, 46 kinds).
+3. **Guard recognition**: the guard table in the family description (each
+   entry its export identity and reviewed text, node or tag guard, domain
+   and exact $`K_g`$, pinned to the audited digest); its generator under
+   the recognition contract and the fast check comparing its output with
+   the table; recognition by resolution; `host-guard` and the tag guard's
+   writing with the domain obligation; `guard-value` and `tag-guard-value`;
+   every unlisted guard of the family without predicate; $`K_g`$ in the
+   run's selection; a second instance (below). Controls, each pipeline
+   negative run under Node; a forged control rejects a false entailment,
+   not an over-approximation, and bypasses the producer in search and in
+   checking, at the forged claim:
+   - `invalid-compiler-api-js-alias`: `isTypeAliasDeclaration(n) ? n.kind :
+     undefined` at `SyntaxKind.TypeAliasDeclaration | undefined`, verified at
+     the declared predicate, refused; under Node, on a `@typedef`, 345;
+   - the argument evaluated once, through the pipeline: `isIdentifier(next())`
+     with `next` counting its calls, the count after the guard asserted 1,
+     verified and run under Node, so a parser duplicating the argument
+     fails the case;
+   - the domain: a guard called on an `unknown`, on `null` claimed through
+     a union, and on a program object, each refused at the argument; forged
+     claims weakening the obligation (the cast's operand claimed at the
+     family type where its derivation gives `unknown`, the cast's claim
+     restated without the marker), refused in search and in checking;
+   - F5's boundary: a write to `ts.SyntaxKind` through a
+     `Record<string, unknown>` view and through `{ Identifier: number }`,
+     `Object.assign(ts.SyntaxKind, …)`, and a reassignment of
+     `ts.isIdentifier` through the namespace and of an imported
+     `isIdentifier`, each refused at the write;
+   - the comma in a test position: `(x satisfies T, x.kind === 1) ? x.a : …`
+     verified, and its left operand's effects kept (a counter run under
+     Node);
+   - resolution: an entry whose recorded module or mapping differs from the
+     installation's (a stand-in manifest) leaves the guards without
+     predicate;
+   - `compiler-api-guard-false-branch` from gap to positive; a tag guard on
+     both edges (`isAssignmentOperator(op)`);
+   - guards as values: `filter(ts.isImportDeclaration)` and `some(n =>
+     ts.isIdentifier(n))` within a callback's effect-free footprint
+     (positive); a guard value receiving an index, the array and another
+     receiver through `filter` and `call`, its answer unchanged (positive,
+     run under Node); a tag guard value at a union of literals;
+   - recognition by resolution: a re-exported guard narrows; a local
+     function named `isIdentifier`, a guard re-bound to a `let`, and a
+     wrapper of a guard are ordinary calls, the wrapper read at its own
+     signature; a spread argument and an extra argument, refused;
+   - an unlisted guard: `isUnaryExpression(n) && n.operand`, refused (no
+     predicate);
+   - forged claims of false entailments: on a guard's `false` edge the
+     argument claimed at one kind that an input reaching that edge
+     contradicts (refused); a guard value's promise claimed at shapes that
+     exclude an actual `true` answer (refused);
+   - the table: the generator's output equals the reviewed table; the
+     functions outside the contract are exactly the unlisted exports;
+     every entry run under Node on an object of each tag answers
+     exactly $`K_g`$ (regression evidence).
+
+   The census record lists the exports the generator leaves out and why
+   (range tests outside a family helper, reads beyond the tag), next to the
+   expected movements. A second family shows the mechanism general: a stand-in package of
+   string-tagged nodes (`type: "A" | "B" | …`), one guard through a checked
+   helper, and one guard outside the contract whose answer depends on an
+   option argument, which gets no entry and narrows nothing. Guards outside
+   the contract stay explicit coverage gaps.
+
+   Measured: a long guard chain (`isExpression`, 46 kinds) through
+   `verify-source.mts`, and the `tools/` census before and after. Expected
+   in the census, to be recorded in WORK.md as it turns out, with the
+   motivating fixtures and their next blockers: the 21 slices of
+   `fragment-statements.mts` refused with "missing field elements" read a
+   `BindingName` after `if (ts.isIdentifier(node)) return …`, a guard's
+   `false` edge on a binding, and are expected past that refusal. The
+   "missing field text" (18) and "missing field name" (6) groups read a
+   member path after a guard of it (`ts.isIdentifier(m.name) &&
+   m.name.text`), and are expected to wait on
+   [stable members](#stable-members). `interfacesOf`, a guard closure
+   passed to `filter`, is expected to stay refused, for `filter<S>`'s
+   overload, which no review states. The uses of `isTypeAliasDeclaration`
+   and `isImportDeclaration` that read `name` or `moduleSpecifier` after
+   the guard are expected to be refused, since `JSTypeAliasDeclaration` and
+   `JSImportDeclaration` hold neither; each is a coverage loss its source
+   repairs with a test of the kind.
 4. **Stable members**: the stable flag, its decoder restriction, `read-eq`.
    Controls: a readonly program-object path, mutation through an alias and
    by a call, a root written directly and from a closure, a mixed path, a

@@ -174,6 +174,21 @@ Null coalescing is likewise a derived form: a let saves the left value, and
 `unionVar` with known nullish-tag conditionals selects the fallback or saved value.
 No truthiness rule is involved; false remains a result of the left operand.
 
+A comma in a test position is a derived form too: its left operand runs for
+its effects, and its right operand is the condition, lowered in the state
+the left operand leaves, its refinements on both edges; an exception of the
+left operand is the comma's. `(a, b) && c`, `(a, b) || c` and `!(a, b)` run
+`a` first and are then `b && c`, `b || c` and `!b`:
+
+```math
+\frac{\Gamma\vdash a \Rightarrow \Gamma' \quad \Gamma'\vdash_R\ \mathsf{if}\ (b)\ S_1\ \mathsf{else}\ S_2}
+     {\Gamma\vdash_R\ \mathsf{if}\ ((a\mathtt{,}\ b))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-comma}
+```
+
+with $`\Gamma\vdash a\Rightarrow\Gamma'`$ the context the left operand's
+evaluation leaves, an earlier fact it may invalidate gone
+(`comma-test-refinement`, run under Node).
+
 **Shadowing.** JavaScript's scopes nest; the lowering's are lists of
 names, each declared once (a second is `duplicate or shadowing local
 declaration`). The parser renames instead: a local whose name another

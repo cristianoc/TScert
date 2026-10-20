@@ -33,7 +33,7 @@ module Calls = Expression_calls.Make(S)
       | _,BlockBody _ | None,_ -> env
       | Some root,_ -> expression_entry root e.pos env in
     let t = match e.node with
-    | Id _ | Literal _ | Not _ | TypeofTest _ | HasKey _ | InstanceTest _
+    | Id _ | Literal _ | Not _ | TypeofTest _ | TagMember _ | HasKey _ | InstanceTest _
     | Arith _ | Comma _ | Update _ | LogicalAssign _ | NullishAssign _ | Unary _
     | ArrayAssign _ | Equality _ | Apply _ | WithFields _ | Bind _ | Conditional _
     | Coalesce _ | Optional _ | Logical _ | Cast _ | BlockBody _ ->

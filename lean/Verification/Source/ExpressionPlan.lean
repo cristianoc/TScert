@@ -70,7 +70,7 @@ def negationMark (negation : Span) : Span := (negation.1, negation.1 + 1)
 
 /-- A test: an expression whose value is a Boolean by its form. -/
 def testForm : Expr → Bool
-  | .shapeTest .. | .equality .. | .singletonTest .. | .not .. | .inKeys .. => true
+  | .shapeTest .. | .tagMember .. | .equality .. | .singletonTest .. | .not .. | .inKeys .. => true
   | .arith _ op _ _ => op == .lt || op == .le || op == .gt || op == .ge || op == .eq
   | .logical _ _ a b => testForm a && testForm b
   | _ => false
@@ -118,6 +118,8 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
     | .cast pos annot a => operand root a "value" fun a => do pure (atom (.cast pos annot (readSaved a)))
     | .shapeTest pos tag equal a => operand root a "value" fun a => do
         pure (atom (.shapeTest pos tag equal (readSaved a)))
+    | .tagMember pos domain field tags a => operand root a "value" fun a => do
+        pure (atom (.tagMember pos domain field tags (readSaved a)))
     | .read pos field a => operand root a "receiver" fun a => do pure (atom (.read pos field (readSaved a)))
     | .equality pos equal left right => operand root left "value" fun left => do
         operand root right "value" fun right => do pure (atom (.equality pos equal (readSaved left) (readSaved right)))
@@ -150,6 +152,10 @@ private partial def expression (root : Span) (e : Expr) : Builder Plan := do
         pure (atom (.arrayLit pos (es.map readSaved) spreads))
     | .comma _ left right => operand root left "discard" fun _ => do
         operand root right "value" fun right => do pure (atom (.var e.span right.name))
+    -- `(a, b) && c` is `a, (b && c)`, `||` alike: `a` runs, then the
+    -- operator over `b`, whose test then refines `c`'s operands.
+    | .logical p andOp (.comma _ l r) right =>
+        operand root l "discard" fun _ => expression root (.logical p andOp r right)
     | .logical _ andOp left right => logical root e left right andOp "condition"
     | .coalesce _ left right =>
         let binding ← saved root left.span "condition"
@@ -267,6 +273,15 @@ private partial def logical (root : Span) (e left right : Expr) (andOp : Bool) (
     at an empty span no claim names, and the operands keep their own. -/
 private partial def truthOf (root : Span) (cond : Expr) : Builder Plan :=
   match cond with
+  -- `a, b` as a condition: `a` runs for its effects, then `b` is the
+  -- condition, its tests refining in the state `a` leaves (JavaScript's
+  -- comma); `(a, b) && c`, `(a, b) || c` and `!(a, b)` likewise run `a`
+  -- first.
+  | .comma _ left right => operand root left "discard" fun _ => truthOf root right
+  | .logical p andOp (.comma _ l r) right =>
+    operand root l "discard" fun _ => truthOf root (.logical p andOp r right)
+  | .not p (.comma _ l r) =>
+    operand root l "discard" fun _ => truthOf root (.not p r)
   -- `(a || b) || c` is `a || (b || c)` for its truthiness and its
   -- evaluation, `&&` alike: the left operand's operands are dispatched on
   -- in turn, the same operator's right operand its new right one's.

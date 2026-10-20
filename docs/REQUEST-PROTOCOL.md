@@ -375,10 +375,10 @@ facts about another. These are finite state assertions, not extra type labels.
 Nodes also contain `implies`, `yields`, `arguments` and `promise`, which
 only a request's `promise` makes other than empty or `null`. `implies` lists `{test, target, type}`: where the Boolean in
 slot `test` is `true`, slot `target` holds a `type`; incoming edges must
-establish them. `yields` lists `{conditional, target, type, evidence}`: what
+establish them. `yields` lists `{conditional, target, type, evidence, onFalse}`: what
 the node's result promises of slot `target`, where it is `true`
-(`conditional`) or wherever the expression returns, with the subtype
-evidence a tag test's slice needs. `arguments` lists the entry slots holding
+(`conditional`), where it is `false` (`onFalse`) or wherever the expression
+returns, with the subtype evidence a tag test's slice needs. `arguments` lists the entry slots holding
 the promised input. At a return, `promise` is `null` or `[slot, proof]`:
 one of those slots and a subtype proof that its type, refined by the
 yields, is within the promise.

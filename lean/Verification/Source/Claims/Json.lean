@@ -73,6 +73,20 @@ private def nodeRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : Source
       (firstBad q.entry.row.effect.footprint q.entry.row.effect.onThrow q.entry.start
         (GraphCode.program q.entry.exprs q.entry.conts) C sourceMap).map (refuse ·.pos)
 
+/-- Where evidence fails a node's typing: the first node of the unit's graph
+whose node check (`ControlFlow.checkNodeUsing`: its claim, its yields, its
+edges) refuses the certificate, at its source position. A diagnostic only. -/
+private def typingRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (c : Response ι) :
+    Option String :=
+  let G := RequestJson.graph r.toRequest
+  let codes := match codeTable r.toRequest c with
+    | some table => GraphCode.admits table
+    | none => fun _ => false
+  ((r.program.zip c.certificate).zipIdx.find? fun ((node, e), _) =>
+      !checkNodeUsing (checker := r.checker) G (StoreView.images r.types) r.goal r.program c.certificate node e codes).bind
+    fun (_, l) => ((r.sourceMap[l]?).bind id).map fun m =>
+      s!"source evidence refusal at [{m.pos.1},{m.pos.2}): the evidence does not establish this node's typing"
+
 /-- Where evidence fails an expression obligation: the first whose evidence
 the check refuses, at its source position. A diagnostic only. -/
 private def obligationRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (c : Response ι)
@@ -113,7 +127,7 @@ def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
     (((certified.zip b.functions).findSome? fun (plan, c) => match plan with
       | .graph name namePos r => footprintRefusal name namePos r c) <|>
      (((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
-      | .graph _ _ r => nodeRefusal r c <|> obligationRefusal r c es <|> claimRefusal r c)).getD fallback)
+      | .graph _ _ r => nodeRefusal r c <|> obligationRefusal r c es <|> claimRefusal r c <|> typingRefusal r c)).getD fallback)
 
 def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
     (budget : PositiveCertificates.SearchBudget := {})

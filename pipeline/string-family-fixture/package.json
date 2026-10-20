@@ -1,0 +1,11 @@
+{
+  "//": "A stand-in host package of a string-tagged family with guards; pipeline/test.mts installs it as the host through the test-only stand-ins, with a description and a guard table of its own.",
+  "name": "typescript",
+  "version": "7.0.2",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./ast": { "types": "./ast.d.ts", "default": "./ast.js" }
+  },
+  "imports": {}
+}

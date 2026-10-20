@@ -12,7 +12,7 @@ open Fragment SourceFlow ProgramTyping
 partial def expressionOccurrences (e : Expr) : List Expr :=
   let children := match e with
     | .var .. | .lit .. | .lambda .. | .ctor .. | .block .. => []
-    | .shapeTest _ _ _ a | .not _ a | .unary _ _ a | .cast _ _ a | .read _ _ a
+    | .shapeTest _ _ _ a | .tagMember _ _ _ _ a | .not _ a | .unary _ _ a | .cast _ _ a | .read _ _ a
     | .assign _ _ _ a | .nullishAssign _ _ _ a => [a]
     | .alloc _ _ es | .build _ _ es | .arrayLit _ es _ => es
     | .logical _ _ a b | .coalesce _ a b | .equality _ _ a b

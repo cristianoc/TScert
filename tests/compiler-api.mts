@@ -20,7 +20,7 @@
 // declared as reviewed, and under Node two reads of it give different values
 // where a stable member gives one.
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -91,11 +91,19 @@ for (const { name, file } of hostEnums) {
   const expected = new Set(declared.map((d) => d.member));
   for (const { value } of declared) expected.add(String(value));
   assert.deepEqual(new Set(values.keys()), expected, `${name}: the runtime object's keys are its members and reverse mappings`);
+  // Each key an own data property holding a primitive: a read of it runs no
+  // code. The object is mutable; that it is never written is F5.
+  for (const key of Reflect.ownKeys(runtime)) {
+    const descriptor = Reflect.getOwnPropertyDescriptor(runtime, key);
+    assert.ok(descriptor && "value" in descriptor && !descriptor.get && !descriptor.set &&
+      (typeof descriptor.value === "number" || typeof descriptor.value === "string"),
+      `${name}.${String(key)}: an own data property holding a primitive`);
+  }
   for (const exported of [ast, sync])
     if (name in exported) assert.equal(exported[name], runtime, `${name}: an entry point exports the object #enums loads`);
   members += declared.length;
 }
-console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the runtime value`);
+console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the runtime value, an own data property holding a primitive`);
 
 // C4 for node lists (COMPILER-API.md, "Node lists"; T4): on lists of lengths
 // around 16, where index getters move from the prototype to the instance,
@@ -355,4 +363,97 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   }
   closeParser();
   console.log(`corrections: the ${corrected.length} corrected members' fixtures return undefined under Node`);
+}
+
+// The guards' fixtures under Node (HOST-FAMILIES.md, "Guard recognition"):
+// `invalid-compiler-api-js-alias` returns 345 on a JSDoc `@typedef`, which
+// `isTypeAliasDeclaration` accepts; `compiler-api-guard-argument` evaluates
+// a guard's argument once; and the write `invalid-compiler-api-enum-record-write`
+// makes, which F5 excludes, turns `isIdentifier` false on an identifier;
+// `invalid-compiler-api-guard-domain-object`'s program object, outside the
+// guard's domain, answers `true`; `invalid-compiler-api-type-node` returns
+// an `ExpressionWithTypeArguments`, which `TypeNode` does not declare.
+{
+  const dir = runDirectory("tscert-guards-");
+  mkdirSync(join(dir, "node_modules"));
+  symlinkSync(root, join(dir, "node_modules", hostPackage.name));
+  const fixture = async (name: string): Promise<Record<string, unknown>> => {
+    const copy = join(dir, `${name}.ts`);
+    copyFileSync(resolve(import.meta.dirname, `../pipeline/examples/${name}.ts`), copy);
+    const module: unknown = await import(pathToFileURL(copy).href);
+    assert.ok(isNamespace(module), `${name}: a module`);
+    return module;
+  };
+  type AstNode = Parameters<Parameters<ReturnType<typeof openText>["forEachChild"]>[0]>[0];
+  const first = (file: string, source: string, kind: number): AstNode => {
+    writeFileSync(file, source);
+    const tree = openText(file, source);
+    let found: AstNode | undefined;
+    const visit = (node: AstNode): undefined => {
+      if (!found && node.kind === kind) found = node;
+      const docs: unknown = Reflect.get(node, "jsDoc");
+      if (Array.isArray(docs)) for (const doc of docs.filter((d): d is AstNode => typeof d === "object" && d !== null && "kind" in d)) visit(doc);
+      return node.forEachChild(visit);
+    };
+    tree.forEachChild(visit);
+    assert.ok(found, `a node of kind ${kind} in ${JSON.stringify(source)}`);
+    return found;
+  };
+  const syntaxKind: unknown = Reflect.get(ast, "SyntaxKind");
+  assert.ok(isNamespace(syntaxKind), "the package exports SyntaxKind");
+  const unary = (v: unknown): v is (x: unknown) => unknown => typeof v === "function";
+  const nullary = (v: unknown): v is () => unknown => typeof v === "function";
+  const alias = await fixture("invalid-compiler-api-js-alias");
+  assert.ok(unary(alias.aliasKind), "the fixture exports aliasKind");
+  const typedef = first(join(dir, "typedef.js"), "/** @typedef {string} Name */\nexport {};\n", 345);
+  assert.equal(alias.aliasKind(typedef), 345, "aliasKind returns 345 on a @typedef");
+  const argument = await fixture("compiler-api-guard-argument");
+  assert.ok(unary(argument.counted), "the fixture exports counted");
+  const name = first(join(dir, "name.ts"), "export const x = y;\n", Number(syntaxKind.Identifier));
+  assert.equal(argument.counted(name), 1, "the argument is evaluated once");
+  const write = await fixture("invalid-compiler-api-enum-record-write");
+  assert.ok(nullary(write.rewrite), "the fixture exports rewrite");
+  const isIdentifier: unknown = Reflect.get(ast, "isIdentifier");
+  assert.ok(unary(isIdentifier), "the package exports isIdentifier");
+  const before = syntaxKind.Identifier;
+  assert.equal(isIdentifier(name), true, "isIdentifier holds of an identifier");
+  try {
+    write.rewrite();
+    assert.equal(isIdentifier(name), false, "after the write, isIdentifier answers false of an identifier");
+  } finally {
+    Reflect.set(syntaxKind, "Identifier", before);
+  }
+  const domain = await fixture("invalid-compiler-api-guard-domain-object");
+  assert.ok(nullary(domain.identifier), "the fixture exports identifier");
+  assert.equal(domain.identifier(), true, "isIdentifier answers true of a program object holding an identifier's kind");
+  const typeNode = await fixture("invalid-compiler-api-type-node");
+  assert.ok(unary(typeNode.asTypeNode), "the fixture exports asTypeNode");
+  const heritage = first(join(dir, "heritage.ts"), "class A extends B<C> {}\n", 234);
+  assert.equal(typeNode.asTypeNode(heritage), heritage, "asTypeNode returns the ExpressionWithTypeArguments");
+  // Another subpath of a package whose manifest maps it to other code: the
+  // guard's declaration in TypeScript, a function answering `true` under
+  // Node.
+  const other = runDirectory("tscert-guard-subpath-");
+  const installed = join(other, "node_modules", hostPackage.name);
+  cpSync(root, installed, { recursive: true, dereference: true });
+  const otherManifest: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.ok(typeof otherManifest === "object" && otherManifest !== null && "exports" in otherManifest &&
+    typeof otherManifest.exports === "object" && otherManifest.exports !== null, "the package's exports");
+  writeFileSync(join(installed, "package.json"), JSON.stringify({ ...otherManifest,
+    exports: { ...otherManifest.exports, "./unstable/other": "./other.js" } }));
+  writeFileSync(join(installed, "other.js"), "export function isIdentifier(node) {\n    return true;\n}\n");
+  copyFileSync(resolve(import.meta.dirname, "../pipeline/examples/invalid-compiler-api-guard-subpath.ts"),
+    join(other, "subpath.ts"));
+  const subpath: unknown = await import(pathToFileURL(join(other, "subpath.ts")).href);
+  assert.ok(isNamespace(subpath) && unary(subpath.name), "the fixture exports name");
+  const statement = first(join(dir, "statement.ts"), "x;\n", Number(syntaxKind.ExpressionStatement));
+  assert.equal(subpath.name(statement), undefined, "name returns undefined on an expression statement");
+  // A re-export TypeScript reads at the guard, whose `.js` Node loads instead.
+  for (const file of ["compiler-api-guard-mismatch-reexport.js", "invalid-compiler-api-guard-reexport-mismatch.ts"])
+    copyFileSync(resolve(import.meta.dirname, `../pipeline/examples/${file}`), join(other, file));
+  const mismatch: unknown = await import(pathToFileURL(join(other, "invalid-compiler-api-guard-reexport-mismatch.ts")).href);
+  assert.ok(isNamespace(mismatch) && unary(mismatch.name), "the fixture exports name");
+  assert.equal(mismatch.name(statement), undefined, "the mismatched re-export reads text of no identifier");
+  closeParser();
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier");
 }

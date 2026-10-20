@@ -8,8 +8,18 @@
  * them, through `FamilyGraph`, which the declaration reader supplies from
  * the compiler's resolution; the reader then reads each member the reading
  * keeps by its ordinary rules. */
+import type { GuardClosure } from "./guard-closure.mts";
 import { createHash } from "node:crypto";
 import type { InterfaceDeclaration, TypeElement, TypeNode } from "typescript/unstable/ast";
+
+/** A tag value: a number, or a string for a family whose tag is a string. */
+export type TagValue = number | string;
+/** The order of tag values: numbers by value, strings by code point, numbers
+ * before strings. */
+export const compareTags = (a: TagValue, b: TagValue): number =>
+  typeof a === "number" && typeof b === "number" ? a - b
+    : typeof a !== typeof b ? (typeof a === "number" ? -1 : 1)
+    : a < b ? -1 : a > b ? 1 : 0;
 
 /** A rule of the shape table, tried in order for each tag value. */
 export type FamilyRule =
@@ -28,6 +38,39 @@ export type FamilyRule =
  * `text` the member's declaration as reviewed. */
 export type FamilyCorrection = { kind: string; owner: string; member: string; text: string };
 
+/** An entry of a guard table (HOST-FAMILIES.md, "The guard table"): the
+ * export's name, a node guard or a tag guard, its declared domain, its exact
+ * tag set by constant name; the module declaring it, by its path in the
+ * package; the helpers its function reads, by `module#name`, and its
+ * dependency edges; and its function's text as reviewed. */
+export type GuardEntry = {
+  name: string;
+  kind: "node" | "tag";
+  domain: string;
+  tags: readonly string[];
+  module: string;
+  helpers: readonly string[];
+  /** Each binding the closure imports: the importing module, the local
+   * name, the module it resolves to and the name that module exports. */
+  edges: readonly (readonly [string, string, string, string])[];
+  text: string;
+};
+/** A family's guard table: the entry point and the resolution conditions
+ * its entries were resolved under, the entry point's module and complete
+ * executable closure (file digests and static edges), the helpers'
+ * texts, the entries, and
+ * the guards the package declares that the recognition contract excludes,
+ * each with its reason. */
+export type GuardTable = {
+  entryPoint: string;
+  conditions: readonly string[];
+  entryModule: string;
+  closure: GuardClosure;
+  helpers: { readonly [helper: string]: string };
+  guards: readonly GuardEntry[];
+  excluded: readonly (readonly [string, string])[];
+};
+
 /** A family description (HOST-FAMILIES.md, "The family description"). The
  * package's identity and the digest of its audited installation are its
  * contract file's binding check; the description names the package. */
@@ -40,9 +83,12 @@ export type FamilyDescription = {
    * are the interfaces reaching it through `extends`. */
   root: { name: string; form: "inheritance"; text: string };
   /** The tag field, its primitive, and the enum holding its constants. */
-  tag: { field: string; primitive: "number"; constants: { enum: string } };
+  tag: { field: string; primitive: "number" | "string"; constants: { enum: string } };
   table: readonly FamilyRule[];
   corrections: readonly FamilyCorrection[];
+  /** The guard table: the guards read from an audited entry, every other
+   * guard of the family read without predicate. */
+  guards: GuardTable;
 };
 
 /** The package's declarations as the interpreter reads them, resolved by
@@ -56,11 +102,11 @@ export type FamilyGraph = {
   /** The tag values a type states: the literal constants of a set, through
    * aliases and unions; null for a type that is no set of literals (the
    * enum itself, `number`, a type parameter). */
-  literals: (type: TypeNode) => readonly number[] | null;
+  literals: (type: TypeNode) => readonly TagValue[] | null;
   /** The tag's constants: the enum's values, each once, ascending. */
-  values: readonly number[];
+  values: readonly TagValue[];
   /** A tag value's constant name, the first the enum states for it. */
-  constantName: (value: number) => string;
+  constantName: (value: TagValue) => string;
   /** The name of a declaration's tag parameter, or null. */
   tagParameter: (declaration: InterfaceDeclaration) => string | null;
   /** Whether a member is declared optional, `name?: T`. */
@@ -92,7 +138,7 @@ export type FamilyTag =
   /** Its tag is a set of literals: read as its flattened declared members,
    * the shape itself where it is the table's choice, a refinement
    * otherwise. */
-  | { k: "literal"; values: readonly number[] }
+  | { k: "literal"; values: readonly TagValue[] }
   /** Its tag is its own type parameter: a generic shape, applied at tags. */
   | { k: "parameter"; parameter: string }
   /** Its tag is no set of literals: the union of its members' shapes. */
@@ -104,16 +150,16 @@ export type FamilyArm =
   | { k: "declaration"; declaration: InterfaceDeclaration }
   /** The meet of generic declarations, each applied at the tag set (one
    * value, or several merged where only the tag varies). */
-  | { k: "generic"; declarations: readonly InterfaceDeclaration[]; values: readonly number[] }
+  | { k: "generic"; declarations: readonly InterfaceDeclaration[]; values: readonly TagValue[] }
   /** A synthetic shape: a base declaration read at a tag set, or the
    * residual joining the shapes the selection leaves out. */
-  | { k: "synthetic"; name: string; values: readonly number[]; fields: readonly SyntheticField[] };
+  | { k: "synthetic"; name: string; values: readonly TagValue[]; fields: readonly SyntheticField[] };
 
 /** A member of a synthetic shape: its name, the flattened members it joins
  * (one per distinct declaration), each with the tag value it is read at
  * where its owner is generic, and whether it is optional. The tag member is
  * left out: a synthetic shape's tag is its tag set. */
-export type SyntheticField = { name: string; sources: readonly { member: FlatMember; value: number }[]; optional: boolean };
+export type SyntheticField = { name: string; sources: readonly { member: FlatMember; value: TagValue }[]; optional: boolean };
 
 /** The interpreter's reading of one family. */
 export type FamilyTable = {
@@ -124,17 +170,17 @@ export type FamilyTable = {
   flatten: (declaration: InterfaceDeclaration) => readonly FlatMember[];
   /** Whether a flattened member is optional in a reading covering the tag
    * values `values`: so declared, or corrected at one of them. */
-  optional: (member: FlatMember, values: readonly number[]) => boolean;
+  optional: (member: FlatMember, values: readonly TagValue[]) => boolean;
   /** The tag values a declaration's values can have: its literals, its tag
    * parameter's bound, or the members of an open declaration. */
-  tagsOf: (declaration: InterfaceDeclaration) => readonly number[];
+  tagsOf: (declaration: InterfaceDeclaration) => readonly TagValue[];
   /** The family's shape sources, by tag value. */
-  shapes: ReadonlyMap<number, ShapeSource>;
+  shapes: ReadonlyMap<TagValue, ShapeSource>;
   /** `members_F(A)`: the tag values whose shape source reaches `A`. */
-  membersOf: (declaration: InterfaceDeclaration) => readonly number[];
+  membersOf: (declaration: InterfaceDeclaration) => readonly TagValue[];
   /** The arms of an open declaration's reading under a selection, in tag
    * order, the residual last. */
-  arms: (declaration: InterfaceDeclaration, selection: ReadonlySet<number>) => readonly FamilyArm[];
+  arms: (declaration: InterfaceDeclaration, selection: ReadonlySet<TagValue>) => readonly FamilyArm[];
 };
 
 /** The interpreter: the table and membership on the declaration graph as
@@ -205,7 +251,7 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
   };
 
   // The table, rule by rule for each tag value.
-  const candidates = new Map<number, InterfaceDeclaration[]>();
+  const candidates = new Map<TagValue, InterfaceDeclaration[]>();
   for (const d of graph.interfaces) {
     const tag = tagOf(d);
     if (tag.k !== "literal" || tag.values.length !== 1) continue;
@@ -213,7 +259,7 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
     if (t === undefined) continue;
     candidates.set(t, [...(candidates.get(t) ?? []), d]);
   }
-  const shapes = new Map<number, ShapeSource>();
+  const shapes = new Map<TagValue, ShapeSource>();
   for (const t of graph.values) {
     for (const rule of description.table) {
       if (rule.rule === "literal") {
@@ -249,8 +295,8 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
   }
   const sourceReaches = (source: ShapeSource, a: InterfaceDeclaration): boolean =>
     source.rule === "generic" ? source.declarations.some(g => reaches(g, a)) : reaches(source.declaration, a);
-  const membersCache = new Map<InterfaceDeclaration, number[]>();
-  const membersOf = (a: InterfaceDeclaration): number[] => {
+  const membersCache = new Map<InterfaceDeclaration, TagValue[]>();
+  const membersOf = (a: InterfaceDeclaration): TagValue[] => {
     const known = membersCache.get(a);
     if (known) return known;
     const result = graph.values.filter(t => {
@@ -273,9 +319,9 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
     if (value === undefined) graph.fail(`the correction of ${c.owner}.${c.member} names no tag ${c.kind}`);
     corrected.add(`${value}:${c.owner}.${c.member}`);
   }
-  const optional = (f: FlatMember, values: readonly number[]): boolean =>
+  const optional = (f: FlatMember, values: readonly TagValue[]): boolean =>
     f.members.some(graph.questioned) || values.some(v => corrected.has(`${v}:${f.owner.name.text}.${f.name}`));
-  const tagsOf = (d: InterfaceDeclaration): readonly number[] => {
+  const tagsOf = (d: InterfaceDeclaration): readonly TagValue[] => {
     const tag = tagOf(d);
     if (tag.k === "literal") return tag.values;
     if (tag.k === "open") return membersOf(d);
@@ -295,7 +341,7 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
   // distinct declarations of it, optional where one is.
   const sourceMembers = (source: ShapeSource): readonly FlatMember[] =>
     source.rule === "generic" ? source.declarations.flatMap(flatten) : flatten(source.declaration);
-  const synthetic = (base: string, values: readonly number[]): FamilyArm => {
+  const synthetic = (base: string, values: readonly TagValue[]): FamilyArm => {
     const per = values.map(t => {
       const source = shapes.get(t);
       if (!source) return graph.fail(`no shape for ${t}`);
@@ -307,7 +353,7 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
       if (f.name === description.tag.field || fields.some(x => x.name === f.name)) continue;
       const found = per.map(p => ({ t: p.t, members: p.members.filter(g => g.name === f.name) }));
       if (found.some(p => !p.members.length)) continue;
-      const sources: { member: FlatMember; value: number }[] = [];
+      const sources: { member: FlatMember; value: TagValue }[] = [];
       for (const p of found)
         for (const member of p.members)
           if (!sources.some(s => s.member.owner === member.owner &&
@@ -318,11 +364,11 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
     const digest = createHash("sha256").update(values.join(",")).digest("hex").slice(0, 16);
     return { k: "synthetic", name: `${base} at ${values.length} tags ${digest}`, values, fields };
   };
-  const arms = (a: InterfaceDeclaration, selection: ReadonlySet<number>): FamilyArm[] => {
+  const arms = (a: InterfaceDeclaration, selection: ReadonlySet<TagValue>): FamilyArm[] => {
     const members = membersOf(a);
     // Each arm at the least tag it holds, the arms in tag order: a literal
     // declaration's tag, a generic application's or a base shape's first.
-    const groups = new Map<string, { first: number; arm: () => FamilyArm; values: number[] }>();
+    const groups = new Map<string, { first: TagValue; arm: () => FamilyArm; values: TagValue[] }>();
     for (const t of members) {
       if (!selection.has(t)) continue;
       const source = shapes.get(t);
@@ -342,7 +388,7 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
         ? () => ({ k: "generic", declarations: source.declarations, values })
         : () => synthetic(source.declaration.name.text, values) });
     }
-    const result = [...groups.values()].sort((x, y) => x.first - y.first).map(g => g.arm());
+    const result = [...groups.values()].sort((x, y) => compareTags(x.first, y.first)).map(g => g.arm());
     const rest = members.filter(t => !selection.has(t));
     if (rest.length) result.push(synthetic(`${a.name.text} residual`, rest));
     return result;

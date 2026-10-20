@@ -42,6 +42,7 @@ import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
   throwUninitializedName, type EnumMemberValue } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
+import type { TagValue } from "./host-families.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement } from "./fragment-support.mts";
 import * as classes from "./fragment-classes.mts";
 import * as expressions from "./fragment-expressions.mts";
@@ -301,6 +302,10 @@ export class Gate {
   /** Calls the reviewed overlay of library globals reads as a test of the
    * calculus, `Array.isArray(e)`, and `e instanceof Array`, by span. */
   readonly globalTests: Set<string> = new Set();
+  /** The import bindings of a listed guard of the compiler API's family
+   * (HOST-FAMILIES.md, "Calls"), by local name: its kind, its exact tag
+   * values and the domain its declared parameter states. */
+  readonly hostGuards: Map<string, { domain: TypeTerm; field: string | null; tags: readonly (number | string)[] }> = new Map();
   /** Statement calls of `node:assert/strict`'s `assert` and `ok` read as the
    * calculus's own test, by span. */
   readonly assertionCalls: Set<string> = new Set();
@@ -1004,7 +1009,7 @@ function parseModules(file: string, carriesContext: boolean, tsconfigPath: strin
   resolutionFile: string, seen: ((diagnostic: SeenDiagnostic) => void) | undefined): Ast {
   // One tag selection of each host family for the run (HOST-FAMILIES.md,
   // "Residuals"): the checked file's, every imported module lowered with it.
-  let selection: readonly number[] | undefined;
+  let selection: readonly TagValue[] | undefined;
   const main = lowerFile(file, carriesContext, tsconfigPath, resolutionFile, seen, null, { selected: s => { selection = s; } });
   const modules: ModuleAst[] = [];
   const done = new Set<string>();
@@ -1067,7 +1072,7 @@ function renamedModule<T>(value: T, from: string, to: string): T {
 function lowerFile(file: string, carriesContext: boolean,
   tsconfigPath: string | undefined, resolutionFile: string,
   seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null,
-  family: { given?: readonly number[]; selected?: (selection: readonly number[]) => void }): Lowered {
+  family: { given?: readonly TagValue[]; selected?: (selection: readonly TagValue[]) => void }): Lowered {
   const absolute = resolve(file);
   const text = readText(absolute);
   const { file: source, checker } = openFile(absolute, text);
@@ -1808,6 +1813,7 @@ function lowerFile(file: string, carriesContext: boolean,
         },
         enumMemberRead: ([start, end], member) => gate.enumMemberReads.set(`${start}:${end}`, member.join(":")),
         importedEnum: (local, members) => gate.importedEnums.set(local, members),
+        hostGuard: (local, _entry, domain, field, tags) => gate.hostGuards.set(local, { domain, field, tags }),
         constEnumReads: constEnumNodes.map(node => gate.span(node)),
         constEnumRead: ([start, end], value) => gate.constEnumReads.set(`${start}:${end}`, value),
         library: ([start, end], library) => {

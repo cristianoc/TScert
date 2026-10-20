@@ -520,8 +520,8 @@ a host type is read as a readonly view:
 A view states no equality between two reads: a readonly `parent` may give
 different values. That stable members return the same value on every read is
 the host assumption T1; no rule of the node shapes or the guards reads it,
-since the host-guard expansion reads `kind` with nothing between the reads
-and the field slice's exclusion is timeless.
+since a guard's membership test reads `kind` once and the field slice's
+exclusion is timeless.
 [Stable members](HOST-FAMILIES.md#stable-members) are the one rule that
 reads it.
 
@@ -587,7 +587,8 @@ agree for the values T1 and T1′ describe
 
 ## Guards
 
-[Guard recognition](HOST-FAMILIES.md#guard-recognition) reads the bodies in
+[Guard recognition](HOST-FAMILIES.md#guard-recognition) reads the guard
+table, which its generator derives from the bodies in
 `dist/ast/is.generated.js` and `dist/ast/is.js` as the package's `exports`
 map resolves them. The tag field is `kind`, and a constant is a member of
 `SyntaxKind` read through the module's import binding of `#enums/syntaxKind`,
@@ -834,11 +835,15 @@ as regression evidence.
   member of its `.enum.d.ts` is an integer literal equal to the value of the
   runtime object Node loads for `#enums/<name>` under the `default`
   condition, the object's keys are the members and their reverse mappings,
-  and the entry points exporting the enum export that object.
-- **C2, guards.** The guard check reads every exported guard: the bodies
-  outside the accepted syntax are exactly the refused list, and execution on
-  every kind (and on every number in a range around $`\mathcal K`$ for
-  guards taking a kind) gives the derived sets.
+  each an own data property holding a primitive, and the entry points
+  exporting the enum export that object. The object is mutable; that it is
+  never written is F5.
+- **C2, guards (regression evidence).** The
+  [guard table](HOST-FAMILIES.md#the-guard-table)'s generator, run on every
+  exported guard, gives exactly the reviewed table, its unlisted exports
+  exactly those outside the recognition contract; every entry run under
+  Node on an object of each kind (and on every number in a range around
+  $`\mathcal K`$ for a tag guard) answers exactly its tag set.
 - **C3, shapes (regression evidence).** `make compiler-api-shapes`
   (`tests/compiler-api-shapes.mts`, about 20 s) reads the family table over
   the installed declarations and walks every node of `tools/*.mts`,
@@ -918,9 +923,27 @@ the corpus runs are regression evidence, not proofs.
   invariant correspond in both directions, which the agreement of two units'
   residuals needs (F1′). It is an external-model obligation, not a conjunct
   of `WorldAdm`.
-- **T2 (guards).** The guard bodies the guard check reads are the functions
-  Node runs for the package's exports, under the bindings the check resolved
-  (F3); the check itself is a trusted part of the front end.
+- **T2 (guards).** Each entry of the guard table holds of the function Node
+  runs for its export, resolved as the entry records (F3; resolved by the
+  verifying process's Node, the program assumed to run under the same Node
+  configuration, through ES module resolution, over the unchanged
+  installation, with no resolution-altering hook): exact tag set,
+  the tag the only member read, no other effect, and an answer independent
+  of further arguments and of the receiver; and the package's enum objects
+  and its guards' and helpers' bindings are never written, by the program
+  or by external code (F5). Activation checks the complete executable closure
+  before loading the entry: disk sources are parsed without execution, static
+  imports and export-from declarations (including attributes) are resolved by
+  Node, and their module set, binding edges and per-file SHA-256 digests must
+  equal the reviewed table. Resolution errors, queries, fragments and
+  unrecorded loading forms (dynamic import, require/createRequire, import.meta,
+  await and eval/Function capabilities) refuse the table before any closure
+  module is evaluated. Post-load function and binding identity checks bind the
+  table to the loaded instances. These checks establish consistency between
+  the reviewed table and the trusted installation the front end itself runs
+  (F3); they are no defence against an installation modified before the
+  front end starts. No guard's declared predicate is trusted: a
+  listed guard narrows by its entry, and an unlisted one narrows nothing.
 - **T3 (node methods).** The node methods make no server request, run no
   client code but `forEachChild`'s visitors, which they call synchronously,
   only with children of the receiver, in a fixed order, and propagate a
@@ -1152,8 +1175,11 @@ The pieces, by file:
 - `tools/declaration-graph.mts`: reading rules 1–5, the family's readings at
   the run's selection, host enums, method overloads in declared classes,
   private members skipped.
-- `tools/fragment-*.mts`: `host-guard` and the guard check, namespace
-  imports, bitwise operators.
+- `tools/fragment-*.mts`: `host-guard` over the guard table, the
+  membership test `tagMember`, namespace imports, bitwise operators; the
+  table's generator is a review aid, outside the front end; the table's
+  activation, in `tools/compiler-api.mts`, reads the package's modules with
+  a compiler of its own.
 - `tests/compiler-api.mts`: C0–C4; the suite wrapper of C5.
 - `docs/SOURCE-CONTRACTS.md`, `docs/SOURCE-FRAGMENT.md` and
   `docs/DESIGN.md`: the rules, the restrictions and the trust rows.

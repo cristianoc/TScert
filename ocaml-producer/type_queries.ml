@@ -61,7 +61,7 @@ let literal_type = function
 
 (* Read permissions do not imply write permissions. All candidates still pass
    through reconstructed obligations, including readonly view conversion. *)
-let definition declarations id args =
+let definition_of declarations id args =
   (* An interface and its base as one object: disjoint fields, and the one
      index signature either states. A hint only: Lean's `inheritRows` gives
      the declaration's meaning. *)
@@ -127,6 +127,17 @@ let definition declarations id args =
       body d.bases
   | None -> unsupported ("missing declaration " ^ id) in
   instantiate [] id args
+(* A declaration's instance, computed once for each application and the
+   declarations it is read in: a family's root is its arms' union, each an
+   interface merged with its bases, read at every refinement of a node. *)
+let definitions : (string * ty list, Source.declaration list * ty) Hashtbl.t = Hashtbl.create 256
+let definition declarations id args =
+  match Hashtbl.find_opt definitions (id, args) with
+  | Some (read, t) when read == declarations -> t
+  | _ ->
+    let t = definition_of declarations id args in
+    Hashtbl.replace definitions (id, args) (declarations, t);
+    t
 (* A declaration's equation, for inference to look inside an application. *)
 let expand_named declarations = function
   | Atoms [Named (id,args)] ->
@@ -652,17 +663,38 @@ let truthy_refine declarations truth t = match t with
   | Atoms xs -> truthy_slice truth (Atoms (List.filter (fun a ->
       atom_truthiness declarations [] a <> Some (not truth)) xs))
   | t -> truthy_slice truth t
-let discriminate bounds declarations t key slice =
+let rec discriminate ?(seen = []) bounds declarations t key slice =
   match declared_head declarations [] t with
   | Atoms atoms ->
     let atoms = union_arms declarations atoms in
+    (* A declaration whose definition is a union with intersection arms is
+       its definition's arms, each discriminated. *)
+    let unions = List.filter_map (fun atom -> match atom with
+      | Named (id,args) when not (List.mem id seen) ->
+        (match (try Some (definition declarations id args) with Json.Error _ -> None) with
+         | Some (Union _ as u) -> Some (atom,id,u)
+         | _ -> None)
+      | _ -> None) atoms in
+    let plain = List.filter (fun a -> not (List.exists (fun (b,_,_) -> b = a) unions)) atoms in
     let admits atom =
       match (try Some (field_type bounds declarations [] (Atoms [atom]) key) with Json.Error _ -> None) with
       | Some field -> slice field <> Atoms []
       | None -> true in
-    let kept = List.filter admits atoms in
-    if List.length kept = List.length atoms then t else Atoms kept
-  | Rigid _ | Union _ | Meet _ -> t
+    let kept = List.filter admits plain in
+    let parts = List.map (fun (_,id,u) -> discriminate ~seen:(id :: seen) bounds declarations u key slice) unions in
+    if unions = [] then (if List.length kept = List.length atoms then t else Atoms kept)
+    else if List.length kept = List.length plain && parts = List.map (fun (_,_,u) -> u) unions then t
+    else List.fold_left union (Atoms kept) parts
+  (* A union's arms each, an intersection arm dropped where its field holds
+     nothing the slice keeps. *)
+  | Union ts ->
+    let parts = List.map (fun u -> discriminate ~seen bounds declarations u key slice) ts in
+    if parts = ts then t else List.fold_left union (Atoms []) parts
+  | Meet _ as m ->
+    (match (try Some (field_type bounds declarations [] m key) with Json.Error _ -> None) with
+     | Some field when slice field = Atoms [] -> Atoms []
+     | _ -> t)
+  | Rigid _ -> t
 (* The arms of `t` whose object may still be of them once the value of its
    field `key` answered `slice`: an arm is dropped only where it fixes the
    field, required, at a type none of whose values does. *)

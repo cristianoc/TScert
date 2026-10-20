@@ -19,7 +19,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { allocatingMembers, compilerApiFamily, hostPackage } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
-import { familyTable, type FamilyGraph, type FlatMember } from "../tools/host-families.mts";
+import { familyTable, type FamilyGraph, type FlatMember, type TagValue } from "../tools/host-families.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 
@@ -102,8 +102,8 @@ const admitsUndefined = (type: ts.TypeNode | undefined): boolean => !type ||
   type.kind === ts.SyntaxKind.AnyKeyword || type.kind === ts.SyntaxKind.UndefinedKeyword ||
   (ts.isUnionTypeNode(type) && type.types.some(admitsUndefined)) ||
   (ts.isParenthesizedTypeNode(type) && admitsUndefined(type.type));
-const requiredAt = new Map<number, FlatMember[]>();
-const required = (k: number): FlatMember[] => {
+const requiredAt = new Map<TagValue, FlatMember[]>();
+const required = (k: TagValue): FlatMember[] => {
   const known = requiredAt.get(k);
   if (known) return known;
   const source = table.shapes.get(k);
@@ -125,7 +125,7 @@ const corpus = [
 ];
 const isNode = (value: unknown): value is ts.Node =>
   typeof value === "object" && value !== null && "kind" in value && typeof value.kind === "number";
-const seenKinds = new Set<number>();
+const seenKinds = new Set<TagValue>();
 const held = new Set<string>();
 const absent = new Map<string, number>();
 let nodes: number = 0;
@@ -156,7 +156,7 @@ closeParser();
 // a keyword, trivia), leaves no property of its own unchecked; the others
 // are listed apart.
 const common = new Set([compilerApiFamily.root.name, "NodeBase", "ReadonlyTextRange"]);
-const ownRequired = (k: number): FlatMember[] => required(k).filter((f) => !common.has(f.owner.name.text));
+const ownRequired = (k: TagValue): FlatMember[] => required(k).filter((f) => !common.has(f.owner.name.text));
 const unreachedKinds = [...table.shapes.keys()].filter((k) => !seenKinds.has(k));
 const unreached = unreachedKinds.filter((k) => !ownRequired(k).length).map(graph.constantName);
 const uncovered = unreachedKinds.filter((k) => ownRequired(k).length).map((k) =>

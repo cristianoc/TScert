@@ -29,6 +29,12 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   // The step calling the closure constant reads `LIMIT` before it holds a value.
   assert.throws(() => runExample("invalid-initialization-closure-call", "scaled(1)"), /before initialization/,
     "invalid-initialization-closure-call: the module throws a ReferenceError while it initializes");
+  // A comma in a test position runs its left operand first, once: the
+  // counter is 1 at the test, the write seen by it, and a throwing left
+  // operand's exception is the comma's.
+  assert.equal(runExample("comma-test-refinement", `counted({ kind: 1, a: "" })`), 1, "comma-test-refinement: counted");
+  assert.equal(runExample("comma-test-refinement", "written()"), 5, "comma-test-refinement: written");
+  assert.throws(() => runExample("comma-test-refinement", `thrown({ kind: 3, c: "" })`), /left/, "comma-test-refinement: thrown");
   // `map` over stable callbacks returns dense arrays; a callback popping the
   // array it maps leaves a hole below the result's length.
   for (const [file, call, expected] of [
