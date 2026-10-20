@@ -228,19 +228,23 @@ theorem carries_reassign (Γ : List (List ι)) (facts : HeapKnowledge.Knowledge)
     (sources : List Nat) (t : Target) (c : NodeEvidence ι) :
     carries (reassign G η) Γ facts xs sources t c = carries G Γ facts xs sources t c := rfl
 
+omit [DecidableEq ι] in
+theorem unsatisfiable_reassign (Γ : List (List ι)) :
+    unsatisfiable (reassign G η) Γ = unsatisfiable G Γ := rfl
+
 theorem checkTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι)) (t : Target)
     (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge) (xs : List (PromiseCalls.Implication ι))
     (sources : List Nat) :
     checkTargetUsing (reassign G η) (images.reassign η) P C Γ t p facts xs sources =
       checkTargetUsing G images P C Γ t p facts xs sources := by
-  simp only [checkTargetUsing_eq, checkMapped_reassign, carries_reassign]
+  simp only [checkTargetUsing_eq, checkMapped_reassign, carries_reassign, unsatisfiable_reassign]
 
 theorem checkBranchTarget_reassign (P : Program) (C : ControlFlow.Certificate ι) (Γ : List (List ι))
     (o : Observation) (t : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge)
     (xs : List (PromiseCalls.Implication ι)) (sources : List Nat) :
     checkBranchTargetUsing (reassign G η) (images.reassign η) P C Γ o t p facts xs sources =
       checkBranchTargetUsing G images P C Γ o t p facts xs sources := by
-  simp only [checkBranchTargetUsing_eq, checkObserved_reassign, carries_reassign]
+  simp only [checkBranchTargetUsing_eq, checkObserved_reassign, carries_reassign, unsatisfiable_reassign]
   rfl
 
 theorem fieldYield_reassign (Γ : List (List ι)) (links : HeapLinks.Links) (y : PromiseCalls.Yield ι)

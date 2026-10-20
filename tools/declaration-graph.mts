@@ -5,7 +5,7 @@
  * declaration reached into a source equation, or refuses a form the fragment
  * cannot state; a refusal never drops a declaration. */
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
+import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, TypePredicateKind, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 // declaration-types.mts declares the declaration document this module writes, which the Fragment carries and Lean's EquationLowering reads.
@@ -16,7 +16,7 @@ import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifi
 // library-globals.mts is the reviewed overlay of the standard library's globals, the only global values this reader admits, at the signatures it states.
 import type { Span } from "./span.mts";
 import { childrenOf, nameOf } from "./syntax.mts";
-import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, signature, signatures, substitute,
+import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, restPositions, restTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type MappedMember, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
   primitivePrototypeName, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
@@ -36,7 +36,7 @@ import { computedType, enclosingBinders, inferredTerm, literalUnion, type Comput
 import type { DeclarationIdentity, DeclarationDocument, PropertyKey, Reference, TypeDefinition, TypeRoot, TypeTerm, ValueRoot, WrittenApplication } from "./declaration-types.mts";
 import { literal, SweepError, writtenApplications, type Entity } from "./written-applications.mts";
 import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe.mts";
-import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import { emptyEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // files.mts makes every file-system failure a tool failure.
 import { orAbsent, readText, realPath } from "./files.mts";
@@ -2678,7 +2678,7 @@ export function collectDeclarations(file: string, options: {
     // no instantiation of its declaration's binders, and the instantiated
     // type carries the `undefined` optionality adds. Each index signature is
     // read at its key's kind and capability. A member no object contract
-    // states (a method, an accessor, a symbol key, a call signature, an index
+    // states (a method, an accessor, a symbol key, an index
     // of another key) is refused.
     const contextualRecord = (type: Type, span: Span): TypeTerm | null => {
       if (!(type.flags & TypeFlags.Object)) return null;
@@ -2751,6 +2751,85 @@ export function collectDeclarations(file: string, options: {
       return { k: "object", fields, stringIndex, ...(numberIndex ? { numberIndex } : {}),
         ...(symbolIndex ? { symbolIndex } : {}), calls: [], span };
     };
+    // A function's type (SOURCE-ELABORATION.md, "Source closures and their
+    // annotations"): a function type or callable type literal the program
+    // writes is read as written by the annotation reader, where TypeScript
+    // gives it outside any generic declaration or at its declaration's own
+    // binders, as a record's type literal is. Any other callable without members (a generic declaration's
+    // callable at an instance, a library's, a function's `typeof`) is
+    // read through its one call signature as TypeScript instantiates it: its
+    // receiver, each parameter at its type (an optional or defaulted one's
+    // with the `undefined` that admits), a rest at its array's element or
+    // its tuple's positions, its result, and a guard's or an assertion's
+    // promise about a parameter as a second form, with the ordinary effect
+    // an annotation of it states. Refused, as no contract the reading
+    // recovers: type parameters, a promise about the receiver or without a
+    // type, a rest of another type, a construct signature, a second
+    // signature, a member beside the call signature.
+    const contextualCallable = (type: Type, span: Span): TypeTerm | null => {
+      if (!(type.flags & TypeFlags.Object)) return null;
+      const calls = checker.getSignaturesOfType(type, SignatureKind.Call);
+      if (!calls.length) return null;
+      const declarations = (type.getSymbol()?.declarations ?? []).map(d => d.resolve());
+      const [only, ...others] = declarations;
+      const text = checker.typeToString(type);
+      if (only && !others.length && (ts.isFunctionTypeNode(only) || ts.isTypeLiteralNode(only)) &&
+          !libraryFile(only.getSourceFile())) {
+        const binders = enclosingBinders(only);
+        if (!binders.length || checker.getTypeFromTypeNode(only)?.id === type.id)
+          return computedContext.annotation(only, only, binders);
+      }
+      const refuse = (what: string): never => {
+        throw Error(`TypeScript types this unannotated closure parameter from its context as ${text}, ${what}, which an annotation states`);
+      };
+      const [signature, ...more] = calls;
+      if (!signature || more.length || checker.getSignaturesOfType(type, SignatureKind.Construct).length)
+        return refuse("not one call signature");
+      if (checker.getPropertiesOfType(type).length || checker.getIndexInfosOfType(type).length)
+        return refuse("a callable with members");
+      if (signature.getTypeParameters().length) return refuse("a generic signature");
+      const self = signature.getThisParameter();
+      const selfType = self && checker.getTypeOfSymbol(self);
+      if (self && !selfType) return refuse("a signature whose receiver has no type");
+      const receiver = selfType ? contextualTerm(selfType, span) : null;
+      const parameters = signature.getParameters();
+      const params: TypeTerm[] = [];
+      let rest: TypeTerm | null = null;
+      for (const [index, p] of parameters.entries()) {
+        const declaration = p.declarations[0]?.resolve();
+        // The signature gives the argument contract, including `undefined`
+        // for a defaulted parameter. For a rest it gives one position's
+        // type; its symbol gives the aggregate array or tuple to expand.
+        const parameter = declaration && ts.isParameterDeclaration(declaration) && declaration.dotDotDotToken
+          ? checker.getTypeOfSymbol(p) : checker.getParameterType(signature, index);
+        if (p.declarations.length !== 1 || !declaration || !ts.isParameterDeclaration(declaration) || !parameter)
+          return refuse("a signature with a parameter no declaration states");
+        const term = contextualTerm(parameter, span);
+        if (!declaration.dotDotDotToken) {
+          params.push(term);
+          continue;
+        }
+        const positions = index === parameters.length - 1
+          ? restPositions(restTerm(valueScope(declaration, text), term)) : null;
+        if (!positions) return refuse("a signature with a rest that is not an array or a tuple of required positions");
+        if ("positions" in positions) params.push(...positions.positions);
+        else rest = positions.element;
+      }
+      const returned = checker.getReturnTypeOfSignature(signature);
+      if (!returned) return refuse("a signature of no result type");
+      const plain: FunctionTerm = { k: "function", effect: ordinaryEffect, receiver, params, rest,
+        result: contextualTerm(returned, span), span };
+      const predicate = checker.getTypePredicateOfSignature(signature);
+      if (!predicate) return plain;
+      const asserts = predicate.kind === TypePredicateKind.AssertsIdentifier;
+      const about = predicate.parameterIndex;
+      const declared = about === undefined ? undefined : parameters[about]?.declarations[0]?.resolve();
+      if (!(asserts || predicate.kind === TypePredicateKind.Identifier) || about === undefined || !predicate.type ||
+          !declared || !ts.isParameterDeclaration(declared) || declared.dotDotDotToken)
+        return refuse("a promise about the receiver, a rest or no type");
+      return oneTerm([plain, { ...plain, effect: promiseEffect(asserts, about),
+        result: contextualTerm(predicate.type, span) }], span);
+    };
     const typesRead = new Set<number>();
     const readContextualTerm = (type: Type, span: Span): TypeTerm => {
       if (type.flags & TypeFlags.Any)
@@ -2818,6 +2897,8 @@ export function collectDeclarations(file: string, options: {
           }
           return { k: "tuple", presence: "dense", readonly: tuple.readonly, required, optional: [], rest, span };
         }
+        const callable = contextualCallable(type, span);
+        if (callable) return callable;
         const record = contextualRecord(type, span);
         if (record) return record;
         // A library regex type (`RegExpExecArray` for a match's callback), as

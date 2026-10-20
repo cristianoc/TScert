@@ -16,6 +16,9 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-for-in-entry-rebound", "wrong({ a: 1, b: 2 }, {})"],
     // A function's `length` is not enumerable: its copy lacks it.
     ["invalid-spread-function-length", "arity((a, b) => a + b)"],
+    // The closure calls its callable parameter with a number, which a
+    // function of strings reads `length` of.
+    ["invalid-closure-contextual-callable", "narrow.run((s) => s.length)"],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
@@ -29,6 +32,13 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   // The step calling the closure constant reads `LIMIT` before it holds a value.
   assert.throws(() => runExample("invalid-initialization-closure-call", "scaled(1)"), /before initialization/,
     "invalid-initialization-closure-call: the module throws a ReferenceError while it initializes");
+  // A call of a function returning `never` throws: the statement after it
+  // runs only on the condition's other edge, and its throw reaches the
+  // handler and the `finally` block.
+  assert.equal(runExample("never-call-narrowing", `checked("a")`), "a", "never-call-narrowing: checked");
+  assert.throws(() => runExample("never-call-narrowing", "checked(1)"), /not a string/, "never-call-narrowing: thrown");
+  assert.equal(runExample("never-call-narrowing", "caught(1)"), "caught!", "never-call-narrowing: caught");
+  assert.equal(runExample("never-call-narrowing", `caught("a")`), "a!", "never-call-narrowing: completed");
   // A comma in a test position runs its left operand first, once: the
   // counter is 1 at the test, the write seen by it, and a throwing left
   // operand's exception is the comma's.
