@@ -24,7 +24,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { compareTags, familyTable, type FamilyArm, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { allocatingMembers, guardEntry, hostFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
+import { allocatingMembers, hostFamily, importedGuard, selectionGuard, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -975,7 +975,7 @@ export function collectDeclarations(file: string, options: {
         if (!guardNames.has(name.text)) return;
         const declaration = targetOf(checker, name)?.declarations[0]?.resolve();
         if (!declaration || !ts.isFunctionDeclaration(declaration) || !declaration.name) return;
-        const entry = guardEntry(declaration.getSourceFile().fileName, declaration.name.text);
+        const entry = selectionGuard(declaration.getSourceFile().fileName, declaration.name.text);
         if (!entry) return;
         const constants = guardConstants(declaration, entry);
         for (const tag of entry.tags) {
@@ -1397,10 +1397,11 @@ export function collectDeclarations(file: string, options: {
     // A host value is the host's: its branded strings read where it produces
     // them (reading rule 5).
     const skipParenthesized = (e: Node): Node => ts.isParenthesizedExpression(e) ? skipParenthesized(e.expression) : e;
-    const valueOf = (declared: readonly Node[], what: string): Omit<ValueRoot, "binding"> => {
+    // `guard` is the listed guard a client's import binds to (`bindingGuard`).
+    const valueOf = (declared: readonly Node[], what: string, guard: GuardEntry | null = null): Omit<ValueRoot, "binding"> => {
       const read = valueRead(declared, what);
       return declared.some(n => isHostFile(n.getSourceFile().fileName))
-        ? { ...read, type: guardReading(declared, hostBrands(read.type, true, isBrand, message => { throw Error(`${message} in ${what}`); })) }
+        ? { ...read, type: guardReading(declared, hostBrands(read.type, true, isBrand, message => { throw Error(`${message} in ${what}`); }), guard) }
         : read;
     };
     // A guard of the compiler API's family (HOST-FAMILIES.md, "Guards as
@@ -1412,7 +1413,7 @@ export function collectDeclarations(file: string, options: {
     // of the tags themselves (a tag guard's); any other host function
     // declaring a predicate at its plain signature, without it. A function
     // no predicate declares is as read.
-    const guardReading = (declared: readonly Node[], type: TypeTerm): TypeTerm => {
+    const guardReading = (declared: readonly Node[], type: TypeTerm, guard: GuardEntry | null): TypeTerm => {
       const [node] = declared;
       if (!node || declared.length !== 1 || !ts.isFunctionDeclaration(node) || !node.name || !node.type ||
           !ts.isTypePredicateNode(node.type)) return type;
@@ -1420,8 +1421,8 @@ export function collectDeclarations(file: string, options: {
       const plain = forms.filter((f): f is Extract<TypeTerm, { k: "function" }> => f.k === "function" && f.effect.promise === null);
       const [one] = plain;
       if (!one || plain.length !== 1) throw Error(`the guard ${node.name.text} has no one plain signature`);
-      const entry = guardEntry(node.getSourceFile().fileName, node.name.text);
-      if (!entry) return one;
+      const entry = guard;
+      if (!entry || entry.name !== node.name.text) return one;
       const constants = guardConstants(node, entry);
       const values = entry.tags.map(name => {
         const value = constants.find(c => c.name === name)?.value;
@@ -1775,6 +1776,35 @@ export function collectDeclarations(file: string, options: {
         construct: false, typeParams: binders.map(name => ({ name, bound: null, resolution: null })),
         type: oneTerm(signatures, at) };
     };
+    // The listed guard a client's import binds (HOST-FAMILIES.md, "Calls"):
+    // an import of the guard's name from the family's entry point specifier,
+    // whose export Node loads as the checked function (`importedGuard`), or
+    // from a module of the program re-exporting it, written
+    // `export { g } from "…"`, followed to that specifier; an import or a
+    // re-export with attributes binds none. A binding the checker resolves to
+    // a guard's declaration through any other specifier or statement is no
+    // guard.
+    const reexported = (from: SourceFile, specifier: string, imported: string, depth: number): GuardEntry | null => {
+      if (depth > 16) return null;
+      const statements = from.statements.filter((s): s is ts.ImportDeclaration | ts.ExportDeclaration =>
+        (ts.isImportDeclaration(s) || ts.isExportDeclaration(s)) && s.moduleSpecifier !== undefined &&
+        ts.isStringLiteral(s.moduleSpecifier) && s.moduleSpecifier.text === specifier);
+      if (statements.some(s => s.attributes)) return null;
+      const listed = importedGuard(specifier, imported);
+      if (listed !== undefined) return listed;
+      const [first] = statements;
+      const module = first?.moduleSpecifier ? checker.getSymbolAtLocation(first.moduleSpecifier)?.declarations[0]?.resolve() : undefined;
+      if (!module || !ts.isSourceFile(module) || isHostFile(module.fileName)) return null;
+      for (const s of module.statements) {
+        if (!ts.isExportDeclaration(s) || s.isTypeOnly || !s.exportClause || !ts.isNamedExports(s.exportClause) ||
+            !s.moduleSpecifier || !ts.isStringLiteral(s.moduleSpecifier)) continue;
+        const element = s.exportClause.elements.find(e => !e.isTypeOnly && e.name.text === imported);
+        if (element) return reexported(module, s.moduleSpecifier.text, element.propertyName?.text ?? element.name.text, depth + 1);
+      }
+      return null;
+    };
+    const bindingGuard = (binding: { specifier: string; imported: string; typeOnly: boolean }): GuardEntry | null =>
+      binding.typeOnly ? null : reexported(client, binding.specifier, binding.imported, 0);
     for (const binding of importBindings(client, options.namespaceMembers ?? [])) {
       try {
         // A function with overloads is its several declarations; any other
@@ -1785,7 +1815,7 @@ export function collectDeclarations(file: string, options: {
           options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name));
           if (!binding.typeOnly)
             values.push({ binding: { local: binding.name, imported: binding.imported,
-              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name) });
+              specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name, bindingGuard(binding)) });
           continue;
         }
         const reviewed = moduleEntries(binding.specifier, binding.imported);
@@ -1815,11 +1845,12 @@ export function collectDeclarations(file: string, options: {
           throw Error(`TypeScript found ${nodes.length} declarations for ${binding.name}`);
         // A class is a type and, imported as a value, a constructor too.
         if (!binding.typeOnly && nodes.some(n => !ts.isTypeAliasDeclaration(n) && !ts.isInterfaceDeclaration(n))) {
-          const value = valueOf(nodes, binding.name);
+          const guard = node && nodes.length === 1 && ts.isFunctionDeclaration(node) && node.name &&
+            isHostFile(node.getSourceFile().fileName) ? bindingGuard(binding) : null;
+          const entry = guard && node && ts.isFunctionDeclaration(node) && node.name?.text === guard.name ? guard : null;
+          const value = valueOf(nodes, binding.name, entry);
           values.push({ binding: { local: binding.name, imported: binding.imported,
             specifier: binding.specifier, span: binding.span }, ...value });
-          const entry = node && nodes.length === 1 && ts.isFunctionDeclaration(node) && node.name
-            ? guardEntry(node.getSourceFile().fileName, node.name.text) : null;
           const forms = value.type.k === "intersection" ? value.type.parts : [value.type];
           const plainForm = forms.find(f => f.k === "function" && f.effect.promise === null);
           const domain = plainForm?.k === "function" ? plainForm.params[0] : undefined;

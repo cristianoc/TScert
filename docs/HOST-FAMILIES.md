@@ -319,12 +319,11 @@ to the digest of the audited closure (C0). Each entry records:
 - the guard's **export identity** and its **resolution**: the package entry
   point and export name; the resolution conditions, those Node enables
   (`node`, `import`, `module-sync`, `node-addons`, with `default`); the
-  module the entry point resolves to; the
-  re-export chain from the entry point to the module declaring the function,
-  each module by its path in the package; the declaring module's local
-  binding; and the dependency edges, each helper and enum binding the
-  function reads with the module it resolves to; with the reviewed text of
-  the function and of each helper;
+  module the entry point resolves to; the module declaring the function, by
+  its path in the package; and the dependency edges, each helper and enum
+  binding the function reads, by its importing module, local name, the
+  module it resolves to and the name that module exports; with the reviewed
+  text of the function and of each helper;
 - its **kind**: a *node guard*, whose one parameter is a member of the
   family, or a *tag guard*, whose one parameter is a tag value;
 - its **domain**: for a node guard the family type its parameter is
@@ -338,22 +337,21 @@ is in $`K_g`$, reads nothing of its argument but the tag, runs no other
 code, throws nothing, and returns the same answer whatever it receives
 beyond its one parameter (further arguments, a receiver).
 
-Before the table is activated, the front end resolves each entry again
-over the installation the run admits, once per process, reading the
-package's modules with a compiler of its own. The table's conditions must
-be the ones Node enables in the running process, read through a resolve
-hook. Every specifier is resolved by Node's own resolver, through the same
-hook, from the module that contains it: the entry point, by the package's
-name, to the recorded module, and each import a module of the chain or of
-the closure reads to the module the chain or the edge records; a
-resolution Node refuses, or a file outside the package, is a mismatch;
-each export as the module linker resolves it, through
-the module's own exports and its `export *` modules, a name two of them
-provide being no export, to the recorded function and chain, of exactly its
-reviewed text and assigned nowhere in its module; and the function's
-dependency closure, each free name a function of its module or a named
-import of the package, whose helpers and binding edges are exactly the
-entry's, each helper of exactly its reviewed text. A mismatch, like a digest
+Before the table is activated, the front end checks each entry against
+the package as Node loads it, once per process, reading the package's
+modules with a compiler of its own. The table's conditions must be the ones
+Node enables in the running process, read through a resolve hook, and no
+flag may preserve symlinks. The entry point, by the package's name,
+resolves through Node's own resolver to the recorded module, which Node
+then loads, in the front end's own process: each entry's export is a
+function whose text is the entry's, the very function the recorded module
+exports, which declares it with that text and assigns it nowhere. The
+function's dependency closure, each free name a function of its module or
+a named import without attributes that Node resolves from the importing
+module to a module of the package and that the loaded module exports, has
+exactly the entry's helpers and binding edges, each helper of exactly its
+reviewed text, as loaded where it is exported. A mismatch, or a load Node
+refuses, like a digest
 mismatch, leaves the family without guards, each read without predicate. File digests alone do not pin
 resolution, since a manifest or a re-export can select other code among
 files already hashed.
@@ -412,8 +410,13 @@ the entry's statement.
 
 #### Calls
 
-A call is recognized by **resolution**: its callee resolves, through the
-unit's import binding and any re-exports, to an export the table lists. A
+A call is recognized by **the loaded binding**: the unit imports the
+guard's name from the table's entry point specifier, whose export Node
+loads as the checked function, directly or through a module of the program
+re-exporting it (`export { g } from "…"`), with no import attributes. A
+declaration TypeScript reaches through another specifier
+(`invalid-compiler-api-guard-subpath`), or through a program binding of
+any other form, is no guard. A
 same-named local function, a re-bound name, or a function wrapping a guard
 is an ordinary call, the wrapper an ordinary verified function. A call with
 a spread or more than one argument is refused.
@@ -709,7 +712,9 @@ bind them to the reviewed files.
   records, under the audited digest. Activation reads that resolution from
   the verifying process's Node; F3 assumes the program runs under the same
   Node configuration (its conditions), through ES module resolution, over
-  the unchanged installation, with no hook or loader altering resolution.
+  the unchanged installation, with no hook or loader altering resolution,
+  and its import of the entry point specifier loads the module instance
+  the front end loads and checks.
 - **F5 (unwritten constants).** The enum objects and the module bindings in
   the guard table's recorded dependency closure are never written after the
   package loads, by the program or by external code.
@@ -844,7 +849,7 @@ the compiler API the first instance throughout.
    - the comma in a test position: `(x satisfies T, x.kind === 1) ? x.a : …`
      verified, and its left operand's effects kept (a counter run under
      Node);
-   - resolution: an entry whose recorded chain or mapping differs from the
+   - resolution: an entry whose recorded module or mapping differs from the
      installation's (a stand-in manifest) leaves the guards without
      predicate;
    - `compiler-api-guard-false-branch` from gap to positive; a tag guard on

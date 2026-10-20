@@ -8,7 +8,7 @@
     "target": "es2022",
     "lib": ["es2022"],
     "types": [],
-    "paths": { "@fixture/strings": ["../string-family-fixture/ast.d.ts"] }
+    "paths": { "typescript/ast": ["../string-family-fixture/ast.d.ts"] }
   },
   "include": ["../examples/*string-family-fixture*.ts"]
 }

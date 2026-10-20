@@ -39,20 +39,19 @@ export type FamilyCorrection = { kind: string; owner: string; member: string; te
 
 /** An entry of a guard table (HOST-FAMILIES.md, "The guard table"): the
  * export's name, a node guard or a tag guard, its declared domain, its exact
- * tag set by constant name; its resolution, the module declaring it and the
- * re-export chain from the entry point, every module by its path in the
+ * tag set by constant name; the module declaring it, by its path in the
  * package; the helpers its function reads, by `module#name`, and its
- * dependency edges, each binding with the module it resolves to; and its
- * function's text as reviewed. */
+ * dependency edges; and its function's text as reviewed. */
 export type GuardEntry = {
   name: string;
   kind: "node" | "tag";
   domain: string;
   tags: readonly string[];
   module: string;
-  chain: readonly string[];
   helpers: readonly string[];
-  edges: readonly (readonly [string, string])[];
+  /** Each binding the closure imports: the importing module, the local
+   * name, the module it resolves to and the name that module exports. */
+  edges: readonly (readonly [string, string, string, string])[];
   text: string;
 };
 /** A family's guard table: the entry point and the resolution conditions

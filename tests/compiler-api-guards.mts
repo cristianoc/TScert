@@ -77,7 +77,6 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
     ["another entry module", { ...compilerApiGuards, entryModule: "dist/ast/is.js" }],
     ["other conditions", { ...compilerApiGuards, conditions: ["browser"] }],
     ["another module", one({ ...identifier, module: "dist/ast/is.js" })],
-    ["another chain", one({ ...identifier, chain: [compilerApiGuards.entryModule, identifier.module] })],
     ["another text", one({ ...identifier, text: identifier.text.replace("===", "!==") })],
     ["a helper more", one({ ...identifier, helpers: [helper] })],
     ["a helper less", one({ ...helped, helpers: helped.helpers.slice(1) })],
@@ -95,9 +94,11 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
   // the entry point's module; an entry point target without `./`, or with a
   // `..` segment; an integer condition key, which Node refuses even under a
   // condition it skips; a module importing `#enums/syntaxKind/` through an
-  // exact key of that spelling, or `#enums/../enums/syntaxKind`.
+  // exact key of that spelling, or `#enums/../enums/syntaxKind`; and an
+  // enum import Node cannot load, of a name the enum module does not
+  // export, or with JSON attributes. Node's answer is what it loads.
   const copy = (change: (manifest: Record<string, unknown>) => Record<string, unknown>,
-      imported: string = "#enums/syntaxKind"): string => {
+      line: string = 'import { SyntaxKind } from "#enums/syntaxKind";'): string => {
     const dir = runDirectory("tscert-guard-manifest-");
     cpSync(root, dir, { recursive: true, dereference: true });
     const manifest: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
@@ -105,14 +106,16 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
     writeFileSync(join(dir, "package.json"), JSON.stringify(change(manifest)));
     for (const module of ["dist/ast/is.js", "dist/ast/is.generated.js"]) {
       const text = readFileSync(join(dir, module), "utf8");
-      writeFileSync(join(dir, module), text.replace('from "#enums/syntaxKind";', `from ${JSON.stringify(imported)};`));
+      assert.ok(text.includes('import { SyntaxKind } from "#enums/syntaxKind";'), `${module} imports SyntaxKind`);
+      writeFileSync(join(dir, module), text.replace('import { SyntaxKind } from "#enums/syntaxKind";', line));
     }
     return dir;
   };
-  // The real path of what Node resolves `specifier` to from a module of the
-  // copy, or null where it throws.
+  // The real path of what Node loads for `specifier` from a module of the
+  // copy, or null where resolving or loading it throws.
   const nodeResolves = (dir: string, specifier: string): string | null => {
-    writeFileSync(join(dir, "probe.mjs"), `console.log(import.meta.resolve(${JSON.stringify(specifier)}));\n`);
+    writeFileSync(join(dir, "probe.mjs"),
+      `await import(${JSON.stringify(specifier)});\nconsole.log(import.meta.resolve(${JSON.stringify(specifier)}));\n`);
     const resolved = spawnSync(process.execPath, [join(dir, "probe.mjs")], { encoding: "utf8" });
     return resolved.status === 0 ? realpathSync(fileURLToPath(resolved.stdout.trim())) : null;
   };
@@ -129,11 +132,17 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
     ["a target without ./", point, false, entry("dist/ast/index.js")],
     ["a target with a .. segment", point, false, entry("./dist/ast/../ast/index.js")],
     ["an integer condition key", point, false, entry({ node: { "0": "./unused.js" }, default: "./dist/ast/index.js" })],
-    ["a specifier ending /", "#enums/syntaxKind/", false, imports({ "#enums/syntaxKind/": "./dist/enums/syntaxKind.js" }), "#enums/syntaxKind/"],
-    ["a specifier with a .. segment", "#enums/../enums/syntaxKind", false, (m) => m, "#enums/../enums/syntaxKind"],
+    ["a specifier ending /", "#enums/syntaxKind/", false, imports({ "#enums/syntaxKind/": "./dist/enums/syntaxKind.js" }),
+      'import { SyntaxKind } from "#enums/syntaxKind/";'],
+    ["a specifier with a .. segment", "#enums/../enums/syntaxKind", false, (m) => m,
+      'import { SyntaxKind } from "#enums/../enums/syntaxKind";'],
+    ["an import of a name the module does not export", point, false, (m) => m,
+      'import { MissingExport as SyntaxKind } from "#enums/syntaxKind";'],
+    ["an import with JSON attributes", point, false, (m) => m,
+      'import { SyntaxKind } from "#enums/syntaxKind" with { type: "json" };'],
   ];
-  for (const [what, specifier, expected, change, imported] of variants) {
-    const dir = copy(change, imported);
+  for (const [what, specifier, expected, change, line] of variants) {
+    const dir = copy(change, line);
     const reviewed = specifier === point ? compilerApiGuards.entryModule : "dist/enums/syntaxKind.js";
     const nodes = nodeResolves(dir, specifier) === realpathSync(join(dir, reviewed));
     assert.equal(nodes, expected, `${what}: Node resolves ${specifier} ${expected ? "to" : "elsewhere than"} ${reviewed}`);
@@ -142,5 +151,19 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
   }
   assert.equal(activeGuards({ ...compilerApiGuards, conditions: ["node", "import", "default"] }), null,
     "conditions other than the running Node's: no table");
-  console.log(`activation: the reviewed table resolves, every entry; ${mismatches.length} tables differing from the installation in one recorded fact each, and a table of other conditions than the running Node's, are none; over ${variants.length} changed copies of the package, activated exactly where Node resolves the reviewed module`);
+  // Symlink-preserving resolution, by a flag or NODE_OPTIONS, activates no
+  // table: Node then gives modules their symlinked paths as parents.
+  const activeIn = (args: readonly string[], env: Record<string, string>): string => {
+    const code = `import { activeGuards } from ${JSON.stringify(pathToFileURL(join(repository, "tools", "compiler-api.mts")).href)};\n` +
+      `import { compilerApiGuards } from ${JSON.stringify(pathToFileURL(join(repository, "tools", "compiler-api-guards.mts")).href)};\n` +
+      "console.log(activeGuards(compilerApiGuards)?.size ?? 'none');\n";
+    const ran = spawnSync(process.execPath, [...args, "--input-type=module", "-e", code],
+      { encoding: "utf8", env: { ...process.env, ...env } });
+    assert.equal(ran.status, 0, ran.stderr);
+    return ran.stdout.trim();
+  };
+  assert.equal(activeIn([], {}), String(compilerApiGuards.guards.length), "a plain process activates the table");
+  assert.equal(activeIn(["--preserve-symlinks"], {}), "none", "--preserve-symlinks: no table");
+  assert.equal(activeIn([], { NODE_OPTIONS: "--preserve-symlinks-main" }), "none", "NODE_OPTIONS --preserve-symlinks-main: no table");
+  console.log(`activation: the reviewed table resolves, every entry; ${mismatches.length} tables differing from the installation in one recorded fact each, and a table of other conditions than the running Node's, are none, as is every table under symlink-preserving resolution; over ${variants.length} changed copies of the package, activated exactly where Node loads the reviewed module`);
 }

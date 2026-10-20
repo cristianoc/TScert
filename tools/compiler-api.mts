@@ -8,7 +8,7 @@
  * values. Each entry is checked against the installed package by
  * `tests/compiler-api.mts`. */
 import { createHash } from "node:crypto";
-import { registerHooks } from "node:module";
+import { createRequire, registerHooks } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, relative, sep } from "node:path";
 import type { DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
@@ -348,22 +348,31 @@ export function isHostFile(file: string): boolean {
 
 /** A guard table checked against the installation the run admits, or the
  * package at `root`, once per table and root (HOST-FAMILIES.md, "The guard
- * table"). Its conditions are the ones Node enables in this process; its
- * entry point, through the package's name, and every import of a module it
- * reads resolve as Node's own resolver resolves them from the module that
- * contains them (`nodeResolve`), to the module the table records. Each entry's export is
- * resolved as the module linker resolves it, through each module's own
- * exports and its `export *` modules, a name two of those provide being no
- * export, to the function the entry records, of exactly its text and never
- * assigned in its module. Each free name of that function, and of each
- * helper it reaches, is a function of its module or a named import of the
- * package: the helpers and the binding edges this closure reaches are
- * exactly the entry's, each helper of exactly its recorded text and never
- * assigned. `parse` gives a module's tree. A mismatch is no table: every
- * guard of the family is then read without predicate. */
-const activeTables = new Map<string, Map<GuardTable, ReadonlyMap<string, GuardEntry> | null>>();
+ * table"). Its conditions are the ones Node enables in this process, and no
+ * flag preserves symlinks; its entry point, through the package's name,
+ * resolves as Node's own resolver resolves it (`nodeResolve`) to the module
+ * the table records. Node loads that module: each entry's export is a
+ * function of the entry's text, the one the module the entry records
+ * exports, which declares it with that text, never assigned. Each free name
+ * of that function, and of each helper it reaches, is a function of its
+ * module or a named import, without attributes, that Node resolves from the
+ * importing module to a module of the package and that the loaded module
+ * exports: the helpers and the binding edges (importing module, local name,
+ * target module, exported name) this closure reaches are exactly the
+ * entry's, each helper of exactly its recorded text, also as loaded where
+ * exported. `parse` gives a module's tree. A mismatch, or a load Node
+ * refuses, is no table: every guard of the family is then read without
+ * predicate. */
+/** Node's loader for a module of the package by its path: `require` of an
+ * ES module, which shares the instance an `import` of the same file loads. */
+const loadModule: (path: string) => unknown = createRequire(import.meta.url);
+type Loaded = { entries: ReadonlyMap<string, GuardEntry>; specifier: string };
+const activeTables = new Map<string, Map<GuardTable, Loaded | null>>();
 export function activeGuards(table: GuardTable, root: string = installation().root): ReadonlyMap<string, GuardEntry> | null {
-  const tables = activeTables.get(root) ?? new Map<GuardTable, ReadonlyMap<string, GuardEntry> | null>();
+  return loadedGuards(table, root)?.entries ?? null;
+}
+function loadedGuards(table: GuardTable, root: string): Loaded | null {
+  const tables = activeTables.get(root) ?? new Map<GuardTable, Loaded | null>();
   activeTables.set(root, tables);
   if (tables.has(table)) return tables.get(table) ?? null;
   // The package's modules, read by a compiler of the check's own.
@@ -378,7 +387,7 @@ export function activeGuards(table: GuardTable, root: string = installation().ro
     if (!file) throw Error(`the compiler produced no tree for ${path}`);
     return file;
   };
-  let result: ReadonlyMap<string, GuardEntry> | null = null;
+  let result: Loaded | null = null;
   let thrown: { error: unknown } | null = null;
   try {
     result = checkedGuards(table, root, parse);
@@ -448,7 +457,7 @@ export function nodeResolve(specifier: string, parent: string): string | null {
 }
 
 function checkedGuards(table: GuardTable, root: string, parse: (path: string, text: string) => ts.SourceFile):
-    ReadonlyMap<string, GuardEntry> | null {
+    Loaded | null {
   // Every specifier is resolved by Node's own resolver, from the module that
   // contains it: the entry point through the package's name, from its
   // manifest; each import from its module. A module is its path in the
@@ -459,7 +468,21 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   // The table's conditions are the ones Node enables in this process.
   const runtime = runtimeConditions();
   if (table.conditions.length !== runtime.length || !runtime.every(c => table.conditions.includes(c))) return null;
+  // Resolution that keeps symlinked paths gives modules other parents than
+  // the real paths this check reads: no table.
+  const flags = [...process.execArgv, ...(process.env["NODE_OPTIONS"] ?? "").split(/\s+/)];
+  if (flags.some(f => f.startsWith("--preserve-symlinks"))) return null;
   const realRoot = realPath(root);
+  // A module of the package as Node loads it, the instance a program
+  // importing it shares; null where the load throws.
+  const load = (module: string): Record<string, unknown> | null => {
+    try {
+      const loaded: unknown = loadModule(join(realRoot, module));
+      return typeof loaded === "object" && loaded !== null ? { ...loaded } : null;
+    } catch {
+      return null;
+    }
+  };
   const resolveSpecifier = (from: string, specifier: string): string | null => {
     const resolved = nodeResolve(specifier, join(root, from));
     if (resolved === null) return null;
@@ -468,6 +491,8 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   };
   const entryPoint = table.entryPoint === "." ? name : `${name}${table.entryPoint.slice(1)}`;
   if (resolveSpecifier("package.json", entryPoint) !== table.entryModule) return null;
+  const entryLoaded = load(table.entryModule);
+  if (!entryLoaded) return null;
   const trees = new Map<string, ts.SourceFile>();
   const tree = (module: string): ts.SourceFile => {
     const known = trees.get(module);
@@ -476,9 +501,6 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
     trees.set(module, parsed);
     return parsed;
   };
-  const exported = (s: ts.Statement): boolean =>
-    (ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s) || ts.isVariableStatement(s)) &&
-    (s.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) ?? false);
   // The names a module assigns anywhere: an assignment, compound or not, or
   // an update of a plain name.
   const assignedIn = new Map<string, Set<string>>();
@@ -506,49 +528,14 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
     const [only] = found;
     return only && found.length === 1 && only.body && !assigned(module).has(name) ? only : null;
   };
-  // What the export `name` of a module resolves to, as the linker resolves
-  // it: the module's own export, else the one export of its `export *`
-  // modules that provides it; the modules passed through, in order.
-  type Resolved = { module: string; local: string; path: string[] };
-  const resolveExport = (module: string, name: string, seen: readonly string[]): Resolved | "ambiguous" | null => {
-    if (seen.includes(module)) return null;
-    const here = [...seen, module];
-    const file = tree(module);
-    for (const s of file.statements) {
-      if (exported(s) && (ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s)) && s.name?.text === name)
-        return { module, local: name, path: here };
-      if (exported(s) && ts.isVariableStatement(s) &&
-          s.declarationList.declarations.some(d => ts.isIdentifier(d.name) && d.name.text === name))
-        return { module, local: name, path: here };
-      if (ts.isExportDeclaration(s) && s.exportClause && ts.isNamedExports(s.exportClause))
-        for (const e of s.exportClause.elements)
-          if (e.name.text === name) {
-            const local = e.propertyName ? e.propertyName.getText(file) : e.name.text;
-            if (!s.moduleSpecifier) return { module, local, path: here };
-            const next = ts.isStringLiteral(s.moduleSpecifier) ? resolveSpecifier(module, s.moduleSpecifier.text) : null;
-            return next ? resolveExport(next, local, here) : null;
-          }
-      if (ts.isExportDeclaration(s) && s.exportClause && ts.isNamespaceExport(s.exportClause) &&
-          s.exportClause.name.getText(file) === name) return null;
-    }
-    const found: Resolved[] = [];
-    for (const s of file.statements)
-      if (ts.isExportDeclaration(s) && !s.exportClause && s.moduleSpecifier && ts.isStringLiteral(s.moduleSpecifier)) {
-        const next = resolveSpecifier(module, s.moduleSpecifier.text);
-        if (!next) return null;
-        const r = resolveExport(next, name, here);
-        if (r === "ambiguous") return r;
-        if (r && !found.some(f => f.module === r.module && f.local === r.local)) found.push(r);
-      }
-    const [one] = found;
-    return found.length > 1 ? "ambiguous" : one ?? null;
-  };
   // A module's named imports: each local name, the module it resolves to
   // and the name it imports.
-  const importsOf = (module: string): Map<string, { module: string; name: string }> => {
+  // An import with attributes is refused: no import of the closure has one.
+  const importsOf = (module: string): Map<string, { module: string; name: string }> | null => {
     const out = new Map<string, { module: string; name: string }>();
     for (const s of tree(module).statements) {
       if (!ts.isImportDeclaration(s) || !ts.isStringLiteral(s.moduleSpecifier)) continue;
+      if (s.attributes) return null;
       const bindings = s.importClause?.namedBindings;
       if (s.importClause?.name || !bindings || !ts.isNamedImports(bindings)) continue;
       const from = resolveSpecifier(module, s.moduleSpecifier.text);
@@ -573,32 +560,43 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
     return new Set([...names].filter(n => !declared.has(n)));
   };
   const textOf = (module: string, f: ts.FunctionDeclaration): string => f.getText(tree(module)).trim();
+  // A loaded function of the text a module declares it with.
+  const runs = (value: unknown, text: string): boolean =>
+    typeof value === "function" && value.toString() === text.replace(/^export /, "");
   const entries = new Map<string, GuardEntry>();
   for (const entry of table.guards) {
-    const resolved = resolveExport(table.entryModule, entry.name, []);
-    if (!resolved || resolved === "ambiguous" || resolved.module !== entry.module || resolved.local !== entry.name ||
-        resolved.path.join("\n") !== entry.chain.join("\n")) return null;
+    // The function the entry point exports, as Node loads it, is the one
+    // the declaring module exports, of the entry's text.
     const f = functionOf(entry.module, entry.name);
-    if (!f || textOf(entry.module, f) !== entry.text) return null;
+    const declaring = load(entry.module);
+    const loaded = entryLoaded[entry.name];
+    if (!f || textOf(entry.module, f) !== entry.text || !runs(loaded, entry.text) || !declaring ||
+        declaring[entry.name] !== loaded) return null;
     // The dependency closure: helpers and binding edges reached.
     const helpers = new Set<string>();
     const edges = new Set<string>();
     const pending: { module: string; f: ts.FunctionDeclaration }[] = [{ module: entry.module, f }];
     for (let next = pending.pop(); next; next = pending.pop()) {
       const { module } = next;
+      const imports = importsOf(module);
+      if (!imports) return null;
       for (const name of freeNames(next.f)) {
         const local = functionOf(module, name);
-        const imported = importsOf(module).get(name);
+        const imported: { module: string; name: string } | undefined = imports.get(name);
         if (local) {
           const key = `${module}#${name}`;
           if (table.helpers[key] !== textOf(module, local)) return null;
           if (!helpers.has(key)) { helpers.add(key); pending.push({ module, f: local }); }
         } else if (imported) {
-          edges.add(JSON.stringify([name, imported.module]));
+          edges.add(JSON.stringify([module, name, imported.module, imported.name]));
+          // The binding the target module exports, as Node loads it.
+          const target = load(imported.module);
+          if (!target || !(imported.name in target) || target[imported.name] === undefined) return null;
           const helper = functionOf(imported.module, imported.name);
           if (helper) {
             const key = `${imported.module}#${imported.name}`;
-            if (table.helpers[key] !== textOf(imported.module, helper)) return null;
+            if (table.helpers[key] !== textOf(imported.module, helper) || !runs(target[imported.name], textOf(imported.module, helper)))
+              return null;
             if (!helpers.has(key)) { helpers.add(key); pending.push({ module: imported.module, f: helper }); }
           }
         } else return null;
@@ -609,13 +607,24 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
         edges.size !== recordedEdges.size || ![...edges].every(e => recordedEdges.has(e))) return null;
     entries.set(entry.name, entry);
   }
-  return entries;
+  return { entries, specifier: entryPoint };
 }
 
-/** The entry of the compiler API's family guarding a declaration: the
- * function `name` of the declaration file `file`, which the entry's module
- * declares. */
-export function guardEntry(file: string, name: string): GuardEntry | null {
+/** The entry of a listed guard a program binds by importing `imported` from
+ * `specifier`: the active table's entry of that name, where `specifier` is
+ * its entry point's, whose export Node loads as the checked function;
+ * `undefined` where `specifier` is another, which a program module may
+ * re-export. */
+export function importedGuard(specifier: string, imported: string): GuardEntry | null | undefined {
+  const loaded = loadedGuards(hostFamily().guards, installation().root);
+  if (!loaded || loaded.specifier !== specifier) return undefined;
+  return loaded.entries.get(imported) ?? null;
+}
+
+/** The entry of the listed guard of a declaration's name, for the run's tag
+ * selection alone, which a further tag only widens: the function `name` of
+ * the declaration file `file`, which the entry's module declares. */
+export function selectionGuard(file: string, name: string): GuardEntry | null {
   if (!isHostFile(file)) return null;
   const entries = activeGuards(hostFamily().guards);
   const entry = entries?.get(name);

@@ -15,6 +15,9 @@
       "typescript/unstable/ast": [
         "../../tools/node_modules/typescript/dist/ast/index.d.ts"
       ],
+      "typescript/unstable/other": [
+        "../../tools/node_modules/typescript/dist/ast/index.d.ts"
+      ],
       "typescript/unstable/sync": [
         "../../tools/node_modules/typescript/dist/api/sync/api.d.ts"
       ],

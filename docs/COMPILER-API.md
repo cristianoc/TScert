@@ -927,7 +927,9 @@ the corpus runs are regression evidence, not proofs.
   runs for its export, resolved as the entry records (F3; resolved by the
   verifying process's Node, the program assumed to run under the same Node
   configuration, through ES module resolution, over the unchanged
-  installation, with no resolution-altering hook): exact tag set,
+  installation, with no resolution-altering hook, its import of the entry
+  point specifier loading the module instance the front end loads and
+  checks): exact tag set,
   the tag the only member read, no other effect, and an answer independent
   of further arguments and of the receiver; and the package's enum objects
   and its guards' and helpers' bindings are never written, by the program

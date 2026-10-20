@@ -101,21 +101,23 @@ type Value = (t: number) => boolean | number;
 type Helper = { key: string; text: string };
 class Refused extends Error {}
 const refuse = (reason: string): never => { throw new Refused(reason); };
-const constant = (tree: ts.SourceFile, e: ts.Expression, edges: Map<string, string>): number | null => {
+type Edge = [string, string, string, string];
+const constant = (tree: ts.SourceFile, e: ts.Expression, edges: Map<string, Edge>): number | null => {
   if (ts.isNumericLiteral(e)) return Number(e.text);
   if (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "SyntaxKind" &&
-      edges.has("SyntaxKind")) {
+      [...edges.values()].some(([, local]) => local === "SyntaxKind")) {
     const v = constants.get(e.name.text);
     return v === undefined ? refuse(`SyntaxKind has no member ${e.name.text}`) : v;
   }
   return null;
 };
 // The module's bindings: its function declarations, never assigned, and its
-// named imports from modules of the package.
-const bindings = (path: string): { functions: Map<string, ts.FunctionDeclaration>; imports: Map<string, string> } => {
+// named imports from modules of the package, each the module it resolves to
+// and the name that module exports; an import with attributes binds nothing.
+const bindings = (path: string): { functions: Map<string, ts.FunctionDeclaration>; imports: Map<string, { module: string; name: string }> } => {
   const tree = moduleOf(path);
   const functions = new Map<string, ts.FunctionDeclaration>();
-  const imports = new Map<string, string>();
+  const imports = new Map<string, { module: string; name: string }>();
   const assigned = new Set<string>();
   const visit = (n: ts.Node): undefined => {
     if (ts.isBinaryExpression(n) && n.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isIdentifier(n.left))
@@ -125,10 +127,10 @@ const bindings = (path: string): { functions: Map<string, ts.FunctionDeclaration
   visit(tree);
   for (const s of tree.statements) {
     if (ts.isFunctionDeclaration(s) && s.name && !assigned.has(s.name.text)) functions.set(s.name.text, s);
-    if (ts.isImportDeclaration(s) && s.importClause?.namedBindings && ts.isNamedImports(s.importClause.namedBindings)) {
+    if (ts.isImportDeclaration(s) && !s.attributes && s.importClause?.namedBindings && ts.isNamedImports(s.importClause.namedBindings)) {
       const resolved = resolveSpecifier(path, specifierText(s.moduleSpecifier));
       for (const e of s.importClause.namedBindings.elements)
-        if (resolved && !e.isTypeOnly) imports.set(e.name.text, resolved.module);
+        if (resolved && !e.isTypeOnly) imports.set(e.name.text, { module: resolved.module, name: e.propertyName?.text ?? e.name.text });
     }
   }
   return { functions, imports };
@@ -138,7 +140,7 @@ const bindings = (path: string): { functions: Map<string, ts.FunctionDeclaration
 // (`node`), its tag as a family helper (`family`), or a public tag value
 // (`public`, equalities alone).
 const analyze = (path: string, f: ts.FunctionDeclaration, role: "node" | "family" | "public",
-    helpers: Map<string, Helper>, edges: Map<string, string>, depth: number): Value => {
+    helpers: Map<string, Helper>, edges: Map<string, Edge>, depth: number): Value => {
   if (depth > 32) refuse("a helper graph too deep or cyclic");
   const tree = moduleOf(path);
   const name = f.name?.text ?? "";
@@ -163,8 +165,8 @@ const analyze = (path: string, f: ts.FunctionDeclaration, role: "node" | "family
     if (role !== "node" && ts.isIdentifier(e) && e.text === x) return (t) => t;
     if (local !== null && ts.isIdentifier(e) && e.text === local) return (t) => t;
     if (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === "SyntaxKind") {
-      if (!imports.has("SyntaxKind")) refuse(`${name} reads a SyntaxKind no import binds`);
-      edges.set("SyntaxKind", imports.get("SyntaxKind") ?? "");
+      const bound = imports.get("SyntaxKind") ?? refuse(`${name} reads a SyntaxKind no import binds`);
+      edges.set(`${path}#SyntaxKind`, [path, "SyntaxKind", bound.module, bound.name]);
     }
     const c = constant(tree, e, edges);
     if (c !== null) return () => c;
@@ -195,10 +197,12 @@ const analyze = (path: string, f: ts.FunctionDeclaration, role: "node" | "family
       const importedFrom = imports.get(callee);
       let helperPath = path;
       let helper = declaredHere;
+      let helperName = callee;
       if (!helper && importedFrom) {
-        helper = bindings(importedFrom).functions.get(callee);
-        helperPath = importedFrom;
-        edges.set(callee, importedFrom);
+        helper = bindings(importedFrom.module).functions.get(importedFrom.name);
+        helperPath = importedFrom.module;
+        helperName = importedFrom.name;
+        edges.set(`${path}#${callee}`, [path, callee, importedFrom.module, importedFrom.name]);
       }
       if (!helper) return refuse(`${name} calls ${callee}, no stable function of the package`);
       if (!arg) return refuse(`${name} calls ${callee} without an argument`);
@@ -207,7 +211,7 @@ const analyze = (path: string, f: ts.FunctionDeclaration, role: "node" | "family
       const argument = onNode ? null : operand(arg);
       const helperRole = onNode ? "node" : role === "public" ? "public" : "family";
       const v = analyze(helperPath, helper, helperRole, helpers, edges, depth + 1);
-      helpers.set(`${helperPath}#${callee}`, { key: `${helperPath}#${callee}`, text: textOf(helperPath, helper) });
+      helpers.set(`${helperPath}#${helperName}`, { key: `${helperPath}#${helperName}`, text: textOf(helperPath, helper) });
       return onNode || !argument ? v : (t) => v(Number(argument(t)));
     }
     return refuse(`${name} tests ${e.getText(tree)}`);
@@ -253,8 +257,8 @@ const analyze = (path: string, f: ts.FunctionDeclaration, role: "node" | "family
 };
 const textOf = (path: string, f: ts.FunctionDeclaration): string => f.getText(moduleOf(path)).trim();
 
-type Entry = { name: string; kind: "node" | "tag"; domain: string; tags: string[]; module: string; chain: string[];
-  text: string; helpers: string[]; edges: [string, string][] };
+type Entry = { name: string; kind: "node" | "tag"; domain: string; tags: string[]; module: string;
+  text: string; helpers: string[]; edges: Edge[] };
 const entries: Entry[] = [];
 const excluded: [string, string][] = [];
 const helperTexts = new Map<string, string>();
@@ -264,13 +268,14 @@ for (const [name, { domain, tagged }] of [...declared].sort(([a], [b]) => a < b 
   const f = bindings(located.module).functions.get(name);
   if (!f) { excluded.push([name, "no stable function declaration"]); continue; }
   const helpers = new Map<string, Helper>();
-  const edges = new Map<string, string>();
+  const edges = new Map<string, Edge>();
   try {
     const value = analyze(located.module, f, tagged ? "public" : "node", helpers, edges, 0);
     const tags = values.filter((t) => value(t) === true).map(nameOf);
     for (const h of helpers.values()) helperTexts.set(h.key, h.text);
-    entries.push({ name, kind: tagged ? "tag" : "node", domain, tags, module: located.module, chain: located.chain,
-      text: textOf(located.module, f), helpers: [...helpers.keys()].sort(), edges: [...edges].sort() });
+    entries.push({ name, kind: tagged ? "tag" : "node", domain, tags, module: located.module,
+      text: textOf(located.module, f), helpers: [...helpers.keys()].sort(),
+      edges: [...edges].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, e]) => e) });
   } catch (error) {
     if (!(error instanceof Refused)) throw error;
     excluded.push([name, error.message]);
@@ -294,7 +299,7 @@ ${[...helperTexts].sort(([a], [b]) => a < b ? -1 : 1).map(([k, t]) => `    ${jso
   },
   guards: [
 ${entries.map((e) => `    { name: ${json(e.name)}, kind: ${json(e.kind)}, domain: ${json(e.domain)}, tags: ${json(e.tags)},
-      module: ${json(e.module)}, chain: ${json(e.chain)}, helpers: ${json(e.helpers)}, edges: ${json(e.edges)},
+      module: ${json(e.module)}, helpers: ${json(e.helpers)}, edges: ${json(e.edges)},
       text: ${json(e.text)} },`).join("\n")}
   ],
   excluded: [

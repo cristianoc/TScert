@@ -20,7 +20,7 @@
 // declared as reviewed, and under Node two reads of it give different values
 // where a stable member gives one.
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -430,6 +430,24 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(unary(typeNode.asTypeNode), "the fixture exports asTypeNode");
   const heritage = first(join(dir, "heritage.ts"), "class A extends B<C> {}\n", 234);
   assert.equal(typeNode.asTypeNode(heritage), heritage, "asTypeNode returns the ExpressionWithTypeArguments");
+  // Another subpath of a package whose manifest maps it to other code: the
+  // guard's declaration in TypeScript, a function answering `true` under
+  // Node.
+  const other = runDirectory("tscert-guard-subpath-");
+  const installed = join(other, "node_modules", hostPackage.name);
+  cpSync(root, installed, { recursive: true, dereference: true });
+  const otherManifest: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.ok(typeof otherManifest === "object" && otherManifest !== null && "exports" in otherManifest &&
+    typeof otherManifest.exports === "object" && otherManifest.exports !== null, "the package's exports");
+  writeFileSync(join(installed, "package.json"), JSON.stringify({ ...otherManifest,
+    exports: { ...otherManifest.exports, "./unstable/other": "./other.js" } }));
+  writeFileSync(join(installed, "other.js"), "export function isIdentifier(node) {\n    return true;\n}\n");
+  copyFileSync(resolve(import.meta.dirname, "../pipeline/examples/invalid-compiler-api-guard-subpath.ts"),
+    join(other, "subpath.ts"));
+  const subpath: unknown = await import(pathToFileURL(join(other, "subpath.ts")).href);
+  assert.ok(isNamespace(subpath) && unary(subpath.name), "the fixture exports name");
+  const statement = first(join(dir, "statement.ts"), "x;\n", Number(syntaxKind.ExpressionStatement));
+  assert.equal(subpath.name(statement), undefined, "name returns undefined on an expression statement");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, and asTypeNode returns a node of kind 234");
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, and a subpath mapped to other code reads text of no identifier");
 }
