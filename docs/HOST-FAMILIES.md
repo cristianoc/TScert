@@ -781,6 +781,11 @@ name. A family supplies, in its description, data alone:
   declares, checked against the declaration as reviewed;
 - its allocating members, omitted from every shape and checked likewise.
 
+What the mechanism does not yet take from the description is the
+package's installation: the front end registers the compiler API's
+package, pinned by the tools, and reads another only through a test-only
+channel ([WORK.md](../WORK.md#family-installation)).
+
 It gets, for every required property member of its shapes the rule does
 not exclude, a stable key in the declaration document; the tag of a
 residual is stable where the tag member of every shape it stands for is,
