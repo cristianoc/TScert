@@ -1018,7 +1018,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     // A closure's parameter slot narrowed until its next write; a write, or
     // an inner closure's write, between the test and the read gives
     // `undefined` where a string is returned.
-    ["closure-parameter-slot", "const p = { kind: 'paren', inner: { kind: 'call', callee: { kind: 'name', text: 'f' }, args: [{ kind: 'paren', inner: { kind: 'name', text: 'a' } }] } }; JSON.stringify([unwrap(p).kind, names(p), area({ kind: 'square', side: 2 }), later(p)()])", '["call",["f","a"],4,""]'],
+    ["closure-parameter-slot", "const p = { kind: 'paren', inner: { kind: 'call', callee: { kind: 'name', text: 'f' }, args: [{ kind: 'paren', inner: { kind: 'name', text: 'a' } }] } }; JSON.stringify([unwrap(p).kind, names(p), area({ kind: 'square', side: 2 }), later(p)(), later({ kind: 'paren', inner: { kind: 'name', text: 'a' } })()])", '["call",["f","a"],4,"","a"]'],
     ["invalid-closure-parameter-write", "String(textOf({ kind: 'name', text: 'a' }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }))", "undefined"],
     ["invalid-closure-parameter-cell", "String(textOf({ kind: 'name', text: 'a' }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }))", "undefined"],
     ["slot-object-growth", "JSON.stringify(grownSlot('x', false)()) + JSON.stringify(grownSlot('x', true)())", "{\"x\":1,\"count\":2}{\"x\":1,\"count\":2}"],
