@@ -39,6 +39,12 @@ that covers what changed, and the wider tier once before committing:
 run in one worker process per core, each keeping its TypeScript compiler
 between cases; progress goes to standard error.
 
+The wider tier runs once for each change of producer, Lean, parser or
+shared-tool code. A later edit of cases, examples or docs alone reruns only
+the cases it touches (`run-cases.mts <pattern>`), and a doc edit runs
+`node tests/docs.mts`. A case that fails on a timeout while the machine is
+loaded is rerun by its pattern, not with the whole suite.
+
 ### Measuring coverage: once, on main
 
 The census of the front end's own functions (each top-level function of
