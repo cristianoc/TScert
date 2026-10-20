@@ -10,7 +10,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { hostPackage, nodeResolve, runtimeConditions } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
@@ -31,7 +31,7 @@ const realRoot = realpathSync(root);
 const resolveSpecifier = (from: string, specifier: string): { module: string } | null => {
   const resolved = nodeResolve(specifier, join(root, from));
   if (resolved === null) return null;
-  const module = relative(realRoot, resolved);
+  const module = relative(realRoot, fileURLToPath(resolved));
   return module.startsWith("..") ? null : { module };
 };
 const entryResolved = resolveSpecifier("package.json", `${manifestValue.name}${entryPoint.slice(1)}`);

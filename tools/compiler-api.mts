@@ -366,7 +366,8 @@ export function isHostFile(file: string): boolean {
 /** Node's loader for a module of the package by its path: `require` of an
  * ES module, which shares the instance an `import` of the same file loads. */
 const loadModule: (path: string) => unknown = createRequire(import.meta.url);
-type Loaded = { entries: ReadonlyMap<string, GuardEntry>; functions: ReadonlyMap<unknown, GuardEntry> };
+type Loaded = { entries: ReadonlyMap<string, GuardEntry>; functions: ReadonlyMap<unknown, GuardEntry>;
+  modules: ReadonlyMap<string, Readonly<Record<string, unknown>>> };
 const activeTables = new Map<string, Map<GuardTable, Loaded | null>>();
 export function activeGuards(table: GuardTable, root: string = installation().root): ReadonlyMap<string, GuardEntry> | null {
   return loadedGuards(table, root)?.entries ?? null;
@@ -428,10 +429,11 @@ export function runtimeConditions(): readonly string[] {
   return runtimeConditionsRead;
 }
 
-/** The file Node's own ES module resolver resolves `specifier` to from the
- * module at `parent`, under the conditions it enables in this process, its
- * real path; `null` where Node throws. Run through a resolve hook, which
- * calls Node's resolution with that parent and resolves nothing else. */
+/** The URL Node's own ES module resolver resolves `specifier` to from the
+ * module at `parent`, under the conditions it enables in this process: a
+ * file URL with no query or fragment, else `null`, as where Node throws.
+ * Run through a resolve hook, which calls Node's resolution with that parent
+ * and resolves nothing else; it loads nothing. */
 export function nodeResolve(specifier: string, parent: string): string | null {
   const probe = "tscert:resolve";
   const found: { url: string | null } = { url: null };
@@ -452,8 +454,10 @@ export function nodeResolve(specifier: string, parent: string): string | null {
     hooks.deregister();
   }
   const url = found.url;
-  if (url === null || !url.startsWith("file:")) return null;
-  return orAbsent(realPath, fileURLToPath(url));
+  if (url === null) return null;
+  // A query or a fragment names another instance of the same file: refused.
+  const parsed = new URL(url);
+  return parsed.protocol === "file:" && parsed.search === "" && parsed.hash === "" ? url : null;
 }
 
 function checkedGuards(table: GuardTable, root: string, parse: (path: string, text: string) => ts.SourceFile):
@@ -475,10 +479,18 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   const realRoot = realPath(root);
   // A module of the package as Node loads it, the instance a program
   // importing it shares; null where the load throws.
+  // Each module loaded, by its URL; recognition reads these alone.
+  const urlOf = (module: string): string => pathToFileURL(join(realRoot, module)).href;
+  const modules = new Map<string, Record<string, unknown>>();
   const load = (module: string): Record<string, unknown> | null => {
+    const known = modules.get(urlOf(module));
+    if (known) return known;
     try {
       const loaded: unknown = loadModule(join(realRoot, module));
-      return typeof loaded === "object" && loaded !== null ? { ...loaded } : null;
+      if (typeof loaded !== "object" || loaded === null) return null;
+      const namespace = { ...loaded };
+      modules.set(urlOf(module), namespace);
+      return namespace;
     } catch {
       return null;
     }
@@ -486,8 +498,8 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   const resolveSpecifier = (from: string, specifier: string): string | null => {
     const resolved = nodeResolve(specifier, join(root, from));
     if (resolved === null) return null;
-    const module = relative(realRoot, resolved).split(sep).join("/");
-    return module.startsWith("../") ? null : module;
+    const module = relative(realRoot, fileURLToPath(resolved)).split(sep).join("/");
+    return module.startsWith("../") || urlOf(module) !== resolved ? null : module;
   };
   const entryPoint = table.entryPoint === "." ? name : `${name}${table.entryPoint.slice(1)}`;
   if (resolveSpecifier("package.json", entryPoint) !== table.entryModule) return null;
@@ -576,6 +588,7 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
     // The dependency closure: helpers and binding edges reached.
     const helpers = new Set<string>();
     const edges = new Set<string>();
+    const recordedEdges = new Set(entry.edges.map(e => JSON.stringify(e)));
     const pending: { module: string; f: ts.FunctionDeclaration }[] = [{ module: entry.module, f }];
     for (let next = pending.pop(); next; next = pending.pop()) {
       const { module } = next;
@@ -589,7 +602,10 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
           if (table.helpers[key] !== textOf(module, local)) return null;
           if (!helpers.has(key)) { helpers.add(key); pending.push({ module, f: local }); }
         } else if (imported) {
-          edges.add(JSON.stringify([module, name, imported.module, imported.name]));
+          const edge = JSON.stringify([module, name, imported.module, imported.name]);
+          // A module outside the recorded closure is never loaded.
+          if (!recordedEdges.has(edge)) return null;
+          edges.add(edge);
           // The binding the target module exports, as Node loads it.
           const target = load(imported.module);
           if (!target || !(imported.name in target) || target[imported.name] === undefined) return null;
@@ -603,22 +619,22 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
         } else return null;
       }
     }
-    const recordedEdges = new Set(entry.edges.map(e => JSON.stringify(e)));
     if (helpers.size !== entry.helpers.length || !entry.helpers.every(h => helpers.has(h)) ||
         edges.size !== recordedEdges.size || ![...edges].every(e => recordedEdges.has(e))) return null;
     entries.set(entry.name, entry);
     functions.set(loaded, entry);
   }
-  return { entries, functions };
+  return { entries, functions, modules };
 }
 
 /** What Node binds when the module at `from` imports `imported` from
- * `specifier`: Node's own resolver resolves the specifier from that module;
- * a module of the installation Node loads, and the binding is a listed
- * guard where its export is the very function activation checked
- * (`entry`, else `null`); a module outside the installation is named by
- * its real path (`program`), which may re-export one; a resolution or a
- * load Node refuses binds nothing (`null`). */
+ * `specifier`, read without loading anything: Node's own resolver resolves
+ * the specifier from that module to a URL, with no query or fragment. Where
+ * that URL is one of the modules activation loaded and checked, the binding
+ * is a listed guard where its export there is the very function activation
+ * checked (`entry`, else `null`); any other file of the installation binds
+ * nothing (`null`), unloaded; a module outside the installation is named by
+ * its real path (`program`), which may re-export one. */
 export function importedGuard(from: string, specifier: string, imported: string):
     { entry: GuardEntry | null } | { program: string } | null {
   const root = installation().root;
@@ -626,14 +642,11 @@ export function importedGuard(from: string, specifier: string, imported: string)
   if (!loaded) return null;
   const resolved = nodeResolve(specifier, from);
   if (resolved === null) return null;
-  if (relative(realPath(root), resolved).split(sep)[0] === "..") return { program: resolved };
-  try {
-    const module: unknown = loadModule(resolved);
-    const value: unknown = typeof module === "object" && module !== null ? Reflect.get(module, imported) : undefined;
-    return { entry: loaded.functions.get(value) ?? null };
-  } catch {
-    return null;
-  }
+  const namespace = loaded.modules.get(resolved);
+  if (namespace) return { entry: loaded.functions.get(namespace[imported]) ?? null };
+  const path = orAbsent(realPath, fileURLToPath(resolved));
+  if (path === null || relative(realPath(root), path).split(sep)[0] !== "..") return null;
+  return { program: path };
 }
 
 /** The entry of the listed guard of a declaration's name, for the run's tag

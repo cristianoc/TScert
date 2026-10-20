@@ -1,7 +1,6 @@
 import { fork, spawnSync, type ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { Socket } from "node:net";
-import { linkFixtures } from "./fixture-links.mts";
 import { availableParallelism } from "node:os";
 import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
@@ -689,7 +688,6 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
   } else {
     // The printed outcome names the run's directory, kept for inspection.
     keepRunDirectories();
-    linkFixtures();
     try {
       const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, subtypeRounds);
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");

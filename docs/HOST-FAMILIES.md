@@ -411,13 +411,15 @@ the entry's statement.
 #### Calls
 
 A call is recognized by **the loaded binding**: Node's own resolver
-resolves the unit's import from the unit's module, and Node loads what it
-resolves; where that is a module of the installation, its export must be
-the very function activation checked. Where Node resolves a module of the
-program, that module's `export { g } from "…"` is resolved and loaded the
-same way, from that module. An import or a re-export with attributes, a
-resolution or load Node refuses, a module Node resolves that the program
-does not hold, and any other binding are no guard: a declaration TypeScript
+resolves the unit's import from the unit's module, loading nothing, to a
+URL; where that URL, with no query or fragment, is one of the modules
+activation loaded and checked, the export there must be the very function
+activation checked. Where Node resolves a module of the program, that
+module's `export { g } from "…"` is resolved the same way, from that
+module. Any other file of the installation is refused unloaded, so its code
+never runs in the front end. An import or a re-export with attributes, a
+resolution Node refuses, a module Node resolves that the program does not
+hold, and any other binding are no guard: a declaration TypeScript
 reaches through another subpath (`invalid-compiler-api-guard-subpath`),
 through a re-export whose file Node does not load
 (`invalid-compiler-api-guard-reexport-mismatch`), or through another copy

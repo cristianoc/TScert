@@ -2,11 +2,11 @@
 // sources import a host package gets a `node_modules` link beside them, so
 // that Node and TypeScript resolve the package's specifiers by one rule,
 // with no `paths` between them. The links are generated, never committed
-// (`.gitignore`), and created idempotently by `make setup`, the case runner
-// and the pipeline's suites.
+// (`.gitignore`), and created where missing by `make setup`, the case runner
+// and the pipeline's suites; a single verification creates none.
 //   node pipeline/fixture-links.mts
-import { lstatSync, mkdirSync, readlinkSync, symlinkSync, unlinkSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, symlinkSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 
 const here = import.meta.dirname;
 
@@ -23,21 +23,30 @@ export const fixtureLinks: readonly (readonly [string, string])[] = [
   ["string-family-fixture-project/node_modules/typescript", "../../string-family-fixture"],
 ];
 
-/** Create each link that is missing; a link holding another target is
- * replaced; any other file at a link's path is an error. */
+/** Create each link that is missing. Every link's directory, or its nearest
+ * existing ancestor, must be a real directory inside the repository; a link
+ * already in place must hold its target; any other file at a link's path,
+ * or a link to another target, is an error. Every link is checked before
+ * any is created, so a refusal changes nothing. */
 export function linkFixtures(): void {
+  const repository = realpathSync(join(here, ".."));
+  const problems: string[] = [];
+  const missing: (readonly [string, string])[] = [];
   for (const [path, target] of fixtureLinks) {
     const link = join(here, path);
-    let current: string | null = null;
-    try {
-      const stat = lstatSync(link);
-      if (!stat.isSymbolicLink()) throw Error(`${link} is no link: remove it to let the fixtures link their installation`);
-      current = readlinkSync(link);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-    }
-    if (current === target) continue;
-    if (current !== null) unlinkSync(link);
+    let directory = dirname(link);
+    while (!existsSync(directory)) directory = dirname(directory);
+    const stat = lstatSync(directory);
+    const real = realpathSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || (real !== repository && !real.startsWith(repository + sep)))
+      problems.push(`${directory} is no real directory inside the repository`);
+    else if (!lexists(link)) missing.push([link, target]);
+    else if (!lstatSync(link).isSymbolicLink()) problems.push(`${link} is no link: remove it to link the fixtures' installation`);
+    else if (readlinkSync(link) !== target)
+      problems.push(`${link} links ${readlinkSync(link)}, not ${target}: remove it to link the fixtures' installation`);
+  }
+  if (problems.length) throw Error(`the fixtures' installation links are not set up, and nothing was changed:\n${problems.join("\n")}`);
+  for (const [link, target] of missing) {
     mkdirSync(dirname(link), { recursive: true });
     try {
       symlinkSync(target, link);
@@ -45,6 +54,17 @@ export function linkFixtures(): void {
       // Another process linked it meanwhile.
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST") || readlinkSync(link) !== target) throw error;
     }
+  }
+}
+
+/** Whether anything, a dangling link included, is at `path`. */
+function lexists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw error;
   }
 }
 

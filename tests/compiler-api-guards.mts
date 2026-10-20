@@ -7,13 +7,13 @@
 // callback receives them.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { compilerApiGuards } from "../tools/compiler-api-guards.mts";
-import { activeGuards, hostPackage } from "../tools/compiler-api.mts";
+import { activeGuards, hostPackage, importedGuard, useHostInstallationForTests } from "../tools/compiler-api.mts";
 import type { GuardEntry, GuardTable } from "../tools/host-families.mts";
 
 const repository = resolve(import.meta.dirname, "..");
@@ -165,5 +165,36 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
   assert.equal(activeIn([], {}), String(compilerApiGuards.guards.length), "a plain process activates the table");
   assert.equal(activeIn(["--preserve-symlinks"], {}), "none", "--preserve-symlinks: no table");
   assert.equal(activeIn([], { NODE_OPTIONS: "--preserve-symlinks-main" }), "none", "NODE_OPTIONS --preserve-symlinks-main: no table");
-  console.log(`activation: the reviewed table resolves, every entry; ${mismatches.length} tables differing from the installation in one recorded fact each, and a table of other conditions than the running Node's, are none, as is every table under symlink-preserving resolution; over ${variants.length} changed copies of the package, activated exactly where Node loads the reviewed module`);
+  // Recognition loads nothing: a client import binds a guard only where
+  // Node resolves it to the URL of a module activation loaded. A query names
+  // another instance of the same file, whose function Node gives as another
+  // (run under Node), and binds none; a file of the installation activation
+  // did not load is refused unloaded: its top-level code, which writes a
+  // marker, does not run.
+  const client = join(root, "client.mjs");
+  const generated = "./dist/ast/is.generated.js";
+  const bound = importedGuard(client, generated, "isIdentifier");
+  assert.ok(bound && "entry" in bound && bound.entry?.name === "isIdentifier", "the loaded module's isIdentifier is the guard");
+  assert.equal(importedGuard(client, `${generated}?review`, "isIdentifier"), null, "a query binds no guard");
+  assert.equal(importedGuard(client, `${generated}#review`, "isIdentifier"), null, "a fragment binds no guard");
+  const instances = spawnSync(process.execPath, ["--input-type=module", "-e",
+    `const url = ${JSON.stringify(pathToFileURL(join(realpathSync(root), "dist", "ast", "is.generated.js")).href)};\n` +
+    "const a = await import(url), b = await import(url + '?review');\nconsole.log(a.isIdentifier !== b.isIdentifier);\n"],
+    { encoding: "utf8" });
+  assert.equal(instances.stdout.trim(), "true", `Node loads another isIdentifier with a query: ${instances.stderr}`);
+  const effected = runDirectory("tscert-guard-effect-");
+  cpSync(root, effected, { recursive: true, dereference: true });
+  writeFileSync(join(effected, "dist", "effect.js"), 'import { writeFileSync } from "node:fs";\n' +
+    'writeFileSync(new URL("./marker", import.meta.url), "ran");\nexport function isIdentifier(node) {\n    return true;\n}\n');
+  useHostInstallationForTests(effected);
+  try {
+    assert.equal(importedGuard(join(effected, "client.mjs"), "./dist/effect.js", "isIdentifier"), null,
+      "an installation file activation did not load binds no guard");
+    assert.ok(!existsSync(join(effected, "dist", "marker")), "its top-level code did not run");
+    const stood = importedGuard(join(effected, "client.mjs"), generated, "isIdentifier");
+    assert.ok(stood && "entry" in stood && stood.entry?.name === "isIdentifier", "the stand-in's loaded module binds");
+  } finally {
+    useHostInstallationForTests(null);
+  }
+  console.log(`activation: the reviewed table resolves, every entry; ${mismatches.length} tables differing from the installation in one recorded fact each, and a table of other conditions than the running Node's, are none, as is every table under symlink-preserving resolution; over ${variants.length} changed copies of the package, activated exactly where Node loads the reviewed module; recognition binds a loaded module's export, and neither a query, a fragment nor an unloaded file, whose code does not run`);
 }
