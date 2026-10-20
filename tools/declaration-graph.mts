@@ -1777,24 +1777,27 @@ export function collectDeclarations(file: string, options: {
         type: oneTerm(signatures, at) };
     };
     // The listed guard a client's import binds (HOST-FAMILIES.md, "Calls"):
-    // an import of the guard's name from the family's entry point specifier,
-    // whose export Node loads as the checked function (`importedGuard`), or
-    // from a module of the program re-exporting it, written
-    // `export { g } from "…"`, followed to that specifier; an import or a
-    // re-export with attributes binds none. A binding the checker resolves to
-    // a guard's declaration through any other specifier or statement is no
-    // guard.
+    // what Node loads for it (`importedGuard`), resolved from the importing
+    // module itself, where that is the very function activation checked; or,
+    // where Node resolves a module of the program, that module's
+    // `export { g } from "…"`, resolved again by Node from it. An import or a
+    // re-export with attributes, a module Node resolves that the program
+    // does not hold, or any other form of binding binds none.
+    const programModule = (path: string): SourceFile | undefined => {
+      const name = program.getSourceFileNames().find(n => orAbsent(realPath, n) === path);
+      return name === undefined ? undefined : program.getSourceFile(name);
+    };
     const reexported = (from: SourceFile, specifier: string, imported: string, depth: number): GuardEntry | null => {
       if (depth > 16) return null;
       const statements = from.statements.filter((s): s is ts.ImportDeclaration | ts.ExportDeclaration =>
         (ts.isImportDeclaration(s) || ts.isExportDeclaration(s)) && s.moduleSpecifier !== undefined &&
         ts.isStringLiteral(s.moduleSpecifier) && s.moduleSpecifier.text === specifier);
       if (statements.some(s => s.attributes)) return null;
-      const listed = importedGuard(specifier, imported);
-      if (listed !== undefined) return listed;
-      const [first] = statements;
-      const module = first?.moduleSpecifier ? checker.getSymbolAtLocation(first.moduleSpecifier)?.declarations[0]?.resolve() : undefined;
-      if (!module || !ts.isSourceFile(module) || isHostFile(module.fileName)) return null;
+      const bound = importedGuard(from.fileName, specifier, imported);
+      if (!bound) return null;
+      if ("entry" in bound) return bound.entry;
+      const module = programModule(bound.program);
+      if (!module || module.isDeclarationFile || isHostFile(module.fileName)) return null;
       for (const s of module.statements) {
         if (!ts.isExportDeclaration(s) || s.isTypeOnly || !s.exportClause || !ts.isNamedExports(s.exportClause) ||
             !s.moduleSpecifier || !ts.isStringLiteral(s.moduleSpecifier)) continue;

@@ -410,13 +410,20 @@ the entry's statement.
 
 #### Calls
 
-A call is recognized by **the loaded binding**: the unit imports the
-guard's name from the table's entry point specifier, whose export Node
-loads as the checked function, directly or through a module of the program
-re-exporting it (`export { g } from "…"`), with no import attributes. A
-declaration TypeScript reaches through another specifier
-(`invalid-compiler-api-guard-subpath`), or through a program binding of
-any other form, is no guard. A
+A call is recognized by **the loaded binding**: Node's own resolver
+resolves the unit's import from the unit's module, and Node loads what it
+resolves; where that is a module of the installation, its export must be
+the very function activation checked. Where Node resolves a module of the
+program, that module's `export { g } from "…"` is resolved and loaded the
+same way, from that module. An import or a re-export with attributes, a
+resolution or load Node refuses, a module Node resolves that the program
+does not hold, and any other binding are no guard: a declaration TypeScript
+reaches through another subpath (`invalid-compiler-api-guard-subpath`),
+through a re-export whose file Node does not load
+(`invalid-compiler-api-guard-reexport-mismatch`), or through another copy
+of the package in a nested `node_modules` (`pipeline/test.mts`). The
+fixture projects resolve the package as Node does, through installation
+links (`pipeline/fixture-links.mts`), with no `paths` for it. A
 same-named local function, a re-bound name, or a function wrapping a guard
 is an ordinary call, the wrapper an ordinary verified function. A call with
 a spread or more than one argument is refused.
@@ -712,9 +719,7 @@ bind them to the reviewed files.
   records, under the audited digest. Activation reads that resolution from
   the verifying process's Node; F3 assumes the program runs under the same
   Node configuration (its conditions), through ES module resolution, over
-  the unchanged installation, with no hook or loader altering resolution,
-  and its import of the entry point specifier loads the module instance
-  the front end loads and checks.
+  the unchanged installation, with no hook or loader altering resolution.
 - **F5 (unwritten constants).** The enum objects and the module bindings in
   the guard table's recorded dependency closure are never written after the
   package loads, by the program or by external code.
@@ -764,7 +769,9 @@ tag, each activated over the stand-in's own modules; `isNameLoosely`, whose
 answer depends on an option argument, takes two parameters and has no
 entry. Each listed guard's call is the membership test of the family's
 string constants and narrows both edges; the unlisted one narrows nothing
-(`string-family-fixture-guards`, `invalid-string-family-fixture-loose`).
+(`pipeline/string-family-fixture-project/`, whose `node_modules/typescript`
+links the stand-in, so that Node and TypeScript resolve its specifier
+alike).
 
 ### A second instance: a readonly Babel interface
 

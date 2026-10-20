@@ -448,6 +448,12 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(isNamespace(subpath) && unary(subpath.name), "the fixture exports name");
   const statement = first(join(dir, "statement.ts"), "x;\n", Number(syntaxKind.ExpressionStatement));
   assert.equal(subpath.name(statement), undefined, "name returns undefined on an expression statement");
+  // A re-export TypeScript reads at the guard, whose `.js` Node loads instead.
+  for (const file of ["compiler-api-guard-mismatch-reexport.js", "invalid-compiler-api-guard-reexport-mismatch.ts"])
+    copyFileSync(resolve(import.meta.dirname, `../pipeline/examples/${file}`), join(other, file));
+  const mismatch: unknown = await import(pathToFileURL(join(other, "invalid-compiler-api-guard-reexport-mismatch.ts")).href);
+  assert.ok(isNamespace(mismatch) && unary(mismatch.name), "the fixture exports name");
+  assert.equal(mismatch.name(statement), undefined, "the mismatched re-export reads text of no identifier");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, and a subpath mapped to other code reads text of no identifier");
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier");
 }

@@ -3,7 +3,7 @@
 // `isIdentifier` is that function, checked by its own body; a wrapper of a
 // guard is read at its own signature.
 import * as ts from "typescript/unstable/ast";
-import { isIdentifier as named } from "./compiler-api-guard-reexport";
+import { isIdentifier as named } from "./compiler-api-guard-reexport.ts";
 
 export function reexported(n: ts.Node): number {
   return named(n) ? n.text.length : 0;

@@ -1,6 +1,11 @@
 lean/lake-manifest.json
 lean/.lake/
 node_modules
+# The fixtures' installation links (pipeline/fixture-links.mts), generated:
+/pipeline/examples/node_modules
+/pipeline/compiler-api-project/node_modules
+/pipeline/host-augmented-project/node_modules
+/pipeline/string-family-fixture-project/node_modules
 _build/
 /.claude/settings.local.json
 .DS_Store

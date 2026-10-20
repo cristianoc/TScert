@@ -366,7 +366,7 @@ export function isHostFile(file: string): boolean {
 /** Node's loader for a module of the package by its path: `require` of an
  * ES module, which shares the instance an `import` of the same file loads. */
 const loadModule: (path: string) => unknown = createRequire(import.meta.url);
-type Loaded = { entries: ReadonlyMap<string, GuardEntry>; specifier: string };
+type Loaded = { entries: ReadonlyMap<string, GuardEntry>; functions: ReadonlyMap<unknown, GuardEntry> };
 const activeTables = new Map<string, Map<GuardTable, Loaded | null>>();
 export function activeGuards(table: GuardTable, root: string = installation().root): ReadonlyMap<string, GuardEntry> | null {
   return loadedGuards(table, root)?.entries ?? null;
@@ -564,6 +564,7 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
   const runs = (value: unknown, text: string): boolean =>
     typeof value === "function" && value.toString() === text.replace(/^export /, "");
   const entries = new Map<string, GuardEntry>();
+  const functions = new Map<unknown, GuardEntry>();
   for (const entry of table.guards) {
     // The function the entry point exports, as Node loads it, is the one
     // the declaring module exports, of the entry's text.
@@ -606,19 +607,33 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
     if (helpers.size !== entry.helpers.length || !entry.helpers.every(h => helpers.has(h)) ||
         edges.size !== recordedEdges.size || ![...edges].every(e => recordedEdges.has(e))) return null;
     entries.set(entry.name, entry);
+    functions.set(loaded, entry);
   }
-  return { entries, specifier: entryPoint };
+  return { entries, functions };
 }
 
-/** The entry of a listed guard a program binds by importing `imported` from
- * `specifier`: the active table's entry of that name, where `specifier` is
- * its entry point's, whose export Node loads as the checked function;
- * `undefined` where `specifier` is another, which a program module may
- * re-export. */
-export function importedGuard(specifier: string, imported: string): GuardEntry | null | undefined {
-  const loaded = loadedGuards(hostFamily().guards, installation().root);
-  if (!loaded || loaded.specifier !== specifier) return undefined;
-  return loaded.entries.get(imported) ?? null;
+/** What Node binds when the module at `from` imports `imported` from
+ * `specifier`: Node's own resolver resolves the specifier from that module;
+ * a module of the installation Node loads, and the binding is a listed
+ * guard where its export is the very function activation checked
+ * (`entry`, else `null`); a module outside the installation is named by
+ * its real path (`program`), which may re-export one; a resolution or a
+ * load Node refuses binds nothing (`null`). */
+export function importedGuard(from: string, specifier: string, imported: string):
+    { entry: GuardEntry | null } | { program: string } | null {
+  const root = installation().root;
+  const loaded = loadedGuards(hostFamily().guards, root);
+  if (!loaded) return null;
+  const resolved = nodeResolve(specifier, from);
+  if (resolved === null) return null;
+  if (relative(realPath(root), resolved).split(sep)[0] === "..") return { program: resolved };
+  try {
+    const module: unknown = loadModule(resolved);
+    const value: unknown = typeof module === "object" && module !== null ? Reflect.get(module, imported) : undefined;
+    return { entry: loaded.functions.get(value) ?? null };
+  } catch {
+    return null;
+  }
 }
 
 /** The entry of the listed guard of a declaration's name, for the run's tag

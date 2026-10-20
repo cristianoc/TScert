@@ -2,9 +2,9 @@
 // documents and claims no case can make. The controls needing no build are
 // node-runs.mts and trusted-inputs.mts, among the fast checks.
 import assert from "node:assert/strict";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
@@ -15,6 +15,7 @@ import { compilerApiFamily, runtimeConditions, useFamilyDescriptionForTests, use
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
+import { linkFixtures } from "./fixture-links.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { decodeGraph, emptyEffect, emptyFootprint, footprintEffect, ordinaryEffect, type ClosedFootprint } from "../tools/type-graph.mts";
@@ -76,6 +77,7 @@ const writeClaims = (artifacts: string, name: string, claims: SourceClaims): str
   return path;
 };
 
+linkFixtures();
 const outcomes = await pooled(cases, runCase);
 const artifactsOf = new Map<string, string>();
 let verifiedFunctions: number = 0;
@@ -3295,6 +3297,32 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   process.stdout.write("forged guard domains: a domain the argument is not within, with the entry's tags and with none, in a condition, a callback's body and a negated condition, refused at the call by the search and by the checker against the case's evidence; a call without its domain by the decoder\n");
 }
 {
+  // A guard binds by what Node loads for the client's own import
+  // (HOST-FAMILIES.md, "Calls"). A project whose `paths` point TypeScript at
+  // the audited declarations, beside a `node_modules/typescript` Node loads:
+  // a link to the audited installation, whose `isIdentifier` is the checked
+  // function, narrows; a copy of the package, another instance of the same
+  // code, is no guard.
+  const installation = resolve(import.meta.dirname, "..", "tools", "node_modules", "typescript");
+  const nested = (name: string, place: (target: string) => void): Outcome => {
+    const dir = runDirectory(`tscert-nested-${name}-`);
+    writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+      module: "preserve", moduleResolution: "bundler", target: "es2022", verbatimModuleSyntax: true, types: [],
+      paths: { "typescript/unstable/ast": [join(installation, "dist", "ast", "index.d.ts")] } }, include: ["*.ts"] }));
+    const source = join(dir, "name.ts");
+    writeFileSync(source, 'import * as ts from "typescript/unstable/ast";\n\n' +
+      "export function name(n: ts.Node): string {\n  return ts.isIdentifier(n) ? n.text : \"\";\n}\n");
+    mkdirSync(join(dir, "node_modules"));
+    place(join(dir, "node_modules", "typescript"));
+    return check(source, tsconfigOf(dir));
+  };
+  const linked = nested("linked", (target) => symlinkSync(installation, target));
+  assert.equal(linked.status, "verified", JSON.stringify(linked));
+  const copied = nested("copied", (target) => cpSync(installation, target, { recursive: true, dereference: true }));
+  assert.ok(copied.status === "unsupported" && copied.detail.includes("missing field text"), JSON.stringify(copied));
+  process.stdout.write("nested installations: the audited package linked narrows, a copy of it in the client's node_modules is no guard\n");
+}
+{
   // F5 (HOST-FAMILIES.md, "Trust"): the package's enum objects are never
   // written. Claims bypassing the producer that read `ts.SyntaxKind` at the
   // writable record its alias is bound to are refused by the search at that
@@ -3420,7 +3448,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // string constants; a guard whose answer depends on an option argument
   // has no entry and narrows nothing.
   const project = tsconfigOf(join(import.meta.dirname, "string-family-fixture-project"));
-  const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
+  const example = (file: string): string => join(import.meta.dirname, "string-family-fixture-project", `${file}.ts`);
   const helper = "function isExpressionKind(type) {\n    return type === SyntaxKind.Name\n        || type === SyntaxKind.Call;\n}";
   const strings: FamilyDescription = {
     package: "string-family-fixture",
@@ -3448,7 +3476,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   useHostInstallationForTests(join(import.meta.dirname, "string-family-fixture"));
   useFamilyDescriptionForTests(strings);
   try {
-    const kept = check(example("string-family-fixture-guards"), project);
+    const kept = check(example("guards"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
     const tagSets: string[] = [];
     const visit = (v: unknown): void => {
@@ -3461,7 +3489,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     visit(JSON.parse(readFileSync(join(kept.artifacts, "fragment.json"), "utf8")));
     assert.ok(tagSets.includes(JSON.stringify([{ a: "stringlit", v: "name" }, { a: "stringlit", v: "call" }]) ?? ""),
       `isExpression's call tests the family's string constants: ${tagSets.join(" ")}`);
-    const file = example("invalid-string-family-fixture-loose");
+    const file = example("invalid-loose");
     const refused = check(file, project);
     const at = readFileSync(file, "utf8").lastIndexOf("n.name");
     assert.ok(refused.status === "unsupported" && refused.detail.includes(`at [${at},`), JSON.stringify(refused));
