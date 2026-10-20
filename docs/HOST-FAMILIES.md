@@ -478,11 +478,13 @@ argument. A member path narrows with [stable members](#stable-members).
 
 On the guard's admitted domain the test is exactly the guard: `true` on an
 argument whose tag is in $`K_g`$, `false` otherwise, by the entry. The
-`false` edge subtracts $`K_g`$ from what $`x`$ already holds: an arm of
-the object whose tag is one of the set's tags is dropped, and one whose tag
-is a set of several values stays (a `Token` arm of its tag set, under
-`isToken`'s `false`), since each tag is decided alone
-(`compiler-api-guard-false-branch`, `compiler-api-guards`).
+`false` edge subtracts $`K_g`$ from what $`x`$ already holds
+([member-split](PROGRAM-TYPING.md#a-membership-test)): an arm of the object
+whose tag is one of the set's tags, or a set of tags all in $`K_g`$, is
+dropped (a `Token` arm of its tag set, under `isToken`'s `false`); an arm
+whose tag set is partly in $`K_g`$ is read at the rest of its set, an
+application of its generic declaration at those tags, where its tag is a
+stable member, and is kept whole otherwise.
 
 A tag guard's call on an immutable name $`x`$ is the membership test of
 $`x`$ itself, $`\mathsf{member}(K_g, x)`$, with $`P`$ the tag's primitive,

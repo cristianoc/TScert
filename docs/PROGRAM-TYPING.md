@@ -2478,13 +2478,49 @@ field $`f`$, holds a value of the slice
 \mathsf{slice}_q(A) \;=\;
 \begin{cases}
 \bigcup_{t\in S} \sigma(A, t, \mathsf{true}) & q = \mathsf{true}\\
-\sigma(\dots\sigma(\sigma(A, t_1, \mathsf{false}), t_2, \mathsf{false})\dots, t_n, \mathsf{false}) & q = \mathsf{false}
+\rho_S\big(\sigma(\dots\sigma(\sigma(A, t_1, \mathsf{false}), t_2, \mathsf{false})\dots, t_n, \mathsf{false})\big) & q = \mathsf{false}
 \end{cases}
 ```
 
 with $`\sigma`$ the tag slice of the slot ($`\mathsf{tagSlice}_G`$) or the
 field slice of the object ($`F^{f}`$), each sound for one tag
-(`tagSlice_sound`, `fieldSlice_sound`). The rule:
+(`tagSlice_sound`, `fieldSlice_sound`), and $`\rho_S`$ the removal of what
+the whole set answers. A clause is **covered** by $`S`$ when each of its
+elements (a tag set's literals, any other clause itself) answers `true` to
+one test of $`S`$:
+
+```math
+\mathrm{covered}_S(c) \iff \forall e\in\mathrm{elements}(c).\ \exists t\in S.\ T_t(e)=\mathsf{true}
+```
+
+with $`T_t`$ the clause's answer to the test (`tagClause`). For the slot,
+$`\rho_S`$ drops a label all of whose clauses are covered. For the object
+through field $`f`$, it drops an arm each of whose clauses fixes $`f`$ (an
+invariant field or a view) at a type all of whose clauses are covered, and
+**splits** an arm of one record clause $`c`$ whose view of $`f`$ is at
+$`K`$ and whose stable keys hold $`f`$: where the yield's type $`T`$ has a
+label $`b`$ whose clause is $`c`$ with that view at $`K'`$, each element of
+$`K`$'s clauses either covered or a literal clause of $`K'`$, the arm is
+read as $`b`$:
+
+```math
+\frac{
+ G(a) = [c]\quad f\in\mathrm{stable}(c)\quad (f, K)\in\mathrm{views}(c)\quad
+ b\in T\quad G(b) = [c[f := K']]\quad
+ \forall d\in K.\ \forall e\in\mathrm{elements}(d).\ \mathrm{covered}_S(e)\lor e\in K'
+}{
+ \rho_S\ \text{reads}\ a\ \text{as}\ b
+}\ (\textsf{member-split})
+```
+
+The removal is sound because, where every test answered `false`, the
+tested value, the field's current contents for the object, answers `false`
+to each tag, and a value of a covered clause answers `true` to one. The
+split rests on stability: the location of a stable key holds one value at
+every level and world of its contract, the current one, an element of
+$`K`$ no tag of $`S`$ covers, so a literal of $`K'`$; the view at $`K'`$
+then holds of every value the contract admits. Without the stable key, an
+arm partly covered is kept. The rule:
 
 ```math
 \frac{
@@ -2504,9 +2540,10 @@ is `onFalse`. A `branchBind` edge on `false` refines its context by the
 edge leaves them out, and an implication on the pushed Boolean is made of a
 conditional yield alone. `memberYield_sound` proves the rule from
 `member_run` and the slices' soundness; `yieldFollows_sound` carries it to
-`checkJson_safe`. The false slice subtracts each tag from what the slot
+`checkJson_safe`. The false slice subtracts the tags from what the slot
 already holds: a broad `number` stays `number`, since no tag test
-contradicts it, and a slot is never replaced by a family's other tags.
+contradicts it nor covers it, and a slot is never replaced by a family's
+other tags.
 Numbers are compared by `numberEqual`, JavaScript's equality, under which
 `0` and `-0` are one value and `NaN` equals none: a slice drops a label only
 where the tag's test answers so for every value of it (`tagClause_sound`),
