@@ -78,12 +78,16 @@ export type GuardTable = {
   excluded: readonly (readonly [string, string])[];
 };
 
-/** A family description (HOST-FAMILIES.md, "The family description"). The
- * package's identity and the digest of its audited installation are its
- * contract file's binding check; the description names the package. */
+/** A family description (HOST-FAMILIES.md, "The family description"). */
 export type FamilyDescription = {
-  /** The host package, whose audited files hold every declaration below. */
-  package: string;
+  /** The host package, whose audited files hold every declaration below:
+   * the name and version its manifest states. */
+  package: { readonly name: string; readonly version: string };
+  /** The audited installation (C0): the package of that name as Node's
+   * package resolution finds it from the directory `from`, relative to the
+   * repository's root, and the digest of its declarations
+   * (`declarationsDigest` in `family-activation.mts`). */
+  installation: { readonly from: string; readonly digest: string };
   /** The value `m_F` of the model's `[[host]]` in every member. */
   marker: string;
   /** The root declaration, an inheritance root: the family's declarations

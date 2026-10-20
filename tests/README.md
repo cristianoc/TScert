@@ -40,8 +40,9 @@ declares a `process` spelled as Node's, for the `*fake-process*` case;
 `pipeline/host-fixture-project/` reads `pipeline/host-fixture/`, a package
 whose manifest names the host package and whose `Node` reaches no node list:
 as a case it is no host (`host-fixture-lookalike`), and `pipeline/test.mts`
-installs it as the host through the test-only stand-in for the
-`*host-fixture*` controls of reading rule 1.
+activates it under the compiler API's description naming its installation
+(`pipeline/host-fixture-project/node_modules/typescript`, a fixture link) and
+digest for the `*host-fixture*` controls of reading rule 1.
 Lean tests build alongside the implementation in `lean/Verification/Tests/`.
 
 This directory holds the suites that check the repository around the pipeline:

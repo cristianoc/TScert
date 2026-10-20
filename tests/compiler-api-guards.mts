@@ -7,13 +7,14 @@
 // callback receives them.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { compilerApiGuards } from "../tools/compiler-api-guards.mts";
-import { activeGuards, hostPackage, importedGuard, useHostInstallationForTests } from "../tools/compiler-api.mts";
+import { compilerApiFamily, hostPackage } from "../tools/compiler-api.mts";
+import { activeGuards, importedGuard, useFamiliesForTests } from "../tools/family-activation.mts";
 import type { GuardEntry, GuardTable } from "../tools/host-families.mts";
 
 const repository = resolve(import.meta.dirname, "..");
@@ -60,7 +61,7 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
 // a helper's text; the helpers or binding edges its closure reaches) is no
 // table.
 {
-  const active = activeGuards(compilerApiGuards);
+  const active = activeGuards(compilerApiGuards, root);
   assert.ok(active && active.size === compilerApiGuards.guards.length, "the reviewed table resolves, every entry");
   const named = (name: string): GuardEntry => {
     const found = compilerApiGuards.guards.find(g => g.name === name);
@@ -88,7 +89,7 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
     ["another helper text", { ...one(helped), helpers: { ...compilerApiGuards.helpers, [helper]: "function f() {}" } }],
   ];
   for (const [what, table] of mismatches)
-    assert.equal(activeGuards(table), null, `${what}: no table`);
+    assert.equal(activeGuards(table, root), null, `${what}: no table`);
   // Copies of the package, a manifest mapping or a module's import changed,
   // each activated exactly where Node, run in the copy, resolves the
   // specifier the change concerns to the module the table records: Node's
@@ -173,14 +174,14 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
     assert.ok(!existsSync(marker), `${form}: unchecked top-level code did not run`);
   }
   console.log("pre-load closure: manifest redirect, extra static import and dynamic import refused; all three markers absent");
-  assert.equal(activeGuards({ ...compilerApiGuards, conditions: ["node", "import", "default"] }), null,
+  assert.equal(activeGuards({ ...compilerApiGuards, conditions: ["node", "import", "default"] }, root), null,
     "conditions other than the running Node's: no table");
   // Symlink-preserving resolution, by a flag or NODE_OPTIONS, activates no
   // table: Node then gives modules their symlinked paths as parents.
   const activeIn = (args: readonly string[], env: Record<string, string>): string => {
-    const code = `import { activeGuards } from ${JSON.stringify(pathToFileURL(join(repository, "tools", "compiler-api.mts")).href)};\n` +
+    const code = `import { activeGuards } from ${JSON.stringify(pathToFileURL(join(repository, "tools", "family-activation.mts")).href)};\n` +
       `import { compilerApiGuards } from ${JSON.stringify(pathToFileURL(join(repository, "tools", "compiler-api-guards.mts")).href)};\n` +
-      "console.log(activeGuards(compilerApiGuards)?.size ?? 'none');\n";
+      `console.log(activeGuards(compilerApiGuards, ${JSON.stringify(root)})?.size ?? 'none');\n`;
     const ran = spawnSync(process.execPath, [...args, "--input-type=module", "-e", code],
       { encoding: "utf8", env: { ...process.env, ...env } });
     assert.equal(ran.status, 0, ran.stderr);
@@ -206,11 +207,16 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
     "const a = await import(url), b = await import(url + '?review');\nconsole.log(a.isIdentifier !== b.isIdentifier);\n"],
     { encoding: "utf8" });
   assert.equal(instances.stdout.trim(), "true", `Node loads another isIdentifier with a query: ${instances.stderr}`);
-  const effected = runDirectory("tscert-guard-effect-");
+  // A copy of the package installed in another project, activated by the
+  // compiler API's description naming that installation; its declarations
+  // are the reviewed ones.
+  const project = runDirectory("tscert-guard-effect-");
+  const effected = join(project, "node_modules", hostPackage.name);
+  mkdirSync(join(project, "node_modules"));
   cpSync(root, effected, { recursive: true, dereference: true });
   writeFileSync(join(effected, "dist", "effect.js"), 'import { writeFileSync } from "node:fs";\n' +
     'writeFileSync(new URL("./marker", import.meta.url), "ran");\nexport function isIdentifier(node) {\n    return true;\n}\n');
-  useHostInstallationForTests(effected);
+  useFamiliesForTests([{ ...compilerApiFamily, installation: { ...compilerApiFamily.installation, from: project } }]);
   try {
     assert.equal(importedGuard(join(effected, "client.mjs"), "./dist/effect.js", "isIdentifier"), null,
       "an installation file activation did not load binds no guard");
@@ -218,7 +224,7 @@ console.log(`C2: ${compilerApiGuards.guards.length} guards, ${calls} calls under
     const stood = importedGuard(join(effected, "client.mjs"), generated, "isIdentifier");
     assert.ok(stood && "entry" in stood && stood.entry?.name === "isIdentifier", "the stand-in's loaded module binds");
   } finally {
-    useHostInstallationForTests(null);
+    useFamiliesForTests(null);
   }
   console.log(`activation: the reviewed table resolves, every entry; ${mismatches.length} tables differing from the installation in one recorded fact each, and a table of other conditions than the running Node's, are none, as is every table under symlink-preserving resolution; over ${variants.length} changed copies of the package, activated exactly where Node loads the reviewed module; recognition binds a loaded module's export, and neither a query, a fragment nor an unloaded file, whose code does not run`);
 }

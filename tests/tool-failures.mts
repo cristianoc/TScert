@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import fs, { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import { isHostFile } from "../tools/compiler-api.mts";
+import { isHostFile } from "../tools/family-activation.mts";
 import { join, resolve } from "node:path";
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { messageOf } from "../tools/thrown.mts";

@@ -1,5 +1,5 @@
 {
-  "//": "A lookalike of the compiler API's host package: its manifest names the host package at the reviewed version, and as no installation of it the declaration reader gives it no host reading. pipeline/test.mts installs it as the host through the test-only stand-in; its Node reaches no node list.",
+  "//": "A lookalike of the compiler API's host package: its manifest names the host package at the reviewed version, and as no installation of it the declaration reader gives it no host reading. pipeline/test.mts activates it under a description naming its installation and digest; its Node reaches no node list.",
   "name": "typescript",
   "version": "7.0.2",
   "private": true

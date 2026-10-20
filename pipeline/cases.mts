@@ -874,8 +874,9 @@ export const cases: Case[] = [
     project: "pipeline/compiler-api-project" },
   // `pipeline/host-fixture/` names the host package in its manifest and is
   // no installation of it: no host reading applies, so its `jsDoc` is an
-  // ordinary member. pipeline/test.mts reads it as the host package through
-  // the test-only stand-in, where every read of `jsDoc` is refused.
+  // ordinary member. pipeline/test.mts reads it as the host package under a
+  // description naming its installation, where every read of `jsDoc` is
+  // refused.
   { ...positive("host-fixture-lookalike", "a package whose manifest names the host package, outside the audited installation, gets no host reading: its `jsDoc` is read as declared"),
     project: "pipeline/host-fixture-project" },
   { ...positive("host-fixture-jsdoc-other-reads", "no read of the allocating member: a constant named `jsDoc` holding \"parent\" keys the read of `parent`; a node at a structural type stating only kept members; `\"jsDoc\" in n`, which reads no value"),

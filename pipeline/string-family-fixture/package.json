@@ -1,11 +1,14 @@
 {
-  "//": "A stand-in host package of a string-tagged family with guards; pipeline/test.mts installs it as the host through the test-only stand-ins, with a description and a guard table of its own.",
-  "name": "typescript",
-  "version": "7.0.2",
+  "//": "A stand-in host package of a string-tagged family with guards; pipeline/test.mts activates it through a description of its own, which names this package, its installation and its digest, and a guard table of its own.",
+  "name": "string-family-fixture",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "exports": {
-    "./ast": { "types": "./ast.d.ts", "default": "./ast.js" }
+    "./ast": {
+      "types": "./ast.d.ts",
+      "default": "./ast.js"
+    }
   },
   "imports": {}
 }

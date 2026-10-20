@@ -18,9 +18,14 @@ export const fixtureLinks: readonly (readonly [string, string])[] = [
   ["compiler-api-project/node_modules", "../../tools/node_modules"],
   // A project's augmentation of the package's modules names them as Node does.
   ["host-augmented-project/node_modules", "../../tools/node_modules"],
-  // The string-tagged stand-in's examples import the stand-in package by
-  // the name it stands in for.
-  ["string-family-fixture-project/node_modules/typescript", "../../string-family-fixture"],
+  // The string-tagged stand-in's examples import the stand-in package by its
+  // name, and its description names this installation.
+  ["string-family-fixture-project/node_modules/string-family-fixture", "../../string-family-fixture"],
+  // The compiler API's stand-ins, each the installation a test's
+  // description names: the package of the host's name and version Node
+  // finds from the project.
+  ["host-fixture-project/node_modules/typescript", "../../host-fixture"],
+  ["family-fixture-project/node_modules/typescript", "../../family-fixture"],
 ];
 
 /** Create each link that is missing. Every link's directory, or its nearest

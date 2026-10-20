@@ -11,7 +11,8 @@ import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
-import { compilerApiFamily, runtimeConditions, useFamilyDescriptionForTests, useHostInstallationForTests } from "../tools/compiler-api.mts";
+import { compilerApiFamily } from "../tools/compiler-api.mts";
+import { runtimeConditions, useFamiliesForTests } from "../tools/family-activation.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { cases } from "./cases.mts";
 import { expectOutcome, pooled, runCase } from "./run-cases.mts";
@@ -2869,12 +2870,14 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
 
 {
   // Reading rule 1 on a stand-in host package (`pipeline/host-fixture/`,
-  // whose `Node` reaches no node list), installed as the host through the
-  // test-only channel: the shape omits the allocating `jsDoc`, so every form
-  // of its read is refused, and reads of other members verify.
+  // whose `Node` reaches no node list), activated by the compiler API's
+  // description naming the stand-in's installation and digest: the shape
+  // omits the allocating `jsDoc`, so every form of its read is refused, and
+  // reads of other members verify.
   const project = tsconfigOf(join(import.meta.dirname, "host-fixture-project"));
   const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
-  useHostInstallationForTests(join(import.meta.dirname, "host-fixture"));
+  useFamiliesForTests([{ ...compilerApiFamily, installation: { from: "pipeline/host-fixture-project",
+    digest: "9d2da7d1428fb185d589e2d72425e34dd96dacebafb443d2c8c37202424bb3da" } }]);
   try {
     for (const [form, refusal] of [
       ["dot", /missing field jsDoc/], ["element", /missing field jsDoc/], ["paren-key", /missing field jsDoc/],
@@ -2937,7 +2940,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const lookalike = check(example("host-fixture-lookalike"), project);
     assert.equal(lookalike.status, "unsupported", JSON.stringify(lookalike));
   } finally {
-    useHostInstallationForTests(null);
+    useFamiliesForTests(null);
   }
   process.stdout.write("host reading on a stand-in host: every read of jsDoc refused, also with claims made over a document stating it; other reads verified; a node list read as a dense readonly array, its members unread; a branded string read as a string where the host produces it, refused where the client would; a member declared any optional\n");
 }
@@ -3374,7 +3377,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     plainRuns.set(name, plain.artifacts);
   }
   for (const [kind, name, read] of controls) {
-    useFamilyDescriptionForTests({ ...compilerApiFamily, corrections: [...compilerApiFamily.corrections, getText(kind)] });
+    useFamiliesForTests([{ ...compilerApiFamily, corrections: [...compilerApiFamily.corrections, getText(kind)] }]);
     let artifacts: string;
     try {
       const file = join(import.meta.dirname, "examples", `${name}.ts`);
@@ -3387,7 +3390,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
         `${name} with getText corrected at ${kind}: refused at ${read}: ${JSON.stringify(corrected)}`);
       artifacts = corrected.artifacts;
     } finally {
-      useFamilyDescriptionForTests(null);
+      useFamiliesForTests(null);
     }
     const plain = must(plainRuns.get(name), "the plain run");
     const identities = (dir: string): string[] => must(readFragmentFile(join(dir, "fragment.json")).declarations, "the declarations")
@@ -3420,8 +3423,9 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // refused at the call.
   const project = tsconfigOf(join(import.meta.dirname, "family-fixture-project"));
   const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
-  useHostInstallationForTests(join(import.meta.dirname, "family-fixture"));
-  useFamilyDescriptionForTests({ ...compilerApiFamily, table: [{ rule: "literal" }], corrections: [], allocating: [] });
+  useFamiliesForTests([{ ...compilerApiFamily, installation: { from: "pipeline/family-fixture-project",
+    digest: "aaaa66cf18b7f7d980c0e7734ae6421159ac2eccbbaa8d28b76f03e4280701ff" },
+  table: [{ rule: "literal" }], corrections: [], allocating: [] }]);
   try {
     const kept = check(example("family-fixture-optional-method"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
@@ -3435,27 +3439,29 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const at = readFileSync(file, "utf8").indexOf("n.describe");
     assert.ok(refused.status === "unsupported" && refused.detail.includes(`at [${at},`), JSON.stringify(refused));
   } finally {
-    useFamilyDescriptionForTests(null);
-    useHostInstallationForTests(null);
+    useFamiliesForTests(null);
   }
   process.stdout.write("declared-optional method: each shape's own optional member, the required one shared, its call refused\n");
 }
 {
   // A second family (HOST-FAMILIES.md, "Instances"): a stand-in package of
-  // string-tagged units, read through a description whose tag is `type`,
-  // a string, with a guard table of its own, which activates over the
-  // stand-in's own modules. A guard of one tag and one through a helper of
-  // its tag narrow both edges, each call a membership test of the family's
-  // string constants; a guard whose answer depends on an option argument
-  // has no entry and narrows nothing.
+  // string-tagged units, activated beside the compiler API's by a
+  // description of its own, which names the stand-in's package, its
+  // installation and its digest, its tag `type`, a string, and a guard table
+  // that activates over the stand-in's own modules. A guard of one tag and
+  // one through a helper of its tag narrow both edges, each call a
+  // membership test of the family's string constants; a guard whose answer
+  // depends on an option argument has no entry and narrows nothing.
   const project = tsconfigOf(join(import.meta.dirname, "string-family-fixture-project"));
   const example = (file: string): string => join(import.meta.dirname, "string-family-fixture-project", `${file}.ts`);
-  const helper = "function isExpressionKind(type) {\n    return type === SyntaxKind.Name\n        || type === SyntaxKind.Call;\n}";
+  const helper = "function isExpressionKind(type) {\n    return type === UnitType.Name\n        || type === UnitType.Call;\n}";
   const strings: FamilyDescription = {
-    package: "string-family-fixture",
+    package: { name: "string-family-fixture", version: "1.0.0" },
+    installation: { from: "pipeline/string-family-fixture-project",
+      digest: "9da785badc130abf82a69bf2a5733c33c54afe2b5943b3c10b22687fcfc85d5f" },
     marker: "StringFixture",
     root: { name: "Unit", form: "inheritance", text: "export interface Unit {" },
-    tag: { field: "type", primitive: "string", constants: { enum: "SyntaxKind" } },
+    tag: { field: "type", primitive: "string", constants: { enum: "UnitType" } },
     table: [{ rule: "literal" }],
     corrections: [],
     allocating: [],
@@ -3466,25 +3472,27 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
       entryModule: "ast.js",
       closure: {
         files: {
-          "ast.js": "21bb112accb1949b4e171a8dc7daca0413931b3274be46a76304adc987655604",
-          "kinds.js": "47ec99b8f2ea2b11c81af40225a2daa9fb5b2c51421cd6a182d8ad0c03d2e8c2",
+          "ast.js": "ec36559dd989abd248cf999d4c3b2bb750799046b0d88b1630a9d53a3ad0056c",
+          "kinds.js": "7cb37e251aae0c597bb7f572bd109efb935cc15860ae9e892521adf431f70e6d",
         },
-        edges: [["ast.js", "SyntaxKind", "kinds.js", "SyntaxKind", [], "import"]],
+        edges: [["ast.js", "UnitType", "kinds.js", "UnitType", [], "import"]],
       },
       helpers: { "ast.js#isExpressionKind": helper },
       guards: [
         { name: "isName", kind: "node", domain: "Unit", tags: ["Name"], module: "ast.js",
-          helpers: [], edges: [["ast.js", "SyntaxKind", "kinds.js", "SyntaxKind"]],
-          text: "export function isName(node) {\n    return node.type === SyntaxKind.Name;\n}" },
+          helpers: [], edges: [["ast.js", "UnitType", "kinds.js", "UnitType"]],
+          text: "export function isName(node) {\n    return node.type === UnitType.Name;\n}" },
         { name: "isExpression", kind: "node", domain: "Unit", tags: ["Name", "Call"], module: "ast.js",
-          helpers: ["ast.js#isExpressionKind"], edges: [["ast.js", "SyntaxKind", "kinds.js", "SyntaxKind"]],
+          helpers: ["ast.js#isExpressionKind"], edges: [["ast.js", "UnitType", "kinds.js", "UnitType"]],
           text: "export function isExpression(node) {\n    return isExpressionKind(node.type);\n}" },
       ],
       excluded: [["isNameLoosely", "two parameters"]],
     },
   };
-  useHostInstallationForTests(join(import.meta.dirname, "string-family-fixture"));
-  useFamilyDescriptionForTests(strings);
+  // The stand-in's description beside the compiler API's: the active
+  // descriptions, the whole of what the run is given.
+  const activate = (description: FamilyDescription): void => useFamiliesForTests([compilerApiFamily, description]);
+  activate(strings);
   try {
     const kept = check(example("guards"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
@@ -3503,22 +3511,38 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const refused = check(file, project);
     const at = readFileSync(file, "utf8").lastIndexOf("n.name");
     assert.ok(refused.status === "unsupported" && refused.detail.includes(`at [${at},`), JSON.stringify(refused));
+    // Activation fails closed: under a description whose digest differs from
+    // the stand-in's declarations, or whose installation Node does not find,
+    // the same program is refused; with no stand-in description its guards
+    // narrow nothing.
+    for (const [what, description, refusal] of [
+      ["another digest", { ...strings, installation: { ...strings.installation, digest: "0".repeat(64) } },
+        /is not the one the family StringFixture was reviewed against/],
+      ["an installation Node does not find", { ...strings, installation: { ...strings.installation, from: "pipeline/host-fixture-project" } },
+        /the family StringFixture's package string-family-fixture does not resolve from pipeline\/host-fixture-project/],
+    ] as const) {
+      activate(description);
+      const closed = check(example("guards"), project);
+      assert.ok(closed.status !== "verified" && "detail" in closed && refusal.test(closed.detail), `${what}: ${JSON.stringify(closed)}`);
+    }
+    useFamiliesForTests([compilerApiFamily]);
+    const inactive = check(example("guards"), project);
+    assert.ok(inactive.status !== "verified", `no stand-in description: ${JSON.stringify(inactive)}`);
+    activate(strings);
     // Stable members through the same code (HOST-FAMILIES.md, "Stable
     // keys"): every property member of the stand-in is stable, so a callee
     // tested and read past a call is the tested value; the description
     // excluding `Call.callee`, the one thing changed, refuses the read.
     const stable = check(example("stable"), project);
     assert.equal(stable.status, "verified", JSON.stringify(stable));
-    useFamilyDescriptionForTests({ ...strings,
-      stable: { excluded: [{ owner: "Call", member: "callee", text: "readonly callee: Unit;" }] } });
+    activate({ ...strings, stable: { excluded: [{ owner: "Call", member: "callee", text: "readonly callee: Unit;" }] } });
     const excluded = check(example("stable"), project);
     const read = readFileSync(example("stable"), "utf8").lastIndexOf("c.callee.name");
     assert.ok(excluded.status !== "verified" && excluded.detail.includes(`at [${read},`), JSON.stringify(excluded));
     // The tag's stability follows its declarations, a residual's too: with
     // `Literal.type` excluded, the residual standing for `Literal` states no
     // stable tag, while `Name`'s shape keeps its own.
-    useFamilyDescriptionForTests({ ...strings,
-      stable: { excluded: [{ owner: "Literal", member: "type", text: "readonly type: SyntaxKind.Literal;" }] } });
+    activate({ ...strings, stable: { excluded: [{ owner: "Literal", member: "type", text: "readonly type: UnitType.Literal;" }] } });
     const tagged = check(example("guards"), project);
     assert.equal(tagged.status, "verified", JSON.stringify(tagged));
     const shapes = must(readFragmentFile(join(tagged.artifacts, "fragment.json")).declarations, "the declarations").definitions
@@ -3531,19 +3555,17 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     // An allocating member (HOST-FAMILIES.md, "The family contract"): the
     // description listing `Unit.notes`, the one thing changed, omits it from
     // every shape, so its read is refused; without the entry it verifies.
-    useFamilyDescriptionForTests(strings);
+    activate(strings);
     const plain = check(example("notes"), project);
     assert.equal(plain.status, "verified", JSON.stringify(plain));
-    useFamilyDescriptionForTests({ ...strings,
-      allocating: [{ owner: "Unit", member: "notes", text: "readonly notes: readonly string[];" }] });
+    activate({ ...strings, allocating: [{ owner: "Unit", member: "notes", text: "readonly notes: readonly string[];" }] });
     const omitted = check(example("notes"), project);
     const notesAt = readFileSync(example("notes"), "utf8").lastIndexOf("u.notes");
     assert.ok(omitted.status !== "verified" && omitted.detail.includes(`at [${notesAt},`), JSON.stringify(omitted));
   } finally {
-    useFamilyDescriptionForTests(null);
-    useHostInstallationForTests(null);
+    useFamiliesForTests(null);
   }
-  process.stdout.write("string-tagged family: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
+  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
 }
 {
   // Each correction of the compiler API's family (COMPILER-API.md,
@@ -3568,12 +3590,12 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const file = join(import.meta.dirname, "examples", `invalid-compiler-api-corrected-${slug}.ts`);
     const text = readFileSync(file, "utf8");
     const at = text.indexOf("return ") + "return ".length;
-    useFamilyDescriptionForTests({ ...compilerApiFamily, corrections: compilerApiFamily.corrections.filter((c) => c !== correction) });
+    useFamiliesForTests([{ ...compilerApiFamily, corrections: compilerApiFamily.corrections.filter((c) => c !== correction) }]);
     let plain: Outcome;
     try {
       plain = check(file, project);
     } finally {
-      useFamilyDescriptionForTests(null);
+      useFamiliesForTests(null);
     }
     assert.equal(plain.status, "verified", `${slug} uncorrected: ${JSON.stringify(plain)}`);
     const corrected = check(file, project);

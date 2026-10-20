@@ -1,7 +1,7 @@
 // The stand-in family's tag enum.
-export var SyntaxKind;
-(function (SyntaxKind) {
-    SyntaxKind["Name"] = "name";
-    SyntaxKind["Call"] = "call";
-    SyntaxKind["Literal"] = "literal";
-})(SyntaxKind || (SyntaxKind = {}));
+export var UnitType;
+(function (UnitType) {
+    UnitType["Name"] = "name";
+    UnitType["Call"] = "call";
+    UnitType["Literal"] = "literal";
+})(UnitType || (UnitType = {}));

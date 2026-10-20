@@ -1,5 +1,5 @@
 {
-  "//": "A stand-in host package for the family reading of a declared-optional method; pipeline/test.mts installs it as the host through the test-only stand-ins.",
+  "//": "A stand-in host package for the family reading of a declared-optional method; pipeline/test.mts activates it under a description naming its installation and digest.",
   "name": "typescript",
   "version": "7.0.2",
   "private": true

@@ -24,24 +24,61 @@ import { copyFileSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSy
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { compilerApiFamily, hostViews, declarationsDigest, hostDeclarationsDigest, hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
+import { compilerApiFamily, hostViews, hostEnums, hostPackage } from "../tools/compiler-api.mts";
+import { declarationsDigest, installationRoot, isHostFile, reviewedFamilies, useFamiliesForTests } from "../tools/family-activation.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 
 // The package the front end resolves, from tools/.
 const root = dirname(createRequire(resolve(import.meta.dirname, "../tools/package.json"))
   .resolve(`${hostPackage.name}/package.json`));
+assert.equal(installationRoot(compilerApiFamily), root, "the description's installation is the package the tools resolve");
 const manifest: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 assert.ok(typeof manifest === "object" && manifest !== null, "the host package's manifest is an object");
 assert.ok("name" in manifest && manifest.name === hostPackage.name && "version" in manifest &&
   manifest.version === hostPackage.version,
   `the installed host package is ${hostPackage.name} ${hostPackage.version}`);
 assert.ok(isHostFile(join(root, "dist", "ast", "index.d.ts")), "the package's declarations are host files");
-// C0, binding: the installed declarations have the reviewed digest, and a
-// package elsewhere whose manifest names the host package is no host.
-assert.equal(declarationsDigest(root), hostDeclarationsDigest, "the host declarations are the reviewed ones");
+// C0, binding: every reviewed description's installation has the
+// description's digest, and a package elsewhere whose manifest names the
+// host package is no host.
+for (const description of reviewedFamilies)
+  assert.equal(declarationsDigest(installationRoot(description)), description.installation.digest,
+    `the family ${description.marker}'s declarations are the reviewed ones`);
 const lookalike = resolve(import.meta.dirname, "../pipeline/host-fixture/ast.d.ts");
 assert.ok(!isHostFile(lookalike), "a lookalike package with the host's manifest is no host");
+// Activation fails closed (HOST-FAMILIES.md, "Activation"): a description
+// whose digest, version or installation differs from the package Node
+// resolves refuses every read of the package's declarations, each beside the
+// reviewed description, under which the same file is a host file.
+{
+  const file = join(root, "dist", "ast", "index.d.ts");
+  const refusedUnder = (description: typeof compilerApiFamily, at: string, refusal: RegExp, what: string): void => {
+    useFamiliesForTests([description]);
+    try {
+      assert.throws(() => isHostFile(at), refusal, what);
+    } finally {
+      useFamiliesForTests(null);
+    }
+  };
+  refusedUnder({ ...compilerApiFamily, installation: { ...compilerApiFamily.installation, digest: "0".repeat(64) } }, file,
+    /is not the one the family RemoteNode was reviewed against: its declarations' digest is/, "another digest");
+  refusedUnder({ ...compilerApiFamily, package: { ...compilerApiFamily.package, version: "7.0.1" } }, file,
+    /is not the family RemoteNode's typescript 7.0.1: its manifest names typescript 7.0.2/, "another version");
+  // The package of the same name and version Node finds from the stand-in's
+  // project (`pipeline/fixture-links.mts`), whose declarations differ.
+  refusedUnder({ ...compilerApiFamily, installation: { ...compilerApiFamily.installation, from: "pipeline/host-fixture-project" } },
+    lookalike, /is not the one the family RemoteNode was reviewed against/, "another installation of the package's name");
+  refusedUnder({ ...compilerApiFamily, installation: { ...compilerApiFamily.installation, from: "docs" } }, file,
+    /the family RemoteNode's package typescript does not resolve from docs/, "an installation Node does not find");
+  useFamiliesForTests([compilerApiFamily]);
+  try {
+    assert.ok(isHostFile(file), "the reviewed description, the one thing changed");
+  } finally {
+    useFamiliesForTests(null);
+  }
+  console.log("C0: each reviewed description's installation has its digest; a description of another digest, version or installation, or one whose installation Node does not find, refuses the package's declarations");
+}
 
 // `#enums/*` under the `default` condition, as the manifest's `imports` map
 // states it.

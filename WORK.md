@@ -36,7 +36,7 @@ design, not its progress.
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
-| [A family's installation](#family-installation) | open | a family description names its package's installation and digest, and the front end activates any active description's package by that data, as it does the compiler API's |
+| [A family's installation](docs/HOST-FAMILIES.md#activation) | closed: each description names its package, installation and digest; the front end activates every active description's installation by that data, the compiler API's among them, refusing another digest, version or an installation Node does not find; the string-tagged stand-in activated by its description alone beside the compiler API's (2026-10-20) | — |
 | [Paths at an entry beyond one member](#paths-at-an-entry) | open | a statement entry carries the refinement of a path of two members or more, and a read of `n.expression.expression` past a statement boundary verifies |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | open: an investigation, cause unknown | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
@@ -319,17 +319,6 @@ members (`case K.One:`, `case ts.SyntaxKind.SourceFile:`) narrows nothing in
 the producer, where the same constants narrow in an `===` test and literal
 labels narrow in a `switch` (`switch-enum-case-narrowing`, a gap). The
 compiler API's code switches on `node.kind` this way.
-
-<a id="family-installation"></a>
-**A family's installation.** The checking mechanism of host families reads
-its family from the description alone (HOST-FAMILIES.md, "What a family
-supplies, what it gets"), but registering the package a description is
-about is the compiler API's: the front end resolves the installation of
-`typescript` the tools pin (`installation` in `tools/compiler-api.mts`)
-and checks its digest (C0), and another package is read as a host only
-through the test-only stand-in channel. A second real family needs its
-package, installation and digest stated in its description and resolved by
-the same code.
 
 <a id="paths-at-an-entry"></a>
 **Paths at an entry beyond one member.** A statement entry states a path's

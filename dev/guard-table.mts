@@ -8,17 +8,17 @@
 // `tools/compiler-api-guards.mts`; `--check` compares it with the reviewed one.
 //   node dev/guard-table.mts [--check]
 import { readFileSync, realpathSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join, relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { guardClosure } from "../tools/guard-closure.mts";
-import { hostPackage, nodeResolve, runtimeConditions } from "../tools/compiler-api.mts";
+import { compilerApiFamily } from "../tools/compiler-api.mts";
+import { installationRoot, nodeResolve, runtimeConditions } from "../tools/family-activation.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 
 const repository = resolve(import.meta.dirname, "..");
-const root = dirname(createRequire(resolve(repository, "tools/package.json")).resolve(`${hostPackage.name}/package.json`));
+const root = installationRoot(compilerApiFamily);
 const entryPoint = "./unstable/ast";
 // The conditions Node enables in this process, which activation compares
 // with the running Node's.
