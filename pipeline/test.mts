@@ -650,6 +650,25 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged operand entry: a parameter read claimed narrower than its test refused\n");
 }
 {
+  // A call claimed at the empty type leaves a slot no value meets in its
+  // statement's context, whose edge onward is then never taken
+  // (`vacuous-edge`, PROGRAM-TYPING.md). The claim is the call's, checked at
+  // the callee's signature: `warn`, which returns, claimed at the empty type
+  // is refused where evidence is produced and where it is checked.
+  const good = run("never-call-narrowing");
+  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "warned"), "warned function");
+  const call = 'warn("not a string")';
+  const start = source.indexOf(call, source.indexOf("function warned"));
+  const claim = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + call.length), "the call of warn");
+  claim.type = [];
+  const forged = writeClaims(good, "never-call", claims);
+  refusedAt(good, forged, "never-call", `at [${start},${start + call.length})`);
+  invoke(forged, join(good, "evidence.json"), good);
+  process.stdout.write("forged never call: a call of a function that returns claimed at the empty type refused\n");
+}
+{
   // A contextual closure parameter's record is the parser's reading of its
   // context. The closure's claim must stay within it: claimed at the record
   // without its field, with the field at another type, or with an optional

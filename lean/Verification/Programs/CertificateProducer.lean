@@ -1184,6 +1184,10 @@ observation comes from graph dispatch, never from supplied point annotations. -/
     (cells : HeapFacts.Facts := []) :
     SearchM ι (EdgeEvidence ι) := do
   let c ← claims[target.label]?
+  -- An edge out of a context no environment meets is never taken
+  -- (`vacuous-edge`): the checker needs no slot evidence.
+  if ControlFlow.unsatisfiable G Γ then
+    return List.replicate c.context.length {}
   if let some (tested, o) := observed then
     if Γ[tested]?.isNone then failure
     -- An observation the tested type rules out: the edge is never taken.

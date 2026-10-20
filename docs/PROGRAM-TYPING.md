@@ -2411,6 +2411,32 @@ premise, and a jump whose entry is so claimed completes the function rather
 than continuing (the exhaustive `switch` in the
 [source statement rules](SOURCE-CONTRACTS.md#statement-forms) falls off no end).
 
+<a id="vacuous-edges"></a>
+An edge out of such a context is never taken, so it establishes every
+target claim, whatever its slots, links and implications:
+
+```math
+\frac{\exists i.\ \Gamma_i\ \text{plain}\ \land\ \mathrm{expand}(\Gamma_i)=\emptyset}
+     {(\Gamma;\Sigma;\Pi)\xrightarrow{m}(\Delta;\Sigma';\Pi')}\ \textsf{vacuous-edge}
+```
+
+`checkTargetResult` and `checkBranchTargetResult` accept it
+(`ControlFlow.unsatisfiable`) once the target exists, and
+`unsatisfiable_sound` proves no environment meets $`\Gamma`$, so
+`target_state`, `branch_target_state` and `witness_edge_sound` have no case
+to establish. A call
+claimed at the empty type, of a function declared to return `never`, returns
+normally into no environment: its result slot is in the context of each node
+up to the statement's end, whose edge to the next statement is
+`vacuous-edge`. The producer proposes the next statement's slots at the
+empty type along it, which a join with another edge drops, and a handler
+edge as for any call. After `if (!ok(x)) fail(…)` the next statement is
+reached by the condition's `false` edge alone and sees its refinement
+(`never-call-narrowing`, `compiler-api-never-guard`). The claim is the
+call's, checked at the callee's signature: a call of a function returning a
+value, claimed at the empty type, is refused (the forged `never-call` claims
+of `pipeline/test.mts`).
+
 The `branchBind` dispatch uses this common checker and environment
 theorem with a Boolean observation of the actual pushed value. Its all-budget
 safety proof covers cyclic graphs.

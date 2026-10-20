@@ -123,12 +123,30 @@ implications and argument slots must follow from them. -/
   impliesCheck G Γ (PromiseCalls.aliasImplications facts.links xs) target.mapping c.implies &&
     argFollows (PromiseCalls.aliasSources facts.links sources) target.mapping c.arguments
 
-/-- Target existence is checked against both the actual graph and its claims. -/
+/-- A context no environment meets: one of its slots has a type no value
+meets. -/
+def unsatisfiable (G : NormalGraph ι) (Γ : List (Ty ι)) : Bool :=
+  Γ.any fun A => G.plainTy A && (expand G A).isEmpty
+
+theorem unsatisfiable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W}
+    (hu : unsatisfiable G Γ = true) (he : EnvOk G Γ ρ n W) : False := by
+  obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hu
+  simp only [Bool.and_eq_true, List.isEmpty_iff] at hnil
+  obtain ⟨i, hi⟩ := List.getElem?_of_mem hA
+  have hm := (expand_sem G A hnil.1 n W _).mp (he.2 i A hi)
+  rw [hnil.2] at hm
+  obtain ⟨_, hmem, _⟩ := hm
+  cases hmem
+
+/-- Target existence is checked against both the actual graph and its claims.
+An edge out of a context no environment meets is never taken: it establishes
+the target's claims whatever they are (`vacuous-edge`). -/
 @[nospecialize] def checkTargetResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (P : Program) (C : Certificate ι)
     (Γ : List (Ty ι)) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[],[]⟩)
     (xs : List (Implication ι) := []) (sources : List Nat := []) : CheckResult ι Unit :=
   match P[target.label]?, C[target.label]? with
-  | some _, some c => (checkMappedResult G images Γ (entry c) target.mapping p).bind fun _ =>
+  | some _, some c => (CheckResult.ofBool (unsatisfiable G Γ)).orElse fun _ =>
+      (checkMappedResult G images Γ (entry c) target.mapping p).bind fun _ =>
       CheckResult.ofBool (HeapKnowledge.check facts c.knowledge target.mapping && carries G Γ facts xs sources target c)
   | _, _ => failure
 
@@ -142,13 +160,13 @@ theorem checkTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Inst
     (xs : List (Implication ι)) (sources : List Nat) :
     checkTargetUsing G images P C Γ target p facts xs sources = (
   match P[target.label]?, C[target.label]? with
-  | some _, some c => checkMappedUsing G images Γ (entry c) target.mapping p &&
-      (HeapKnowledge.check facts c.knowledge target.mapping && carries G Γ facts xs sources target c)
+  | some _, some c => unsatisfiable G Γ || (checkMappedUsing G images Γ (entry c) target.mapping p &&
+      (HeapKnowledge.check facts c.knowledge target.mapping && carries G Γ facts xs sources target c))
   | _, _ => false
   ) := by
   cases hp : P[target.label]? <;> cases hc : C[target.label]? <;>
     simp only [checkTargetUsing, checkTargetResult, hp, hc, CheckResult.accepted_bind,
-      CheckResult.accepted_ofBool, checkMappedUsing] <;> rfl
+      CheckResult.accepted_ofBool, CheckResult.accepted_orElse, checkMappedUsing] <;> rfl
 
 /-- The objects the value in `slot` was read from, with the field: the
 current read links ending at it. -/
@@ -204,7 +222,7 @@ theorem optionalFields_holds {facts : HeapKnowledge.Knowledge} {slot ρ h}
     (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι) (facts : HeapKnowledge.Knowledge := ⟨[],[],[]⟩)
     (xs : List (Implication ι) := []) (sources : List Nat := []) : CheckResult ι Unit :=
   match P[target.label]?, C[target.label]? with
-  | some _, some c =>
+  | some _, some c => (CheckResult.ofBool (unsatisfiable G Γ)).orElse fun _ =>
       (checkObservedResult G images Γ (entry c) 0 o target.mapping p
         (readFields facts 0) (optionalFields facts 0) (HeapKnowledge.observeTyped G Γ facts 0 o).cells).bind fun _ =>
       CheckResult.ofBool (HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge target.mapping &&
@@ -221,14 +239,14 @@ theorem checkBranchTargetUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images 
     (xs : List (Implication ι)) (sources : List Nat) :
     checkBranchTargetUsing G images P C Γ o target p facts xs sources = (
   match P[target.label]?, C[target.label]? with
-  | some _, some c => checkObservedUsing G images Γ (entry c) 0 o target.mapping p (readFields facts 0)
+  | some _, some c => unsatisfiable G Γ || (checkObservedUsing G images Γ (entry c) 0 o target.mapping p (readFields facts 0)
       (optionalFields facts 0) (HeapKnowledge.observeTyped G Γ facts 0 o).cells && (HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge target.mapping &&
-        carries G Γ facts xs sources target c)
+        carries G Γ facts xs sources target c))
   | _, _ => false
   ) := by
   cases hp : P[target.label]? <;> cases hc : C[target.label]? <;>
     simp only [checkBranchTargetUsing, checkBranchTargetResult, hp, hc, CheckResult.accepted_bind,
-      CheckResult.accepted_ofBool, checkObservedUsing] <;> rfl
+      CheckResult.accepted_ofBool, CheckResult.accepted_orElse, checkObservedUsing] <;> rfl
 
 
 /-- The slots holding the promised argument once a value is pushed: the
@@ -479,15 +497,15 @@ theorem checkGraphUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Insta
 
 def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target)
     (facts : HeapKnowledge.Knowledge) (xs : List (Implication ι)) (sources : List Nat) : Prop :=
-  ∃ c, C[l.label]? = some c ∧ MappedCovers G Γ (entry c) l.mapping ∧
-    HeapKnowledge.check facts c.knowledge l.mapping = true ∧ carries G Γ facts xs sources l c = true
+  ∃ c, C[l.label]? = some c ∧ (unsatisfiable G Γ = true ∨ (MappedCovers G Γ (entry c) l.mapping ∧
+    HeapKnowledge.check facts c.knowledge l.mapping = true ∧ carries G Γ facts xs sources l c = true))
 
 def BranchTargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι)
     (Γ : List (Ty ι)) (o : Observation) (l : Target) (facts : HeapKnowledge.Knowledge)
     (xs : List (Implication ι)) (sources : List Nat) : Prop :=
-  ∃ c, C[l.label]? = some c ∧ ObservedCovers G Γ (entry c) 0 o l.mapping (readFields facts 0)
+  ∃ c, C[l.label]? = some c ∧ (unsatisfiable G Γ = true ∨ (ObservedCovers G Γ (entry c) 0 o l.mapping (readFields facts 0)
     (optionalFields facts 0) (HeapKnowledge.observeTyped G Γ facts 0 o).cells ∧ HeapKnowledge.check (HeapKnowledge.observeTyped G Γ facts 0 o) c.knowledge l.mapping = true ∧
-    carries G Γ facts xs sources l c = true
+    carries G Γ facts xs sources l c = true))
 
 /-- Where a throw out of a node in environment `ρ` may go: nowhere (it leaves
 the program), or a target the thrown value and the surviving facts enter. -/
@@ -537,8 +555,10 @@ theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
   rw [checkTargetUsing_eq] at hc
   split at hc
   · rename_i node c hn he
-    simp only [Bool.and_eq_true] at hc
-    exact ⟨c, he, checkMapped_sound hc.1, hc.2.1, hc.2.2⟩
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at hc
+    rcases hc with hu | hc
+    · exact ⟨c, he, .inl hu⟩
+    · exact ⟨c, he, .inr ⟨checkMapped_sound hc.1, hc.2.1, hc.2.2⟩⟩
   · contradiction
 
 /-- A checked witness edge establishes both the saved value's type and the
@@ -553,7 +573,9 @@ theorem witness_edge_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     meaning G A n W (mapEnv target.mapping ρ witness) ∧
       ∃ flds cls oid, mapEnv target.mapping ρ receiver = .objAt flds cls oid ∧
         HeapFacts.ReadGave flds field h (mapEnv target.mapping ρ witness) := by
-  obtain ⟨d, hd, covers, knowledge, _⟩ := target_sound checked
+  obtain ⟨d, hd, hcases⟩ := target_sound checked
+  rcases hcases with hu | ⟨covers, knowledge, _⟩
+  · exact (unsatisfiable_sound hu he).elim
   have same : d = c := Option.some.inj (hd.symm.trans destination)
   subst d
   constructor
@@ -569,8 +591,10 @@ theorem branch_target_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     BranchTargetOk G C Γ q l facts xs sources := by
   rw [checkBranchTargetUsing_eq] at hc
   split at hc
-  · simp only [Bool.and_eq_true] at hc
-    exact ⟨_, by assumption, checkObserved_sound hc.1, hc.2.1, hc.2.2⟩
+  · simp only [Bool.or_eq_true, Bool.and_eq_true] at hc
+    rcases hc with hu | hc
+    · exact ⟨_, by assumption, .inl hu⟩
+    · exact ⟨_, by assumption, .inr ⟨checkObserved_sound hc.1, hc.2.1, hc.2.2⟩⟩
   · contradiction
 
 theorem return_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {goal : Goal ι}
@@ -701,7 +725,9 @@ theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h 
     (ht : TargetOk G C Γ l facts xs sources) (he : EnvOk G Γ ρ n W) (hi : ImpliesOk G xs ρ n W)
     (ha : ArgumentsOk sources ρ v0) (hf : HeapKnowledge.Holds facts ρ h) :
     StateOk G Rty C v0 n W h (.at l.label (mapEnv l.mapping ρ)) := by
-  obtain ⟨c, hc, hcov, hfact, hcar⟩ := ht
+  obtain ⟨c, hc, hcases⟩ := ht
+  rcases hcases with hu | ⟨hcov, hfact, hcar⟩
+  · exact (unsatisfiable_sound hu he).elim
   simp only [carries, Bool.and_eq_true] at hcar
   exact ⟨c, hc, hcov.env he,
     PromiseCalls.impliesCheck_sound hcar.1 he (PromiseCalls.aliasImplications_holds hf.2.2 hi),
@@ -713,7 +739,9 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
     (hq : q.holds (ρ 0)) (hi : ImpliesOk G xs ρ (n+1) W) (ha : ArgumentsOk sources ρ v0)
     (hf : HeapKnowledge.Holds facts ρ h) :
     StateOk G Rty C v0 n (trunc n (Nat.le_succ n) W) h (.at l.label (mapEnv l.mapping ρ)) := by
-  obtain ⟨c,hc,hcov,hfact,hcar⟩ := ht
+  obtain ⟨c,hc,hcases⟩ := ht
+  rcases hcases with hu | ⟨hcov,hfact,hcar⟩
+  · exact (unsatisfiable_sound hu he).elim
   simp only [carries, Bool.and_eq_true] at hcar
   exact ⟨c,hc,(hcov.env he hq hh (readFields_holds hf) (optionalFields_holds hf)
     (HeapKnowledge.observeTyped_holds he hf hq).1).transfer n

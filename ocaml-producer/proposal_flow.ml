@@ -29,6 +29,9 @@ type 'output callbacks = {
   with_output: 'result. string -> (unit -> 'result) -> 'result * 'output;
   publish_output: 'output -> unit;
   statement: environment -> Source.stmt -> environment;
+  (* Whether the statement just transferred is an expression whose claimed
+     type is empty: it never completes normally, so it has no normal edge. *)
+  cannot_return_normally: Source.stmt -> bool;
   execute_bindings: environment -> Execution.binding_plan -> environment;
   expression: environment -> Source.expr -> ty;
   expression_effects: Source.expr -> environment -> environment;
@@ -167,7 +170,17 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           let after=match node.Flow.binding_plan with
             | Some plan -> callbacks.execute_bindings env plan
             | None -> callbacks.statement env s in
-          (match s.statement with Throw _ -> [] | _ -> [next id after])
+          (* A statement that cannot return normally leaves its successor an
+             environment no value meets: each slot at the empty type, which
+             a join drops and Lean checks by `vacuous-edge`. *)
+          let unreachable env = List.map (fun (n,b) -> if is_field n then n,b else match b with
+            | Value _ -> n,Value (Atoms [])
+            | Local (contract,_) -> n,Local (contract,Atoms [])
+            | Storage _ -> n,b) env in
+          (match s.statement with
+           | Throw _ -> []
+           | _ when callbacks.cannot_return_normally s -> [next id (unreachable after)]
+           | _ -> [next id after])
         | Flow.Branch (span,yes,no) ->
           let s=source span in
           let cond=match s.statement with If (c,_,_) | While (c,_,_) -> c

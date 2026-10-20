@@ -1386,7 +1386,35 @@ accessor, a symbol key, a call signature or an index of another key of such
 a record is refused at the parameter (`closure-contextual-records`,
 `closure-contextual-method-refused`). A tuple with an optional position is refused, since TypeScript
 gives that position's type with `undefined` whether or not an annotation
-wrote it (`invalid-contextual-optional-tuple`). It is a proposal like any claim, since the body is checked at
+wrote it (`invalid-contextual-optional-tuple`). A function type is read as a
+record's type literal is: one the program writes, as written, by the
+annotation reader, where TypeScript gives it outside any generic declaration
+or at its declaration's own binders. Any other callable without members (a
+generic declaration's function type at an instance, a library's, a
+function's `typeof`) is read through the one call signature TypeScript
+instantiates, at the ordinary effect an annotation of it states, which
+assumes no preservation of the heap:
+
+```math
+\frac{\tau\ \text{has exactly the call signature}\ (\mathit{this}{:}Q;\ x_1{:}A_1,\ldots,x_n{:}A_n,\ \ldots r{:}E)\Rightarrow B\ \text{and no binder}}
+     {\mathrm{ctx}(\tau)=(\mathrm{ctx}(Q);\ \mathrm{ctx}(A_1),\ldots,\mathrm{ctx}(A_n),\ \ldots\mathrm{ctx}(E))\to_{\mathsf{ord}}\mathrm{ctx}(B)}\ \textsf{contextual-callable}
+```
+
+The receiver is read where the signature states one, an optional or
+defaulted parameter at the type TypeScript gives it, which holds the
+`undefined` the parameter admits, a rest at its array's element or its
+tuple's required positions, and a promise `x is T` or `asserts x is T` about
+a parameter as a second form at the promise's effect and type, as the
+annotation reader reads a guard. Refused at the parameter, as contracts the
+reading does not recover: type parameters
+(`closure-contextual-callable-generic-refused`), a promise about the
+receiver or without a type, a rest of another type, a construct signature, a
+second call signature and a member beside the call signature. The reading is
+the annotation the closure is checked at, and the closure is checked where
+it flows at the signature it is offered: a closure calling its callable
+parameter with a number is no handler of a signature passing a function of
+strings alone (`invalid-closure-contextual-callable`, run under Node;
+`closure-contextual-callable`, `compiler-api-contextual-callable`). It is a proposal like any claim, since the body is checked at
 $`A_j\sqsubseteq_G D_j`$ and the closure at $`\bigwedge L`$ wherever it goes, the
 call offering it included. A closure is **offered** each signature binding
 more parameters than it does that is expected where it flows: passed where

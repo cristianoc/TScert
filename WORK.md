@@ -44,6 +44,8 @@ design, not its progress.
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
 | [A guard's false edge over a tag-set arm](docs/PROGRAM-TYPING.md#a-membership-test) | closed: the false slice drops arms the guard's set covers and reads a partly covered arm with a stable tag at the rest of its set; `compiler-api-guard-false-sets` verifies, its forged claims are refused, each accepted with coverage disabled (2026-10-20) | — |
+| [A call returning `never`](docs/PROGRAM-TYPING.md#vacuous-edges) | closed: an edge out of a context with a slot of the empty type establishes any target claim, plain and branch edges alike; the producer proposes no normal edge out of an expression statement claimed at the empty type; `never-call-narrowing` and `compiler-api-never-guard` verify, a returning call claimed at the empty type is refused (2026-10-20) | — |
+| [Contextual function types](docs/SOURCE-ELABORATION.md#source-closures-and-their-annotations) | closed: a closure parameter TypeScript types by a function type is read as written where the program writes it, else through its one call signature as instantiated; `closure-contextual-callable` and `compiler-api-contextual-callable` verify, `invalid-closure-contextual-callable` is refused (run under Node) (2026-10-20) | — |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
 | [Remaining source forms](#remaining-source-forms) | open | the forms listed there are admitted |
@@ -610,8 +612,11 @@ first three items 2026-10-19):
   [stable members](docs/HOST-FAMILIES.md#stable-members) design a guard
   refines the slot of its argument's read, which a later read of the same
   path is through the read link;
-- a contextual parameter typed `(node: TypeNodeBase) => TypeTerm` (17), the
-  slices of `type-term.mts` past their optional method calls;
+- a pattern binding a `for...of` over a program's iterable (17), the slices
+  of `type-term.mts` past their contextual function types, and a member
+  read of a `let` holding a union of objects after a test of it (19), the
+  slices of `fragment-statements.mts` past `protocolPattern`'s call of
+  `gate.fail` (2026-10-20, [census](#census-never-callable));
 - a callback's parameter written without a type is read at its contextual
   type, records, indexes and aliases without parameters included; no slice
   stops there;
@@ -732,6 +737,20 @@ refused in the producer at `getTypes` after `isUnionType`
 (`invalid-compiler-api-sync-guard`), a loss by principle: no audited
 contract states the predicate. `compiler-api.mts#importsKey` replaces
 `#guardModule` and is refused in search at its return.
+
+<a id="census-never-callable"></a>
+The census of the slices of `fragment-statements.mts` and `type-term.mts`
+alone, on 7e17fb5 (main) and on the branch of the
+[`never` call](docs/PROGRAM-TYPING.md#vacuous-edges) and the
+[contextual function types](docs/SOURCE-ELABORATION.md#source-closures-and-their-annotations),
+run on one machine, the branch twice (2026-10-20): 8 of 34 and 11 of 35 slices
+verify on both. Of `fragment-statements.mts`, the 19 slices stopped at
+"missing field text" (`protocolPattern` and its dependents) stop at a member
+read of a `let` holding a union of objects after a test of it, and
+`#pattern` moves from "missing field text" to search, at a numeric array key.
+Of `type-term.mts`, the 17 slices stopped at the contextual
+`(node: TypeNodeBase) => TypeTerm` stop at a pattern binding a `for...of`
+over a program's iterable.
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:

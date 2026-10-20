@@ -222,6 +222,7 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
     { name: "getTypeAtLocation", text: "getTypeAtLocation(node: Node): Type | undefined;" },
     { name: "getTypeFromTypeNode", text: "getTypeFromTypeNode(node: TypeNode): Type | undefined;" },
     { name: "getTypeOfSymbol", text: "getTypeOfSymbol(symbol: Symbol): Type | undefined;" },
+    { name: "getTypePredicateOfSignature", text: "getTypePredicateOfSignature(signature: Signature): TypePredicate | undefined;" },
     { name: "isArrayType", text: "isArrayType(type: Type): boolean;" },
     { name: "isTupleType", text: "isTupleType(type: Type): boolean;" },
     { name: "isUndefinedSymbol", text: "isUndefinedSymbol(symbol: Symbol): boolean;" },
@@ -249,6 +250,7 @@ export const hostViews: readonly { owner: string; members: readonly { name: stri
   ] },
   { owner: "Signature", members: [
     { name: "getParameters", text: "getParameters(): readonly Symbol[];" },
+    { name: "getThisParameter", text: "getThisParameter(): Symbol | undefined;" },
     { name: "getTypeParameters", text: "getTypeParameters(): readonly TypeParameter[];" },
     { name: "thisParameter", text: "readonly thisParameter?: number | undefined;" },
   ] },
