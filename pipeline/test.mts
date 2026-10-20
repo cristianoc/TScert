@@ -3966,3 +3966,92 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.match(checked, /refusal at \[\d+,\d+\)|obligation at \[\d+,\d+\)/, checked);
   process.stdout.write("stable links: the document without the tested member's stable key refused in search and in checking, the honest one accepted\n");
 }
+
+{
+  // Lean's side of the stable-link negatives, bypassing the producer, which
+  // refuses each at the read. A document weakened so that a property
+  // assignment's `name` (and the program record's) is an identifier or a
+  // private one, both stating `text`, has the producer state the read past
+  // the call there; its search and
+  // check accept those claims there. With each case's own unchanged
+  // document, the same claims are refused by the search and the same
+  // evidence by the checker, located at the read. On the handler's case, a
+  // witness of the tested name forged into the `catch` entry is refused at
+  // that entry's incoming edge.
+  type Term = TypeTerm;
+  const referenceTo = (fragment: Ast, name: string): Term => {
+    const find = (t: Term): Term | undefined =>
+      t.k === "reference" && t.reference.name === name && t.args.length === 0 ? t
+        : t.k === "union" ? t.parts.map(find).find(x => x !== undefined)
+          : t.k === "object" ? t.fields.map(f => find(f.type)).find(x => x !== undefined) : undefined;
+    return must(must(fragment.declarations, "the declarations").definitions
+      .map(d => d.expression ? find(d.expression) : undefined).find(x => x !== undefined), `a reference to ${name}`);
+  };
+  const weaken = (artifacts: string, file: string): string => {
+    const fragment: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+    // Both arms state `text`, and the guard still splits them.
+    const named: Term = { k: "union", span: [0, 0],
+      parts: [referenceTo(fragment, "Identifier"), referenceTo(fragment, "PrivateIdentifier")] };
+    for (const d of must(fragment.declarations, "the declarations").definitions) {
+      const e = d.expression;
+      if (e?.k !== "object") continue;
+      const weakened = e.host !== undefined ? d.declaration.name === "PropertyAssignment" : d.declaration.name === "Named";
+      if (!weakened) continue;
+      for (const f of e.fields) if (f.name === "name") f.type = named;
+    }
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    return path;
+  };
+  const hostile = (file: string, read: string): { artifacts: string; claims: string; evidence: string; at: number; reads: number[] } => {
+    const artifacts = run(file);
+    const weak = weaken(artifacts, `weakened-${file}`);
+    const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(lowered.status, 0, lowered.stderr);
+    const flow = join(artifacts, `weakened-${file}-flow.json`);
+    writeFileSync(flow, lowered.stdout);
+    const proposed = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(proposed.status, 0, proposed.stderr);
+    const claims = join(artifacts, `weakened-${file}-claims.json`);
+    writeFileSync(claims, proposed.stdout);
+    const borrowed = produceWith(artifacts, claims, `weakened-${file}`, weak);
+    assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
+    const evidence = join(artifacts, `weakened-${file}-evidence.json`);
+    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const reads = [...source.matchAll(new RegExp(read.replace(/\./g, "\\."), "g"))].map(m => m.index);
+    return { artifacts, claims, evidence, at: source.lastIndexOf(read), reads };
+  };
+  // Located at a read of the path, where the claims and the document differ.
+  const located = (detail: string, reads: readonly number[]): boolean =>
+    [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some(m => reads.some(at => Number(m[1]) <= at && at < Number(m[2])));
+  for (const [file, read] of [["invalid-compiler-api-stable-mixed", "m.name"], ["invalid-compiler-api-stable-record", "w.node.name"],
+      ["invalid-compiler-api-stable-let", "m.name"], ["invalid-compiler-api-stable-catch", "m.name"]] as const) {
+    const h = hostile(file, read);
+    const searched = produceWith(h.artifacts, h.claims, `hostile-${file}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok(located(searched.stdout + searched.stderr, h.reads), `${file}: the search at ${read}: ${searched.stdout + searched.stderr}`);
+    // The checker refuses the borrowed evidence where it first differs from
+    // the case's document: at a node between the test and the read.
+    const checked = invoke(h.claims, h.evidence, h.artifacts);
+    const first = Math.min(...h.reads);
+    assert.ok([...checked.matchAll(/at \[(\d+),(\d+)\)/g)].some(m => Number(m[1]) >= first && Number(m[1]) <= h.at),
+      `${file}: the checker between the test and the read of ${read}: ${checked}`);
+    if (file !== "invalid-compiler-api-stable-catch") continue;
+    // The handler's entry claiming the tested name's witness.
+    const claims = readClaimsFile(h.claims);
+    const fn = must(claims.functions[0], "the function");
+    const source = readFileSync(join(h.artifacts, "source.ts"), "utf8");
+    const handler = source.indexOf("catch");
+    const entry = must(fn.entries.find(e => e.start > handler), "the catch entry");
+    const readAt = must(fn.expressions.find(e => e.pos[0] === h.at && e.pos[1] === h.at + read.length), "the read");
+    const binding = must(entry.bindings.find(b => b.name === "m"), "m at the catch");
+    assert.ok(Array.isArray(readAt.type), "the read's labels");
+    binding.current = [["name", readAt.type]];
+    const forged = writeClaims(h.artifacts, "forged-handler-witness", claims);
+    const witnessed = produceWith(h.artifacts, forged, "forged-handler-witness");
+    assert.equal(witnessed.status, 1, witnessed.stdout + witnessed.stderr);
+    assert.match(witnessed.stdout + witnessed.stderr, /at \[\d+,\d+\)/, witnessed.stdout + witnessed.stderr);
+    assert.match(invoke(forged, h.evidence, h.artifacts), /at \[\d+,\d+\)/);
+  }
+  process.stdout.write("stable-link negatives: claims made under a document weakening the name to identifiers refused with each case's own document, by the search at a read of the path and by the checker between the test and the read; a forged handler witness refused by both\n");
+}

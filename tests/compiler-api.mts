@@ -396,7 +396,10 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const holder: { node: object } = { node: { name: { kind: identifier, text: "a" } } };
   assert.equal(record(holder, () => { holder.node = { name: { kind: computed } }; }), undefined,
     "invalid-compiler-api-stable-record: the call replaces the holder's node");
-  console.log("stable links: a record's member and a mixed path's first member replaced by the call, each read returns undefined under Node");
+  const captured = await load("invalid-compiler-api-stable-let");
+  assert.equal(captured({ name: { kind: identifier, text: "a" } }, { name: { kind: computed } }), undefined,
+    "invalid-compiler-api-stable-let: the callback replaces the let root");
+  console.log("stable links: a record's member, a mixed path's first member and a let root replaced by the call, each read returns undefined under Node");
 }
 
 // The guards' fixtures under Node (HOST-FAMILIES.md, "Guard recognition"):

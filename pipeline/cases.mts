@@ -718,6 +718,8 @@ export const cases: Case[] = [
     /missing field text at \[507,518\)/), status: "unsupported", phase: "proposal", project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-stable-record", "a mixed path whose first member is a program record's: the call may replace `w.node`, so the read past it is of the declared type (run under Node)",
     /missing field text at \[435,451\)/), status: "unsupported", phase: "proposal", project: "pipeline/compiler-api-project" },
+  { ...negative("invalid-compiler-api-stable-let", "a `let` root a callback replaces between the test and the read: the cell's read link ends at the call (run under Node)",
+    /missing field text at \[495,506\)/), status: "unsupported", phase: "proposal", project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-stable-catch", "a refinement read in a `catch`: the exceptional edge keeps no stable link, so the handler reads the declared type",
     /missing field text at \[412,423\)/), status: "unsupported", phase: "proposal", project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-stable-view", "a host view's member tested and read past a call: no family states a view's members stable, so the read is of the declared type",
