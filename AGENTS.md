@@ -43,11 +43,12 @@ between cases; progress goes to standard error.
 
 The census of the front end's own functions (each top-level function of
 `tools/` sliced and run through the pipeline) runs once on main, after a
-merge, and its movement is recorded then. A branch does not run it over all
-of `tools/`, alone or back to back with main; it may run it on the files its
-change targets, to show the change does what it is for. A branch is ready to
-merge when `make test` and `make suite` pass and its review is done. A branch reports as soon as its
-suites pass. A small, local fix whose output is unchanged (an untrusted
+merge, and its movement is recorded then. A branch runs no census, over
+`tools/` or over a file. To show a change does what it is for, it runs the
+slice of the function the change targets and one slice depending on it,
+before and after. A branch is ready to merge when `make test` and
+`make suite` pass and its review is done, and reports as soon as its suites
+pass. A small, local fix whose output is unchanged (an untrusted
 search's speed, a diagnostic's wording) merges on green suites without a
 further review round; a new rule or a change of trust is reviewed before it
 merges.
