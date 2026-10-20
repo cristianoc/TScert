@@ -39,6 +39,19 @@ that covers what changed, and the wider tier once before committing:
 run in one worker process per core, each keeping its TypeScript compiler
 between cases; progress goes to standard error.
 
+### Measuring coverage: once, on main
+
+The census of the front end's own functions (each top-level function of
+`tools/` sliced and run through the pipeline) runs once on main, after a
+merge, and its movement is recorded then. A branch does not run it over all
+of `tools/`, alone or back to back with main; it may run it on the files its
+change targets, to show the change does what it is for. A branch is ready to
+merge when `make test` and `make suite` pass and its review is done. A branch reports as soon as its
+suites pass. A small, local fix whose output is unchanged (an untrusted
+search's speed, a diagnostic's wording) merges on green suites without a
+further review round; a new rule or a change of trust is reviewed before it
+merges.
+
 ### Working in a separate git worktree
 
 A new worktree has an empty `lean/.lake`, and its first
