@@ -208,8 +208,8 @@ inductive Expr where
   `?.` token) is the receiver's value. -/
   | optional (pos mark : Span) (receiver body : Expr)
   | shapeTest (pos : Span) (tag : Tag) (equal : Bool) (e : Expr)
-  /-- A family guard's call of an immutable name (HOST-FAMILIES.md, "Calls"):
-  the operand, at one more obligation, its guard's domain, then the test of
+  /-- A family guard's call (HOST-FAMILIES.md, "A guard on any argument"):
+  the operand, evaluated once, at one more obligation, its guard's domain, then the test of
   its value, or of its field `field`, against each tag of the set in turn,
   `true` where one holds (`PromiseCalls.memberOn`). The field is read once. -/
   | tagMember (pos : Span) (domain : Json) (field : Option PropKey) (tags : List Tag) (e : Expr)
@@ -826,7 +826,7 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     return .singletonTest p (.hasKey (.str key)) true true (← decodeExpr (← jField j "e")) proto
   | "tagMember" => do
     -- A family guard's call, which the parser writes only for a guard of the
-    -- audited table at its exact tag set, of an immutable name.
+    -- audited table at its exact tag set: its one argument, evaluated once.
     fieldsExactly j ["k","pos","domain","field","tags","e"]
     let d ← jField j "domain"
     if d == .null then throw "a family guard's call states its guard's domain"
@@ -841,7 +841,6 @@ partial def decodeExpr (j : Json) : Except String Expr := do
       | .vstr s => pure (Tag.strEq s)
       | _ => throw "a tag is a number or a string"
     let e ← decodeExpr (← jField j "e")
-    let .var _ _ := e | throw "a family guard's test is of a name"
     return .tagMember p d field tags.eraseDups e
   | "arrayTest" => do
     -- `Array.isArray(e)`, which the parser writes only for the standard

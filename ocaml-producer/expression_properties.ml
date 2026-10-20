@@ -26,6 +26,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
     | Atoms [], _ -> t
     | p, _ -> p in
   match e.node with
+    (* A path a test refined, read again: the value of the read the test
+       refined, through its read link (HOST-FAMILIES.md, "Linked reads"). *)
+    | Read (o,Name _) when path_entry env e <> None ->
+      ignore (expr env o); Option.get (path_entry env e)
     | Read (({node=Id name;_} as o),Name field) when List.mem_assoc (field_key name field) env ->
       let known = binding_type (List.assoc (field_key name field) env) in
       ignore (expr env o); known

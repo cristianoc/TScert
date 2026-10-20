@@ -59,7 +59,7 @@ so it fails here rather than reaching a message. -/
 record naming them, the locations of an object of the type. -/
 @[nospecialize] private def commonFields (G : Verification.PositiveGraphs.NormalGraph ι) (A : Ty ι) : List PropKey :=
   match PositiveRules.expand G A with
-  | .refs fs _ _ _ _ _ :: _ =>
+  | .refs fs _ _ _ _ _ _ :: _ =>
     (fs.map Prod.fst).eraseDups.filter (HeapExpressionRules.fieldOperand (PositiveRules.expand G A))
   | _ => []
 
@@ -221,16 +221,16 @@ nullish exclusions `A` implies. -/
     | none => pure none
   return answer.orElse fun _ => HeapExpressionRules.nullishAtoms G A
 
-/-- The declared result of a named record property, including absence for an
-optional key. This only selects a persistent proof obligation. -/
-private def declaredRead (c : PositiveNormalization.Clause (Ty Tree)) (fld : PropKey) : Option (Ty Tree) :=
-  match c with
-  | .refs W [] vs os _ _ =>
-    (W.lookup fld).orElse fun _ => (vs.lookup fld).orElse fun _ =>
-      (os.find? (fun o => o.key == fld)).map (fun o => o.type ++ [Labels.undef])
-  | .dict _ _ _ ds _ _ _ cs =>
-    ((ds ++ cs).find? (HeapExpressionRules.stringIndex · fld)).map (fun d => d.2 ++ [Labels.undef])
-  | _ => none
+/-- A statement witness asserts the origin of its saved value. Every incoming
+edge checks this link together with the witness's context type. -/
+@[nospecialize] def witnessLinks (T : EquationStore.State) (Γ : List (Ty Tree))
+    (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) : HeapLinks.Links :=
+  scope.zipIdx.filterMap fun (b,j) => do
+    let (root, [field]) ← b.witness | none
+    let _ ← witnessClaim T fc pos root field
+    let (i, .value) ← resolve scope root | none
+    return ⟨i,j,false,field,false,valueField,
+      !(HeapExpressionRules.fieldOperand (PositiveRules.expand (SourceTypes.graph T) (Γ[i]?.getD [])) field)⟩
 
 /-- Mutable entry types are assertions about contents, not reference types.
 Supported primitive assertions are checked on every incoming edge. Other claims
@@ -295,7 +295,10 @@ must follow from the stable storage contract; no claim is silently dropped. -/
           -- observation cannot be attached to the holder's own value field.
           persistentObservation b.source (pos,pos+1) reference fld A
         | .value | .slot _ =>
-          if (invariant fld).any (within T · A) then
+          if (witnessClaim T fc pos b.source.name fld).isSome &&
+              scope.any (fun w => w.witness == some (b.source.name, [fld]) && (match b.storage with | .value => true | _ => false)) then
+            pure ()
+          else if (invariant fld).any (within T · A) then
             persistentObservation b.source (pos,pos+1) reference fld A
           else match ← fieldAtoms (invariant fld) A with
           | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]

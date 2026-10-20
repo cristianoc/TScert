@@ -196,7 +196,7 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
         fun _ _ _ he => by cases he; exact hhost⟩,
       fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       by simpa using optT_nil, MethodMembers.methodT_nil _ _ _,
-      fun B hB => ?_⟩
+      fun B hB => ?_, stableKeysT_nil _ _ _⟩
     simp only [List.mem_singleton] at hB
     subst hB
     exact ownKeysT_slots fun g hg => by simp_all [KeyBound.admits]
@@ -210,7 +210,7 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
         by simp [ReferenceConjunctions.famsOf]⟩,
       fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm,
       ⟨fun y hy => ?_, fun y hy => ?_⟩, by simpa using optT_nil, MethodMembers.methodT_nil _ _ _,
-      fun B hB => ?_⟩
+      fun B hB => ?_, stableKeysT_nil _ _ _⟩
     · simp only [List.mem_singleton] at hy; subst hy; exact dictCellT_view hcell
     · simp only [List.mem_singleton] at hy; subst hy; exact hcell
     · simp only [List.mem_singleton] at hB

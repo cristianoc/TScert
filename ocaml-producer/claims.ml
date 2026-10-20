@@ -543,8 +543,11 @@ let encode (proposal : Proposal_types.t) =
   let bindings bs = Array (List.filter_map (fun (n,b) ->
     if Environment.is_field n then None else
     let fields = List.filter_map (fun (m,f) ->
-      if Environment.is_field m && Environment.owner m = n then
-        Some (Array [String (Environment.field_of m); claim_type (binding_type f)])
+      if Environment.is_field m && Environment.owner m = n &&
+         (Environment.is_path m || not (List.mem_assoc (Environment.path_key n [Environment.field_of m]) bs)) then
+        let field = Environment.field_of m in
+        let field = if Environment.is_path m then String.sub field 1 (String.length field - 1) else field in
+        Some (Array [String field; claim_type (binding_type f)])
       else None) bs in
     Some (Object ["name",String n; "type",claim_type (binding_type b);
                   "current",(if fields = [] then Null else Array fields)])) bs)

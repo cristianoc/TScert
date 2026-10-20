@@ -27,6 +27,10 @@ inductive StepEvidence (ι : Type) where
   for, `Array.isArray`'s). -/
   | slicedRead (tag : Tag) (answer : Bool) (slot : Nat) (proof : ProgramCertificates.Evidence ι) (sub : PositiveCertificates.SubtypeChoices ι)
   | knownValue (slot : Nat) (contents : List Atom)
+  /-- A read of `slot`'s field where a read link says the field holds the
+  value of `value` (HOST-FAMILIES.md, "Linked reads"): the read gives that
+  value, at its type, below the claim by `sub`. -/
+  | linkedRead (slot value : Nat) (sub : PositiveCertificates.SubtypeChoices ι)
   /-- The fields, their slots and their contents are read off the term and the
   state, so this carries only the ordinary derivation it stands beside. -/
   | allocated (proof : ProgramCertificates.Evidence ι)
@@ -243,7 +247,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
 
 /-- A clause's first invariant bag operand, independent of callability. -/
 def clauseBagOperand : PositiveNormalization.Clause α → Option (List (PropKey × α))
-  | .refs B _ _ _ _ _ | .callable B _ _ _ => some B
+  | .refs B _ _ _ _ _ _ | .callable B _ _ _ => some B
   | _ => none
 
 /-- Whether a clause states the field `fld` of a location: in its first
@@ -254,7 +258,7 @@ def clauseField (c : PositiveNormalization.Clause α) (fld : PropKey) : Bool :=
     | some B => B.any fun p => decide (p.1 = fld)
     | none => false) ||
   (match c with
-    | .refs _ _ vs _ _ _ => fld != lengthKey && vs.any fun p => decide (p.1 = fld)
+    | .refs _ _ vs _ _ _ _ => fld != lengthKey && vs.any fun p => decide (p.1 = fld)
     | _ => false)
 
 /-- Whether every alternative is a record stating the field `fld`, an
@@ -374,8 +378,9 @@ of it is then of a location of the object, or, where the key is absent,
 `undefined`, since such an object has no prototype. -/
 def optionalOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : Bool :=
   !cs.isEmpty && cs.all fun c => match c with
-    | .refs a _ _ os _ _ => a.any (fun p => decide (p.1 = fld)) || os.any (fun o => decide (o.key = fld))
-    | .dict _ _ _ ds _ _ _ cs => (ds ++ cs).any (stringIndex · fld)
+    | .refs a _ vs os _ _ _ => a.any (fun p => decide (p.1 = fld)) ||
+      vs.any (fun p => p.1 != lengthKey && decide (p.1 = fld)) || os.any (fun o => decide (o.key = fld))
+    | .dict _ _ _ ds _ _ _ cs _ => (ds ++ cs).any (stringIndex · fld)
     | _ => false
 
 /-- What such a read finds: the object, and, where it has the key, a
@@ -395,25 +400,36 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
   have hb := hr.2 c hm
   cases c with
   | refs a bs vs os ms ks =>
-    simp only [Bool.or_eq_true, List.any_eq_true, decide_eq_true_eq] at hb
+    simp only [Bool.or_eq_true, List.any_eq_true, decide_eq_true_eq, Bool.and_eq_true, bne_iff_ne] at hb
     obtain ⟨⟨flds, oid, hvf, hrec⟩, _⟩ := hc.1
     subst hvf
     refine ⟨flds, oid, rfl, ?_, ?_⟩
     · intro l hl
-      rcases hb with ⟨⟨g, El⟩, hmem, rfl⟩ | ⟨o, hmem, rfl⟩
+      rcases hb with (⟨⟨g, El⟩, hmem, rfl⟩ | ⟨⟨g, El⟩, hmem, hne, rfl⟩) | ⟨o, hmem, rfl⟩
       · obtain ⟨l', c', hl', hw, hag⟩ := hrec g (meaning G El)
           (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩)
         rw [hl] at hl'
         cases hl'
         exact ⟨c', hw, fun W' u hu => meaning_valOnly G El 0 W' u ((hag 0 (by omega) W' u).mp hu)⟩
+      · obtain ⟨flds', loc, ctr, oid', obj, key, hw, imp⟩ :=
+          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hne hc.2.1
+        cases obj
+        rw [hl] at key
+        cases key
+        exact ⟨ctr, hw, fun W' u hu => meaning_valOnly G El 0 W' u (imp 0 (by omega) W' u hu)⟩
       · obtain ⟨c', hw, hsc⟩ := optT_present (List.mem_map.mpr ⟨o, hmem, rfl⟩) hc.2.2.1 hl
         exact ⟨c', hw, fun W' u hu => meaning_valOnly G o.type 0 W' u ((hsc 0 (by omega) W' u).1 hu)⟩
     · intro hl
-      rcases hb with ⟨⟨g, El⟩, hmem, rfl⟩ | ⟨o, hmem, rfl⟩
+      rcases hb with (⟨⟨g, El⟩, hmem, rfl⟩ | ⟨⟨g, El⟩, hmem, hne, rfl⟩) | ⟨o, hmem, rfl⟩
       · obtain ⟨l', c', hl', _⟩ := hrec g (meaning G El)
           (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩)
         rw [hl] at hl'
         cases hl'
+      · obtain ⟨flds', loc, ctr, oid', obj, key, _⟩ :=
+          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hne hc.2.1
+        cases obj
+        rw [hl] at key
+        cases key
       · exact optT_no_proto (List.mem_map.mpr ⟨o, hmem, rfl⟩) hc.2.2.1 hl
   | dict a bs vs ds os ms ks cs =>
     obtain ⟨d, hd, hidx⟩ := List.any_eq_true.mp hb
@@ -486,6 +502,43 @@ theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     obtain ⟨a,_,ha⟩ := hv; exact Atom.isValue ha
   exact HeapObservations.value hval (includes_sound hc hv n W)
     (result_holds (copy_holds hk) hv)
+
+/-- A read link from `i`, or a slot an alias link equates with it, through
+`fld` to `y`: the link a read records. -/
+def linksField (k : Knowledge) (i y : Nat) (fld : PropKey) : Bool :=
+  k.links.any fun g => (HeapLinks.aliases k.links i).contains g.cell && g.value == y &&
+    !g.alias && !g.distinct && g.field == fld
+
+/-- **A linked read.** Where a read link says the object in `i` holds the
+value of `y` at its field, the read gives that value, which has `y`'s type. -/
+theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
+    (hl : linksField k i y fld = true) (hB : Γ[y]? = some B)
+    (hsub : FamLe (meaning G B) (meaning G A))
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (copy k y) (push v ρ) h') n W h (.readAt fld (ρ i)) := by
+  obtain ⟨g,hg,hm⟩ := List.any_eq_true.mp hl
+  simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.contains_iff_mem] at hm
+  obtain ⟨⟨⟨⟨hal,hv⟩,ha⟩,hd⟩,hf⟩ := hm
+  have hc : ρ g.cell = ρ i := HeapLinks.aliases_eq hk.2.2 hal
+  have hgl := hk.2.2 g hg
+  simp only [hd, ha, Bool.false_eq_true, if_false] at hgl
+  have hread : ∃ flds c oid, ρ i = .objAt flds c oid ∧ ReadGave flds fld h (ρ y) := by
+    split at hgl
+    · obtain ⟨flds,c,oid,ho,hr⟩ := hgl
+      exact ⟨flds,c,oid,hc ▸ ho,hf ▸ hv ▸ hr⟩
+    · obtain ⟨flds,c,oid,l,ho,hlk,hl⟩ := hgl
+      exact ⟨flds,c,oid,hc ▸ ho,ReadGave.present (hf ▸ hlk) (hv ▸ hl)⟩
+  obtain ⟨flds,c,oid,ho,hr⟩ := hread
+  have hty := he.2 y B hB
+  have hval := (meaning_value hty).1
+  cases n with
+  | zero => trivial
+  | succ n =>
+    rw [ho]
+    exact .inr ⟨trunc n (Nat.le_succ n) W, h, ρ y, WExt_refl _, WorldAdm_trunc _ hw, hr.step,
+      HeapOk_trunc n W h hh,
+      HeapObservations.value hval (hsub _ _ _ ((meaning_adm G B).down n W _ hty)) (copy_holds hk)⟩
 
 /-- Ordinary calls and arbitrary expressions retain immutable snapshots, but no
 heap observation without a specific proved effect rule. -/
@@ -1045,7 +1098,7 @@ theorem store_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {k A ρ n W h}
 distinctness is stated at, since a later claim can name no other. -/
 def namedKeys [DecidableEq ι] (G : NormalGraph ι) (A : Ty ι) : List PropKey :=
   ((expand G A).flatMap fun c => match c with
-    | .refs fs rs vs os _ _ => ((fs :: rs).flatten ++ vs).map Prod.fst ++ os.map (·.key)
+    | .refs fs rs vs os _ _ _ => ((fs :: rs).flatten ++ vs).map Prod.fst ++ os.map (·.key)
     | _ => []).eraseDups
 
 theorem writeSlots_eq {t f i v} (h : writeSlots t = some (f, i, v)) :
@@ -1128,6 +1181,12 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     CheckResult.fromOption (if j.term = .var i ∧ i < j.context.length ∧
       valuesAt G j.context k i = some R ∧ includes G j.type R = true
       then some (withResult (copy k i) R) else none)
+  | .linkedRead i y p =>
+    match readSlot j.term, j.context[y]? with
+    | some (fld, i'), some B =>
+      (CheckResult.ofBool (decide (i' = i ∧ linksField k i y fld = true))).bind fun _ =>
+        (ProgramCertificates.checkSubtypeUsing G images B j.type p).map fun _ => copy k y
+    | _, _ => failure
   | .allocated e =>
     match allocationSlots j.term with
     | some slots =>
@@ -1216,6 +1275,12 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     if j.term = .var i ∧ i < j.context.length ∧
         valuesAt G j.context k i = some R ∧ includes G j.type R = true
     then some (withResult (copy k i) R) else none
+  | .linkedRead i y p =>
+    match readSlot j.term, j.context[y]? with
+    | some (fld, i'), some B =>
+      if i' = i ∧ linksField k i y fld = true ∧ PositiveCertificates.checkUsing G images B j.type p = true
+      then some (copy k y) else none
+    | _, _ => none
   | .allocated e =>
     match allocationSlots j.term with
     | some slots =>
@@ -1251,6 +1316,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
         checkedOutput_value, CheckResult.value_bind_const, CheckResult.value_map_const,
         CheckResult.value_orElse, CheckResult.accepted_ofBool,
         BranchRefinement.checkObservedSubResult_accepted,
+        ProgramCertificates.checkSubtypeUsing_accepted,
         checkTreeUsing, Bool.and_eq_true, decide_eq_true_eq, and_assoc, and_left_comm, and_comm]
     | split
   all_goals (try simp_all) <;> congr
@@ -1399,6 +1465,19 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       rw [ht]
       simpa [instantiate] using value_sound hr hi he hk
     · contradiction
+  | linkedRead i y p =>
+    simp only [checkStepUsing_eq] at hc
+    split at hc
+    · rename_i fld i' B hslot hB
+      split at hc
+      · rename_i hp
+        obtain ⟨rfl,hl,hs⟩ := hp
+        cases hc
+        rw [readSlot_eq hslot]
+        simpa [instantiate] using
+          linkedRead_sound hl hB (PositiveCertificates.acceptedUsing hs) he hk hw hh
+      · contradiction
+    · contradiction
   | allocated e =>
     simp only [checkStepUsing_eq] at hc
     split at hc
@@ -1473,7 +1552,120 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       · contradiction
     · contradiction
 
-@[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
+/-! ### Stable links (HOST-FAMILIES.md, "Stable links")
+
+A read link through a member every clause of its receiver's type states a
+stable key holds through every step: the location's contract admits one
+value, which every heap a run reaches holds there. -/
+
+/-- Every clause of `A` states `fld` a stable key. -/
+def stableField (G : NormalGraph ι) (A : Ty ι) (fld : PropKey) : Bool :=
+  G.plainTy A && !(expand G A).isEmpty && (expand G A).all fun c => c.stableKeys.contains fld
+
+theorem stableField_at {G : NormalGraph ι} {A : Ty ι} {fld : PropKey} {n W v}
+    (hs : stableField G A fld = true) (hv : meaning G A n W v) :
+    ∃ (flds : List (PropKey × Nat)) (oid l : Nat) (ct : Ctr n) (value : Val),
+      v = .objAt flds .absent oid ∧ flds.lookup fld = some l ∧
+        lookup W l = some ct ∧ CtrStable ct value := by
+  simp only [stableField, Bool.and_eq_true, List.all_eq_true] at hs
+  obtain ⟨⟨hplain, -⟩, hall⟩ := hs
+  obtain ⟨c, hc, hsem, -⟩ := (expand_sem G A hplain n W v).mp hv
+  exact semWithArgs_stable hsem (List.contains_iff_mem.mp (hall c hc))
+
+/-- The read links a step keeps through its every effect: those through a
+member every clause of the receiver's type states stable. -/
+def stableLinks (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : HeapLinks.Links :=
+  k.links.filter fun g => !g.alias && !g.distinct && !g.optional &&
+    match Γ[g.cell]? with
+    | some A => stableField G A g.field
+    | none => false
+
+/-- A step's output with the input's stable links, past the result slot,
+each once. -/
+def withStable (G : NormalGraph ι) (Γ : List (Ty ι)) (k out : Knowledge) : Knowledge :=
+  { out with links := out.links ++
+      (HeapLinks.pull (stableLinks G Γ k) (fun i => [i+1])).filter fun g => !out.links.contains g }
+
+/-- What a kept link says of a heap. -/
+private def LinkAt (ρ : Env) (h : Heap) (g : HeapLinks.Link) : Prop :=
+  ∃ flds c oid l, ρ g.cell = .objAt flds c oid ∧ flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value)
+
+private theorem stable_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {ρ n W h t}
+    {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h) :
+    ∀ (S : HeapLinks.Links), (∀ g ∈ S, g ∈ stableLinks G Γ k) →
+      SafePost (excOf G) T Q n W h t →
+      SafePost (excOf G) T (fun h' v => Q h' v ∧ ∀ g ∈ S, LinkAt ρ h' g) n W h t := by
+  intro S
+  induction S with
+  | nil =>
+    intro _ hs
+    exact consequence (fun _ _ _ h => h) (fun _ _ hq => ⟨hq, fun _ hg => by cases hg⟩) hs
+  | cons g S ih =>
+    intro hS hs
+    have rest := ih (fun x hx => hS x (List.mem_cons_of_mem _ hx)) hs
+    have hg := hS g List.mem_cons_self
+    simp only [stableLinks, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at hg
+    obtain ⟨hmem, ⟨⟨ha, hd⟩, ho⟩, hty⟩ := hg
+    have hlink := hk.2.2 g hmem
+    simp only [hd, ha, ho, Bool.false_eq_true, if_false] at hlink
+    obtain ⟨flds, c, oid, l, hcell, hl, hv⟩ := hlink
+    split at hty
+    · rename_i A hA
+      obtain ⟨flds', oid', l', ct, value, hcell', hl', hw, hc⟩ := stableField_at hty (he.2 g.cell A hA)
+      rw [hcell] at hcell'
+      cases hcell'
+      rw [hl] at hl'
+      cases hl'
+      cases n with
+      | zero => trivial
+      | succ n =>
+        have hval : h[l]? = some value := hh.stable_value (Nat.zero_lt_succ n) hw hc
+        rw [hv] at hval
+        cases hval
+        refine consequence (fun _ _ _ h => h) (fun h' u hq => ?_) (stable_frame hw hc hh rest)
+        obtain ⟨⟨hq, hall⟩, hl'⟩ := hq
+        refine ⟨hq, fun x hx => ?_⟩
+        rcases List.mem_cons.mp hx with rfl | hx
+        · exact ⟨flds, _, oid, l, hcell, hl, hl'⟩
+        · exact hall x hx
+    · cases hty
+
+/-- **Stable links survive every step.** Whatever a step's postcondition, its
+input's stable links hold of every heap it returns in. -/
+theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowledge} {ρ n W h t} {T : Fam}
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
+    (hs : SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h t) :
+    SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds (withStable G Γ k out) (push v ρ) h') n W h t := by
+  refine consequence (fun _ _ _ h => h) (fun h' v hq => ?_)
+    (stable_frames he hk hh (stableLinks G Γ k) (fun _ hg => hg) hs)
+  obtain ⟨hout, hall⟩ := hq
+  have hS : HeapLinks.Holds (stableLinks G Γ k) ρ h' := by
+    intro g hg
+    have hg' := hg
+    simp only [stableLinks, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at hg'
+    obtain ⟨-, ⟨⟨ha, hd⟩, ho⟩, -⟩ := hg'
+    simp only [hd, ha, ho, Bool.false_eq_true, if_false]
+    exact hall g hg
+  have hpull := HeapLinks.pull_holds (pre := fun i => [i+1]) (τ := push v ρ) hS
+    (fun i j hj => by simp at hj; subst hj; rfl)
+  refine ⟨hout.1, hout.2.1, fun g hg => ?_⟩
+  rcases List.mem_append.mp hg with hg | hg
+  · exact hout.2.2 g hg
+  · exact hpull g (List.mem_filter.mp hg).1
+
+/-- A checker whose every step also keeps its input's stable links. -/
+@[nospecialize] def Checker.keepingStable [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    (base : Checker G images) : Checker G images where
+  run := fun j k e codes => (base.run j k e codes).map (withStable G j.context k)
+  select := fun j k e codes => (base.select j k e codes).map (withStable G j.context k)
+  sound := by
+    intro j k e out codes hc hcodes ρ n W h he hk hw hh
+    simp only [CheckResult.map, Option.map_eq_some_iff] at hc
+    obtain ⟨out0, h0, rfl⟩ := hc
+    exact withStable_sound he hk hh (base.sound h0 hcodes he hk hw hh)
+
+/-- The steps' own rules, without the stable links every step keeps. -/
+@[nospecialize] def Checker.steps [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) : Checker G images where
   run := fun j k e codes => checkStepResult G images j k e codes
   select := fun j k e codes => checkStepResult G images j k e codes (tree := false)
@@ -1481,9 +1673,14 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     intro j k e out codes hc hcodes ρ n W h he hk hw hh
     exact checkStep_sound hc hcodes he hk hw hh
 
+/-- The steps' rules, each keeping its input's stable links. -/
+@[nospecialize] def Checker.ordinary [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) : Checker G images :=
+  (Checker.steps G images).keepingStable
+
 /-- Descriptor-aware ordinary expressions use the same heap-forgetting rule
 as ordinary calls. Other effect rules retain their existing checks. -/
-@[nospecialize] def Checker.withSubtyping [DecidableEq ι] (G : NormalGraph ι)
+@[nospecialize] def Checker.subtypingSteps [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (subtyping : BodySubtyping G) : Checker G images where
   run := fun j k step codes => match step with
     | .ordinary e =>
@@ -1506,5 +1703,10 @@ as ordinary calls. Other effect rules retain their existing checks. -/
         exact ordinary_sound typed he hk hw hh
       · cases checked
     | _ => exact checkStep_sound checked hcodes he hk hw hh
+
+/-- Descriptor-aware steps, each keeping its input's stable links. -/
+@[nospecialize] def Checker.withSubtyping [DecidableEq ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (subtyping : BodySubtyping G) : Checker G images :=
+  (Checker.subtypingSteps G images subtyping).keepingStable
 
 end Verification.HeapExpressionRules

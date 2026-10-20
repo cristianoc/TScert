@@ -55,16 +55,6 @@ export const hostEnums: readonly { name: string; file: string }[] = [
   { name: "DiagnosticCategory", file: "diagnosticCategory" },
 ];
 
-/** The members of host types whose read allocates (reading rule 1), each
- * with the interface declaring it and the declaration text it was reviewed
- * against: `jsDoc` builds a fresh array on each read
- * (`node.generated.js:221`). The declaration reader omits each from its host
- * type's shape, so every read of it is a read of a member the type does not
- * state. */
-export const allocatingMembers: readonly { owner: string; name: string; text: string }[] = [
-  { owner: "Node", name: "jsDoc", text: "readonly jsDoc?: readonly Node[] | undefined;" },
-];
-
 /** The compiler API's family description (HOST-FAMILIES.md, "The compiler
  * API"): the syntax tree's nodes, tagged by `kind`. The generic rule names
  * every generic node declaration; `KeywordExpression` gives the shapes of
@@ -94,6 +84,13 @@ export const compilerApiFamily: FamilyDescription = {
     { kind: "TaggedTemplateExpression", owner: "TaggedTemplateExpression", member: "questionDotToken", text: "readonly questionDotToken: QuestionDotToken;" },
     { kind: "JSDocTemplateTag", owner: "JSDocTemplateTag", member: "constraint", text: "readonly constraint: Node;" },
   ],
+  // The members of host types whose read allocates (reading rule 1): `jsDoc`
+  // builds a fresh array on each read (`node.generated.js:221`). The
+  // declaration reader omits each from every shape, so every read of it is a
+  // read of a member the type does not state.
+  allocating: [{ owner: "Node", member: "jsDoc", text: "readonly jsDoc?: readonly Node[] | undefined;" }],
+  // Every required property member is stable (reading rule 1, checked by C4).
+  stable: { excluded: [] },
   guards: compilerApiGuards,
 };
 

@@ -109,6 +109,53 @@ private def claimRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (r : Sourc
     ((r.sourceMap[l]?).bind id).map fun m =>
       s!"source evidence refusal at [{m.pos.1},{m.pos.2}): the evidence does not establish this node's claim"
 
+/-- The destination of a failed incoming type or heap-knowledge obligation.
+Claim agreement is checked before this diagnostic is selected. -/
+@[nospecialize] private def edgeRefusal {σ ι : Type} [Labels ι] [StoreView σ ι]
+    (r : SourceRequest σ ι) (c : Response ι) : Option String := Id.run do
+  let G := RequestJson.graph r.toRequest
+  let images := StoreView.images r.types
+  let codes := match codeTable r.toRequest c with
+    | some table => GraphCode.admits table
+    | none => fun _ => false
+  -- A bad expression or yield can also make a later edge fail. Report that
+  -- local typing failure before blaming an incoming interface.
+  if (r.program.zip c.certificate).any (fun (node, e) =>
+      !((ProgramCertificates.claim e.expression).term == node.expression &&
+        ProgramCertificates.checkScope (entry e).length node.expression &&
+        ((r.checker.run (ProgramCertificates.claim e.expression) e.knowledge
+          (e.effect.getD (.ordinary e.expression)) codes).expect e.output).accepted &&
+        checkYields G images e codes)) then return none
+  for ((node, e), label) in (r.program.zip c.certificate).zipIdx do
+    if let (some target, some (T, proof)) := (node.handler, e.handler) then
+      if let some destination := c.certificate[target.label]? then
+        let typed := PointClaims.checkMappedUsing G images (T :: entry e) (entry destination) target.mapping proof
+        let linked := HeapKnowledge.check (handlerFacts e.knowledge) destination.knowledge target.mapping
+        if !typed || !linked then
+          if let some m := (r.sourceMap[target.label]?).bind id then
+            return some s!"source incoming edge obligation at [{m.pos.1},{m.pos.2}): evidence fails {if !typed then "type coverage" else "heap knowledge"} from node {label}, handler edge"
+    for (target, index) in (CertificateProducer.successors node.continuation).zipIdx do
+      let some destination := c.certificate[target.label]? | continue
+      let some proof := e.edges[index]? | continue
+      let Γ := CertificateProducer.edgeContextOf G e node.continuation index
+      let facts := CertificateProducer.edgeImplicationsOf.edgeFactsOf e node.continuation
+      let observed := match node.continuation with
+        | .branchBind .. => some (BranchRefinement.Observation.boolean (index == 0))
+        | .tagBind tag .. => some (BranchRefinement.Observation.tag tag (index == 0))
+        | _ => none
+      let typed := match observed with
+        | none => PointClaims.checkMappedUsing G images Γ (entry destination) target.mapping proof
+        | some o => BranchRefinement.checkObservedUsing G images Γ (entry destination) 0 o target.mapping proof
+            (readFields facts 0) (optionalFields facts 0) (HeapKnowledge.observeTyped G Γ facts 0 o).cells
+      let knowledge := match observed with
+        | none => facts
+        | some o => HeapKnowledge.observeTyped G Γ facts 0 o
+      let linked := HeapKnowledge.check knowledge destination.knowledge target.mapping
+      if !typed || !linked then
+        if let some m := (r.sourceMap[target.label]?).bind id then
+          return some s!"source incoming edge obligation at [{m.pos.1},{m.pos.2}): evidence fails {if !typed then "type coverage" else "heap knowledge"} from node {label}, edge {index}"
+  return none
+
 def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
     (budget : PositiveCertificates.SearchBudget := {})
     (qualified : List (String × Footprints.Closed × Bool) := []) : Except String Unit := do
@@ -127,7 +174,7 @@ def checkDocument (ast claims : Json) (fileKey : String) (evidence : Json)
     (((certified.zip b.functions).findSome? fun (plan, c) => match plan with
       | .graph name namePos r => footprintRefusal name namePos r c) <|>
      (((certified.zip b.functions).zip b.obligations).findSome? fun ((plan, c), es) => match plan with
-      | .graph _ _ r => nodeRefusal r c <|> obligationRefusal r c es <|> claimRefusal r c <|> typingRefusal r c)).getD fallback)
+      | .graph _ _ r => obligationRefusal r c es <|> claimRefusal r c <|> edgeRefusal r c <|> nodeRefusal r c <|> typingRefusal r c)).getD fallback)
 
 def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
     (budget : PositiveCertificates.SearchBudget := {})

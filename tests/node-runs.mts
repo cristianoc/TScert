@@ -1291,3 +1291,14 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     "const s = apply({ base: 0 }, 1, log); return JSON.stringify([r, s === undefined, log]); })()"),
   '[3,true,["argument"]]', "optional-method-call: the receiver bound, the arguments skipped where the method is absent");
 }
+
+// Each invalidation changes the value observed by the second member read.
+for (const [file, call] of [
+  ["invalid-path-witness-getter", `wrong()`],
+  ["invalid-path-witness-call", `(() => { const h = { value: { kind: "text", text: "ok" } }; return wrong(h, () => { h.value = { kind: "empty" }; }); })()`],
+  ["invalid-path-witness-alias", `(() => { const h = { value: { kind: "text", text: "ok" } }; return wrong(h, h); })()`],
+  ["invalid-path-witness-root", `wrong({ value: { kind: "text", text: "ok" } }, { value: { kind: "empty" } })`],
+  ["invalid-path-witness-closure", `wrong({ value: { kind: "text", text: "ok" } }, { value: { kind: "empty" } })`],
+]) assert.equal(runExample(file, call), undefined, file);
+// Accessors lie outside the plain-data caller contract of structural records.
+assert.equal(runExample("path-witness-record", `(() => { let reads = 0; return read({ get value() { return ++reads === 1 ? { kind: "text", text: "ok" } : { kind: "empty" }; } }); })()`), undefined);

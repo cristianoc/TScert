@@ -241,30 +241,30 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {K : KeyBound}
       {gs ws : List (PropKey × Ty ι)} {os' : List (OptionalField (Ty ι))}
       {ms' : List (MethodMembers.Sig (Ty ι))}
-      {ks' : List KeyBound} {f : PropKey} {A : Ty ι} :
-      HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → K ∈ ks → K.admits f = false →
-      (CallArguments.protoField, P) ∈ fs ++ vs → Represents G P (.refs gs [] ws os' ms' ks') →
+      {ks' : List KeyBound} {st st' : List PropKey} {f : PropKey} {A : Ty ι} :
+      HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks st) → K ∈ ks → K.admits f = false →
+      (CallArguments.protoField, P) ∈ fs ++ vs → Represents G P (.refs gs [] ws os' ms' ks' st') →
       (f, A) ∈ gs ++ ws.filter (·.1 != lengthKey) → HasTyWith G images subtyping Γ (.readAt f a) A
   /-- An optional field, writable or readonly, reads at its type or, where the
   object lacks the key, as `undefined`. -/
   | readOptional {a : Tm} {Ref : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
-      {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {f : PropKey} {r : Bool}
+      {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {st : List PropKey} {f : PropKey} {r : Bool}
       {A U : Ty ι} :
-      HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks) → ⟨f, r, A⟩ ∈ os →
+      HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks st) → ⟨f, r, A⟩ ∈ os →
       Represents G U .undef → inheritedKey f = false → HasTyWith G images subtyping Γ (.readAt f a) (A ++ U)
   /-- A dictionary read may miss even when every present value has type `A`.
   An index says nothing of a key its class does not admit, so a key is read
   through one only where its class surely admits it: any string key through
   a string index, a canonical numeric one ("0", "1.5") through a number
   index, a symbol key through a symbol index. -/
-  | readDict {f : PropKey} {K : IndexKeys} : HasTyWith G images subtyping Γ a Ref →
-      Represents G Ref (.dict fs [] vs ix os ms ks cs) →
+  | readDict {f : PropKey} {K : IndexKeys} {st : List PropKey} : HasTyWith G images subtyping Γ a Ref →
+      Represents G Ref (.dict fs [] vs ix os ms ks cs st) →
       (K, A) ∈ ix → K.surely f = true → Represents G U .undef → inheritedKey f = false →
       HasTyWith G images subtyping Γ (.readAt f a) (A ++ U)
   /-- A computed key of the key clause of a class within the index's reads
   through it: a string through a string index, a number through a number
   index or a string one, a symbol through a symbol index. -/
-  | indexDict {K KK : IndexKeys} : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs) →
+  | indexDict {K KK : IndexKeys} {st : List PropKey} : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs st) →
       HasTyWith G images subtyping Γ key Kt → Represents G Kt (keyClause KK) → KK.within K = true →
       (K, A) ∈ ix → Represents G U .undef → KK ≠ .strings →
       HasTyWith G images subtyping Γ (.indexAt a key) (A ++ U)
@@ -1001,7 +1001,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       ⟨by simpa [ReferenceConjunctions.famsOf] using optT_nil, MethodMembers.methodT_nil _ _ _,
         fun K hK => ownKeysT_slots fun n hn => by
           obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hn
-          exact hbound K hK p hp⟩⟩, ?_⟩
+          exact hbound K hK p hp, stableKeysT_nil _ _ _⟩⟩, ?_⟩
     have hinv := allocBuiltins_sound hreal (by simpa [List.map_map, Function.comp_def] using hnd)
       (.refs (parts.map fun p => (p.1, p.2.1)) [] [] [] [] ks) (base := heap.length) (k := k) (V := V)
       (by simpa [List.map_map, Function.comp_def] using hrec)
@@ -1070,7 +1070,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         rw [show (OptionalField.map (meaning G) o').key = o'.key from rfl,
           slots_lookup_none (habs o' ho')] at hl
         cases hl⟩, MethodMembers.methodT_nil _ _ _,
-      fun K hK => by simp at hK⟩, builtinInvariant_of_lookup (slots_lookup_none hstore)⟩
+      fun K hK => by simp at hK, stableKeysT_nil _ _ _⟩, builtinInvariant_of_lookup (slots_lookup_none hstore)⟩
   | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
@@ -1145,7 +1145,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
             viewsT_at_plain (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hns hviews
           cases he'
           exact read_view_rule (meaning_valOnly G A) k _ h l hw' hh' hf' hl hag
-  | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' f A ha hr hK hf hpr hP hm ih =>
+  | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' st st' f A ha hr hK hf hpr hP hm ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
@@ -1159,7 +1159,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         exact ⟨flds, l, c, oid', he, hf', hl, fun i hi V u hu => (hag i hi V u).mp hu⟩
       · exact viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨P, hpr, rfl⟩) (by decide) hs.2.1
     obtain ⟨flds, l, c, oid, rfl, hpf, hl, hag⟩ := hloc
-    have hmiss := ownKeysT_lookup (hs.2.2.2.2 K hK) hf
+    have hmiss := ownKeysT_lookup (hs.2.2.2.2.1 K hK) hf
     apply read_proto_rule j U heap l hu hok hmiss hpf hl hag
     intro i V h' hV hh' u hu
     have hp := (represents_raw hP i V u) hu
@@ -1171,7 +1171,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
         viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (by simpa using hml) hp.2.1
       exact read_view_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
-  | @readOptional Γ a Ref fs vs os ms ks f r A U ha hr hm hUnd _ ih =>
+  | @readOptional Γ a Ref fs vs os ms ks st f r A U ha hr hm hUnd _ ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
@@ -1185,7 +1185,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           obtain ⟨c, hc, hag⟩ := optT_present (List.mem_map_of_mem hm) hs.2.2.1 hl
           exact ⟨c, hc, fun i hi U u hu => (hag i hi U u).1 hu⟩))
 
-  | @readDict Γ a Ref fs vs ix os ms ks cs A U f K ha hr hm hsure hUnd _ ih =>
+  | @readDict Γ a Ref fs vs ix os ms ks cs A U f K st ha hr hm hsure hUnd _ ih =>
     intro n W h ρ he hw hh
     apply bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
@@ -1194,7 +1194,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_back hUnd k X u) h)))) V heap _
       (read_dict_rule (meaning_valOnly G A) j V heap hv hok (IndexKeys.surely_admits hsure) hd)
-  | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK ha hr hk hStr hwithin hm hUnd _ iha ihk =>
+  | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK st ha hr hk hStr hwithin hm hUnd _ iha ihk =>
     intro n W h ρ he hw hh
     apply bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 Raises.indexC1 n W h _ hw hh
       (iha n W h ρ he hw hh)

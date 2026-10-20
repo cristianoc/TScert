@@ -79,3 +79,29 @@ Each example function has a doc comment explaining the behavior or proof
 obligation it illustrates. For unsupported examples, the comment distinguishes
 the adapter's limitation from a soundness result; loop examples say when
 termination is not established.
+
+## Path-witness and stable-link evidence controls
+
+`node pipeline/test.mts` derives the 4a and 4b forgeries from each run's
+claims and evidence. Function names, parsed statements, source spans and named
+receiver paths select the changes. There are no stored evidence patches or
+fixture regeneration commands.
+
+[`pipeline/evidence-mutations.mts`](../pipeline/evidence-mutations.mts) builds
+an isolated mutation executable in the run directory from the current Lake
+build's generated C and link response file. Run `(cd lean && lake build)` first.
+The helper uses the pinned toolchain's compiler; it reads the Lake cache and
+writes only to the run directory. The production verifier and Lean sources
+contain no mutation switches.
+
+The mutations bypass mapped/observed edge coverage, read-link entailment or
+heap-cell entailment, retain all links through `withStable`, or retain links
+through `handlerFacts`. Symbol lookup requires one matching definition and
+checks the handler's inlined call site. A compiler output change that breaks
+these anchors fails the test. The coverage search constructs empty subtype
+choices for the destination context; the other mutations use ordinary search.
+Each generated document must be accepted under its selected mutation and
+refused with each selected component removed. The stable and handler controls
+also require refusal under each other's mutation. The production verifier
+checks every forgery against its exact refusal location, including the handler
+edge at `[405,424)`.

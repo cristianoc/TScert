@@ -82,8 +82,33 @@ let fact ?(answer = false) env key contract t =
 let widen_locals ?(only = fun _ -> true) env = List.map (fun (n,b) -> match b with
   | Local (contract,_) when only n -> n,Local (contract,contract)
   | _ -> n,b) env
-let forget ?only env = List.filter_map (fun (n,b) -> match b,only with
-  | _,None when is_field n -> None
+let forget ?only ?(keep = fun _ -> false) env = List.filter_map (fun (n,b) -> match b,only with
+  | _,None when is_field n -> if keep n then Some (n,b) else None
   | Storage (contract,_),None -> Some (n,cell contract)
   | Storage (contract,_),Some only when only n -> Some (n,cell contract)
   | _ -> Some (n,b)) env
+
+(* What a member path of an immutable binding's object currently holds, where
+   a test of the path's value found it (HOST-FAMILIES.md, "Linked reads"): an
+   entry named by the root and the path's fields, after a NUL and a SOH, so
+   that it is a field entry of its root, which a step that may write cells
+   forgets. Lean reads it through the read link from the path's last read to
+   the slot the test refined. *)
+let path_key root fields = root ^ "\000\001" ^ String.concat "\001" fields
+let is_path n = is_field n && (let i = String.index n '\000' in
+  i + 1 < String.length n && n.[i+1] = '\001')
+let rec path_of env (e:Source.expr) = match e.Source.node with
+  | Source.Read ({Source.node=Source.Id name;_},Name f) ->
+    (match List.assoc_opt name env with Some (Value _) -> Some (name,[f]) | _ -> None)
+  | Source.Read (inner,Name f) -> Option.map (fun (r,fs) -> (r,fs @ [f])) (path_of env inner)
+  | _ -> None
+let path_entry env e = Option.bind (path_of env e) (fun (r,fs) ->
+  match List.assoc_opt (path_key r fs) env with Some (Value t) -> Some t | _ -> None)
+let refine_path env (e:Source.expr) current refine = match path_of env e with
+  | None -> env
+  | Some (r,fs) ->
+    let key = path_key r fs in
+    let current = match List.assoc_opt key env with Some (Value t) -> Some t | _ -> current in
+    (match current with
+     | None -> env
+     | Some t -> List.remove_assoc key env @ [key,Value (refine t)])

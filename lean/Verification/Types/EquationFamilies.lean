@@ -281,10 +281,10 @@ results and readonly positions, `contra` under parameters and receivers,
 def clausePolar : Clause α → List (Variance × α)
   | .list a bs => (a :: bs).flatMap fun t => t.operands.map ((if t.readonly then .co else .inv), ·)
   | .pack a bs => (a :: bs).flatMap fun t => t.operands.map (.co, ·)
-  | .refs a bs vs os ms _ =>
+  | .refs a bs vs os ms _ _ =>
     (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ vs.map (fun f => (.co, f.2)) ++
       os.map (fun o => ((if o.readonly then .co else .inv), o.type)) ++ ms.flatMap sigPolar
-  | .dict a bs vs ds os ms _ cs =>
+  | .dict a bs vs ds os ms _ cs _ =>
     (a ++ bs.flatten).map (fun f => (.inv, f.2)) ++ vs.map (fun f => (.co, f.2)) ++
       ds.map (fun f => (.co, f.2)) ++
       os.map (fun o => ((if o.readonly then .co else .inv), o.type)) ++ ms.flatMap sigPolar ++

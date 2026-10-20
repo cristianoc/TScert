@@ -40,6 +40,17 @@ theorem WorldT_eq (k : Nat) :
 /-- A contract at level `k`: inspects worlds at any strictly lower level. -/
 abbrev Ctr (k : Nat) := (j : Nat) → j < k → WorldT j → Val → Prop
 
+/-- A stable contract admits the same single value at every level and world.
+It may admit no value at some levels or worlds. -/
+def CtrStable {k : Nat} (c : Ctr k) (v : Val) : Prop :=
+  ∀ j hj U u, c j hj U u → u = v
+
+theorem CtrStable.restrict {k j : Nat} {c : Ctr k} {v : Val}
+    (hc : CtrStable c v) (h : j ≤ k) :
+    CtrStable (fun i hi U u => c i (Nat.lt_of_lt_of_le hi h) U u) v := by
+  intro i hi U u hu
+  exact hc i (Nat.lt_of_lt_of_le hi h) U u hu
+
 def toList {k : Nat} (W : WorldT k) : List (Ctr k) := cast (WorldT_eq k) W
 
 def ofList {k : Nat} (cs : List (Ctr k)) : WorldT k := cast (WorldT_eq k).symm cs

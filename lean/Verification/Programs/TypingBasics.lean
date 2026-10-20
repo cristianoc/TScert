@@ -1131,11 +1131,11 @@ theorem tagClause_protoFree {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
   cases tag
   case hasKey k =>
     cases c
-    case refs a bs vs os ms ks =>
-      have hin : inAnswer k (Clause.refs a bs vs os ms ks) = some q := by simpa [tagClause] using hq
+    case refs a bs vs os ms ks st =>
+      have hin : inAnswer k (Clause.refs a bs vs os ms ks st) = some q := by simpa [tagClause] using hq
       exact inAnswer_protoFree hin hv
-    case dict a bs vs ds os ms ks cs =>
-      have hin : inAnswer k (Clause.dict a bs vs ds os ms ks cs) = some q := by simpa [tagClause] using hq
+    case dict a bs vs ds os ms ks cs st =>
+      have hin : inAnswer k (Clause.dict a bs vs ds os ms ks cs st) = some q := by simpa [tagClause] using hq
       exact inAnswer_protoFree hin hv
     case top => simp [tagClause] at hq
     case source => simp [tagClause] at hq

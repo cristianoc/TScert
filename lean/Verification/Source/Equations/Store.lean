@@ -751,8 +751,8 @@ def resolutionContext (s : State) (p : NativePromise E) :
 /-- The keys a record clause names: its fields, views, optional fields and
 methods. -/
 private def clauseKeys : Clause (List Tree) → List PropKey
-  | .refs fs rs vs os ms _ => (fs ++ rs.flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key)
-  | .dict fs rs vs _ os ms _ _ => (fs ++ rs.flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key)
+  | .refs fs rs vs os ms _ _ => (fs ++ rs.flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key)
+  | .dict fs rs vs _ os ms _ _ _ => (fs ++ rs.flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key)
   | _ => []
 
 /-- The prototype operands a clause states under `[[proto]]`. -/

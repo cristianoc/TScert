@@ -277,9 +277,9 @@ private def validCurrent (T : EquationStore.State) (A : ClaimType Tree) (current
     (match PositiveRules.expand (SourceTypes.graph T) (A.ground.toOption.getD []) with
       | [] => false
       | cs => cs.all fun
-        | .refs contract [] vs os _ _ => fs.all (fun p => (contract.lookup p.1).isSome ||
+        | .refs contract [] vs os _ _ _ => fs.all (fun p => (contract.lookup p.1).isSome ||
             (vs.lookup p.1).isSome || os.any (fun o => o.key == p.1))
-        | .dict _ _ _ ds _ _ _ cells => fs.all (fun p => (ds ++ cells).any (HeapExpressionRules.stringIndex · p.1))
+        | .dict _ _ _ ds _ _ _ cells _ => fs.all (fun p => (ds ++ cells).any (HeapExpressionRules.stringIndex · p.1))
         | _ => false) &&
     fs.all (fun p => validType T (.labels p.2))
 private def validBindings (T : EquationStore.State) (bs : List (Binding Tree)) : Bool :=

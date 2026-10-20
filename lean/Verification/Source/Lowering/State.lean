@@ -2,6 +2,7 @@ import Verification.Programs.CellClaims
 import Verification.Source.SourceRequests
 import Verification.Source.SourceClaims
 import Verification.Source.Fragment
+import Verification.Source.ExpressionPlan
 import Verification.Source.SourceFacts
 
 /-! Owns lexical slots and the mutable graph construction state. -/
@@ -65,6 +66,8 @@ structure ScopeBinding (ι : Type) where
   created the closure, so no fact of that allocation holds at the closure's
   entry. -/
   captured : Bool := false
+  /-- An administrative value saved from a named member path. -/
+  witness : Option (String × List PropKey) := none
   deriving Repr
 
 @[nospecialize] def held (d : Descriptor) : ScopeBinding ι := { source := d }
@@ -90,6 +93,38 @@ value was saved (a write clears the saved aliases, `executePlanTail`). -/
   match ← resolve scope name with
   | (i, .value) | (i, .slot _) => return i
   | (_, .cell ..) | (_, .early ..) => none
+
+/-- Paths identify source reads independently of their occurrence spans. -/
+def memberPath : Fragment.Expr → Option (String × List PropKey)
+  | .var _ name => some (name, [])
+  | .read _ field receiver => do
+    let (root, fields) ← memberPath receiver
+    return (root, fields ++ [field])
+  | _ => none
+
+/-- Only immutable source roots identify the same receiver across reads. -/
+@[nospecialize] def pathWitness (scope : List (ScopeBinding ι)) (e : Fragment.Expr) : Option Nat := do
+  let path ← memberPath e
+  if path.2.isEmpty then none else do
+    let (_, .value) ← resolve scope path.1 | none
+    scope.findIdx? (·.witness == some path)
+
+/-- Read paths in an execution plan, including both arms and their tests. -/
+partial def planPaths : SourceExecution.Plan → List (String × List PropKey)
+  | .observe _ p => planPaths p
+  | .sequence _ _ p q => planPaths p ++ planPaths q
+  | .choose _ _ _ _ p y n => planPaths p ++ planPaths y ++ planPaths n
+  | .atom _ (.evaluate e _ _) =>
+    match memberPath e with
+    | some p => if p.2.isEmpty then [] else [p]
+    | none => []
+  | .atom .. => []
+
+partial def testedPaths : SourceExecution.Plan → List (String × List PropKey)
+  | .observe _ p => testedPaths p
+  | .sequence _ _ p q => testedPaths p ++ testedPaths q
+  | .choose _ _ _ _ p y n => planPaths p ++ testedPaths y ++ testedPaths n
+  | .atom .. => []
 
 /-- State local to one compiled graph. A closure begins with an empty frame
 and restores its enclosing frame as a whole. -/

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { chmodSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
 import { join, resolve } from "node:path";
-import type { Ast } from "../tools/fragment.mts";
+import type { Ast, Expr } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
@@ -30,6 +30,7 @@ import { checkOverloads } from "./overload-claims.mts";
 import { checkDefaults, checkSchemeDefaults, checkEarlyDefault, checkPatternDefaults } from "./default-parameters.mts";
 import { decodeFlowDocument, type ExecutionPlan, type ExecutionOperation } from "../tools/source-flow.mts";
 import { runExample } from "./run-example.mts";
+import { checkMutation, forgedEvidence } from "./evidence-mutations.mts";
 const here = import.meta.dirname;
 
 function must<T>(value: T | null | undefined, message: string): T {
@@ -3420,7 +3421,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const project = tsconfigOf(join(import.meta.dirname, "family-fixture-project"));
   const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
   useHostInstallationForTests(join(import.meta.dirname, "family-fixture"));
-  useFamilyDescriptionForTests({ ...compilerApiFamily, table: [{ rule: "literal" }], corrections: [] });
+  useFamilyDescriptionForTests({ ...compilerApiFamily, table: [{ rule: "literal" }], corrections: [], allocating: [] });
   try {
     const kept = check(example("family-fixture-optional-method"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
@@ -3457,6 +3458,8 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     tag: { field: "type", primitive: "string", constants: { enum: "SyntaxKind" } },
     table: [{ rule: "literal" }],
     corrections: [],
+    allocating: [],
+    stable: { excluded: [] },
     guards: {
       entryPoint: "./ast",
       conditions: runtimeConditions(),
@@ -3500,11 +3503,47 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const refused = check(file, project);
     const at = readFileSync(file, "utf8").lastIndexOf("n.name");
     assert.ok(refused.status === "unsupported" && refused.detail.includes(`at [${at},`), JSON.stringify(refused));
+    // Stable members through the same code (HOST-FAMILIES.md, "Stable
+    // keys"): every property member of the stand-in is stable, so a callee
+    // tested and read past a call is the tested value; the description
+    // excluding `Call.callee`, the one thing changed, refuses the read.
+    const stable = check(example("stable"), project);
+    assert.equal(stable.status, "verified", JSON.stringify(stable));
+    useFamilyDescriptionForTests({ ...strings,
+      stable: { excluded: [{ owner: "Call", member: "callee", text: "readonly callee: Unit;" }] } });
+    const excluded = check(example("stable"), project);
+    const read = readFileSync(example("stable"), "utf8").lastIndexOf("c.callee.name");
+    assert.ok(excluded.status !== "verified" && excluded.detail.includes(`at [${read},`), JSON.stringify(excluded));
+    // The tag's stability follows its declarations, a residual's too: with
+    // `Literal.type` excluded, the residual standing for `Literal` states no
+    // stable tag, while `Name`'s shape keeps its own.
+    useFamilyDescriptionForTests({ ...strings,
+      stable: { excluded: [{ owner: "Literal", member: "type", text: "readonly type: SyntaxKind.Literal;" }] } });
+    const tagged = check(example("guards"), project);
+    assert.equal(tagged.status, "verified", JSON.stringify(tagged));
+    const shapes = must(readFragmentFile(join(tagged.artifacts, "fragment.json")).declarations, "the declarations").definitions
+      .flatMap(d => d.expression?.k === "object" && d.expression.host !== undefined ? [{ name: d.declaration.name, term: d.expression }] : []);
+    const residuals = shapes.filter(s => s.name.includes(" tags "));
+    assert.ok(residuals.length > 0, "a residual arm");
+    for (const r of residuals) assert.ok(!(r.term.stable ?? []).includes("type"), `${r.name}: no stable tag over an excluded one`);
+    const name = must(shapes.find(s => s.name === "Name"), "the Name shape");
+    assert.ok((name.term.stable ?? []).includes("type"), "Name's own tag stays stable");
+    // An allocating member (HOST-FAMILIES.md, "The family contract"): the
+    // description listing `Unit.notes`, the one thing changed, omits it from
+    // every shape, so its read is refused; without the entry it verifies.
+    useFamilyDescriptionForTests(strings);
+    const plain = check(example("notes"), project);
+    assert.equal(plain.status, "verified", JSON.stringify(plain));
+    useFamilyDescriptionForTests({ ...strings,
+      allocating: [{ owner: "Unit", member: "notes", text: "readonly notes: readonly string[];" }] });
+    const omitted = check(example("notes"), project);
+    const notesAt = readFileSync(example("notes"), "utf8").lastIndexOf("u.notes");
+    assert.ok(omitted.status !== "verified" && omitted.detail.includes(`at [${notesAt},`), JSON.stringify(omitted));
   } finally {
     useFamilyDescriptionForTests(null);
     useHostInstallationForTests(null);
   }
-  process.stdout.write("string-tagged family: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing\n");
+  process.stdout.write("string-tagged family: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
 }
 {
   // Each correction of the compiler API's family (COMPILER-API.md,
@@ -3711,4 +3750,284 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.equal(unread.status, 3, unread.stderr);
   assert.match(unread.stderr, /^error: /);
   process.stdout.write("step failures: an exit without a complete refusal, and a failed --explain, are tool failures\n");
+}
+
+{
+  // Constant returns isolate the entry obligation from subsequent read typing.
+  // Forged claims select named paths at source statements. The test-only
+  // mutation executable searches their complete evidence and checks it with
+  // every selected bypass necessary: coverage, links, or cell knowledge.
+  const artifacts = run("path-witness-controls");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const honest = readClaims(artifacts);
+  const before = must(honest.functions.find(f => f.name === "before"), "witness before");
+  const refined = must(before.entries.find(e => source.startsWith("return 1;", e.start)), "refined entry");
+  const current = must(must(refined.bindings.find(b => b.name === "holder"), "holder").current, "witness type");
+  const type = must(current.find(([field]) => field === "value"), "value field")[1];
+  const object = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  for (const [name, functionName, marker, failure] of [
+    ["before", "before", "if (holder.value", "type coverage"],
+    ["afterCall", "afterCall", "return 0;", "heap knowledge"],
+    ["afterRoot", "afterRoot", "return 0;", "type coverage"],
+    ["caught", "caught", "return /* caught */ 0;", "heap knowledge"],
+    ["predecessor", "before", "return 0;", "type coverage"],
+    ["read", "afterCallRead", "return holder.value;", "heap knowledge"],
+  ]) {
+    const claims = structuredClone(honest);
+    const fn = must(claims.functions.find(f => f.name === functionName), name);
+    const at = must(fn.entries.filter(e => source.startsWith(marker, e.start)).sort((a, b) => a.start - b.start)[0], `${name}: forged entry`);
+    must(at.bindings.find(b => b.name === "holder"), "holder").current = [["value", type]];
+    if (name === "read") {
+      const expression = must(fn.expressions.find(e => e.pos[0] === at.start + "return ".length &&
+        e.pos[1] === at.start + "return holder.value".length), "read past call");
+      expression.type = type;
+    }
+    const input = writeClaims(artifacts, `forged-witness-${name}`, claims);
+    const obligation = `source incoming edge obligation at [${at.start},${source.indexOf(";", at.start) + 1})`;
+    refusedAt(artifacts, input, `forged-witness-${name}`, obligation);
+    const checked = invoke(input, forgedEvidence(artifacts, input, `forged-witness-${name}`,
+      name === "predecessor" ? "coverage" : name === "afterCall" || name === "read" ? "links" :
+        name === "afterRoot" ? "coverage,cells" : "coverage,links"), artifacts);
+    assert.ok(checked.includes(`${obligation}: evidence fails ${failure} from node `), checked);
+  }
+
+  // Both paths have been read and refined to the same type. The false relation
+  // is added at a non-cut return node, so the source entry's exact interface
+  // stays intact. Its output carries the same added link in the pushed frame.
+  // Only the incoming read-link obligation can reject this evidence.
+  type Link = { cell: number; value: number; alias: boolean; distinct: boolean;
+    field: string; other: string; optional: boolean };
+  type WitnessNode = { expression: { node: { claim: { term: unknown; context: number[][] } } };
+    knowledge: { links: Link[] }; output: { links: Link[] } };
+  for (const name of ["receiver", "field"]) {
+    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
+    const index = honest.functions.findIndex(f => f.name === name);
+    const fn = must(honest.functions[index], name);
+    const entry = must(fn.entries.find(e => source.startsWith("return 1;", e.start)), "both paths refined");
+    for (const [root, field] of name === "receiver" ? [["holder", "value"], ["other", "value"]] : [["holder", "value"], ["holder", "other"]]) {
+      const binding = must(entry.bindings.find(b => b.name === root), root);
+      assert.deepEqual(must(binding.current, "refined path").find(([f]) => f === field)?.[1], type);
+    }
+    const unit: unknown = evidence.main.functions[index];
+    assert.ok(object(unit) && Array.isArray(unit.certificate));
+    const certificate = unit.certificate as WitnessNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
+    const node = must(certificate.find(c => {
+      const links = c.knowledge.links.filter(l => !l.alias && !l.distinct);
+      return JSON.stringify(c.expression.node.claim.term) === JSON.stringify({ var: { i: 0 } }) &&
+        links.length === 2 && links.every(l => l.cell > 0 && l.value > 0) &&
+        JSON.stringify(c.expression.node.claim.context[links[0].value]) === JSON.stringify(c.expression.node.claim.context[links[1].value]);
+    }), `${name}: two refined witnesses at a non-cut return`);
+    const [first, second] = node.knowledge.links.filter(l => !l.alias && !l.distinct);
+    if (name === "receiver") {
+      assert.notEqual(first.cell, second.cell);
+      assert.equal(first.field, second.field);
+    } else {
+      assert.equal(first.cell, second.cell);
+      assert.notEqual(first.field, second.field);
+    }
+    const forged = name === "receiver" ? { ...first, cell: second.cell } : { ...first, field: second.field };
+    assert.ok(!node.knowledge.links.some(l => JSON.stringify(l) === JSON.stringify(forged)), "a false origin, not a duplicate link");
+    node.knowledge.links.push(forged);
+    node.output.links.push({ ...forged, cell: forged.cell + 1, value: forged.value + 1 });
+    const path = join(artifacts, `forged-witness-${name}-evidence.json`);
+    writeFileSync(path, JSON.stringify(evidence));
+    checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
+    const start = entry.start + "return ".length;
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    assert.ok(checked.includes(`source incoming edge obligation at [${start},${start + 1}): evidence fails heap knowledge`), checked);
+  }
+  process.stdout.write("path witnesses: exact forged evidence refused at incoming edges; wrong receiver/field isolate links, false predecessor isolates type coverage\n");
+}
+
+{
+  // Stable keys in the declaration document (HOST-FAMILIES.md, "Stable
+  // keys"): the decoder accepts them as required readonly members of a
+  // marked family shape alone. Each forged document is refused by the
+  // decoder; its neighbour, differing in the one thing the check reads, is
+  // decoded.
+  const artifacts = run("compiler-api-path-witness");
+  type Definition = TypeDefinition;
+  type ObjectTerm = Extract<TypeTerm, { k: "object" }>;
+  const shapeOf = (d: Definition): ObjectTerm => {
+    const e = d.expression;
+    assert(e?.k === "object");
+    return e;
+  };
+  const searchWith = (file: string, change: (o: ObjectTerm) => void): string => {
+    const fragment: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+    const definition = must(must(fragment.declarations, "the declarations").definitions.find(d =>
+      d.expression?.k === "object" && d.expression.host !== undefined && (d.expression.stable ?? []).length > 1 &&
+      d.expression.fields.some(f => f.name === "text")), "a marked shape with stable keys");
+    change(shapeOf(definition));
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    const searched = produceWith(artifacts, join(artifacts, "claims.json"), file, path);
+    return searched.stdout + searched.stderr;
+  };
+  const decoder = /stable key/;
+  const honest = searchWith("stable-honest", () => {});
+  assert.doesNotMatch(honest, decoder, honest);
+  // An optional member stated stable; its neighbour states the member
+  // optional and not stable.
+  const optional = searchWith("forged-stable-optional", o => {
+    must(o.fields.find(f => f.name === "text"), "text").optional = true;
+  });
+  assert.match(optional, /the stable key "text" is no required readonly member of its shape/, optional);
+  const optionalNeighbour = searchWith("stable-optional-neighbour", o => {
+    must(o.fields.find(f => f.name === "text"), "text").optional = true;
+    o.stable = (o.stable ?? []).filter(k => k !== "text");
+  });
+  assert.doesNotMatch(optionalNeighbour, decoder, optionalNeighbour);
+  // A key the shape does not state; its neighbour states the member.
+  const absent = searchWith("forged-stable-absent", o => { o.stable = [...(o.stable ?? []), "noSuchMember"]; });
+  assert.match(absent, /the stable key "noSuchMember" is no required readonly member of its shape/, absent);
+  const absentNeighbour = searchWith("stable-absent-neighbour", o => {
+    const text = must(o.fields.find(f => f.name === "text"), "text");
+    o.fields.push({ ...text, name: "noSuchMember" });
+    o.stable = [...(o.stable ?? []), "noSuchMember"];
+  });
+  assert.doesNotMatch(absentNeighbour, decoder, absentNeighbour);
+  // An unmarked shape stating stable keys; its neighbour states none.
+  const unmarked = searchWith("forged-stable-unmarked", o => { delete o.host; });
+  assert.match(unmarked, /a stable key is stated of a host family's marked shape alone/, unmarked);
+  const unmarkedNeighbour = searchWith("stable-unmarked-neighbour", o => { delete o.host; delete o.stable; });
+  assert.doesNotMatch(unmarkedNeighbour, decoder, unmarkedNeighbour);
+  process.stdout.write("stable keys: an optional, an absent and an unmarked stable key refused by the decoder, each beside its decoded neighbour\n");
+}
+
+{
+  // Stable links (HOST-FAMILIES.md, "Stable links"): a read link through a
+  // member every arm states stable survives a call. The positive case's
+  // document with the tested member's stable key dropped from its shape,
+  // the one thing the rule reads, is refused in search with the case's own
+  // claims and in checking with its own evidence, at the read past the call;
+  // the honest document is accepted.
+  const artifacts = run("compiler-api-stable-link");
+  const forged = (file: string, keys: (stable: readonly string[]) => string[] | undefined): string => {
+    const fragment: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+    for (const d of must(fragment.declarations, "the declarations").definitions) {
+      const e = d.expression;
+      if (e?.k !== "object" || e.host === undefined || e.stable === undefined) continue;
+      if (!e.fields.some(f => f.name === "initializer")) continue;
+      const next = keys(e.stable);
+      if (next && next.length) e.stable = next;
+      else delete e.stable;
+    }
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    return path;
+  };
+  const honest = forged("stable-link-honest", s => [...s]);
+  const accepted = spawnSync(verifier, ["--check-source-claims", honest, join(artifacts, "claims.json"),
+    join(artifacts, "source.ts"), join(artifacts, "evidence.json")], { encoding: "utf8", timeout: 30_000 });
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  const unstable = forged("forged-stable-link", s => s.filter(k => k !== "name"));
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-stable-link", unstable);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /obligation at \[\d+,\d+\)/, searched.stdout + searched.stderr);
+  const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, unstable);
+  assert.match(checked, /refusal at \[\d+,\d+\)|obligation at \[\d+,\d+\)/, checked);
+  process.stdout.write("stable links: the document without the tested member's stable key refused in search and in checking, the honest one accepted\n");
+}
+
+{
+  // The constant-return neighbour supplies valid claims and evidence before
+  // the tested call. Only the final path/read and its entry witness are forged;
+  // the declaration document is identical throughout. The let-cell neighbour
+  // observes the mutable root directly with a kind test; the original let
+  // case also loses its member witness at a statement entry before the call.
+  // The mutation executable searches the source-anchored claims. Each exact
+  // document must pass its mutation and fail both the production verifier
+  // and the other stable/handler mutation.
+  for (const kind of ["mixed", "record", "let", "catch"] as const) {
+    const artifacts = run(`invalid-compiler-api-stable-${kind === "let" ? "let-cell" : kind}`);
+    const fragment = readFragmentFile(join(artifacts, "fragment.json"));
+    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const body = must(fragment.functions[0], "the function").body;
+    // Select the catch from the parsed tree, never from a keyword in a comment.
+    const caught = body.find(s => s.k === "try");
+    const handler = caught?.k === "try" ? caught.handler?.body[0] : undefined;
+    if (kind === "catch") {
+      assert.ok(handler?.k === "return");
+      assert.deepEqual(handler.pos, [405, 424]);
+    }
+    const statement = kind === "catch" ? must(handler, "the handler entry")
+      : must(body.find(s => s.k === "return"), "the final return");
+    assert.ok(statement.k === "return" && statement.e);
+    const returned = statement.e;
+    const comma = returned.k === "conditional" ? returned.then : undefined;
+    if (kind === "record" || kind === "let") assert.ok(comma?.k === "comma");
+    const read = comma?.k === "comma" ? comma.right : returned;
+    assert.ok(read.k === "read" && read.field === "text" && (read.e.k === "read" || read.e.k === "id"));
+    const path = read.e;
+    const [at, end] = read.pos;
+    const neutral: Expr = { k: "lit", pos: read.pos, lit: { a: "stringlit", v: "" } };
+    if (comma?.k === "comma") comma.right = neutral;
+    else statement.e = neutral;
+    const neighbour = join(artifacts, "stable-neighbour.json");
+    writeFileSync(neighbour, JSON.stringify(fragment));
+    const lowered = spawnSync(verifier, ["--lower-control-flow", neighbour], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
+    const flow = join(artifacts, "stable-neighbour-flow.json");
+    writeFileSync(flow, lowered.stdout);
+    const proposed = spawnSync(producerExecutable, [neighbour, flow], { encoding: "utf8", timeout: 30_000 });
+    assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
+    const honestPath = join(artifacts, "stable-neighbour-claims.json");
+    writeFileSync(honestPath, proposed.stdout);
+    const claims = readClaimsFile(honestPath);
+    const fn = must(claims.functions[0], "the claims");
+    // The constant has the same (wider) result contract as the hostile read,
+    // keeping the surrounding contexts and graph labels identical.
+    for (const e of fn.expressions) if (e.pos[0] <= at && e.pos[1] >= end) e.type = fn.result;
+    writeFileSync(honestPath, JSON.stringify(claims));
+    const honestSearch = produceWith(artifacts, honestPath, "stable-neighbour", neighbour);
+    assert.equal(honestSearch.status, 0, honestSearch.stdout + honestSearch.stderr);
+    const constant = must(fn.expressions.find(e => e.pos[0] === at && e.pos[1] === end), "constant neighbour");
+    const definitions = must(fragment.declarations, "declarations").definitions;
+    const identifier = definitions.findIndex(d => d.declaration.name === "Identifier");
+    assert.ok(identifier >= 0);
+    const refined = [{ decl: identifier }];
+    const prefix = structuredClone(fn.expressions.filter(e => e.pos[1] <= at));
+    fn.expressions = fn.expressions.filter(e => e !== constant);
+    // Copy each receiver's type from the honest pre-test read of the same path.
+    const addRead = (e: Expr): void => {
+      assert.ok(e.k === "read" || e.k === "id");
+      if (e.k === "read") addRead(e.e);
+      const previous = must(prefix.find(p => p.pos[1] - p.pos[0] === e.pos[1] - e.pos[0] &&
+        source.slice(p.pos[0], p.pos[1]) ===
+        source.slice(e.pos[0], e.pos[1])), "honest receiver read");
+      fn.expressions.push({ ...structuredClone(previous), point: constant.point, pos: e.pos,
+        type: e === path ? refined : previous.type, current: null });
+    };
+    addRead(path);
+    fn.expressions.push({ ...constant, type: fn.result });
+    for (const e of fn.expressions) if (e.pos[0] <= at && e.pos[1] >= end) e.type = fn.result;
+    if (kind === "mixed" || kind === "catch") {
+      const entry = must(fn.entries.find(e => e.start === statement.pos[0]), "post-call/handler entry");
+      assert.equal(entry.start, kind === "catch" ? 405 : 500);
+      must(entry.bindings.find(b => b.name === "m"), "m at the entry").current = [["name", refined]];
+    }
+    assert.deepEqual(fn.expressions.filter(e => e.pos[1] <= at), prefix);
+    const forged = writeClaims(artifacts, `isolated-stable-${kind}`, claims);
+    const searched = produceWith(artifacts, forged, `isolated-stable-${kind}`);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    const obligation = kind === "mixed" ? "source incoming edge obligation at [500,519)"
+      : kind === "catch" ? "source expression obligation at [382,387)"
+        : `source expression obligation at [${path.pos[0]},${path.pos[1]})`;
+    assert.ok((searched.stdout + searched.stderr).includes(obligation), searched.stdout + searched.stderr);
+    const evidencePath = forgedEvidence(artifacts, forged, `isolated-stable-${kind}`,
+      kind === "catch" ? "handler" : "stable");
+    const checked = invoke(forged, evidencePath, artifacts);
+    if (kind === "catch")
+      assert.match(checked, /source incoming edge obligation at \[405,424\): evidence fails heap knowledge from node \d+, handler edge/);
+    else {
+      // The forged output keeps the read link at the call. The exact output
+      // check is the boundary that drops it, before any later read is checked.
+      const callSpan = kind === "mixed" ? [491, 496] : kind === "record" ? [428, 433] : [495, 504];
+      assert.ok(checked.includes(`source evidence refusal at [${callSpan[0]},${callSpan[1]}): the evidence does not establish this node's typing`), checked);
+    }
+  }
+  process.stdout.write("stable-link negatives: honest pre-test claims and evidence; mixed, record and let isolate the call, catch isolates the incoming handler edge at [405,424)\n");
 }

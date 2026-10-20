@@ -79,7 +79,7 @@ theorem witness_clause (G : NormalGraph ι) (η : MixedAssignment ι)
     (admitted : ∀ K ∈ ks, ∀ p ∈ vs, K.admits p.1 = true) :
     semWithArgs Ξ (mixedValues G η) (mixedArgs G η)
       (.refs [] [] vs [] ms ks) 1 witnessWorld (witness (viewKeys vs)) := by
-  refine ⟨⟨⟨fields (viewKeys vs), 1, rfl, ?_⟩, ?_, ?_⟩, ?_, ?_, ?_, ?_⟩
+  refine ⟨⟨⟨fields (viewKeys vs), 1, rfl, ?_⟩, ?_, ?_⟩, ?_, ?_, ?_, ?_, stableKeysT_nil _ _ _⟩
   · simp [famsOf]
   · simp
   · simp [famsOf]
@@ -111,7 +111,7 @@ theorem witness_builtins (G : NormalGraph ι) (X : List ι → Fam)
 witness lacks, or by an optional key it lacks while it has a prototype. -/
 def RejectClause (keys : List PropKey) (c : Clause (List ι)) : Prop :=
   (shape c ≠ 2 ∧ shape c ≠ 7) ∨ match c with
-  | .refs _ _ views optional _ _ =>
+  | .refs _ _ views optional _ _ _ =>
       (∃ p ∈ views, p.1 ∉ keys ∧ p.1 ≠ lengthKey) ∨ ∃ o ∈ optional, o.key ∉ keys
   | _ => False
 

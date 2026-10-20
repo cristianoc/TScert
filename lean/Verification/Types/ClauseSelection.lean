@@ -186,7 +186,7 @@ that key holds a literal the type does not admit. -/
 /-- **R5.** A record source and a dictionary target, the source with no bound
 listing its own keys without the prototype key. -/
 def boundExcl : Clause α → Clause α → Bool
-  | .refs _ _ _ _ _ ks, .dict .. => !ks.any fun K => K.among && !K.keys.contains CallArguments.protoField
+  | .refs _ _ _ _ _ ks _, .dict .. => !ks.any fun K => K.among && !K.keys.contains CallArguments.protoField
   | _, _ => false
 
 /-- The target clauses R1–R5 exclude for a source clause. -/

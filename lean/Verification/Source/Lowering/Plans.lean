@@ -30,7 +30,7 @@ fields are at its claim's. -/
   let keyed := fun (ps : List (PropKey × Ty Tree)) => ps.filterMap fun (k, T) => match k with
     | .str s => some (s, T) | .sym _ => none
   let each := (PositiveRules.expand G A).map fun c => match c with
-    | .refs fs [] vs os _ _ | .dict fs [] vs _ os _ _ _ => keyed (fs ++ vs ++ os.map fun o => (o.key, o.type))
+    | .refs fs [] vs os _ _ _ | .dict fs [] vs _ os _ _ _ _ => keyed (fs ++ vs ++ os.map fun o => (o.key, o.type))
     | _ => []
   -- Over a union, a key every record naming it states at one type.
   let all := each.flatten
@@ -343,10 +343,10 @@ field or view, or, for a key an own-key bound does not admit, its prototype's, a
 @[nospecialize] def fieldRow (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) :
     Option (Ty ι) :=
   match PositiveRules.expand G O with
-  | [.refs fs [] vs _ _ ks] => fs.lookup fld <|> vs.lookup fld <|> do
+  | [.refs fs [] vs _ _ ks _] => fs.lookup fld <|> vs.lookup fld <|> do
       if !ks.any (fun K => !K.admits fld) then none
       let P ← (fs ++ vs).lookup SourceTypes.protoField
-      let [.refs gs [] ws _ _ _] := PositiveRules.expand G P | none
+      let [.refs gs [] ws _ _ _ _] := PositiveRules.expand G P | none
       (gs ++ ws.filter (·.1 != lengthKey)).lookup fld
   | [.callable fs _ _ _] => fs.lookup fld
   | _ => none
@@ -439,7 +439,7 @@ bag, or an explicit union of cell contracts each naming the field. -/
 @[nospecialize] partial def readCell (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree)) (fld : PropKey)
     (a : DirectProof.Plan Tree) : Compiler (DirectProof.Plan Tree) := do
   match PositiveRules.expand G a.type with
-  | [.refs fs [] vs os _ ks] =>
+  | [.refs fs [] vs os _ ks _] =>
     -- An invariant field reads at its contract; a readonly view at its bound;
     -- an optional field at its type or `undefined` (`readOptional`); a key a
     -- bound of the object does not admit at its prototype's field or view
@@ -454,12 +454,12 @@ bag, or an explicit union of cell contracts each naming the field. -/
       let inherited : Option (Ty Tree × Ty Tree) := do
         if !ks.any (fun K => !K.admits fld) then none
         let P ← (fs ++ vs).lookup SourceTypes.protoField
-        let [.refs gs [] ws _ _ _] := PositiveRules.expand G P | none
+        let [.refs gs [] ws _ _ _ _] := PositiveRules.expand G P | none
         let B ← (gs ++ ws.filter (·.1 != lengthKey)).lookup fld
         pure (P, B)
       let some (P, B) := inherited | throw s!"read of a field '{fld}' the contract does not name"
       pure (DirectProof.node Γ (.readAt fld a.term) B (.readProto P) [a])
-  | [.dict fs [] vs ix [] [] [] _] =>
+  | [.dict fs [] vs ix [] [] [] _ _] =>
     -- A named field or view, else an index whose class surely admits the
     -- key, which may miss.
     match fs.lookup fld, vs.lookup fld with
@@ -579,7 +579,7 @@ is read as an object (`readCell`). -/
   let armPlan (L : List (Ty Tree)) (label : Tree) : PrimitiveArm Tree → Except String (DirectProof.Plan Tree)
     | .length => pure (DirectProof.node L (.lenOf (.var o)) N .lenStr [DirectProof.var L o [label]])
     | .proto p P R => do
-      let [.refs gs [] ws _ _ _] := PositiveRules.expand G P
+      let [.refs gs [] ws _ _ _ _] := PositiveRules.expand G P
         | throw "a primitive's prototype contract must be a record"
       let some B := (gs ++ ws.filter (·.1 != lengthKey)).lookup fld
         | throw s!"read of a member '{fld}' the primitive's prototype contract does not name"
@@ -636,11 +636,11 @@ obligation checks writes at a forbidden key against the retained bound. -/
   let cs := PositiveRules.expand G B
   let optionalView := fun (os : List (OptionalField (Ty ι))) => os.any fun o => o.key == fld && o.readonly
   cs.any (fun c => match c with
-    | .refs fs rs vs _ ms _ | .dict fs rs vs _ _ ms _ _ =>
+    | .refs fs rs vs _ ms _ _ | .dict fs rs vs _ _ ms _ _ _ =>
       !((fs :: rs).flatten ++ vs).any (·.1 == fld) && !ms.any (·.key == fld)
     | _ => false) &&
   !cs.any fun c => match c with
-    | .refs _ _ _ os _ ks | .dict _ _ _ _ os _ ks _ =>
+    | .refs _ _ _ os _ ks _ | .dict _ _ _ _ os _ ks _ _ =>
       optionalView os || ks.any (fun K => !K.among && !K.admits fld)
     | _ => false
 

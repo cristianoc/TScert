@@ -237,7 +237,7 @@ array contracts reads at the union of their positions. -/
   recordHints [label]
   let alts ← (PositiveRules.expand G A).mapM fun c => do
     let store ← match c with
-      | .refs fs [] vs _ _ _ => match fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField with
+      | .refs fs [] vs _ _ _ _ => match fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField with
         | some S => pure S
         | none => throw "an array pattern requires an array contract"
       | _ => throw "an array pattern requires an array contract"

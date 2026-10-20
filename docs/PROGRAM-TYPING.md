@@ -1736,6 +1736,31 @@ These are local obligations on the edges given; they do not establish that
 the edges enumerate a graph's actual predecessors. The graph checker below
 discharges that enumeration obligation.
 
+### Witness edges
+
+A path witness is a target slot $`w`$ at type $`A`$, together with a read
+link $`x.f\mapsto w`$. Its incoming edge uses the ordinary slot mapping
+$`m`$ and checks both obligations:
+
+```math
+\frac{
+  \Gamma\preceq_G^m\Delta\qquad\Delta_w=A\qquad
+  m_x.f\mapsto m_w\in\Sigma
+}{
+  (\Gamma;\Sigma)\xrightarrow{m}(\Delta; x.f\mapsto w)
+}\ \textsf{witness-edge}
+```
+
+`checkTargetResult` checks mapped type coverage and `HeapKnowledge.check`;
+`HeapLinks.check` compares the mapped receiver, field and value slots.
+`ControlFlow.witness_edge_sound` proves that the mapped witness satisfies
+$`A`$ and is the value read from that receiver's field in the current heap,
+including an absent optional field's `undefined`. Branch edges apply their
+observed refinement before these checks (`branch_target_sound`). The graph
+checker checks every actual edge, including backedges and handler edges;
+handler edges carry empty heap knowledge. A top-typed administrative slot
+with no asserted link imposes only its ordinary type obligation.
+
 ### Throwing
 
 `throw a` has every type: it never produces a value, and a throw is an
@@ -2937,12 +2962,29 @@ It computes a guaranteed output, not an assumed postcondition:
 | Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; through a key a record may lack, optional links. No prior current-content fact is needed. Its result has the supplied type. |
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
 | Sliced read (`slicedRead`)           | A read of a location one of whose facts answers a tag $`\tau`$ with $`q`$ (a nullish exclusion answers its test `false`, a tag atom is its answer): ordinary read evidence at the location's contract $`C`$, whose refinement by that answer is within the requested type (`ObservedSub`, as a branch edge checks a refinement). As an ordinary typed read otherwise. |
+| Linked read (`linkedRead`)           | A read of a field one of whose read links, from the receiver's slot or a slot an alias link equates with it, names the slot holding what the field holds: the read gives that slot's value, at its type below the claim (`checkUsing`); the output is that slot's copy. [Witness edges](#witness-edges) check both the slot's type and its receiver-and-field link when carrying it into a target. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
 | Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and its fields' distinctness from every record slot's. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, the fields its result type names distinct. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`). |
 | Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
-`typedRead_sound`, `slicedRead_sound`, `read_sound`, `reading_sound` (by
+Every step keeps, past its result, the read links of its input through a
+member every clause of the receiver's type states a stable key
+([stable keys](POSITIVE-TYPES.md#records)), whatever the step: a call, a
+write, a closure's run. On normal return the location holds its one value
+in every heap a run reaches (`stable_frame`), so the link holds there:
+
+```math
+\frac{x.f\mapsto y\in\Sigma\quad \forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)\quad
+      \Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\Sigma'}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\ \Sigma',\ x.f\mapsto y}\ \textsf{stable-link}
+```
+
+(`withStable_sound`, applied by `Checker.keepingStable`). An exceptional
+edge keeps none: a handler's facts are `handlerFacts`, the heap-independent
+part of the input.
+
+`typedRead_sound`, `slicedRead_sound`, `linkedRead_sound`, `read_sound`, `reading_sound` (by
 `read_frame`), `alloc_sound` (with `merge_alloc_sound` and
 `store_alloc_sound`) and `write_sound` prove the read, allocation and write
 rules above. The read rule is

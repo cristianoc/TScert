@@ -24,7 +24,7 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
 import { compareTags, familyTable, type FamilyArm, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { allocatingMembers, hostFamily, importedGuard, selectionGuard, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
+import { hostFamily, importedGuard, selectionGuard, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, isHostFile, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -867,7 +867,6 @@ export function collectDeclarations(file: string, options: {
             n.typeName.text === parameter) || (n.forEachChild(visit) ?? false);
           return visit(m);
         },
-        omitted: (owner, name) => allocatingMembers.some(m => m.owner === owner && m.name === name),
         fail: message => { throw Error(`the family ${familyDescription.marker}: ${message}`); },
       };
       family = { table: familyTable(familyDescription, graph), members: new Set(interfaces), enums, literals, constants };
@@ -4170,11 +4169,6 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       const { table, selection } = familyReading;
       const marker = table.description.marker;
       const span: Span = [node.getStart(source), node.end];
-      for (const entry of allocatingMembers.filter(m => m.owner === node.name.text)) {
-        const declared = node.members.filter(m => { const name = nameOf(m); return !!name && ts.isIdentifier(name) && name.text === entry.name; });
-        if (declared.length !== 1 || declared.some(m => m.getText(source).trim() !== entry.text))
-          throw Error(`${entry.owner}.${entry.name} is not declared as reviewed: ${entry.text}`);
-      }
       const tagTerm = (values: readonly TagValue[]): TypeTerm => {
         const parts = values.map(v => literalTerm(v, span));
         const [only] = parts;
@@ -4198,7 +4192,13 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           type: hostBrands(type, true, context.isBrand,
             message => { throw Error(`${message} in ${identity.module}#${identity.name}.${f.name}`); }) };
       };
-      const shape = (fields: Field[]): TypeTerm => ({ k: "object", fields, stringIndex: null, calls: [], span, host: marker });
+      // A shape's stable members: its required property members the
+      // stable-member rule names, the tag among them (HOST-FAMILIES.md,
+      // "Stable keys").
+      const shape = (fields: Field[], stable: readonly string[]): TypeTerm => {
+        const keys = fields.flatMap(f => typeof f.name === "string" && !f.optional && stable.includes(f.name) ? [f.name] : []);
+        return { k: "object", fields, stringIndex: null, calls: [], span, host: marker, ...(keys.length ? { stable: keys } : {}) };
+      };
       const reference = (target: TypeDeclaration, args: TypeTerm[]): TypeTerm => {
         queue.push(target);
         const id = identityOf(target);
@@ -4242,6 +4242,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         const made = synthetic(a.name);
         if (made.fresh) {
           const fields: Field[] = [{ name: table.description.tag.field, optional: false, readonly: true, type: tagTerm(a.values), span }];
+          const stable: string[] = table.tagStable(a.values) ? [table.description.tag.field] : [];
           const methods: FlatMember[] = [];
           // Every method's definition, in member order, whether or not the
           // residual shares it.
@@ -4268,9 +4269,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
             if (!one) continue;
             fields.push({ name: s.name, readonly: true, optional: s.optional || read.some(r => r.optional),
               type: types.length === 1 ? one : { k: "union", parts: types, span }, span });
+            if (s.sources.every(x => table.stable(x.member))) stable.push(s.name);
           }
           written.forEach(methodBase);
-          definitions.push({ declaration: made.id, parameters: [], bases: methodOwners(methods), expression: shape(fields) });
+          definitions.push({ declaration: made.id, parameters: [], bases: methodOwners(methods), expression: shape(fields, stable) });
         }
         return made.term;
       };
@@ -4305,7 +4307,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
         // definitions alike.
         flat.filter(isMethod).forEach(methodBase);
         definitions.push({ declaration: identity, parameters, bases: methodOwners(flat.filter(f => shared(f, tags))),
-          expression: shape(flat.filter(f => !shared(f, tags)).map(f => readMember(f, tags, null))) });
+          expression: shape(flat.filter(f => !shared(f, tags)).map(f => readMember(f, tags, null)),
+            flat.filter(f => !shared(f, tags) && !isMethod(f) && table.stable(f)).map(f => f.name)) });
       }
       continue;
     }
@@ -4327,17 +4330,17 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // declared `readonly` (COMPILER-API.md, reading rule 1): a client write
     // to one is refused, and a test of one narrows as an invariant field's.
     // A member whose read allocates is no member of the host type's shape
-    // (`allocatingMembers`, declared as reviewed): every read of it, in any
+    // (the active family description's `allocating`, declared as reviewed): every read of it, in any
     // form, is a read of a member the type does not state, and no structural
     // type requiring it admits a value of the host type.
     if (context.hostType(node) && expression.k === "object") {
       const omitted = ts.isInterfaceDeclaration(node)
-        ? allocatingMembers.filter(m => m.owner === node.name.text) : [];
+        ? hostFamily().allocating.filter(m => m.owner === node.name.text).map(m => ({ name: m.member, text: m.text })) : [];
       for (const entry of omitted) {
         const declared = parts.flatMap(part => ts.isInterfaceDeclaration(part) ? part.members : [])
           .filter(m => { const name = nameOf(m); return !!name && ts.isIdentifier(name) && name.text === entry.name; });
         if (declared.length !== 1 || declared.some(m => m.getText(m.getSourceFile()).trim() !== entry.text))
-          throw Error(`${entry.owner}.${entry.name} is not declared as reviewed: ${entry.text}`);
+          throw Error(`${node.name?.text}.${entry.name} is not declared as reviewed: ${entry.text}`);
       }
       // A member declared `any` states nothing (reading rule 2): an optional
       // member of type `unknown`, as the brands (`_expressionBrand: any`),

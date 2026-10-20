@@ -141,7 +141,7 @@ let present key =
     when not (List.exists (fun (f:Semantic.field) -> f.name = Name key) fields) ->
     (match index_for s (Name key) with
      | Some i -> Shape {s with fields=fields @ [{name=Name key;optional=false;read=i.value;write=None;
-         host=false;receivers=[]}]}
+         host=false;receivers=[];stable=false}]}
      | None -> Shape s)
   | Exact fields -> Exact (promote fields)
   | a -> a
@@ -174,10 +174,47 @@ let record_field ?(allow_optional=false) declarations t field =
            key it lacks gives `undefined` (Lean's `optionalOperand`). *)
         | Shape ({calls=[];elements=None;indexes=_::_;_} as s) when allow_optional ->
           index_for s (Name field) <> None
-        | Named (id,_) as atom when not (List.mem id seen) -> has (id::seen) (Atoms [atom])
+        | Named (id,args) when not (List.mem id seen) ->
+          (try has (id::seen) (definition declarations id args) with Json.Error _ -> false)
         | _ -> false) atoms
+    | Some (Union ts) -> ts <> [] && List.for_all (has seen) ts
     | _ -> false in
   has [] t
+(* Whether every record arm states the field a stable member (HOST-FAMILIES.md,
+   "Stable keys"): a required member its declaration document states stable. *)
+let stable_member declarations t field =
+  let rec has seen t = match (try Some (declared_head declarations seen t) with Json.Error _ -> None) with
+    | Some (Atoms (_::_ as atoms)) -> List.for_all (function
+        | Shape {fields;calls=[];elements=None;indexes=[]} ->
+          List.exists (fun (f:Semantic.field) -> f.name = Name field && f.stable && not f.optional) fields
+        | Named (id,args) when not (List.mem id seen) ->
+          (try has (id::seen) (definition declarations id args) with Json.Error _ -> false)
+        | _ -> false) atoms
+    | Some (Union ts) -> ts <> [] && List.for_all (has seen) ts
+    | _ -> false in
+  has [] t
+(* Whether a path entry survives a step that may write cells: each member
+   of the path stable in every arm of what its receiver holds, the root's
+   type or the refinement its prefix's entry states (Lean's stable links,
+   `HeapExpressionRules.withStable`). *)
+let stable_path declarations env n =
+  is_path n &&
+  match String.split_on_char '\001' (field_of n) with
+  | "" :: fields ->
+    (match List.assoc_opt (owner n) env with
+     | Some (Value root) ->
+       let rec walk t prefix = function
+         | [] -> true
+         | f :: rest ->
+           stable_member declarations t f &&
+           let here = prefix @ [f] in
+           let next = match List.assoc_opt (path_key (owner n) here) env with
+             | Some (Value t') -> Some t'
+             | _ -> (try Some (field_type [] declarations [] t (Name f)) with Json.Error _ -> None) in
+           (match next with Some t' -> walk t' here rest | None -> rest = [])
+       in walk root [] fields
+     | _ -> false)
+  | _ -> false
 (* A guard on a field of an immutable binding's object: what the field holds
    is known until a step may write it. *)
 (* The atoms of a field's type some of the known contents may be: a
@@ -339,12 +376,21 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
      known of what it holds, the test keeps the arms whose field may answer
      so (Lean's `fieldSlice` through the read's link): `IteratorResult` by
      `done`. *)
+  (* A path of two members or more, tested for truthiness: what the test
+     leaves of the read's value, which a read of the same path reads again. *)
+  | Read ({node=Read _;_},Name _) when path_of env cond <> None ->
+    refine_path env cond (claimed cond.pos) (truthy_refine declarations truth)
   | Read ({node=Id name;_},Name field) ->
+    let current = claimed cond.pos in
+    if path_of env cond <> None && (match current with Some t -> not (knowable t) | None -> false)
+    then refine_path env cond current (truthy_refine declarations truth)
+    else
     let env = match List.assoc_opt name env with
       | Some (Value t) when not (record_field declarations t field) ->
         refine_value env name (fun t -> discriminate_fixed bounds declarations t (Name field) (truthy_slice truth))
       | _ -> env in
-    refine_field ~answer:true env name field (truthy_slice truth)
+    let env = refine_field ~answer:true env name field (truthy_slice truth) in
+    refine_path env cond (claimed cond.pos) (truthy_refine declarations truth)
   (* A true `&&` (a false `||`) established both operands so; the other
      answer came from either operand, the right one after the left answered
      the first way, and holds what either established. *)
@@ -370,7 +416,7 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
      their field, as Lean's slices leave them (`PromiseCalls.memberSlice`):
      where it answered `true`, each atom one of the tags may equal, kept as
      it is; where `false`, each atom less the tags' values. *)
-  | TagMember (field,tags,{node=Id name;_}) ->
+  | TagMember (field,tags,tested) ->
     let atoms = List.filter_map (fun l -> singleton_atom (literal_type l)) tags in
     let rec passing t = match t with
       | Atoms xs -> Atoms (List.filter (fun x ->
@@ -389,9 +435,14 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
       if truth then passing field
       else if List.exists (fun a -> restrict ~declarations a false field = Atoms []) atoms then Atoms []
       else field in
-    (match field with
-     | None -> refine_value env name own
-     | Some f -> refine_value env name (fun t -> discriminate bounds declarations t (Name f) through))
+    let by_field f t = discriminate bounds declarations t (Name f) through in
+    (* A name, where it is held; a path, through the read the test refined
+       (HOST-FAMILIES.md, "A guard on any argument"). *)
+    (match tested.node,field with
+     | Id name,None -> refine_value env name own
+     | Id name,Some f -> refine_value env name (by_field f)
+     | _,None -> refine_path env tested (claimed tested.pos) own
+     | _,Some f -> refine_path env tested (claimed tested.pos) (by_field f))
   | HasKey ({node=Literal (LString key);_},{node=Id name;_}) ->
     refine_value env name (key_slice key truth)
   (* `x instanceof C` is the same test of the class's key: primitives and
@@ -471,6 +522,10 @@ let rec branch_with state ?(modules = fun _ -> None) ?(claimed = fun _ -> None) 
         (match key with
          | Name field -> refine_field env name field slice
          | _ -> env)
+      (* A field of a path's value: the path's arms, as the read the test
+         refined holds them. *)
+      | Some (slice,_),Read (inner,key) when path_of env inner <> None ->
+        refine_path env inner (claimed inner.pos) (fun t -> discriminate bounds declarations t key slice)
       | Some _,_ -> env in
     narrow (narrow env l r) r l
   | (Call _ | Invoke _) when truth ->

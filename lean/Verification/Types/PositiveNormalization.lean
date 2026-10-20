@@ -40,10 +40,13 @@ inductive Clause (α : Type) where
   object rather than one location twice. Optional fields constrain a key
   only where the object has it (`optT`). Methods are host-relative members
   (`methodT`): read from the object and invoked on it. Each key bound says
-  which keys the object may own (`ownKeysT`). -/
+  which keys the object may own (`ownKeysT`). Each stable key is owned at a
+  location whose contract admits one value (`stableKeysT`, HOST-FAMILIES.md,
+  "Stable keys"). -/
   | refs (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
       (views : List (PropKey × α)) (optional : List (OptionalField α) := [])
       (methods : List (MethodMembers.Sig α) := []) (bounds : List KeyBound := [])
+      (stable : List PropKey := [])
   /-- A plain object with invariant named fields, readonly named views,
   index views (`dictViewT`) and writable index contracts (`dictCellT`), each
   over the keys its class admits (`IndexKeys`): every string key, the
@@ -57,6 +60,7 @@ inductive Clause (α : Type) where
       (optional : List (OptionalField α) := [])
       (methods : List (MethodMembers.Sig α) := []) (bounds : List KeyBound := [])
       (cells : List (IndexKeys × α) := [])
+      (stable : List PropKey := [])
   /-- A callable value meeting every fixed signature, `(receiver, parameters,
   result)`, and every variadic one, `(receiver, fixed parameters, element,
   result)`: the receiver a call may pass, the contract of each actual, and
@@ -142,16 +146,16 @@ def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → 
   | .numIn bs => fun _ _ v => ∃ b ∈ bs, v = .num b
   | .strIn ss => fun _ _ v => ∃ s ∈ ss, v = .str s
   | .symbol => symbolT
-  | .refs a bs vs os ms ks => fun n W v =>
+  | .refs a bs vs os ms ks st => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧ viewsT (famsOf X vs) n W v ∧
         optT (os.map (·.map X)) n W v ∧ methodT Ξ (ms.map (Member.of X P)) n W v ∧
-        ∀ K ∈ ks, ownKeysT K n W v
-  | .dict a bs vs ds os ms ks cs => fun n W v =>
+        (∀ K ∈ ks, ownKeysT K n W v) ∧ stableKeysT st n W v
+  | .dict a bs vs ds os ms ks cs st => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧
       viewsT (famsOf X vs) n W v ∧
         ((∀ d ∈ ds, dictViewT d.1 (X d.2) n W v) ∧ ∀ d ∈ cs, dictCellT d.1 (X d.2) n W v) ∧
         optT (os.map (·.map X)) n W v ∧ methodT Ξ (ms.map (Member.of X P)) n W v ∧
-        ∀ K ∈ ks, ownKeysT K n W v
+        (∀ K ∈ ks, ownKeysT K n W v) ∧ stableKeysT st n W v
   | .arrs L S => interT (CallEffects.callsT Ξ (L.map (Arrow.map X)))
       (CallEffects.restsT Ξ (S.map (RestArrow.mapWith X P)))
   | .callable a bs L S =>
@@ -384,14 +388,14 @@ def meet : Clause α → Clause α → List (Clause α)
   | .strIn S, .strIn T => strSet (S.filter T.contains)
   -- Object contracts meet on one object: their first operands are one record
   -- (`ReferenceConjunctions.flatten`), whose named fields the read rules find.
-  | .refs a bs vs os ms ks, .refs c ds ws ps ns ls =>
-      [.refs (a ++ c) (bs ++ ds) (vs ++ ws) (os ++ ps) (ms ++ ns) (ks ++ ls)]
-  | .refs a bs vs os ms ks, .dict c ds ws ix ps ns ls cy =>
-      [.dict (a ++ c) (bs ++ ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls) cy]
-  | .dict a bs vs ix os ms ks cx, .refs c ds ws ps ns ls =>
-      [.dict (a ++ c) (bs ++ ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls) cx]
-  | .dict a bs vs ix os ms ks cx, .dict c ds ws iy ps ns ls cy =>
-      [.dict (a ++ c) (bs ++ ds) (vs ++ ws) (ix ++ iy) (os ++ ps) (ms ++ ns) (ks ++ ls) (cx ++ cy)]
+  | .refs a bs vs os ms ks st, .refs c ds ws ps ns ls su =>
+      [.refs (a ++ c) (bs ++ ds) (vs ++ ws) (os ++ ps) (ms ++ ns) (ks ++ ls) (st ++ su)]
+  | .refs a bs vs os ms ks st, .dict c ds ws ix ps ns ls cy su =>
+      [.dict (a ++ c) (bs ++ ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls) cy (st ++ su)]
+  | .dict a bs vs ix os ms ks cx st, .refs c ds ws ps ns ls su =>
+      [.dict (a ++ c) (bs ++ ds) (vs ++ ws) ix (os ++ ps) (ms ++ ns) (ks ++ ls) cx (st ++ su)]
+  | .dict a bs vs ix os ms ks cx st, .dict c ds ws iy ps ns ls cy su =>
+      [.dict (a ++ c) (bs ++ ds) (vs ++ ws) (ix ++ iy) (os ++ ps) (ms ++ ns) (ks ++ ls) (cx ++ cy) (st ++ su)]
   | .arrs L S, .arrs M T => [.arrs (L ++ M) (S ++ T)]
   -- Two bags on one object are both; two bagless ones stay bagless.
   | .ctors L S [] [] [], .ctors M T [] [] [] => [.ctors (L ++ M) (S ++ T)]
@@ -451,7 +455,7 @@ def Clause.presentKeys : Clause α → List PropKey
 
 /-- An object clause's key bounds. -/
 def Clause.keyBounds : Clause α → List KeyBound
-  | .refs _ _ _ _ _ ks | .dict _ _ _ _ _ _ ks _ => ks
+  | .refs _ _ _ _ _ ks _ | .dict _ _ _ _ _ _ ks _ _ => ks
   | _ => []
 
 /-- A clause whose bounds admit every key it says the object owns. Any other
@@ -772,39 +776,39 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       all_goals intro hv; subst v; simp
     · simp only [singleton_sem, semWithArgs, List.map_append]
       rw [famsOf_append, flatten _ _ _ _ n W v]
-      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, interT,
+      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, stableKeysT_append, interT,
         List.mem_append, or_imp, forall_and]
-      exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
-          ⟨⟨r1, v1, o1, m1, k1⟩, ⟨r2, v2, o2, m2, k2⟩⟩,
-        fun ⟨⟨r1, v1, o1, m1, k1⟩, ⟨r2, v2, o2, m2, k2⟩⟩ =>
-          ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩⟩
+      exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩, ⟨s1, s2⟩⟩ =>
+          ⟨⟨r1, v1, o1, m1, k1, s1⟩, ⟨r2, v2, o2, m2, k2, s2⟩⟩,
+        fun ⟨⟨r1, v1, o1, m1, k1, s1⟩, ⟨r2, v2, o2, m2, k2, s2⟩⟩ =>
+          ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩, ⟨s1, s2⟩⟩⟩
     · -- refs ∩ dictionary
       simp only [singleton_sem, semWithArgs, List.map_append]
       rw [famsOf_append, flatten _ _ _ _ n W v]
-      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, interT,
+      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, stableKeysT_append, interT,
         List.mem_append, or_imp, forall_and]
-      exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d2, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
-          ⟨⟨r1, v1, o1, m1, k1⟩, ⟨r2, v2, d2, o2, m2, k2⟩⟩,
-        fun ⟨⟨r1, v1, o1, m1, k1⟩, ⟨r2, v2, d2, o2, m2, k2⟩⟩ =>
-          ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d2, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩⟩
+      exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d2, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩, ⟨s1, s2⟩⟩ =>
+          ⟨⟨r1, v1, o1, m1, k1, s1⟩, ⟨r2, v2, d2, o2, m2, k2, s2⟩⟩,
+        fun ⟨⟨r1, v1, o1, m1, k1, s1⟩, ⟨r2, v2, d2, o2, m2, k2, s2⟩⟩ =>
+          ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d2, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩, ⟨s1, s2⟩⟩⟩
     · -- dictionary ∩ refs
       simp only [singleton_sem, semWithArgs, List.map_append]
       rw [famsOf_append, flatten _ _ _ _ n W v]
-      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, interT,
+      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, stableKeysT_append, interT,
         List.mem_append, or_imp, forall_and]
-      exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d1, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
-          ⟨⟨r1, v1, d1, o1, m1, k1⟩, ⟨r2, v2, o2, m2, k2⟩⟩,
-        fun ⟨⟨r1, v1, d1, o1, m1, k1⟩, ⟨r2, v2, o2, m2, k2⟩⟩ =>
-          ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d1, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩⟩
+      exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d1, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩, ⟨s1, s2⟩⟩ =>
+          ⟨⟨r1, v1, d1, o1, m1, k1, s1⟩, ⟨r2, v2, o2, m2, k2, s2⟩⟩,
+        fun ⟨⟨r1, v1, d1, o1, m1, k1, s1⟩, ⟨r2, v2, o2, m2, k2, s2⟩⟩ =>
+          ⟨⟨r1, r2⟩, ⟨v1, v2⟩, d1, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩, ⟨s1, s2⟩⟩⟩
     · -- dictionary ∩ dictionary
       simp only [singleton_sem, semWithArgs, List.map_append,
         List.mem_append, or_imp, forall_and]
       rw [famsOf_append, flatten _ _ _ _ n W v]
-      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, interT]
-      exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨⟨d1, d2⟩, ⟨c1, c2⟩⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩ =>
-          ⟨⟨r1, v1, ⟨d1, c1⟩, o1, m1, k1⟩, ⟨r2, v2, ⟨d2, c2⟩, o2, m2, k2⟩⟩,
-        fun ⟨⟨r1, v1, ⟨d1, c1⟩, o1, m1, k1⟩, ⟨r2, v2, ⟨d2, c2⟩, o2, m2, k2⟩⟩ =>
-          ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨⟨d1, d2⟩, ⟨c1, c2⟩⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩⟩⟩
+      simp only [famsOf_append, viewsT_append, optT_append, methodT_append, stableKeysT_append, interT]
+      exact ⟨fun ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨⟨d1, d2⟩, ⟨c1, c2⟩⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩, ⟨s1, s2⟩⟩ =>
+          ⟨⟨r1, v1, ⟨d1, c1⟩, o1, m1, k1, s1⟩, ⟨r2, v2, ⟨d2, c2⟩, o2, m2, k2, s2⟩⟩,
+        fun ⟨⟨r1, v1, ⟨d1, c1⟩, o1, m1, k1, s1⟩, ⟨r2, v2, ⟨d2, c2⟩, o2, m2, k2, s2⟩⟩ =>
+          ⟨⟨r1, r2⟩, ⟨v1, v2⟩, ⟨⟨d1, d2⟩, ⟨c1, c2⟩⟩, ⟨o1, o2⟩, ⟨m1, m2⟩, ⟨k1, k2⟩, ⟨s1, s2⟩⟩⟩
     · -- arrs ∩ arrs
       simp only [singleton_sem, semWithArgs, List.map_append]
       rw [interT, CallEffects.callsT_append, CallEffects.restsT_append]
@@ -967,8 +971,8 @@ theorem semWithArgs_consistent {X : α → Fam} {P : α → ArgFam} {c : Clause 
     obtain ⟨flds, l, oid, rfl, hl⟩ := hat
     exact ownKeysT_admits (hk K hK) hl
   cases c with
-  | refs a bs vs os ms ks => exact present a bs vs ks h.1 h.2.1 h.2.2.2.2
-  | dict a bs vs ds os ms ks cs => exact present a bs vs ks h.1 h.2.1 h.2.2.2.2.2
+  | refs a bs vs os ms ks => exact present a bs vs ks h.1 h.2.1 h.2.2.2.2.1
+  | dict a bs vs ds os ms ks cs => exact present a bs vs ks h.1 h.2.1 h.2.2.2.2.2.1
   | _ => simp [Clause.consistent, Clause.presentKeys]
 
 /-- A member of an object clause owns every key the clause says it owns. -/
@@ -1002,9 +1006,26 @@ theorem semWithArgs_owns {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n
 theorem semWithArgs_bounded {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v} {K : KeyBound}
     (h : semWithArgs Ξ X P c n W v) (hK : K ∈ c.keyBounds) : ownKeysT K n W v := by
   cases c with
-  | refs a bs vs os ms ks => exact h.2.2.2.2 K hK
-  | dict a bs vs ds os ms ks cs => exact h.2.2.2.2.2 K hK
+  | refs a bs vs os ms ks => exact h.2.2.2.2.1 K hK
+  | dict a bs vs ds os ms ks cs => exact h.2.2.2.2.2.1 K hK
   | _ => simp [Clause.keyBounds] at hK
+
+/-- The stable keys a record or dictionary clause states. -/
+def Clause.stableKeys : Clause α → List PropKey
+  | .refs _ _ _ _ _ _ st | .dict _ _ _ _ _ _ _ _ st => st
+  | _ => []
+
+/-- A member of a clause stating a stable key owns the key at a location
+whose contract admits one value (HOST-FAMILIES.md, "Stable keys"). -/
+theorem semWithArgs_stable {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v} {k : PropKey}
+    (h : semWithArgs Ξ X P c n W v) (hk : k ∈ c.stableKeys) :
+    ∃ (flds : List (PropKey × Nat)) (oid l : Nat) (ct : Ctr n) (value : Val),
+      v = .objAt flds .absent oid ∧ flds.lookup k = some l ∧
+        lookup W l = some ct ∧ CtrStable ct value := by
+  cases c with
+  | refs a bs vs os ms ks st => exact stableKeysT_at h.2.2.2.2.2 hk
+  | dict a bs vs ds os ms ks cs st => exact stableKeysT_at h.2.2.2.2.2.2 hk
+  | _ => simp [Clause.stableKeys] at hk
 
 /-- All constructors remain admissible, without assumptions on the operand
 families. Invariant comparison and arrow guards supply the required stability. -/
@@ -1019,10 +1040,12 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
   | strIn _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | refs a bs vs os ms ks => exact ⟨fun n W v h => ⟨(adm _ _).down n W v h.1, (viewsT_adm _).down n W v h.2.1,
         (optT_adm _).down n W v h.2.2.1, (methodT_adm _).down n W v h.2.2.2.1,
-        fun K hK => (ownKeysT_adm K).down n W v (h.2.2.2.2 K hK)⟩,
+        fun K hK => (ownKeysT_adm K).down n W v (h.2.2.2.2.1 K hK),
+        (stableKeysT_adm _).down n W v h.2.2.2.2.2⟩,
       fun n W U hx v h => ⟨(adm _ _).mono n W U hx v h.1, (viewsT_adm _).mono n W U hx v h.2.1,
         (optT_adm _).mono n W U hx v h.2.2.1, (methodT_adm _).mono n W U hx v h.2.2.2.1,
-        fun K hK => (ownKeysT_adm K).mono n W U hx v (h.2.2.2.2 K hK)⟩⟩
+        fun K hK => (ownKeysT_adm K).mono n W U hx v (h.2.2.2.2.1 K hK),
+        (stableKeysT_adm _).mono n W U hx v h.2.2.2.2.2⟩⟩
   | dict a bs vs ds os ms ks cs =>
     refine ⟨?_, ?_⟩
     · intro n W v h
@@ -1030,13 +1053,15 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
         ⟨fun d hd => (dictViewT_adm _ _).down n W v (h.2.2.1.1 d hd),
           fun d hd => (dictCellT_adm _ _).down n W v (h.2.2.1.2 d hd)⟩, (optT_adm _).down n W v h.2.2.2.1,
         (methodT_adm _).down n W v h.2.2.2.2.1,
-        fun K hK => (ownKeysT_adm K).down n W v (h.2.2.2.2.2 K hK)⟩
+        fun K hK => (ownKeysT_adm K).down n W v (h.2.2.2.2.2.1 K hK),
+        (stableKeysT_adm _).down n W v h.2.2.2.2.2.2⟩
     · intro n W U hx v h
       exact ⟨(adm _ _).mono n W U hx v h.1, (viewsT_adm _).mono n W U hx v h.2.1,
         ⟨fun d hd => (dictViewT_adm _ _).mono n W U hx v (h.2.2.1.1 d hd),
           fun d hd => (dictCellT_adm _ _).mono n W U hx v (h.2.2.1.2 d hd)⟩, (optT_adm _).mono n W U hx v h.2.2.2.1,
         (methodT_adm _).mono n W U hx v h.2.2.2.2.1,
-        fun K hK => (ownKeysT_adm K).mono n W U hx v (h.2.2.2.2.2 K hK)⟩
+        fun K hK => (ownKeysT_adm K).mono n W U hx v (h.2.2.2.2.2.1 K hK),
+        (stableKeysT_adm _).mono n W U hx v h.2.2.2.2.2.2⟩
   | arrs L S => exact interT_adm _ _ (CallEffects.callsT_adm _) (CallEffects.restsT_adm _)
   | callable a bs L S => exact interT_adm _ _ (CallableConjunctions.adm _ _ _) (CallEffects.restsT_adm _)
   | ctors L S a bs vs =>
@@ -1245,10 +1270,10 @@ def Clause.map (f : α → β) : Clause α → Clause β
   | .symbol => .symbol
   | .symbolLit v => .symbolLit v
   | .list a bs => .list (a.map f) (bs.map (·.map f))
-  | .refs a bs vs os ms ks => .refs (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
-      (os.map (·.map f)) (ms.map (Sig.map f)) ks
-  | .dict a bs vs ds os ms ks cs => .dict (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
-      (mapFields f ds) (os.map (·.map f)) (ms.map (Sig.map f)) ks (mapFields f cs)
+  | .refs a bs vs os ms ks st => .refs (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
+      (os.map (·.map f)) (ms.map (Sig.map f)) ks st
+  | .dict a bs vs ds os ms ks cs st => .dict (mapFields f a) (bs.map (mapFields f)) (mapFields f vs)
+      (mapFields f ds) (os.map (·.map f)) (ms.map (Sig.map f)) ks (mapFields f cs) st
   | .arrs L S => .arrs (L.map (Arrow.map f))
       (S.map (RestArrow.map f))
   | .callable a bs L S => .callable (mapFields f a) (bs.map (mapFields f))
@@ -1301,9 +1326,9 @@ theorem semWithArgs_not_plain {X : α → Fam} {P : α → ArgFam} {c : Clause �
 /-- Every operand of a clause. -/
 def Clause.operands : Clause α → List α
   | .list a bs => a.operands ++ bs.flatMap Tuple.operands
-  | .refs a bs vs os ms _ => (a ++ bs.flatten ++ vs).map (·.2) ++ os.map (·.type) ++
+  | .refs a bs vs os ms _ _ => (a ++ bs.flatten ++ vs).map (·.2) ++ os.map (·.type) ++
       ms.flatMap Sig.operands
-  | .dict a bs vs ds os ms _ cs => (a ++ bs.flatten ++ vs).map (·.2) ++ os.map (·.type) ++
+  | .dict a bs vs ds os ms _ cs _ => (a ++ bs.flatten ++ vs).map (·.2) ++ os.map (·.type) ++
       ds.map (·.2) ++ ms.flatMap Sig.operands ++ cs.map (·.2)
   | .arrs L S => L.flatMap Arrow.operands ++
       S.flatMap RestArrow.operands
@@ -1413,7 +1438,7 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
       mapFields_self fun x hx => h x (.inl (.inl (.inr hx))),
       opt_self fun x hx => h x (.inl (.inl (.inl (.inr hx)))),
       map_self fun m hm => sig_self fun x hx => h x (.inl (.inr (List.mem_flatMap.mpr ⟨m, hm, hx⟩))),
-      trivial, mapFields_self fun x hx => h x (.inr hx)⟩
+      trivial, mapFields_self fun x hx => h x (.inr hx), trivial⟩
     simp only [List.mem_map, List.mem_flatten] at hx ⊢
     obtain ⟨q, hq, rfl⟩ := hx
     exact ⟨q, ⟨fs, hfs, hq⟩, rfl⟩

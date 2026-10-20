@@ -435,7 +435,7 @@ static fields, exactly `P`. -/
 /-- The prototype type `P` has a field or view `f` at `A`. -/
 @[nospecialize] def ProtoMember (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) : Prop :=
   match expand G P with
-  | [.refs gs [] ws _ _ _] => (f, A) ∈ gs ++ ws.filter (·.1 != lengthKey)
+  | [.refs gs [] ws _ _ _ _] => (f, A) ∈ gs ++ ws.filter (·.1 != lengthKey)
   | _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) :
@@ -890,7 +890,7 @@ declared bounds. -/
     | .readAt f a, [ja] =>
       ja.context = j.context ∧ ja.term = a ∧
       (match expand G ja.type with
-       | [.refs fs [] vs _ _ ks] =>
+       | [.refs fs [] vs _ _ ks _] =>
          (∃ K ∈ ks, K.admits f = false) ∧ (CallArguments.protoField, P) ∈ fs ++ vs ∧
          ProtoMember G P f j.type
        | _ => False)
@@ -901,7 +901,7 @@ declared bounds. -/
       ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
       inheritedKey f = false ∧
       (match expand G ja.type with
-       | [.refs _ [] _ os _ _] => ∃ o ∈ os, o.key = f ∧ o.type = A
+       | [.refs _ [] _ os _ _ _] => ∃ o ∈ os, o.key = f ∧ o.type = A
        | _ => False)
     | _, _ => False
   | .readDict K A U =>
@@ -910,7 +910,7 @@ declared bounds. -/
       ja.context = j.context ∧ ja.term = a ∧ Represents G U .undef ∧ j.type = A ++ U ∧
       K.surely f = true ∧ inheritedKey f = false ∧
       (match expand G ja.type with
-       | [.dict _ [] _ ix _ _ _ _] => (K, A) ∈ ix
+       | [.dict _ [] _ ix _ _ _ _ _] => (K, A) ∈ ix
        | _ => False)
     | _, _ => False
   | .indexDict K KK A U =>
@@ -921,7 +921,7 @@ declared bounds. -/
       Represents G jk.type (keyClause KK) ∧ KK.within K = true ∧
       Represents G U .undef ∧ j.type = A ++ U ∧ KK ≠ .strings ∧
       (match expand G ja.type with
-       | [.dict _ [] _ ix _ _ _ _] => (K, A) ∈ ix
+       | [.dict _ [] _ ix _ _ _ _ _] => (K, A) ∈ ix
        | _ => False)
     | _, _ => False
   | .write =>

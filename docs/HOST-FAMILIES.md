@@ -14,11 +14,11 @@ This document specifies one mechanism for every such family, parameterized
 by a reviewed **family description**. Each part has one implementation,
 which reads the description; no part names a family. The
 [compiler API](COMPILER-API.md) is the first instance. The pipeline
-implements [tag sets](#tag-sets), with their Lean proofs, and
+implements [tag sets](#tag-sets), with their Lean proofs,
 [the family contract](#the-family-contract) in the front end, whose readings
-the checker reads by its ordinary rules; [guard recognition](#guard-recognition)
-and [stable members](#stable-members) are a design, which the pipeline does
-not implement, and their Lean obligations are unproved.
+the checker reads by its ordinary rules, and
+[guard recognition](#guard-recognition) and
+[stable members](#stable-members), with their Lean proofs.
 
 ## The parts
 
@@ -303,7 +303,7 @@ other function of the host package declaring a predicate, the sync API's
 `isUnionType(type: Type)` among them (`invalid-compiler-api-sync-guard`):
 a predicate of the package narrows only by an audited entry.
 
-It is an instance of the [effects vision](#stable-members): an operation
+It is an instance of the effects vision: an operation
 proved stable for a structure makes the effect-free rule sound for code
 using only it. A listed guard, called on an established member of the
 family, reads one member of its argument, the tag, which is stable (F2) and
@@ -546,58 +546,276 @@ the trusted base; the table and its review are.
 
 ### Stable members
 
-The description's **stable-member rule** names the members of each shape
-whose read gives the same value every time; the tag is always one. The
-trusted front end, and nothing else, marks them **stable views** in the
-shapes it emits.
+A test refines the slot holding the value it tests, and the narrowing rules
+([guards](SOURCE-CONTRACTS.md#guards)) refine every slot known to hold that
+value. A **path** $`p = x.f_1\cdots f_n`$, $`n\ge 0`$, is a root binding
+$`x`$ and member reads. Each evaluation of a path reads it anew:
+`ts.isIdentifier(m.name) && m.name.text` reads `m.name` twice, into two
+slots. Path refinement is the knowledge that a later read of a path gives
+the value an earlier read gave, so that it sees the earlier read's
+refinement. It has two parts: linked reads, which hold of every admitted
+object until a call or a write, and stable links, which hold of the members
+whose locations have stable contracts through every step; a family's stable
+members are the ones introduced at such locations, by F2.
 
-A **stable contract** is one fixed value: a location contract $`c`$ is
-stable when
-$`\exists v_0.\ \forall j, U, u.\ c_j(U,u)\Rightarrow u=v_0`$, the same
-$`v_0`$ at every level and world. A stable view of $`f`$ at $`B`$ holds of an
-object whose field $`f`$ is a location with a stable contract implying
-$`B`$. Truncation and world extension keep it. A stable view is below the
-plain view of the same type; no rule makes a stable view of a plain one, of
-an invariant field or of an optional one; mappings and subtyping keep the
-flag. Decoders accept the flag only in the rows of the declaration document
-the front end emits for an active family, so a claim stating a stable view
-the declarations do not give is refused.
+The refinement is a type of the slot, never of the root. A view's contract
+implication ranges over every world at a lower level (`viewT`), and the
+slice a test leaves of the current value holds at the current world alone,
+so no refined view of the root follows from it.
 
-**Read equality.** A test refines a value, and the narrowing rules
-([guards](SOURCE-CONTRACTS.md#guards)) refine every slot known to hold it. A
-path $`p = x.f_1\cdots f_n`$, $`n\ge 0`$, is a root binding $`x`$ and member
-reads; a variable is the path of length zero. Where a read link
-$`x.f\mapsto y`$ holds, every arm of $`x`$'s claim states $`f`$ as a stable
-view and $`y`$ is claimed at $`B`$, $`x`$ is claimed at those arms with
-$`f`$'s view at $`B`$:
+#### Linked reads
 
-```math
-\frac{x.f\mapsto y\quad \Gamma\vdash x : \textstyle\bigcup_i \mathsf{Ref}(\ldots;\,f{:}^{\mathsf{st}}A_i;\ldots)\quad \Gamma\vdash y : B}
-     {\Gamma\vdash x : \textstyle\bigcup_i \mathsf{Ref}(\ldots;\,f{:}^{\mathsf{st}}B;\ldots)}\ \textsf{read-eq}
-```
-
-Sound because the location's stable contract makes it hold $`\rho(y)`$ in
-every later world, and a type's meaning is preserved by world extension and
-lower levels. The refined claim is a type in $`\Gamma`$, so a call or a
-write of another location leaves it; a write of $`x`$'s slot, also through
-a captured binding, replaces it. Paths compose: the rule applied at each
-segment transports a test of $`x.f.g`$ to $`x`$. A branch over a test of a
-path is derived notation:
+A read $`r\leftarrow x.f`$ records the read link $`x.f\mapsto r`$: the
+object in $`x`$ holds $`\rho(r)`$ at its field $`f`$ in the current heap
+(`readFrame`, [checked expression postconditions](PROGRAM-TYPING.md#checked-expression-postconditions)).
+A later read of $`x.f`$ where the link holds gives that value:
 
 ```math
-\frac{\Gamma\vdash p : A\quad \Gamma,\ p \mapsto T_c(A)\vdash_R S_1\quad \Gamma,\ p \mapsto T_{\lnot c}(A)\vdash_R S_2}
-     {\Gamma\vdash_R\ \mathsf{if}\ (c(p))\ S_1\ \mathsf{else}\ S_2}\ \textsf{if-path}
+\frac{x.f\mapsto y\in\Sigma\quad \Gamma\vdash y : B\quad B\le A}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathsf{readAt}\,f\,x : A\dashv\Pi,\ r=y;\ \Sigma}\ \textsf{read-linked}
 ```
 
-where $`p\mapsto B`$ means the claim `read-eq` gives each later read of $`p`$.
-Tests, their slices and their Boolean combinations are the existing rules'.
-Lean checks the segment's stable flag, the read link (the same root and
-member), the branch the claim is on, the root's preservation and the slice.
-What it assumes is that the location behind a stable member has a stable
-contract (F1′'s modeled realization of F2). A path's fact ends where its
-root's slot is written; it is no
-[current-content assertion](SOURCE-MODEL.md#current-content-assertions),
-whose facts a call ends.
+The read is a step of the program, as any read; the rule types its result.
+It is sound because $`\Sigma`$ holds of the current heap, so the read returns
+$`\rho(y)`$, and $`\Gamma`$'s types hold of the environment at the current
+world. A link through a key the object may lack (an optional link) covers
+the absent key's `undefined` as well. The rule holds of every admitted
+object, program records and host values alike, because a read of a member is
+a read of a data property: the source fragment admits no accessor in a
+program object ([source boundary](SOURCE-FRAGMENT.md)), a structural input is
+a plain data object by the caller contract
+([trust surface](DESIGN.md#trust-surface)), and a host value's reads are its
+model's by its audited correspondence (T4). An object outside these, one
+whose getter answers differently on two reads, is outside the caller
+contract; a boundary control runs it under Node. Its invalidation is the read
+link's: a write discards read links, a call discards them, and a closure's
+entry states none.
+
+Paths compose through equalities: a read of `x.f.g` reads `x.f`, which the
+link $`x.f\mapsto y`$ gives as $`y`$, and then `g` of it, which a link
+$`y.g\mapsto z`$ gives as $`z`$. Two evaluations of one path under live links
+are one value, so two tests of it refine one slot:
+`(ts.isIdentifier(m.name) || ts.isPrivateIdentifier(m.name)) && m.name.text`
+reads `m.name` three times, and the second and third reads are the first
+one's slot, at the union of the two guards' arms where the condition holds.
+
+A cell fact ($`x.f\mapsto R`$, read by `read-sliced`) states a predicate of a
+location's current value, which survives a write a distinct link separates
+from the location; a read link states the value itself, whose every
+refinement a linked read sees.
+
+#### A guard on any argument
+
+A listed guard's call of one argument evaluates the argument once, into a
+slot $`s`$, and is the membership test of $`s`$, or of its tag field, after
+the domain obligation on $`s`$:
+
+```math
+\frac{g\ \text{a node guard of}\ F,\quad K_g=\{t_1,\ldots,t_n\}}
+     {g(e)\ \leadsto\ s\leftarrow e;\ \ s : P\ \text{checked};\ \ \mathsf{member}(K_g,\ s.\tau)}\ \textsf{host-guard-operand}
+```
+
+and a tag guard's call is $`\mathsf{member}(K_g, s)`$. A call on an
+immutable name is the case where $`s`$ is the name's slot (`host-guard`). The
+entry makes the call and the test agree: on its domain the guard returns
+`true` exactly when the tag is in $`K_g`$, reads nothing but the tag and has
+no other effect, so evaluating the argument and testing its tag is the call.
+The argument's evaluation is the call's, its exceptions the call's. So
+`ts.isIdentifier(m.name)` refines the slot of its read of `m.name`, which the
+next read of `m.name` is by `read-linked`. The guard's signature
+(`guard-value`) remains the reading of a guard used as a value.
+
+#### Entries
+
+Branch scopes hold an administrative **witness** for each member path read
+by their condition. A read maps its result into the witness slot; a branch
+edge checks the refined type of that slot and projects its read links.
+A path not read on an incoming short-circuit edge has the top type and no
+read link on that edge. Witness names cannot occur in source identifiers.
+The slots contain saved values; a later source member read is checked by
+`read-linked`. Paths compose through the witnesses of their prefixes.
+
+A statement entry states a one-member path's refinement through the existing
+[current-content assertion](SOURCE-CLAIMS.md#current-content-assertions),
+`{"name": "m", "type": […], "current": [["name", [Identifier]]]}`.
+A refinement beyond the declared read contract and the supported field
+predicates uses a witness slot at the asserted type, with a required read
+link from the root binding through that field. Every incoming edge, including a loop
+backedge, checks both the mapped slot's type and that link's receiver and
+field. The rule is [witness-edge](PROGRAM-TYPING.md#witness-edges), proved
+by `ControlFlow.witness_edge_sound`. Calls and writes discard read links;
+closure entries and exceptional transfers establish none. A catch therefore
+cannot receive a witness link from the throwing computation.
+
+#### Stable keys
+
+A record clause states a set $`\sigma`$ of **stable keys**, each one of its
+required views. The notion belongs to no family: an object meets them when
+it owns each $`f\in\sigma`$ at a location whose contract $`c`$ is
+**stable**:
+
+```math
+\exists v_0.\ \forall j, U, u.\ c_j(U,u)\Rightarrow u=v_0
+```
+
+the same $`v_0`$ at every level and world. Extension keeps every contract
+of a world and truncation restricts it, so both keep a stable key. Subtyping
+may forget a source's stable keys and proves every key the target states
+stable; an ordinary record states none, so a node remains below
+`{ readonly flags: number }`. A meet states the keys either operand states;
+a join, such as a [residual](#residuals), the keys every operand states.
+
+The semantic predicate `stableKeysT` in
+[Types.lean](../lean/Verification/Types/Types.lean) states the location and
+stable-contract requirement. `stableKeysT_at` supplies that contract;
+`stableKeysT_adm`, `stableKeysT_weaken` and `stableKeysT_append` prove
+admissibility, forgetting keys and conjunction. The theorem
+`HeapObservations.stable_key_frame` in
+[HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean)
+frames the heap value at a stated key on normal return. A record or
+dictionary clause states its stable keys (`Clause.refs`'s last part), whose
+meaning is `stableKeysT` (`semWithArgs_stable`). In the declaration document
+a marked object term states them as `"stable": [key, …]`, nonempty, which
+`objectClause` decodes.
+
+The program never introduces a stable key: an allocation's locations have
+the contracts of their types, which state no single value. A family's
+reading is the one authorized introduction, at host values, by F1′. The
+checks split by who can make them:
+
+- **The trusted front end** writes a stable key only for a member the
+  active family's reading authorizes: a required property member of the
+  shape the description's table selects, not among the description's
+  exclusions. The interpreter refuses a description whose stable-member
+  rule names an excluded member or one the shape lacks.
+- **Lean** accepts stable keys only on an object term carrying a family's
+  marker, and only each a required view of that term; a stable key at an
+  optional member or at a key the term does not state is refused by the
+  decoder. The claims wire has no form for them, so a claim states them
+  only by naming a declaration.
+
+No program allocation owns `[[host]]`, so no program object meets a type
+stating a stable key, whatever claim names one.
+
+The stable members of a shape are those the description names: required
+property members of the shape, the tag among them. A method is none, nor an
+optional member (a correction's absent member among them), nor a member of
+a program record, of a look-alike declaration, of a host view (`Type`,
+`Symbol`, `Checker`, `API`) or of a node list. Spelling (`readonly`, a member
+name) makes nothing stable.
+
+#### Stable links
+
+A read link through a member every arm of its cell's claim states stable
+holds through every step:
+
+```math
+\frac{x.f\mapsto y\in\Sigma\quad \forall a\in\Gamma(x).\ f\in\sigma(a)\quad
+      \Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\Sigma'}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow t : A\dashv\Pi';\ \Sigma',\ x.f\mapsto y}\ \textsf{stable-link}
+```
+
+for every term $`t`$: a call, a write, a closure's run, on the term's normal
+return. A claim with an arm that does not state $`f`$ stable keeps no link
+through $`f`$.
+
+It is sound by a frame property of stable contracts. Let $`c`$ be stable at
+$`v_0`$ in $`W`$ at level $`n+1`$. A heap meeting $`W`$ holds $`v_0`$ at
+$`c`$'s location; every state an execution reaches at a positive remaining
+level $`m`$ meets a world extending $`W`$ truncated to $`m`$, whose
+contract at that location is $`c`$ restricted to the levels below $`m`$, so
+its heap holds $`v_0`$ there too:
+
+```math
+\frac{\mathrm{lookup}(W,\ell)=c\quad c\ \text{stable at}\ v_0\quad \mathrm{HeapOk}(n{+}1,W,h)\quad \mathrm{SafePost}(T,Q,n{+}1,W,h,t)}
+     {\mathrm{SafePost}(T,\ \lambda h'\,v.\ Q(h',v)\land h'(\ell)=v_0,\ n{+}1,W,h,t)}\ \textsf{stable-frame}
+```
+
+The semantic lemmas are `HeapOk.stable_value_future` in
+[Heaps.lean](../lean/Verification/Semantics/Heaps.lean) and
+`HeapObservations.stable_frame` in
+[HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean).
+The checker applies the rule to every step: each step's output keeps the
+input's read links through a member every clause of the receiver's type
+states stable (`HeapExpressionRules.withStable`, proved by
+`withStable_sound` from `stable_frame`), the one place every expression
+checker passes through (`Checker.keepingStable`). The rule is
+[stable-link](PROGRAM-TYPING.md#checked-expression-postconditions).
+
+So $`v_0=\rho(y)`$, the value the link observed, and the location holds it
+in every later heap. The root $`x`$ is a slot, which no step rebinds; a
+`let` root is a cell, read into a slot by a plain read link, which a call or
+a write of the cell ends.
+
+What the frame property covers is the model's execution. A call into
+external code that receives the node, a callback of `forEachChild` or a
+separately verified function, keeps the link in the model; that the runtime
+external code leaves the member as the model does rests on F1′ (T1′) and the
+external execution correspondence (T8), which the lemma does not prove.
+
+The exceptional edge keeps no stable link: a handler's entry states the
+facts its own claim states, and the ordinary postcondition gives an
+exceptional continuation none, so a refinement read in a `try` block is not
+a fact of its `catch`.
+
+A footprint that preserves a location's contents is another sufficient
+condition for keeping a link through a call
+([exceptional footprints](SOURCE-MODEL.md#exceptional-footprints)); it holds
+of the calls whose footprint is checked, where stability holds of every
+admitted call.
+
+A stable member is the [effects vision](#guard-recognition) at its
+strongest: an operation whose result no step changes. A refinement of a
+stable path survives every call, as a fact of an immutable value does, so
+no call's footprint has to keep it.
+
+#### What a family supplies, what it gets
+
+Stable members are one mechanism, in which no family is named: the
+stable-contract notion, the clause's stable keys and their subtyping, the
+decoder's checks and the stable-link rule read no package, member or tag
+name. A family supplies, in its description, data alone:
+
+- the marker, which the decoder requires of a shape stating stable keys;
+- the stable-member rule's exclusions, each a property member its owner
+  declares, checked against the declaration as reviewed;
+- its allocating members, omitted from every shape and checked likewise.
+
+What the mechanism does not yet take from the description is the
+package's installation: the front end registers the compiler API's
+package, pinned by the tools, and reads another only through a test-only
+channel ([WORK.md](../WORK.md#family-installation)).
+
+It gets, for every required property member of its shapes the rule does
+not exclude, a stable key in the declaration document; the tag of a
+residual is stable where the tag member of every shape it stands for is,
+and with it the stable-link rule: a test of a path through such members
+holds past every call and write. A host view of the package, a node list,
+an optional or corrected member, and a member of a program record state
+none, by the same rule. The compiler API's description excludes no member
+(its allocating `jsDoc` is no member of any shape,
+[reading rule 1](COMPILER-API.md#reading-rules)); the
+[string-tagged stand-in](#a-string-tagged-stand-in) excludes none, and a
+run under a description excluding `Call.callee` refuses the read its run
+without the exclusion verifies (`pipeline/test.mts`).
+
+#### Limits
+
+A closure's entry states no read link and no witness, so a callback reading
+`m.name.text` after a test of `m.name` outside the callback reads the
+member's declared type. A path at an entry has length one. A node list's
+element is no path segment.
+
+#### Trust
+
+Linked reads and guards on any argument add none: a read of a structural
+input's member is a data property's by the caller contract, a read of a host
+value's member is a read of its model (T4), and a guard's test is its
+entry's (F3).
+Stable keys add none beyond F1′: the stable contracts of a host value's
+stable members are F1′'s modeled realization of F2, the introduction
+obligation of a stable key at a host value. C4 reads every member of every
+node twice on the corpus, regression evidence for F2.
 
 ## Identity through program code
 
@@ -667,10 +885,13 @@ It states:
   - `base`: a named declaration;
 - **corrections:** the audited members the declarations state required and
   the runtime leaves absent, each read as optional, with its text;
+- **allocating members:** the members whose read allocates, each omitted
+  from every shape, with its text; no ordinary read or read link reaches
+  one, since two reads of it give two values;
 - **marker:** the value $`m_F`$ of `[[host]]`;
-- **stable members:** every property member of a shape, the tag included, but
-  the listed exclusions, with the regression check that reads each twice on
-  a corpus;
+- **stable members:** every required property member of a shape, the tag
+  included, but the listed exclusions, with the regression check that reads
+  each twice on a corpus;
 - **guards:** the [guard table](#the-guard-table), each entry an export's
   identity and reviewed text, its kind, domain and exact tag set.
 
@@ -766,8 +987,10 @@ The description of `typescript` 7.0.2's syntax trees
   `base` `NodeBase` (`JSTypeAliasDeclaration`, `JSImportDeclaration`);
 - corrections: the [corrections](COMPILER-API.md#corrections) table;
 - marker: `"RemoteNode"`;
-- stable members: every property member of a shape but `jsDoc`, which
-  allocates (reading rule 1), checked by C4;
+- allocating members: `Node.jsDoc`, which builds a fresh array on each
+  read (reading rule 1);
+- stable members: every required property member of a shape, no
+  exclusion; checked by C4;
 - guards: the table of the exports of `typescript/unstable/ast` whose
   functions, in `dist/ast/is.generated.js` and `dist/ast/is.js`, meet the
   recognition contract; `isLeftHandSideExpression` and `isUnaryExpression`,
@@ -786,10 +1009,14 @@ lists `isName`, an equality, and `isExpression`, through a helper of its
 tag, each activated over the stand-in's own modules; `isNameLoosely`, whose
 answer depends on an option argument, takes two parameters and has no
 entry. Each listed guard's call is the membership test of the family's
-string constants and narrows both edges; the unlisted one narrows nothing
-(`pipeline/string-family-fixture-project/`, whose `node_modules/typescript`
-links the stand-in, so that Node and TypeScript resolve its specifier
-alike).
+string constants and narrows both edges; the unlisted one narrows nothing.
+Its description states no stable-member exclusion, so a callee tested and
+read past a call verifies; under one excluding `Call.callee` the same read
+is refused, under one excluding `Literal.type` no residual standing for
+`Literal` states its tag stable, and under one listing `Unit.notes` as
+allocating a read of it is refused (`pipeline/string-family-fixture-project/`, whose
+`node_modules/typescript` links the stand-in, so that Node and TypeScript
+resolve its specifier alike).
 
 ### A second instance: a readonly Babel interface
 
@@ -807,7 +1034,7 @@ restricted client interface:
 - table: `literal`;
 - marker: `"BabelNode"`, which F1 states of every object the parser returns
   as a node;
-- stable members: every property member. F2 then needs a lifetime shape
+- stable members: every required property member. F2 then needs a lifetime shape
   preservation assumption the interface makes true: the client reaches nodes
   only through the parser's result and the readonly shapes, which grant no
   write, and the parser writes no node after it returns;
@@ -924,11 +1151,85 @@ the compiler API the first instance throughout.
    the guard are expected to be refused, since `JSTypeAliasDeclaration` and
    `JSImportDeclaration` hold neither; each is a coverage loss its source
    repairs with a test of the kind.
-4. **Stable members**: the stable flag, its decoder restriction, `read-eq`.
-   Controls: a readonly program-object path, mutation through an alias and
-   by a call, a root written directly and from a closure, a mixed path, a
-   segment off a `Type`, and forged claims before the test and after the
-   root's write.
+4. **Stable members**, in two parts. The rules each part adds to the
+   calculus land in their owners with it: `read-linked` and `stable-link`
+   in [program typing](PROGRAM-TYPING.md#checked-expression-postconditions),
+   witnesses in [current-content assertions](SOURCE-CLAIMS.md#current-content-assertions),
+   stable keys in [records](POSITIVE-TYPES.md#records).
+
+   a. **Linked reads**, with no assumption: Lean's `read-linked` step and
+      its soundness; the Fragment's `tagMember` of any operand, the decoder
+      accepting one and the lowering testing the slot it is evaluated into;
+      witnesses at entries; the producer's read links, linked reads,
+      membership tests of any argument and witness assertions. Controls,
+      each pipeline negative run under Node:
+      - positive: `ts.isIdentifier(m.name) && m.name.text`; the same split
+        by a statement, `if (!ts.isIdentifier(m.name)) return ""; return
+        m.name.text;` (a witness); a path of two members,
+        `ts.isPropertyAccessExpression(n.expression) &&
+        n.expression.name.text`; two tests of one path under `||`;
+        `holder.parent ? f(holder.parent) : holder`, an optional link; a
+        kind test of a path, `m.name.kind === ts.SyntaxKind.Identifier &&
+        m.name.text`; a readonly program record,
+        `h.name.kind === 1 ? h.name.text : ""`; a `let` root read before its
+        next write; the argument evaluated once, `isIdentifier(next().name)`
+        with `next` counting its calls, the count asserted 1;
+      - refused, each returning a value outside its claimed type under
+        Node: a program record's path past a call that replaces the
+        member, past a write of it through an alias, and past a write of a
+        `let` root; a host path past a write of its `let` root from a
+        closure the program calls between the test and the read; a mixed
+        path (`w.node.name`, `w` a program record) past a call replacing
+        `w.node`;
+      - the boundary: an object whose getter answers differently on two
+        reads, run under Node beside the caller contract that excludes it;
+      - forged, bypassing the producer, refused in search and in checking,
+        each beside an accepted neighbour that differs in one thing: a
+        witness at an entry before the test (neighbour: after it); a
+        witness past the root's write (neighbour: before it); a witness
+        typed correctly but linked from another receiver, and one linked
+        through another field (neighbour: the program's own mapping); a
+        witness at a join whose one predecessor holds no link to it
+        (neighbour: both predecessors linked), and at a loop entry whose
+        backedge does not establish it; a linked read claimed past a call
+        on a program record's member (neighbour: the same read with no
+        call between).
+   b. **Stable keys**: the clause part, its meaning, subtyping, meets and
+      joins; the declaration graph's emission by the description's rule,
+      the interpreter's refusal of an unauthorized stable member and the
+      decoder's restriction to required views of marked terms; the frame
+      property of stable contracts and `stable-link`. Controls:
+      - positive: a host path's test read past an unrelated call
+        (`if (ts.isBigIntLiteral(node.operand)) return f(node),
+        node.operand.text`), past a write of a program record, and past an
+        external call that receives the node; a node still passed where
+        `{ readonly flags: number }` is expected;
+      - refused: the same path through a `Type`'s member, and through a
+        node's optional member, past a call; a claim of two arms of which
+        one states the member stable, past a call; the refinement read in
+        the `catch` of a `try` whose block tested it; each part-a negative
+        with a call between the test and the read, kept refused;
+      - malformed declarations, each refused, each beside the accepted
+        description or document it alters in one thing: a marked term
+        stating a stable key at an optional member and at a key it does not
+        state (Lean's decoder); an unmarked term stating one (Lean's
+        decoder); a description whose stable-member rule names an excluded
+        member (the front end's interpreter);
+      - forged: a claim reading a program record's member past a call at
+        the refined type, refused in search and in checking (neighbour: a
+        host member's, accepted); a subtyping into a target stating a
+        stable key its source does not (neighbour: the source stating it).
+
+   Expected in the `tools/` census, recorded in WORK.md as it turns out: of
+   the 26 slices refused at a member path read after a test of it ("missing
+   field text" and "missing field name", and `bindingScope`'s repeated read
+   of `holder.parent`), 17 read the path with no call between the test and
+   the read and are expected past that refusal with part a; the 8 slices
+   reaching `expr`'s case of a negated bigint, where `gate.span(node)` runs
+   between `ts.isBigIntLiteral(node.operand)` and `node.operand.text`, with
+   part b; `fragment-statements.mts#pattern` reads a name, `key`, after a
+   call of `gate.fail` on the guard's `false` edge, and stays. Each slice
+   stops at its first refusal, so the next blockers are unknown.
 
 Out of order: guards before the family contract read `ts.isIdentifier(n) &&
 n.text` with `n: Node` as a test of `kind` on `Node`'s declared record and

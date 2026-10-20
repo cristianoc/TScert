@@ -380,6 +380,13 @@ export function decodeGraph(value: JsonRead): TypeGraph {
       if (typeof r.among !== "boolean") throw Error("invalid key bound");
       array(r.keys).forEach((k) => key(k, "a key in a bound"));
     });
+  // A record's stable keys (HOST-FAMILIES.md, "Stable keys"): a nonempty
+  // list of keys, omitted when empty.
+  const stableKeys = (v: JsonRead) => {
+    const ks = array(v);
+    if (!ks.length) throw Error("an empty stable-key list is written by omitting it");
+    ks.forEach((k) => key(k, "a stable key"));
+  };
   const tuple = (v: JsonRead) => {
     const t = obj(v, ["required", "optional", "rest", "readonly", "presence"]);
     if (!isArrayPresence(t.presence)) throw Error("invalid tuple density flag");
@@ -443,7 +450,7 @@ export function decodeGraph(value: JsonRead): TypeGraph {
         throw Error("invalid symbol identity");
     },
     refs: (b) => {
-      const r = objOptional(b, ["first", "rest", "views"], ["optional", "methods", "bounds"]);
+      const r = objOptional(b, ["first", "rest", "views"], ["optional", "methods", "bounds", "stable"]);
       fields(r.first);
       array(r.rest).forEach(v => fields(v));
       // Views are conjunctive capabilities, not an object literal: a meet
@@ -452,9 +459,10 @@ export function decodeGraph(value: JsonRead): TypeGraph {
       if ("optional" in r) optionalFields(r.optional);
       if ("methods" in r) methods(r.methods);
       if ("bounds" in r) bounds(r.bounds);
+      if ("stable" in r) stableKeys(r.stable);
     },
     dict: (b) => {
-      const r = objOptional(b, ["first", "rest", "views", "indexes"], ["optional", "methods", "bounds", "cells"]);
+      const r = objOptional(b, ["first", "rest", "views", "indexes"], ["optional", "methods", "bounds", "cells", "stable"]);
       fields(r.first);
       array(r.rest).forEach(v => fields(v));
       // Views are conjunctive capabilities, not an object literal: a meet
@@ -465,6 +473,7 @@ export function decodeGraph(value: JsonRead): TypeGraph {
       if ("optional" in r) optionalFields(r.optional);
       if ("methods" in r) methods(r.methods);
       if ("bounds" in r) bounds(r.bounds);
+      if ("stable" in r) stableKeys(r.stable);
     },
     ctors: (b) => {
       const r = objOptional(b, ["signatures"], ["variadic", "first", "rest", "views"]);

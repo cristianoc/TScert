@@ -232,7 +232,7 @@ let rec source_type ctx j =
       | Some fs -> List.map (fun f -> let t = recur (field "type" f) in
           let readonly = List.mem_assoc "readonly" (obj f) in
           {name=property_key (field "name" f);optional=false;read=t;write=(if readonly then None else Some t);
-           host=false;receivers=[]}) (list fs) in
+           host=false;receivers=[];stable=false}) (list fs) in
     Atoms [Ctors ([{call_effect=effect_of (field "effect" j);quantified=[];receiver=top;params=List.map recur (items "params" j);
       variadic=None;rest_pack;result=recur (field "result" j)}],statics)]
   | "function" ->
@@ -279,6 +279,10 @@ let rec source_type ctx j =
          | _ -> [])
       | t -> [t] in
     let method_syntax t = forms t <> [] && List.for_all (fun f -> stated f <> None) (forms t) in
+    (* A family's stable members (HOST-FAMILIES.md, "Stable keys"), by name. *)
+    let stable_names = match List.assoc_opt "stable" (obj j) with
+      | Some names -> List.map str (list names)
+      | None -> [] in
     let fields = List.map (fun f ->
       let optional = boolean (field "optional" f) in
       let host = not optional && method_syntax (field "type" f) in
@@ -298,7 +302,7 @@ let rec source_type ctx j =
       let t = recur ty in
       {name=property_key (field "name" f);optional;
        read=t;write=(if boolean (field "readonly" f) then None else Some t);
-       host;receivers})
+       host;receivers;stable=(match field "name" f with String n -> List.mem n stable_names | _ -> false)})
       (items "fields" j) in
     (* The string index, and the number and symbol indexes a term states only
        when it has them. *)
@@ -314,14 +318,14 @@ let rec source_type ctx j =
     (* Members held as own properties that are not enumerable, on the
        prototype the model gives the object (the library overlay's). *)
     let fields = match List.assoc_opt "prototype" (obj j) with
-      | Some p -> fields @ [{name=Name "[[proto]]";optional=false;read=recur p;write=None;host=false;receivers=[]}]
+      | Some p -> fields @ [{name=Name "[[proto]]";optional=false;read=recur p;write=None;host=false;receivers=[];stable=false}]
       | None -> fields in
     (* A host family's marker: a required readonly view of `[[host]]` at the
        marker's string, which no allocation of the program owns. *)
     let fields = match List.assoc_opt "host" (obj j) with
       | Some (String marker) ->
         if indexes <> [] || calls <> [] then unsupported "a host family's marker on a record with indexes or calls";
-        fields @ [{name=Name "[[host]]";optional=false;read=Atoms [StrLit marker];write=None;host=false;receivers=[]}]
+        fields @ [{name=Name "[[host]]";optional=false;read=Atoms [StrLit marker];write=None;host=false;receivers=[];stable=false}]
       | Some _ -> fail "invalid host marker"
       | None -> fields in
     Atoms [Shape {fields;indexes;calls;elements=None}]
@@ -1206,7 +1210,7 @@ and decode_program ast =
     | [parameter],[],Some (Atoms [Shape shape] as body) ->
       (match shape.fields,shape.indexes,shape.calls,shape.elements with
       | [{name=Name "value";optional=false;read=Rigid identity;
-          write=Some (Rigid written);host=false;receivers=[]}],[],[],None
+          write=Some (Rigid written);host=false;receivers=[];stable=false}],[],[],None
           when identity=parameter && written=parameter ->
         Some (d.id,(parameter,body))
       | _ -> None)

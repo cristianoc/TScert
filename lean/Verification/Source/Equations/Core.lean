@@ -312,6 +312,21 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
     if readonly then none else some (name, value)
   let views := fs.toList.filterMap (fun (name, value, readonly) =>
     if readonly then some (name, value) else none) ++ marker
+  -- A family's stable members (HOST-FAMILIES.md, "Stable keys"): stated of a
+  -- marked shape alone, each a required readonly member it states, distinct
+  -- and at least one; the claims wire has no form for them.
+  let stable ← match term.getObjVal? "stable" with
+    | .ok s => do
+      let names ← (← s.getArr?).toList.mapM fun n => do PropKey.decode n
+      if marker.isEmpty then
+        throw s!"{ctx.site}: a stable key is stated of a host family's marked shape alone"
+      if names.isEmpty || names.eraseDups.length != names.length then
+        throw s!"{ctx.site}: a shape's stable keys are distinct, and at least one"
+      for k in names do
+        unless fs.toList.any (fun (n, _, readonly) => n == k && readonly) do
+          throw s!"{ctx.site}: the stable key {(toJson k).compress} is no required readonly member of its shape"
+      pure names
+    | .error _ => pure []
   let mut fixed : List (Arrow (List Tree)) := []
   let mut variadic : List (RestArrow (List Tree)) := []
   for call in ← arr term "calls" do
@@ -334,7 +349,7 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
       match hidden with
       | some (P, keys) =>
         return .refs writes [] (views ++ [(CallArguments.protoField, P)]) optional methods [⟨false, keys⟩]
-      | none => return .refs writes [] views optional methods
+      | none => return .refs writes [] views optional methods [] stable
     else return .dict writes [] views indexes optional methods [] cells
   else if !methods.isEmpty then throw s!"{ctx.site}: a callable object with methods needs a combined clause"
   else if !optional.isEmpty then throw s!"{ctx.site}: a callable object with an optional field needs a combined clause"

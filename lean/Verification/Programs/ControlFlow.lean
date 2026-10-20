@@ -264,7 +264,9 @@ expression's; without one, by those of a slot read and of a tag test. -/
   match PromiseCalls.promiseOf G c.expression with
   | some (effect, a, T) => checkTreeUsing G images c.expression codes &&
       PromiseCalls.promiseYields G (result c) effect a T c.yields &&
-      decide (c.output = HeapExpressionRules.ordinaryOutput c.knowledge)
+      (decide (c.output = HeapExpressionRules.ordinaryOutput c.knowledge) ||
+        decide (c.output = HeapExpressionRules.withStable G (entry c) c.knowledge
+          (HeapExpressionRules.ordinaryOutput c.knowledge)))
   | none => c.yields.all (PromiseCalls.yieldFollows G images (entry c) c.implies c.knowledge.links
       (claim c.expression).term)
 
@@ -539,6 +541,29 @@ theorem target_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     exact ⟨c, he, checkMapped_sound hc.1, hc.2.1, hc.2.2⟩
   · contradiction
 
+/-- A checked witness edge establishes both the saved value's type and the
+receiver and field from which that value was read. -/
+theorem witness_edge_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {P C Γ target p facts xs sources c ρ n W h receiver witness field optional A}
+    (checked : checkTargetUsing G images P C Γ target p facts xs sources = true)
+    (destination : C[target.label]? = some c)
+    (typed : (entry c)[witness]? = some A)
+    (linked : (⟨receiver,witness,false,field,false,valueField,optional⟩ : HeapLinks.Link) ∈ c.knowledge.links)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds facts ρ h) :
+    meaning G A n W (mapEnv target.mapping ρ witness) ∧
+      ∃ flds cls oid, mapEnv target.mapping ρ receiver = .objAt flds cls oid ∧
+        HeapFacts.ReadGave flds field h (mapEnv target.mapping ρ witness) := by
+  obtain ⟨d, hd, covers, knowledge, _⟩ := target_sound checked
+  have same : d = c := Option.some.inj (hd.symm.trans destination)
+  subst d
+  constructor
+  · exact (covers.env he).2 witness A typed
+  · have link := (HeapKnowledge.check_sound knowledge hk).2.2 _ linked
+    cases optional <;> simp only [Bool.false_eq_true, ite_false, ite_true] at link
+    · obtain ⟨flds, cls, oid, loc, obj, key, value⟩ := link
+      exact ⟨flds, cls, oid, obj, HeapFacts.ReadGave.present key value⟩
+    · exact link
+
 theorem branch_target_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {P C Γ q l p facts xs sources}
     (hc : checkBranchTargetUsing G images P C Γ q l p facts xs sources = true) :
     BranchTargetOk G C Γ q l facts xs sources := by
@@ -615,10 +640,15 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     unfold checkYields at hy
     split at hy
     · rename_i effect a T hp
-      simp only [Bool.and_eq_true, decide_eq_true_eq] at hy
+      simp only [Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq] at hy
       have hs := PromiseCalls.promiseCall_sound hp hy.1.1 hcodes hy.1.2 he hf hw hh
-      rw [hy.2]
-      simpa only [entry, result, hterm] using hs
+      rcases hy.2 with ho | ho
+      · rw [ho]
+        simpa only [entry, result, hterm] using hs
+      · rw [ho]
+        have hs' := HeapExpressionRules.withStable_sound (Γ := entry c) (out := HeapExpressionRules.ordinaryOutput c.knowledge)
+          he hf hh (by simpa only [entry] using hs)
+        simpa only [entry, result, hterm] using hs'
     · have ht := checker.sound hc.1.1.2 hcodes he hf hw hh
       have ht' := PromiseCalls.yieldFollows_sound hy he hi hh hf.2.2 ht
       simpa only [entry, result, hterm] using ht'

@@ -33,7 +33,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
           | Atoms [Shape ({calls;_} as s)] ->
             Atoms [Shape {s with calls=List.map (fun (c:Semantic.signature) -> {c with call_effect=Semantic.ordinary_effect}) calls}]
           | t -> t in
-        {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) statics in
+        {name;optional=false;read=t;write=Some t;host=false;receivers=[];stable=false}) statics in
   match e.node with
     | Ctor ({node=Lambda (None,[],ps,[],false,Some result,_,body);_},statics) ->
       (* The constructor's body under its parameters; `new` passes it no

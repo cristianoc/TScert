@@ -61,7 +61,9 @@ open S
     | Execution.Observe (source,evaluate) -> observe source env; run_execution ~observe env evaluate
     | Execution.Atom (_,operation) -> (match operation.Execution.impact with
       | Execution.None_ -> env
-      | Execution.Havoc -> forget env
+      (* A step that may write cells keeps the path entries through stable
+         members, as Lean keeps their read links. *)
+      | Execution.Havoc -> forget ~keep:(Refinement.stable_path declarations env) env
       | Execution.CellWrite (name,value) ->
         (match List.assoc_opt name env,claimed_type value with
          | Some (Storage _),Some t -> assign env name t

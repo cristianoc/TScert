@@ -24,7 +24,7 @@ import { copyFileSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSy
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { allocatingMembers, hostViews, declarationsDigest, hostDeclarationsDigest, hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
+import { compilerApiFamily, hostViews, declarationsDigest, hostDeclarationsDigest, hostEnums, hostPackage, isHostFile } from "../tools/compiler-api.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 
@@ -273,8 +273,8 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
 // stable member gives one value.
 {
   const declarations = readFileSync(join(root, "dist", "ast", "ast.d.ts"), "utf8");
-  for (const { owner, name, text } of allocatingMembers)
-    assert.ok(declarations.includes(text), `${owner}.${name} is declared as reviewed: ${text}`);
+  for (const { owner, member, text } of compilerApiFamily.allocating)
+    assert.ok(declarations.includes(text), `${owner}.${member} is declared as reviewed: ${text}`);
   const file = join(runDirectory("tscert-jsdoc-"), "documented.ts");
   const source = "/** The answer. */\nexport const answer = 42;\n";
   writeFileSync(file, source);
@@ -363,6 +363,46 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   }
   closeParser();
   console.log(`corrections: the ${corrected.length} corrected members' fixtures return undefined under Node`);
+}
+
+// Stable links under Node (HOST-FAMILIES.md, "Stable links"): where a path's
+// first member is a program record's, a call between the test and the read
+// may replace it, and the read returns `undefined` where a string is
+// promised. Each fixture is called with program objects at the declared
+// shapes' members the guard reads: an identifier's `kind`, and another's.
+{
+  const dir = runDirectory("tscert-stable-");
+  mkdirSync(join(dir, "node_modules"));
+  symlinkSync(root, join(dir, "node_modules", hostPackage.name));
+  const load = async (name: string): Promise<(...args: unknown[]) => unknown> => {
+    const fixture = join(dir, `${name}.ts`);
+    copyFileSync(resolve(import.meta.dirname, `../pipeline/examples/${name}.ts`), fixture);
+    const module: unknown = await import(pathToFileURL(fixture).href);
+    assert.ok(isNamespace(module), `${name} is a module`);
+    const nameText: unknown = Reflect.get(module, "nameText");
+    const callable = (f: unknown): f is (...args: unknown[]) => unknown => typeof f === "function";
+    assert.ok(callable(nameText), `${name} exports nameText`);
+    return nameText;
+  };
+  const kinds: unknown = Reflect.get(ast, "SyntaxKind");
+  assert.ok(isNamespace(kinds), "the package exports SyntaxKind");
+  const identifier: unknown = Reflect.get(kinds, "Identifier");
+  const computed: unknown = Reflect.get(kinds, "ComputedPropertyName");
+  const mixed = await load("invalid-compiler-api-stable-mixed");
+  const named: { name: object } = { name: { kind: identifier, text: "a" } };
+  assert.equal(mixed(named, () => { named.name = { kind: computed }; }), undefined,
+    "invalid-compiler-api-stable-mixed: the call replaces the record's name");
+  const record = await load("invalid-compiler-api-stable-record");
+  const holder: { node: object } = { node: { name: { kind: identifier, text: "a" } } };
+  assert.equal(record(holder, () => { holder.node = { name: { kind: computed } }; }), undefined,
+    "invalid-compiler-api-stable-record: the call replaces the holder's node");
+  const captured = await load("invalid-compiler-api-stable-let");
+  assert.equal(captured({ name: { kind: identifier, text: "a" } }, { name: { kind: computed } }), undefined,
+    "invalid-compiler-api-stable-let: the callback replaces the let root");
+  const cell = await load("invalid-compiler-api-stable-let-cell");
+  assert.equal(cell({ name: { kind: identifier, text: "a" } }, { name: { kind: computed } }), undefined,
+    "invalid-compiler-api-stable-let-cell: the callback replaces the mutable name");
+  console.log("stable links: a record's member, a mixed path's first member and a let root replaced by the call, each read returns undefined under Node");
 }
 
 // The guards' fixtures under Node (HOST-FAMILIES.md, "Guard recognition"):

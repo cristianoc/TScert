@@ -525,11 +525,13 @@ exclusion is timeless.
 [Stable members](HOST-FAMILIES.md#stable-members) are the one rule that
 reads it.
 
-A test of a stable member's value refines the member for later reads by
-[read equality](HOST-FAMILIES.md#stable-members), whose segments are the
-stable members of node shapes alone: T1 states equality of reads for nodes,
-and the other host classes (`Type`, `Symbol`, `Checker`, `API`) and node
-lists have no such assumption.
+A test of a member path refines the slot of its read, which a later read of
+the same path is while its read link holds
+([linked reads](HOST-FAMILIES.md#linked-reads)); a call or a write ends the
+link. A link through stable members of node shapes holds through every step
+([stable links](HOST-FAMILIES.md#stable-links)): their locations have
+stable contracts by T1′, and the other host classes (`Type`, `Symbol`,
+`Checker`, `API`) and node lists have no such assumption.
 
 The refinements of `unknown` (`typeof`, `in`, `Array.isArray`) must give
 readonly views or optional fields, so that no writable view of a host object
@@ -1086,14 +1088,17 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
 - `invalid-compiler-api-guard-argument`: `isIdentifier(next())` with `next`
   counting its calls, the count after the guard asserted 1 in a positive
   case, and a forged claim reading the argument twice refused;
-- stable paths: positive, `ts.isIdentifier(m.name) && m.name.text`, a test
-  of `node.expression.name` read past an unrelated call, and a `let` slot's
-  path read before its next write; refused: the same path over a readonly
-  program object, mutated through an alias and by a call; a root written
-  directly and from a closure the program runs between test and read; a
-  mixed path past its first program-object segment; a segment read off a
-  `Type`; forged claims stating the refined read before the test and after
-  the root's write;
+- stable paths ([stable members](HOST-FAMILIES.md#stable-members)):
+  positive `compiler-api-path-witness`, guard and kind tests on a path and
+  the statement split, and `compiler-api-stable-link`, a path's test read
+  past an unrelated call, past an external call receiving the node and past
+  a write of a program record; refused `invalid-compiler-api-stable-mixed`
+  (an arm of a program record), `invalid-compiler-api-stable-record` (a
+  mixed path past its first program-record member), both run under Node,
+  `invalid-compiler-api-stable-catch` (a handler) and
+  `invalid-compiler-api-stable-view` (a host view's member past a call);
+  the case's document without the tested member's stable key refused in
+  search and in checking; malformed stable keys refused by the decoder;
 - host provenance, each refused: a node assigned to a variable of a mutable
   structural type and written; `{ ...node }` and `Object.assign({}, node)`
   passed to `getTypeAtLocation`; a node widened to `unknown`, refined by

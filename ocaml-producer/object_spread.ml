@@ -103,7 +103,7 @@ let merge_alternative (a:alternative) (b:alternative) : alternative =
   let index_at (x:alternative) k = match k with Name _ -> x.index | Key _ -> x.symbols in
   let names = List.fold_left (fun ns (f:Semantic.field) ->
     if List.mem f.name ns then ns else ns @ [f.name]) [] (a.afields @ b.afields) in
-  let field name optional t = ({name;optional;read=t;write=Some t;host=false;receivers=[]} : Semantic.field) in
+  let field name optional t = ({name;optional;read=t;write=Some t;host=false;receivers=[];stable=false} : Semantic.field) in
   let fields = List.filter_map (fun k ->
     match find b.afields k with
     | Some f when not f.optional -> Some (field k false f.read)

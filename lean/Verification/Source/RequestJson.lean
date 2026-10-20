@@ -65,7 +65,8 @@ deriving instance ToJson, FromJson for Clause
 
 /-- The clause fields that are left out of JSON when empty: a call clause's
 variadic signatures, a class value's static fields, a record's optional
-fields, methods and key bounds, and a dictionary's writable index contracts.
+fields, methods, key bounds and stable keys, and a dictionary's writable
+index contracts.
 Absence is the one spelling of none, so strict decoding, which re-encodes and
 compares, still refuses an explicit empty list, and a clause without them reads
 as it always has. -/
@@ -73,7 +74,7 @@ private def omittedWhenEmpty : List (String × String) :=
   [("arrs", "variadic"), ("callable", "variadic"), ("ctors", "variadic"), ("ctors", "first"),
    ("ctors", "rest"), ("ctors", "views"), ("refs", "optional"),
    ("dict", "optional"), ("refs", "methods"), ("dict", "methods"), ("refs", "bounds"),
-   ("dict", "bounds"), ("dict", "cells")]
+   ("dict", "bounds"), ("dict", "cells"), ("refs", "stable"), ("dict", "stable")]
 
 private def withoutEmptyVariadic (j : Json) : Json :=
   omittedWhenEmpty.foldl (fun j (key, name) =>
@@ -216,7 +217,7 @@ def arrayExcludedKeys (ks : List PropKey) : List PropKey :=
 /-- The excluded array keys: `constructor`, `then`, `toJSON` and the prototype row's fields', views', optional fields'
 and methods', the reserved keys aside. -/
 @[nospecialize] def arrayExcludedKeysOf : List (Clause (List ι)) → List PropKey
-  | [.refs a bs vs os ms _] =>
+  | [.refs a bs vs os ms _ _] =>
     arrayExcludedKeys (((a :: bs).flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
   | _ => arrayExcludedKeys []
 
@@ -363,6 +364,7 @@ decreasing_by
     validEvidence ok e
   | .slicedRead _ _ _ e p => validEvidence ok e && (subtypeChoiceTypes p).all (validTy ok)
   | .observedRead _ _ | .knownValue _ _ => true
+  | .linkedRead _ _ p => (subtypeChoiceTypes p).all (validTy ok)
 
 @[nospecialize] def validCertificate (ok : ι → Bool) (C : ControlFlow.Certificate ι) : Bool :=
   C.all (fun n =>

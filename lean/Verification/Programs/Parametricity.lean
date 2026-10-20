@@ -222,7 +222,7 @@ decreasing_by
 theorem checkStep_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
     (codes : CodeEntry ι → Bool := fun _ => false) :
     checkStepUsing (reassign G η) (images.reassign η) j k e codes = checkStepUsing G images j k e codes := by
-  cases e <;> simp only [checkStepUsing_eq, checkTree_reassign, checkObservedSub_reassign] <;> rfl
+  cases e <;> simp only [checkStepUsing_eq, checkTree_reassign, checkObservedSub_reassign, check_reassign] <;> rfl
 
 theorem carries_reassign (Γ : List (List ι)) (facts : HeapKnowledge.Knowledge) (xs : List (PromiseCalls.Implication ι))
     (sources : List Nat) (t : Target) (c : NodeEvidence ι) :
@@ -306,6 +306,10 @@ theorem checkHandler_reassign (P : Program) (C : ControlFlow.Certificate ι) (no
   simp only [checkHandlerUsing_eq, checkTarget_reassign]
   rfl
 
+omit [DecidableEq ι] in
+theorem withStable_reassign :
+    HeapExpressionRules.withStable (reassign G η) = HeapExpressionRules.withStable G := rfl
+
 theorem checkStepResult_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (e : StepEvidence ι) (codes : CodeEntry ι → Bool) :
     (checkStepResult (reassign G η) (images.reassign η) j k e codes).value =
@@ -320,7 +324,9 @@ theorem checkBodyStep_reassign (body : BodySubtyping G)
     (codes : CodeEntry ι → Bool) :
     ((Checker.withSubtyping (reassign G η) (images.reassign η) body').run j k e codes).value =
       ((Checker.withSubtyping G images body).run j k e codes).value := by
-  cases e <;> simp only [Checker.withSubtyping, CheckResult.value_bind_const,
+  simp only [Checker.withSubtyping, Checker.keepingStable, CheckResult.map, withStable_reassign]
+  congr 1
+  cases e <;> simp only [Checker.subtypingSteps, CheckResult.value_bind_const,
     CheckResult.accepted_ofBool, same, checkTreeWith_reassign,
     checkStepResult_value_reassign] <;> rfl
 
@@ -358,7 +364,8 @@ theorem checkNode_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : Contro
     (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) :
     checkNodeUsing (reassign G η) (images.reassign η) Rty P C node c codes =
       checkNodeUsing G images Rty P C node c codes := by
-  simp only [checkNodeUsing_eq, Checker.ordinary, checkHandler_reassign, checkStepResult_value_reassign, checkTarget_reassign,
+  simp only [checkNodeUsing_eq, Checker.ordinary, Checker.keepingStable, Checker.steps, CheckResult.map,
+    withStable_reassign, checkHandler_reassign, checkStepResult_value_reassign, checkTarget_reassign,
     checkBranchTarget_reassign, checkYields_reassign, checkReturn_reassign]
   rfl
 

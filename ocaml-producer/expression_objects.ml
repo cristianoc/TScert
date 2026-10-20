@@ -50,7 +50,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         let fresh = match e.node with Id _ | Read _ -> false | _ -> true in
         let t=if widened || name = Name proto_key || (expected = None && not fresh) then inferred
           else Option.value expected ~default:(widen inferred) in
-        {name;optional=false;read=t;write=Some t;host=false;receivers=[]}) fs in
+        {name;optional=false;read=t;write=Some t;host=false;receivers=[];stable=false}) fs in
       (* Where the contract is a dictionary, or has optional fields, the
          literal is claimed with its exact keys: that own-key bound is what
          lets it meet an index, or an optional field it leaves out. A class
@@ -108,7 +108,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
              | _ -> None) in
         let inferred = expr ?expected env e in
         let t = if name = proto_key then inferred else Option.value expected ~default:(widen inferred) in
-        ({name=Name name;optional=false;read=t;write=Some t;host=false;receivers=[]} : Semantic.field) in
+        ({name=Name name;optional=false;read=t;write=Some t;host=false;receivers=[];stable=false} : Semantic.field) in
       let group fs = {empty_alternative with afields=fs} in
       let merge alts b = List.concat_map (fun a -> List.map (merge_alternative a) b) alts in
       let alts,fields = List.fold_left (fun (alts,fields) (name,e) -> match name with

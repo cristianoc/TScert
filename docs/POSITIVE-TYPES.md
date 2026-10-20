@@ -107,9 +107,9 @@ symbol, and the two spaces are disjoint:
 ```
 
 A `refs` clause
-$\mathsf{Ref}(\varphi_0\land\cdots\land\varphi_m;\,\psi;\,\omega;\,\mu;\,\beta)$ carries
+$\mathsf{Ref}(\varphi_0\land\cdots\land\varphi_m;\,\psi;\,\omega;\,\mu;\,\beta;\,\sigma)$ carries
 invariant operands $\varphi_i$, readonly views $\psi$, optional fields
-$\omega$, methods $\mu$ and own-key bounds $\beta$. An optional field
+$\omega$, methods $\mu$, own-key bounds $\beta$ and stable keys $\sigma$. An optional field
 $\kappa{:}^{r}T$ carries a mode $r\in\{\mathsf{w},\mathsf{ro}\}$: writable or
 readonly. Write $\ell$ for the object
 $\mathsf{obj}(\mathit{flds},\mathsf{absent})$, $c_j\equiv T_j$ for "the
@@ -120,10 +120,12 @@ $c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
 
 ```math
 \begin{aligned}
-⟦\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu;\beta)⟧_n(W,v)
+⟦\mathsf{Ref}(\vec\varphi;\psi;\omega;\mu;\beta;\sigma)⟧_n(W,v)
 &\iff \textstyle\bigwedge_i\mathsf{rec}(\varphi_i)\land
       \mathsf{view}(\psi)\land\mathsf{opt}(\omega)\land\mathsf{meth}(\mu)\land
-      \bigwedge_{b\in\beta}\mathsf{own}(b),\\
+      \bigwedge_{b\in\beta}\mathsf{own}(b)\land\mathsf{stable}(\sigma),\\
+\mathsf{stable}(\sigma)_n(W,v)&\iff\forall\kappa\in\sigma.\;v=\ell\land\exists l,c,v_0.\;
+      \mathit{flds}(\kappa)=l\land W(l)=c\land\forall j,U,u.\;c_j(U,u)\Rightarrow u=v_0,\\
 \mathsf{own}(b)_n(W,v)&\iff v=\ell\land\forall\kappa\in\mathrm{dom}(\mathit{flds}).\;b\vDash\kappa,\\
 \mathsf{rec}(\overline{\kappa{:}T})_n(W,v)
 &\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
@@ -150,6 +152,11 @@ $c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
   $\mathsf{Ref}\,\{\mathsf{value}{:}A\}$.
 - **Views** only read: the location's contract implies the view's type, so a
   view grants no write.
+- **Stable keys** are owned at locations whose contracts admit one value
+  (`stableKeysT`), so every heap a run reaches holds that value there
+  ([stable members](HOST-FAMILIES.md#stable-keys)). A meet states the stable
+  keys of both operands; a record is below another only where it states
+  every stable key the other states; dictionaries carry them as records do.
 - **`length`.** A view of `length` is also met by an object owning the array
   store key $\sigma$, when every number is of its type: an array's
   `length` is its store's length, which the store keeps, and `push` changes

@@ -1021,14 +1021,14 @@ and the target's receivers, its signatures against the target's schemes'). -/
 /-- The pairs one clause's coverage of another compares. -/
 @[nospecialize] def clausePairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (self : List ι) :
     Clause (List ι) → Clause (List ι) → List (List ι × List ι)
-  | .refs a bs vs os ms _, .refs c ds ws ps ns _
-  | .dict a bs vs _ os ms _ _, .refs c ds ws ps ns _ =>
+  | .refs a bs vs os ms _ _, .refs c ds ws ps ns _ _
+  | .dict a bs vs _ os ms _ _ _, .refs c ds ws ps ns _ _ =>
     recordPairs G known self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns
-  | .refs a bs vs os ms _, .dict c ds ws iy ps ns _ cy =>
+  | .refs a bs vs os ms _ _, .dict c ds ws iy ps ns _ cy _ =>
     recordPairs G known self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
       (iy.flatMap fun y => ((a :: bs).flatten ++ vs).map fun p => (p.2, y.2)) ++
       (cy.flatMap fun y => (a :: bs).flatten.flatMap fun p => [(p.2, y.2), (y.2, p.2)])
-  | .dict a bs vs ix os ms _ cx, .dict c ds ws iy ps ns _ cy =>
+  | .dict a bs vs ix os ms _ cx _, .dict c ds ws iy ps ns _ cy _ =>
     recordPairs G known self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
       ((iy ++ cy).flatMap fun y => (ix ++ cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]) ++
       (cy.flatMap fun y => os.map fun o => (y.2, o.type))
@@ -1118,7 +1118,7 @@ stored on the prototype and received by the source object. -/
     | _, _ => []
   let direct := (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap (pairs i)
   let methods := (clausesOf G Y).flatMap fun c => match c with
-    | .refs _ _ _ _ ms _ | .dict _ _ _ _ _ ms _ _ => ms
+    | .refs _ _ _ _ ms _ _ | .dict _ _ _ _ _ ms _ _ _ => ms
     | _ => []
   direct ++ methods.flatMap fun m =>
     let sources := (protoChain G PositiveRules.protoChainDepth X).flatMap fun P =>

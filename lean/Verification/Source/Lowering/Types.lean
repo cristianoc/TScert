@@ -67,6 +67,34 @@ from its location. -/
   requireWithin T pos role A B reason
   requireWithin T pos role B A reason
 
+/-- The declared result of a named record property, including absence for an
+optional key. This only selects a persistent proof obligation. -/
+def declaredRead (c : PositiveNormalization.Clause (Ty Tree)) (fld : PropKey) : Option (Ty Tree) :=
+  match c with
+  | .refs W [] vs os _ _ _ =>
+    (W.lookup fld).orElse fun _ => (vs.lookup fld).orElse fun _ =>
+      (os.find? (fun o => o.key == fld)).map (fun o => o.type ++ [Labels.undef])
+  | .dict _ _ _ ds _ _ _ cs _ =>
+    ((ds ++ cs).find? (HeapExpressionRules.stringIndex · fld)).map (fun d => d.2 ++ [Labels.undef])
+  | _ => none
+
+/-- Existing field predicates and declared contracts retain their own entry
+checks. A witness carries a refinement that neither of those establishes. -/
+@[nospecialize] def witnessClaim (T : EquationStore.State) (fc : SourceClaims.Function Tree)
+    (pos : Nat) (root : String) (field : PropKey) : Option (Ty Tree) := do
+  let A ← ((fc.entryCurrent.lookup pos).getD []).lookup root >>= (·.lookup field)
+  let G := SourceTypes.graph T
+  if (HeapKnowledge.atoms G A).isSome then none else do
+    let raw ← ((fc.envs.lookup pos).getD []).lookup root
+    let R ← (SourceClaims.resolve T raw).toOption
+    let cs := PositiveRules.expand G R
+    let fields ← cs.mapM (fun c => declaredRead c field)
+    let C := fields.flatten.eraseDups
+    if within T C A || (HeapExpressionRules.fieldOperand cs field &&
+        [Tag.isUndef, .isNul, .isNullish].any
+          (fun tag => within T (BranchRefinement.tagSlice G C tag false) A)) then none
+    else some A
+
 @[nospecialize] private def envCore (T : EquationStore.State) (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
     Except String (List (Ty Tree)) := do
   let vars ← match fc.envs.lookup pos with
@@ -77,6 +105,9 @@ from its location. -/
     -- The slot holds the cell's identity. What the producer says `x` is now
     -- describes the contents, and is an observation, not this slot's type.
     let name := b.source.name
+    if let some (root, [field]) := b.witness then
+      if let some A := witnessClaim T fc pos root field then
+        return A
     if let some A := b.fixed then return A
     let some t := vars.lookup name | throw s!"missing claimed binding '{name}' at {pos}"
     let A ← (SourceClaims.resolve T t).mapError fun msg =>
@@ -98,7 +129,7 @@ value. -/
 @[nospecialize] def noMethodRead (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) (fld : String) :
     Except String Unit :=
   if (PositiveRules.expand G A).any fun c => match c with
-      | .refs _ _ _ _ ms _ => ms.any (·.key == fld) | _ => false then
+      | .refs _ _ _ _ ms _ _ => ms.any (·.key == fld) | _ => false then
     throw s!"a method '{fld}' read off its object is not a function value: it takes the object as its receiver"
   else pure ()
 
@@ -125,14 +156,14 @@ rest. -/
 invariantly or as a view. -/
 @[nospecialize] def storeOf (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Option (Ty ι) :=
   match PositiveRules.expand G A with
-  | [.refs fs [] vs _ _ _] => fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField
+  | [.refs fs [] vs _ _ _ _] => fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField
   | _ => none
 
 /-- A union of arrays: every clause of the type holds a store. -/
 @[nospecialize] def arraysOnly (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Bool :=
   let cs := PositiveRules.expand G A
   !cs.isEmpty && cs.all fun c => match c with
-    | .refs fs [] vs _ _ _ => (fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField).isSome
+    | .refs fs [] vs _ _ _ _ => (fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField).isSome
     | _ => false
 
 /-- A source numeric key must denote one valid array index. The two runtime
@@ -420,8 +451,8 @@ none of them. -/
     match c with
     | .nul | .undef | .bool | .boolLit _ | .num | .numLit _ | .numIn _ | .str | .strLit _ | .strIn _
     | .bigint | .bigintLit _ | .symbol | .symbolLit _ => true
-    | .refs _ _ _ _ _ ks => bounded ks
-    | .dict _ _ _ [] _ _ ks [] => bounded ks
+    | .refs _ _ _ _ _ ks _ => bounded ks
+    | .dict _ _ _ [] _ _ ks [] _ => bounded ks
     | _ => false
 
 /-- The refusal of a write at a key that may be reserved onto a receiver of

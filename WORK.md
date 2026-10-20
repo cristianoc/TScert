@@ -31,11 +31,15 @@ design, not its progress.
 | [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
 | [Decoders' dictionary reads](#decoders-dictionary-reads) | open: the decoders take parsed JSON (2026-10-18); in `calculus` 12 of 15 functions verify, and `decodeTerm`, `decodeCode` and `termsOf` verify in 10.0 s of evidence search with candidate selection and the answered requests threaded through the document's search, 25.2 s without any reuse (user time, median of 3, 2026-10-19) | the decoders of `calculus`/`control-flow` verify in their modules within the limit |
 | [Function declarations in bodies](docs/SOURCE-MODEL.md#lexical-bindings-before-initialization) | open | `function-declaration-in-body-refused` verifies: a function declared in a body is created at its block's entry, and a call of it before the block's bindings are initialized reaches their checked accesses |
-| [Optional-field truthiness over unions](#optional-field-truthiness) | open: an investigation, cause unknown | `optional-field-truthiness-union-refused` verifies |
+| [Optional-field truthiness over unions](#optional-field-truthiness) | closed: checked read witnesses (2026-10-20) | `optional-field-truthiness-union-refused` verifies |
 | [Exceptional footprints](#exceptional-footprints) | open: handler facts across a throw | a call's footprint on a throw carries an effect through a handler, with `checkJson_safe` concluding it |
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Family identity controls](#family-identity-controls) | open | the identity controls HOST-FAMILIES.md lists verify or are refused as it states |
+| [A family's installation](#family-installation) | open | a family description names its package's installation and digest, and the front end activates any active description's package by that data, as it does the compiler API's |
+| [Paths at an entry beyond one member](#paths-at-an-entry) | open | a statement entry carries the refinement of a path of two members or more, and a read of `n.expression.expression` past a statement boundary verifies |
+| [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | open: an investigation, cause unknown | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
+| [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
 | [A guard's false edge over a tag-set arm](#guard-false-edge-tag-sets) | open | where `ts.isToken(node)` answers `false`, `node` holds no `Token` arm |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
@@ -276,14 +280,9 @@ decodes the verifier's output with `decodeUnits`, which calls `fields` and
 states ([module composition](#module-composition)).
 
 <a id="optional-field-truthiness"></a>
-**Optional-field truthiness over unions**, an investigation: after
-`if (o.m)`, a read of `o.m` is of `m`'s type where `o` is one record leaving
-`m` optional. Where `o` is a union of records one of which requires `m` and
-one leaves it optional, the claim where the test fails, without the arm
-requiring `m`, is refused at the incoming edge
-(`optional-field-truthiness-union-refused`), and where
-each arm leaves `m` optional, the producer claims the read at `m`'s type or
-`undefined` (observed 2026-10-18).
+**Optional-field truthiness over unions** uses a saved read result and its
+receiver-and-field link, including where one record requires the field and
+another leaves it optional ([witness edges](docs/PROGRAM-TYPING.md#witness-edges)).
 
 <a id="exceptional-footprints"></a>
 **Exceptional footprints**: a call's promise that its footprint also holds
@@ -320,6 +319,29 @@ members (`case K.One:`, `case ts.SyntaxKind.SourceFile:`) narrows nothing in
 the producer, where the same constants narrow in an `===` test and literal
 labels narrow in a `switch` (`switch-enum-case-narrowing`, a gap). The
 compiler API's code switches on `node.kind` this way.
+
+<a id="family-installation"></a>
+**A family's installation.** The checking mechanism of host families reads
+its family from the description alone (HOST-FAMILIES.md, "What a family
+supplies, what it gets"), but registering the package a description is
+about is the compiler API's: the front end resolves the installation of
+`typescript` the tools pin (`installation` in `tools/compiler-api.mts`)
+and checks its digest (C0), and another package is read as a host only
+through the test-only stand-in channel. A second real family needs its
+package, installation and digest stated in its description and resolved by
+the same code.
+
+<a id="paths-at-an-entry"></a>
+**Paths at an entry beyond one member.** A statement entry states a path's
+refinement as a current-content assertion of a binding's field, so a path
+of one member: `if (!ts.isCallExpression(n) || …) return; n.expression.expression.text`
+across the statement reads the declared type. A witness of a longer path
+needs the entry to state it through its prefix's witness.
+
+<a id="shadowing-locals-search"></a>
+**The search past 60 s on `shadowingLocals`.** In the census of ab51b0c the
+search for `fragment-support.mts#shadowingLocals`, refused in search on
+77ca829, did not finish within 60 s; which obligation grows is not known.
 
 <a id="family-identity-controls"></a>
 **Family identity controls.** Of the
@@ -603,9 +625,10 @@ first three items 2026-10-19):
   `ts.isIdentifier(m.name) && m.name.text` (7: `staticFieldOf`,
   `staticMethodOf`, `hasInstanceClass`, `hasInstanceAlong`, `localArrow`,
   `memberOf`, and `moduleFunction` through `memberMayBeWritten`;
-  2026-10-19, 829513e): a promise refines a name alone; the
-  [read-equality rule](docs/HOST-FAMILIES.md#stable-members), a design,
-  refines the path;
+  2026-10-19, 829513e): a promise refines a name alone; in the
+  [stable members](docs/HOST-FAMILIES.md#stable-members) design a guard
+  refines the slot of its argument's read, which a later read of the same
+  path is through the read link;
 - a contextual parameter typed `(node: TypeNodeBase) => TypeTerm` (17), the
   slices of `type-term.mts` past their optional method calls;
 - a callback's parameter written without a type is read at its contextual
@@ -687,6 +710,38 @@ no worker failure on either. The branch adds 4 slices
   `JSImportDeclaration`, a node without it; `fragment-statements.mts#patternDefaults`,
   past "missing field elements" (the guard's `false` edge on a
   `BindingName`), now refused in search inside its `flatMap` callback.
+
+<a id="census-stable-members"></a>
+The `tools/` census of 77ca829 (main) and of ab51b0c (stable members: linked
+reads, branch witnesses, stable links), run back to back on one machine
+(2026-10-20, load averages 3 to 18): 123 of 373 slices verify on main, 134
+of 373 on the branch; none verified on main fails on the branch.
+
+- verified on the branch only (11): seven read a member path after a test of
+  it (`array-prototype.mts#splitSeparators`, `fragment-support.mts#staticFieldOf`,
+  `#staticMethodOf`, `#unnamedMember`, `#typeParameterMentioned`,
+  `#bindingScope`, `written-applications.mts#literal`); four were refused in
+  search or at an edge (`declaration-graph.mts#typesOnly`,
+  `fragment-classes.mts#ownClass`, `fragment-statements.mts#patternDefaults`,
+  `type-term.mts#propertyKey`);
+- of the 26 slices refused at a path read on main, 6 verify (above), 17
+  move past it and 3 keep it: `fragment-expressions.mts#moduleFunction` and
+  `#memberMayBeWritten`, whose path's root `target` is no immutable binding,
+  and `fragment-statements.mts#pattern`, whose read follows a call of
+  `gate.fail` on the guard's `false` edge. Of the 17: the 8 slices reaching
+  `expr`'s negated bigint, where
+  `gate.span(node)` runs between the test and the read, now stop at
+  "missing field computed" (10456); `refuseReceiverForm`, `confined`,
+  `selfConstructs` and `assertsNothing` stop in search or at a write;
+  `knownLocal`, `localArrow`, `memberOf`, `guardOf` and `namespaceMembers` at
+  a later missing member;
+- beyond those 26: the 21 slices of `fragment-statements.mts` stopped at
+  "missing field elements" stop at "missing field text" (3593);
+  `hasInstanceClass`, `hasInstanceAlong` and `callableAssign`, refused in the
+  producer on main, stop in search;
+- a new timeout (1): `fragment-support.mts#shadowingLocals`, refused in
+  search on main, the search past 60 s on the branch;
+- otherwise the same refusal at another position or a path spelling.
 
 The census of a818552, which reads the sync API's `isUnionType` without its
 declared predicate, run after b7787b9's on the same machine (2026-10-20,
