@@ -1156,15 +1156,23 @@ structure Fallback (ι : Type) where
 /-- The arrow evidence a table's rows ask for, premises decided by `rel`:
 each row's arrow clauses against its target's, and each quantified member
 against the target's, as declared and with the target's binders renamed to
-the source's. -/
+the source's. Only arrow and callable clauses have arrows: the others are
+dropped before duplicates are erased, and a row's target clauses are erased
+once. Untrusted: `ArrowsCheckedWith` checks every arrow. -/
 @[nospecialize] def rowArrows [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G))
     (rel : List ι → List ι → Bool) (table : Table ι) : Evidence ι :=
   let arrows (L : Ops ι) (S : List (RestArrow (List ι))) (M : Ops ι) :=
     M.filterMap fun q =>
       (arrowSearch G rel L S q (q.arguments.length + q.receiver.length + 1)).map (L, q, ·)
+  let hasArrows : Clause (List ι) → Bool
+    | .arrs .. | .callable .. => true
+    | _ => false
   table.flatMap fun (X, Y) =>
-    let sources := (sourceClauses G X ++ PositiveRules.meetSources G X Y ++ expand G X).eraseDups
-    (sources.flatMap fun a => (clausesOf G Y ++ expand G Y).eraseDups.flatMap fun b => match a, b with
+    let sources := ((sourceClauses G X ++ PositiveRules.meetSources G X Y ++ expand G X).filter
+      hasArrows).eraseDups
+    -- `expand G Y` is `clausesOf G Y` or empty: it adds no target clause.
+    let targets := ((clausesOf G Y).filter hasArrows).eraseDups
+    (sources.flatMap fun a => targets.flatMap fun b => match a, b with
       | .arrs L S, .arrs M _ | .callable _ _ L S, .arrs M _ | .callable _ _ L S, .callable _ _ M _ =>
         arrows L S M
       | _, _ => []) ++
