@@ -3378,18 +3378,26 @@ type `E` is $`\bigcup_i\{v_i\}`$, `E.A` the literal type of `A`'s value, and
 
 A member TypeScript computes no value for has an initializer $`e_i`$ whose
 value, a number (TypeScript requires it), is known only at run time, and so
-is the key of its reverse mapping. Such an enum's object type states its
-members only, each at its value's type
-$`\tau_i`$, $`\{v_i\}`$ or $`\mathtt{number}`$ where $`v_i=\bot`$:
+is the key of its reverse mapping. With $`\tau_i`$ a member's value type,
+$`\{v_i\}`$ or $`\mathtt{number}`$ where $`v_i=\bot`$, the object of its
+members, and the object of its members and of the reverse keys of the values
+TypeScript computes, are
 
 ```math
 \mathcal O^{\circ}(E)=\{\overline{\mathtt{readonly}\ m_i:\tau_i}\},\qquad
-E=\textstyle\bigcup_i\tau_i .
+\mathcal O^{\rho}(E)=\mathcal O^{\circ}(E)\uplus
+  \{\overline{\mathtt{readonly}\ \mathrm{str}(v_j):\mathtt{string}}^{\,v_j\in\mathbb R}\},\qquad
+E=\textstyle\bigcup_i\tau_i ,
 ```
 
+$`\mathcal O^{\rho}(E)`$ in JavaScript's key order where its keys are known.
+At $`\mathrm{str}(v_j)`$ the emit writes $`m_j`$'s name, and a later member
+whose value, known only at run time, is $`v_j`$ writes its own name there,
+so the key holds a member's name; no member's own write reaches it, since
+no member is named by a canonical numeric string (below).
 The declaration runs each such initializer in order, bound to a constant of
 its own, then builds the object with the trusted step
-$`\%\mathsf{Enum{:}E}\%:(\mathcal O^{\circ}(E))\Rightarrow\mathcal O^{\circ}(E)`$,
+$`\%\mathsf{Enum{:}E}\%:(\mathcal O^{\circ}(E))\Rightarrow\mathcal O^{\rho}(E)`$,
 which adds the reverse mapping
 ([intrinsics](../tools/intrinsics.mts)):
 
@@ -3399,7 +3407,7 @@ which adds the reverse mapping
       \forall i.\ v_i=\bot\Rightarrow \mathrm{reads}_E(e_i)\subseteq\{m_j\mid j<i\}}
      {\texttt{enum E}\{\vec m\}\ \leadsto\
       \overline{\texttt{const}\ \%E.m_i\%:\mathtt{number}=e_i[\overline{m_j:=u_j}]}^{\,v_i=\bot};\
-      \texttt{const E}:\mathcal O^{\circ}(E)=\%\mathsf{Enum{:}E}\%(\{\overline{m_i:u_i}\})}
+      \texttt{const E}:\mathcal O^{\rho}(E)=\%\mathsf{Enum{:}E}\%(\{\overline{m_i:u_i}\})}
 ```
 
 with $`u_j`$ the constant $`\%E.m_j\%`$ where $`v_j=\bot`$ and the literal
@@ -3424,18 +3432,58 @@ member it does not initialize, which TypeScript leaves opaque:
 
 The type `E` is $`\bigcup_i\tau_i`$ there too.
 
-An enum another module declares, imported or reached through a declaration,
-is read by the same rule: its value is $`\mathcal O^{\circ}(E)`$, the object of
-its members, merged declarations together, which states nothing of the
-reverse mapping; `E.M` is the literal type of `M`'s value and `typeof E` is
-$`\mathcal O^{\circ}(E)`$. An imported `const enum` has no object to read and
-is refused as a value. At a position of a declaration of a
-[host package](COMPILER-API.md#host-declarations) the type `E` is
-`number` (reading rule 3): TypeScript admits any number at a numeric enum
-type, and the flag enums hold combinations of members, which are no member's
-value. A host enum is read as a value only where the contract lists it
-(`hostEnums` in [`compiler-api.mts`](../tools/compiler-api.mts)), whose
-runtime object `tests/compiler-api.mts` compares with the declaration (C1).
+An enum another module declares, imported or reached through a
+declaration, merged declarations together, is the object of its members,
+with its reverse keys where that object is built by TypeScript's emit or
+checked to hold them:
+
+```math
+\frac{\text{every declaration of }E\text{ in a program module, outside an ambient context}\ \lor\
+      E\ \text{a host enum whose object is checked}}
+     {\Gamma(E)=\mathcal O^{\rho}(E)}\ \textsf{emitted-enum}
+```
+
+and $`\Gamma(E)=\mathcal O^{\circ}(E)`$ otherwise. A program module is a
+source file outside the standard library, the host packages and installed
+packages; an ambient context is a `declare` modifier on the declaration or
+an enclosing one, or a declaration file. The import assumption of
+[the trust surface](DESIGN.md#trust-surface), that an imported value meets
+its declaration, covers a program module's enum as its emit builds it: its
+members, and at each value TypeScript computes the name of a member with
+that value, as above (`enum-reverse-value-import`, imported directly and
+through a re-export). A host enum is read as a value only where the contract
+lists it (`hostEnums` in [`compiler-api.mts`](../tools/compiler-api.mts)),
+whose runtime object `tests/compiler-api.mts` compares with the declaration
+(C1), or as a family's tag enum, whose runtime object activation compares
+with the declaration ([activation](HOST-FAMILIES.md#activation)); both by
+one condition (`enumObjectMatches`): each member an own data property
+holding its value, at each numeric value's key an own data property holding
+the name of a member with that value, and no other own key. Any other enum,
+a declaration file's or the program's ambient one, is the environment's
+object, of which its members alone are assumed
+(`invalid-enum-reverse-declared-value-import`, `invalid-ambient-enum-reverse`).
+`E.M` is the literal type of `M`'s value and `typeof E` is $`\Gamma(E)`$. An
+imported `const enum` has no object to read and is refused as a value. At a
+position of a declaration of a
+[host package](COMPILER-API.md#host-declarations) the type `E` is `number`
+(reading rule 3): TypeScript admits any number at a numeric enum type, and
+the flag enums hold combinations of members, which are no member's value.
+
+A read `E[k]` is the keyed read of the enum's object: at a key whose type is
+a union of the literals of numeric values the object type states, per
+singleton that reverse key's field, the last member's name for
+$`\mathcal O(E)`$ and `string` for $`\mathcal O^{\rho}(E)`$
+(`enum-reverse-keys`, `compiler-api-enum-reverse`). At `number`, or at a
+literal outside those values, the object type states no field, and the read
+is refused (`invalid-enum-reverse-number`, `invalid-enum-reverse-outside`):
+there the object may hold `undefined` (an enum with a member known only at
+run time holds further reverse keys), which TypeScript types `string` by the
+enum object's index signature `[x: number]: string` (`string | undefined`
+under `noUncheckedIndexedAccess`). A string member has no reverse key
+(`invalid-string-enum-reverse`). Each negative but the declaration file's
+runs under Node, the ambient one over an object without the reverse
+mapping; claims bypassing the producer that read a reverse key at `number`
+or of an ambient enum are refused (`pipeline/test.mts`).
 
 ## Const assertions
 

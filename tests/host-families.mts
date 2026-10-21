@@ -5,12 +5,15 @@
 // different tags stay separate arms, where a generic whose tag alone varies
 // merges them into one arm at their tag set; a residual keeps the members
 // every replaced shape has, optional where one is; a refinement is no shape;
-// and a name two unrelated bases state is refused.
+// and a name two unrelated bases state is refused. A tag enum object with a
+// reverse key missing, inherited, an accessor, a number, naming a member of
+// another value, or beside an extra key, is no emitted enum object.
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { syntax as ts } from "../tools/syntax.mts";
 import { familyTable, type FamilyDescription, type FamilyGraph } from "../tools/host-families.mts";
+import { enumObjectMatches } from "../tools/family-activation.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 
@@ -185,3 +188,25 @@ console.log("family interpreter: a tag-only generic merged at its tag set, a tag
   "a residual's common members; a refinement no shape; a stable-member exclusion as reviewed, and one naming no member or another text refused; " +
   "an allocating member omitted, one at another text refused; " +
   "a generic with a parameter beside its tag, and an unrelated inherited name, refused");
+
+// A tag enum's runtime object (`enumObjectMatches`, HOST-FAMILIES.md,
+// "Activation"): the emitted object matches its declaration; one whose
+// reverse key is missing, inherited, an accessor, a number, or the name of a
+// member of another value, or with a key of its own beside them, does not.
+{
+  const declared = [{ name: "A", value: 0 }, { name: "B", value: 1 }, { name: "C", value: 1 }];
+  const emitted = (): Record<string, unknown> => ({ A: 0, B: 1, C: 1, 0: "A", 1: "C" });
+  assert.ok(enumObjectMatches(emitted(), declared), "the emitted object");
+  assert.ok(enumObjectMatches({ ...emitted(), 1: "B" }, declared), "a reverse key naming another member of its value");
+  const missing = emitted();
+  delete missing[1];
+  const inherited = { A: 0, B: 1, C: 1, 0: "A" };
+  assert.ok(Reflect.setPrototypeOf(inherited, { 1: "C" }));
+  const accessor = { A: 0, B: 1, C: 1, 0: "A", get 1(): string { return "C"; } };
+  for (const [what, object] of [["missing", missing], ["inherited", inherited], ["an accessor", accessor],
+    ["a number", { ...emitted(), 1: 1 }], ["another value's member", { ...emitted(), 1: "A" }],
+    ["an extra key", { ...emitted(), 2: "A" }]] as const)
+    assert.ok(!enumObjectMatches(object, declared), `a reverse key ${what}`);
+}
+console.log("tag enum objects: the emitted object matches; a reverse key missing, inherited, an accessor, a number, " +
+  "naming a member of another value, or an extra key, refused");

@@ -122,7 +122,7 @@ run_test "Tool failures stay tool failures" node tests/tool-failures.mts
 run_test "Compiler-API contract" node tests/compiler-api.mts
 # tests/compiler-api-guards.mts compares each family's guard table, the compiler API's and the stand-in's, with its generator and runs every entry under Node (C2).
 run_test "Family guard tables" node tests/compiler-api-guards.mts
-# tests/host-families.mts checks the family interpreter on declarations no audited package has: generic arms, residual members, refinements.
+# tests/host-families.mts checks the family interpreter on declarations no audited package has: generic arms, residual members, refinements; and tampered tag enum objects.
 run_test "Host family interpreter" node tests/host-families.mts
 # tests/regexp-shapes.mts checks the capture-shape reading of regex literals against the host.
 run_test "RegExp shapes" node tests/regexp-shapes.mts

@@ -40,7 +40,7 @@ import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, 
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
-  throwUninitializedName, type EnumMemberValue } from "./intrinsics.mts";
+  throwUninitializedName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
 import type { TagValue } from "./host-families.mts";
 import { type ClassRecord, type EnumInfo, type EnumMember, SPREAD_POSITION, isTagSymbol, callableAssign, forInEntryReads, inKey, shadowName, shadowingLocals, typeParameterMentioned, writesName, writtenElement } from "./fragment-support.mts";
@@ -320,7 +320,7 @@ export class Gate {
   readonly enums: Map<string, EnumInfo> = new Map();
   /** The enums the file imports, by local name, with their members as the
    * declaration graph read them. */
-  readonly importedEnums: Map<string, readonly EnumMemberValue[]> = new Map();
+  readonly importedEnums: Map<string, { members: readonly EnumMemberValue[]; reverse: EnumReverse }> = new Map();
   /** Reads of a `const enum` member TypeScript writes as the member's value,
    * by span: that value. */
   readonly constEnumReads: Map<string, string | number> = new Map();
@@ -648,18 +648,18 @@ export class Gate {
           if (found) return found.value === null ? { k: "atom", name: "number", span } : literalTerm(found.value, span);
         }
         // An imported enum's, at its members as the declaration graph read
-        // them (`ambient-enum`); the enum named directly or as a namespace
-        // member.
+        // them, with the reverse keys it decided (`emitted-enum`); the enum
+        // named directly or as a namespace member.
         const enumName = (name: Node): string | undefined =>
           ts.isIdentifier(name) ? (this.hasTypeParam(name.text) ? undefined : name.text) : this.namespaceMember(name);
         if (ts.isTypeQueryNode(node) && !node.typeArguments?.length) {
           const named = enumName(node.exprName);
           const imported = named === undefined ? undefined : this.importedEnums.get(named);
-          if (imported) return enumMembersTerm(imported, span);
+          if (imported) return enumMembersTerm(imported.members, span, imported.reverse);
         }
         if (ts.isTypeReferenceNode(node) && ts.isQualifiedName(node.typeName)) {
           const named = enumName(node.typeName.left);
-          const imported = named === undefined ? undefined : this.importedEnums.get(named);
+          const imported = named === undefined ? undefined : this.importedEnums.get(named)?.members;
           const member = node.typeName.right.text;
           const found = imported?.find((m) => m.name === member);
           if (imported && !found) return this.fail(node, `${named ?? ""} has no member ${member}`);
@@ -714,7 +714,7 @@ export class Gate {
         }
         // An imported enum's type in the file's annotations: the union of
         // its members' types (`ambient-enum`).
-        const imported = this.importedEnums.get(name);
+        const imported = this.importedEnums.get(name)?.members;
         if (imported && !this.hasTypeParam(name)) {
           if (node.typeArguments?.length) this.fail(node, "an enum type takes no type arguments");
           const parts = imported.map((m): TypeTerm =>
@@ -1813,7 +1813,7 @@ function lowerFile(file: string, carriesContext: boolean,
             for (const m of info.members) if (m.span[0] === start && m.span[1] === end) m.value = value;
         },
         enumMemberRead: ([start, end], member) => gate.enumMemberReads.set(`${start}:${end}`, member.join(":")),
-        importedEnum: (local, members) => gate.importedEnums.set(local, members),
+        importedEnum: (local, members, reverse) => gate.importedEnums.set(local, { members, reverse }),
         hostGuard: (local, _entry, domain, field, tags) => gate.hostGuards.set(local, { domain, field, tags }),
         constEnumReads: constEnumNodes.map(node => gate.span(node)),
         constEnumRead: ([start, end], value) => gate.constEnumReads.set(`${start}:${end}`, value),

@@ -737,6 +737,17 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runEmitted("invalid-enum-computed-call-order", "first()"), undefined);
   assert.equal(runEmitted("invalid-enum-computed-literal", "wrong()"), 2);
   assert.equal(runEmitted("invalid-enum-proto-member", "proto() === Object.prototype"), true);
+  // An enum's reverse keys: at each value's key a member's name, the last
+  // member with the value, a member known only at run time replacing an
+  // earlier name; at a number outside the values, at a string member's
+  // value, and on an environment's object without them, undefined.
+  assert.equal(runEmitted("enum-reverse-keys",
+    "JSON.stringify([closedName(4), openName(7), openLiteral(), objectName(openObject()), suffixed(1)])"),
+    '["C","D","D","E",true]');
+  assert.throws(() => runEmitted("invalid-enum-reverse-number", "levelName(5)"), /reading .length./);
+  assert.throws(() => runEmitted("invalid-enum-reverse-outside", "outside()"), /reading .length./);
+  assert.throws(() => runEmitted("invalid-string-enum-reverse", `unitName("name")`), /reading .length./);
+  assert.throws(() => runEmitted("invalid-ambient-enum-reverse", "globalThis.Grade = { Low: 0, High: 1 }; lowName()"), /reading .length./);
   // Exact observation uses the native identity and ordinary constructor.
   // A fulfilled record may acquire a then member before it is observed.
   assert.equal(await runExample("native-promise-record-observation", `(async () => {

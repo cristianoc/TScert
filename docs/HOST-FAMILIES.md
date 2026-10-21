@@ -969,11 +969,14 @@ The mechanism is explicit, and nothing activates it by spelling:
   as they declare them, under the host reading rules every installation
   shares.
 - **The tag enum as a value:** a program reads the description's tag enum
-  as a value, each member at its literal type, where its declaration's
-  members are those of the runtime object the activated entry point exports
-  under its name: each member an own data property holding its declared
-  value, every other own key the reverse mapping of a numeric member (C1, for
-  every family), and where the program's import of it, resolved by Node
+  as a value, each member at its literal type and each numeric value's
+  reverse key at `string` ([enums](SOURCE-CONTRACTS.md#enums),
+  `emitted-enum`), where its declaration's members are those of the runtime
+  object the activated entry point exports under its name: each member an
+  own data property holding its declared value, at each numeric value's key
+  an own data property holding the name of a member with that value, and no
+  other own key (`enumObjectMatches`, C1 for every family), and where the
+  program's import of it, resolved by Node
   from the importing module and through a program module's re-export as a
   guard's is ([calls](#calls)), binds that very object. Any other enum of a family's installation is read as a
   value only where its package's contract lists it, as the compiler API's
