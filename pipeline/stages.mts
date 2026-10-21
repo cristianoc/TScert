@@ -253,11 +253,12 @@ export function linkedLibraries(executable: string): Canonical | string {
 /** The load commands of a Mach-O file that name libraries (its own install
  * name and every library it loads: required, weak, re-exported, lazy,
  * upward) and its run paths, in their order; or why the file is no Mach-O
- * file read here: one holding a
- * command that names a library or changes dyld's search otherwise
- * (`LC_LAZY_LOAD_DYLIB_INFO`, `LC_DYLD_ENVIRONMENT`), or a universal file
- * whose architectures differ in their libraries or run paths. Memoized by
- * the file's digest (`digest`), where the bytes read are the ones it names. */
+ * file read here: one holding a command that names a library or changes
+ * dyld's search otherwise (`LC_LAZY_LOAD_DYLIB_INFO`,
+ * `LC_DYLD_ENVIRONMENT`), or a universal file whose architectures (those
+ * its table counts, and an arm64 one described right after a 32-bit table)
+ * differ in their libraries or run paths. Memoized by the file's digest
+ * (`digest`), where the bytes read are the ones it names. */
 type LoadCommands = { libraries: readonly string[]; runPaths: readonly string[] };
 const loadCommandsOf = new Map<string, LoadCommands | string>();
 const dylibCommands: ReadonlySet<number> = new Set([0xc, 0xd, 0x80000018, 0x8000001f, 0x20, 0x80000023]);
@@ -306,8 +307,11 @@ function loadCommands(file: string, digest: string): LoadCommands | string {
       // A universal file: big-endian architecture entries, 32- or 64-bit offsets.
       const wide = magic === 0xcafebabf, width = wide ? 32 : 20;
       const count = bytes(4, 4).readUInt32BE(0);
-      const entries = bytes(8, count * width);
-      const slices = Array.from({ length: count }, (_, i) =>
+      // dyld also loads an arm64 slice a 32-bit table describes right after
+      // its last entry, outside its count.
+      const entries = bytes(8, (count + (wide ? 0 : 1)) * width);
+      const hidden = !wide && entries.readUInt32BE(count * width) === 0x0100000c ? 1 : 0;
+      const slices = Array.from({ length: count + hidden }, (_, i) =>
         image(wide ? Number(entries.readBigUInt64BE(i * width + 8)) : entries.readUInt32BE(i * width + 8)));
       // dyld loads one architecture; the others must agree with it.
       const first = slices[0];

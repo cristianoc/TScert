@@ -480,6 +480,31 @@ if (platform() === "darwin") {
   macho(executable, [other]);
   const relinked = linkedLibraries(executable);
   assert.notEqual(canonical(relinked), canonical(changed), "relink follows current dependency closure");
+  // Universal files: slices at 4096 and 8192, the second described in the
+  // table or, as dyld also reads it, right after a table of one.
+  const universal = (path: string, counted: number, slices: readonly (readonly string[])[]): void => {
+    const table = Buffer.alloc(4096);
+    table.writeUInt32BE(0xcafebabe, 0);
+    table.writeUInt32BE(counted, 4);
+    const images = slices.map((dependencies, i) => {
+      const slice = join(dir, `slice-${i}`);
+      macho(slice, dependencies);
+      const bytes = readFileSync(slice);
+      table.writeUInt32BE(i === 0 ? 0x01000007 : 0x0100000c, 8 + 20 * i);
+      table.writeUInt32BE(4096 * (i + 1), 8 + 20 * i + 8);
+      table.writeUInt32BE(bytes.length, 8 + 20 * i + 12);
+      return Buffer.concat([bytes, Buffer.alloc(4096 - bytes.length)]);
+    });
+    writeFileSync(path, Buffer.concat([table, ...images]));
+  };
+  const fat = join(dir, "universal");
+  universal(fat, 2, [[library], [library]]);
+  assert.ok(typeof linkedLibraries(fat) !== "string", "a universal file whose architectures agree is identified");
+  universal(fat, 2, [[library], [other]]);
+  assert.match(String(linkedLibraries(fat)), /architectures differ/, "architectures loading different libraries");
+  universal(fat, 1, [[library], [other]]);
+  assert.match(String(linkedLibraries(fat)), /architectures differ/, "an arm64 slice after the table is read");
+  process.stdout.write("linked libraries: a library replaced or relinked changes the identity; a universal file's architectures must agree\n");
 }
 {
   // Each identity control owns the modules it edits.
