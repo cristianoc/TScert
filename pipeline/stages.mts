@@ -215,7 +215,9 @@ const onSystemVolume = (path: string): boolean => systemPrefixes.some((s) => pat
 export function linkedLibraries(executable: string): Canonical | string {
   return identifyLibraries(executable);
 }
-function identifyLibraries(executable: string, files?: Map<string, string>): Canonical | string {
+type Listing = { status: number | null; stdout: string; stderr: string };
+type ListFile = (flag: "-L" | "-l", file: string, digest?: string) => Listing;
+function identifyLibraries(executable: string, files?: Map<string, string>, list: ListFile = otool): Canonical | string {
   const build = osBuild();
   let found: Canonical | string;
   if (platform() !== "darwin" || build === null) found = "dynamic libraries are identified on macOS only";
@@ -229,7 +231,7 @@ function identifyLibraries(executable: string, files?: Map<string, string>): Can
     for (let work = [{ real: start, digest: fileDigest(start) }], item = work.shift(); item !== undefined;
         item = work.shift()) {
       const next = item.real;
-      const listed = otool("-L", next, item.digest);
+      const listed = list("-L", next, item.digest);
       if (listed.status !== 0) {
         found = `otool -L ${next} failed: ${listed.stderr.trim().split("\n")[0] ?? ""}`;
         break;
@@ -241,7 +243,7 @@ function identifyLibraries(executable: string, files?: Map<string, string>): Can
       // path of the loader or the executable naming an existing file.
       const paths: string[] = [];
       for (const p of named) {
-        const resolved = p.startsWith("@") ? resolveLoaderName(p, next, executable) : p;
+        const resolved = p.startsWith("@") ? resolveLoaderName(p, next, executable, list) : p;
         if (resolved === null) {
           found = `a library dyld's rules do not resolve here: ${p} (from ${next})`;
           break;
@@ -272,15 +274,22 @@ let listingTool: string | undefined;
 let listingIdentity: Canonical | undefined;
 const listingFiles = new Map<string, string>();
 let identifyingListingTool: boolean = false;
-const listings = new Map<string, { status: number | null; stdout: string; stderr: string }>();
-/** Recheck the bootstrap's paths and contents through the stat-memoized digests. */
+const listings = new Map<string, Listing>();
+const bootstrapListings = new Map<string, Listing>();
+const bootstrapListing: ListFile = (flag, file, digest = fileDigest(realpathSync(file))) =>
+  bootstrapListings.get(canonical([flag, digest])) ??
+  { status: 1, stdout: "", stderr: "unidentified listing-tool dependency" };
+/** Recheck contents and library resolution using only bootstrap listings. */
 function listingToolUnchanged(): boolean {
   try {
+    if (listingTool === undefined || listingIdentity === undefined) return false;
     for (const [path, identity] of listingFiles) {
       const real = realpathSync(path);
       if (canonical([real, fileDigest(real)]) !== identity) return false;
     }
-    return true;
+    const libraries = identifyLibraries(listingTool, undefined, bootstrapListing);
+    return typeof libraries !== "string" && canonical(listingIdentity) ===
+      canonical([realpathSync(listingTool), fileDigest(realpathSync(listingTool)), libraries, osBuild()]);
   } catch {
     return false;
   }
@@ -293,8 +302,10 @@ function otool(flag: "-L" | "-l", file: string, digest: string = fileDigest(real
     identifyingListingTool = true;
     try {
       const libraries = identifyLibraries(listingTool, listingFiles);
-      if (selected.status === 0 && typeof libraries !== "string" && listingToolUnchanged())
+      if (selected.status === 0 && typeof libraries !== "string") {
         listingIdentity = [realpathSync(listingTool), fileDigest(realpathSync(listingTool)), libraries, osBuild()];
+        if (!listingToolUnchanged()) listingIdentity = undefined;
+      }
     } finally {
       identifyingListingTool = false;
     }
@@ -303,30 +314,43 @@ function otool(flag: "-L" | "-l", file: string, digest: string = fileDigest(real
     const listed = spawnSync(listingTool ?? "/usr/bin/otool", [flag, file], { encoding: "utf8", env: {} });
     return { status: listed.status, stdout: listed.stdout ?? "", stderr: listed.stderr ?? String(listed.error ?? "") };
   };
-  if (identifyingListingTool || listingIdentity === undefined) return fresh();
-  const changed = { status: 1, stdout: "", stderr: "otool or its dependencies differ from their identified contents" };
-  if (!listingToolUnchanged()) return changed;
+  if (identifyingListingTool) {
+    const result = fresh();
+    if (result.status === 0) bootstrapListings.set(canonical([flag, digest]), result);
+    return result;
+  }
+  if (listingIdentity === undefined) return fresh();
+  // A listing kept under the key was made by the tool the key identifies,
+  // of the content the key digests: it is reused whatever the tool is now.
+  // A fresh listing is kept and published under the key only where the tool
+  // is the identified one before and after it runs.
   const key = sha256(canonical(["otool", listingIdentity, flag, digest]));
   const held = listings.get(key);
   if (held) return held;
   const store = currentStore();
   const stored = store?.memo("otool", key) ?? null;
+  if (stored !== null) {
+    const result = { status: 0, stdout: stored, stderr: "" };
+    listings.set(key, result);
+    return result;
+  }
+  const changed = { status: 1, stdout: "", stderr: "otool or its dependencies differ from their identified contents" };
   if (!listingToolUnchanged()) return changed;
-  const result = stored === null ? fresh() : { status: 0, stdout: stored, stderr: "" };
+  const result = fresh();
   if (!listingToolUnchanged()) return changed;
-  if (stored === null && result.status === 0) store?.publishMemo("otool", key, result.stdout);
+  if (result.status === 0) store?.publishMemo("otool", key, result.stdout);
   listings.set(key, result);
   return result;
 }
 
 /** The run paths a Mach-O file declares (`LC_RPATH`). */
-function runPaths(file: string): string[] {
-  const listed = otool("-l", file);
+function runPaths(file: string, list: ListFile): string[] {
+  const listed = list("-l", file);
   if (listed.status !== 0) return [];
   return [...listed.stdout.matchAll(/cmd LC_RPATH\s+cmdsize \d+\s+path (.+?) \(offset \d+\)/g)].map((m) => m[1]);
 }
 /** A library name relative to its loader, resolved, or null. */
-function resolveLoaderName(name: string, loader: string, executable: string): string | null {
+function resolveLoaderName(name: string, loader: string, executable: string, list: ListFile): string | null {
   const expand = (path: string): string => path.replace(/^@loader_path/, dirname(loader))
     .replace(/^@executable_path/, dirname(executable));
   const exists = (path: string): boolean => {
@@ -343,7 +367,7 @@ function resolveLoaderName(name: string, loader: string, executable: string): st
   }
   if (!name.startsWith("@rpath/")) return null;
   const rest = name.slice("@rpath/".length);
-  for (const base of [...runPaths(loader), ...(loader === executable ? [] : runPaths(executable))]) {
+  for (const base of [...runPaths(loader, list), ...(loader === executable ? [] : runPaths(executable, list))]) {
     const path = resolve(expand(base), rest);
     if (exists(path)) return path;
   }

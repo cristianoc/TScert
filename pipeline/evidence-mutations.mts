@@ -5,7 +5,7 @@ import { chmodSync, existsSync, readdirSync, readFileSync, realpathSync, statSyn
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { currentStore, forced, linkedLibraries, verifierCall } from "./stages.mts";
+import { currentStore, forced, linkedLibraries, verifierCall, type Canonical } from "./stages.mts";
 import { sourceKey } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 
@@ -175,12 +175,14 @@ export function mutationVerifier(): string {
   const resource = command(clang, ["--no-default-config", "-print-resource-dir"], env);
   const runtime = join(resource, "lib/darwin/libclang_rt.osx.a");
   const linkArgs = [...nativeArgs, "--ld-path=" + linker, "-nostdlib", "-Wl,-Z", "-lSystem", runtime];
-  const dependencies = [clang, linker, "/bin/sh"].map((program) => {
+  const identifyDependencies = (): Canonical[] => [clang, linker, "/bin/sh"].map((program) => {
     const libraries = linkedLibraries(program);
     assert.ok(typeof libraries !== "string", `${program}: ${String(libraries)}`);
     return [realpathSync(program), libraries];
   });
-  const named = buildFiles([...inputs, clang, linker, join(toolchain, "include"), resource]);
+  const dependencies = identifyDependencies();
+  const paths = [...inputs, clang, linker, join(toolchain, "include"), resource];
+  const named = buildFiles(paths);
   // Temporary output paths have no semantic role in these commands.
   const key = createHash("sha256").update(JSON.stringify({ toolchain, header, dependencies,
     env: { ...env, TMPDIR: "<dir>" }, linkArgs,
@@ -209,6 +211,8 @@ export function mutationVerifier(): string {
   const rsp = join(dir, "mutation.rsp");
   writeFileSync(rsp, response);
   command(clang, ["-o", executable, "@" + rsp, ...linkArgs], env);
+  assert.deepEqual(buildFiles(paths), named, "mutation build inputs changed during compilation or linking");
+  assert.deepEqual(identifyDependencies(), dependencies, "mutation build tools changed during compilation or linking");
   store?.publishBuilt("mutation-verifier", key, "mutation-verifier", executable);
   return executable;
 }
