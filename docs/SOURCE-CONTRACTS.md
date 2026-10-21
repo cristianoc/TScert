@@ -312,8 +312,9 @@ is erased by TypeScript's emit: the statement has no execution, and it
 binds a type name over its whole block, before and after it, as a
 module-level declaration binds one over the module. Its equation is read by
 the readers every declaration's is, lifted over the type parameters it
-closes over: $`\vec X`$, the enclosing type parameters its equation names,
-directly or through a block type it names, each one TypeScript resolves at
+closes over: $`\vec X`$, the enclosing type parameters its declaration
+names (its equation, its parameters' bounds and defaults), directly or
+through a block type it names, each one TypeScript resolves at
 the declaration's block (a parameter a nearer declaration of the same
 spelling hides there is not one), outermost first, then its own
 $`\vec Y`$. The captured arguments are equation arguments: the unit whose

@@ -2180,6 +2180,8 @@ export const cases: Case[] = [
     diagnostic: /a conditional type over a type parameter, Awaited<T>, is computed only at an instance \(line 3, col 12\)/ },
   positive("block-type-aliases", "a type alias and an interface declared in a body run nothing and name their block: one closing over the function's type parameter, one shadowing a module alias inside its block only, one naming another declared after it, a recursive one"),
   positive("block-type-captures", "types declared in a body lifted over the type parameters they close over: a merged interface binding a parameter of its own besides, an own parameter shadowing a captured one, a default reading the captured one, a block type hiding the parameter of its spelling, a generic closure naming the alias at the outer binder, a block type naming no binder beside a rest pack"),
+  negative("invalid-block-type-captured-shadow", "a block alias's own parameter shadows the captured one of its spelling only in its own positions: a number at the captured position is refused (run under Node: the result is that number at T := string)",
+    /source expression obligation at \[385,393\): evidence search failed/),
   negative("invalid-block-type-scope", "past its block, a module alias's spelling is the module's: the value built there at the block's alias is refused at the module's (run under Node: the result holds a number)",
     /source expression obligation at \[462,470\): evidence search failed/),
   gap("block-type-hidden-binder-refused", "a reference to a block type where a nearer type parameter hides one it closes over: no binder there denotes the captured one",

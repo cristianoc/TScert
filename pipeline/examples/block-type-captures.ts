@@ -14,14 +14,16 @@ function merged<T>(value: T): T {
   return slot.value;
 }
 
-// An own parameter shadows the captured one of its spelling; a default reads
-// the captured one.
+// An own parameter shadows the captured one of its spelling: `Both` closes
+// over the outer `T` through `Outer`, and its own `T` is `string`. A default
+// reads the captured one.
 function shadowedParameter<T>(value: T, label: string): string {
-  type Same<T> = { own: T };
+  type Outer = { v: T };
+  type Both<T> = { outer: Outer; own: T };
   type Defaulted<U = T[]> = { items: U };
-  const same: Same<string> = { own: label };
-  const defaulted: Defaulted = { items: [value] };
-  return same.own + defaulted.items.length;
+  const both: Both<string> = { outer: { v: value }, own: label };
+  const defaulted: Defaulted = { items: [both.outer.v] };
+  return both.own + defaulted.items.length;
 }
 
 // A block's type hides the enclosing type parameter of its spelling: in the
