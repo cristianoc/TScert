@@ -213,6 +213,9 @@ const onSystemVolume = (path: string): boolean => systemPrefixes.some((s) => pat
  * the system volume by its digest, each on it by the system's build; or why
  * they are not identified. */
 export function linkedLibraries(executable: string): Canonical | string {
+  return identifyLibraries(executable);
+}
+function identifyLibraries(executable: string, files?: Map<string, string>): Canonical | string {
   const build = osBuild();
   let found: Canonical | string;
   if (platform() !== "darwin" || build === null) found = "dynamic libraries are identified on macOS only";
@@ -222,6 +225,7 @@ export function linkedLibraries(executable: string): Canonical | string {
     const seen = new Set<string>();
     // Each file to list: its real path and its digest.
     const start = realpathSync(executable);
+    files?.set(executable, canonical([start, fileDigest(start)]));
     for (let work = [{ real: start, digest: fileDigest(start) }], item = work.shift(); item !== undefined;
         item = work.shift()) {
       const next = item.real;
@@ -252,6 +256,7 @@ export function linkedLibraries(executable: string): Canonical | string {
         else {
           const real = realpathSync(p);
           const digest = fileDigest(real);
+          if (!files?.has(p)) files?.set(p, canonical([real, digest]));
           identified.push([p, digest]);
           work.push({ real, digest });
         }
@@ -265,8 +270,21 @@ export function linkedLibraries(executable: string): Canonical | string {
  * tool's own dependency identity with fresh listings from that same tool. */
 let listingTool: string | undefined;
 let listingIdentity: Canonical | undefined;
+const listingFiles = new Map<string, string>();
 let identifyingListingTool: boolean = false;
 const listings = new Map<string, { status: number | null; stdout: string; stderr: string }>();
+/** Recheck the bootstrap's paths and contents through the stat-memoized digests. */
+function listingToolUnchanged(): boolean {
+  try {
+    for (const [path, identity] of listingFiles) {
+      const real = realpathSync(path);
+      if (canonical([real, fileDigest(real)]) !== identity) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 function otool(flag: "-L" | "-l", file: string, digest: string = fileDigest(realpathSync(file))):
     { status: number | null; stdout: string; stderr: string } {
   if (listingTool === undefined) {
@@ -274,8 +292,8 @@ function otool(flag: "-L" | "-l", file: string, digest: string = fileDigest(real
     listingTool = selected.status === 0 ? selected.stdout.trim() : "/usr/bin/otool";
     identifyingListingTool = true;
     try {
-      const libraries = linkedLibraries(listingTool);
-      if (selected.status === 0 && typeof libraries !== "string")
+      const libraries = identifyLibraries(listingTool, listingFiles);
+      if (selected.status === 0 && typeof libraries !== "string" && listingToolUnchanged())
         listingIdentity = [realpathSync(listingTool), fileDigest(realpathSync(listingTool)), libraries, osBuild()];
     } finally {
       identifyingListingTool = false;
@@ -286,12 +304,16 @@ function otool(flag: "-L" | "-l", file: string, digest: string = fileDigest(real
     return { status: listed.status, stdout: listed.stdout ?? "", stderr: listed.stderr ?? String(listed.error ?? "") };
   };
   if (identifyingListingTool || listingIdentity === undefined) return fresh();
+  const changed = { status: 1, stdout: "", stderr: "otool or its dependencies differ from their identified contents" };
+  if (!listingToolUnchanged()) return changed;
   const key = sha256(canonical(["otool", listingIdentity, flag, digest]));
   const held = listings.get(key);
   if (held) return held;
   const store = currentStore();
   const stored = store?.memo("otool", key) ?? null;
+  if (!listingToolUnchanged()) return changed;
   const result = stored === null ? fresh() : { status: 0, stdout: stored, stderr: "" };
+  if (!listingToolUnchanged()) return changed;
   if (stored === null && result.status === 0) store?.publishMemo("otool", key, result.stdout);
   listings.set(key, result);
   return result;
