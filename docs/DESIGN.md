@@ -365,8 +365,10 @@ complete-directory publication protocol. Concurrent observations coexist.
 
 Atomic publication provides visibility across process interruption.
 Power-loss durability requires a separately specified and validated
-filesystem flush protocol. Readers validate complete manifests and file
-digests; missing, incomplete or corrupt entries cause recomputation.
+filesystem flush protocol. Readers validate complete manifests, an integrity
+digest covering every manifest payload field (including exit status and
+measurement metadata), and file digests; missing, incomplete or corrupt
+entries cause recomputation.
 Cleanup removes temporary directories only when their writers are known
 to have stopped. A reader copies and validates a whole entry before use;
 concurrent eviction causes a retry or miss.

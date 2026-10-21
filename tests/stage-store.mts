@@ -265,6 +265,34 @@ if (eligible) {
 }
 
 if (eligible) {
+  // Every manifest field returned to a caller belongs to its integrity
+  // digest, including the refusal status and the stored measurement.
+  const store = freshStore("manifest-integrity");
+  const program = script("refusal.sh", 'echo "reject: control"; echo "end of refusal"; exit 1');
+  const call = verifierCall(program, ["--check-source-claims", file("integrity-fragment.json", "fragment"),
+    file("integrity-claims.json", "claims"), "key", file("integrity-evidence.json", "evidence")]);
+  const first = invoke(call);
+  assert.equal(first.status, 1);
+  assert.ok(first.record.key !== null);
+  assert.equal(invoke(call).record.execution, "replayed");
+  const path = join(store.root, "entries", "check", first.record.key, "manifest.json");
+  const original = readFileSync(path, "utf8");
+  chmodSync(path, 0o644);
+  for (const corrupted of [
+    original.replace('"exitStatus":1', '"exitStatus":0'),
+    original.replace(/"elapsedMs":[^,}]+/, '"elapsedMs":-1'),
+  ]) {
+    assert.notEqual(corrupted, original);
+    writeFileSync(path, corrupted);
+    const fresh = invoke(call);
+    assert.equal(fresh.record.execution, "executed", "a changed manifest payload is a miss");
+    assert.equal(fresh.status, 1, "the fresh refusal reaches the caller");
+    assert.equal(readFileSync(path, "utf8"), corrupted, "an invalid entry is not replaced");
+  }
+  process.stdout.write("manifest integrity: changed exit status or measurement is a miss and is not replaced\n");
+}
+
+if (eligible) {
   // Concurrent publication by two processes: both execute, one publishes,
   // the other finds the same result present; a stage giving two results for
   // one key is a store error.

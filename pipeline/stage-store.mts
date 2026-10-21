@@ -6,7 +6,8 @@
 //
 //   <root>/entries/<stage>/<key>/              a finished result
 //       manifest.json   key, stage, input manifest, exit status, digests of
-//                       stdout, stderr and each output, and the measurement
+//                       stdout, stderr and each output, the measurement,
+//                       and an integrity digest of the complete payload
 //       stdout, stderr, out/<role>
 //   <root>/timeouts/<stage>/<key>/<attempt>/observation.json
 //   <root>/sources/<digest>/<name>             a stable snapshot location
@@ -90,7 +91,7 @@ function readDigest(value: unknown): Digest | null {
 const matches = (bytes: Buffer, digest: Digest): boolean => bytes.length === digest.size && sha256(bytes) === digest.sha256;
 
 /** An entry's manifest, decoded field by field. */
-type Manifest = {
+type ManifestPayload = {
   key: string;
   stage: string;
   input: string;
@@ -100,13 +101,14 @@ type Manifest = {
   outputs: { role: string; digest: Digest }[];
   measurement: Measurement;
 };
+type Manifest = ManifestPayload & { payloadSha256: string };
 function readManifest(value: unknown): Manifest | null {
   const m = fieldsOf(value);
-  if (!m || !exactly(m, ["key", "stage", "input", "exitStatus", "stdout", "stderr", "outputs", "measurement"])) return null;
-  const { key, stage, input, exitStatus, outputs } = m;
+  if (!m || !exactly(m, ["key", "stage", "input", "exitStatus", "stdout", "stderr", "outputs", "measurement", "payloadSha256"])) return null;
+  const { key, stage, input, exitStatus, outputs, payloadSha256 } = m;
   const stdout = readDigest(m["stdout"]), stderr = readDigest(m["stderr"]);
   const measurement = readMeasurement(m["measurement"]);
-  if (typeof key !== "string" || typeof stage !== "string" || typeof input !== "string" ||
+  if (typeof payloadSha256 !== "string" || typeof key !== "string" || typeof stage !== "string" || typeof input !== "string" ||
       !(exitStatus === null || typeof exitStatus === "number") || !stdout || !stderr || !measurement ||
       !Array.isArray(outputs))
     return null;
@@ -117,7 +119,8 @@ function readManifest(value: unknown): Manifest | null {
     if (!f || !exactly(f, ["role", "digest"]) || typeof role !== "string" || !digest) return null;
     read.push({ role, digest });
   }
-  return { key, stage, input, exitStatus, stdout, stderr, outputs: read, measurement };
+  const payload: ManifestPayload = { key, stage, input, exitStatus, stdout, stderr, outputs: read, measurement };
+  return sha256(JSON.stringify(payload)) === payloadSha256 ? { ...payload, payloadSha256 } : null;
 }
 
 function readObservation(value: unknown): TimeoutObservation | null {
@@ -137,7 +140,7 @@ const failedWith = (error: unknown, ...codes: string[]): boolean =>
 /** The result payload two finished results for one key must agree on: the
  * input manifest, exit status, stdout, stderr and the outputs' names and
  * digests; attempt identities and measurements are excluded. */
-const payload = (m: Manifest): string =>
+const resultPayload = (m: Manifest): string =>
   JSON.stringify([m.input, m.exitStatus, m.stdout, m.stderr, m.outputs.map((o) => [o.role, o.digest])]);
 
 /** An in-process test barrier after an entry is complete and before rename. */
@@ -232,12 +235,13 @@ export class Store {
    * error; an invalid one is left, and the fresh result is not published. */
   publishFinished(stage: string, key: string, result: StoredResult): "published" | "present" | "invalid present" {
     if (sha256(result.input) !== key) throw new StoreError(`store error: the input of ${stage} entry ${key} is not its key's`);
-    const manifest: Manifest = {
+    const payload: ManifestPayload = {
       key, stage, input: result.input, exitStatus: result.exitStatus,
       stdout: digestOf(result.stdout), stderr: digestOf(result.stderr),
       outputs: result.outputs.map(([role, bytes]) => ({ role, digest: digestOf(bytes) })),
       measurement: result.measurement,
     };
+    const manifest: Manifest = { ...payload, payloadSha256: sha256(JSON.stringify(payload)) };
     const building = this.temporary(result.measurement.attempt);
     try {
       mkdirSync(join(building, "out"));
@@ -256,7 +260,7 @@ export class Store {
       }
       const present = this.validated(destination, stage, key, null);
       if (!present) return "invalid present";
-      if (payload(present) !== payload(manifest))
+      if (resultPayload(present) !== resultPayload(manifest))
         throw new StoreError(`store error: two different results for ${stage} entry ${key} (attempts ` +
           `${present.measurement.attempt} and ${result.measurement.attempt})`);
       return "present";
