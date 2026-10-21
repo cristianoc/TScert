@@ -279,7 +279,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         && (match s.variadic with
             | None -> List.length s.params > List.length ps
             | Some _ -> List.length s.params >= List.length ps)
-        && List.for_all2 plausible_subtype
+        && List.for_all2 (plausible_subtype_declared declarations)
              (List.filteri (fun i _ -> i < List.length ps) s.params) (List.map snd ps) in
       let from_context = match expected with
         | Some t -> (match (try declared_head declarations [] t with Json.Error _ -> t) with
@@ -293,8 +293,15 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | extra,context -> Some (Option.value extra ~default:[] @ context) in
       let own = match offered_here, own with
         | Some extra, Atoms [Shape ({calls=[call];_} as shape)] when quantified=[] && element=None ->
+          (* An offered signature stating the closure's written promise keeps
+             it, at the promised type: Lean checks the body's promise at it. *)
+          let at_own (s:Semantic.signature) = match guard with
+            | Some (stated,promised) when s.call_effect.promise <> None
+                && s.call_effect.promise = stated.promise ->
+              {s with call_effect=stated;result=promised}
+            | _ -> {s with call_effect} in
           Atoms [Shape {shape with calls=call :: List.filter (fun s -> s <> call)
-            (List.sort_uniq compare (List.map (fun s -> {s with call_effect}) extra))}]
+            (List.sort_uniq compare (List.map at_own extra))}]
         | _ -> own in
       (* A guard closure offers its promise beside its own signature, at the
          same parameters, and its body is checked at each, returning its plain

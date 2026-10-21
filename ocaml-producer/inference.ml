@@ -286,12 +286,16 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
       | Atoms [Shape {calls=(_::_ as calls);fields=[];indexes=[];elements=None}],
       Atoms [Shape {calls=[e];fields=[];indexes=[];elements=None}]
         when e.quantified=[] && List.exists (fun (a:signature) -> a.quantified=[]
-          && List.length a.params<=List.length e.params) calls ->
+          && List.length a.params<=List.length e.params
+          && a.call_effect.promise=e.call_effect.promise) calls ->
       (* A callback may take fewer parameters than it is offered: the
          positions it has are compared, the rest it ignores. Of several
-         signatures, the first that fits is compared. *)
+         signatures, the first that fits and states the same promise is
+         compared: a promise signature's result is the promised type, a
+         plain one's the call's. *)
       let a = List.find (fun (a:signature) -> a.quantified=[]
-        && List.length a.params<=List.length e.params) calls in
+        && List.length a.params<=List.length e.params
+        && a.call_effect.promise=e.call_effect.promise) calls in
       constrain e.receiver a.receiver;
       List.iteri (fun i p -> constrain (List.nth e.params i) p) a.params;
       constrain a.result e.result

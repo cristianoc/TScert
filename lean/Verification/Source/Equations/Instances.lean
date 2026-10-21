@@ -176,7 +176,13 @@ def proposeLabels {sig : Signature} (unfold : Unfold) (s : SchemeRow (Label sig)
     s.bounds.map (fun (b, U) => (b.1, tree U)), s.variadic.map (RestArrow.map tree), s.resolution,
     s.construct⟩
   let θ ← unifyScheme unfold s' (L.map (Arrow.map tree)) (M.map (RestArrow.map tree))
-  let θs ← s.binders.mapM fun b => ((θ.lookup b.1).getD [b.1]).mapM Label.ofTree?
+  -- A binder matching does not determine: one a target operand mentions
+  -- stands for itself; any other (`filter`'s `S` at a plain predicate) is
+  -- proposed at the empty union, an instance like any other of the scheme.
+  -- The substitution, bound and image checks decide.
+  let named := (L.flatMap Arrow.operands ++ M.flatMap RestArrow.operands).flatten.map (·.1)
+  let θs ← s.binders.mapM fun b =>
+    ((θ.lookup b.1).getD (if named.any (mentionsAny [b.1]) then [b.1] else [])).mapM Label.ofTree?
   let κ : PositiveRules.Ctx (Label sig) := s.binders.zip θs
   let operands := (s.signatures.flatMap Arrow.operands ++ s.variadic.flatMap RestArrow.operands).flatten.eraseDups
   return (θs, operands.map fun l => (l, κ, l.substitute (parameterReplacement κ)))

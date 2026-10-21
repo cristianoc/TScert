@@ -2801,6 +2801,50 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 }
 
 {
+  // A guard closure passed to `filter` is claimed at the guard overload's
+  // longer promise signature (`offer-promise`), the one the call is checked
+  // at. That row forged without its promise, at a promise the body does not
+  // establish, at a parameter outside the closure's contextual one, or at a
+  // footprint narrower than the top one a promise row's code is checked at:
+  // each refused where evidence is produced and where the honest evidence is
+  // checked.
+  const artifacts = run("filter-guard-callback");
+  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const at = source.indexOf("(d): d is Declaration => d.kind === \"declaration\")");
+  assert.ok(at >= 0, "the guard closure of `declarations`");
+  type ClosureArrow = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"][number];
+  const forgeLonger = (name: string, edit: (longer: ClosureArrow, claims: SourceClaims) => void): string => {
+    const forged = readClaims(artifacts);
+    const fn = must(forged.functions.find(f => f.name === "declarations"), "declarations' claims");
+    const closure = must(fn.expressions.find(e => e.pos[0] === at), "the closure's claim");
+    const label = Array.isArray(closure.type) ? closure.type[0] : undefined;
+    assert.ok(typeof label === "number", "the closure's claim is a row");
+    const clause = must(forged.types[label], "the closure's row")[0];
+    assert.ok(clause !== undefined && typeof clause === "object" && "arrs" in clause, "an arrow clause");
+    const longer = must(clause.arrs.arrows.find(a => a.arguments.length > 1 && a.effect.promise !== null),
+      "the longer promise signature");
+    edit(longer, forged);
+    return writeClaims(artifacts, name, forged);
+  };
+  const forgeries = [
+    [forgeLonger("forged-filter-guard-plain", (longer) => { longer.effect.promise = null; }), "forged-filter-guard-plain", "reject: "],
+    [forgeLonger("forged-filter-guard-promise", (longer, claims) => { longer.result = [rowOf(claims, "nul")]; }),
+      "forged-filter-guard-promise", "reject: "],
+    [forgeLonger("forged-filter-guard-parameter", (longer, claims) => { longer.arguments[0] = [rowOf(claims, "nul")]; }),
+      "forged-filter-guard-parameter", "closure signature claim is outside the source annotation"],
+    [forgeLonger("forged-filter-guard-footprint", (longer) => { longer.effect.footprint = { value: "keep", store: "keep" }; }),
+      "forged-filter-guard-footprint", "reject: "],
+  ] as const;
+  for (const [input, name, refusal] of forgeries) {
+    const searched = produceWith(artifacts, input, name);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.ok((searched.stdout + searched.stderr).includes(refusal), searched.stdout + searched.stderr);
+    assert.ok(invoke(input, join(artifacts, "evidence.json"), artifacts).includes(refusal));
+  }
+  process.stdout.write("filter guard closure: its longer promise signature without the promise, at an unestablished promise, a parameter outside its context and a narrower footprint refused in search and in checking\n");
+}
+
+{
   // A footprint check that runs out of subtype rounds is inconclusive, not a
   // refusal: `marks` claims the empty footprint, and with one round the
   // checks of its graph exhaust. Search and checking report exhaustion, never

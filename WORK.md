@@ -25,7 +25,8 @@ design, not its progress.
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
 | [Generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
 | [A literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
-| [Guard overloads of `every` and `filter`](#guard-overloads) | open | a reviewed `every<S>` and `filter<S>` narrow their receiver and their result where a guard is passed, and `shadow-contracts.mts`'s `print` verifies |
+| [Guard overloads beyond `filter`'s](#guard-overloads) | open | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, and `filter-guard-value-refused` verify |
+| [`filter`'s guard overload](docs/SOURCE-CONTRACTS.md#prototype-contracts) | closed: `filter` is stated at TypeScript's guard overload (`native-guard-filter`) and a guard closure is claimed at the longer promise signature it is passed at (`offer-promise`); `filter-guard-callback` and `compiler-api-filter-guard` verify, `invalid-filter-guard-promise` is refused (run under Node), forged promise rows refused in search and in checking (2026-10-21, [slice measurement](#census-filter-guard)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past "closure signature claim is outside the source annotation" |
 | [Footprints](#footprints) | open: the seven programs decided (2026-10-17) | every application form has a checked bound |
 | [Keys known only at run time](#keys-known-only-at-run-time) | open | the writes listed there are typed |
 | [Module composition](#module-composition) | open: certified imports checked, their units' composition reviewed (2026-10-18) | a Lean theorem composes units certified against each other's signatures |
@@ -243,15 +244,19 @@ keeps the whole of `JsonValue` is unknown. The front end's literal guards
 which verifies.
 
 <a id="guard-overloads"></a>
-**Guard overloads of `every` and `filter`.** TypeScript's `every` and
-`filter` take a guard at overloads binding the guard's type, `every<S>`
-narrowing the array to `S[]` where it answers `true` and `filter<S>`
-returning `S[]`. The reviewed overlay states only their predicate
-overloads, so a guard closure passed to them is checked and narrows
-nothing; a callback a later call of the array takes is then read at the
-array's element type, where TypeScript reads the guard's
-(`shadow-contracts.mts`). Stating the overloads is a new library contract,
-to be reviewed as the overlay's others are.
+**Guard overloads beyond `filter`'s.** TypeScript's `every<S>` narrows the
+array to `readonly S[]` where it answers `true` at a guard, and `find<S>`
+returns `S | undefined`. Neither is a contract of the native at the top
+footprint a closure's promise signature is checked at
+([prototype contracts](docs/SOURCE-CONTRACTS.md#prototype-contracts)): a
+callback may append untested elements or replace tested ones before `every`
+answers, and `find` passes `undefined` at positions a callback removed. Both
+hold at a callback keeping array stores, which a promise signature can state
+once a promise row's code is checked at a footprint (`effectChecked` checks
+it at the top one alone). A guard read as a value meets `filter`'s guard
+overload once its promise signature is adapted to the callback's longer one,
+as a module function's slot meets a longer plain signature
+(`filter-guard-value-refused`).
 
 **Field facts across calls** are deferred, measured (2026-10-19): a call
 step keeps no current-content fact, and keeping those a call's checked
@@ -807,6 +812,19 @@ both read it at `string` and stop in search at "closure signature claim is
 outside the source annotation", the closure
 `d => d.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword)` in
 `readCannotThrow`.
+
+<a id="census-filter-guard"></a>
+The same two slices on 0242a5e (main) and on the branch stating `filter`'s
+guard overload (2026-10-21, load averages 4 to 17): neither verifies on
+either. On main both stop in search at "closure signature claim is outside
+the source annotation", the closure
+`d => d.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword)` in
+`readCannotThrow`. On the branch both pass it, and their evidence search
+exceeds the census's 60 s step limit; run to its end (88 s and 93 s of
+CPU), each stops at "a numeric array key needs a proved array-index
+singleton", the read `node.elements[node.elements.length - 1]` in
+`pattern`, which both reach, a refusal the lowering reports without a
+location.
 
 <a id="census-for-of-patterns"></a>
 Two slices of `type-term.mts`, `readTypeTerm` and `typeTerm`, which calls it,

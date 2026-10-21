@@ -1475,6 +1475,42 @@ with $`R_m`$ the member's result: $`T[\,]`$, `boolean`, `boolean`,
 `push`, `pop`, `shift`, `unshift`, `reverse`) and those that call an
 unrestricted callback do not.
 
+`filter` is stated at TypeScript's guard overload too,
+`filter<S extends T>(predicate: (value: T, index: number, array: readonly T[]) => value is S): S[]`,
+read at a callback whose [promise signature](#user-defined-guards) promises
+$`S`$ of its first actual:
+
+```math
+\frac{f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow S\,[\mathsf{guards}\ 0]}
+     {\mathit{xs}.\mathsf{filter}(f):S[\,]\;!\;\top}\ \textsf{native-guard-filter}
+```
+
+The native reads each present element $`v`$ once, calls the callback with
+$`v`$, its index and the receiver, and appends that same $`v`$ to its fresh
+result, by ordinary construction, where the answer converts to `true`; it
+skips absent positions and is called without `thisArg`. A promise signature
+answers `true` or `false`, and its `true` leaves $`v\in S`$. The callbacks
+the native runs afterwards change the heap only by writes the model admits,
+each keeping every location's contract, so the world they leave extends the
+one $`v\in S`$ held in, and membership of a type is kept by world extension
+(`Adm`'s `mono`, [Types.lean](../lean/Verification/Types/Types.lean)).
+Every kept value is an $`S`$ without the bound $`S\le T`$, which the
+overlay leaves out; at $`S`$ the empty type the result is empty. The
+signature states the callback at the top footprint, the one a closure's
+promise signature is checked at, so the call may change any location; its
+result is fresh. A callback whose promise is about another parameter, or a
+promise signature at fewer parameters than the callback takes (a guard read
+as a value, `nodes.filter(ts.isIdentifier)`), meets only the plain
+signatures, where `filter` keeps `T` (`compiler-api-guard-values`,
+`filter-guard-value-refused`).
+
+`find`'s guard overload is not stated: at the top footprint `find` visits
+positions a callback removed and passes them `undefined`, so its callback
+there takes `T | undefined`, which a guard closure TypeScript types at `T`
+does not admit. `every`'s, `this is readonly S[]`, is not a contract of the
+native: a callback may append untested elements or replace tested ones, so
+a traversal answering `true` says nothing of the receiver it leaves.
+
 The reviewed overlay can restrict quantified binders (`bounds`) and weaken a
 native's promised result (`result`). These specify trusted natives; source
 annotations are still translated in full. `join` bounds `T` to the conversion
@@ -3328,9 +3364,12 @@ at a type within the written one, or the closure is refused. A guard
 closure passed where a callback binding more parameters is expected
 (`every`'s or `filter`'s predicate) is claimed at its own signature, its
 promise and the longer signature, its body checked at each
-(`guard-closure-callback`). The reviewed `every` and `filter` state no guard
-overload (`every<S>`, `filter<S>`), so a call passing a guard narrows neither
-its receiver nor its result.
+(`guard-closure-callback`). Where the longer signature states the
+closure's written promise (`filter`'s guard overload,
+[`native-guard-filter`](#prototype-contracts)), the closure is claimed at it
+with that promise, and its body is checked at it with the promise goal. The
+reviewed `every` states no guard overload (`every<S>`), so a call passing a
+guard does not narrow its receiver.
 
 An imported guard is read at its declared type, both signatures; its promise
 is the import assumption of [the trust surface](DESIGN.md#trust-surface),
