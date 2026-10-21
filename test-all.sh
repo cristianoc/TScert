@@ -120,8 +120,8 @@ run_test "Trusted inputs" node tests/trusted-inputs.mts
 run_test "Tool failures stay tool failures" node tests/tool-failures.mts
 # tests/stage-store.mts checks the stage store with stand-in stages: invalidation, concurrent writers, interrupted writers, timeouts, isolation.
 run_test "Stage store" node tests/stage-store.mts
-# The parse and TypeScript's diagnostics replayed by their observations.
-run_test "Observed stages" node tests/observed-stages.mts
+# The stages' code reads the file system only through tools/files.mts; the observed stages' replay controls are pipeline/test.mts's.
+run_test "Observed stages read through files.mts" node tests/observed-stages.mts --reads
 # tests/compiler-api.mts binds the compiler-API contract to the installed package: C1, its enums.
 run_test "Compiler-API contract" node tests/compiler-api.mts
 # tests/compiler-api-guards.mts compares each family's guard table, the compiler API's and the stand-in's, with its generator and runs every entry under Node (C2).
