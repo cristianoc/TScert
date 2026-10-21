@@ -27,11 +27,14 @@ const stageNames: readonly StageName[] = ["parse", "lower", "propose", "assemble
   "diagnostics"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
-/** The stages that replay. The check and the parse execute without replay:
- * replaying the check would need an audit of its result binding, and the
- * parse's filesystem observations are not recorded (WORK.md, the stage
- * store); TypeScript's diagnostics likewise. */
-const replayedStages: ReadonlySet<StageName> = new Set<StageName>(["lower", "propose", "assemble", "search", "explain"]);
+/** The stages that replay. A replayed check is the verifier's result for
+ * exactly its key's inputs: the verifier's check mode reads the three files
+ * its arguments name and prints its judgment, and reads no clock, randomness,
+ * environment or working directory (DESIGN.md, the trust surface). The parse
+ * and TypeScript's diagnostics execute without replay: the compiler's
+ * filesystem observations are not recorded (WORK.md, the stage store). */
+const replayedStages: ReadonlySet<StageName> = new Set<StageName>(["lower", "propose", "assemble", "search", "check",
+  "explain"]);
 
 /** The repository's builds of the two audited programs, at their build
  * locations: the Lean verifier and the OCaml producer. */

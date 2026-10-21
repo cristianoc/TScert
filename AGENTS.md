@@ -27,7 +27,7 @@ make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of
 ### The stage store
 
 Every stage invocation goes through [one mechanism](pipeline/stages.mts),
-and the lowering, proposal, claims assembly, search and explanations replay
+and the lowering, proposal, claims assembly, search, the check and explanations replay
 from [the stage store](docs/DESIGN.md#the-stage-store) by content.
 
 - `TSCERT_STAGE_STORE=<dir>` selects the store, by default
