@@ -5,8 +5,9 @@
 // it changes resolution, each make it execute; forged entries are refused;
 // TypeScript's diagnostics replay by the same mechanism. The confined
 // compiler is killed on a read the API's queries do not serve, and the stages'
-// code reads the file system only through tools/files.mts. Each run is a
-// fresh process, as each pipeline run is; no build is needed.
+// code reads the file system only through tools/files.mts. Replay controls
+// use fresh processes; the retirement control reuses one. No build is needed.
+// --node-only runs the controls that do not require sandbox-exec.
 import assert from "node:assert/strict";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -18,7 +19,7 @@ import { parseSource, typeScriptErrors } from "../pipeline/verify-source.mts";
 import { compilerApiFamily } from "../tools/compiler-api.mts";
 import { launcherForTests, openCompiler, useInstallationForTests } from "../tools/compiler-channel.mts";
 import { useFamiliesForTests } from "../tools/family-activation.mts";
-import { nodeResolve } from "../tools/files.mts";
+import { nodeResolve, processRetirement, observed, observationsHold, type Observation } from "../tools/files.mts";
 
 const here = import.meta.dirname;
 const repository = resolve(here, "..");
@@ -43,6 +44,42 @@ if (process.argv[2] === "--run") {
   else parseSource(source, project, runDirectory("observed-"), recorder);
   const record = recorder.records.find((r) => r.stage === (stage === "resolution" || stage === "mutation" ? "parse" : stage));
   process.stdout.write(JSON.stringify({ execution: record?.execution, ineligible: record?.ineligible, key: record?.key }));
+  process.exit(0);
+}
+
+// An incomplete resolution can populate Node's caches without observing the
+// link target. Later execution must be refused even when every observation holds.
+if (process.argv[2] === "--retarget") {
+  const directory = process.argv[3];
+  const parent = join(directory, "main.ts");
+  const target = join(directory, "node_modules/exported/target.js");
+  const implementation = captureCodeIdentity([]);
+  const invoke = (name: string, run: () => string): ReturnType<typeof invokeInProcess<string>> =>
+    invokeInProcess({ stage: "parse", implementation, inputs: [{ role: "control", bytes: name }],
+      observed: true, codec: textCodec, run }, { force: false, recorder: null });
+  const stable = (): string => "independent replay";
+  assert.equal(invoke("stable", stable).record.execution, "executed");
+  let observations: readonly Observation[] = [];
+  const first = invoke("linked", () => {
+    const made = observed(() => nodeResolve("exported", parent) ?? "unresolved");
+    observations = made.observations;
+    return made.value;
+  });
+  assert.match(first.value, /third\.js$/);
+  assert.equal(first.record.execution, "executed");
+  assert.equal(first.record.key, null);
+  assert.match(first.record.ineligible ?? "", /symbolic link/);
+  assert.match(processRetirement() ?? "", /symbolic link/);
+  rmSync(target);
+  symlinkSync("other.js", target);
+  assert.equal(observationsHold(observations), true);
+  let executed = false;
+  assert.throws(() => invoke("linked", () => {
+    executed = true;
+    return nodeResolve("exported", parent) ?? "unresolved";
+  }), /fresh process is needed/);
+  assert.equal(executed, false);
+  assert.equal(invoke("stable", stable).record.execution, "replayed");
   process.exit(0);
 }
 
@@ -73,8 +110,8 @@ const main = join(fixture, "main.ts"), project = join(fixture, "tsconfig.json");
 
 type Attempt = { execution: string; ineligible: string | null; key: string | null };
 /** One stage in a fresh process. */
-function run(stage: "parse" | "diagnostics" | "resolution" | "mutation" = "parse", families: string = "reviewed", installation: string = "-"): Attempt {
-  const p = spawnSync(process.execPath, [import.meta.filename, "--run", stage, main, project, families, installation],
+function run(stage: "parse" | "diagnostics" | "resolution" | "mutation" = "parse", families: string = "reviewed", installation: string = "-", parent: string = main): Attempt {
+  const p = spawnSync(process.execPath, [import.meta.filename, "--run", stage, parent, project, families, installation],
     { encoding: "utf8", env: { ...process.env, TSCERT_STAGE_STORE: root } });
   assert.equal(p.status, 0, p.stderr);
   const parsed: unknown = JSON.parse(p.stdout);
@@ -125,6 +162,32 @@ rmSync(target);
 symlinkSync("third.js", target);
 assert.match(run("resolution", "exported").ineligible ?? "", /symbolic link/);
 
+const retarget = spawnSync(process.execPath, [import.meta.filename, "--retarget", fixture],
+  { encoding: "utf8", env: { ...process.env, TSCERT_STAGE_STORE: root } });
+assert.equal(retarget.status, 0, retarget.stderr);
+
+// Null exports do not establish a self-reference. A scope search stops at
+// node_modules, even when the containing project names the requested package.
+for (const boundary of [false, true]) {
+  const name = boundary ? "boundary" : "null-self";
+  write("package.json", JSON.stringify({ name, exports: boundary ? "./local.js" : null }));
+  write("local.js", "export {};\n");
+  const parent = boundary ? join(fixture, "node_modules/unscoped/main.js") : main;
+  if (boundary) write("node_modules/unscoped/main.js", "export {};\n");
+  write(`node_modules/${name}/a.js`, "export {};\n");
+  write(`node_modules/${name}/b.js`, "export {};\n");
+  for (const target of ["a.js", "b.js"]) {
+    write(`node_modules/${name}/package.json`, JSON.stringify({ name, exports: `./${target}` }));
+    const attempt = run("resolution", name, "-", parent);
+    assert.equal(attempt.execution, "executed");
+    assert.equal(attempt.ineligible, null);
+    assert.equal(run("resolution", name, "-", parent).execution, "replayed");
+  }
+}
+write("node_modules/null-exports/package.json", JSON.stringify({ exports: null, main: "index.js" }));
+write("node_modules/null-exports/index.js", "export {};\n");
+assert.match(run("resolution", "null-exports").ineligible ?? "", /states no exports/);
+
 // A package import to the scope's own file replays; one redirected to another
 // package lookup is not accounted for.
 write("package.json", JSON.stringify({ imports: { "#guard": "redirected/guard", "#local": "./local.js" } }));
@@ -151,86 +214,89 @@ incompleteImport();
 rmSync(join(fixture, "package.json"));
 rmSync(join(fixture, "local.js"));
 
-// --- a parse replays after an unchanged run; each change makes it execute
-executesThenReplays("a first parse");
-write("dep.ts", "export function dep(x: number): number {\n  return x + 1;\n}\n");
-executesThenReplays("an imported module changed");
-write("node_modules/pkg/index.d.ts", "export declare function lib(x: number): number;\nexport declare const other: string;\n");
-executesThenReplays("a declaration file reached through node_modules changed");
-write("tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2023", module: "preserve",
-  moduleResolution: "bundler" }, files: ["main.ts"] }));
-executesThenReplays("the tsconfig changed");
-// `./mod` resolved to `mod/index.ts`; a `mod.ts` beside it is found first.
-write("mod.ts", "export function m(x: number): number {\n  return 2 * x;\n}\n");
-executesThenReplays("a module added where it changes resolution");
-executesThenReplays("the family descriptions changed", "parse", "changed");
-const reviewed = run();
-assert.equal(reviewed.execution, "replayed", "the reviewed descriptions again");
+if (process.argv[2] !== "--node-only") {
+  // --- a parse replays after an unchanged run; each change makes it execute
+  executesThenReplays("a first parse");
+  write("dep.ts", "export function dep(x: number): number {\n  return x + 1;\n}\n");
+  executesThenReplays("an imported module changed");
+  write("node_modules/pkg/index.d.ts", "export declare function lib(x: number): number;\nexport declare const other: string;\n");
+  executesThenReplays("a declaration file reached through node_modules changed");
+  write("tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2023", module: "preserve",
+    moduleResolution: "bundler" }, files: ["main.ts"] }));
+  executesThenReplays("the tsconfig changed");
+  // `./mod` resolved to `mod/index.ts`; a `mod.ts` beside it is found first.
+  write("mod.ts", "export function m(x: number): number {\n  return 2 * x;\n}\n");
+  executesThenReplays("a module added where it changes resolution");
+  executesThenReplays("the family descriptions changed", "parse", "changed");
+  const reviewed = run();
+  assert.equal(reviewed.execution, "replayed", "the reviewed descriptions again");
 
-// --- the TypeScript package: a clone of the installation, then changed
-executesThenReplays("another TypeScript installation", "parse", "reviewed", installation);
-const manifest = join(installation, "node_modules", "typescript", "package.json");
-chmodSync(manifest, 0o644);
-writeFileSync(manifest, readFileSync(manifest, "utf8") + "\n");
-executesThenReplays("the TypeScript package changed", "parse", "reviewed", installation);
+  // --- the TypeScript package: a clone of the installation, then changed
+  executesThenReplays("another TypeScript installation", "parse", "reviewed", installation);
+  const manifest = join(installation, "node_modules", "typescript", "package.json");
+  chmodSync(manifest, 0o644);
+  writeFileSync(manifest, readFileSync(manifest, "utf8") + "\n");
+  executesThenReplays("the TypeScript package changed", "parse", "reviewed", installation);
 
-// --- forged entries are refused
-const replayedKey = run().key ?? "";
-const preKeys = readdirSync(join(root, "observed", "parse"));
-const preKey = preKeys.find((p) => readdirSync(join(root, "observed", "parse", p)).includes(replayedKey)) ?? "";
-assert.ok(preKey, "the replayed entry is referenced under its pre-key");
-const references = join(root, "observed", "parse", preKey);
-const entry = (key: string): string => join(root, "entries", "parse", key);
-const found = store.finished("parse", replayedKey, null);
-assert.ok(found);
-// An entry whose observations answer otherwise now, the only one referenced.
-const input: unknown = JSON.parse(found.result.input);
-const observations = typeof input === "object" && input !== null && "observations" in input &&
-  Array.isArray(input.observations) ? input.observations : [];
-const forgedObservations: Canonical[] = observations.map((o: unknown) =>
-  Array.isArray(o) && o[0] === "read" && o[1] === join(fixture, "dep.ts") ? ["read", o[1], "0".repeat(64)] : (o as Canonical)); // asserted: the observations of the entry this test's run just published
-const forgedInput = JSON.stringify({ ...(input as object), observations: forgedObservations }); // asserted: the manifest object just parsed
-assert.notEqual(forgedInput, found.result.input, "the forged entry differs");
-const forgedKey = sha256(forgedInput);
-store.publishFinished("parse", forgedKey, { ...found.result, input: forgedInput });
-store.reference("parse", preKey, forgedKey);
-rmSync(join(references, replayedKey));
-assert.equal(run().execution, "executed", "an entry whose observations do not hold");
-// A reference to an entry of another pre-key: its manifest is not this one's.
-const other = readdirSync(join(root, "observed", "parse")).find((p) => p !== preKey) ?? "";
-const otherKey = readdirSync(join(root, "observed", "parse", other))[0] ?? "";
-for (const k of readdirSync(references)) rmSync(join(references, k));
-store.reference("parse", preKey, otherKey);
-assert.equal(run().execution, "executed", "a reference to another pre-key's entry");
-// A stored result altered after publication.
-for (const k of readdirSync(references)) rmSync(join(references, k));
-store.reference("parse", preKey, replayedKey);
-assert.equal(run().execution, "replayed", "the valid entry again");
-const stdout = join(entry(replayedKey), "stdout");
-chmodSync(entry(replayedKey), 0o755);
-chmodSync(stdout, 0o644);
-writeFileSync(stdout, readFileSync(stdout, "utf8").replace("\"code\":", "\"code\": "));
-assert.equal(run().execution, "executed", "an entry whose stored result was altered");
+  // --- forged entries are refused
+  const replayedKey = run().key ?? "";
+  const preKeys = readdirSync(join(root, "observed", "parse"));
+  const preKey = preKeys.find((p) => readdirSync(join(root, "observed", "parse", p)).includes(replayedKey)) ?? "";
+  assert.ok(preKey, "the replayed entry is referenced under its pre-key");
+  const references = join(root, "observed", "parse", preKey);
+  const entry = (key: string): string => join(root, "entries", "parse", key);
+  const found = store.finished("parse", replayedKey, null);
+  assert.ok(found);
+  // An entry whose observations answer otherwise now, the only one referenced.
+  const input: unknown = JSON.parse(found.result.input);
+  const observations = typeof input === "object" && input !== null && "observations" in input &&
+    Array.isArray(input.observations) ? input.observations : [];
+  const forgedObservations: Canonical[] = observations.map((o: unknown) =>
+    Array.isArray(o) && o[0] === "read" && o[1] === join(fixture, "dep.ts") ? ["read", o[1], "0".repeat(64)] : (o as Canonical)); // asserted: the observations of the entry this test's run just published
+  const forgedInput = JSON.stringify({ ...(input as object), observations: forgedObservations }); // asserted: the manifest object just parsed
+  assert.notEqual(forgedInput, found.result.input, "the forged entry differs");
+  const forgedKey = sha256(forgedInput);
+  store.publishFinished("parse", forgedKey, { ...found.result, input: forgedInput });
+  store.reference("parse", preKey, forgedKey);
+  rmSync(join(references, replayedKey));
+  assert.equal(run().execution, "executed", "an entry whose observations do not hold");
+  // A reference to an entry of another pre-key: its manifest is not this one's.
+  const other = readdirSync(join(root, "observed", "parse")).find((p) => p !== preKey) ?? "";
+  const otherKey = readdirSync(join(root, "observed", "parse", other))[0] ?? "";
+  for (const k of readdirSync(references)) rmSync(join(references, k));
+  store.reference("parse", preKey, otherKey);
+  assert.equal(run().execution, "executed", "a reference to another pre-key's entry");
+  // A stored result altered after publication.
+  for (const k of readdirSync(references)) rmSync(join(references, k));
+  store.reference("parse", preKey, replayedKey);
+  assert.equal(run().execution, "replayed", "the valid entry again");
+  const stdout = join(entry(replayedKey), "stdout");
+  chmodSync(entry(replayedKey), 0o755);
+  chmodSync(stdout, 0o644);
+  writeFileSync(stdout, readFileSync(stdout, "utf8").replace("\"code\":", "\"code\": "));
+  assert.equal(run().execution, "executed", "an entry whose stored result was altered");
 
-// --- TypeScript's diagnostics replay by the same mechanism
-executesThenReplays("TypeScript's diagnostics", "diagnostics");
-write("dep.ts", "export function dep(x: number): string {\n  return x;\n}\n");
-executesThenReplays("TypeScript's diagnostics, an imported module changed", "diagnostics");
+  // --- TypeScript's diagnostics replay by the same mechanism
+  executesThenReplays("TypeScript's diagnostics", "diagnostics");
+  write("dep.ts", "export function dep(x: number): string {\n  return x;\n}\n");
+  executesThenReplays("TypeScript's diagnostics, an imported module changed", "diagnostics");
 
-// --- the confined compiler is killed on any read its queries do not serve
-const launcher = launcherForTests();
-if (launcher === null) throw Error("the compiler is not confined on this platform");
-const version = spawnSync(launcher, ["--version"], { encoding: "utf8" });
-assert.equal(version.status, 0, version.stderr);
-const directReads: readonly (readonly [string, string])[] = [["a file", main], ["a missing file", join(fixture, "absent", "x.ts")]];
-for (const [what, read] of directReads) {
-  const direct: SpawnSyncReturns<string> = spawnSync(launcher, ["--noEmit", read], { encoding: "utf8" });
-  assert.equal(direct.signal, "SIGKILL", `the compiler reading ${what} itself: ${JSON.stringify(direct)}`);
+  // --- the confined compiler is killed on any read its queries do not serve
+  const launcher = launcherForTests();
+  if (launcher === null) throw Error("the compiler is not confined on this platform");
+  const version = spawnSync(launcher, ["--version"], { encoding: "utf8" });
+  assert.equal(version.status, 0, version.stderr);
+  const directReads: readonly (readonly [string, string])[] = [["a file", main], ["a missing file", join(fixture, "absent", "x.ts")]];
+  for (const [what, read] of directReads) {
+    const direct: SpawnSyncReturns<string> = spawnSync(launcher, ["--noEmit", read], { encoding: "utf8" });
+    assert.equal(direct.signal, "SIGKILL", `the compiler reading ${what} itself: ${JSON.stringify(direct)}`);
+  }
+  // Through the API, with directory queries the client declines.
+  const declining = openCompiler({ cwd: fixture, tsserverPath: launcher,
+    fs: { readFile: () => undefined, fileExists: () => undefined } });
+  assert.throws(() => declining.updateSnapshot({ openProjects: [project] }), "a query the client declines kills the compiler");
+
 }
-// Through the API, with directory queries the client declines.
-const declining = openCompiler({ cwd: fixture, tsserverPath: launcher,
-  fs: { readFile: () => undefined, fileExists: () => undefined } });
-assert.throws(() => declining.updateSnapshot({ openProjects: [project] }), "a query the client declines kills the compiler");
 
 // --- the stages' code reads the file system only through tools/files.mts
 const closure = codeIdentity([join(repository, "pipeline", "parse-stage.mts")]);
@@ -244,4 +310,6 @@ for (const module of modules) {
   const text = readFileSync(join(repository, module), "utf8").replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");
   assert.doesNotMatch(text, reading, `${module} reads the file system other than through tools/files.mts`);
 }
-process.stdout.write("observed stages: replay, invalidation, forged entries, confinement, reads in one place\n");
+process.stdout.write(process.argv[2] === "--node-only"
+  ? "observed stages: Node resolution, retirement, compiler identity, reads in one place\n"
+  : "observed stages: replay, invalidation, forged entries, confinement, reads in one place\n");

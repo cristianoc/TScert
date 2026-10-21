@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 // ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.
 import { close as closeParser } from "../tools/fragment-parse.mts";
 import { diagnosticsCodec, diagnosticsStage, observedImplementation, parseStage, parsedCodec, type Parsed } from "./parse-stage.mts";
-import { processInconsistency } from "../tools/files.mts";
+import { processInconsistency, processRetirement } from "../tools/files.mts";
 import { activeFamilies } from "../tools/family-activation.mts";
 import { tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
@@ -633,6 +633,10 @@ const checkTimeoutMs = 4 * stepTimeoutMs;
 type Job = { request: Request; done: (o: Outcome) => void; fail: (e: Error) => void };
 const queue: Job[] = [];
 const idle: ChildProcess[] = [];
+/** The workers that answer their current check and exit: their caches may
+ * disagree with the file system (DESIGN.md, "Observed stages"). */
+const retiring = new WeakSet<ChildProcess>();
+const retiringMessage = "retiring";
 const logs = new Map<ChildProcess, string>();
 let workers: number = 0;
 /** Give queued checks to idle workers, starting one per core at most. An idle
@@ -674,10 +678,18 @@ function give(worker: ChildProcess, job: Job): void {
     worker.off("exit", died);
     finish();
   };
-  const answered = (message: unknown) => settle(() => {
+  const answered = (message: unknown) => {
+    // A worker retiring says so before its outcome, and takes no more checks.
+    if (message === retiringMessage) {
+      retiring.add(worker);
+      return;
+    }
+    finished(message);
+  };
+  const finished = (message: unknown) => settle(() => {
     worker.unref();
     worker.channel?.unref();
-    idle.push(worker);
+    if (!retiring.has(worker)) idle.push(worker);
     try {
       job.done(readOutcome(message));
     } catch (error) {
@@ -720,8 +732,10 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
     // A process whose caches may disagree with the file system answers
     // this check and exits: a fresh worker takes the next (DESIGN.md,
     // "Observed stages").
+    const retire = processInconsistency() !== null || processRetirement() !== null;
+    if (retire) process.send?.(retiringMessage);
     process.send?.(outcome, () => {
-      if (processInconsistency() !== null) process.exit(0);
+      if (retire) process.exit(0);
     });
   });
   process.on("disconnect", () => {

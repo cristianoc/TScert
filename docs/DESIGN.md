@@ -350,16 +350,18 @@ import no file system, module or process API.
 - *Node's resolver.* A resolution of a specifier from module `m` observes the
   reads of [Node's resolution algorithm](REFERENCES.md#nodejs-modules). Each
   resolution first reads `m`'s package scope (`kind a/package.json` for each
-  ancestor `a` of `m` from the nearest, up to the first that is a file, and
-  its `read`). A package import (`#…`) and a self-reference (the scope names
-  the package and states `exports`) resolve through it; another bare
-  specifier of package `p` through the `node_modules` lookup
+  ancestor `a` of `m` from the nearest, stopping before a `node_modules`
+  directory or at the first that is a file, and its `read`). A package import
+  (`#…`) and a self-reference (the scope names the package and states
+  non-null `exports`) resolve through it; another bare specifier of package
+  `p` through the `node_modules` lookup
   (`kind a/node_modules/p` for each ancestor from the nearest, up to the
   first that is a directory, its `real` and the `read` of its
   `package.json`). The resolved file's `kind` and `real` follow. A relative,
   absolute or `file:` specifier observes its target's `kind` and `real`; a
-  built-in, nothing. A package without `exports`, and a specifier a scope
-  or a package found does not resolve, leave the observations incomplete.
+  built-in, nothing. A package with absent or null `exports`, and a specifier
+  a scope or a package found does not resolve, leave the observations
+  incomplete.
   A package whose `exports` or `imports` resolve the specifier (the package
   found, or the scope of a self-reference or a package import) observes the
   `dirents` of every directory of its own tree, nested `node_modules` left
@@ -395,7 +397,12 @@ resolution and module caches cannot be computed again: the
 process keeps the first answer of every observation of its resolver and
 loader, and an observed stage during which one answers otherwise fails as an
 operational failure; the pipeline's worker process then exits, and a fresh
-one takes its next check.
+one takes its next check. A resolver or loader read the record cannot account
+for marks the process for retirement and the current stage incomplete; that
+stage keeps its result without publication. Further observed-stage execution
+in the process is refused. Validated replays remain available because they
+do not use Node's caches. The worker answers its current check and exits
+when marked for retirement, so its next check has fresh caches.
 
 *Validation.* An observation is made again by its operation, reading the
 file system afresh. The answers a stage used are the ones it recorded: the
@@ -662,7 +669,7 @@ trusted obligation below.
 | The execution model agrees with JavaScript on the supported operations, including that Lean's compiled `Float` operations are IEEE-754's and `Float.pow` is C's `pow`, which `binop` corrects where `**` differs. | `Semantics/Calculus.lean`; [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) runs the model where no proof and no pipeline case compares it with JavaScript (NaN, the prototype chain, evaluation order, stuck subterms, reentry), and `tests/node-runs.mts` runs the examples under Node beside their outcomes |
 | Lean's kernel, its compiler (including the `@[csimp]` replacements, each proved equal to its definition) and the executed verifier binary are correct. The binary initializes the Lean runtime and the modules it imports, not the rest of the Lean library (`lean_initialize` is replaced, [runtime_init.c](../lean/c/runtime_init.c)). | `lean/lakefile.toml` |
 | A replayed check is the verifier's own judgment of exactly the inputs its key binds, so the premise of `checkJson_safe` holds of them: the stage store binds each stored check to the digests of its Fragment, claims and evidence documents, its argument vector (file key, subtype rounds), the verifier executable and its libraries, the adapter's loaded code and the Node runtime, and validates them and every stored file before replay; replay requires both the running Node process and the explicit stage-child environment to contain no `DYLD_` variable; its entries are written only by the user's own pipeline processes. The verifier's check mode reads the three files its arguments name and prints its judgment; the verifier reads no clock, randomness, environment variable or working directory, and runs no task or foreign code beyond Lean's runtime. Cold and replayed runs agree (the replay control of `pipeline/test.mts`). | [The stage store](#the-stage-store), [`pipeline/stages.mts`](../pipeline/stages.mts), [`pipeline/stage-store.mts`](../pipeline/stage-store.mts), [`RequestCli.lean`](../lean/Verification/Source/RequestCli.lean) |
-| A replayed parse is the parser's own result for exactly the inputs its key binds: the stage store binds each stored parse (and each stored TypeScript diagnostics list) to its pre-key (the source's bytes, its snapshot path, resolution file and project, the active family descriptions, the front end's loaded code and the compiler package's and its executable package's files, the profile, the case sensitivity of the executable's file system, the system's build, the Node runtime) and to its observations, every answer the file system gave the stage, each made again and compared before replay. The observations are complete: the front end reads only through `tools/files.mts` (a fast check of the stages' code closure); the compiler, confined by its sandbox profile on macOS, reaches the user's files only through the API's five queries, every one answered by an observation; compiler and loaded-code identities are compared with disk before the stage runs and again before it is published; Node's resolver and loader read what [Node's resolution algorithm](REFERENCES.md#nodejs-modules) and the load hook state, observed before and after, a package resolving through `exports` or `imports` holding no symbolic link in its own tree; the stages open fresh compilers, and the process's caches record their observations, Node's checked for first-answer consistency. Elsewhere, or where an observation is not accounted for, the stage executes without replay. | [Observed stages](#the-stage-store), [`tools/files.mts`](../tools/files.mts), [`tools/compiler-channel.mts`](../tools/compiler-channel.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), `tests/observed-stages.mts` |
+| A replayed parse is the parser's own result for exactly the inputs its key binds: the stage store binds each stored parse (and each stored TypeScript diagnostics list) to its pre-key (the source's bytes, its snapshot path, resolution file and project, the active family descriptions, the front end's loaded code and the compiler package's and its executable package's files, the profile, the case sensitivity of the executable's file system, the system's build, the Node runtime) and to its observations, every answer the file system gave the stage, each made again and compared before replay. The observations are complete: the front end reads only through `tools/files.mts` (a fast check of the stages' code closure); the compiler, confined by its sandbox profile on macOS, reaches the user's files only through the API's five queries, every one answered by an observation; compiler and loaded-code identities are compared with disk before the stage runs and again before it is published; Node's resolver and loader read what [Node's resolution algorithm](REFERENCES.md#nodejs-modules) and the load hook state, observed before and after, a package resolving through `exports` or `imports` holding no symbolic link in its own tree; the stages open fresh compilers, and the process's caches record their observations, Node's checked for first-answer consistency. An incomplete Node resolver or loader observation makes the current execution unpublishable and retires the worker; later observed executions require a fresh process, while validated replays remain available. Elsewhere, or where other observations are not accounted for, the stage executes without publication. | [Observed stages](#the-stage-store), [`tools/files.mts`](../tools/files.mts), [`tools/compiler-channel.mts`](../tools/compiler-channel.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), `tests/observed-stages.mts` |
 
 **Assumed values.** Each is an input slot of the units that use it, at its
 declared or stated type; nothing checks the code behind it, and each may

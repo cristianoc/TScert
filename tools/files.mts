@@ -19,7 +19,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathS
   type Dirent } from "node:fs";
 import { createRequire, isBuiltin, registerHooks } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fieldOf, IoFailure } from "./thrown.mts";
 
@@ -106,6 +106,14 @@ export function unobservable(reason: string): void {
  * once they may: from then on every record is inconsistent. */
 let staleProcess: string | null = null;
 export const processInconsistency = (): string | null => staleProcess;
+/** Why a Node read cannot be accounted for: the current stage may finish,
+ * but further execution needs a fresh process. */
+let retiringProcess: string | null = null;
+export const processRetirement = (): string | null => retiringProcess;
+function nodeUnobservable(reason: string): void {
+  retiringProcess ??= reason;
+  unobservable(reason);
+}
 /** The process, and every record being made, inconsistent, for `reason`. */
 function inconsistent(reason: string): void {
   staleProcess ??= reason;
@@ -119,6 +127,8 @@ export type Observed<T> = { value: T; observations: Observation[]; incomplete: s
   inconsistent: string | null };
 /** `run`, with the observations it made. */
 export function observed<T>(run: () => T): Observed<T> {
+  if (recordings.length === 0 && retiringProcess !== null)
+    throw Error(`Node's reads are incomplete (${retiringProcess}); a fresh process is needed`);
   const made = observedNoting(run, true);
   return { value: made.value, observations: made.noted.map((n) => n.observation), incomplete: made.incomplete,
     inconsistent: made.inconsistent };
@@ -515,6 +525,7 @@ function manifestField(bytes: Buffer | null, field: string): unknown {
  * directory or a directory above, read, as Node's loader finds it. */
 function observeScope(module: string, checkLinks: boolean = false): { directory: string; bytes: Buffer | null } | null {
   for (const at of ancestors(dirname(module))) {
+    if (basename(at) === "node_modules") break;
     const manifest = join(at, "package.json");
     if (kindOf(manifest, true) === "file") {
       if (checkLinks) observePackageLinks(at);
@@ -531,11 +542,11 @@ function observeScope(module: string, checkLinks: boolean = false): { directory:
 function observePackageLinks(directory: string): void {
   const { entries } = direntsOf(directory);
   if (entries === null) {
-    unobservable(`the package directory ${directory} is absent`);
+    nodeUnobservable(`the package directory ${directory} is absent`);
     return;
   }
   for (const entry of entries) {
-    if (entry.isSymbolicLink()) unobservable(`the package tree ${directory} contains a symbolic link`);
+    if (entry.isSymbolicLink()) nodeUnobservable(`the package tree ${directory} contains a symbolic link`);
     else if (entry.isDirectory() && entry.name !== "node_modules") observePackageLinks(join(directory, entry.name));
   }
 }
@@ -568,7 +579,7 @@ function observeResolution(specifier: string, parent: string): { found: boolean;
   const name = packageOf(specifier);
   // A self-reference resolves through its package scope's `exports`.
   const scope = observeScope(parent);
-  if (scope && manifestField(scope.bytes, "name") === name && manifestField(scope.bytes, "exports") !== undefined) {
+  if (scope && manifestField(scope.bytes, "name") === name && manifestField(scope.bytes, "exports") != null) {
     observeScope(parent, true);
     return { found: true, scope: null };
   }
@@ -577,8 +588,8 @@ function observeResolution(specifier: string, parent: string): { found: boolean;
     if (kindOf(candidate, true) !== "directory") continue;
     realOf(candidate, true);
     observePackageLinks(candidate);
-    if (manifestField(readAnswer(join(candidate, "package.json"), true).bytes, "exports") === undefined)
-      unobservable(`the package ${name} of ${specifier} states no exports`);
+    if (manifestField(readAnswer(join(candidate, "package.json"), true).bytes, "exports") == null)
+      nodeUnobservable(`the package ${name} of ${specifier} states no exports`);
     return { found: true, scope: null };
   }
   return { found: false, scope: null };
@@ -626,9 +637,9 @@ export function nodeResolve(specifier: string, parent: string): string | null {
     const real = realOf(target, true);
     const within = scope === null || real === null ? null : relative(scope, real).split(sep);
     if (specifier.startsWith("#") && (within === null || within[0] === ".." || within.includes("node_modules")))
-      unobservable(`the package import ${specifier} resolves outside its package scope's own files`);
+      nodeUnobservable(`the package import ${specifier} resolves outside its package scope's own files`);
   } else if (after.value.found && !/^(\.{0,2}\/|file:)/.test(specifier))
-    unobservable(`${specifier} is unresolved in the package found for it`);
+    nodeUnobservable(`${specifier} is unresolved in the package found for it`);
   // A query or a fragment names another instance of the same file: refused.
   return parsed && parsed.protocol === "file:" && parsed.search === "" && parsed.hash === "" ? url : null;
 }
@@ -686,7 +697,7 @@ export function loadModule(root: string, path: string): unknown {
       const file = url.startsWith("file:") ? fileURLToPath(url) : null;
       const real = file === null ? null : realOf(file, true);
       if (file === null || real === null || relative(root, real).split(sep)[0] === "..") {
-        unobservable(`loading ${path} read ${url}, outside its installation`);
+        nodeUnobservable(`loading ${path} read ${url}, outside its installation`);
         continue;
       }
       observeScope(file);
