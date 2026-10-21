@@ -27,8 +27,17 @@ make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of
 ### The stage store
 
 Every stage invocation goes through [one mechanism](pipeline/stages.mts),
-and the lowering, proposal, claims assembly, search, the check and explanations replay
-from [the stage store](docs/DESIGN.md#the-stage-store) by content.
+and every stage replays from [the stage store](docs/DESIGN.md#the-stage-store)
+by content: the parse and TypeScript's diagnostics as
+[observed stages](docs/DESIGN.md#the-stage-store), keyed by the file system's
+answers to their reads, on macOS, where the compiler runs confined by
+`sandbox-exec`.
+
+- The front end reads the file system only through `tools/files.mts`, and
+  opens its compiler only through `openFrontEndCompiler`
+  (`tools/compiler-channel.mts`); `tests/observed-stages.mts` refuses a
+  module of the stages' code that imports a file-system, module or process
+  API itself.
 
 - `TSCERT_STAGE_STORE=<dir>` selects the store, by default
   `$XDG_CACHE_HOME/tscert/stages` (`~/.cache/tscert/stages`), shared by every

@@ -10,9 +10,10 @@
 //                       and an integrity digest of the complete payload
 //       stdout, stderr, out/<role>
 //   <root>/timeouts/<stage>/<key>/<attempt>/observation.json
+//   <root>/observed/<stage>/<pre-key>/<key>    a reference to an observed stage's entry
 //   <root>/sources/<digest>/<name>             a stable snapshot location
 //   <root>/tmp/<host>/<pid>.<attempt>/         a writer's unpublished entry
-import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -173,7 +174,7 @@ export class Store {
    * manifest, its key, its input, every file's digest and no file beyond
    * them); a missing, incomplete, corrupt or concurrently removed entry is a
    * miss. */
-  finished(stage: string, key: string, input: string): { result: StoredResult; lookupMs: number; validationMs: number } | null {
+  finished(stage: string, key: string, input: string | null): { result: StoredResult; lookupMs: number; validationMs: number } | null {
     const started = performance.now();
     const copy = join(runDirectory(`stage-entry-${stage}-`), "entry");
     try {
@@ -296,6 +297,39 @@ export class Store {
     return null;
   }
 
+  /** The keys referenced under an observed stage's pre-key, newest first:
+   * candidates only, each entry validated by its reader. */
+  candidates(stage: string, preKey: string): string[] {
+    const directory = join(this.root, "observed", stage, preKey);
+    let names: string[];
+    try {
+      names = readdirSync(directory);
+    } catch (error) {
+      if (failedWith(error, "ENOENT", "ENOTDIR")) return [];
+      throw error;
+    }
+    const time = (name: string): number => {
+      try {
+        return statSync(join(directory, name)).mtimeMs;
+      } catch {
+        return 0;
+      }
+    };
+    return names.filter((n) => /^[0-9a-f]{64}$/.test(n)).map((n) => ({ n, t: time(n) }))
+      .sort((a, b) => b.t - a.t || (a.n < b.n ? -1 : 1)).map((c) => c.n);
+  }
+  /** Reference the published entry `key` under its pre-key: an empty file,
+   * written once. */
+  reference(stage: string, preKey: string, key: string): void {
+    const directory = join(this.root, "observed", stage, preKey);
+    mkdirSync(directory, { recursive: true });
+    try {
+      writeFileSync(join(directory, key), "", { flag: "wx", mode: 0o444 });
+    } catch (error) {
+      if (!failedWith(error, "EEXIST")) throw error;
+    }
+  }
+
   /** Publish a timeout observation at its attempt's own destination. */
   publishTimeout(stage: string, key: string, observation: TimeoutObservation): void {
     const building = this.temporary(observation.attempt);
@@ -345,7 +379,7 @@ export class Store {
    * temporary directory whose writer has stopped: one of this host whose
    * process is gone. */
   clean(): void {
-    for (const part of ["entries", "timeouts"]) rmSync(join(this.root, part), { recursive: true, force: true });
+    for (const part of ["entries", "timeouts", "observed"]) rmSync(join(this.root, part), { recursive: true, force: true });
     const here = join(this.root, "tmp", hostname());
     let temporaries: string[];
     try {

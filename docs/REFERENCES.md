@@ -591,6 +591,19 @@ lowering a generator would take.
 [DESIGN: trust surface](DESIGN.md#trust-surface), [CALLABLES](CALLABLES.md),
 [COMPILER-API](COMPILER-API.md) (its compiler API as a host library).
 
+### Node.js modules
+
+OpenJS Foundation. *Node.js documentation: Modules: ECMAScript modules*,
+section "Resolution algorithm specification" (`ESM_RESOLVE`,
+`PACKAGE_RESOLVE`, `PACKAGE_SELF_RESOLVE`, `LOOKUP_PACKAGE_SCOPE`),
+[nodejs.org/api/esm.html](https://nodejs.org/api/esm.html#resolution-algorithm-specification).
+
+**Used for** the files a Node resolution reads: the package scope's and each
+ancestor's `package.json`, each ancestor's `node_modules/<package>` up to the
+first that exists, and the resolved file. These are the observations a
+replayed parse records for a resolution.
+**Discussed in** [DESIGN: the stage store](DESIGN.md#the-stage-store).
+
 ### Lean 4
 
 Leonardo de Moura and Sebastian Ullrich. *The Lean 4 theorem prover and

@@ -4538,8 +4538,8 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
 {
   // Replay: a cold run in a fresh store and a warm run in another run root
   // agree on their outcome, documents and logs; the warm run replays every
-  // replayed stage (module runs and explanations included) and executes the
-  // parse and TypeScript diagnostics. The warm worker first checks other sources.
+  // stage (module runs and explanations included), the parse by its
+  // observations. The warm worker first checks other sources.
   // A changed source executes again.
   const store = runDirectory("tscert-replay-store-");
   const runAt = (source: string, project: string | null, preceding: readonly string[] = []): { outcome: Outcome; records: AttemptRecord[] } => {
@@ -4560,7 +4560,7 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     "proposal.log", "search.log", "check.log", "typescript-diagnostics.json"];
   const contents = (artifacts: string): Map<string, string> => new Map(documents.flatMap((name): [string, string][] =>
     present(join(artifacts, name)) ? [[name, readFileSync(join(artifacts, name), "utf8")]] : []));
-  const replayed = new Set(["lower", "propose", "assemble", "search", "check", "explain"]);
+  const replayed = new Set(["parse", "lower", "propose", "assemble", "search", "check", "explain", "diagnostics"]);
   const runs: [string, string | null][] = [["certified-nested-value-import", "pipeline/imports-project"],
     ["invalid-closure-contextual-result", null]];
   for (const [name, project] of runs) {
@@ -4578,7 +4578,7 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     for (const r of warm.records) {
       assert.equal(r.execution, replayed.has(r.stage) && r.key !== null ? "replayed" : "executed", `${name}: warm ${r.stage}`);
       if (replayed.has(r.stage) && r.key === null) {
-        assert.match(r.ineligible ?? "", /macOS only|Node import, require or loader|Node DYLD_/,
+        assert.match(r.ineligible ?? "", /macOS only|Node import, require or loader|Node DYLD_|confined on macOS/,
           `${name}: ${r.stage} explains its unidentified dependencies`);
         process.stdout.write(`${name}: ${r.stage} executes without a key: ${r.ineligible}\n`);
       }
@@ -4593,5 +4593,5 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
   assert.equal(after.outcome.status, before.outcome.status);
   for (const r of after.records) assert.ok(ranStage(r), `a changed source: ${r.stage} executed`);
   process.stdout.write("replay: cold and warm workers with different request histories agree on outcomes, documents and logs; the warm run " +
-    "replays eligible stages and executes stages with unidentified dependencies; a changed source executes\n");
+    "replays every stage, the parse by its observations, and executes stages with unidentified dependencies; a changed source executes\n");
 }

@@ -5,7 +5,6 @@
  * through its description; the compiler contract additionally supplies the
  * entry points whose enum exports C1 audits. */
 import { createHash } from "node:crypto";
-import { createRequire, findPackageJSON, registerHooks } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { join, relative, resolve, sep } from "node:path";
 import type { FamilyDescription, GuardEntry, GuardTable } from "./host-families.mts";
@@ -13,10 +12,12 @@ import { guardClosure } from "./guard-closure.mts";
 import { compilerApiFamily, hostEnumModules } from "./compiler-api.mts";
 import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
-import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
+import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { toolFailureOf } from "./thrown.mts";
 // files.mts makes every file-system failure a tool failure.
-import { listDirectory, orAbsent, readBytes, readText, realPath } from "./files.mts";
+import { findPackage, listDirectory, loadModule, nodeResolve, orAbsent, readBytes, readText, realPath, remembered, runtimeConditions,
+  type Remembered } from "./files.mts";
+export { nodeResolve, runtimeConditions } from "./files.mts";
 
 /** The reviewed family descriptions the front end activates: each a
  * description of the trusted host contracts, contributed by the contract
@@ -88,32 +89,23 @@ function digestOf(real: string, inventory: readonly string[]): string {
 }
 
 /** The directory of a description's package: the package of the
- * description's name, as Node's own package resolution finds its manifest
+ * description's name, as Node's `node_modules` lookup finds its manifest
  * from the description's directory (`installation.from`, relative to the
- * repository's root), its real path. A package Node does not find is
- * refused. */
-const roots = new Map<string, string>();
+ * repository's root), its real path. A package not found is refused. */
+const roots = new Map<string, Remembered<string>>();
 export function installationRoot(description: FamilyDescription): string {
   const from = resolve(repository, description.installation.from);
-  const key = `${description.package.name}\0${from}`;
-  const known = roots.get(key);
-  if (known !== undefined) return known;
-  let manifest: string | undefined;
-  try {
-    manifest = findPackageJSON(description.package.name, pathToFileURL(join(from, "package.json")).href);
-  } catch {
-    manifest = undefined;
-  }
-  if (manifest === undefined)
-    throw Error(`the family ${description.marker}'s package ${description.package.name} does not resolve from ${description.installation.from}`);
-  const root = realPath(resolve(manifest, ".."));
-  roots.set(key, root);
-  return root;
+  return remembered(roots, `${description.package.name}\0${from}`, () => {
+    const root = findPackage(description.package.name, from);
+    if (root === null)
+      throw Error(`the family ${description.marker}'s package ${description.package.name} does not resolve from ${description.installation.from}`);
+    return root;
+  });
 }
 
 /** The installations checked, by root and the digest checked against: the
  * real paths of the inventory hashed. */
-const checkedInstallations = new Map<string, ReadonlySet<string>>();
+const checkedInstallations = new Map<string, Remembered<ReadonlySet<string>>>();
 
 /** A description's installation, checked once per process: its manifest
  * names the description's package and version, and its declarations have the
@@ -129,8 +121,9 @@ export function checkedInstallation(description: FamilyDescription): string {
 function checkedInventory(description: FamilyDescription): ReadonlySet<string> {
   const root = installationRoot(description);
   const key = `${root}\0${description.package.name}\0${description.package.version}\0${description.installation.digest}`;
-  const known = checkedInstallations.get(key);
-  if (known) return known;
+  return remembered(checkedInstallations, key, () => checkInventory(description, root));
+}
+function checkInventory(description: FamilyDescription, root: string): ReadonlySet<string> {
   const manifest: unknown = JSON.parse(readText(join(root, "package.json")));
   const name = typeof manifest === "object" && manifest !== null && "name" in manifest ? manifest.name : null;
   const version = typeof manifest === "object" && manifest !== null && "version" in manifest ? manifest.version : null;
@@ -142,9 +135,7 @@ function checkedInventory(description: FamilyDescription): ReadonlySet<string> {
   if (digest !== description.installation.digest)
     throw Error(`the package at ${root} is not the one the family ${description.marker} was reviewed against: ` +
       `its declarations' digest is ${digest}, the description's ${description.installation.digest}`);
-  const files = new Set(inventory.map(file => join(root, ...file.split("/"))));
-  checkedInstallations.set(key, files);
-  return files;
+  return new Set(inventory.map(file => join(root, ...file.split("/"))));
 }
 
 /** The active descriptions with their installations' roots, each marker and
@@ -211,25 +202,23 @@ export function familyOfGuard(entry: GuardEntry): FamilyDescription {
  * exported. `parse` gives a module's tree. A mismatch, or a load Node
  * refuses, is no table: every guard of the family is then read without
  * predicate. */
-/** Node's loader for a module of the package by its path: `require` of an
- * ES module, which shares the instance an `import` of the same file loads. */
-const loadModule: (path: string) => unknown = createRequire(import.meta.url);
 type Loaded = { entries: ReadonlyMap<string, GuardEntry>; functions: ReadonlyMap<unknown, GuardEntry>;
   modules: ReadonlyMap<string, Readonly<Record<string, unknown>>> };
-const activeTables = new Map<string, Map<GuardTable, Loaded | null>>();
+/** The guard tables activated, by root and table, each with the
+ * observations it was computed from (`remembered`). */
+const activeTables = new Map<string, Map<GuardTable, Remembered<Loaded | null>>>();
 export function activeGuards(table: GuardTable, root: string): ReadonlyMap<string, GuardEntry> | null {
   return loadedGuards(table, root)?.entries ?? null;
 }
 function loadedGuards(table: GuardTable, root: string): Loaded | null {
-  const tables = activeTables.get(root) ?? new Map<GuardTable, Loaded | null>();
+  const tables = activeTables.get(root) ?? new Map<GuardTable, Remembered<Loaded | null>>();
   activeTables.set(root, tables);
-  if (tables.has(table)) return tables.get(table) ?? null;
+  return remembered(tables, table, () => activateGuards(table, root));
+}
+function activateGuards(table: GuardTable, root: string): Loaded | null {
   // The package's modules, read by a compiler of the check's own.
   const contents = new Map<string, string>();
-  const api = openCompiler({ cwd: root, fs: {
-    readFile: (name) => contents.get(name),
-    fileExists: (name) => (contents.has(name) ? true : undefined),
-  } });
+  const api = openFrontEndCompiler(root, contents);
   const parse = (path: string, text: string): ts.SourceFile => {
     contents.set(path, text);
     const program = api.updateSnapshot({ openFiles: [path] }).getDefaultProjectForFile(path)?.program;
@@ -249,65 +238,7 @@ function loadedGuards(table: GuardTable, root: string): Loaded | null {
   } finally {
     releaseCompiler(api, thrown);
   }
-  tables.set(table, result);
   return result;
-}
-/** The conditions Node's ES module resolution enables in this process
- * (`node`, `import`, `module-sync` and `node-addons` by default, and any
- * `--conditions`), read from the resolution itself through a resolve hook,
- * with `default`, which every resolution admits. */
-let runtimeConditionsRead: readonly string[] | null = null;
-export function runtimeConditions(): readonly string[] {
-  if (runtimeConditionsRead) return runtimeConditionsRead;
-  const probe = "tscert:conditions";
-  const seen: { conditions: readonly string[] | null } = { conditions: null };
-  const hooks = registerHooks({
-    resolve: (specifier, context, next) => {
-      if (specifier !== probe) return next(specifier, context);
-      seen.conditions = context.conditions;
-      return { url: "data:text/javascript,", shortCircuit: true };
-    },
-  });
-  try {
-    import.meta.resolve(probe);
-  } finally {
-    hooks.deregister();
-  }
-  const read = seen.conditions;
-  if (read === null) throw Error("the resolve hook saw no resolution of the conditions probe");
-  runtimeConditionsRead = [...read, "default"];
-  return runtimeConditionsRead;
-}
-
-/** The URL Node's own ES module resolver resolves `specifier` to from the
- * module at `parent`, under the conditions it enables in this process: a
- * file URL with no query or fragment, else `null`, as where Node throws.
- * Run through a resolve hook, which calls Node's resolution with that parent
- * and resolves nothing else; it loads nothing. */
-export function nodeResolve(specifier: string, parent: string): string | null {
-  const probe = "tscert:resolve";
-  const found: { url: string | null } = { url: null };
-  const hooks = registerHooks({
-    resolve: (requested, context, next) => {
-      if (requested !== probe) return next(requested, context);
-      try {
-        found.url = next(specifier, { ...context, parentURL: pathToFileURL(parent).href }).url;
-      } catch {
-        found.url = null;
-      }
-      return { url: "data:text/javascript,", shortCircuit: true };
-    },
-  });
-  try {
-    import.meta.resolve(probe);
-  } finally {
-    hooks.deregister();
-  }
-  const url = found.url;
-  if (url === null) return null;
-  // A query or a fragment names another instance of the same file: refused.
-  const parsed = new URL(url);
-  return parsed.protocol === "file:" && parsed.search === "" && parsed.hash === "" ? url : null;
 }
 
 function checkedGuards(table: GuardTable, root: string, parse: (path: string, text: string) => ts.SourceFile):
@@ -337,7 +268,7 @@ function checkedGuards(table: GuardTable, root: string, parse: (path: string, te
     const known = modules.get(urlOf(module));
     if (known) return known;
     try {
-      const loaded: unknown = loadModule(join(realRoot, module));
+      const loaded: unknown = loadModule(realRoot, join(realRoot, module));
       if (typeof loaded !== "object" || loaded === null) return null;
       const namespace = { ...loaded };
       modules.set(urlOf(module), namespace);

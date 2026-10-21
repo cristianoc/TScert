@@ -16,6 +16,8 @@ import { arch, homedir, platform } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { runDirectory } from "./run-directory.mts";
 import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
+import { isOperation, observationsHold, observed, type Observation } from "../tools/files.mts";
+import { compilerImplementation } from "../tools/compiler-channel.mts";
 
 export type { Cpu, Measurement } from "./stage-store.mts";
 
@@ -27,14 +29,14 @@ const stageNames: readonly StageName[] = ["parse", "lower", "propose", "assemble
   "diagnostics"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
-/** The stages that replay. A replayed check is the verifier's result for
- * exactly its key's inputs: the verifier's check mode reads the three files
- * its arguments name and prints its judgment, and reads no clock, randomness,
- * environment or working directory (DESIGN.md, the trust surface). The parse
- * and TypeScript's diagnostics execute without replay: the compiler's
- * filesystem observations are not recorded (WORK.md, the stage store). */
-const replayedStages: ReadonlySet<StageName> = new Set<StageName>(["lower", "propose", "assemble", "search", "check",
-  "explain"]);
+/** The stages that replay: every stage. A replayed check is the verifier's
+ * result for exactly its key's inputs: the verifier's check mode reads the
+ * three files its arguments name and prints its judgment, and reads no clock,
+ * randomness, environment or working directory (DESIGN.md, the trust
+ * surface). The parse and TypeScript's diagnostics are observed stages, keyed
+ * by the file system's answers to their reads (DESIGN.md, "Observed
+ * stages"). */
+const replayedStages: ReadonlySet<StageName> = new Set<StageName>(stageNames);
 
 /** The repository's builds of the two audited programs, at their build
  * locations: the Lean verifier and the OCaml producer. */
@@ -639,12 +641,43 @@ export type InProcessCall<T> = {
   run: () => T;
   /** The value as stored, and back: for a stage that replays. */
   codec?: { encode: (value: T) => Buffer; decode: (bytes: Buffer) => T };
+  /** An observed stage (DESIGN.md, "Observed stages"): the file system's
+   * answers to its reads are part of its key. */
+  observed?: true;
 };
+
+/** An observed stage's manifest with its observations: the canonical text
+ * a key is the digest of. */
+const observedInput = (manifest: { readonly [key: string]: Canonical }, observations: readonly Observation[]): string =>
+  canonical({ ...manifest, observations: observations.map(([operation, path, answer]) => [operation, path, answer]) });
+/** The observations of a stored observed entry whose manifest is exactly
+ * `manifest` with them, read field by field; null for any other entry. */
+function storedObservations(input: string, manifest: { readonly [key: string]: Canonical }): Observation[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(input);
+  } catch {
+    return null;
+  }
+  const listed = typeof parsed === "object" && parsed !== null && "observations" in parsed ? parsed.observations : null;
+  if (!Array.isArray(listed)) return null;
+  const observations: Observation[] = [];
+  for (const o of listed) {
+    if (!Array.isArray(o) || o.length !== 3) return null;
+    const [operation, path, answer]: unknown[] = o;
+    if (!isOperation(operation) || typeof path !== "string" || !(answer === null || typeof answer === "string")) return null;
+    observations.push([operation, path, answer]);
+  }
+  return observedInput(manifest, observations) === input ? observations : null;
+}
 
 /** Run an in-process stage, recording its attempt: an exception it throws is
  * an operational failure, recorded and thrown on. A replay-eligible
  * invocation of a replayed stage with a codec replays and publishes as a
- * process stage does. */
+ * process stage does. An observed stage runs with its observations recorded,
+ * replays a referenced entry whose observations hold now, and is published
+ * where they are complete; where Node's caches disagree with the file system
+ * it fails. */
 export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boolean; recorder: Recorder | null }):
     { value: T; record: AttemptRecord } {
   const attempt = randomUUID();
@@ -654,23 +687,32 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
   const store = currentStore();
   const forced = options.force || store === null;
   const runtime = nodeIdentity();
-  const manifest: Canonical = {
+  const compiler = call.observed ? compilerImplementation() : null;
+  const manifest: { readonly [key: string]: Canonical } = {
     stage: call.stage,
     adapter: adapter.identity,
     runtime: "identity" in runtime ? runtime.identity : null,
     implementation: "identity" in call.implementation ? call.implementation.identity : null,
     inputs: call.inputs.map((i) => [i.role, sha256(i.bytes)]),
+    ...(compiler ? { compiler: "identity" in compiler ? compiler.identity : null, system: osBuild() } : {}),
   };
   const input = canonical(manifest);
-  const ineligible = adapter.changed() ? "loaded adapter modules differ from disk"
+  let ineligible = adapter.changed() ? "loaded adapter modules differ from disk"
     : "identity" in call.implementation && call.implementation.changed() ? "loaded implementation modules differ from disk"
     : "unidentified" in call.implementation ? call.implementation.unidentified
-    : "unidentified" in runtime ? runtime.unidentified : null;
-  const key = ineligible === null ? sha256(input) : null;
+    : "unidentified" in runtime ? runtime.unidentified
+    : compiler && "unobserved" in compiler ? compiler.unobserved
+    : compiler && compiler.changed() ? "the loaded compiler differs from disk"
+    : compiler && osBuild() === null ? "the system's build is not identified"
+    : null;
+  // An observed stage's manifest here is its pre-key's; its key is known
+  // once its observations are.
+  let key = ineligible === null ? sha256(input) : null;
+  let recorded: Canonical = manifest;
   const record = (execution: Execution, replay: Replay | null): AttemptRecord => {
     const used = process.cpuUsage(cpu);
     return {
-      attempt, stage: call.stage, key, ineligible, manifest, context: null, forced, limitMs: null, execution,
+      attempt, stage: call.stage, key, ineligible, manifest: recorded, context: null, forced, limitMs: null, execution,
       exitStatus: null, elapsedMs: performance.now() - started,
       cpu: replay ? replay.stored.cpu : { userMs: used.user / 1000, systemMs: used.system / 1000,
         covers: "the pipeline's process" },
@@ -681,28 +723,58 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
   const replaying = key !== null && store !== null && call.codec && replayedStages.has(call.stage)
     ? { key, store, codec: call.codec } : null;
   if (replaying && !forced) {
-    const found = replaying.store.finished(call.stage, replaying.key, input);
-    if (found) {
+    const candidates = call.observed ? replaying.store.candidates(call.stage, replaying.key) : [replaying.key];
+    for (const candidate of candidates) {
+      const found = replaying.store.finished(call.stage, candidate, call.observed ? null : input);
+      if (!found) continue;
+      let validationMs = found.validationMs;
+      if (call.observed) {
+        const validating = performance.now();
+        const observations = storedObservations(found.result.input, manifest);
+        const holds = observations !== null && observationsHold(observations);
+        validationMs += performance.now() - validating;
+        if (!holds) continue;
+        key = candidate;
+        recorded = { ...manifest, observations: observations.length };
+      }
       const materializing = performance.now();
       const value = replaying.codec.decode(found.result.stdout);
-      const done = record("replayed", { lookupMs: found.lookupMs, validationMs: found.validationMs,
+      const done = record("replayed", { lookupMs: found.lookupMs, validationMs,
         materializationMs: performance.now() - materializing, stored: found.result.measurement });
       options.recorder?.finish(done);
       return { value, record: done };
     }
   }
   let value: T;
+  let observations: Observation[] = [];
   try {
-    value = call.run();
+    if (call.observed) {
+      const made = observed(call.run);
+      if (made.inconsistent !== null)
+        throw Error(`the process's caches may disagree with the file system (${made.inconsistent}); a fresh process is needed`);
+      value = made.value;
+      observations = made.observations;
+      if (made.incomplete !== null) {
+        ineligible ??= made.incomplete;
+        key = null;
+      }
+    } else value = call.run();
   } catch (error) {
     options.recorder?.finish(record("failed", null));
     throw error;
   }
+  let fullInput = input;
+  if (call.observed && key !== null) {
+    fullInput = observedInput(manifest, observations);
+    key = sha256(fullInput);
+    recorded = { ...manifest, observations: observations.length };
+  }
   const done = record("executed", null);
-  if (replaying) {
-    const result: StoredResult = { input, exitStatus: 0, stdout: replaying.codec.encode(value), stderr: Buffer.alloc(0),
-      outputs: [], measurement: { attempt, elapsedMs: done.elapsedMs, limitMs: null, cpu: done.cpu } };
-    replaying.store.publishFinished(call.stage, replaying.key, result);
+  if (replaying && key !== null) {
+    const result: StoredResult = { input: fullInput, exitStatus: 0, stdout: replaying.codec.encode(value),
+      stderr: Buffer.alloc(0), outputs: [], measurement: { attempt, elapsedMs: done.elapsedMs, limitMs: null, cpu: done.cpu } };
+    replaying.store.publishFinished(call.stage, key, result);
+    if (call.observed) replaying.store.reference(call.stage, replaying.key, key);
   }
   options.recorder?.finish(done);
   return { value, record: done };
