@@ -9,15 +9,16 @@
 // fresh process, as each pipeline run is; no build is needed.
 import assert from "node:assert/strict";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
-import { Recorder, codeIdentity, sha256, type Canonical } from "../pipeline/stages.mts";
+import { Recorder, captureCodeIdentity, invokeInProcess, textCodec, codeIdentity, sha256, type Canonical } from "../pipeline/stages.mts";
 import { Store } from "../pipeline/stage-store.mts";
 import { parseSource, typeScriptErrors } from "../pipeline/verify-source.mts";
 import { compilerApiFamily } from "../tools/compiler-api.mts";
 import { launcherForTests, openCompiler, useInstallationForTests } from "../tools/compiler-channel.mts";
 import { useFamiliesForTests } from "../tools/family-activation.mts";
+import { nodeResolve } from "../tools/files.mts";
 
 const here = import.meta.dirname;
 const repository = resolve(here, "..");
@@ -29,9 +30,18 @@ if (process.argv[2] === "--run") {
     useFamiliesForTests([{ ...compilerApiFamily, corrections: compilerApiFamily.corrections.slice(1) }]);
   if (installation !== "-") useInstallationForTests(installation);
   const recorder = new Recorder(null);
-  if (stage === "diagnostics") typeScriptErrors(recorder, source, project);
+  if (stage === "resolution" || stage === "mutation") {
+    invokeInProcess({ stage: "parse", implementation: captureCodeIdentity([]),
+      inputs: [{ role: "control", bytes: stage + source + families }], observed: true, codec: textCodec,
+      run: (): string => {
+        if (stage === "resolution") return nodeResolve(families, source) ?? "unresolved";
+        const path = join(installation, "node_modules", "typescript", "package.json");
+        writeFileSync(path, readFileSync(path, "utf8") + "\n");
+        return "installation changed during execution";
+      } }, { force: false, recorder });
+  } else if (stage === "diagnostics") typeScriptErrors(recorder, source, project);
   else parseSource(source, project, runDirectory("observed-"), recorder);
-  const record = recorder.records.find((r) => r.stage === stage);
+  const record = recorder.records.find((r) => r.stage === (stage === "resolution" || stage === "mutation" ? "parse" : stage));
   process.stdout.write(JSON.stringify({ execution: record?.execution, ineligible: record?.ineligible, key: record?.key }));
   process.exit(0);
 }
@@ -63,7 +73,7 @@ const main = join(fixture, "main.ts"), project = join(fixture, "tsconfig.json");
 
 type Attempt = { execution: string; ineligible: string | null; key: string | null };
 /** One stage in a fresh process. */
-function run(stage: "parse" | "diagnostics" = "parse", families: string = "reviewed", installation: string = "-"): Attempt {
+function run(stage: "parse" | "diagnostics" | "resolution" | "mutation" = "parse", families: string = "reviewed", installation: string = "-"): Attempt {
   const p = spawnSync(process.execPath, [import.meta.filename, "--run", stage, main, project, families, installation],
     { encoding: "utf8", env: { ...process.env, TSCERT_STAGE_STORE: root } });
   assert.equal(p.status, 0, p.stderr);
@@ -86,6 +96,61 @@ function executesThenReplays(what: string, stage: "parse" | "diagnostics" = "par
   return second.key ?? "";
 }
 
+const installation = join(dir, "installation");
+for (const name of ["typescript", "@typescript"])
+  cpSync(join(repository, "tools", "node_modules", name), join(installation, "node_modules", name), { recursive: true });
+
+// --- publication requires the compiler identity after the stage's run
+const mutated = run("mutation", "reviewed", installation);
+assert.equal(mutated.execution, "executed");
+assert.match(mutated.ineligible ?? "", /compiler differs/);
+assert.equal(mutated.key, null);
+
+// --- Node resolution, through the same observed-stage entry point
+write("node_modules/exported/package.json", JSON.stringify({ name: "exported", exports: "./target.js" }));
+write("node_modules/exported/target.js", "export {};\n");
+write("node_modules/exported/other.js", "export {};\n");
+write("node_modules/exported/target.d.ts", "export declare const x: number;\n");
+write("node_modules/exported/other.d.ts", "export declare const x: string;\n");
+assert.equal(run("resolution", "exported").ineligible, null);
+assert.equal(run("resolution", "exported").execution, "replayed");
+const target = join(fixture, "node_modules/exported/target.js");
+rmSync(target);
+symlinkSync("other.js", target);
+const linked = run("resolution", "exported");
+assert.equal(linked.execution, "executed", "inserting an export-target link invalidates the directory observation");
+assert.match(linked.ineligible ?? "", /symbolic link/);
+write("node_modules/exported/third.js", "export {};\n");
+rmSync(target);
+symlinkSync("third.js", target);
+assert.match(run("resolution", "exported").ineligible ?? "", /symbolic link/);
+
+// A package import to the scope's own file replays; one redirected to another
+// package lookup is not accounted for.
+write("package.json", JSON.stringify({ imports: { "#guard": "redirected/guard", "#local": "./local.js" } }));
+write("local.js", "export {};\n");
+assert.equal(run("resolution", "#local").ineligible, null);
+assert.equal(run("resolution", "#local").execution, "replayed");
+const external = join(dir, "node_modules/redirected");
+mkdirSync(external, { recursive: true });
+writeFileSync(join(external, "package.json"), JSON.stringify({ exports: { "./guard": "./a.js" } }));
+writeFileSync(join(external, "a.js"), "export {};\n");
+writeFileSync(join(external, "b.js"), "export {};\n");
+const incompleteImport = (): void => {
+  const attempt = run("resolution", "#guard");
+  assert.equal(attempt.execution, "executed");
+  assert.match(attempt.ineligible ?? "", /outside its package scope's own files/);
+  assert.equal(attempt.key, null);
+};
+incompleteImport();
+writeFileSync(join(external, "package.json"), JSON.stringify({ exports: { "./guard": "./b.js" } }));
+incompleteImport();
+write("node_modules/redirected/package.json", JSON.stringify({ exports: { "./guard": "./near.js" } }));
+write("node_modules/redirected/near.js", "export {};\n");
+incompleteImport();
+rmSync(join(fixture, "package.json"));
+rmSync(join(fixture, "local.js"));
+
 // --- a parse replays after an unchanged run; each change makes it execute
 executesThenReplays("a first parse");
 write("dep.ts", "export function dep(x: number): number {\n  return x + 1;\n}\n");
@@ -103,9 +168,6 @@ const reviewed = run();
 assert.equal(reviewed.execution, "replayed", "the reviewed descriptions again");
 
 // --- the TypeScript package: a clone of the installation, then changed
-const installation = join(dir, "installation");
-for (const name of ["typescript", "@typescript"])
-  cpSync(join(repository, "tools", "node_modules", name), join(installation, "node_modules", name), { recursive: true });
 executesThenReplays("another TypeScript installation", "parse", "reviewed", installation);
 const manifest = join(installation, "node_modules", "typescript", "package.json");
 chmodSync(manifest, 0o644);

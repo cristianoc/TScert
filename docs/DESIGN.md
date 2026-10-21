@@ -300,7 +300,7 @@ operation, an absolute path and the answer:
 | `read` | the SHA-256 of the bytes read, `directory`, or absent |
 | `kind` | `file` or `directory` after following links, or absent |
 | `real` | the real path, or absent |
-| `dirents` | the digest of the directory's entries in name order with their own kinds (link, file, directory, other), or absent |
+| `dirents` | the digest of the directory's entries in name order with their own kinds (link, file, directory, other), including the digest of an empty list, or absent |
 | `entries` | the digest of the directory's files and directories in name order, links followed and others dropped, or absent |
 
 A failed lookup is an observation with the answer absent; configuration
@@ -360,6 +360,14 @@ import no file system, module or process API.
   absolute or `file:` specifier observes its target's `kind` and `real`; a
   built-in, nothing. A package without `exports`, and a specifier a scope
   or a package found does not resolve, leave the observations incomplete.
+  A package whose `exports` or `imports` resolve the specifier (the package
+  found, or the scope of a self-reference or a package import) observes the
+  `dirents` of every directory of its own tree, nested `node_modules` left
+  out (a target naming `node_modules` is invalid); a symbolic link there
+  leaves the observations incomplete, since the path a target names before
+  Node resolves its links is not observed. A package import whose resolved
+  file is not its scope's own file, outside any `node_modules`, was
+  redirected through another package lookup and leaves them incomplete too.
   Node reads these files itself: they are observed before and after the
   resolution, and the two must agree.
 - *Node's loader.* Loading a module of a family's installation observes the
@@ -370,7 +378,8 @@ import no file system, module or process API.
   compiler package's and its executable package's files (its JavaScript
   client, its executable and its library files) are digested when the
   process loads them and are in the pre-key; a difference from disk at the
-  stage makes it ineligible, as for every replayed stage. The modules the
+  stage entry or after execution before publication makes it ineligible,
+  with the reason recorded and no entry published. The modules the
   front end loads at start-up are these.
 
 *State follows the observations.* Each parse and each diagnostics stage opens
@@ -653,7 +662,7 @@ trusted obligation below.
 | The execution model agrees with JavaScript on the supported operations, including that Lean's compiled `Float` operations are IEEE-754's and `Float.pow` is C's `pow`, which `binop` corrects where `**` differs. | `Semantics/Calculus.lean`; [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) runs the model where no proof and no pipeline case compares it with JavaScript (NaN, the prototype chain, evaluation order, stuck subterms, reentry), and `tests/node-runs.mts` runs the examples under Node beside their outcomes |
 | Lean's kernel, its compiler (including the `@[csimp]` replacements, each proved equal to its definition) and the executed verifier binary are correct. The binary initializes the Lean runtime and the modules it imports, not the rest of the Lean library (`lean_initialize` is replaced, [runtime_init.c](../lean/c/runtime_init.c)). | `lean/lakefile.toml` |
 | A replayed check is the verifier's own judgment of exactly the inputs its key binds, so the premise of `checkJson_safe` holds of them: the stage store binds each stored check to the digests of its Fragment, claims and evidence documents, its argument vector (file key, subtype rounds), the verifier executable and its libraries, the adapter's loaded code and the Node runtime, and validates them and every stored file before replay; replay requires both the running Node process and the explicit stage-child environment to contain no `DYLD_` variable; its entries are written only by the user's own pipeline processes. The verifier's check mode reads the three files its arguments name and prints its judgment; the verifier reads no clock, randomness, environment variable or working directory, and runs no task or foreign code beyond Lean's runtime. Cold and replayed runs agree (the replay control of `pipeline/test.mts`). | [The stage store](#the-stage-store), [`pipeline/stages.mts`](../pipeline/stages.mts), [`pipeline/stage-store.mts`](../pipeline/stage-store.mts), [`RequestCli.lean`](../lean/Verification/Source/RequestCli.lean) |
-| A replayed parse is the parser's own result for exactly the inputs its key binds: the stage store binds each stored parse (and each stored TypeScript diagnostics list) to its pre-key (the source's bytes, its snapshot path, resolution file and project, the active family descriptions, the front end's loaded code and the compiler package's and its executable package's files, the profile, the case sensitivity of the executable's file system, the system's build, the Node runtime) and to its observations, every answer the file system gave the stage, each made again and compared before replay. The observations are complete: the front end reads only through `tools/files.mts` (a fast check of the stages' code closure); the compiler, confined by its sandbox profile on macOS, reaches the user's files only through the API's five queries, every one answered by an observation; Node's resolver and loader read what [Node's resolution algorithm](REFERENCES.md#nodejs-modules) and the load hook state, observed before and after; the stages open fresh compilers, and the process's caches record their observations, Node's checked for first-answer consistency. Elsewhere, or where an observation is not accounted for, the stage executes without replay. | [Observed stages](#the-stage-store), [`tools/files.mts`](../tools/files.mts), [`tools/compiler-channel.mts`](../tools/compiler-channel.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), `tests/observed-stages.mts` |
+| A replayed parse is the parser's own result for exactly the inputs its key binds: the stage store binds each stored parse (and each stored TypeScript diagnostics list) to its pre-key (the source's bytes, its snapshot path, resolution file and project, the active family descriptions, the front end's loaded code and the compiler package's and its executable package's files, the profile, the case sensitivity of the executable's file system, the system's build, the Node runtime) and to its observations, every answer the file system gave the stage, each made again and compared before replay. The observations are complete: the front end reads only through `tools/files.mts` (a fast check of the stages' code closure); the compiler, confined by its sandbox profile on macOS, reaches the user's files only through the API's five queries, every one answered by an observation; compiler and loaded-code identities are compared with disk before the stage runs and again before it is published; Node's resolver and loader read what [Node's resolution algorithm](REFERENCES.md#nodejs-modules) and the load hook state, observed before and after, a package resolving through `exports` or `imports` holding no symbolic link in its own tree; the stages open fresh compilers, and the process's caches record their observations, Node's checked for first-answer consistency. Elsewhere, or where an observation is not accounted for, the stage executes without replay. | [Observed stages](#the-stage-store), [`tools/files.mts`](../tools/files.mts), [`tools/compiler-channel.mts`](../tools/compiler-channel.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), `tests/observed-stages.mts` |
 
 **Assumed values.** Each is an input slot of the units that use it, at its
 declared or stated type; nothing checks the code behind it, and each may

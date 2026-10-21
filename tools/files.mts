@@ -513,12 +513,31 @@ function manifestField(bytes: Buffer | null, field: string): unknown {
 }
 /** The package scope of a module: the nearest `package.json` of its
  * directory or a directory above, read, as Node's loader finds it. */
-function observeScope(module: string): Buffer | null {
+function observeScope(module: string, checkLinks: boolean = false): { directory: string; bytes: Buffer | null } | null {
   for (const at of ancestors(dirname(module))) {
     const manifest = join(at, "package.json");
-    if (kindOf(manifest, true) === "file") return readAnswer(manifest, true).bytes;
+    if (kindOf(manifest, true) === "file") {
+      if (checkLinks) observePackageLinks(at);
+      return { directory: at, bytes: readAnswer(manifest, true).bytes };
+    }
   }
   return null;
+}
+/** The entries of every directory of a package's own tree, links not
+ * followed and nested `node_modules` left out, where Node's `exports` and
+ * `imports` targets lie (a target naming `node_modules` is invalid): a
+ * package holding a link there is not accounted for, since the path a target
+ * names before Node resolves its links is not observed. */
+function observePackageLinks(directory: string): void {
+  const { entries } = direntsOf(directory);
+  if (entries === null) {
+    unobservable(`the package directory ${directory} is absent`);
+    return;
+  }
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) unobservable(`the package tree ${directory} contains a symbolic link`);
+    else if (entry.isDirectory() && entry.name !== "node_modules") observePackageLinks(join(directory, entry.name));
+  }
 }
 /** The reads of Node's resolution of `specifier` from the module at
  * `parent` (REFERENCES.md, "Node.js modules") before its target: for a bare
@@ -529,37 +548,40 @@ function observeScope(module: string): Buffer | null {
  * its target; for a built-in, nothing. A package without `exports` is not
  * accounted for. Whether a package or a scope resolves the specifier, so
  * that its target is to be found. */
-function observeResolution(specifier: string, parent: string): { found: boolean } {
-  if (isBuiltin(specifier) || /^(node|data):/.test(specifier)) return { found: false };
-  // A package import resolves through its package scope's `imports`.
-  if (specifier.startsWith("#")) {
-    observeScope(parent);
-    return { found: true };
-  }
+function observeResolution(specifier: string, parent: string): { found: boolean; scope: string | null } {
+  if (isBuiltin(specifier) || /^(node|data):/.test(specifier)) return { found: false, scope: null };
+  // A package import resolves through its package scope's `imports`: to a
+  // file of the scope's own tree, or through another package lookup, which
+  // its target shows (`nodeResolve`).
+  if (specifier.startsWith("#")) return { found: true, scope: observeScope(parent, true)?.directory ?? null };
   if (/^(\.{0,2}\/|file:)/.test(specifier)) {
     let target: string;
     try {
       target = fileURLToPath(new URL(specifier, pathToFileURL(parent)));
     } catch {
-      return { found: false };
+      return { found: false, scope: null };
     }
     kindOf(target, true);
     realOf(target, true);
-    return { found: true };
+    return { found: true, scope: null };
   }
   const name = packageOf(specifier);
   // A self-reference resolves through its package scope's `exports`.
   const scope = observeScope(parent);
-  if (manifestField(scope, "name") === name && manifestField(scope, "exports") !== undefined) return { found: true };
+  if (scope && manifestField(scope.bytes, "name") === name && manifestField(scope.bytes, "exports") !== undefined) {
+    observeScope(parent, true);
+    return { found: true, scope: null };
+  }
   for (const at of ancestors(dirname(parent))) {
     const candidate = join(at, "node_modules", ...name.split("/"));
     if (kindOf(candidate, true) !== "directory") continue;
     realOf(candidate, true);
+    observePackageLinks(candidate);
     if (manifestField(readAnswer(join(candidate, "package.json"), true).bytes, "exports") === undefined)
       unobservable(`the package ${name} of ${specifier} states no exports`);
-    return { found: true };
+    return { found: true, scope: null };
   }
-  return { found: false };
+  return { found: false, scope: null };
 }
 
 /** The URL Node's own ES module resolver resolves `specifier` to from the
@@ -597,6 +619,14 @@ export function nodeResolve(specifier: string, parent: string): string | null {
     const target = fileURLToPath(parsed);
     kindOf(target, true);
     realOf(target, true);
+    // A package import's target is the scope's own file, outside any
+    // `node_modules`; one reached through another package lookup is not
+    // accounted for.
+    const scope = after.value.scope === null ? null : realOf(after.value.scope, true);
+    const real = realOf(target, true);
+    const within = scope === null || real === null ? null : relative(scope, real).split(sep);
+    if (specifier.startsWith("#") && (within === null || within[0] === ".." || within.includes("node_modules")))
+      unobservable(`the package import ${specifier} resolves outside its package scope's own files`);
   } else if (after.value.found && !/^(\.{0,2}\/|file:)/.test(specifier))
     unobservable(`${specifier} is unresolved in the package found for it`);
   // A query or a fragment names another instance of the same file: refused.

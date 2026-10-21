@@ -697,7 +697,7 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
     ...(compiler ? { compiler: "identity" in compiler ? compiler.identity : null, system: osBuild() } : {}),
   };
   const input = canonical(manifest);
-  let ineligible = adapter.changed() ? "loaded adapter modules differ from disk"
+  const identityFailure = (): string | null => adapter.changed() ? "loaded adapter modules differ from disk"
     : "identity" in call.implementation && call.implementation.changed() ? "loaded implementation modules differ from disk"
     : "unidentified" in call.implementation ? call.implementation.unidentified
     : "unidentified" in runtime ? runtime.unidentified
@@ -705,6 +705,7 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
     : compiler && compiler.changed() ? "the loaded compiler differs from disk"
     : compiler && osBuild() === null ? "the system's build is not identified"
     : null;
+  let ineligible = identityFailure();
   // An observed stage's manifest here is its pre-key's; its key is known
   // once its observations are.
   let key = ineligible === null ? sha256(input) : null;
@@ -763,6 +764,8 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
     options.recorder?.finish(record("failed", null));
     throw error;
   }
+  ineligible ??= identityFailure();
+  if (ineligible !== null) key = null;
   let fullInput = input;
   if (call.observed && key !== null) {
     fullInput = observedInput(manifest, observations);
