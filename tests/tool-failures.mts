@@ -14,7 +14,8 @@ import { messageOf } from "../tools/thrown.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { abandonCompiler, compilerProcess, openCompiler } from "../tools/compiler-channel.mts";
 import { present } from "../tools/files.mts";
-import { run as runStep } from "../pipeline/verify-source.mts";
+import { runStep } from "../pipeline/verify-source.mts";
+import { verifierCall } from "../pipeline/stages.mts";
 
 const dir = runDirectory("tscert-tool-failures-");
 const config = join(dir, "tsconfig.json");
@@ -214,6 +215,9 @@ process.stdout.write("unchecked.mts: a panic is reported where it was asked, ret
 
 // A step killed by a signal, as the verifier is when it aborts on a stack
 // overflow, is a tool failure naming the signal and what the step wrote.
-assert.throws(() => runStep("/bin/sh", ["-c", "echo 'Stack overflow detected. Aborting.' >&2; kill -ABRT $$"]),
-  /^Error: tool failure: sh was killed by SIGABRT: Stack overflow detected\. Aborting\.$/);
+const aborting = join(dir, "aborting.sh");
+writeFileSync(aborting, "#!/bin/sh\necho 'Stack overflow detected. Aborting.' >&2; kill -ABRT $$\n");
+chmodSync(aborting, 0o755);
+assert.throws(() => runStep(verifierCall(aborting, ["--lower-control-flow", join(dir, "absent.json")])),
+  /^Error: tool failure: aborting.sh --lower-control-flow was killed by SIGABRT: Stack overflow detected\. Aborting\.$/);
 process.stdout.write("a step killed by a signal: a tool failure naming it\n");

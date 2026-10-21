@@ -306,6 +306,15 @@ retains the original source's project and import-resolution context.
 Any path affecting resolution, document identity or output remains an
 input unless an explicit stage adapter establishes a stable equivalent.
 
+The source snapshot lives at a store location named by its bytes and its
+configuration's; its path is the Fragment's file identity, which every
+later document embeds. A process stage runs in a fresh directory holding
+its input files under fixed role names, with relative arguments and an
+explicit environment. The audited programs, the repository's builds of the
+verifier and the producer, read only the files their arguments name and do
+not observe that directory's path, which is excluded from the key. Any other
+program executes without replay.
+
 Logs belong to the stage invocation whose paths they describe. Each
 caller receives fresh writable copies of the artifacts under its own run
 root, and its Outcome names that directory. Shared entries are immutable.
@@ -356,8 +365,10 @@ complete-directory publication protocol. Concurrent observations coexist.
 
 Atomic publication provides visibility across process interruption.
 Power-loss durability requires a separately specified and validated
-filesystem flush protocol. Readers validate complete manifests and file
-digests; missing, incomplete or corrupt entries cause recomputation.
+filesystem flush protocol. Readers validate complete manifests, an integrity
+digest covering every manifest payload field (including exit status and
+measurement metadata), and file digests; missing, incomplete or corrupt
+entries cause recomputation.
 Cleanup removes temporary directories only when their writers are known
 to have stopped. A reader copies and validates a whole entry before use;
 concurrent eviction causes a retry or miss.
@@ -408,8 +419,11 @@ measurement.
 **Location and size.** The store lives outside every checkout at
 `$XDG_CACHE_HOME/tscert/stages`, defaulting to `~/.cache/tscert/stages`.
 `TSCERT_STAGE_STORE` selects another directory; `off` forces execution.
-`make clean-store` removes stored entries. Eviction is approximate and
-affects reuse only; readers treat concurrent removal as a miss.
+`make clean-store` removes finished entries, timeout observations and abandoned
+publication directories on this host. It retains immutable, content-addressed
+source locations, validated at each use, so active parses keep their inputs.
+Eviction is approximate and affects reuse only; readers treat concurrent
+removal as a miss.
 
 **Census records.** Each slice has a persistent record of its source
 identity, outcome, execution policy and ordered invocation references,
@@ -533,6 +547,7 @@ trusted obligation below.
 | The capture-shape reading of a regex literal is correct: for every literal it reads, the number of capture groups and whether a group is named are the pattern's, and a group it reports as taking part in every match holds a string in every successful match under ECMA-262's semantics. The count and the names are also checked against the host's compilation of each literal; which groups take part is the reading's alone. | [`tools/regexp-shape.mts`](../tools/regexp-shape.mts); `tests/regexp-shapes.mts` runs it against the host on known shapes, its counterexamples and a seeded fuzz |
 | The execution model agrees with JavaScript on the supported operations, including that Lean's compiled `Float` operations are IEEE-754's and `Float.pow` is C's `pow`, which `binop` corrects where `**` differs. | `Semantics/Calculus.lean`; [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) runs the model where no proof and no pipeline case compares it with JavaScript (NaN, the prototype chain, evaluation order, stuck subterms, reentry), and `tests/node-runs.mts` runs the examples under Node beside their outcomes |
 | Lean's kernel, its compiler (including the `@[csimp]` replacements, each proved equal to its definition) and the executed verifier binary are correct. The binary initializes the Lean runtime and the modules it imports, not the rest of the Lean library (`lean_initialize` is replaced, [runtime_init.c](../lean/c/runtime_init.c)). | `lean/lakefile.toml` |
+| A replayed check is the verifier's own judgment of exactly the inputs its key binds, so the premise of `checkJson_safe` holds of them: the stage store binds each stored check to the digests of its Fragment, claims and evidence documents, its argument vector (file key, subtype rounds), the verifier executable and its libraries, the adapter's loaded code and the Node runtime, and validates them and every stored file before replay; replay requires both the running Node process and the explicit stage-child environment to contain no `DYLD_` variable; its entries are written only by the user's own pipeline processes. The verifier's check mode reads the three files its arguments name and prints its judgment; the verifier reads no clock, randomness, environment variable or working directory, and runs no task or foreign code beyond Lean's runtime. Cold and replayed runs agree (the replay control of `pipeline/test.mts`). | [The stage store](#the-stage-store), [`pipeline/stages.mts`](../pipeline/stages.mts), [`pipeline/stage-store.mts`](../pipeline/stage-store.mts), [`RequestCli.lean`](../lean/Verification/Source/RequestCli.lean) |
 
 **Assumed values.** Each is an input slot of the units that use it, at its
 declared or stated type; nothing checks the code behind it, and each may

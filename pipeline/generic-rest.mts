@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { forced, verifierCall } from "./stages.mts";
 import { runInNewContext } from "node:vm";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Ast } from "../tools/fragment.mts";
 import { stripTypes } from "../tools/strip-types.mts";
-import { readFragmentFile, readClaimsFile } from "./verify-source.mts";
+import { readFragmentFile, readClaimsFile, sourceKey } from "./verify-source.mts";
 
 /** Universal collection, substitution and source binding are independent
  * obligations; neither fresh search nor reused evidence may bypass them. */
@@ -25,18 +25,14 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
     writeFileSync(claimed, JSON.stringify(changed));
     writeFileSync(parsed, JSON.stringify(tree));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const p = spawnSync(
-        verifier,
-        [
+      const p = forced(verifierCall(verifier, [
           mode,
           parsed,
           claimed,
-          join(artifacts, "source.ts"),
+          sourceKey(artifacts),
           join(artifacts, "evidence.json"),
           ...(mode === "--produce-source-claims" ? ["12"] : []),
-        ],
-        { encoding: "utf8", timeout: 30_000 },
-      );
+        ]));
       assert.ifError(p.error);
       assert.equal(p.signal, null);
       assert.equal(p.status, 1, p.stdout + p.stderr);
@@ -67,7 +63,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
   assert(fn);
   const calls = fn.expressions.filter((e) => e.instantiate);
   assert.equal(calls.length, 2);
-  const numericStart = readFileSync(join(artifacts, "source.ts"), "utf8").indexOf("collect(n, n)");
+  const numericStart = readFileSync(sourceKey(artifacts), "utf8").indexOf("collect(n, n)");
   assert(numericStart >= 0);
   const numeric = calls.find((e) => e.pos[0] === numericStart)?.instantiate?.[0];
   assert(numeric);
@@ -150,7 +146,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
     /evidence search failed|does not justify|evidence refusal at/,
   );
 
-  const source = stripTypes(readFileSync(join(artifacts, "source.ts"), "utf8"));
+  const source = stripTypes(readFileSync(sourceKey(artifacts), "utf8"));
   const evaluate = (expression: string): unknown =>
     runInNewContext(source + "\n" + expression, {}, { timeout: 1000 });
   assert.equal(evaluate("JSON.stringify(genericRestUses(true, 7))"), "[7,7]");

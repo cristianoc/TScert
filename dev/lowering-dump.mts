@@ -12,7 +12,7 @@ import { present } from "../tools/files.mts";
 import { join, resolve } from "node:path";
 import { fields, nat, showTag, showTerm, unmatched, type Json } from "../tools/calculus.mts";
 import { decodeNode, type Continuation, type ProgramNode, type Target } from "../tools/control-flow.mts";
-import { readOutcome, verifier } from "../pipeline/verify-source.mts";
+import { readOutcome, sourceKey, verifier } from "../pipeline/verify-source.mts";
 import { runRoot } from "../pipeline/run-directory.mts";
 
 const [file, wanted] = process.argv.slice(2);
@@ -30,7 +30,7 @@ const firstLine = (s: unknown): string => String(s).split("\n")[0];
 console.log(`outcome: ${outcome.status}${outcome.status === "verified" ? "" : `: ${firstLine(outcome.detail)}`}`);
 if (!present(claims)) process.exit(0);
 
-const lowered = spawnSync(verifier, ["--lower-program", join(artifacts, "fragment.json"), claims, join(artifacts, "source.ts")], { encoding: "utf8" });
+const lowered = spawnSync(verifier, ["--lower-program", join(artifacts, "fragment.json"), claims, sourceKey(artifacts)], { encoding: "utf8" });
 if (lowered.status !== 0) throw new Error(lowered.stderr);
 
 interface Unit { name: string; start: number; program: Json[]; codes: { arity: number; start: number; program: Json[] }[] }

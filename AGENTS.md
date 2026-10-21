@@ -20,7 +20,32 @@ make lowering FILE=f.ts [FN=name]   # the program graph a source lowers to
 make semantic-diff REV=rev          # render the commit records of a commit or range
 make build       # build-lean and build-producer: the Lean verifier and the OCaml producer
 make setup       # the node dependencies
+make clean-store # remove stage entries and timeout observations; keep source snapshots
+make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of a directory's functions
 ```
+
+### The stage store
+
+Every stage invocation goes through [one mechanism](pipeline/stages.mts),
+and the lowering, proposal, claims assembly, search, the check and explanations replay
+from [the stage store](docs/DESIGN.md#the-stage-store) by content.
+
+- `TSCERT_STAGE_STORE=<dir>` selects the store, by default
+  `$XDG_CACHE_HOME/tscert/stages` (`~/.cache/tscert/stages`), shared by every
+  checkout and worktree; `TSCERT_STAGE_STORE=off` executes every stage.
+  `make clean-store` removes finished entries, timeout observations and abandoned
+  publication directories on this host; it retains stable source snapshots.
+- A branch uses the default store. Keys include the executables' and the
+  adapters' digests, so a branch's changed verifier, producer or adapter
+  never replays another build's entries; an agent testing the store itself
+  names a store under `$TMPDIR`.
+- Each process stage is killed after 60 s; `TSCERT_STEP_LIMIT=<seconds>`
+  sets another limit. A timeout is recorded with its limit: a run at that
+  limit or a smaller one reports it again, a longer limit executes the
+  stage.
+- A run's directory holds `invocations.jsonl`, each stage invocation's
+  attempt: its stage key, limit, outcome (executed, replayed, timed out,
+  failed) and elapsed time.
 
 ### Iterating: run what the change touches
 
@@ -52,7 +77,19 @@ The census of the front end's own functions (each top-level function of
 merge, and its movement is recorded then. A branch runs no census, over
 `tools/` or over a file. To show a change does what it is for, it runs the
 slice of the function the change targets and one slice depending on it,
-before and after. A branch is ready to merge when `make test` and
+before and after (`make census FILES=f.mts FUNCTIONS=fn,other`).
+
+[`dev/census.mts`](dev/census.mts) writes a census record per run (each
+slice's outcome and its stage invocations with their timings) and prints
+its path. `SHARD=i/n` runs every n-th slice from the i-th, so n processes
+or agents split a census and share the stage store; a later run replays
+what an earlier one computed. `node dev/census.mts report <before>
+<after>` compares two censuses, each one record or its shards' records
+separated by commas: slices gained and lost, timeouts, changed outcomes
+and each stage's time. A census rerun with a longer `TSCERT_STEP_LIMIT`
+executes the stages that timed out again and replays the finished ones.
+
+A branch is ready to merge when `make test` and
 `make suite` pass and its review is done, and reports as soon as its suites
 pass. A small, local fix whose output is unchanged (an untrusted
 search's speed, a diagnostic's wording) merges on green suites without a

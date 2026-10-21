@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { forced, verifierCall } from "./stages.mts";
+import { sourceKey } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 
 const lean = resolve(import.meta.dirname, "../lean");
@@ -127,9 +129,8 @@ export function checkMutation(artifacts: string, claims: string, path: string, m
   if (mutations === "stable") variants.push("handler");
   if (mutations === "handler") variants.push("stable");
   for (const [i, variant] of variants.entries()) {
-    const result = spawnSync(mutationVerifier(), ["--check-source-claims", join(artifacts, "fragment.json"),
-      claims, join(artifacts, "source.ts"), path],
-      { encoding: "utf8", timeout: 30_000, env: { ...process.env, TSCERT_TEST_MUTATIONS: variant } });
+    const result = forced(verifierCall(mutationVerifier(), ["--check-source-claims", join(artifacts, "fragment.json"),
+      claims, sourceKey(artifacts), path], { TSCERT_TEST_MUTATIONS: variant }));
     assert.ifError(result.error);
     assert.equal(result.status, i === 0 ? 0 : 1,
       `${path}, mutation ${variant || "none"}: ${result.stdout}${result.stderr}`);
@@ -140,9 +141,8 @@ export function checkMutation(artifacts: string, claims: string, path: string, m
  * document under the intended mutation and its component-removal controls. */
 export function forgedEvidence(artifacts: string, claims: string, name: string, mutations: string): string {
   const path = join(artifacts, `${name}-generated.json`);
-  const result = spawnSync(mutationVerifier(), ["--produce-source-claims", join(artifacts, "fragment.json"),
-    claims, join(artifacts, "source.ts"), path, "12"],
-    { encoding: "utf8", timeout: 30_000, env: { ...process.env, TSCERT_TEST_MUTATIONS: mutations } });
+  const result = forced(verifierCall(mutationVerifier(), ["--produce-source-claims", join(artifacts, "fragment.json"),
+    claims, sourceKey(artifacts), path, "12"], { TSCERT_TEST_MUTATIONS: mutations }));
   assert.ifError(result.error);
   assert.equal(result.status, 0, `${name}, ${mutations}: ${result.stdout}${result.stderr}`);
   checkMutation(artifacts, claims, path, mutations);

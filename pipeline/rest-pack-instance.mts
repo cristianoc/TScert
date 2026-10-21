@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { forced, verifierCall } from "./stages.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
-import { readClaimsFile } from "./verify-source.mts";
+import { readClaimsFile, sourceKey } from "./verify-source.mts";
 
 /** A type parameter typing a value and a rest is instantiated at an array or
  * tuple type, whose argument lists the rest's are: a forged instance that is
@@ -11,7 +11,7 @@ import { readClaimsFile } from "./verify-source.mts";
  * both verifier entry points, not read as a pack. */
 export function checkRestPackInstance(verifier: string, artifacts: string, at: string): void {
   const claims: SourceClaims = readClaimsFile(join(artifacts, "claims.json"));
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const start = source.indexOf(at);
   assert(start >= 0);
   const forged = structuredClone(claims);
@@ -22,9 +22,8 @@ export function checkRestPackInstance(verifier: string, artifacts: string, at: s
   const claimed = join(artifacts, "forged-pack-instance-claims.json");
   writeFileSync(claimed, JSON.stringify(forged));
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const p = spawnSync(verifier, [mode, join(artifacts, "fragment.json"), claimed, join(artifacts, "source.ts"),
-      join(artifacts, "evidence.json"), ...(mode === "--produce-source-claims" ? ["12"] : [])],
-      { encoding: "utf8", timeout: 30_000 });
+    const p = forced(verifierCall(verifier, [mode, join(artifacts, "fragment.json"), claimed, sourceKey(artifacts),
+      join(artifacts, "evidence.json"), ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(p.error);
     assert.equal(p.status, 1, p.stdout + p.stderr);
     assert.match(p.stdout + p.stderr, /a type parameter typing a value and a rest's argument list, is no array or tuple type/);
