@@ -3,6 +3,10 @@
 // reads, as its `modules`. The documents are spliced as text, so a bigint
 // literal's digits pass through unrounded.
 
+import { captureCodeIdentity, type LoadedCode } from "./stages.mts";
+
+export const assemblyImplementation: LoadedCode = captureCodeIdentity([import.meta.filename]);
+
 /** The raw proposal `proposal` with `modules`, in order, as its modules. */
 export function assembleClaims(proposal: string, modules: readonly string[]): string {
   const marker = '"modules":[]';

@@ -17,15 +17,13 @@ import type { SourceClaims } from "../tools/source-claims.mts";
 import { decodeFlowDocument } from "../tools/source-flow.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
-import { assembleClaims } from "./claims-assembly.mts";
+import { assembleClaims, assemblyImplementation } from "./claims-assembly.mts";
 import { currentStore, invokeInProcess, invokeProcess, producerBuild, producerCall, Recorder, refusalEnd, textCodec,
   verifierBuild, verifierCall,
   type ProcessCall } from "./stages.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
 export const invocationLog = "invocations.jsonl";
-/** The claims assembly stage's module, whose source identifies it. */
-const assembly = join(import.meta.dirname, "claims-assembly.mts");
 
 /** A Fragment document this pipeline's parser wrote, read back by a test that
  * forges it. The tests (18 reads) edit fields deep in the document through
@@ -543,7 +541,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
       });
       const assembled = invokeInProcess({
         stage: "assemble",
-        implementation: { modules: [assembly] },
+        implementation: assemblyImplementation,
         codec: textCodec,
         inputs: [{ role: "proposal", bytes: proposed.out }, ...used.map((text, i) => ({ role: `module-${i}`, bytes: text }))],
         run: () => assembleClaims(proposed.out, used),

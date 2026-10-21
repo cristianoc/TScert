@@ -4567,8 +4567,14 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     assert.deepEqual(contents(warmArtifacts), contents(coldArtifacts), `${name}: the same documents and logs`);
     assert.deepEqual(warm.records.map((r) => r.stage), cold.records.map((r) => r.stage), `${name}: the same stages`);
     for (const r of cold.records) assert.ok(ranStage(r), `${name}: cold ${r.stage} executed`);
-    for (const r of warm.records)
-      assert.equal(r.execution, replayed.has(r.stage) ? "replayed" : "executed", `${name}: warm ${r.stage}`);
+    for (const r of warm.records) {
+      assert.equal(r.execution, replayed.has(r.stage) && r.key !== null ? "replayed" : "executed", `${name}: warm ${r.stage}`);
+      if (replayed.has(r.stage) && r.key === null) {
+        assert.match(r.ineligible ?? "", /macOS only|Node import, require or loader/,
+          `${name}: ${r.stage} explains its unidentified dependencies`);
+        process.stdout.write(`${name}: ${r.stage} executes without a key: ${r.ineligible}\n`);
+      }
+    }
     assert.ok(warm.records.filter((r) => r.stage === "lower").length > (project ? 1 : 0), `${name}: module runs replayed`);
     assert.ok(project !== null || warm.records.some((r) => r.stage === "explain"), `${name}: its explanation replayed`);
   }
@@ -4579,5 +4585,5 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.equal(after.outcome.status, before.outcome.status);
   for (const r of after.records) assert.ok(ranStage(r), `a changed source: ${r.stage} executed`);
   process.stdout.write("replay: cold and warm runs in other run roots agree on outcomes, documents and logs; the warm run " +
-    "replays lowering, proposal, assembly, search and explanations, modules included; a changed source executes\n");
+    "replays eligible stages and executes stages with unidentified dependencies; a changed source executes\n");
 }

@@ -69,7 +69,8 @@ export type AttemptRecord = {
   execution: Execution;
   exitStatus: number | null;
   /** Monotonic elapsed wall time of the attempt: its execution, or its
-   * lookup, validation and materialization. */
+   * lookup, validation and materialization. For an interrupted attempt read
+   * from a log, wall time from its start until the log is read. */
   elapsedMs: number;
   cpu: Cpu;
   replay: Replay | null;
@@ -85,8 +86,8 @@ export class Recorder {
   constructor(file: string | null) {
     this.file = file;
   }
-  start(attempt: string, stage: StageName, key: string | null): void {
-    if (this.file) appendFileSync(this.file, JSON.stringify({ event: "start", attempt, stage, key }) + "\n");
+  start(record: AttemptRecord, startedAt: number): void {
+    if (this.file) appendFileSync(this.file, JSON.stringify({ event: "start", record, startedAt }) + "\n");
   }
   finish(record: AttemptRecord): void {
     this.records.push(record);
@@ -159,6 +160,22 @@ export function codeIdentity(files: readonly string[]): Canonical {
   return all.map((f) => [f.startsWith(repository + "/") ? f.slice(repository.length + 1) : f, fileDigest(f)]);
 }
 
+/** A module closure captured during module evaluation. Callers retain this
+ * identity with the implementation they loaded. */
+export type LoadedCode = { identity: Canonical; changed: () => boolean };
+export function captureCodeIdentity(files: readonly string[]): LoadedCode {
+  const identity = codeIdentity(files);
+  const encoded = canonical(identity);
+  return { identity, changed: (): boolean => {
+    try {
+      return canonical(codeIdentity(files)) !== encoded;
+    } catch {
+      return true;
+    }
+  } };
+}
+const adapter = captureCodeIdentity([import.meta.filename]);
+
 /** The operating system's build, which identifies the files of its sealed
  * system volume on macOS; null elsewhere. */
 let systemBuild: string | null | undefined;
@@ -179,10 +196,7 @@ const onSystemVolume = (path: string): boolean => systemPrefixes.some((s) => pat
 /** The dynamic libraries an executable links, transitively: each outside
  * the system volume by its digest, each on it by the system's build; or why
  * they are not identified. */
-const libraries = new Map<string, Canonical | string>();
-function linkedLibraries(executable: string): Canonical | string {
-  const known = libraries.get(executable);
-  if (known !== undefined) return known;
+export function linkedLibraries(executable: string): Canonical | string {
   const build = osBuild();
   let found: Canonical | string;
   if (platform() !== "darwin" || build === null) found = "dynamic libraries are identified on macOS only";
@@ -191,7 +205,7 @@ function linkedLibraries(executable: string): Canonical | string {
     found = identified;
     const seen = new Set<string>();
     for (let work = [executable], next = work.shift(); next !== undefined; next = work.shift()) {
-      const listed = spawnSync("/usr/bin/otool", ["-L", next], { encoding: "utf8", env: {} });
+      const listed = otool("-L", next);
       if (listed.status !== 0) {
         found = `otool -L ${next} failed: ${listed.stderr.trim().split("\n")[0] ?? ""}`;
         break;
@@ -223,13 +237,26 @@ function linkedLibraries(executable: string): Canonical | string {
       }
     }
   }
-  libraries.set(executable, found);
   return found;
+}
+
+/** `otool` of a file, memoized by the file's content: what a listing reads is
+ * the file's load commands, so a changed file is listed again; the names it
+ * lists are resolved, and the libraries they name digested, at every use. */
+const listings = new Map<string, { status: number | null; stdout: string; stderr: string }>();
+function otool(flag: "-L" | "-l", file: string): { status: number | null; stdout: string; stderr: string } {
+  const key = `${flag}:${fileDigest(realpathSync(file))}`;
+  const known = listings.get(key);
+  if (known) return known;
+  const listed = spawnSync("/usr/bin/otool", [flag, file], { encoding: "utf8", env: {} });
+  const result = { status: listed.status, stdout: listed.stdout, stderr: listed.stderr };
+  listings.set(key, result);
+  return result;
 }
 
 /** The run paths a Mach-O file declares (`LC_RPATH`). */
 function runPaths(file: string): string[] {
-  const listed = spawnSync("/usr/bin/otool", ["-l", file], { encoding: "utf8", env: {} });
+  const listed = otool("-l", file);
   if (listed.status !== 0) return [];
   return [...listed.stdout.matchAll(/cmd LC_RPATH\s+cmdsize \d+\s+path (.+?) \(offset \d+\)/g)].map((m) => m[1]);
 }
@@ -312,6 +339,9 @@ function executableIdentity(program: string): { identity: Canonical } | { uniden
  * libraries by content, its options (`execArgv`, `NODE_OPTIONS`); or why it
  * is not identified. */
 function nodeIdentity(): { identity: Canonical } | { unidentified: string } {
+  const options = [...process.execArgv, process.env["NODE_OPTIONS"] ?? ""].join(" ");
+  if (/(?:^|[\s"'])(?:--(?:import|require|loader|experimental[-_]loader)(?:[=\s"']|$)|-r)/.test(options))
+    return { unidentified: "Node import, require or loader options have unidentified code dependencies" };
   const real = realpathSync(process.execPath);
   const linked = linkedLibraries(real);
   if (typeof linked === "string") return { unidentified: `Node: ${linked}` };
@@ -393,6 +423,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
   const program = resolve(call.program);
   const attempt = randomUUID();
   const started = performance.now();
+  const startedAt = Date.now();
   const store = currentStore();
   const forced = options.force || store === null;
   const directory = runDirectory(`stage-${call.stage}-`);
@@ -429,7 +460,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     const runtime = nodeIdentity();
     const manifest: Canonical = {
       stage: call.stage,
-      adapter: codeIdentity([import.meta.filename]),
+      adapter: adapter.identity,
       runtime: "identity" in runtime ? runtime.identity : null,
       implementation: "identity" in implementation ? implementation.identity : null,
       argv,
@@ -438,7 +469,8 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
       outputs: outputs.map((o) => o.role),
     };
     const input = canonical(manifest);
-    const ineligible = "unidentified" in implementation ? implementation.unidentified
+    const ineligible = adapter.changed() ? "loaded adapter modules differ from disk"
+      : "unidentified" in implementation ? implementation.unidentified
       : "unidentified" in runtime ? runtime.unidentified : null;
     const key = ineligible === null ? sha256(input) : null;
     const record = (execution: Execution, exitStatus: number | null, replay: Replay | null): AttemptRecord => ({
@@ -446,7 +478,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
       limitMs: options.limitMs, execution, exitStatus, elapsedMs: performance.now() - started,
       cpu: replay ? replay.stored.cpu : { unavailable: "the child process's CPU time is not measured" }, replay,
     });
-    options.recorder?.start(attempt, call.stage, key);
+    options.recorder?.start(record("interrupted", null, null), startedAt);
     const replaying = key !== null && store !== null && replayedStages.has(call.stage) ? { key, store } : null;
     if (replaying && !forced) {
       const found = replaying.store.finished(call.stage, replaying.key, input);
@@ -582,7 +614,7 @@ export type InProcessCall<T> = {
   stage: StageName;
   /** The modules implementing the stage, whose sources identify it; or why
    * its dependencies are not identified. */
-  implementation: { modules: readonly string[] } | { unidentified: string };
+  implementation: LoadedCode | { unidentified: string };
   inputs: readonly { role: string; bytes: string | Buffer }[];
   run: () => T;
   /** The value as stored, and back: for a stage that replays. */
@@ -597,22 +629,24 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
     { value: T; record: AttemptRecord } {
   const attempt = randomUUID();
   const started = performance.now();
+  const startedAt = Date.now();
   const cpu = process.cpuUsage();
   const store = currentStore();
   const forced = options.force || store === null;
   const runtime = nodeIdentity();
   const manifest: Canonical = {
     stage: call.stage,
-    adapter: codeIdentity([import.meta.filename]),
+    adapter: adapter.identity,
     runtime: "identity" in runtime ? runtime.identity : null,
-    implementation: "modules" in call.implementation ? codeIdentity(call.implementation.modules) : null,
+    implementation: "identity" in call.implementation ? call.implementation.identity : null,
     inputs: call.inputs.map((i) => [i.role, sha256(i.bytes)]),
   };
   const input = canonical(manifest);
-  const ineligible = "unidentified" in call.implementation ? call.implementation.unidentified
+  const ineligible = adapter.changed() ? "loaded adapter modules differ from disk"
+    : "identity" in call.implementation && call.implementation.changed() ? "loaded implementation modules differ from disk"
+    : "unidentified" in call.implementation ? call.implementation.unidentified
     : "unidentified" in runtime ? runtime.unidentified : null;
   const key = ineligible === null ? sha256(input) : null;
-  options.recorder?.start(attempt, call.stage, key);
   const record = (execution: Execution, replay: Replay | null): AttemptRecord => {
     const used = process.cpuUsage(cpu);
     return {
@@ -623,6 +657,7 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
       replay,
     };
   };
+  options.recorder?.start(record("interrupted", null), startedAt);
   const replaying = key !== null && store !== null && call.codec && replayedStages.has(call.stage)
     ? { key, store, codec: call.codec } : null;
   if (replaying && !forced) {
@@ -732,14 +767,13 @@ export function readInvocationLog(file: string): AttemptRecord[] {
     const event: unknown = JSON.parse(line);
     if (typeof event !== "object" || event === null) throw Error(`not an invocation event: ${line.slice(0, 200)}`);
     const e: { [key: string]: unknown } = { ...event };
-    const attempt = e["attempt"], stage = e["stage"], key = e["key"];
-    if (e["event"] === "start" && typeof attempt === "string" && isStageName(stage) &&
-        (key === null || typeof key === "string")) {
-      open.set(attempt, records.length);
-      records.push({ attempt, stage, key, ineligible: null, manifest: null, context: null, forced: false,
-        limitMs: null, execution: "interrupted", exitStatus: null, elapsedMs: 0,
-        cpu: { unavailable: "the attempt was interrupted" }, replay: null });
-    } else if (e["event"] === "end") {
+    if (e["event"] === "start" && Object.keys(e).sort().join() === "event,record,startedAt" && typeof e["startedAt"] === "number" && Number.isFinite(e["startedAt"])) {
+      const record = readAttemptRecord(e["record"]);
+      open.set(record.attempt, records.length);
+      records.push({ ...record, execution: "interrupted",
+        elapsedMs: Math.max(record.elapsedMs, Date.now() - e["startedAt"]),
+        cpu: { unavailable: "the attempt was interrupted" } });
+    } else if (e["event"] === "end" && Object.keys(e).sort().join() === "event,record") {
       const record = readAttemptRecord(e["record"]);
       const at = open.get(record.attempt);
       if (at !== undefined) {

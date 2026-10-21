@@ -140,6 +140,12 @@ const failedWith = (error: unknown, ...codes: string[]): boolean =>
 const payload = (m: Manifest): string =>
   JSON.stringify([m.input, m.exitStatus, m.stdout, m.stderr, m.outputs.map((o) => [o.role, o.digest])]);
 
+/** An in-process test barrier after an entry is complete and before rename. */
+let beforePublishForTests: ((directory: string) => void) | null = null;
+export function pausePublicationForTests(hook: ((directory: string) => void) | null): void {
+  beforePublishForTests = hook;
+}
+
 export class Store {
   readonly root: string;
   constructor(root: string) {
@@ -241,6 +247,7 @@ export class Store {
       writeFileSync(join(building, "manifest.json"), JSON.stringify(manifest), { mode: 0o444 });
       const destination = this.entry(stage, key);
       mkdirSync(dirname(destination), { recursive: true });
+      beforePublishForTests?.(building);
       try {
         renameSync(building, destination);
         return "published";
@@ -292,6 +299,7 @@ export class Store {
       writeFileSync(join(building, "observation.json"), JSON.stringify(observation), { mode: 0o444 });
       const destination = join(this.timeouts(stage, key), observation.attempt);
       mkdirSync(dirname(destination), { recursive: true });
+      beforePublishForTests?.(building);
       renameSync(building, destination);
     } finally {
       rmSync(building, { recursive: true, force: true });
