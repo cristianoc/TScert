@@ -535,6 +535,7 @@ function observeScope(module: string, checkLinks: boolean = false): { directory:
     if (basename(at) === "node_modules") break;
     const manifest = join(at, "package.json");
     if (kindOf(manifest, true) === "file") {
+      realOf(at, true);
       if (checkLinks) observePackageLinks(at);
       return { directory: at, bytes: readAnswer(manifest, true).bytes };
     }

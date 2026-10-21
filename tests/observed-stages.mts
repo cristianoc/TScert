@@ -10,7 +10,7 @@
 // --node-only runs the controls that do not require sandbox-exec.
 import assert from "node:assert/strict";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Recorder, captureCodeIdentity, invokeInProcess, textCodec, codeIdentity, sha256, type Canonical } from "../pipeline/stages.mts";
@@ -91,6 +91,35 @@ if (process.argv[2] === "--retarget") {
   }), /fresh process is needed/);
   assert.equal(executed, false);
   assert.equal(invoke("stable", stable).record.execution, "replayed");
+  process.exit(0);
+}
+
+// A scope link can change while both package trees and manifests stay intact.
+if (process.argv[2] === "--retarget-scope") {
+  const directory = process.argv[3], specifier = process.argv[4];
+  const link = join(directory, "link"), parent = join(link, "main.js");
+  const implementation = captureCodeIdentity([]);
+  let observations: readonly Observation[] = [];
+  const invoke = (): ReturnType<typeof invokeInProcess<string>> =>
+    invokeInProcess({ stage: "parse", implementation,
+      inputs: [{ role: "control", bytes: parent + specifier }], observed: true, codec: textCodec,
+      run: (): string => {
+        const made = observed(() => nodeResolve(specifier, parent) ?? "unresolved");
+        observations = made.observations;
+        return made.value;
+      } }, { force: false, recorder: null });
+  const first = invoke();
+  assert.equal(first.record.execution, "executed");
+  assert.equal(first.record.ineligible, null);
+  assert.match(first.value, /\/a\/target\.js$/);
+  assert.equal(observationsHold(observations), true);
+  unlinkSync(link);
+  symlinkSync("b", link);
+  assert.equal(observationsHold(observations), false);
+  const fresh = spawnSync(process.execPath, [import.meta.filename, "--resolve", specifier, parent], { encoding: "utf8" });
+  assert.equal(fresh.status, 0, fresh.stderr);
+  assert.match(fresh.stdout, /\/b\/target\.js$/);
+  assert.throws(invoke, /fresh process is needed/);
   process.exit(0);
 }
 
@@ -185,6 +214,38 @@ assert.match(run("resolution", "exported").ineligible ?? "", /symbolic link/);
 const retarget = spawnSync(process.execPath, [import.meta.filename, "--retarget", fixture],
   { encoding: "utf8", env: { ...process.env, TSCERT_STAGE_STORE: root } });
 assert.equal(retarget.status, 0, retarget.stderr);
+
+// Imports and self-references bind the real directory of a symlinked scope,
+// even when its manifests, entries and the original target stay unchanged.
+for (const specifier of ["#local", "scope-self"]) {
+  const directory = join(dir, specifier === "#local" ? "import-scope" : "self-scope");
+  for (const name of ["a", "b"]) {
+    mkdirSync(join(directory, name), { recursive: true });
+    writeFileSync(join(directory, name, "package.json"), JSON.stringify({
+      name: "scope-self", exports: "./target.js", imports: { "#local": "./target.js" },
+    }));
+    for (const file of ["main.js", "target.js"])
+      writeFileSync(join(directory, name, file), "export {};\n");
+  }
+  const link = join(directory, "link"), parent = join(link, "main.js");
+  symlinkSync("a", link);
+  const first = run("resolution", specifier, "-", parent);
+  assert.equal(first.execution, "executed");
+  assert.equal(first.ineligible, null);
+  assert.equal(run("resolution", specifier, "-", parent).execution, "replayed");
+  unlinkSync(link);
+  symlinkSync("b", link);
+  const second = run("resolution", specifier, "-", parent);
+  assert.equal(second.execution, "executed");
+  assert.equal(second.ineligible, null);
+  assert.notEqual(second.key, first.key);
+  assert.equal(run("resolution", specifier, "-", parent).execution, "replayed");
+  unlinkSync(link);
+  symlinkSync("a", link);
+  const stale = spawnSync(process.execPath, [import.meta.filename, "--retarget-scope", directory, specifier],
+    { encoding: "utf8", env: { ...process.env, TSCERT_STAGE_STORE: join(directory, "store") } });
+  assert.equal(stale.status, 0, stale.stderr);
+}
 
 // Null exports do not establish a self-reference. A scope search stops at
 // node_modules, even when the containing project names the requested package.

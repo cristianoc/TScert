@@ -351,9 +351,10 @@ import no file system, module or process API.
   reads of [Node's resolution algorithm](REFERENCES.md#nodejs-modules). Each
   resolution first reads `m`'s package scope (`kind a/package.json` for each
   ancestor `a` of `m` from the nearest, stopping before a `node_modules`
-  directory or at the first that is a file, and its `read`). A package import
-  (`#…`) and a self-reference (the scope names the package and states
-  non-null `exports`) resolve through it; another bare specifier of package
+  directory or at the first that is a file, its `read`, and the scope's
+  directory `real`). A package import (`#…`) and a self-reference (the scope
+  names the package and states non-null `exports`) resolve through it;
+  another bare specifier of package
   `p` through the `node_modules` lookup
   (`kind a/node_modules/p` for each ancestor from the nearest, up to the
   first that is a directory, its `real` and the `read` of its
