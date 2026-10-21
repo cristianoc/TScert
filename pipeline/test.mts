@@ -16,7 +16,7 @@ import { forced, forcedExecutions, producerCall, ran as ranStage, readInvocation
   from "./stages.mts";
 import { check, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
   type Outcome } from "./verify-source.mts";
-import { runDirectory } from "./run-directory.mts";
+import { runDirectory, runRoot } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { compilerApiFamily, hostEnums } from "../tools/compiler-api.mts";
 import { useFamiliesForTests } from "../tools/family-activation.mts";
@@ -39,7 +39,7 @@ import { checkOverloads } from "./overload-claims.mts";
 import { checkDefaults, checkSchemeDefaults, checkEarlyDefault, checkPatternDefaults } from "./default-parameters.mts";
 import { decodeFlowDocument, type ExecutionPlan, type ExecutionOperation } from "../tools/source-flow.mts";
 import { runExample } from "./run-example.mts";
-import { checkMutation, forgedEvidence } from "./evidence-mutations.mts";
+import { checkMutation, forgedEvidence, useMutationVerifier } from "./evidence-mutations.mts";
 const here = import.meta.dirname;
 
 /** The controls after the cases, each a block of this file, registered in
@@ -54,19 +54,27 @@ const control = (body: () => Promise<void>): void => {
 /** Whether this process is a control process of the pool. */
 const serving: boolean = process.argv[2] === "--controls";
 
+/** A Node process of this run beside the suite's own work: its status and
+ * output. It writes under this run's root, which outlives it. */
+const beside = (module: string, args: readonly string[]): Promise<{ status: number | null; stdout: string; stderr: string }> =>
+  new Promise((done, fail) => {
+    runRoot();
+    const child = spawn(process.execPath, [join(here, "..", module), ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "", stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (text: unknown) => { stdout += String(text); });
+    child.stderr.on("data", (text: unknown) => { stderr += String(text); });
+    child.on("error", fail);
+    child.on("close", (status: number | null) => done({ status, stdout, stderr }));
+  });
 // The observed stages' replay controls (tests/observed-stages.mts) run their
 // stages in fresh processes, the parse's with real compilers, beside the
 // rest of this suite; their result is reported at its end.
-const observedStages = serving ? null : new Promise<{ status: number | null; output: string }>((done, fail) => {
-  const child = spawn(process.execPath, [join(here, "..", "tests", "observed-stages.mts")], { stdio: ["ignore", "pipe", "pipe"] });
-  let output = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (text: unknown) => { output += String(text); });
-  child.stderr.on("data", (text: unknown) => { output += String(text); });
-  child.on("error", fail);
-  child.on("close", (status: number | null) => done({ status, output }));
-});
+const observedStages = serving ? null : beside("tests/observed-stages.mts", []);
+// The mutation verifier, built once from the current build beside the cases,
+// and given to every control process.
+const mutationBuild = serving ? null : beside("pipeline/evidence-mutations.mts", ["--build"]);
 
 control(async (): Promise<void> => {
   // Every allowed compiler enum uses the same Node binding identity check as
@@ -4665,9 +4673,11 @@ const readFinished = (value: unknown): Finished => {
 if (serving) {
   // A control process: the cases' artifacts, then one control per message.
   process.on("message", (message: unknown) => {
-    if (typeof message === "object" && message !== null && "artifacts" in message && Array.isArray(message.artifacts)) {
+    if (typeof message === "object" && message !== null && "artifacts" in message && Array.isArray(message.artifacts) &&
+        "mutationVerifier" in message && typeof message.mutationVerifier === "string") {
       for (const entry of message.artifacts)
         if (Array.isArray(entry) && typeof entry[0] === "string" && typeof entry[1] === "string") artifactsOf.set(entry[0], entry[1]);
+      useMutationVerifier(message.mutationVerifier);
       return;
     }
     const index = typeof message === "object" && message !== null && "control" in message && typeof message.control === "number"
@@ -4685,6 +4695,9 @@ if (serving) {
   });
   process.on("disconnect", () => process.exit(0));
 } else {
+  const built = await must(mutationBuild, "the mutation verifier's build");
+  assert.equal(built.status, 0, built.stdout + built.stderr);
+  const mutationVerifier = must(built.stdout.trim().split("\n").at(-1), "the mutation verifier's path");
   const started = performance.now();
   const failures: string[] = [];
   const tally = { count: 0, elapsedMs: 0 };
@@ -4722,14 +4735,13 @@ if (serving) {
       if (status !== 0) failures.push(`a control process exited with ${status}: ${errors}`);
       done();
     });
-    child.send({ artifacts: [...artifactsOf] });
+    child.send({ artifacts: [...artifactsOf], mutationVerifier });
     give();
   })));
   assert.deepEqual(failures, [], failures.join("\n"));
-  const observed = must(observedStages, "the observed stages' run");
-  const { status, output } = await observed;
-  assert.equal(status, 0, output);
-  process.stdout.write(output);
+  const observed = await must(observedStages, "the observed stages' run");
+  assert.equal(observed.status, 0, observed.stdout + observed.stderr);
+  process.stdout.write(observed.stdout);
   process.stdout.write(`controls: ${controls.length} in ${((performance.now() - started) / 1000).toFixed(1)} s on ${width} processes; ` +
     `${tally.count} forced executions of their tested operations, ${(tally.elapsedMs / 1000).toFixed(1)} s in all\n`);
 }

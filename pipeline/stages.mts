@@ -252,16 +252,16 @@ export function linkedLibraries(executable: string): Canonical | string {
 
 /** The load commands of a Mach-O file that name libraries (its own install
  * name and every library it loads: required, weak, re-exported, lazy,
- * upward), its run paths, in their order, and how many linker options it
- * carries; or why the file is no Mach-O file read here: one holding a
+ * upward) and its run paths, in their order; or why the file is no Mach-O
+ * file read here: one holding a
  * command that names a library or changes dyld's search otherwise
  * (`LC_LAZY_LOAD_DYLIB_INFO`, `LC_DYLD_ENVIRONMENT`), or a universal file
  * whose architectures differ in their libraries or run paths. Memoized by
  * the file's digest (`digest`), where the bytes read are the ones it names. */
-type LoadCommands = { libraries: readonly string[]; runPaths: readonly string[]; linkerOptions: number };
+type LoadCommands = { libraries: readonly string[]; runPaths: readonly string[] };
 const loadCommandsOf = new Map<string, LoadCommands | string>();
 const dylibCommands: ReadonlySet<number> = new Set([0xc, 0xd, 0x80000018, 0x8000001f, 0x20, 0x80000023]);
-const runPathCommand = 0x8000001c, linkerOptionCommand = 0x2d;
+const runPathCommand = 0x8000001c;
 const unreadCommands: ReadonlyMap<number, string> = new Map([[0x27, "LC_DYLD_ENVIRONMENT"], [0x3a, "LC_LAZY_LOAD_DYLIB_INFO"]]);
 function loadCommands(file: string, digest: string): LoadCommands | string {
   const held = loadCommandsOf.get(digest);
@@ -278,7 +278,6 @@ function loadCommands(file: string, digest: string): LoadCommands | string {
     // One architecture's image at `base`: a 32- or 64-bit little-endian header.
     const image = (base: number): LoadCommands => {
       const libraries: string[] = [], runPaths: string[] = [];
-      let linkerOptions = 0;
       const header = bytes(base, 28);
       const magic = header.readUInt32LE(0);
       if (magic !== 0xfeedface && magic !== 0xfeedfacf) throw Error(`no little-endian Mach-O header at ${base}`);
@@ -298,10 +297,9 @@ function loadCommands(file: string, digest: string): LoadCommands | string {
         if (unread !== undefined) throw Error(`it holds ${unread}`);
         if (dylibCommands.has(command)) libraries.push(name(start, start + length));
         if (command === runPathCommand) runPaths.push(name(start, start + length));
-        if (command === linkerOptionCommand) linkerOptions++;
         start += length;
       }
-      return { libraries, runPaths, linkerOptions };
+      return { libraries, runPaths };
     };
     const magic = bytes(0, 4).readUInt32BE(0);
     if (magic === 0xcafebabe || magic === 0xcafebabf) {
@@ -316,7 +314,7 @@ function loadCommands(file: string, digest: string): LoadCommands | string {
       if (first === undefined) throw Error("a universal file without architectures");
       const named = (c: LoadCommands): string => JSON.stringify([c.libraries, c.runPaths]);
       if (slices.some((c) => named(c) !== named(first))) throw Error("its architectures differ in their libraries or run paths");
-      found = { ...first, linkerOptions: slices.reduce((n, c) => n + c.linkerOptions, 0) };
+      found = first;
     } else found = image(0);
   } catch (error) {
     found = `its load commands are not read: ${error instanceof Error ? error.message : String(error)}`;
@@ -325,13 +323,6 @@ function loadCommands(file: string, digest: string): LoadCommands | string {
   }
   if (fileDigest(file) === digest) loadCommandsOf.set(digest, found);
   return found;
-}
-
-/** How many linker options (`LC_LINKER_OPTION`) a Mach-O file, an object
- * for a link, carries; or why its load commands are not read. */
-export function linkerOptions(file: string): number | string {
-  const commands = loadCommands(file, fileDigest(realpathSync(file)));
-  return typeof commands === "string" ? commands : commands.linkerOptions;
 }
 
 /** A library name relative to its loader, resolved, or null. */

@@ -42,9 +42,8 @@ answers to their reads, on macOS, where the compiler runs confined by
 - `TSCERT_STAGE_STORE=<dir>` selects the store, by default
   `$XDG_CACHE_HOME/tscert/stages` (`~/.cache/tscert/stages`), shared by every
   checkout and worktree; `TSCERT_STAGE_STORE=off` executes every stage.
-  `make clean-store` removes finished entries, test builds, timeout
-  observations and abandoned publication directories on this host; it
-  retains stable source snapshots.
+  `make clean-store` removes finished entries, timeout observations and abandoned
+  publication directories on this host; it retains stable source snapshots.
 - A branch uses the default store. Keys include the executables' and the
   adapters' digests, so a branch's changed verifier, producer or adapter
   never replays another build's entries; an agent testing the store itself

@@ -92,11 +92,10 @@ fixture regeneration commands.
 an isolated mutation executable in the run directory from the current Lake
 build's generated C and link response file. Run `(cd lean && lake build)` first.
 The helper uses the pinned toolchain's compiler; it reads the Lake cache and
-writes only to the run directory and the stage store, which keeps the
-executable under the [build-input key](../docs/DESIGN.md#the-stage-store).
-The compiler and linker run with an explicit environment, compiler default
-configuration disabled, and explicit library search paths and runtime libraries.
-The production verifier and Lean sources contain no mutation switches.
+writes only to the run directory. `pipeline/test.mts` builds it once per run,
+beside its cases (`node pipeline/evidence-mutations.mts --build`), and gives
+it to its control processes. The production verifier and Lean sources
+contain no mutation switches.
 
 The mutations bypass mapped/observed edge coverage, read-link entailment or
 heap-cell entailment, retain all links through `withStable`, or retain links

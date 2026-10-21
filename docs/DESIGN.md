@@ -523,14 +523,10 @@ Forged-document checks, mutation-verifier controls and injected tool-failure
 controls use it for the operation they test. Their baseline artifacts may
 come from the store: the controls of `pipeline/test.mts` run after its cases,
 in a pool of processes, and replay every stage but the one each tests. The
-mutation verifier is a test build the store keeps under the digest of every
-input its supported build recipe reads: generated C, objects, library-search
-candidates (including absent candidates), the include and compiler-resource
-trees, compiler and linker contents and dynamic dependencies, arguments and
-an explicit environment. Unrecognized link inputs are refused. Mutation
-selections, failure-injection settings and host-family overrides remain
-explicit invocation inputs. Store tests cover dependency invalidation,
-concurrent publication, interrupted writers,
+mutation verifier is built once per run of that suite, from the current
+build, beside its cases. Mutation selections, failure-injection settings and
+host-family overrides remain explicit invocation inputs. Store tests cover
+dependency invalidation, concurrent publication, interrupted writers,
 timeout/success races and writable artifact isolation.
 Controls assert that the tested operation actually executed, including every
 mutation variant and injected failure; forced executions remain subject to
@@ -550,9 +546,8 @@ measurement.
 **Location and size.** The store lives outside every checkout at
 `$XDG_CACHE_HOME/tscert/stages`, defaulting to `~/.cache/tscert/stages`.
 `TSCERT_STAGE_STORE` selects another directory; `off` forces execution.
-Beside entries it keeps test builds, each under the digest of its build's
-inputs. `make clean-store` removes finished entries, test builds, timeout
-observations and abandoned publication directories on this host. It retains
+`make clean-store` removes finished entries, timeout observations and
+abandoned publication directories on this host. It retains
 immutable, content-addressed source locations, validated at each use, so
 active parses keep their inputs.
 Eviction is approximate and affects reuse only; readers treat concurrent

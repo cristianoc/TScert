@@ -11,10 +11,9 @@
 //       stdout, stderr, out/<role>
 //   <root>/timeouts/<stage>/<key>/<attempt>/observation.json
 //   <root>/observed/<stage>/<pre-key>/<key>    a reference to an observed stage's entry
-//   <root>/builds/<category>/<key>/<name>, sha256   a test build and its digest
 //   <root>/sources/<digest>/<name>             a stable snapshot location
 //   <root>/tmp/<host>/<pid>.<attempt>/         a writer's unpublished entry
-import { constants, copyFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
@@ -361,40 +360,6 @@ export class Store {
     }
   }
 
-  /** Copy the file `name` built for `key` in `category` to `to`, where an
-   * intact one is stored (its bytes the digest stored beside it, validated
-   * in the copy); false where none is. */
-  copyBuilt(category: string, key: string, name: string, to: string): boolean {
-    const directory = join(this.root, "builds", category, key);
-    try {
-      const digest = readFileSync(join(directory, "sha256"), "utf8");
-      copyFileSync(join(directory, name), to, constants.COPYFILE_FICLONE);
-      if (sha256(readFileSync(to)) === digest) return true;
-    } catch (error) {
-      if (!failedWith(error, "ENOENT", "ENOTDIR", "EISDIR")) throw error;
-    }
-    rmSync(to, { force: true });
-    return false;
-  }
-  /** Store the file at `from` as `name` built for `key` in `category`, with
-   * its digest, published by atomic rename; one already there is left. */
-  publishBuilt(category: string, key: string, name: string, from: string): void {
-    const building = this.temporary(`build-${key}`);
-    try {
-      copyFileSync(from, join(building, name), constants.COPYFILE_FICLONE);
-      writeFileSync(join(building, "sha256"), sha256(readFileSync(join(building, name))), { mode: 0o444 });
-      const destination = join(this.root, "builds", category, key);
-      mkdirSync(dirname(destination), { recursive: true });
-      try {
-        renameSync(building, destination);
-      } catch (error) {
-        if (!failedWith(error, "EEXIST", "ENOTEMPTY")) throw error;
-      }
-    } finally {
-      rmSync(building, { recursive: true, force: true });
-    }
-  }
-
   /** A stable, content-addressed directory holding exactly `files` (each a
    * name and its bytes), published once and validated at each use; null
    * where the directory present is not exactly those files. */
@@ -430,7 +395,7 @@ export class Store {
    * temporary directory whose writer has stopped: one of this host whose
    * process is gone. */
   clean(): void {
-    for (const part of ["entries", "timeouts", "observed", "builds"]) rmSync(join(this.root, part), { recursive: true, force: true });
+    for (const part of ["entries", "timeouts", "observed"]) rmSync(join(this.root, part), { recursive: true, force: true });
     const here = join(this.root, "tmp", hostname());
     let temporaries: string[];
     try {
