@@ -22,6 +22,11 @@ make build       # build-lean and build-producer: the Lean verifier and the OCam
 make setup       # the node dependencies
 ```
 
+Each process stage of the pipeline is killed after 60 s;
+`TSCERT_STEP_LIMIT=<seconds>` sets another limit. A run's directory holds
+`invocations.jsonl`, each stage invocation's attempt with its limit, outcome
+and elapsed time ([the invocation mechanism](pipeline/stages.mts)).
+
 ### Iterating: run what the change touches
 
 The full battery is for deep changes. While iterating, run the narrowest tier

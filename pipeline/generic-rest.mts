@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { forced, verifierCall } from "./stages.mts";
 import { runInNewContext } from "node:vm";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Ast } from "../tools/fragment.mts";
@@ -25,18 +25,14 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
     writeFileSync(claimed, JSON.stringify(changed));
     writeFileSync(parsed, JSON.stringify(tree));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const p = spawnSync(
-        verifier,
-        [
+      const p = forced(verifierCall(verifier, [
           mode,
           parsed,
           claimed,
           join(artifacts, "source.ts"),
           join(artifacts, "evidence.json"),
           ...(mode === "--produce-source-claims" ? ["12"] : []),
-        ],
-        { encoding: "utf8", timeout: 30_000 },
-      );
+        ]));
       assert.ifError(p.error);
       assert.equal(p.signal, null);
       assert.equal(p.status, 1, p.stdout + p.stderr);

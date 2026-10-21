@@ -9,8 +9,9 @@ import type { Ast, Expr } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { check, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
+import { spawnSync } from "node:child_process";
+import { forced, producerCall, ran as ranStage, readInvocationLog, verifierCall, type Invoked } from "./stages.mts";
+import { check, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { compilerApiFamily, hostEnums } from "../tools/compiler-api.mts";
@@ -93,8 +94,7 @@ function must<T>(value: T | null | undefined, message: string): T {
  * require a refusal; its words, for the caller to match. */
 const invoke = (claims: string, evidence: string, artifacts: string,
   ast: string = join(artifacts, "fragment.json")): string => {
-  const p = spawnSync(verifier, ["--check-source-claims", ast, claims, join(artifacts, "source.ts"), evidence],
-    { encoding: "utf8", timeout: 30_000 });
+  const p = forced(verifierCall(verifier, ["--check-source-claims", ast, claims, join(artifacts, "source.ts"), evidence]));
   assert.ifError(p.error);
   assert.equal(p.signal, null);
   assert.equal(p.status, 1, p.stdout + p.stderr);
@@ -102,9 +102,9 @@ const invoke = (claims: string, evidence: string, artifacts: string,
 };
 /** Search for evidence of forged claims, or of a forged parser document. */
 const produceWith = (artifacts: string, claims: string, name: string,
-    fragmentPath: string = join(artifacts, "fragment.json")): SpawnSyncReturns<string> =>
-  spawnSync(verifier, ["--produce-source-claims", fragmentPath, claims, join(artifacts, "source.ts"),
-    join(artifacts, `${name}-evidence.json`), "12"], { encoding: "utf8", timeout: 30_000 });
+    fragmentPath: string = join(artifacts, "fragment.json")): Invoked =>
+  forced(verifierCall(verifier, ["--produce-source-claims", fragmentPath, claims, join(artifacts, "source.ts"),
+    join(artifacts, `${name}-evidence.json`), "12"]));
 /** Require search over forged claims to fail at the obligation named `at`. */
 const refusedAt = (artifacts: string, claims: string, name: string, at: string): void => {
   const searched = produceWith(artifacts, claims, name);
@@ -190,21 +190,18 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   member.type = { k: "atom", name: "unknown", span: member.type.span };
   const weakened = join(erased, "weakened.json");
   writeFileSync(weakened, JSON.stringify(ast));
-  const lowered = spawnSync(verifier, ["--lower-control-flow", weakened],
-    { encoding: "utf8", timeout: 30_000 });
+  const lowered = forced(verifierCall(verifier, ["--lower-control-flow", weakened]));
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(erased, "weakened-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposal = spawnSync(producerExecutable, [weakened, flow],
-    { encoding: "utf8", timeout: 30_000 });
+  const proposal = forced(producerCall(producerExecutable, [weakened, flow]));
   assert.equal(proposal.status, 0, proposal.stderr);
   const claims = join(erased, "forged-claims.json");
   const evidence = join(erased, "forged-evidence.json");
   writeFileSync(claims, proposal.stdout);
   writeFileSync(evidence, "{}");
-  const searched = spawnSync(verifier, ["--produce-source-claims",
-    join(erased, "fragment.json"), claims, join(erased, "source.ts"), evidence, "12"],
-    { encoding: "utf8", timeout: 30_000 });
+  const searched = forced(verifierCall(verifier, ["--produce-source-claims",
+    join(erased, "fragment.json"), claims, join(erased, "source.ts"), evidence, "12"]));
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /generic contract.*cannot be erased/);
   assert.match(invoke(claims, evidence, erased), /generic contract.*cannot be erased/);
@@ -324,9 +321,9 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const path = join(good, `${name}.fragment.json`);
     writeFileSync(path, edit(readFragmentFile(join(good, "fragment.json"))));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const result = spawnSync(verifier, [mode, path, claims, join(good, "source.ts"),
+      const result = forced(verifierCall(verifier, [mode, path, claims, join(good, "source.ts"),
         mode === "--produce-source-claims" ? join(good, `${name}-evidence.json`) : evidence,
-        ...(mode === "--produce-source-claims" ? ["12"] : [])], { encoding: "utf8", timeout: 30_000 });
+        ...(mode === "--produce-source-claims" ? ["12"] : [])]));
       assert.ifError(result.error);
       assert.equal(result.status, 1, result.stdout + result.stderr);
       assert.match(result.stdout + result.stderr, mode === "--produce-source-claims" ? refusal : checked);
@@ -413,8 +410,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   {
     const exact = join(inherited, "tag-fake-exact.fragment.json");
     writeFileSync(exact, fakeAt(readFragmentFile(join(inherited, "fragment.json")), "exact"));
-    const produced = spawnSync(verifier, ["--produce-source-claims", exact, join(inherited, "claims.json"),
-      join(inherited, "source.ts"), join(inherited, "tag-fake-exact-evidence.json"), "12"], { encoding: "utf8", timeout: 30_000 });
+    const produced = forced(verifierCall(verifier, ["--produce-source-claims", exact, join(inherited, "claims.json"),
+      join(inherited, "source.ts"), join(inherited, "tag-fake-exact-evidence.json"), "12"]));
     assert.equal(produced.status, 0, produced.stdout + produced.stderr);
   }
   tagged(inherited, "tag-fake-untagged", ast => fakeAt(ast, "untagged"),
@@ -523,9 +520,9 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const path = join(keyed, `${name}.fragment.json`);
     writeFileSync(path, text.replace(field, `{"name":${to},"e":{"k":"comma"`));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const result = spawnSync(verifier, [mode, path, join(keyed, "claims.json"), join(keyed, "source.ts"),
+      const result = forced(verifierCall(verifier, [mode, path, join(keyed, "claims.json"), join(keyed, "source.ts"),
         join(keyed, mode === "--produce-source-claims" ? `${name}-evidence.json` : "evidence.json"),
-        ...(mode === "--produce-source-claims" ? ["12"] : [])], { encoding: "utf8", timeout: 30_000 });
+        ...(mode === "--produce-source-claims" ? ["12"] : [])]));
       assert.equal(result.status, 1, result.stdout + result.stderr);
       assert.match(result.stdout + result.stderr, /is not the key .* its literal converts to/);
     }
@@ -602,8 +599,8 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     return path;
   };
   const fragment = renamed("fragment.json");
-  const accepted = spawnSync(verifier, ["--check-source-claims", fragment, renamed("claims.json"),
-    join(methods, "source.ts"), renamed("evidence.json")], { encoding: "utf8", timeout: 30_000 });
+  const accepted = forced(verifierCall(verifier, ["--check-source-claims", fragment, renamed("claims.json"),
+    join(methods, "source.ts"), renamed("evidence.json")]));
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
   assert.ok(readFileSync(fragment, "utf8").includes('"name":"stack"'), "the forged fragment names a member `stack`");
   process.stdout.write("forged stack member: accepted by Lean, the reservation enforced by the parser alone\n");
@@ -668,11 +665,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   read.type = [rowOf(claims, "num")];
   const forged = writeClaims(good, "untested-number", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+    const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
       join(good, "source.ts"), join(good, mode === "--produce-source-claims"
         ? "untested-number-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-source-claims" ? ["12"] : [])],
-      { encoding: "utf8", timeout: 30_000 });
+      ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
   }
@@ -865,11 +861,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   read.type = read.type.slice(0, 1);
   const forged = writeClaims(good, "disjunction-one-arm", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+    const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
       join(good, "source.ts"), join(good, mode === "--produce-source-claims"
         ? "disjunction-one-arm-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-source-claims" ? ["12"] : [])],
-      { encoding: "utf8", timeout: 30_000 });
+      ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     if (mode === "--produce-source-claims")
@@ -893,11 +888,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   operand.type = [number];
   const forged = writeClaims(good, "array-spread-number", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+    const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
       join(good, "source.ts"), join(good, mode === "--produce-source-claims"
         ? "array-spread-forged-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-source-claims" ? ["12"] : [])],
-      { encoding: "utf8", timeout: 30_000 });
+      ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
   }
@@ -934,11 +928,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   read.type = [number];
   const forged = writeClaims(good, "constructor-spread-number", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+    const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
       join(good, "source.ts"), join(good, mode === "--produce-source-claims"
         ? "constructor-forged-evidence.json" : "evidence.json"),
-      ...(mode === "--produce-source-claims" ? ["12"] : [])],
-      { encoding: "utf8", timeout: 30_000 });
+      ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stdout + result.stderr, /constructor spread needs a tuple contract/);
@@ -959,11 +952,10 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     read.type = variant === "number" ? [number] : [{ binder: "UnboundPrototypeParameter" }];
     const forged = writeClaims(good, `prototype-${variant}`, claims);
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const result = spawnSync(verifier, [mode, join(good, "fragment.json"), forged,
+      const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
         join(good, "source.ts"), join(good, mode === "--produce-source-claims"
           ? `prototype-${variant}-evidence.json` : "evidence.json"),
-        ...(mode === "--produce-source-claims" ? ["12"] : [])],
-        { encoding: "utf8", timeout: 30_000 });
+        ...(mode === "--produce-source-claims" ? ["12"] : [])]));
       assert.ifError(result.error);
       assert.equal(result.status, 1, result.stdout + result.stderr);
       assert.match(result.stdout + result.stderr, variant === "unbound"
@@ -1739,19 +1731,18 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
           element: { k: "atom", name: "number", span: [0, 0] } })] };
     const weak = join(artifacts, "weakened-array-tojson.json");
     writeFileSync(weak, JSON.stringify(ast));
-    const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
+    const lowered = forced(verifierCall(verifier, ["--lower-control-flow", weak]));
     assert.equal(lowered.status, 0, lowered.stderr);
     const flow = join(artifacts, "weakened-array-tojson-flow.json");
     writeFileSync(flow, lowered.stdout);
-    const proposed = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
+    const proposed = forced(producerCall(producerExecutable, [weak, flow]));
     assert.equal(proposed.status, 0, proposed.stderr);
     const claims = join(artifacts, "weakened-array-tojson-claims.json");
     writeFileSync(claims, proposed.stdout);
     const borrowed = produceWith(artifacts, claims, "weakened-array-tojson", weak);
     assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
     const evidence = join(artifacts, "weakened-array-tojson-evidence.json");
-    const accepted = spawnSync(verifier, ["--check-source-claims", weak, claims, join(artifacts, "source.ts"), evidence],
-      { encoding: "utf8", timeout: 30_000 });
+    const accepted = forced(verifierCall(verifier, ["--check-source-claims", weak, claims, join(artifacts, "source.ts"), evidence]));
     assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
     return { artifacts, claims, evidence };
   };
@@ -1803,11 +1794,11 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   on.type = weaken(on.type);
   const weak = join(artifacts, "weakened-process-on.json");
   writeFileSync(weak, JSON.stringify(ast));
-  const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
+  const lowered = forced(verifierCall(verifier, ["--lower-control-flow", weak]));
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(artifacts, "weakened-process-on-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposed = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
+  const proposed = forced(producerCall(producerExecutable, [weak, flow]));
   assert.equal(proposed.status, 0, proposed.stderr);
   const claims = join(artifacts, "weakened-process-on-claims.json");
   writeFileSync(claims, proposed.stdout);
@@ -1865,11 +1856,11 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
     type: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] });
   const weak = join(write, "weakened-native-constructor.json");
   writeFileSync(weak, JSON.stringify(weakAst));
-  const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
+  const lowered = forced(verifierCall(verifier, ["--lower-control-flow", weak]));
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(write, "weakened-native-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposed = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
+  const proposed = forced(producerCall(producerExecutable, [weak, flow]));
   assert.equal(proposed.status, 0, proposed.stderr);
   const borrowedClaims = join(write, "weakened-native-claims.json");
   writeFileSync(borrowedClaims, proposed.stdout);
@@ -2041,8 +2032,8 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   assert.equal(produce.signal, null);
   assert.equal(produce.status, accepted ? 0 : 1, produce.stdout + produce.stderr);
   if (accepted) {
-    const consume = spawnSync(verifier, ["--check-source-claims", join(artifacts, "fragment.json"),
-      input, join(artifacts, "source.ts"), join(artifacts, "qualified-callback-evidence.json")], {encoding: "utf8", timeout: 30_000});
+    const consume = forced(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"),
+      input, join(artifacts, "source.ts"), join(artifacts, "qualified-callback-evidence.json")]));
     assert.ifError(consume.error);
     assert.equal(consume.status, 0, consume.stdout + consume.stderr);
   } else {
@@ -2643,9 +2634,8 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   const kept = forge("setSecond", { value: "any", store: "keep" });
   const accepted = produceWith(artifacts, kept, "forged-element-write-kept");
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
-  const checked = spawnSync(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), kept,
-    join(artifacts, "source.ts"), join(artifacts, "forged-element-write-kept-evidence.json")],
-    { encoding: "utf8", timeout: 30_000 });
+  const checked = forced(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), kept,
+    join(artifacts, "source.ts"), join(artifacts, "forged-element-write-kept-evidence.json")]));
   assert.equal(checked.status, 0, checked.stdout + checked.stderr);
   for (const [name, footprint] of [["setThird", { value: "any", store: "keep" }],
       ["setSecond", emptyFootprint]] as const) {
@@ -2853,9 +2843,9 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   const searched = check(file, undefined, false, 1);
   assert.equal(searched.status, "exhausted", JSON.stringify(searched));
   const artifacts = run("declaration-preserving-callback");
-  const checking = spawnSync(verifier, ["--subtype-rounds", "1", "--check-source-claims",
+  const checking = forced(verifierCall(verifier, ["--subtype-rounds", "1", "--check-source-claims",
     join(artifacts, "fragment.json"), join(artifacts, "claims.json"), join(artifacts, "source.ts"),
-    join(artifacts, "evidence.json")], { encoding: "utf8", timeout: 30_000 });
+    join(artifacts, "evidence.json")]));
   assert.equal(checking.status, 1, checking.stdout + checking.stderr);
   const failure = readDiagnostic(checking.stdout + checking.stderr);
   assert.ok(failure && failure.outcome.kind === "exhausted", checking.stdout + checking.stderr);
@@ -2923,11 +2913,11 @@ const bypassed = (artifacts: string, name: string, at: [number, number], change:
   change(ast);
   const weak = join(artifacts, `${name}-fragment.json`);
   writeFileSync(weak, JSON.stringify(ast));
-  const lowered = spawnSync(verifier, ["--lower-control-flow", weak], { encoding: "utf8", timeout: 30_000 });
+  const lowered = forced(verifierCall(verifier, ["--lower-control-flow", weak]));
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(artifacts, `${name}-flow.json`);
   writeFileSync(flow, lowered.stdout);
-  const proposal = spawnSync(producerExecutable, [weak, flow], { encoding: "utf8", timeout: 30_000 });
+  const proposal = forced(producerCall(producerExecutable, [weak, flow]));
   assert.equal(proposal.status, 0, proposal.stderr);
   const claims = join(artifacts, `${name}-claims.json`);
   writeFileSync(claims, proposal.stdout);
@@ -3587,8 +3577,8 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // their meaning; offered with the plain document they are accepted.
   const located = (detail: string, position: number): boolean =>
     [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= position && position < Number(m[2]));
-  const verifierOn = (fragment: string, claims: string, source: string, evidence: string): SpawnSyncReturns<string> =>
-    spawnSync(verifier, ["--check-source-claims", fragment, claims, source, evidence], { encoding: "utf8", timeout: 60_000 });
+  const verifierOn = (fragment: string, claims: string, source: string, evidence: string): Invoked =>
+    forced(verifierCall(verifier, ["--check-source-claims", fragment, claims, source, evidence]), 60_000);
   const plainRuns = new Map<string, string>();
   for (const name of new Set(controls.map(([, file]) => file))) {
     const plain = check(join(import.meta.dirname, "examples", `${name}.ts`), project);
@@ -3914,8 +3904,8 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const searched = produceWith(corrected.artifacts, forged, "forged-uncorrected");
     assert.ok(searched.status === 1 && located(searched.stdout + searched.stderr, at),
       `${slug}: the search refuses at the read: ${searched.stdout + searched.stderr}`);
-    const checked = spawnSync(verifier, ["--check-source-claims", join(corrected.artifacts, "fragment.json"), forged,
-      join(corrected.artifacts, "source.ts"), join(plain.artifacts, "evidence.json")], { encoding: "utf8", timeout: 60_000 });
+    const checked = forced(verifierCall(verifier, ["--check-source-claims", join(corrected.artifacts, "fragment.json"), forged,
+      join(corrected.artifacts, "source.ts"), join(plain.artifacts, "evidence.json")]), 60_000);
     // The checker names the read, or refuses the evidence as a whole where
     // the corrected document's rows leave it justifying no claim.
     assert.ok(checked.status === 1 && (located(checked.stdout + checked.stderr, at) ||
@@ -4020,7 +4010,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const flow = join(artifacts, "flow.json");
   const loneFragment = join(artifacts, "forged-lone-surrogate-fragment.json");
   writeFileSync(loneFragment, fragment.replace("", "\\ud800"));
-  const proposed = spawnSync(producerExecutable, [loneFragment, flow], { encoding: "utf8", timeout: 30_000 });
+  const proposed = forced(producerCall(producerExecutable, [loneFragment, flow]));
   assert.notEqual(proposed.status, 0, proposed.stdout + proposed.stderr);
   assert.match(proposed.stdout + proposed.stderr, /low surrogate/);
   assert.throws(() => readFragmentFile(loneFragment), /not well-formed Unicode/);
@@ -4029,7 +4019,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.match(leanFragment.stdout + leanFragment.stderr, /not well-formed Unicode/);
   const rawFragment = join(artifacts, "forged-invalid-utf8-fragment.json");
   writeFileSync(rawFragment, withByte(fragment));
-  const rawProposed = spawnSync(producerExecutable, [rawFragment, flow], { encoding: "utf8", timeout: 30_000 });
+  const rawProposed = forced(producerCall(producerExecutable, [rawFragment, flow]));
   assert.notEqual(rawProposed.status, 0, rawProposed.stdout + rawProposed.stderr);
   assert.match(rawProposed.stdout + rawProposed.stderr, /not valid UTF-8/);
   process.stdout.write("wire strings: lone surrogates and invalid UTF-8 refused by the producer, Lean and TypeScript\n");
@@ -4041,20 +4031,36 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // no output, an exception's text, and a record cut short, at each step
   // whose refusal is a verdict; and an `--explain` run of the producer that
   // fails or prints no explanations.
+  // The injected failure is written into each stand-in, so it is part of the
+  // executable the invocation runs; the runs force execution, and each
+  // asserts that the failing stage ran.
   const dir = runDirectory("tscert-step-failures-");
-  const fake = (name: string, real: string, status: number): string => {
-    const path = join(dir, name);
-    writeFileSync(path, `#!/bin/sh\nif [ "$1" = "$FAIL_MODE" ]; then\n  [ -n "$FAIL_TEXT" ] && echo "$FAIL_TEXT" >&2\n` +
+  type Failure = { FAIL_MODE: string; FAIL_TEXT?: string; FAIL_STATUS?: string; FAIL_OUT?: string };
+  const stageOfMode: Record<string, string> = { "--lower-control-flow": "lower", "--produce-source-claims": "search",
+    "--check-source-claims": "check", "--explain": "explain" };
+  const fake = (at: string, name: string, real: string, status: number, failure: Failure): string => {
+    const path = join(at, name);
+    const quoted = (s: string): string => `'${s.replaceAll("'", `'\\''`)}'`;
+    writeFileSync(path, `#!/bin/sh\nFAIL_MODE=${quoted(failure.FAIL_MODE)}\nFAIL_TEXT=${quoted(failure.FAIL_TEXT ?? "")}\n` +
+      `FAIL_OUT=${quoted(failure.FAIL_OUT ?? "")}\nFAIL_STATUS=${quoted(failure.FAIL_STATUS ?? "")}\n` +
+      `if [ "$1" = "$FAIL_MODE" ]; then\n  [ -n "$FAIL_TEXT" ] && echo "$FAIL_TEXT" >&2\n` +
       `  [ -n "$FAIL_OUT" ] && echo "$FAIL_OUT"\n  exit \${FAIL_STATUS:-${status}}\nfi\nexec "${real}" "$@"\n`);
     chmodSync(path, 0o755);
     return path;
   };
-  const fakeVerifier = fake("verifier.sh", verifier, 1);
-  const fakeProducer = fake("producer.sh", producerExecutable, 2);
-  const outcomeOf = (source: string, env: Record<string, string>): Outcome => {
+  let runs = 0;
+  const outcomeOf = (source: string, failure: Failure): Outcome => {
+    const at = join(dir, `run-${runs++}`);
+    mkdirSync(at);
     const ran = spawnSync(process.execPath, [join(here, "verify-source.mts"), join(here, "examples", source)],
-      { encoding: "utf8", timeout: 120_000, env: { ...process.env, VERIFIER: fakeVerifier, PRODUCER: fakeProducer, ...env } });
-    return readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+      { encoding: "utf8", timeout: 120_000, env: { ...process.env, TSCERT_STAGE_STORE: "off",
+        VERIFIER: fake(at, "verifier.sh", verifier, 1, failure),
+        PRODUCER: fake(at, "producer.sh", producerExecutable, 2, failure) } });
+    const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+    const failing = readInvocationLog(join(outcome.artifacts, invocationLog))
+      .filter((r) => r.stage === stageOfMode[failure.FAIL_MODE]).at(-1);
+    assert.ok(failing && ranStage(failing) && failing.forced, `${failure.FAIL_MODE}: the failing stage ran forced`);
+    return outcome;
   };
   for (const mode of ["--lower-control-flow", "--produce-source-claims", "--check-source-claims"])
     for (const text of ["", "uncaught exception: forced by pipeline/test.mts", "reject: a record cut short"]) {
@@ -4071,7 +4077,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   assert.equal(garbled.status, "error", JSON.stringify(garbled));
   assert.match(garbled.detail ?? "", /^tool failure: the producer's --explain printed a malformed explanation/);
   // An operational failure of the verifier is its own exit status, 3.
-  const unread = spawnSync(verifier, ["--lower-control-flow", join(dir, "absent.json")], { encoding: "utf8", timeout: 30_000 });
+  const unread = forced(verifierCall(verifier, ["--lower-control-flow", join(dir, "absent.json")]));
   assert.equal(unread.status, 3, unread.stderr);
   assert.match(unread.stderr, /^error: /);
   process.stdout.write("step failures: an exit without a complete refusal, and a failed --explain, are tool failures\n");
@@ -4179,8 +4185,8 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const artifacts = run("path-chain-controls");
   const source = readFileSync(join(artifacts, "source.ts"), "utf8");
   const honest = readClaims(artifacts);
-  const accepted = spawnSync(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), join(artifacts, "claims.json"),
-    join(artifacts, "source.ts"), join(artifacts, "evidence.json")], { encoding: "utf8", timeout: 30_000 });
+  const accepted = forced(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), join(artifacts, "claims.json"),
+    join(artifacts, "source.ts"), join(artifacts, "evidence.json")]));
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
   const chain = (path: readonly string[]): boolean => path.length === 2 && path[0] === "mid" && path[1] === "leaf";
   const before = must(honest.functions.find(f => f.name === "before"), "chain before");
@@ -4401,8 +4407,8 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     return path;
   };
   const honest = forged("stable-link-honest", s => [...s]);
-  const accepted = spawnSync(verifier, ["--check-source-claims", honest, join(artifacts, "claims.json"),
-    join(artifacts, "source.ts"), join(artifacts, "evidence.json")], { encoding: "utf8", timeout: 30_000 });
+  const accepted = forced(verifierCall(verifier, ["--check-source-claims", honest, join(artifacts, "claims.json"),
+    join(artifacts, "source.ts"), join(artifacts, "evidence.json")]));
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
   const unstable = forged("forged-stable-link", s => s.filter(k => k !== "name"));
   const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-stable-link", unstable);
@@ -4449,11 +4455,11 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     else statement.e = neutral;
     const neighbour = join(artifacts, "stable-neighbour.json");
     writeFileSync(neighbour, JSON.stringify(fragment));
-    const lowered = spawnSync(verifier, ["--lower-control-flow", neighbour], { encoding: "utf8", timeout: 30_000 });
+    const lowered = forced(verifierCall(verifier, ["--lower-control-flow", neighbour]));
     assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
     const flow = join(artifacts, "stable-neighbour-flow.json");
     writeFileSync(flow, lowered.stdout);
-    const proposed = spawnSync(producerExecutable, [neighbour, flow], { encoding: "utf8", timeout: 30_000 });
+    const proposed = forced(producerCall(producerExecutable, [neighbour, flow]));
     assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
     const honestPath = join(artifacts, "stable-neighbour-claims.json");
     writeFileSync(honestPath, proposed.stdout);

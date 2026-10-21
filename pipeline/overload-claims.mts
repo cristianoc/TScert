@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { forced, verifierCall } from "./stages.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { readClaimsFile } from "./verify-source.mts";
 
@@ -94,18 +94,14 @@ export function checkOverloads(verifier: string, artifacts: string): void {
     const file = join(artifacts, "forged-overload.json");
     writeFileSync(file, JSON.stringify(claims));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const p = spawnSync(
-        verifier,
-        [
+      const p = forced(verifierCall(verifier, [
           mode,
           join(artifacts, "fragment.json"),
           file,
           join(artifacts, "source.ts"),
           join(artifacts, "evidence.json"),
           ...(mode === "--produce-source-claims" ? ["12"] : []),
-        ],
-        { encoding: "utf8", timeout: 30_000 },
-      );
+        ]));
       assert.ifError(p.error);
       assert.equal(p.signal, null);
       assert.equal(p.status, 1, `${name}: ${p.stdout}${p.stderr}`);

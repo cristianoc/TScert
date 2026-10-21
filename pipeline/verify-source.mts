@@ -1,4 +1,4 @@
-import { fork, spawnSync, type ChildProcess } from "node:child_process";
+import { fork, type ChildProcess } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { Socket } from "node:net";
 import { availableParallelism } from "node:os";
@@ -17,6 +17,14 @@ import type { SourceClaims } from "../tools/source-claims.mts";
 import { decodeFlowDocument } from "../tools/source-flow.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
+import { assembleClaims } from "./claims-assembly.mts";
+import { invokeInProcess, invokeProcess, producerBuild, producerCall, Recorder, refusalEnd, verifierBuild, verifierCall,
+  type ProcessCall } from "./stages.mts";
+
+/** The file of a run's directory holding its stage invocations' attempts. */
+export const invocationLog = "invocations.jsonl";
+/** The claims assembly stage's module, whose source identifies it. */
+const assembly = join(import.meta.dirname, "claims-assembly.mts");
 
 /** A Fragment document this pipeline's parser wrote, read back by a test that
  * forges it. The tests (18 reads) edit fields deep in the document through
@@ -44,12 +52,9 @@ const here = import.meta.dirname;
 // The producer runs from `_build/default/producer.exe` below `../ocaml-producer`.
 // Its dune file, `../ocaml-producer/dune`, declares that executable and the library it links;
 // `../ocaml-producer/dune-project` makes that directory the root `dune build --root` builds into `_build/`.
-export const producerExecutable: string =
-  process.env.PRODUCER ?? resolve(here, "../ocaml-producer/_build/default/producer.exe");
+export const producerExecutable: string = process.env.PRODUCER ?? producerBuild;
 const repo = resolve(here, "..");
-export const verifier: string =
-  process.env.VERIFIER ??
-  resolve(repo, "lean/.lake/build/bin/verifier");
+export const verifier: string = process.env.VERIFIER ?? verifierBuild;
 function refusalStatus(detail: string): "exhausted" | "unverified" {
   const diagnostic = readDiagnostic(detail);
   if (!diagnostic) return "unverified";
@@ -78,23 +83,29 @@ export type Outcome =
     };
 /** The fuel proof search is given. */
 const searchDepth = 12;
-/** Wall-clock limit on each external step (the parser, the producer, the
- * search, the check). A step that exceeds it is killed and the case is an
- * error naming the step and the limit, never a verdict. */
-const stepTimeoutMs = 60_000;
+/** Wall-clock limit on each external step (the producer, the lowering, the
+ * search, the check): `TSCERT_STEP_LIMIT` seconds, 60 by default. A step
+ * that exceeds it is killed and the case is an error naming the step and the
+ * limit, never a verdict. */
+export const stepTimeoutMs: number = stepLimit();
+function stepLimit(): number {
+  const given = process.env["TSCERT_STEP_LIMIT"];
+  if (given === undefined || given === "") return 60_000;
+  const seconds = Number(given);
+  if (!Number.isFinite(seconds) || seconds <= 0) throw Error(`TSCERT_STEP_LIMIT is no positive number of seconds: ${given}`);
+  return Math.round(seconds * 1000);
+}
 /** A step run: its exit code, its output, and what it reports on failure. */
 export type Ran = { code: number; out: string; detail: string };
-export function run(command: string, args: string[]): Ran {
-  const p = spawnSync(command, args, {
-    cwd: repo,
-    timeout: stepTimeoutMs,
-    maxBuffer: 16 * 1024 * 1024,
-  });
+/** A process stage run through the common invocation mechanism, its attempt
+ * recorded by `recorder`. */
+export function runStep(call: ProcessCall, recorder: Recorder | null = null): Ran {
+  const p = invokeProcess(call, { limitMs: stepTimeoutMs, force: false, recorder });
   const step = [
-    basename(command),
-    ...args.filter((a) => a.startsWith("--")),
+    basename(call.program),
+    ...call.arguments.flatMap((a) => ("text" in a && a.text.startsWith("--") ? [a.text] : [])),
   ].join(" ");
-  if (fieldOf(p.error, "code") === "ETIMEDOUT")
+  if (p.record.execution === "timed-out")
     throw Error(
       `timeout: ${step} did not finish within ${stepTimeoutMs / 1000} s`,
     );
@@ -102,22 +113,20 @@ export function run(command: string, args: string[]): Ran {
   // or that did not start is a failure of the tool, no verdict, reported
   // with the first line it wrote.
   if (p.error || p.signal || p.status === null) {
-    const said = (p.stderr ? Buffer.from(p.stderr).toString("utf8") : "").trim().split("\n")[0] ?? "";
+    const said = p.stderr.trim().split("\n")[0] ?? "";
     throw Error(`tool failure: ${step} ${p.signal ? `was killed by ${p.signal}` : "did not run"}: ` +
       `${p.error?.message ?? (said || "no exit status")}`);
   }
   // Every wire document a step prints is valid UTF-8 (`wireText`).
-  const out = wireText(p.stdout, step);
-  const err = wireText(p.stderr, step);
+  const out = wireText(p.stdoutBytes, step);
+  const err = wireText(p.stderrBytes, step);
   return {
     code: p.status,
     out,
     detail: err.trim() || out.trim(),
   };
 }
-/** The line that ends a refusal record, written by the verifier and by the
- * producer after their refusal and nothing after it. */
-export const refusalEnd = "end of refusal";
+export { refusalEnd };
 /** A step's refusal record, without its end line, or null where the step
  * succeeded. A refusal is its exit status (the verifier's 1, the producer's
  * 2), a first line naming it (`reject: …`, `unsupported: …`) and a last line
@@ -232,13 +241,23 @@ function refusedByTypeScript(detail: string, read: () => SeenDiagnostic[]): stri
   return `reject: TypeScript refuses this code too (line ${first.start.line + 1}, col ${
     first.start.character + 1}: ${first.text.split("\n")[0]}); the pipeline follows TypeScript's types\n${detail}`;
 }
-function typeScriptErrors(file: string, tsconfigPath?: string): SeenDiagnostic[] {
-  try {
-    return clientErrors(file, tsconfigPath);
-  } catch (error) {
-    passToolFailure(error);
-    return [];
-  }
+/** The TypeScript diagnostics stage: the errors TypeScript reports for
+ * `file` in its project. Its compiler dependency observations are not
+ * recorded, so it executes without replay. */
+function typeScriptErrors(recorder: Recorder, file: string, tsconfigPath?: string): SeenDiagnostic[] {
+  return invokeInProcess({
+    stage: "diagnostics",
+    implementation: { unidentified: "the compiler's dependency observations are not recorded" },
+    inputs: [{ role: "file", bytes: file }, { role: "project", bytes: tsconfigPath ?? "" }],
+    run: () => {
+      try {
+        return clientErrors(file, tsconfigPath);
+      } catch (error) {
+        passToolFailure(error);
+        return [];
+      }
+    },
+  }, { force: false, recorder }).value;
 }
 /** The parser run in this process: its Fragment as text, or its refusal,
  * with the TypeScript errors its gate read written to `diagnostics`. */
@@ -298,10 +317,10 @@ function eligibleReads(declarations: unknown, units: Map<string, unknown[]>, cla
   });
 }
 /** Propose a document's claims, its eligible reads qualified. */
-function propose(ast: string, flow: string, reads: QualifiedRead[], qualifiedPath: string): Ran {
+function propose(recorder: Recorder, ast: string, flow: string, reads: QualifiedRead[], qualifiedPath: string): Ran {
   writeFileSync(qualifiedPath, JSON.stringify(reads.map(({ local, declaration, footprint, onThrow }) =>
     ({ local, declaration, footprint, onThrow }))));
-  return run(producerExecutable, reads.length ? [ast, flow, qualifiedPath] : [ast, flow]);
+  return runStep(producerCall(producerExecutable, reads.length ? [ast, flow, qualifiedPath] : [ast, flow]), recorder);
 }
 /**
  * The modules of the fragment, each a run of its own: its document,
@@ -317,8 +336,10 @@ class ModuleRuns {
   private readonly units = new Map<string, unknown[]>();
   private readonly proposed = new Map<string, ModuleClaims | null>();
   private readonly artifacts: string;
-  constructor(artifacts: string, fragment: unknown) {
+  private readonly recorder: Recorder;
+  constructor(recorder: Recorder, artifacts: string, fragment: unknown) {
     this.artifacts = artifacts;
+    this.recorder = recorder;
     const locations = list(field(fragment, "modules")).map((m) => field(m, "location"));
     for (const [index, m] of list(field(fragment, "modules")).entries()) {
       const location = field(m, "location");
@@ -327,7 +348,7 @@ class ModuleRuns {
         init: field(m, "init"), functions: field(m, "functions"), modules: [] };
       const ast = join(artifacts, `module-${index}.fragment.json`);
       writeFileSync(ast, JSON.stringify(doc));
-      const lowered = run(verifier, ["--lower-control-flow", ast]);
+      const lowered = runStep(verifierCall(verifier, ["--lower-control-flow", ast]), recorder);
       // A module the verifier refuses to lower is read at its declared types.
       if (verifierRefusal(lowered, "--lower-control-flow") !== null) continue;
       const flow = join(artifacts, `module-${index}.flow.json`);
@@ -355,7 +376,8 @@ class ModuleRuns {
       readsOf.set(location, reads);
       const key = `${location}\n${JSON.stringify(reads)}`;
       if (!this.proposed.has(key)) {
-        const proposed = propose(doc.ast, doc.flow, reads, join(this.artifacts, `module-${doc.index}.qualified.json`));
+        const proposed = propose(this.recorder, doc.ast, doc.flow, reads,
+          join(this.artifacts, `module-${doc.index}.qualified.json`));
         writeFileSync(join(this.artifacts, `module-${doc.index}.proposal.log`), proposed.detail);
         // A module the producer refuses is read at its declared types.
         this.proposed.set(key, producerRefusal(proposed) !== null ? null : { text: proposed.out, parsed: JSON.parse(proposed.out) });
@@ -392,6 +414,8 @@ function failedImport(detail: string): { module: string; name: string | null } |
 export function check(source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
     subtypeRounds?: number): Outcome {
   const artifacts = runDirectory("pipeline-");
+  // Every stage invocation's attempt, in order (`stages.mts`).
+  const recorder = new Recorder(join(artifacts, invocationLog));
   let phase: Phase = "source";
   try {
     if (subtypeRounds !== undefined && (!Number.isSafeInteger(subtypeRounds) || subtypeRounds < 0))
@@ -415,12 +439,20 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
     // The TypeScript errors the parser's gate read are kept beside its log,
     // accepted or not: they are where a refusal over one of them points.
     const diagnostics = join(artifacts, "typescript-diagnostics.json");
-    const parsed = parsedHere(diagnostics, (seen) =>
-      parseFile(snapshot, false, tsconfigPath, tsconfigPath ? resolve(source) : snapshot, seen));
+    const resolution = tsconfigPath ? resolve(source) : snapshot;
+    // The parse stage: its filesystem observations are not recorded, so it
+    // executes without replay.
+    const parsed = invokeInProcess({
+      stage: "parse",
+      implementation: { unidentified: "the parse's filesystem observations are not recorded" },
+      inputs: [{ role: "source", bytes }, { role: "file", bytes: snapshot }, { role: "resolution", bytes: resolution },
+        { role: "project", bytes: tsconfigPath ?? "" }],
+      run: () => parsedHere(diagnostics, (seen) => parseFile(snapshot, false, tsconfigPath, resolution, seen)),
+    }, { force: false, recorder }).value;
     writeFileSync(join(artifacts, "parse.log"), parsed.detail);
     const refusedErrors = () =>
       typescriptErrors
-        ? typeScriptErrors(tsconfigPath ? resolve(source) : snapshot, tsconfigPath)
+        ? typeScriptErrors(recorder, resolution, tsconfigPath)
         : [];
     if (parsed.code !== 0)
       return parsed.detail.startsWith("gate:")
@@ -458,7 +490,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
       return [s.pos[0], s.pos[1]];
     });
     const flow = join(artifacts, "flow.json");
-    const lowered = run(verifier, ["--lower-control-flow", ast]);
+    const lowered = runStep(verifierCall(verifier, ["--lower-control-flow", ast]), recorder);
     writeFileSync(join(artifacts, "flow.log"), lowered.detail);
     const loweringRefusal = verifierRefusal(lowered, "--lower-control-flow");
     if (loweringRefusal !== null)
@@ -468,7 +500,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
     // Certified imports: each module's claims, and the reads they may
     // qualify. A read the search or the check refuses, or a module run it
     // refuses, is withdrawn, and the documents proposed again without it.
-    const modules = new ModuleRuns(artifacts, parsedData);
+    const modules = new ModuleRuns(recorder, artifacts, parsedData);
     const withdrawn = new Set<string>();
     const claims = join(artifacts, "claims.json"),
       evidence = join(artifacts, "evidence.json");
@@ -478,25 +510,26 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
     for (;;) {
       phase = "proposal";
       const { claims: moduleClaims, readsOf, reads } = modules.claims(field(parsedData, "declarations"), withdrawn);
-      const proposed = propose(ast, flow, reads, join(artifacts, "qualified.json"));
+      const proposed = propose(recorder, ast, flow, reads, join(artifacts, "qualified.json"));
       writeFileSync(join(artifacts, "proposal.log"), proposed.detail);
       const proposalRefusal = producerRefusal(proposed);
       if (proposalRefusal !== null)
         return { status: "unsupported", artifacts, phase, detail: refusedByTypeScript(proposalRefusal, refusedErrors) };
       // The importer's claims, its `modules` the claims of each module a read
-      // qualifies, directly or through a module's reads, spliced as text: a
-      // bigint literal's digits pass through unrounded.
-      const marker = '"modules":[]';
-      const at = proposed.out.lastIndexOf(marker);
-      if (at < 0) throw Error("the producer's claims state no modules");
+      // qualifies, directly or through a module's reads.
       const used = readClosure(reads, readsOf).flatMap((m) => {
         const text = moduleClaims.get(m)?.text;
         return text === undefined ? [] : [text];
       });
-      writeFileSync(claims, proposed.out.slice(0, at) + `"modules":[${used.join(",")}]` +
-        proposed.out.slice(at + marker.length));
+      const assembled = invokeInProcess({
+        stage: "assemble",
+        implementation: { modules: [assembly] },
+        inputs: [{ role: "proposal", bytes: proposed.out }, ...used.map((text, i) => ({ role: `module-${i}`, bytes: text }))],
+        run: () => assembleClaims(proposed.out, used),
+      }, { force: false, recorder }).value;
+      writeFileSync(claims, assembled);
       phase = "search";
-      produced = run(verifier, [
+      produced = runStep(verifierCall(verifier, [
         ...budget,
         "--produce-source-claims",
         ast,
@@ -504,7 +537,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
         snapshot,
         evidence,
         String(searchDepth),
-      ]);
+      ]), recorder);
       searchRefusal = verifierRefusal(produced, "--produce-source-claims");
       const failed = searchRefusal !== null ? failedImport(searchRefusal) : null;
       if (!failed) break;
@@ -519,18 +552,18 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
         artifacts,
         phase,
         detail: refusedByName(namingTheObligation(searchRefusal, bytes.toString("utf8")),
-          () => readExplanations(run(producerExecutable, ["--explain", ast, flow])),
+          () => readExplanations(runStep(producerCall(producerExecutable, ["--explain", ast, flow]), recorder)),
           refusedErrors),
       };
     phase = "check";
-    const checked = run(verifier, [
+    const checked = runStep(verifierCall(verifier, [
       ...budget,
       "--check-source-claims",
       ast,
       claims,
       snapshot,
       evidence,
-    ]);
+    ]), recorder);
     writeFileSync(join(artifacts, "check.log"), checked.detail);
     const checkRefusal = verifierRefusal(checked, "--check-source-claims");
     if (checkRefusal !== null)
