@@ -21,6 +21,7 @@ make semantic-diff REV=rev          # render the commit records of a commit or r
 make build       # build-lean and build-producer: the Lean verifier and the OCaml producer
 make setup       # the node dependencies
 make clean-store # remove the stage store's entries
+make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of a directory's functions
 ```
 
 ### The stage store
@@ -75,7 +76,19 @@ The census of the front end's own functions (each top-level function of
 merge, and its movement is recorded then. A branch runs no census, over
 `tools/` or over a file. To show a change does what it is for, it runs the
 slice of the function the change targets and one slice depending on it,
-before and after. A branch is ready to merge when `make test` and
+before and after (`make census FILES=f.mts FUNCTIONS=fn,other`).
+
+[`dev/census.mts`](dev/census.mts) writes a census record per run (each
+slice's outcome and its stage invocations with their timings) and prints
+its path. `SHARD=i/n` runs every n-th slice from the i-th, so n processes
+or agents split a census and share the stage store; a later run replays
+what an earlier one computed. `node dev/census.mts report <before>
+<after>` compares two censuses, each one record or its shards' records
+separated by commas: slices gained and lost, timeouts, changed outcomes
+and each stage's time. A census rerun with a longer `TSCERT_STEP_LIMIT`
+executes the stages that timed out again and replays the finished ones.
+
+A branch is ready to merge when `make test` and
 `make suite` pass and its review is done, and reports as soon as its suites
 pass. A small, local fix whose output is unchanged (an untrusted
 search's speed, a diagnostic's wording) merges on green suites without a

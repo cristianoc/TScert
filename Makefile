@@ -5,7 +5,7 @@ OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
 .PHONY: help setup build build-lean build-producer test suite cases check lowering compiler-api-shapes semantic-diff fmt \
-  check-fmt setup-git-hooks clean-store
+  check-fmt setup-git-hooks clean-store census
 
 help: ## list the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | expand -t 16
@@ -38,6 +38,9 @@ check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir]
 
 clean-store: ## remove the stage store's entries (TSCERT_STAGE_STORE, by default ~/.cache/tscert/stages)
 	node pipeline/stages.mts clean
+
+census: ## the census of a directory's functions: DIR=tools, FILES=a.mts,…, FUNCTIONS=f,…, SHARD=i/n; a record per run
+	node dev/census.mts --dir $(or $(DIR),tools) $(if $(FILES),--files $(FILES)) $(if $(FUNCTIONS),--functions $(FUNCTIONS)) $(if $(SHARD),--shard $(SHARD))
 
 lowering: ## the program graph a source lowers to: FILE=path.ts [FN=function]
 	node dev/lowering-dump.mts $(FILE) $(FN)

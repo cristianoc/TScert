@@ -431,6 +431,9 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
   const artifacts = runDirectory("pipeline-");
   // Every stage invocation's attempt, in order (`stages.mts`).
   const recorder = new Recorder(join(artifacts, invocationLog));
+  // What the run was asked, for a caller finding it in the run root after
+  // its worker died (`dev/census.mts`).
+  writeFileSync(join(artifacts, "request.json"), JSON.stringify({ source: resolve(source), project: tsconfigPath ?? null }));
   let phase: Phase = "source";
   try {
     if (subtypeRounds !== undefined && (!Number.isSafeInteger(subtypeRounds) || subtypeRounds < 0))
