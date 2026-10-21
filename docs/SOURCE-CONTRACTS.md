@@ -312,19 +312,16 @@ is erased by TypeScript's emit: the statement has no execution, and it
 binds a type name over its whole block, before and after it, as a
 module-level declaration binds one over the module. Its equation is read by
 the readers every declaration's is, lifted over the type parameters it
-closes over: $`\vec X`$, every enclosing type parameter TypeScript resolves
-at the declaration's block (each spelling the innermost binder of that
-name; a parameter a nearer type declaration of the same name hides is not
-one), outermost first, then its own $`\vec Y`$. The lifting is
-conservative: $`\vec X`$ holds every visible binder, whether the equation
-names it or not, so the refusals below apply to a block type that names
-none of them too. The captured arguments are equation arguments: the unit
-whose binders they are still owns them
-([generic methods](#generic-methods)).
+closes over: $`\vec X`$, the enclosing type parameters its equation names,
+directly or through a block type it names, each one TypeScript resolves at
+the declaration's block (a parameter a nearer declaration of the same
+spelling hides there is not one), outermost first, then its own
+$`\vec Y`$. The captured arguments are equation arguments: the unit whose
+binders they are still owns them ([generic methods](#generic-methods)).
 
 ```math
 \frac{\mathtt{type}\ L\langle\vec Y\rangle=\tau\ \text{declared in a block}\quad
-      \vec X\ \text{the enclosing type parameters resolved at that block}}
+      \vec X\ \text{the enclosing type parameters}\ \tau\ \text{names, resolved at that block}}
      {L(\vec X,\vec Y)=⟦\tau⟧}\ \textsf{block-type}
 \qquad
 \frac{\Gamma\vdash_R S}{\Gamma\vdash_R\ \mathtt{type}\ L\langle\vec Y\rangle=\tau;\ S}\ \textsf{type-statement}
@@ -346,9 +343,11 @@ that spelling to at the reference:
 ```
 
 A reference where a nearer binder hides an $`X_i`$ is refused, since no
-argument there denotes $`X_i`$ (`block-type-hidden-binder-refused`); so is
-a contextual type TypeScript states at a block type closing over a binder,
-whose alias arguments state only $`\vec\sigma`$. Every reader of an
+argument there denotes $`X_i`$ (`block-type-hidden-binder-refused`), as is
+a block type naming another whose captured binder a nearer declaration
+hides at its own block; so is a contextual type TypeScript states at a
+block type closing over a binder, whose alias arguments state only
+$`\vec\sigma`$. Every reader of an
 application completes its arguments through the one completion
 (`completeArguments`), which takes the captured arguments from its
 reader's scope (a binder at a use, the declaration's own captured position

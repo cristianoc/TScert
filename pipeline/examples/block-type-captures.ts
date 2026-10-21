@@ -47,3 +47,11 @@ function nested<T>(value: T): T[] {
   };
   return twice(0).first;
 }
+
+// A block type naming no binder closes over none: the rest pack `T` is no
+// argument of it.
+function packed<T extends unknown[]>(...args: T): number {
+  type Count = number;
+  const count: Count = args.length;
+  return count;
+}

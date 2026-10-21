@@ -1723,23 +1723,56 @@ export function collectDeclarations(file: string, options: {
     // together, as TypeScript merges them: each position's name from the
     // declaration binding the longest list, its bound and default from a
     // declaration stating them (TypeScript requires those to agree).
-    // A type declared in a block closes over every enclosing type parameter
-    // TypeScript resolves at that block, outermost first: they come first
-    // among its parameters, each argument the binder itself, which needs
-    // no bound (SOURCE-CONTRACTS.md, "Block-scoped type declarations").
-    const sameNode = (a: Node, b: Node): boolean => a.kind === b.kind && a.pos === b.pos && a.end === b.end &&
-      a.getSourceFile().fileName === b.getSourceFile().fileName;
+    // A type declared in a block closes over the enclosing type parameters
+    // its equation names, directly or through another block's type, each
+    // one TypeScript resolves at its block, outermost first: they come
+    // first among its parameters, each argument the binder itself, which
+    // needs no bound (SOURCE-CONTRACTS.md, "Block-scoped type declarations").
+    const nodeKey = (n: Node): string => `${n.getSourceFile().fileName}:${n.kind}:${n.pos}:${n.end}`;
+    const sameNode = (a: Node, b: Node): boolean => nodeKey(a) === nodeKey(b);
     const resolvesTo = (parameter: ts.TypeParameterDeclaration, at: Node): boolean =>
       (checker.resolveName(parameter.name.text, SymbolFlags.Type, at, false)?.declarations ?? [])
         .some(d => { const n = d.resolve(); return !!n && sameNode(n, parameter); });
+    const inBlock = (declaration: Node): boolean => {
+      const block = declaration.parent;
+      return isTypeDeclaration(declaration) && !!block && !ts.isSourceFile(block) && !ts.isModuleBlock(block);
+    };
+    // The type parameters a block's type names, through the block types it
+    // names too, by node key.
+    const mentioned = (declaration: Node, found: Set<string>, seen: Set<string>): void => {
+      const name = nameOf(declaration);
+      const parts = name && ts.isIdentifier(name) ? typeDeclarationsOf(name).filter(isTypeDeclaration) : [declaration];
+      for (const part of parts) {
+        if (seen.has(nodeKey(part))) continue;
+        seen.add(nodeKey(part));
+        const visit = (n: Node): void => {
+          const spelled = ts.isTypeReferenceNode(n) ? n.typeName
+            : ts.isExpressionWithTypeArguments(n) ? n.expression : null;
+          if (spelled && ts.isIdentifier(spelled))
+            for (const d of typeDeclarationsOf(spelled)) {
+              if (ts.isTypeParameterDeclaration(d)) found.add(nodeKey(d));
+              else if (inBlock(d)) mentioned(d, found, seen);
+            }
+          n.forEachChild(visit);
+        };
+        visit(part);
+      }
+    };
+    const captures = new Map<string, ts.TypeParameterDeclaration[]>();
     const capturedOf = (declaration: Node): ts.TypeParameterDeclaration[] => {
       const block = declaration.parent;
-      if (!isTypeDeclaration(declaration) || !block || ts.isSourceFile(block) || ts.isModuleBlock(block)) return [];
+      if (!inBlock(declaration) || !block) return [];
+      const known = captures.get(nodeKey(declaration));
+      if (known) return known;
+      const found = new Set<string>();
+      mentioned(declaration, found, new Set());
       const groups: ts.TypeParameterDeclaration[][] = [];
       for (let at: Node | undefined = block; at; at = at.parent)
-        groups.unshift(childrenOf(at, "typeParameters")
-          .filter((p): p is ts.TypeParameterDeclaration => ts.isTypeParameterDeclaration(p) && resolvesTo(p, block)));
-      return groups.flat();
+        groups.unshift(childrenOf(at, "typeParameters").filter((p): p is ts.TypeParameterDeclaration =>
+          ts.isTypeParameterDeclaration(p) && found.has(nodeKey(p)) && resolvesTo(p, block)));
+      const result = groups.flat();
+      captures.set(nodeKey(declaration), result);
+      return result;
     };
     const parametersOf = (declaration: Node): MergedParameter[] => {
       const name = nameOf(declaration);
