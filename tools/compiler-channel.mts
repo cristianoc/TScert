@@ -9,8 +9,13 @@
  * Every request's failure, whatever it raised (a reply the compiler sent as
  * an error, a panic, a transport or native I/O failure, a stack exhaustion
  * before or after the request was written), is thrown as a `CompilerFailure`,
- * so a catch elsewhere cannot read it as a refusal (`toolFailureOf`). */
+ * so a catch elsewhere cannot read it as a refusal (`toolFailureOf`); a
+ * failure of a file-system query the front end answered for it is thrown as
+ * that query's `IoFailure`. */
+import { userInfo } from "node:os";
+import { join } from "node:path";
 import { API } from "typescript/unstable/sync";
+import { compilerFileSystem, findPackage, installed, privateLauncher, takeQueryFailure, treeDigest, unobservable } from "./files.mts";
 import { CompilerFailure, fieldOf, messageOf, toolFailureOf } from "./thrown.mts";
 
 /** The compiler process, as the client's channel holds it. */
@@ -65,9 +70,13 @@ function guard(client: PrivateClient): void {
     if (!isRequest(original)) throw Error(`the compiler package's private shape changed: API.client.${member} (compiler-channel.mts)`);
     const named = member === "apiRequest" || member === "apiRequestBinary";
     return function (this: unknown, ...args: unknown[]): unknown {
+      takeQueryFailure();
       try {
         return original.call(this, ...args);
       } catch (error) {
+        // A file-system query the front end answered failed: that failure.
+        const query = takeQueryFailure();
+        if (query !== null) throw query;
         throw error instanceof CompilerFailure ? error : new CompilerFailure(named ? String(args[0]) : member, error);
       }
     };
@@ -87,6 +96,122 @@ export function openCompiler(options: ConstructorParameters<typeof API>[0]): API
   }
   guard(privateClient(api));
   return api;
+}
+
+/* The front end's compiler (DESIGN.md, "Observed stages"): every file-system
+ * query the API delegates is answered by `files.mts`, and the process runs
+ * where it can read no other file of the user's. */
+
+/** The installation the front end loads, the package `typescript` its own
+ * `node_modules` holds (or a test's, `useInstallationForTests`), and its
+ * executable, the platform package's `lib/tsc` as the package's
+ * `getExePath` finds it: real paths, or why there is none. */
+type Installation = { package: string; executablePackage: string; executable: string } | { missing: string };
+function locate(from: string): Installation {
+  const at = findPackage("typescript", from);
+  if (at === null) return { missing: `the package typescript is not installed for ${from}` };
+  const platformPackage = findPackage(`@typescript/typescript-${process.platform}-${process.arch}`, at);
+  if (platformPackage === null) return { missing: `typescript has no executable for ${process.platform}-${process.arch}` };
+  const executable = join(platformPackage, "lib", "tsc");
+  return installed(executable) ? { package: at, executablePackage: platformPackage, executable }
+    : { missing: `${executable} is not installed` };
+}
+
+/** The sandbox profile of the compiler installed in `executablePackage`,
+ * launched by `launcher` in the empty directory `directory`: any read or
+ * existence test of a path outside the system volume, the installation, the
+ * launcher and the directory kills it, but three probes of system libraries,
+ * which are denied. The sandbox matches a path as it is named: each of the
+ * three is allowed under its real path and under the system's own link to
+ * it (`/var`, `/tmp` and `/etc` link into `/private`). */
+const quote = (path: string): string => `"${path.replace(/[\\"]/g, (c) => `\\${c}`)}"`;
+const named = (path: string): string[] => [...new Set([path, path.replace(/^\/private\/(var|tmp|etc)\//, "/$1/")])];
+function profile(executablePackage: string, launcher: string, directory: string, home: string): string {
+  const probes = `(literal ${quote(join(home, ".CFUserTextEncoding"))}) (subpath "/AppleInternal") ` +
+    `(subpath "/Library/Preferences/Logging")`;
+  const own = [...named(executablePackage).map((p) => `(subpath ${quote(p)})`),
+    ...[launcher, directory].flatMap(named).map((p) => `(literal ${quote(p)})`)].join(" ");
+  return [
+    "(version 1)",
+    "(allow default)",
+    "(deny file-read* file-test-existence",
+    "  (require-not (require-any",
+    `    (literal "/") (literal "/var") (literal "/tmp") (literal "/etc") (subpath "/System") (subpath "/usr/lib") (subpath "/dev")`,
+    `    ${probes}`,
+    `    ${own}))`,
+    "  (with send-signal SIGKILL))",
+    `(deny file-read* file-test-existence (regex #"^/System/Volumes/Data/") (with send-signal SIGKILL))`,
+    `(deny file-read* file-test-existence ${probes})`,
+  ].join("\n");
+}
+const shellQuoted = (text: string): string => `'${text.replace(/'/g, `'\\''`)}'`;
+/** The case sensitivity of the executable's file system, as the compiler
+ * probes it: whether the executable's path with each letter's case swapped
+ * names nothing. */
+const swapCase = (text: string): string =>
+  [...text].map((c) => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase()).join("");
+
+/** The compiler's identity, captured when this module loads: its
+ * installation's files, its executable's path, its file system's case
+ * sensitivity and its sandbox profile (with the process's own paths left
+ * out), and whether it differs from disk now; or why the compiler's reads
+ * are not all observed. */
+export type CompilerImplementation =
+  { identity: { [field: string]: string | boolean }; changed: () => boolean } | { unobserved: string };
+function identify(at: Installation): { identity: { [field: string]: string | boolean } } | { unobserved: string } {
+  if ("missing" in at) return { unobserved: at.missing };
+  if (process.platform !== "darwin" || !installed("/usr/bin/sandbox-exec"))
+    return { unobserved: "the compiler's own reads are confined on macOS only (sandbox-exec)" };
+  const packageDigest = treeDigest(at.package), executableDigest = treeDigest(at.executablePackage);
+  if (packageDigest === null || executableDigest === null) return { unobserved: "the compiler's installation is missing" };
+  return { identity: { executable: at.executable, packagePath: at.package, package: packageDigest, executablePackage: executableDigest,
+    caseSensitive: !installed(swapCase(at.executable)),
+    profile: profile(at.executablePackage, "<launcher>", "<directory>", userInfo().homedir) } };
+}
+/** The installation in use, its implementation and its launcher. */
+type Current = { installation: Installation; implementation: CompilerImplementation; launcher: string | null };
+function current(from: string): Current {
+  const installation = locate(from);
+  const identified = identify(installation);
+  return { installation, launcher: null, implementation: "unobserved" in identified ? identified
+    : { identity: identified.identity,
+      changed: (): boolean => JSON.stringify(identify(locate(from))) !== JSON.stringify(identified) } };
+}
+let using: Current = current(import.meta.dirname);
+/** The compiler's implementation, as this process loaded it. */
+export const compilerImplementation = (): CompilerImplementation => using.implementation;
+/** Tests only: the compiler installed in the `node_modules` of `directory`
+ * from now on, or the front end's own for null. */
+export function useInstallationForTests(directory: string | null): void {
+  using = current(directory ?? import.meta.dirname);
+}
+
+/** The launcher of the confined compiler, made once per installation. */
+function launcher(): string | null {
+  const { installation, implementation } = using;
+  if ("unobserved" in implementation || "missing" in installation) return null;
+  const { executable, executablePackage } = installation;
+  using.launcher ??= privateLauncher((directory, script) => [
+    "#!/bin/sh",
+    `cd ${shellQuoted(directory)} || exit 70`,
+    `exec /usr/bin/env -i PWD=${shellQuoted(directory)} /usr/bin/sandbox-exec -p ${
+      shellQuoted(profile(executablePackage, script, directory, userInfo().homedir))} ${shellQuoted(executable)} "$@"`,
+    "",
+  ].join("\n")).launcher;
+  return using.launcher;
+}
+/** Tests only: the launcher of the confined compiler, or null. */
+export const launcherForTests = (): string | null => launcher();
+
+/** The front end's compiler, its working directory `cwd`: the texts of
+ * `overlay` at their paths, every other file-system query an observation,
+ * and, where it can be, the process confined to them. */
+export function openFrontEndCompiler(cwd: string, overlay: ReadonlyMap<string, string>): API {
+  const confined = launcher();
+  const { installation, implementation } = using;
+  if (confined === null && "unobserved" in implementation) unobservable(implementation.unobserved);
+  return openCompiler({ cwd, fs: compilerFileSystem(overlay, "missing" in installation ? null : installation.executablePackage),
+    ...(confined ? { tsserverPath: confined } : {}) });
 }
 
 /** The compiler process of an API, for a test that waits for its end. */

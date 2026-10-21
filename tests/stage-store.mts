@@ -6,7 +6,7 @@
 // pipeline's own stages replay in `pipeline/test.mts`.
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, readSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, readSync, symlinkSync, writeFileSync } from "node:fs";
 import { platform } from "node:os";
 import { join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
@@ -454,8 +454,10 @@ if (platform() === "darwin") {
   assert.notEqual(canonical(relinked), canonical(changed), "relink follows current dependency closure");
 }
 {
-  const copied = join(dir, "loaded-copy");
-  mkdirSync(copied);
+  // A copy of the pipeline's modules beside the front end they import.
+  const copied = join(dir, "loaded-copy", "pipeline");
+  mkdirSync(copied, { recursive: true });
+  symlinkSync(resolve(import.meta.dirname, "../tools"), join(dir, "loaded-copy", "tools"));
   for (const name of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts"])
     copyFileSync(resolve(import.meta.dirname, "../pipeline", name), join(copied, name));
   const driver = join(copied, "test.mts");

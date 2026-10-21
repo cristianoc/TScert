@@ -39,9 +39,9 @@ import { makeProbe, type MergedParameter, type ProbeProgram } from "./type-probe
 import { emptyEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 // files.mts makes every file-system failure a tool failure.
-import { orAbsent, readText, realPath } from "./files.mts";
+import { orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
-import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
+import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -138,10 +138,7 @@ export function tsconfigOf(path: string): string {
 function withProject<T>(file: string, tsconfigPath: string | undefined,
   use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
   const overlay = new Map<string, string>();
-  const api = openCompiler({ cwd: dirname(file), fs: {
-    readFile: name => overlay.get(name),
-    fileExists: name => (overlay.has(name) ? true : undefined),
-  } });
+  const api = openFrontEndCompiler(dirname(file), overlay);
   // The files the last probe replaced, read from disk again by the next. The
   // compiler keeps an open file's text over its changes: the client, open
   // for the graph's program, is closed for the probes'.
@@ -3753,12 +3750,13 @@ function globalFunction(checker: Checker, name: string, uses: readonly Identifie
  * holding a `package.json` that names it (`@types/node`), or the project
  * (`project`). A reviewed entry admits one origin, so an identically spelled
  * declaration from another is no declaration it reviews. */
-const origins = new Map<string, string>();
+const origins = new Map<string, Remembered<string>>();
 function declarationOrigin(file: SourceFile, libraryFile: (file: SourceFile) => boolean): string {
   if (libraryFile(file)) return "library";
   const path = realPath(file.fileName);
-  const known = origins.get(path);
-  if (known) return known;
+  return remembered(origins, path, () => originOf(path));
+}
+function originOf(path: string): string {
   const parts = path.split(sep);
   const at = parts.lastIndexOf("node_modules");
   const scope = parts[at + 1] ?? "";
@@ -3772,7 +3770,6 @@ function declarationOrigin(file: SourceFile, libraryFile: (file: SourceFile) => 
     const manifest: unknown = text === null ? null : JSON.parse(text);
     if (manifest && typeof manifest === "object" && "name" in manifest && manifest.name === name) origin = name;
   }
-  origins.set(path, origin);
   return origin;
 }
 

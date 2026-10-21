@@ -19,9 +19,8 @@ import { type API, SymbolFlags, type Checker, type Project } from "typescript/un
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, Expression, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, ParameterDeclaration, SourceFile, Statement, TypeAliasDeclaration, TypeParameterDeclaration, VariableStatement, TypeNode } from "typescript/unstable/ast";
 import { createHash } from "node:crypto";
-import { writeFileSync } from "node:fs";
 // files.mts makes every file-system failure a tool failure.
-import { readText } from "./files.mts";
+import { readText, writeText } from "./files.mts";
 import { dirname, resolve } from "node:path";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, substitute, typeTerm, visitType, type MappedMember, type TermScope } from "./type-term.mts";
@@ -38,7 +37,7 @@ import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, 
   type LibraryType, type SeenDiagnostic }
   from "./declaration-graph.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
-import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
+import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
 import { asyncCompleteName, asyncReturnName, awaitName, enumMembersTerm, forInName, iterateForInName, iterateName, literalTerm,
   throwUninitializedName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { isDispatchMethod } from "./regexp.mts";
@@ -72,13 +71,7 @@ const opened = new Set<string>();
  * needs the same project (and the same compiler process) the gate used.
  */
 function projectFor(absolute: string): Project {
-  compiler ??= openCompiler({
-    cwd: dirname(absolute),
-    fs: {
-      readFile: (name) => contents.get(name),
-      fileExists: (name) => (contents.has(name) ? true : undefined),
-    },
-  });
+  compiler ??= openFrontEndCompiler(dirname(absolute), contents);
   // A file the compiler already holds is re-read rather than reused: the text
   // for a path can change between two opens in one process, and reusing the
   // first tree would leave every span pointing into a file that is no longer
@@ -2059,6 +2052,6 @@ if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
     process.exitCode = 1;
   } finally {
     const out = options.get("--typescript-diagnostics");
-    if (out) writeFileSync(out, JSON.stringify(seen, null, 1) + "\n");
+    if (out) writeText(out, JSON.stringify(seen, null, 1) + "\n");
   }
 }

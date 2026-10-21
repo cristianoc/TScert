@@ -5,8 +5,11 @@ import { availableParallelism } from "node:os";
 import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 // ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.
-import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
-import { clientErrors, tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
+import { close as closeParser } from "../tools/fragment-parse.mts";
+import { diagnosticsCodec, diagnosticsStage, observedImplementation, parseStage, parsedCodec, type Parsed } from "./parse-stage.mts";
+import { processInconsistency, processRetirement } from "../tools/files.mts";
+import { activeFamilies } from "../tools/family-activation.mts";
+import { tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
 import { fieldOf, messageOf, passToolFailure } from "../tools/thrown.mts";
@@ -255,34 +258,16 @@ function refusedByTypeScript(detail: string, read: () => SeenDiagnostic[]): stri
     first.start.character + 1}: ${first.text.split("\n")[0]}); the pipeline follows TypeScript's types\n${detail}`;
 }
 /** The TypeScript diagnostics stage: the errors TypeScript reports for
- * `file` in its project. Its compiler dependency observations are not
- * recorded, so it executes without replay. */
-function typeScriptErrors(recorder: Recorder, file: string, tsconfigPath?: string): SeenDiagnostic[] {
+ * `file` in its project, an observed stage. */
+export function typeScriptErrors(recorder: Recorder, file: string, tsconfigPath?: string): SeenDiagnostic[] {
   return invokeInProcess({
     stage: "diagnostics",
-    implementation: { unidentified: "the compiler's dependency observations are not recorded" },
+    implementation: observedImplementation,
     inputs: [{ role: "file", bytes: file }, { role: "project", bytes: tsconfigPath ?? "" }],
-    run: () => {
-      try {
-        return clientErrors(file, tsconfigPath);
-      } catch (error) {
-        passToolFailure(error);
-        return [];
-      }
-    },
+    run: () => diagnosticsStage(file, tsconfigPath),
+    codec: diagnosticsCodec,
+    observed: true,
   }, { force: false, recorder }).value;
-}
-/** The parser run in this process: its Fragment as text, or its refusal,
- * with the TypeScript errors its gate read written to `diagnostics`. */
-function parsedHere(diagnostics: string, parse: (seen: (d: SeenDiagnostic) => void) => Ast): Ran {
-  const seen: SeenDiagnostic[] = [];
-  try {
-    return { code: 0, out: JSON.stringify(parse((d) => seen.push(d))), detail: "" };
-  } catch (error) {
-    return { code: 1, out: "", detail: messageOf(error) };
-  } finally {
-    writeFileSync(diagnostics, JSON.stringify(seen, null, 1) + "\n");
-  }
 }
 /** A field of a parsed document, `undefined` where it has none. */
 const field = (value: unknown, key: string): unknown => fieldOf(value, key);
@@ -422,6 +407,48 @@ function failedImport(detail: string): { module: string; name: string | null } |
   return run?.[1] ? { module: run[1], name: null } : null;
 }
 
+/** The parse stage of `source`, read in the project `tsconfigPath` (or a
+ * snapshot's own), its log and the TypeScript errors its gate read written
+ * under `artifacts`: the parse, the source's bytes, the snapshot it parsed and the file its
+ * imports resolve as. */
+export function parseSource(source: string, tsconfigPath: string | undefined, artifacts: string, recorder: Recorder):
+    { parsed: Parsed; bytes: Buffer; snapshot: string; resolution: string } {
+  // Parse a snapshot, not a path whose contents may change during verification.
+  const bytes = readFileSync(resolve(source));
+  const configuration = Buffer.from(JSON.stringify({
+    compilerOptions: { strict: true, noEmit: true, target: "es2022" },
+    files: ["source.ts", resolvableDeclaration],
+  }));
+  writeFileSync(join(artifacts, "source.ts"), bytes);
+  writeFileSync(join(artifacts, "tsconfig.json"), configuration);
+  // The snapshot's path is the Fragment's file identity, which every later
+  // stage's input embeds: with the store, it is a stable location named by
+  // the snapshot's and its configuration's contents, the same in every run.
+  const snapshot = join(currentStore()?.stableDirectory("sources", [["source.ts", bytes],
+    ["tsconfig.json", configuration]]) ?? artifacts, "source.ts");
+  // A caller may name the TypeScript project the source belongs to. The
+  // snapshot is parsed, and TypeScript resolves its imports as the original
+  // file in that project; the parser requires both to have the same bytes.
+  // The producer and verifier still decide whether they can interpret the
+  // declarations reached.
+  const resolution = tsconfigPath ? resolve(source) : snapshot;
+  // The parse stage, an observed stage.
+  const parsed = invokeInProcess({
+    stage: "parse",
+    implementation: observedImplementation,
+    inputs: [{ role: "source", bytes }, { role: "file", bytes: snapshot }, { role: "resolution", bytes: resolution },
+      { role: "project", bytes: tsconfigPath ?? "" }, { role: "families", bytes: JSON.stringify(activeFamilies()) }],
+    run: () => parseStage(snapshot, tsconfigPath, resolution),
+    codec: parsedCodec,
+    observed: true,
+  }, { force: false, recorder }).value;
+  // The TypeScript errors the parser's gate read are kept beside its log,
+  // accepted or not: they are where a refusal over one of them points.
+  writeFileSync(join(artifacts, "typescript-diagnostics.json"), JSON.stringify(parsed.seen, null, 1) + "\n");
+  writeFileSync(join(artifacts, "parse.log"), parsed.detail);
+  return { parsed, bytes, snapshot, resolution };
+}
+
 /** Acceptance is deliberately private to this module. A proposal alone cannot
  * construct the public verified outcome: both Lean phases must succeed. */
 export function check(source: string, tsconfigPath?: string, typescriptErrors: boolean = false,
@@ -436,38 +463,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
   try {
     if (subtypeRounds !== undefined && (!Number.isSafeInteger(subtypeRounds) || subtypeRounds < 0))
       throw Error("subtype rounds must be a natural number");
-    // Parse a snapshot, not a path whose contents may change during verification.
-    const bytes = readFileSync(resolve(source));
-    const configuration = Buffer.from(JSON.stringify({
-      compilerOptions: { strict: true, noEmit: true, target: "es2022" },
-      files: ["source.ts", resolvableDeclaration],
-    }));
-    writeFileSync(join(artifacts, "source.ts"), bytes);
-    writeFileSync(join(artifacts, "tsconfig.json"), configuration);
-    // The snapshot's path is the Fragment's file identity, which every later
-    // stage's input embeds: with the store, it is a stable location named by
-    // the snapshot's and its configuration's contents, the same in every run.
-    const snapshot = join(currentStore()?.stableDirectory("sources", [["source.ts", bytes],
-      ["tsconfig.json", configuration]]) ?? artifacts, "source.ts");
-    // A caller may name the TypeScript project the source belongs to. The
-    // snapshot is parsed, and TypeScript resolves its imports as the original
-    // file in that project; the parser requires both to have the same bytes.
-    // The producer and verifier still decide whether they can interpret the
-    // declarations reached.
-    // The TypeScript errors the parser's gate read are kept beside its log,
-    // accepted or not: they are where a refusal over one of them points.
-    const diagnostics = join(artifacts, "typescript-diagnostics.json");
-    const resolution = tsconfigPath ? resolve(source) : snapshot;
-    // The parse stage: its filesystem observations are not recorded, so it
-    // executes without replay.
-    const parsed = invokeInProcess({
-      stage: "parse",
-      implementation: { unidentified: "the parse's filesystem observations are not recorded" },
-      inputs: [{ role: "source", bytes }, { role: "file", bytes: snapshot }, { role: "resolution", bytes: resolution },
-        { role: "project", bytes: tsconfigPath ?? "" }],
-      run: () => parsedHere(diagnostics, (seen) => parseFile(snapshot, false, tsconfigPath, resolution, seen)),
-    }, { force: false, recorder }).value;
-    writeFileSync(join(artifacts, "parse.log"), parsed.detail);
+    const { parsed, bytes, snapshot, resolution } = parseSource(source, tsconfigPath, artifacts, recorder);
     const refusedErrors = () =>
       typescriptErrors
         ? typeScriptErrors(recorder, resolution, tsconfigPath)
@@ -637,6 +633,10 @@ const checkTimeoutMs = 4 * stepTimeoutMs;
 type Job = { request: Request; done: (o: Outcome) => void; fail: (e: Error) => void };
 const queue: Job[] = [];
 const idle: ChildProcess[] = [];
+/** The workers that answer their current check and exit: their caches may
+ * disagree with the file system (DESIGN.md, "Observed stages"). */
+const retiring = new WeakSet<ChildProcess>();
+const retiringMessage = "retiring";
 const logs = new Map<ChildProcess, string>();
 let workers: number = 0;
 /** Give queued checks to idle workers, starting one per core at most. An idle
@@ -678,10 +678,18 @@ function give(worker: ChildProcess, job: Job): void {
     worker.off("exit", died);
     finish();
   };
-  const answered = (message: unknown) => settle(() => {
+  const answered = (message: unknown) => {
+    // A worker retiring says so before its outcome, and takes no more checks.
+    if (message === retiringMessage) {
+      retiring.add(worker);
+      return;
+    }
+    finished(message);
+  };
+  const finished = (message: unknown) => settle(() => {
     worker.unref();
     worker.channel?.unref();
-    idle.push(worker);
+    if (!retiring.has(worker)) idle.push(worker);
     try {
       job.done(readOutcome(message));
     } catch (error) {
@@ -721,7 +729,14 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
       process.stderr.write(messageOf(error) + "\n");
       process.exit(1);
     }
-    process.send?.(outcome);
+    // A process whose caches may disagree with the file system answers
+    // this check and exits: a fresh worker takes the next (DESIGN.md,
+    // "Observed stages").
+    const retire = processInconsistency() !== null || processRetirement() !== null;
+    if (retire) process.send?.(retiringMessage);
+    process.send?.(outcome, () => {
+      if (retire) process.exit(0);
+    });
   });
   process.on("disconnect", () => {
     closeParser();
