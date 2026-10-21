@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { forced, producerCall, verifierCall } from "./stages.mts";
+import { tested, producerCall, verifierCall } from "./stages.mts";
 import { runInNewContext } from "node:vm";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
@@ -26,7 +26,7 @@ export function checkPatternDefaults(verifier: string, artifacts: string): void 
   const forged = join(artifacts, "missing-pattern-default-claims.json");
   writeFileSync(forged, JSON.stringify(claims));
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = forced(verifierCall(verifier, [mode, join(artifacts, "fragment.json"), forged,
+    const result = tested(verifierCall(verifier, [mode, join(artifacts, "fragment.json"), forged,
       sourceKey(artifacts), join(artifacts, "evidence.json"),
       ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(result.error);
@@ -67,7 +67,7 @@ export function checkDefaults(verifier: string, artifacts: string): void {
   writeFileSync(badAst, JSON.stringify(ast));
   writeFileSync(badClaims, JSON.stringify(claims));
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = forced(verifierCall(verifier, [
+    const result = tested(verifierCall(verifier, [
         mode,
         badAst,
         badClaims,
@@ -165,7 +165,7 @@ export function checkDefaults(verifier: string, artifacts: string): void {
 export function checkSchemeDefaults(verifier: string, artifacts: string): void {
   writeFileSync(join(artifacts, "evidence.json"), "{}");
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = forced(verifierCall(verifier, [
+    const result = tested(verifierCall(verifier, [
         mode,
         join(artifacts, "fragment.json"),
         join(artifacts, "claims.json"),
@@ -203,17 +203,17 @@ export function checkEarlyDefault(verifier: string, artifacts: string): void {
   const donor = join(artifacts, "safe-default-ast.json");
   const flow = join(artifacts, "safe-default-flow.json");
   writeFileSync(donor, JSON.stringify(sanitized));
-  const lowered = forced(verifierCall(verifier, ["--lower-control-flow", donor]));
+  const lowered = tested(verifierCall(verifier, ["--lower-control-flow", donor]));
   assert.ifError(lowered.error);
   assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
   writeFileSync(flow, lowered.stdout);
-  const proposed = forced(producerCall(producerExecutable, [donor, flow]));
+  const proposed = tested(producerCall(producerExecutable, [donor, flow]));
   assert.ifError(proposed.error);
   assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
   writeFileSync(join(artifacts, "claims.json"), proposed.stdout);
   writeFileSync(join(artifacts, "evidence.json"), "{}");
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = forced(verifierCall(verifier, [
+    const result = tested(verifierCall(verifier, [
         mode,
         join(artifacts, "fragment.json"),
         join(artifacts, "claims.json"),

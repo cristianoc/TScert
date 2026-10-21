@@ -1,7 +1,8 @@
-// The pipeline's suite: every case of the inventory, then the forged
-// documents and claims no case can make, each control run by a pool of
-// control processes. The controls needing no build are
-// node-runs.mts and trusted-inputs.mts, among the fast checks.
+// The pipeline's controls: the forged documents and claims no case can make,
+// mutations of the verifier, injected tool failures and host-family
+// overrides, each control run by a pool of control processes (`make test`).
+// Every operation a control runs replays from the stage store like any stage
+// (DESIGN.md, "The stage store"). The pipeline cases are run-cases.mts's.
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { present } from "../tools/files.mts";
@@ -12,8 +13,8 @@ import { createHash } from "node:crypto";
 import { availableParallelism } from "node:os";
 import { pathToFileURL } from "node:url";
 import { fork, spawn, spawnSync } from "node:child_process";
-import { forced, forcedExecutions, producerCall, ran as ranStage, readInvocationLog, verifierCall, type AttemptRecord, type Invoked }
-  from "./stages.mts";
+import { controlOperations, tested, producerCall, ran as ranStage, readInvocationLog, verifierCall, type AttemptRecord,
+  type Invoked } from "./stages.mts";
 import { check, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
   type Outcome } from "./verify-source.mts";
 import { runDirectory, runRoot } from "./run-directory.mts";
@@ -23,7 +24,8 @@ import { useFamiliesForTests } from "../tools/family-activation.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { stringFamily } from "./string-family.mts";
 import { cases } from "./cases.mts";
-import { expectOutcome, pooled, runCase } from "./run-cases.mts";
+import { expectOutcome } from "./run-cases.mts";
+import { processInconsistency, processRetirement } from "../tools/files.mts";
 import { linkFixtures } from "./fixture-links.mts";
 import type { Row, SourceClaims } from "../tools/source-claims.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
@@ -42,14 +44,18 @@ import { runExample } from "./run-example.mts";
 import { checkMutation, forgedEvidence, useMutationVerifier } from "./evidence-mutations.mts";
 const here = import.meta.dirname;
 
-/** The controls after the cases, each a block of this file, registered in
- * order. The suite's process runs the cases, then gives the controls to a
- * pool of control processes, one per core (`--controls`), each running one
- * control at a time with its forced executions; every other stage replays
- * from the store the cases filled. */
+/** The controls, each a block of this file, registered in order. The
+ * suite's process gives them to a pool of control processes, one per core
+ * (`--controls`), each running one control at a time; a control running the
+ * mutation verifier registers with `mutationControl` and is given once its
+ * build, beside the others, is done. */
 const controls: (() => Promise<void>)[] = [];
+const mutationControls = new Set<number>();
 const control = (body: () => Promise<void>): void => {
   controls.push(body);
+};
+const mutationControl = (body: () => Promise<void>): void => {
+  mutationControls.add(controls.push(body) - 1);
 };
 /** Whether this process is a control process of the pool. */
 const serving: boolean = process.argv[2] === "--controls";
@@ -72,55 +78,52 @@ const beside = (module: string, args: readonly string[]): Promise<{ status: numb
 // stages in fresh processes, the parse's with real compilers, beside the
 // rest of this suite; their result is reported at its end.
 const observedStages = serving ? null : beside("tests/observed-stages.mts", []);
-// The mutation verifier, built once from the current build beside the cases,
-// and given to every control process.
+// The mutation verifier, built once from the current build beside the
+// controls, and given to every control process.
 const mutationBuild = serving ? null : beside("pipeline/evidence-mutations.mts", ["--build"]);
 
-control(async (): Promise<void> => {
-  // Every allowed compiler enum uses the same Node binding identity check as
-  // family tags, including named program re-exports. TypeScript's paths read
-  // the audited declarations while the negative runtime exports other values.
+// Every allowed compiler enum uses the same Node binding identity check as
+// family tags, including named program re-exports. TypeScript's paths read
+// the audited declarations while the negative runtime exports other values.
+// One control for each of a direct import and a re-export, audited and mismatched.
+for (const reexport of [false, true]) for (const mismatched of [false, true]) control(async (): Promise<void> => {
   const audited = resolve(here, "../tools/node_modules/typescript");
-  for (const reexport of [false, true]) {
-    for (const mismatched of [false, true]) {
-      const dir = runDirectory("tscert-compiler-enum-binding-");
-      const installed = join(dir, "node_modules", "typescript");
-      mkdirSync(join(dir, "node_modules"));
-      if (mismatched) {
-        mkdirSync(installed);
-        writeFileSync(join(installed, "package.json"), JSON.stringify({ name: "typescript", type: "module",
-          exports: { "./unstable/ast": "./enums.js", "./unstable/sync": "./enums.js" } }));
-        writeFileSync(join(installed, "enums.js"), hostEnums.map(({ name }) =>
-          `export const ${name} = { ${name === "SyntaxKind" ? "Identifier" : name === "NodeFlags" ? "Const" : name === "TypeFlags" ? "Union" : name === "SymbolFlags" ? "Alias" : name === "SignatureKind" ? "Call" : name === "ElementFlags" ? "Required" : "Error"}: -123 };`).join("\n"));
-      } else symlinkSync(audited, installed);
-      writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
-        module: "preserve", moduleResolution: "bundler", target: "es2022", lib: ["es2022"], types: [],
-        allowImportingTsExtensions: true, paths: {
-          "typescript/unstable/ast": [join(audited, "dist/ast/index.d.ts")],
-          "typescript/unstable/sync": [join(audited, "dist/api/sync/api.d.ts")],
-        } }, include: ["*.ts"] }));
-      for (const { name } of hostEnums) {
-        const member = name === "SyntaxKind" ? "Identifier" : name === "NodeFlags" ? "Const" :
-          name === "TypeFlags" ? "Union" : name === "SymbolFlags" ? "Alias" :
-          name === "SignatureKind" ? "Call" : name === "ElementFlags" ? "Required" : "Error";
-        const entry = name === "SyntaxKind" || name === "NodeFlags" ? "ast" : "sync";
-        writeFileSync(join(dir, "barrel.ts"), `export { ${name} as Enum } from "typescript/unstable/${entry}";\n`);
-        const file = join(dir, "value.ts");
-        writeFileSync(file, `import { ${reexport ? "Enum" : name + " as Enum"} } from "${reexport ? "./barrel.ts" : "typescript/unstable/" + entry}";\nexport function value(): Enum.${member} { return Enum.${member}; }\n`);
-        const outcome = check(file, tsconfigOf(dir));
-        assert.equal(outcome.status, mismatched ? "unsupported" : "verified", `${name}, reexport=${reexport}: ${JSON.stringify(outcome)}`);
-        if (mismatched) {
-          assert.equal(outcome.status, "unsupported");
-          assert.match(outcome.detail, /the host enum/);
-          const ran = spawnSync(process.execPath, ["--input-type=module", "-e",
-            `import { value } from ${JSON.stringify(pathToFileURL(file).href)}; console.log(value());`], { encoding: "utf8", cwd: dir });
-          assert.equal(ran.status, 0, ran.stderr);
-          assert.equal(ran.stdout.trim(), "-123", `${name}: Node returns the other installation's value`);
-        }
-      }
+  const dir = runDirectory("tscert-compiler-enum-binding-");
+  const installed = join(dir, "node_modules", "typescript");
+  mkdirSync(join(dir, "node_modules"));
+  if (mismatched) {
+    mkdirSync(installed);
+    writeFileSync(join(installed, "package.json"), JSON.stringify({ name: "typescript", type: "module",
+      exports: { "./unstable/ast": "./enums.js", "./unstable/sync": "./enums.js" } }));
+    writeFileSync(join(installed, "enums.js"), hostEnums.map(({ name }) =>
+      `export const ${name} = { ${name === "SyntaxKind" ? "Identifier" : name === "NodeFlags" ? "Const" : name === "TypeFlags" ? "Union" : name === "SymbolFlags" ? "Alias" : name === "SignatureKind" ? "Call" : name === "ElementFlags" ? "Required" : "Error"}: -123 };`).join("\n"));
+  } else symlinkSync(audited, installed);
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true,
+    module: "preserve", moduleResolution: "bundler", target: "es2022", lib: ["es2022"], types: [],
+    allowImportingTsExtensions: true, paths: {
+      "typescript/unstable/ast": [join(audited, "dist/ast/index.d.ts")],
+      "typescript/unstable/sync": [join(audited, "dist/api/sync/api.d.ts")],
+    } }, include: ["*.ts"] }));
+  for (const { name } of hostEnums) {
+    const member = name === "SyntaxKind" ? "Identifier" : name === "NodeFlags" ? "Const" :
+      name === "TypeFlags" ? "Union" : name === "SymbolFlags" ? "Alias" :
+      name === "SignatureKind" ? "Call" : name === "ElementFlags" ? "Required" : "Error";
+    const entry = name === "SyntaxKind" || name === "NodeFlags" ? "ast" : "sync";
+    writeFileSync(join(dir, "barrel.ts"), `export { ${name} as Enum } from "typescript/unstable/${entry}";\n`);
+    const file = join(dir, "value.ts");
+    writeFileSync(file, `import { ${reexport ? "Enum" : name + " as Enum"} } from "${reexport ? "./barrel.ts" : "typescript/unstable/" + entry}";\nexport function value(): Enum.${member} { return Enum.${member}; }\n`);
+    const outcome = check(file, tsconfigOf(dir));
+    assert.equal(outcome.status, mismatched ? "unsupported" : "verified", `${name}, reexport=${reexport}: ${JSON.stringify(outcome)}`);
+    if (mismatched) {
+      assert.equal(outcome.status, "unsupported");
+      assert.match(outcome.detail, /the host enum/);
+      const ran = spawnSync(process.execPath, ["--input-type=module", "-e",
+        `import { value } from ${JSON.stringify(pathToFileURL(file).href)}; console.log(value());`], { encoding: "utf8", cwd: dir });
+      assert.equal(ran.status, 0, ran.stderr);
+      assert.equal(ran.stdout.trim(), "-123", `${name}: Node returns the other installation's value`);
     }
   }
-  process.stdout.write("compiler enum binding: all 7 enums, direct and re-exported; 14 audited bindings verified, 14 mismatched bindings refused and counterexamples executed under Node\n");
+  process.stdout.write(`compiler enum binding, ${reexport ? "re-exported" : "direct"}: all 7 enums, ${mismatched ? "mismatched bindings refused and counterexamples executed under Node" : "audited bindings verified"}\n`);
 });
 
 
@@ -132,7 +135,7 @@ function must<T>(value: T | null | undefined, message: string): T {
  * require a refusal; its words, for the caller to match. */
 const invoke = (claims: string, evidence: string, artifacts: string,
   ast: string = join(artifacts, "fragment.json")): string => {
-  const p = forced(verifierCall(verifier, ["--check-source-claims", ast, claims, sourceKey(artifacts), evidence]));
+  const p = tested(verifierCall(verifier, ["--check-source-claims", ast, claims, sourceKey(artifacts), evidence]));
   assert.ifError(p.error);
   assert.equal(p.signal, null);
   assert.equal(p.status, 1, p.stdout + p.stderr);
@@ -141,7 +144,7 @@ const invoke = (claims: string, evidence: string, artifacts: string,
 /** Search for evidence of forged claims, or of a forged parser document. */
 const produceWith = (artifacts: string, claims: string, name: string,
     fragmentPath: string = join(artifacts, "fragment.json")): Invoked =>
-  forced(verifierCall(verifier, ["--produce-source-claims", fragmentPath, claims, sourceKey(artifacts),
+  tested(verifierCall(verifier, ["--produce-source-claims", fragmentPath, claims, sourceKey(artifacts),
     join(artifacts, `${name}-evidence.json`), "12"]));
 /** Require search over forged claims to fail at the obligation named `at`. */
 const refusedAt = (artifacts: string, claims: string, name: string, at: string): void => {
@@ -168,39 +171,19 @@ const writeClaims = (artifacts: string, name: string, claims: SourceClaims): str
   return path;
 };
 
-/** The artifacts of each case's run in the suite's process; a control
- * process receives them. */
-const artifactsOf = new Map<string, string>();
-if (!serving) {
-  linkFixtures();
-  const outcomes = await pooled(cases, runCase);
-  let verifiedFunctions: number = 0;
-  for (const [i, test] of cases.entries()) {
-    const settled = outcomes[i];
-    if (settled.status === "rejected") throw settled.reason;
-    const result = expectOutcome(test, settled.value);
-    if (result.status === "verified") verifiedFunctions += result.functions.length;
-    else if (test.kind === "negative" && (test.phase === "search" || test.phase === "check"))
-      assert.match(result.detail, /at \[\d+,\d+\)|obligation at \d+/, `${test.file}: a control failing at no located obligation`);
-    artifactsOf.set(test.file, result.artifacts);
-    process.stdout.write(`${test.file}: ${result.status} (${result.phase}, ${test.kind})\n`);
-  }
-  process.stdout.write(
-    `${verifiedFunctions} functions verified; ${cases.filter((c) => c.kind === "negative").length} negative controls; ${cases.filter((c) => c.kind === "gap").length} named gaps\n`,
-  );
-}
-/** The artifacts of a case's run: in a control process, a copy of the
- * suite's run of it, its own to write beside. */
-const copies = new Map<string, string>();
+/** The artifacts of a case's run through the pipeline (its stages replayed
+ * where the store holds them), its outcome the case's expected one: one run
+ * per case in a control process, its own to write beside. */
+const caseRuns = new Map<string, string>();
 const run = (file: string): string => {
-  const artifacts = must(artifactsOf.get(file), `case ${file}'s run`);
-  if (!serving) return artifacts;
-  const held = copies.get(file);
+  const held = caseRuns.get(file);
   if (held !== undefined) return held;
-  const copy = join(runDirectory("control-artifacts-"), "artifacts");
-  cpSync(artifacts, copy, { recursive: true });
-  copies.set(file, copy);
-  return copy;
+  const test = must(cases.find((c) => c.file === file), `case ${file}`);
+  const outcome = check(join(here, "examples", `${file}.ts`),
+    test.project ? tsconfigOf(resolve(here, "..", test.project)) : undefined, test.typescriptErrors);
+  const { artifacts } = expectOutcome(test, outcome);
+  caseRuns.set(file, artifacts);
+  return artifacts;
 };
 
 control(async (): Promise<void> => {
@@ -210,12 +193,12 @@ control(async (): Promise<void> => {
   for (const name of ["fragment.json", "claims.json"]) {
     const input = join(good, name);
     const before = readFileSync(input);
-    const result = forced(verifierCall(verifier, ["--produce-source-claims",
+    const result = tested(verifierCall(verifier, ["--produce-source-claims",
       join(good, "fragment.json"), join(good, "claims.json"), sourceKey(good), input, "12"]));
     assert.ifError(result.error);
     assert.equal(result.signal, null);
     assert.equal(result.status, 1, result.stdout + result.stderr);
-    assert.equal(result.record.execution, "executed");
+    assert.ok(result.record.execution === "executed" || result.record.execution === "replayed", result.record.execution);
     assert.match(result.stdout + result.stderr, /evidence output must differ from the input files/);
     assert.deepEqual(readFileSync(input), before);
   }
@@ -257,17 +240,17 @@ control(async (): Promise<void> => {
   member.type = { k: "atom", name: "unknown", span: member.type.span };
   const weakened = join(erased, "weakened.json");
   writeFileSync(weakened, JSON.stringify(ast));
-  const lowered = forced(verifierCall(verifier, ["--lower-control-flow", weakened]));
+  const lowered = tested(verifierCall(verifier, ["--lower-control-flow", weakened]));
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(erased, "weakened-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposal = forced(producerCall(producerExecutable, [weakened, flow]));
+  const proposal = tested(producerCall(producerExecutable, [weakened, flow]));
   assert.equal(proposal.status, 0, proposal.stderr);
   const claims = join(erased, "forged-claims.json");
   const evidence = join(erased, "forged-evidence.json");
   writeFileSync(claims, proposal.stdout);
   writeFileSync(evidence, "{}");
-  const searched = forced(verifierCall(verifier, ["--produce-source-claims",
+  const searched = tested(verifierCall(verifier, ["--produce-source-claims",
     join(erased, "fragment.json"), claims, sourceKey(erased), evidence, "12"]));
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /generic contract.*cannot be erased/);
@@ -388,7 +371,7 @@ control(async (): Promise<void> => {
     const path = join(good, `${name}.fragment.json`);
     writeFileSync(path, edit(readFragmentFile(join(good, "fragment.json"))));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const result = forced(verifierCall(verifier, [mode, path, claims, sourceKey(good),
+      const result = tested(verifierCall(verifier, [mode, path, claims, sourceKey(good),
         mode === "--produce-source-claims" ? join(good, `${name}-evidence.json`) : evidence,
         ...(mode === "--produce-source-claims" ? ["12"] : [])]));
       assert.ifError(result.error);
@@ -477,7 +460,7 @@ control(async (): Promise<void> => {
   {
     const exact = join(inherited, "tag-fake-exact.fragment.json");
     writeFileSync(exact, fakeAt(readFragmentFile(join(inherited, "fragment.json")), "exact"));
-    const produced = forced(verifierCall(verifier, ["--produce-source-claims", exact, join(inherited, "claims.json"),
+    const produced = tested(verifierCall(verifier, ["--produce-source-claims", exact, join(inherited, "claims.json"),
       sourceKey(inherited), join(inherited, "tag-fake-exact-evidence.json"), "12"]));
     assert.equal(produced.status, 0, produced.stdout + produced.stderr);
   }
@@ -587,7 +570,7 @@ control(async (): Promise<void> => {
     const path = join(keyed, `${name}.fragment.json`);
     writeFileSync(path, text.replace(field, `{"name":${to},"e":{"k":"comma"`));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const result = forced(verifierCall(verifier, [mode, path, join(keyed, "claims.json"), sourceKey(keyed),
+      const result = tested(verifierCall(verifier, [mode, path, join(keyed, "claims.json"), sourceKey(keyed),
         join(keyed, mode === "--produce-source-claims" ? `${name}-evidence.json` : "evidence.json"),
         ...(mode === "--produce-source-claims" ? ["12"] : [])]));
       assert.equal(result.status, 1, result.stdout + result.stderr);
@@ -666,7 +649,7 @@ control(async (): Promise<void> => {
     return path;
   };
   const fragment = renamed("fragment.json");
-  const accepted = forced(verifierCall(verifier, ["--check-source-claims", fragment, renamed("claims.json"),
+  const accepted = tested(verifierCall(verifier, ["--check-source-claims", fragment, renamed("claims.json"),
     sourceKey(methods), renamed("evidence.json")]));
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
   assert.ok(readFileSync(fragment, "utf8").includes('"name":"stack"'), "the forged fragment names a member `stack`");
@@ -732,7 +715,7 @@ control(async (): Promise<void> => {
   read.type = [rowOf(claims, "num")];
   const forged = writeClaims(good, "untested-number", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
+    const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
       sourceKey(good), join(good, mode === "--produce-source-claims"
         ? "untested-number-evidence.json" : "evidence.json"),
       ...(mode === "--produce-source-claims" ? ["12"] : [])]));
@@ -928,7 +911,7 @@ control(async (): Promise<void> => {
   read.type = read.type.slice(0, 1);
   const forged = writeClaims(good, "disjunction-one-arm", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
+    const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
       sourceKey(good), join(good, mode === "--produce-source-claims"
         ? "disjunction-one-arm-evidence.json" : "evidence.json"),
       ...(mode === "--produce-source-claims" ? ["12"] : [])]));
@@ -955,7 +938,7 @@ control(async (): Promise<void> => {
   operand.type = [number];
   const forged = writeClaims(good, "array-spread-number", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
+    const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
       sourceKey(good), join(good, mode === "--produce-source-claims"
         ? "array-spread-forged-evidence.json" : "evidence.json"),
       ...(mode === "--produce-source-claims" ? ["12"] : [])]));
@@ -995,7 +978,7 @@ control(async (): Promise<void> => {
   read.type = [number];
   const forged = writeClaims(good, "constructor-spread-number", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
+    const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
       sourceKey(good), join(good, mode === "--produce-source-claims"
         ? "constructor-forged-evidence.json" : "evidence.json"),
       ...(mode === "--produce-source-claims" ? ["12"] : [])]));
@@ -1019,7 +1002,7 @@ control(async (): Promise<void> => {
     read.type = variant === "number" ? [number] : [{ binder: "UnboundPrototypeParameter" }];
     const forged = writeClaims(good, `prototype-${variant}`, claims);
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
+      const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
         sourceKey(good), join(good, mode === "--produce-source-claims"
           ? `prototype-${variant}-evidence.json` : "evidence.json"),
         ...(mode === "--produce-source-claims" ? ["12"] : [])]));
@@ -1802,18 +1785,18 @@ control(async (): Promise<void> => {
           element: { k: "atom", name: "number", span: [0, 0] } })] };
     const weak = join(artifacts, "weakened-array-tojson.json");
     writeFileSync(weak, JSON.stringify(ast));
-    const lowered = forced(verifierCall(verifier, ["--lower-control-flow", weak]));
+    const lowered = tested(verifierCall(verifier, ["--lower-control-flow", weak]));
     assert.equal(lowered.status, 0, lowered.stderr);
     const flow = join(artifacts, "weakened-array-tojson-flow.json");
     writeFileSync(flow, lowered.stdout);
-    const proposed = forced(producerCall(producerExecutable, [weak, flow]));
+    const proposed = tested(producerCall(producerExecutable, [weak, flow]));
     assert.equal(proposed.status, 0, proposed.stderr);
     const claims = join(artifacts, "weakened-array-tojson-claims.json");
     writeFileSync(claims, proposed.stdout);
     const borrowed = produceWith(artifacts, claims, "weakened-array-tojson", weak);
     assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
     const evidence = join(artifacts, "weakened-array-tojson-evidence.json");
-    const accepted = forced(verifierCall(verifier, ["--check-source-claims", weak, claims, sourceKey(artifacts), evidence]));
+    const accepted = tested(verifierCall(verifier, ["--check-source-claims", weak, claims, sourceKey(artifacts), evidence]));
     assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
     return { artifacts, claims, evidence };
   };
@@ -1865,11 +1848,11 @@ control(async (): Promise<void> => {
   on.type = weaken(on.type);
   const weak = join(artifacts, "weakened-process-on.json");
   writeFileSync(weak, JSON.stringify(ast));
-  const lowered = forced(verifierCall(verifier, ["--lower-control-flow", weak]));
+  const lowered = tested(verifierCall(verifier, ["--lower-control-flow", weak]));
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(artifacts, "weakened-process-on-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposed = forced(producerCall(producerExecutable, [weak, flow]));
+  const proposed = tested(producerCall(producerExecutable, [weak, flow]));
   assert.equal(proposed.status, 0, proposed.stderr);
   const claims = join(artifacts, "weakened-process-on-claims.json");
   writeFileSync(claims, proposed.stdout);
@@ -1927,11 +1910,11 @@ control(async (): Promise<void> => {
     type: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] });
   const weak = join(write, "weakened-native-constructor.json");
   writeFileSync(weak, JSON.stringify(weakAst));
-  const lowered = forced(verifierCall(verifier, ["--lower-control-flow", weak]));
+  const lowered = tested(verifierCall(verifier, ["--lower-control-flow", weak]));
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(write, "weakened-native-flow.json");
   writeFileSync(flow, lowered.stdout);
-  const proposed = forced(producerCall(producerExecutable, [weak, flow]));
+  const proposed = tested(producerCall(producerExecutable, [weak, flow]));
   assert.equal(proposed.status, 0, proposed.stderr);
   const borrowedClaims = join(write, "weakened-native-claims.json");
   writeFileSync(borrowedClaims, proposed.stdout);
@@ -2104,7 +2087,7 @@ control(async (): Promise<void> => {
     assert.equal(produce.signal, null);
     assert.equal(produce.status, accepted ? 0 : 1, produce.stdout + produce.stderr);
     if (accepted) {
-      const consume = forced(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"),
+      const consume = tested(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"),
         input, sourceKey(artifacts), join(artifacts, "qualified-callback-evidence.json")]));
       assert.ifError(consume.error);
       assert.equal(consume.status, 0, consume.stdout + consume.stderr);
@@ -2707,7 +2690,7 @@ control(async (): Promise<void> => {
   const kept = forge("setSecond", { value: "any", store: "keep" });
   const accepted = produceWith(artifacts, kept, "forged-element-write-kept");
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
-  const checked = forced(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), kept,
+  const checked = tested(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), kept,
     sourceKey(artifacts), join(artifacts, "forged-element-write-kept-evidence.json")]));
   assert.equal(checked.status, 0, checked.stdout + checked.stderr);
   for (const [name, footprint] of [["setThird", { value: "any", store: "keep" }],
@@ -2916,7 +2899,7 @@ control(async (): Promise<void> => {
   const searched = check(file, undefined, false, 1);
   assert.equal(searched.status, "exhausted", JSON.stringify(searched));
   const artifacts = run("declaration-preserving-callback");
-  const checking = forced(verifierCall(verifier, ["--subtype-rounds", "1", "--check-source-claims",
+  const checking = tested(verifierCall(verifier, ["--subtype-rounds", "1", "--check-source-claims",
     join(artifacts, "fragment.json"), join(artifacts, "claims.json"), sourceKey(artifacts),
     join(artifacts, "evidence.json")]));
   assert.equal(checking.status, 1, checking.stdout + checking.stderr);
@@ -2986,11 +2969,11 @@ const bypassed = (artifacts: string, name: string, at: [number, number], change:
   change(ast);
   const weak = join(artifacts, `${name}-fragment.json`);
   writeFileSync(weak, JSON.stringify(ast));
-  const lowered = forced(verifierCall(verifier, ["--lower-control-flow", weak]));
+  const lowered = tested(verifierCall(verifier, ["--lower-control-flow", weak]));
   assert.equal(lowered.status, 0, lowered.stderr);
   const flow = join(artifacts, `${name}-flow.json`);
   writeFileSync(flow, lowered.stdout);
-  const proposal = forced(producerCall(producerExecutable, [weak, flow]));
+  const proposal = tested(producerCall(producerExecutable, [weak, flow]));
   assert.equal(proposal.status, 0, proposal.stderr);
   const claims = join(artifacts, `${name}-claims.json`);
   writeFileSync(claims, proposal.stdout);
@@ -3545,13 +3528,13 @@ control(async (): Promise<void> => {
   }
   process.stdout.write("forged guard domains: a domain the argument is not within, with the entry's tags and with none, in a condition, a callback's body and a negated condition, refused at the call by the search and by the checker against the case's evidence; a call without its domain by the decoder\n");
 });
-control(async (): Promise<void> => {
-  // A guard binds by what Node loads for the client's own import
-  // (HOST-FAMILIES.md, "Calls"). A project whose `paths` point TypeScript at
-  // the audited declarations, beside a `node_modules/typescript` Node loads:
-  // a link to the audited installation, whose `isIdentifier` is the checked
-  // function, narrows; a copy of the package, another instance of the same
-  // code, is no guard.
+// A guard binds by what Node loads for the client's own import
+// (HOST-FAMILIES.md, "Calls"). A project whose `paths` point TypeScript at
+// the audited declarations, beside a `node_modules/typescript` Node loads:
+// a link to the audited installation, whose `isIdentifier` is the checked
+// function, narrows; a copy of the package, another instance of the same
+// code, is no guard. One control for each.
+for (const copy of [false, true]) control(async (): Promise<void> => {
   const installation = resolve(import.meta.dirname, "..", "tools", "node_modules", "typescript");
   const nested = (name: string, place: (target: string) => void): Outcome => {
     const dir = runDirectory(`tscert-nested-${name}-`);
@@ -3565,11 +3548,15 @@ control(async (): Promise<void> => {
     place(join(dir, "node_modules", "typescript"));
     return check(source, tsconfigOf(dir));
   };
-  const linked = nested("linked", (target) => symlinkSync(installation, target));
-  assert.equal(linked.status, "verified", JSON.stringify(linked));
-  const copied = nested("copied", (target) => cpSync(installation, target, { recursive: true, dereference: true }));
-  assert.ok(copied.status === "unsupported" && copied.detail.includes("missing field text"), JSON.stringify(copied));
-  process.stdout.write("nested installations: the audited package linked narrows, a copy of it in the client's node_modules is no guard\n");
+  if (!copy) {
+    const linked = nested("linked", (target) => symlinkSync(installation, target));
+    assert.equal(linked.status, "verified", JSON.stringify(linked));
+    process.stdout.write("nested installations: the audited package linked narrows\n");
+  } else {
+    const copied = nested("copied", (target) => cpSync(installation, target, { recursive: true, dereference: true }));
+    assert.ok(copied.status === "unsupported" && copied.detail.includes("missing field text"), JSON.stringify(copied));
+    process.stdout.write("nested installations: a copy of the audited package in the client's node_modules is no guard\n");
+  }
 });
 control(async (): Promise<void> => {
   // F5 (HOST-FAMILIES.md, "Trust"): the package's enum objects are never
@@ -3651,7 +3638,7 @@ control(async (): Promise<void> => {
   const located = (detail: string, position: number): boolean =>
     [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= position && position < Number(m[2]));
   const verifierOn = (fragment: string, claims: string, source: string, evidence: string): Invoked =>
-    forced(verifierCall(verifier, ["--check-source-claims", fragment, claims, source, evidence]), 60_000);
+    tested(verifierCall(verifier, ["--check-source-claims", fragment, claims, source, evidence]), 60_000);
   const plainRuns = new Map<string, string>();
   for (const name of new Set(controls.map(([, file]) => file))) {
     const plain = check(join(import.meta.dirname, "examples", `${name}.ts`), project);
@@ -3977,7 +3964,7 @@ control(async (): Promise<void> => {
     const searched = produceWith(corrected.artifacts, forged, "forged-uncorrected");
     assert.ok(searched.status === 1 && located(searched.stdout + searched.stderr, at),
       `${slug}: the search refuses at the read: ${searched.stdout + searched.stderr}`);
-    const checked = forced(verifierCall(verifier, ["--check-source-claims", join(corrected.artifacts, "fragment.json"), forged,
+    const checked = tested(verifierCall(verifier, ["--check-source-claims", join(corrected.artifacts, "fragment.json"), forged,
       sourceKey(corrected.artifacts), join(plain.artifacts, "evidence.json")]), 60_000);
     // The checker names the read, or refuses the evidence as a whole where
     // the corrected document's rows leave it justifying no claim.
@@ -4083,7 +4070,7 @@ control(async (): Promise<void> => {
   const flow = join(artifacts, "flow.json");
   const loneFragment = join(artifacts, "forged-lone-surrogate-fragment.json");
   writeFileSync(loneFragment, fragment.replace("", "\\ud800"));
-  const proposed = forced(producerCall(producerExecutable, [loneFragment, flow]));
+  const proposed = tested(producerCall(producerExecutable, [loneFragment, flow]));
   assert.notEqual(proposed.status, 0, proposed.stdout + proposed.stderr);
   assert.match(proposed.stdout + proposed.stderr, /low surrogate/);
   assert.throws(() => readFragmentFile(loneFragment), /not well-formed Unicode/);
@@ -4092,7 +4079,7 @@ control(async (): Promise<void> => {
   assert.match(leanFragment.stdout + leanFragment.stderr, /not well-formed Unicode/);
   const rawFragment = join(artifacts, "forged-invalid-utf8-fragment.json");
   writeFileSync(rawFragment, withByte(fragment));
-  const rawProposed = forced(producerCall(producerExecutable, [rawFragment, flow]));
+  const rawProposed = tested(producerCall(producerExecutable, [rawFragment, flow]));
   assert.notEqual(rawProposed.status, 0, rawProposed.stdout + rawProposed.stderr);
   assert.match(rawProposed.stdout + rawProposed.stderr, /not valid UTF-8/);
   process.stdout.write("wire strings: lone surrogates and invalid UTF-8 refused by the producer, Lean and TypeScript\n");
@@ -4105,8 +4092,9 @@ control(async (): Promise<void> => {
   // whose refusal is a verdict; and an `--explain` run of the producer that
   // fails or prints no explanations.
   // The injected failure is written into each stand-in, so it is part of the
-  // executable the invocation runs; the runs force execution, and each
-  // asserts that the failing stage ran.
+  // executable the invocation runs. A stand-in is no audited program, so its
+  // invocations execute without a key while the other stages replay; each
+  // run asserts that the failing stage ran.
   const dir = runDirectory("tscert-step-failures-");
   type Failure = { FAIL_MODE: string; FAIL_TEXT?: string; FAIL_STATUS?: string; FAIL_OUT?: string };
   const stageOfMode: Record<string, string> = { "--lower-control-flow": "lower", "--produce-source-claims": "search",
@@ -4126,13 +4114,13 @@ control(async (): Promise<void> => {
     const at = join(dir, `run-${runs++}`);
     mkdirSync(at);
     const ran = spawnSync(process.execPath, [join(here, "verify-source.mts"), join(here, "examples", source)],
-      { encoding: "utf8", timeout: 120_000, env: { ...process.env, TSCERT_STAGE_STORE: "off",
+      { encoding: "utf8", timeout: 120_000, env: { ...process.env,
         VERIFIER: fake(at, "verifier.sh", verifier, 1, failure),
         PRODUCER: fake(at, "producer.sh", producerExecutable, 2, failure) } });
     const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
     const failing = readInvocationLog(join(outcome.artifacts, invocationLog))
       .filter((r) => r.stage === stageOfMode[failure.FAIL_MODE]).at(-1);
-    assert.ok(failing && ranStage(failing) && failing.forced, `${failure.FAIL_MODE}: the failing stage ran forced`);
+    assert.ok(failing && ranStage(failing) && failing.key === null, `${failure.FAIL_MODE}: the failing stage ran, without a key`);
     return outcome;
   };
   for (const mode of ["--lower-control-flow", "--produce-source-claims", "--check-source-claims"])
@@ -4150,13 +4138,13 @@ control(async (): Promise<void> => {
   assert.equal(garbled.status, "error", JSON.stringify(garbled));
   assert.match(garbled.detail ?? "", /^tool failure: the producer's --explain printed a malformed explanation/);
   // An operational failure of the verifier is its own exit status, 3.
-  const unread = forced(verifierCall(verifier, ["--lower-control-flow", join(dir, "absent.json")]));
+  const unread = tested(verifierCall(verifier, ["--lower-control-flow", join(dir, "absent.json")]));
   assert.equal(unread.status, 3, unread.stderr);
   assert.match(unread.stderr, /^error: /);
   process.stdout.write("step failures: an exit without a complete refusal, and a failed --explain, are tool failures\n");
 });
 
-control(async (): Promise<void> => {
+mutationControl(async (): Promise<void> => {
   // Constant returns isolate the entry obligation from subsequent read typing.
   // Forged claims select named paths at source statements. The test-only
   // mutation executable searches their complete evidence and checks it with
@@ -4245,7 +4233,7 @@ control(async (): Promise<void> => {
   process.stdout.write("path witnesses: exact forged evidence refused at incoming edges; wrong receiver/field isolate links, false predecessor isolates type coverage\n");
 });
 
-control(async (): Promise<void> => {
+mutationControl(async (): Promise<void> => {
   // Paths of two members at a statement entry (HOST-FAMILIES.md, "Entries"):
   // the witness of `holder.mid.leaf` is read from the witness of
   // `holder.mid` through `leaf`, and every incoming edge checks that second
@@ -4258,7 +4246,7 @@ control(async (): Promise<void> => {
   const artifacts = run("path-chain-controls");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const honest = readClaims(artifacts);
-  const accepted = forced(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), join(artifacts, "claims.json"),
+  const accepted = tested(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), join(artifacts, "claims.json"),
     sourceKey(artifacts), join(artifacts, "evidence.json")]));
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
   const chain = (path: readonly string[]): boolean => path.length === 2 && path[0] === "mid" && path[1] === "leaf";
@@ -4338,7 +4326,7 @@ control(async (): Promise<void> => {
 
 // Each forged claim is a control of its own: each executes a search and a
 // check, and the mutation verifier's search and checks.
-for (const variant of ["covered", "kept", "taken"] as const) control(async (): Promise<void> => {
+for (const variant of ["covered", "kept", "taken"] as const) mutationControl(async (): Promise<void> => {
   // A guard's false edge over tag-set arms (PROGRAM-TYPING.md, "A
   // membership test", member-split). Over `Node`, where `isToken` answers
   // false, the claim the checker accepts names no `Token` application. At
@@ -4487,7 +4475,7 @@ control(async (): Promise<void> => {
     return path;
   };
   const honest = forged("stable-link-honest", s => [...s]);
-  const accepted = forced(verifierCall(verifier, ["--check-source-claims", honest, join(artifacts, "claims.json"),
+  const accepted = tested(verifierCall(verifier, ["--check-source-claims", honest, join(artifacts, "claims.json"),
     sourceKey(artifacts), join(artifacts, "evidence.json")]));
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
   const unstable = forged("forged-stable-link", s => s.filter(k => k !== "name"));
@@ -4499,7 +4487,7 @@ control(async (): Promise<void> => {
   process.stdout.write("stable links: the document without the tested member's stable key refused in search and in checking, the honest one accepted\n");
 });
 
-control(async (): Promise<void> => {
+mutationControl(async (): Promise<void> => {
   // The constant-return neighbour supplies valid claims and evidence before
   // the tested call. Only the final path/read and its entry witness are forged;
   // the declaration document is identical throughout. The let-cell neighbour
@@ -4535,11 +4523,11 @@ control(async (): Promise<void> => {
     else statement.e = neutral;
     const neighbour = join(artifacts, "stable-neighbour.json");
     writeFileSync(neighbour, JSON.stringify(fragment));
-    const lowered = forced(verifierCall(verifier, ["--lower-control-flow", neighbour]));
+    const lowered = tested(verifierCall(verifier, ["--lower-control-flow", neighbour]));
     assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
     const flow = join(artifacts, "stable-neighbour-flow.json");
     writeFileSync(flow, lowered.stdout);
-    const proposed = forced(producerCall(producerExecutable, [neighbour, flow]));
+    const proposed = tested(producerCall(producerExecutable, [neighbour, flow]));
     assert.equal(proposed.status, 0, proposed.stdout + proposed.stderr);
     const honestPath = join(artifacts, "stable-neighbour-claims.json");
     writeFileSync(honestPath, proposed.stdout);
@@ -4660,88 +4648,119 @@ process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, 
     "replays every stage, the parse by its observations, and executes stages with unidentified dependencies; a changed source executes\n");
 });
 
-/** A control's result, as a control process reports it. */
-type Finished = { finished: number; error: string | null; forced: { count: number; elapsedMs: number } };
+/** A control's result, as a control process reports it: its operations'
+ * counts (`controlOperations`), and whether the process retires after it. */
+type Operations = { executed: number; replayed: number; elapsedMs: number };
+type Finished = { finished: number; error: string | null; operations: Operations; retiring: boolean };
 const readFinished = (value: unknown): Finished => {
-  if (typeof value !== "object" || value === null || !("finished" in value) || typeof value.finished !== "number" ||
-      !("error" in value) || !(value.error === null || typeof value.error === "string") || !("forced" in value) ||
-      typeof value.forced !== "object" || value.forced === null || !("count" in value.forced) ||
-      typeof value.forced.count !== "number" || !("elapsedMs" in value.forced) || typeof value.forced.elapsedMs !== "number")
+  const fail = (): never => {
     throw Error(`not a control's result: ${JSON.stringify(value)}`);
-  return { finished: value.finished, error: value.error, forced: { count: value.forced.count, elapsedMs: value.forced.elapsedMs } };
+  };
+  if (typeof value !== "object" || value === null || !("finished" in value) || typeof value.finished !== "number" ||
+      !("error" in value) || !(value.error === null || typeof value.error === "string") || !("retiring" in value) ||
+      typeof value.retiring !== "boolean" || !("operations" in value))
+    return fail();
+  const o = value.operations;
+  if (typeof o !== "object" || o === null || !("executed" in o) || typeof o.executed !== "number" ||
+      !("replayed" in o) || typeof o.replayed !== "number" || !("elapsedMs" in o) || typeof o.elapsedMs !== "number")
+    return fail();
+  return { finished: value.finished, error: value.error, retiring: value.retiring,
+    operations: { executed: o.executed, replayed: o.replayed, elapsedMs: o.elapsedMs } };
 };
 if (serving) {
-  // A control process: the cases' artifacts, then one control per message.
+  // A control process: one control per message, with the mutation
+  // verifier's path once it is built. A process whose caches may disagree
+  // with the file system reports its control and exits; a fresh one takes
+  // the next (DESIGN.md, "Observed stages").
+  useMutationVerifier(null);
   process.on("message", (message: unknown) => {
-    if (typeof message === "object" && message !== null && "artifacts" in message && Array.isArray(message.artifacts) &&
-        "mutationVerifier" in message && typeof message.mutationVerifier === "string") {
-      for (const entry of message.artifacts)
-        if (Array.isArray(entry) && typeof entry[0] === "string" && typeof entry[1] === "string") artifactsOf.set(entry[0], entry[1]);
-      useMutationVerifier(message.mutationVerifier);
-      return;
-    }
-    const index = typeof message === "object" && message !== null && "control" in message && typeof message.control === "number"
-      ? message.control : -1;
+    if (typeof message !== "object" || message === null || !("control" in message) || typeof message.control !== "number" ||
+        !("mutationVerifier" in message) || !(message.mutationVerifier === null || typeof message.mutationVerifier === "string"))
+      throw Error(`not a control's request: ${JSON.stringify(message)}`);
+    const index = message.control;
+    if (message.mutationVerifier !== null) useMutationVerifier(message.mutationVerifier);
     const body = controls[index];
     if (body === undefined) throw Error(`no control ${index}`);
-    const before = { ...forcedExecutions };
+    const before = { ...controlOperations };
     const report = (error: string | null): void => {
-      const finished: Finished = { finished: index, error, forced: { count: forcedExecutions.count - before.count,
-        elapsedMs: forcedExecutions.elapsedMs - before.elapsedMs } };
-      process.send?.(finished);
+      const retiring = processInconsistency() !== null || processRetirement() !== null;
+      const finished: Finished = { finished: index, error, retiring, operations: {
+        executed: controlOperations.executed - before.executed, replayed: controlOperations.replayed - before.replayed,
+        elapsedMs: controlOperations.elapsedMs - before.elapsedMs } };
+      process.send?.(finished, () => {
+        if (retiring) process.exit(0);
+      });
     };
     body().then(() => report(null), (error: unknown) =>
       report(error instanceof Error ? error.stack ?? error.message : String(error)));
   });
   process.on("disconnect", () => process.exit(0));
 } else {
-  const built = await must(mutationBuild, "the mutation verifier's build");
-  assert.equal(built.status, 0, built.stdout + built.stderr);
-  const mutationVerifier = must(built.stdout.trim().split("\n").at(-1), "the mutation verifier's path");
+  linkFixtures();
   const started = performance.now();
   const failures: string[] = [];
-  const tally = { count: 0, elapsedMs: 0 };
-  let next = 0;
+  const tally: Operations = { executed: 0, replayed: 0, elapsedMs: 0 };
+  // The controls not yet given: those running the mutation verifier join
+  // once it is built. A lane with none to take waits for them.
+  const pending = controls.flatMap((_, i) => mutationControls.has(i) ? [] : [i]);
+  let mutationVerifier: string | null = null;
+  const waiting: (() => void)[] = [];
+  const mutationReady = must(mutationBuild, "the mutation verifier's build").then((built) => {
+    assert.equal(built.status, 0, built.stdout + built.stderr);
+    mutationVerifier = must(built.stdout.trim().split("\n").at(-1), "the mutation verifier's path");
+    pending.unshift(...mutationControls);
+    for (const wake of waiting.splice(0)) wake();
+  });
+  let processes = 0;
   const width = Math.min(availableParallelism(), controls.length);
-  await Promise.all(Array.from({ length: width }, () => new Promise<void>((done, fail) => {
+  // One lane of the pool: a control process taking controls until none is
+  // left, replaced by a fresh one where it retires.
+  const lane = (): Promise<void> => new Promise<void>((done, fail) => {
+    processes++;
     const child = fork(import.meta.filename, ["--controls"], { stdio: ["ignore", "pipe", "pipe", "ipc"] });
     // Each line a control prints, as it prints it.
-    let pending = "", errors = "";
+    let printed = "", errors = "", retired = false;
     child.stdout?.setEncoding("utf8");
     child.stdout?.on("data", (text: unknown) => {
-      pending += String(text);
-      const at = pending.lastIndexOf("\n");
+      printed += String(text);
+      const at = printed.lastIndexOf("\n");
       if (at >= 0) {
-        process.stdout.write(pending.slice(0, at + 1));
-        pending = pending.slice(at + 1);
+        process.stdout.write(printed.slice(0, at + 1));
+        printed = printed.slice(at + 1);
       }
     });
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (text: unknown) => { errors += String(text); });
     const give = (): void => {
-      if (next < controls.length) child.send({ control: next++ });
+      const index = pending.shift();
+      if (index !== undefined) child.send({ control: index, mutationVerifier });
+      else if (mutationVerifier === null) waiting.push(give);
       else child.disconnect();
     };
     child.on("message", (message: unknown) => {
       const result = readFinished(message);
-      tally.count += result.forced.count;
-      tally.elapsedMs += result.forced.elapsedMs;
+      tally.executed += result.operations.executed;
+      tally.replayed += result.operations.replayed;
+      tally.elapsedMs += result.operations.elapsedMs;
       if (result.error !== null) failures.push(`control ${result.finished}: ${result.error}`);
-      give();
+      if (result.retiring) retired = true;
+      else give();
     });
     child.on("error", fail);
     child.on("exit", (status: number | null) => {
-      if (pending) process.stdout.write(pending + "\n");
+      if (printed) process.stdout.write(printed + "\n");
       if (status !== 0) failures.push(`a control process exited with ${status}: ${errors}`);
-      done();
+      if (retired && status === 0 && (pending.length > 0 || mutationVerifier === null)) lane().then(done, fail);
+      else done();
     });
-    child.send({ artifacts: [...artifactsOf], mutationVerifier });
     give();
-  })));
+  });
+  await Promise.all([mutationReady, ...Array.from({ length: width }, lane)]);
   assert.deepEqual(failures, [], failures.join("\n"));
   const observed = await must(observedStages, "the observed stages' run");
   assert.equal(observed.status, 0, observed.stdout + observed.stderr);
   process.stdout.write(observed.stdout);
-  process.stdout.write(`controls: ${controls.length} in ${((performance.now() - started) / 1000).toFixed(1)} s on ${width} processes; ` +
-    `${tally.count} forced executions of their tested operations, ${(tally.elapsedMs / 1000).toFixed(1)} s in all\n`);
+  process.stdout.write(`controls: ${controls.length} in ${((performance.now() - started) / 1000).toFixed(1)} s on ${width} ` +
+    `lanes (${processes} processes); their operations ${tally.executed} executed (${(tally.elapsedMs / 1000).toFixed(1)} s ` +
+    `in all), ${tally.replayed} replayed\n`);
 }

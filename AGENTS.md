@@ -12,8 +12,8 @@ without breaking the suite's shape.
 
 ```sh
 make help        # every target
-make test        # the fast checks, in seconds: nothing built, no pipeline case runs
-make suite       # build, then the pipeline cases and controls (about 40 s)
+make test        # build, then the fast checks and the controls, replayed from the store
+make suite       # build, then the pipeline cases
 make cases P=x   # the pipeline cases whose file names contain x
 make check FILE=f.ts [PROJECT=dir]  # one source file through the pipeline
 make lowering FILE=f.ts [FN=name]   # the program graph a source lowers to
@@ -41,8 +41,9 @@ answers to their reads, on macOS, where the compiler runs confined by
 
 - `TSCERT_STAGE_STORE=<dir>` selects the store, by default
   `$XDG_CACHE_HOME/tscert/stages` (`~/.cache/tscert/stages`), shared by every
-  checkout and worktree; `TSCERT_STAGE_STORE=off` executes every stage.
-  `make clean-store` removes finished entries, timeout observations and abandoned
+  checkout and worktree; `TSCERT_STAGE_STORE=off` executes every stage,
+  so `TSCERT_STAGE_STORE=off make test` executes every operation of every
+  control. `make clean-store` removes finished entries, timeout observations and abandoned
   publication directories on this host; it retains stable source snapshots.
 - A branch uses the default store. Keys include the executables' and the
   adapters' digests, so a branch's changed verifier, producer or adapter
@@ -63,15 +64,15 @@ that covers what changed, and the wider tier once before committing:
 
 | Changed | While iterating | Before committing |
 | --- | --- | --- |
-| OCaml producer (`ocaml-producer/*.ml`) | `dune build --root ocaml-producer`, then `node pipeline/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `node pipeline/test.mts` (all cases, then the forged documents and claims no case can make) |
+| OCaml producer (`ocaml-producer/*.ml`) | `dune build --root ocaml-producer`, then `node pipeline/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `make suite`, then `make test` (the controls: forged documents and claims no case can make) |
 | One source file | `node pipeline/verify-source.mts <file.ts> [--project dir]` | — |
-| Lean | `(cd lean && lake build)`, then `run-cases.mts` for the affected cases | `make suite` |
+| Lean | `(cd lean && lake build)`, then `run-cases.mts` for the affected cases | `make suite`, then `make test` |
 | Parser, Fragment or SourceClaims wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `make test`, then `make suite` |
 
 `run-cases.mts` with no pattern runs every case (26 s on 12 cores, measured
-2026-10-16) and is the first part of `test.mts`, through the same check. Cases
-run in one worker process per core, each keeping its TypeScript compiler
-between cases; progress goes to standard error.
+2026-10-16) and is `make suite` after its build. Cases run in one worker
+process per core, each keeping its TypeScript compiler between cases;
+progress goes to standard error.
 
 The wider tier runs once for each change of producer, Lean, parser or
 shared-tool code. A later edit of cases, examples or docs alone reruns only
@@ -172,25 +173,32 @@ extraction, producer, wire), and what Lean proves needs no test.
 
 ## The suite's shape, and the rules that keep it
 
-`test-all.sh` (`make test`) runs the fast checks; `make suite` builds, then
-runs `pipeline/test.mts`. Two rules decide where a check goes.
+`make test` builds (a no-op when nothing changed), then runs `test-all.sh`:
+the fast checks and the controls (`pipeline/test.mts`). `make suite` builds,
+then runs the pipeline cases (`pipeline/run-cases.mts`). Three rules decide
+where a check goes.
 
 - **Suites start together.** A suite is `run_test "Name" command args…`; its
   output is buffered and reported in order, and a failure is counted, never
   fatal.
-- **A fast check needs no build and runs no stage.** A check that runs
-  neither the verifier nor the producer, nor a pipeline stage (the parse
-  included), is a suite of `test-all.sh`; one that does belongs in
-  `pipeline/test.mts`, as the observed stages' replay controls do
-  (`tests/observed-stages.mts`, beside the rest of that suite).
-- **Controls run in a pool.** Each control block of `pipeline/test.mts`
-  registers with `control(…)`; after the cases, a pool of control processes,
-  one per core, runs them, each control executing its tested operations
-  (`forced`) and replaying every other stage from the store the cases
-  filled. A control is independent of the others: it reads its cases'
-  artifacts through `run(…)`, a copy of its own, and states its own family
-  overrides. The suite reports the controls' wall time and the number and
-  summed time of their forced executions.
+- **A case is a source with its expected outcome; anything else is a
+  control.** A check of a source through the pipeline is a case of
+  `pipeline/cases.mts`. A check of the verifier, the producer or the
+  pipeline on an input no case makes (a forged document, a mutation, an
+  injected failure, a family override) is a control of `pipeline/test.mts`;
+  a check running no stage is a suite of `test-all.sh`.
+- **Controls replay like stages.** Each control block of `pipeline/test.mts`
+  registers with `control(…)` (`mutationControl(…)` where it runs the
+  mutation verifier); a pool of control processes, one per core, runs them.
+  Every operation a control runs goes through `tested` (`pipeline/stages.mts`)
+  and replays from the store when its executable, inputs and environment are
+  unchanged ([controls](docs/DESIGN.md#the-stage-store)). A control is
+  independent of the others: it reads its cases' artifacts through
+  `run(…)`, the case checked through the pipeline in its own process, and
+  states its own family overrides. The suite reports the controls' wall
+  time and how many of their operations executed and replayed. Controls of
+  the store itself (`tests/observed-stages.mts`, the replay control) name
+  fresh stores and execute every time.
 
 ## What a result means
 

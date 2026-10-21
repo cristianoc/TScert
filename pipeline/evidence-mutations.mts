@@ -5,13 +5,15 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { present } from "../tools/files.mts";
 import { spawnSync } from "node:child_process";
-import { forced, verifierCall } from "./stages.mts";
+import { auditMutationVerifier, tested, verifierCall } from "./stages.mts";
 import { sourceKey } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 
 const lean = resolve(import.meta.dirname, "../lean");
 const prefix = "lp_verification_Verification_";
-let executable: string | undefined;
+// The executable this process uses; null where it uses only one another process
+// builds and has none yet.
+let executable: string | null | undefined;
 
 function command(program: string, args: string[]): string {
   const result = spawnSync(program, args, { cwd: lean, encoding: "utf8", timeout: 180_000 });
@@ -56,6 +58,7 @@ static lean_object *some(lean_object *a) {
  * or uses the one `useMutationVerifier` names. */
 export function mutationVerifier(): string {
   if (executable) return executable;
+  if (executable === null) throw Error("this process runs the mutation verifier another process builds, and has none yet");
   const dir = runDirectory("evidence-mutations-");
   const compiles: { c: string; args: string[] }[] = [];
   const toolchain = command("lean", ["--print-prefix"]);
@@ -129,12 +132,15 @@ export function mutationVerifier(): string {
   writeFileSync(rsp, response);
   executable = join(dir, "mutation-verifier");
   command(clang, ["-o", executable, "@" + rsp]);
+  auditMutationVerifier(executable);
   return executable;
 }
 
 /** Use the mutation verifier at `path`, which another process of this run
- * built from the same build (`pipeline/test.mts`'s control processes). */
-export function useMutationVerifier(path: string): void {
+ * built from the same build (`pipeline/test.mts`'s control processes); with
+ * null, build none in this process. */
+export function useMutationVerifier(path: string | null): void {
+  if (path !== null) auditMutationVerifier(path);
   executable = path;
 }
 
@@ -146,7 +152,7 @@ export function checkMutation(artifacts: string, claims: string, path: string, m
   if (mutations === "stable") variants.push("handler");
   if (mutations === "handler") variants.push("stable");
   for (const [i, variant] of variants.entries()) {
-    const result = forced(verifierCall(mutationVerifier(), ["--check-source-claims", join(artifacts, "fragment.json"),
+    const result = tested(verifierCall(mutationVerifier(), ["--check-source-claims", join(artifacts, "fragment.json"),
       claims, sourceKey(artifacts), path], { TSCERT_TEST_MUTATIONS: variant }));
     assert.ifError(result.error);
     assert.equal(result.status, i === 0 ? 0 : 1,
@@ -158,7 +164,7 @@ export function checkMutation(artifacts: string, claims: string, path: string, m
  * document under the intended mutation and its component-removal controls. */
 export function forgedEvidence(artifacts: string, claims: string, name: string, mutations: string): string {
   const path = join(artifacts, `${name}-generated.json`);
-  const result = forced(verifierCall(mutationVerifier(), ["--produce-source-claims", join(artifacts, "fragment.json"),
+  const result = tested(verifierCall(mutationVerifier(), ["--produce-source-claims", join(artifacts, "fragment.json"),
     claims, sourceKey(artifacts), path, "12"], { TSCERT_TEST_MUTATIONS: mutations }));
   assert.ifError(result.error);
   assert.equal(result.status, 0, `${name}, ${mutations}: ${result.stdout}${result.stderr}`);

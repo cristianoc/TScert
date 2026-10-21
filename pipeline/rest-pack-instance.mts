@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { forced, verifierCall } from "./stages.mts";
+import { tested, verifierCall } from "./stages.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { readClaimsFile, sourceKey } from "./verify-source.mts";
 
@@ -22,7 +22,7 @@ export function checkRestPackInstance(verifier: string, artifacts: string, at: s
   const claimed = join(artifacts, "forged-pack-instance-claims.json");
   writeFileSync(claimed, JSON.stringify(forged));
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-    const p = forced(verifierCall(verifier, [mode, join(artifacts, "fragment.json"), claimed, sourceKey(artifacts),
+    const p = tested(verifierCall(verifier, [mode, join(artifacts, "fragment.json"), claimed, sourceKey(artifacts),
       join(artifacts, "evidence.json"), ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(p.error);
     assert.equal(p.status, 1, p.stdout + p.stderr);
