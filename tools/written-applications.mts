@@ -55,8 +55,10 @@ export type SweepContext = {
   parameters(declaration: Node): readonly MergedParameter[];
   /** The application's arguments, the written ones completed with the
    * defaults at them; the one completion every reader of an application
-   * shares. */
-  complete(declaration: Node, written: readonly TypeTerm[], use: Node, what: string): TypeTerm[];
+   * shares; a type declared in a block takes its captured arguments from
+   * `captured`. */
+  complete(declaration: Node, written: readonly TypeTerm[], use: Node, what: string,
+    captured: (parameter: ts.TypeParameterDeclaration) => TypeTerm): TypeTerm[];
   /** The written reference's edge to the declaration it names. */
   reference(name: ts.Identifier, args: readonly TypeNode[]): WrittenApplication["reference"];
   /** The declarations a member selection depends on: the top-level
@@ -302,7 +304,12 @@ export function writtenApplications(context: SweepContext, roots: readonly Node[
       const written = args.map((arg): TypeTerm => ts.isInferTypeNode(arg)
         ? { k: "binder", name: env.names.get(arg.typeParameter) ?? fresh(arg.typeParameter), span: spanOf(arg) }
         : context.read(arg, read));
-      const terms = context.complete(first, written, node, name.text);
+      const terms = context.complete(first, written, node, name.text, parameter => {
+        const bound = env.names.get(parameter);
+        if (bound === undefined)
+          throw Error(`it closes over the type parameter ${parameter.name.text}, which its scope does not bind`);
+        return { k: "binder", name: bound, span: spanOf(node) };
+      });
       const instance = context.instantiate(first, terms, node);
       const bounds = parameters.map(p => p.constraint ? instance(p.constraint) : null);
       found.push({ scope: pruned(env, [...terms, ...bounds.filter((b): b is TypeTerm => !!b)]),

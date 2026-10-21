@@ -304,6 +304,64 @@ one store in turn, and once extraction is done the heads are validated
 (`Equations.ofRaw`) and every request is checked over their
 `Equations.graph` (`SourceClaimJson.freezePlans`).
 
+### Block-scoped type declarations
+
+A `type` or `interface` declared in a block (a function body, a block
+statement, a loop's body, a `switch`'s case block, shared by its clauses)
+is erased by TypeScript's emit: the statement has no execution, and it
+binds a type name over its whole block, before and after it, as a
+module-level declaration binds one over the module. Its equation is read by
+the readers every declaration's is, lifted over the type parameters it
+closes over: $`\vec X`$, every enclosing type parameter TypeScript resolves
+at the declaration's block (each spelling the innermost binder of that
+name; a parameter a nearer type declaration of the same name hides is not
+one), outermost first, then its own $`\vec Y`$. The lifting is
+conservative: $`\vec X`$ holds every visible binder, whether the equation
+names it or not, so the refusals below apply to a block type that names
+none of them too. The captured arguments are equation arguments: the unit
+whose binders they are still owns them
+([generic methods](#generic-methods)).
+
+```math
+\frac{\mathtt{type}\ L\langle\vec Y\rangle=\tau\ \text{declared in a block}\quad
+      \vec X\ \text{the enclosing type parameters resolved at that block}}
+     {L(\vec X,\vec Y)=⟦\tau⟧}\ \textsf{block-type}
+\qquad
+\frac{\Gamma\vdash_R S}{\Gamma\vdash_R\ \mathtt{type}\ L\langle\vec Y\rangle=\tau;\ S}\ \textsf{type-statement}
+```
+
+and an interface the same way, its merged declarations in one block
+together. A reference is read at the declaration TypeScript binds it to
+(`blockTypes` in `declaration-graph.mts`), so a block declaration shadows
+a module declaration, a library type or a type parameter of the same
+spelling inside its block and nowhere else, and a type parameter of a
+nearer generic function shadows it in turn. Its captured arguments are the
+binders themselves, each required to be the binder TypeScript resolves
+that spelling to at the reference:
+
+```math
+\frac{L(\vec X,\vec Y)\ \text{a block type}\quad
+      \text{each}\ X_i\ \text{resolves to itself at the reference}}
+     {⟦L\langle\vec\sigma\rangle⟧=L(\vec X,⟦\vec\sigma⟧)}\ \textsf{block-reference}
+```
+
+A reference where a nearer binder hides an $`X_i`$ is refused, since no
+argument there denotes $`X_i`$ (`block-type-hidden-binder-refused`); so is
+a contextual type TypeScript states at a block type closing over a binder,
+whose alias arguments state only $`\vec\sigma`$. Every reader of an
+application completes its arguments through the one completion
+(`completeArguments`), which takes the captured arguments from its
+reader's scope (a binder at a use, the declaration's own captured position
+in an equation, the written application's binder in the bounds sweep) or
+refuses the application, so no reader reads a block type at $`\vec\sigma`$
+alone. A block declaration whose equation the readers cannot represent is
+refused at its use, as a module declaration is. One TypeScript computes
+from its parameters is evaluated at each application
+(`computed-types.mts`), its captured parameters at the binders there; a
+computed form naming the parameters of one closing over a binder, which
+TypeScript evaluates only at an instance, and an associated-result alias
+declared in a block are refused.
+
 ### Generic methods
 
 A declaration's generic method `m<U⃗>` is a head `D.m` of its own, taking
