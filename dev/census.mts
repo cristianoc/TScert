@@ -14,7 +14,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { checkApart, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
@@ -149,9 +149,8 @@ function writeStable(path: string, text: string): void {
   renameSync(temporary, path);
 }
 
-/** The census's copy of the repository's modules: tools/ and `directory`
- * (and pipeline/ for tests/, whose drivers import it), with tools/'s
- * installation linked, at a path the same for every process and run of
+/** The census's copy of tools/, `directory` and their local import closure,
+ * with tools/'s installation linked, at a path the same for every process and run of
  * this checkout, so slices' module paths, and the stage keys embedding them,
  * repeat. */
 function prepare(out: string, directory: string): void {
@@ -174,7 +173,30 @@ function prepare(out: string, directory: string): void {
     }
   }
   if (directory !== "tools") copy(join(repository, directory), join(out, directory), (n) => n.endsWith(".mts"));
-  if (directory === "tests") copy(join(repository, "pipeline"), join(out, "pipeline"), (n) => n.endsWith(".mts"));
+  const seen = new Set<string>();
+  const work = [...new Set(["tools", directory])].flatMap((dir) =>
+    readdirSync(join(repository, dir)).filter((n) => n.endsWith(".mts") || n.endsWith(".d.ts"))
+      .map((n) => join(repository, dir, n)));
+  for (let path = work.pop(); path !== undefined; path = work.pop()) {
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const text = readFileSync(path, "utf8");
+    const target = join(out, relative(repository, path));
+    mkdirSync(dirname(target), { recursive: true });
+    writeStable(target, text);
+    const from = dirname(path);
+    const add = (specifier: ts.Node | undefined): void => {
+      if (specifier && ts.isStringLiteral(specifier) && specifier.text.startsWith("."))
+        work.push(resolve(from, specifier.text));
+    };
+    const visit = (node: ts.Node): void => {
+      if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) add(node.moduleSpecifier);
+      if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) add(node.arguments[0]);
+      if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) add(node.argument.literal);
+      node.forEachChild(visit);
+    };
+    visit(openText(path, text));
+  }
 }
 
 // ---------------------------------------------------------------------------

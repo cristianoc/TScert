@@ -306,7 +306,10 @@ export function auditForTests(program: string, dependencies: readonly string[]):
  * read no environment variable the invocation does not fix (the Lean
  * runtime's and OCaml's are unset). Any other program (a test's stand-in,
  * the mutation verifier) has dependencies that are not identified. */
-function executableIdentity(program: string): { identity: Canonical } | { unidentified: string } {
+function executableIdentity(program: string, environment: Readonly<Record<string, string>>):
+    { identity: Canonical } | { unidentified: string } {
+  if (Object.keys(environment).some((name) => name.startsWith("DYLD_")))
+    return { unidentified: "child DYLD_ environment variables have unidentified code dependencies" };
   let real: string;
   try {
     real = realpathSync(program);
@@ -342,6 +345,8 @@ function executableIdentity(program: string): { identity: Canonical } | { uniden
  * libraries by content, its options (`execArgv`, `NODE_OPTIONS`); or why it
  * is not identified. */
 function diskNodeIdentity(): { identity: Canonical } | { unidentified: string } {
+  if (Object.keys(process.env).some((name) => name.startsWith("DYLD_")))
+    return { unidentified: "Node DYLD_ environment variables have unidentified code dependencies" };
   const options = [...process.execArgv, process.env["NODE_OPTIONS"] ?? ""].join(" ");
   if (/(?:^|[\s"'])(?:--(?:import|require|loader|experimental[-_]loader)(?:[=\s"']|$)|-r)/.test(options))
     return { unidentified: "Node import, require or loader options have unidentified code dependencies" };
@@ -471,7 +476,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
       if (bytes !== null) writeFileSync(join(directory, role), bytes);
       inputs.push([role, bytes === null ? null : sha256(bytes)]);
     }
-    const implementation = executableIdentity(program);
+    const implementation = executableIdentity(program, call.environment);
     const runtime = nodeIdentity();
     const manifest: Canonical = {
       stage: call.stage,

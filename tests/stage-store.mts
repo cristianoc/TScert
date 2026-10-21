@@ -121,11 +121,35 @@ freshStore("probe");
 const probe = invoke(lower(script("probe.sh", '/bin/cat "$2"'), file("probe.json", "probe")));
 const eligible = probe.record.key !== null;
 if (!eligible) {
-  assert.match(probe.record.ineligible ?? "", /macOS only|Node import, require or loader/);
+  assert.match(probe.record.ineligible ?? "", /macOS only|Node import, require or loader|Node DYLD_/);
   assert.equal(probe.record.execution, "executed");
   process.stdout.write(`replay ineligible: ${probe.record.ineligible}; invocations execute without keys\n`);
 }
 const replayExecution = eligible ? "replayed" : "executed";
+
+{
+  freshStore("dyld-runtime");
+  const program = script("dyld.sh", '/bin/cat "$2"');
+  const input = file("dyld.json", "runtime");
+  for (const name of ["DYLD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_FRAMEWORK_PATH", "DYLD_TEST_OVERRIDE"]) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const child = spawnSync(process.execPath, [import.meta.filename, "--runtime-child", program, input],
+        { encoding: "utf8", env: { ...process.env, [name]: "" } });
+      assert.equal(child.status, 0, child.stderr);
+      const [record] = readInvocationLog(file("dyld-log.jsonl",
+        JSON.stringify({ event: "end", record: JSON.parse(child.stdout) }) + "\n"));
+      assert.equal(record.key, null);
+      assert.equal(record.execution, "executed");
+      assert.match(record.ineligible ?? "", /Node DYLD_/);
+      const result = invoke({ ...lower(program, input), environment: { [name]: "" } });
+      assert.equal(result.record.key, null);
+      assert.equal(result.record.execution, "executed");
+      assert.match(result.record.ineligible ?? "", /child DYLD_/);
+    }
+  }
+  process.stdout.write("DYLD overrides: Node and stage-child environments execute without keys\n");
+}
+
 
 {
   // Dependency invalidation: the same invocation replays; another input,

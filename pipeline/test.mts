@@ -4539,13 +4539,20 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // Replay: a cold run in a fresh store and a warm run in another run root
   // agree on their outcome, documents and logs; the warm run replays every
   // replayed stage (module runs and explanations included) and executes the
-  // parse and the check. A changed source executes again.
+  // parse and TypeScript diagnostics. The warm worker first checks other sources.
+  // A changed source executes again.
   const store = runDirectory("tscert-replay-store-");
-  const runAt = (source: string, project: string | null): { outcome: Outcome; records: AttemptRecord[] } => {
+  const runAt = (source: string, project: string | null, preceding: readonly string[] = []): { outcome: Outcome; records: AttemptRecord[] } => {
     const root = runDirectory("tscert-replay-root-");
-    const ran = spawnSync(process.execPath, [join(here, "verify-source.mts"), source,
-      ...(project ? ["--project", project] : [])],
+    // Sequential awaits use the same idle worker; each driver starts a fresh pool.
+    const driver = `import { checkApart } from ${JSON.stringify(pathToFileURL(join(here, "verify-source.mts")).href)};
+for (const source of ${JSON.stringify(preceding)}) await checkApart(source);
+process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, ${JSON.stringify(project ?? undefined)})));`;
+    const driverPath = join(root, "worker-history.mts");
+    writeFileSync(driverPath, driver);
+    const ran = spawnSync(process.execPath, [driverPath],
       { encoding: "utf8", timeout: 240_000, env: { ...process.env, TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: root } });
+    assert.equal(ran.status, 0, ran.stderr);
     const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
     return { outcome, records: readInvocationLog(join(outcome.artifacts, invocationLog)) };
   };
@@ -4559,7 +4566,8 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   for (const [name, project] of runs) {
     const source = join(here, "examples", `${name}.ts`);
     const projectPath = project ? resolve(here, "..", project) : null;
-    const cold = runAt(source, projectPath), warm = runAt(source, projectPath);
+    const cold = runAt(source, projectPath), warm = runAt(source, projectPath,
+      [join(here, "examples", "values.ts"), join(here, "examples", "invalid-void-result.ts")]);
     const { artifacts: coldArtifacts, ...coldOutcome } = cold.outcome;
     const { artifacts: warmArtifacts, ...warmOutcome } = warm.outcome;
     assert.notEqual(coldArtifacts, warmArtifacts);
@@ -4570,7 +4578,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     for (const r of warm.records) {
       assert.equal(r.execution, replayed.has(r.stage) && r.key !== null ? "replayed" : "executed", `${name}: warm ${r.stage}`);
       if (replayed.has(r.stage) && r.key === null) {
-        assert.match(r.ineligible ?? "", /macOS only|Node import, require or loader/,
+        assert.match(r.ineligible ?? "", /macOS only|Node import, require or loader|Node DYLD_/,
           `${name}: ${r.stage} explains its unidentified dependencies`);
         process.stdout.write(`${name}: ${r.stage} executes without a key: ${r.ineligible}\n`);
       }
@@ -4584,6 +4592,6 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const after = runAt(changed, null);
   assert.equal(after.outcome.status, before.outcome.status);
   for (const r of after.records) assert.ok(ranStage(r), `a changed source: ${r.stage} executed`);
-  process.stdout.write("replay: cold and warm runs in other run roots agree on outcomes, documents and logs; the warm run " +
+  process.stdout.write("replay: cold and warm workers with different request histories agree on outcomes, documents and logs; the warm run " +
     "replays eligible stages and executes stages with unidentified dependencies; a changed source executes\n");
 }
