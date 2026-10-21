@@ -47,6 +47,7 @@ design, not its progress.
 | [A call returning `never`](docs/PROGRAM-TYPING.md#vacuous-edges) | closed: an edge out of a context with a slot of the empty type establishes any target claim, plain and branch edges alike; the producer keeps the normal edge out of an expression statement claimed at the empty type, carrying every value and local slot at the empty type with storage bindings unchanged; `never-call-narrowing` and `compiler-api-never-guard` verify, a returning call claimed at the empty type is refused (2026-10-20) | — |
 | [Contextual function types](docs/SOURCE-ELABORATION.md#source-closures-and-their-annotations) | closed: a closure parameter TypeScript types by a function type is read as written where the program writes it, else through its one call signature as instantiated; `closure-contextual-callable` and `compiler-api-contextual-callable` verify, `invalid-closure-contextual-callable` is refused (run under Node) (2026-10-20) | — |
 | [Assigned closure parameters](#assigned-closure-parameters) | closed: reads use a slot or cell by the flow graph's decision (2026-10-21, [slice measurement](#census-closure-parameter-slots)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past the `let`-union refusal |
+| [Patterns binding a `for...of` over a program's iterable](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) | closed: each step's value is destructured first in the closing region, by the array loop's lowering; an array's `values`, `keys` and `entries` are read at `IterableIterator` of their declared argument and stepped by the protocol (2026-10-21, [slice measurement](#census-for-of-patterns)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past the `for...of` pattern refusal |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
@@ -643,7 +644,8 @@ first three items 2026-10-19):
   path is through the read link;
 - a pattern binding a `for...of` over a program's iterable (17), the slices
   of `type-term.mts` past their contextual function types (2026-10-20,
-  [census](#census-never-callable)); the slices of
+  [census](#census-never-callable)), which stop past it at a type alias
+  statement in a function body ([record](#census-for-of-patterns)); the slices of
   `fragment-statements.mts` past `protocolPattern`'s call of `gate.fail`
   read a closure's assigned parameter after a host guard, a
   [slot](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)
@@ -794,6 +796,15 @@ expression on a `let` holding a union of objects" (`hoistTarget`'s `first`
 and `assignedNames`'s `targets`, `while (ts.isParenthesizedExpression(x))
 x = x.expression`); on the branch both stop at "missing field 242", the
 reverse lookup `ts.SyntaxKind[s.kind]` in `statements`.
+
+<a id="census-for-of-patterns"></a>
+Two slices of `type-term.mts`, `readTypeTerm` and `typeTerm`, which calls it,
+on 5191b20 (main) and on the branch destructuring a `for...of` pattern over a
+program's iterable in the closing region (2026-10-21): neither verifies on
+either. On main both stop at the gate's "a pattern binding a `for...of` over
+a program's iterable", `quantified`'s `for (const [index, p] of
+typeParameters.entries())`; on the branch both stop at "statement outside the
+fragment (TypeAliasDeclaration)", a type alias declared in a function body.
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:

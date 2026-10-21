@@ -560,6 +560,35 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   process.stdout.write("forged error instances: an own message and a stack claimed of a constructed error, refused\n");
 }
 {
+  // A pattern binding a `for...of` over a program's iterable reads the
+  // step's value through a name no source spells, at the head's `const `:
+  // claiming that read, or the step's value it binds, at a string is
+  // refused where evidence is produced and where it is checked.
+  const patterns = run("for-of-pattern-program-iterable");
+  const source = readFileSync(join(patterns, "source.ts"), "utf8");
+  const head = source.indexOf("const [key, n] of pairs");
+  const pattern = head + "const ".length;
+  // A string where the pattern reads the pair is refused where the pattern
+  // binds; one where the step's value is bound, at that read.
+  const key = source.indexOf("key", pattern);
+  const sites: [name: string, pos: [number, number], at: string][] = [
+    ["forged-for-of-element-read", [head, pattern],
+      `at [${key},${key + "key".length}): an array pattern requires an array contract`],
+    ["forged-for-of-element-value", [pattern, pattern + "[key, n]".length],
+      `at [${pattern},${pattern + "[key, n]".length})`],
+  ];
+  for (const [name, pos, at] of sites) {
+    const claims = readClaims(patterns);
+    const fn = must(claims.functions.find((f) => f.name === "keyed"), "keyed's claims");
+    must(fn.expressions.find((e) => e.pos[0] === pos[0] && e.pos[1] === pos[1]), `the claim at [${pos}]`).type =
+      [rowOf(claims, "str")];
+    const forged = writeClaims(patterns, name, claims);
+    refusedAt(patterns, forged, name, at);
+    invoke(forged, join(patterns, "evidence.json"), patterns);
+  }
+  process.stdout.write("forged for-of patterns: the element's read and the step's value claimed at a string, refused\n");
+}
+{
   // The allocation route's trusted boundary: the parser reserves `message`
   // and `stack` as member names of a class extending `Error` (SOURCE-ELABORATION.md, "A class
   // extending Error"), and Lean reads no class declaration. A fragment, claims

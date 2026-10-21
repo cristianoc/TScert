@@ -949,6 +949,7 @@ export class Gate {
   forInStmt: typeof statements.forInStmt = statements.forInStmt;
 
   protocolForOf: typeof statements.protocolForOf = statements.protocolForOf;
+  forOfPattern: typeof statements.forOfPattern = statements.forOfPattern;
 
   sites: typeof statements.sites = statements.sites;
 

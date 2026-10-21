@@ -1453,8 +1453,8 @@ its receiver is a primitive, it converts only primitives (a string search
 reads no `[Symbol.match]` of a primitive pattern, `split` and `replace` are
 stated at a string pattern), reads `locales` by index, and allocates only its
 result. Of `ArrayProto`, `slice`, `join`, `toString`, `indexOf`,
-`lastIndexOf`, `includes`, `at` and `[Symbol.iterator]` state it: they read
-the receiver, convert only numbers and elements meeting the conversion
+`lastIndexOf`, `includes`, `at`, `[Symbol.iterator]`, `values`, `keys` and
+`entries` state it: they read the receiver, convert only numbers and elements meeting the conversion
 contract below, compare by strict equality or SameValueZero, and allocate
 only their result. `find`, `findIndex`, `filter`, `some`, `every`,
 `forEach` and `flatMap` call a callback; each reads the length once and the
@@ -2937,7 +2937,12 @@ falsy (a [field slice](PROGRAM-TYPING.md#refinement-under-an-observed-outcome) t
 read's link, optional where `IteratorYieldResult` leaves `done` optional), so
 `r.value` is read at the not-done arm's type, `T`. An iterator whose type
 states no `return` is refused where the loop could close it: an open record
-may own any `return`.
+may own any `return`. An array's `values`, `keys` and `entries` give the
+`ArrayIterator` the library declares, read at the overlay as
+`IterableIterator` of the declared argument (`[number, T]` for `entries`):
+the iterator is its own, and a program's iterable by this rule, its `return`
+read `undefined` and the close calling nothing, by the
+[host assumption](DESIGN.md#trust-surface) that its chain holds none.
 
 The library's declarations are read by the rules of
 [library types](#library-types): `Iterable<T>` is the record of its one
@@ -2971,6 +2976,35 @@ body's. Its end and a `continue` go to the head, and a done result leaves
 without it, as IteratorClose is not called there. A jump past the loop to an
 outer target passes it as it passes a `finally`. Every edge is checked as
 any other; the close's statement entries state each cell at its contract.
+
+A pattern $`p`$ binding the loop binds the step's value to a name no source
+spells, where $`x`$ is bound, and destructures it as the closing region's
+first statement:
+
+```math
+\mathsf{const}\ r=n();\ \mathsf{if}\ (r.\mathit{done})\ \mathsf{break};\
+\mathsf{const}\ \%e=r.\mathit{value};\
+\mathsf{closing}\ \{\ \mathsf{const}\ p=\%e;\ S\ \}\ \mathsf{close}\ C_i
+```
+
+ForIn/OfBodyEvaluation runs ForDeclarationBindingInitialization of $`p`$ on
+the step's value after IteratorValue and before the body, and on its abrupt
+completion returns IteratorClose with it: a throw of a default or of a read
+the pattern makes closes the iterator, its own throw discarded, as a throw out
+of $`S`$ does, and a default has no other way out. The pattern runs between two
+steps of the protocol, so its code runs where JavaScript runs it. The inner
+declaration is a `const` pattern's over a value another reference may hold
+(the iterator may keep it), with every rule of
+[patterns](SOURCE-ELABORATION.md#patterns): an array pattern reads the
+positions of an array, with no code that may change it between its steps, its
+nested patterns and defaults included
+(`for-of-pattern-program-iterable-default-refused`); an array pattern over a
+value that is no array (a string, a `Set`, an iterable the program defines)
+is refused by the typing of those reads
+(`for-of-pattern-nested-iterable-refused`), and a position past a short
+array is `undefined` (`invalid-for-of-pattern-program-iterable`, run under
+Node). It is the same lowering as a pattern over an array's loop
+(`forOfPattern`), inside the region (`for-of-pattern-program-iterable`).
 
 A spread of a program's iterable (`collect`) that is the first evaluation
 able to run code of the statement's value (an expression statement's, a
