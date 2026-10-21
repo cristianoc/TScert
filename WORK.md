@@ -63,7 +63,7 @@ design, not its progress.
 | [The any check over external declarations](#the-any-check-over-external-declarations) | open: a stated limit, relations that `any` satisfied in an outside declaration are not re-established; 447 errors in the shadowed declarations (2026-10-18) | a check re-establishes the relations and `tests/unchecked-project/gaps.mts` is refused |
 | [Node's process](#nodes-process) | open: the environment write a located gap; events known only as strings refused | a write of `process.env` through a receiver-bound host setter over shared state preserving every alias's view; signals reached through iteration proven admitted |
 | [JSON records by their fields](#json-records-by-their-fields) | open | a record bounded on all its own string keys meets `JsonValue`, built or validated and kept through mutation and external calls |
-| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 134 of 385 functions verify in `tools/`, 24 of 24 in `dev/`, 9 of 13 in `tests/` and 3 of 37 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
+| [The front end's own functions](#the-front-ends-own-functions) | open: of the test infrastructure (`tools/*.mts`, `dev/*.mts`, `pipeline/*.mts` and the seven drivers of `tests/`; the fixtures `tests/unchecked-project/`, `tests/unchecked-broken/`, `pipeline/examples/`, `pipeline/imports-project/` and `pipeline/library-project/` excluded), 136 of 390 functions verify in `tools/` ([dcc972d](#census-dcc972d)), 24 of 24 in `dev/`, 9 of 13 in `tests/` and 3 of 37 in `pipeline/` (2026-10-19, 60 s step limit) | the blockers listed there are admitted or refused by a stated restriction |
 
 ### Open work
 
@@ -847,6 +847,31 @@ producer at "bind requires a single arrow and a valid argument prefix": the
 slices' only bound calls are the iterators' `next` the protocol lowering
 binds, in `visitType` and in `quantified`'s and `signatures`' `for (const
 [index, p] of ….entries())`.
+
+<a id="census-dcc972d"></a>
+The `tools/` census of dcc972d (main, after the vacuous never-call edges,
+contextual callables, closure parameter slots, enum reverse keys, `for...of`
+patterns, `filter`'s guard overload and block-scoped type declarations;
+2026-10-21, 9 min 43 s, load averages 2.4 → 14.8): 136 of 390 slices
+verify, against 134 of 385 on 6ec97aa. No slice is refused at checking:
+every slice whose search wrote evidence verifies.
+
+- verified on dcc972d only (4): `fragment-expressions.mts#refuseReceiverForm`,
+  refused in search on 6ec97aa; three new slices,
+  `fragment-classes.mts#identityKey` and `#registerEquation` and
+  `fragment-statements.mts#typeStatement`;
+- verified on 6ec97aa only (2), each now past the 60 s step limit and each
+  verified when run alone with no limit:
+  `declaration-graph.mts#untypedAmbientField` (57 s for the whole pipeline)
+  and `fragment-support.mts#shadowingLocals` (70 s), at load averages near
+  10;
+- timeouts (21, none on 6ec97aa): those two and 19 slices of
+  `fragment-statements.mts` (`protocolPattern`, `patternStmt`, `statements`,
+  `stmt` and the statement forms reaching them), which past `filter`'s guard
+  overload reach a search of about 90 s ([filter guard](#census-filter-guard));
+- new slices (5): the three above, `family-activation.mts#enumObjectMatches`
+  (refused at the gate) and `fragment-statements.mts#forOfPattern` (refused
+  in search).
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:
