@@ -53,12 +53,15 @@ export function enumOpen(this: Gate, name: string): boolean {
  * at its literal, and, for a numeric member, the reverse mapping from the
  * value's property key to the member's name, the last member with that
  * value winning (`enumEntries`). An open enum's object (`enumOpen`) states
- * its members only, one known only at run time at `number`
- * (`enumMembersTerm`). */
+ * its members, one known only at run time at `number` (`enumMembersTerm`),
+ * and, built by `%Enum:E%`, the reverse keys of the values TypeScript
+ * computes, each at `string`; an ambient enum's, the environment's, its
+ * members alone. */
 export function enumObjectTerm(this: Gate, name: string, span: Span): TypeTerm {
   const gate: Gate = this;
   if (gate.enumOpen(name))
-    return enumMembersTerm(gate.enumMembers(name).map((m) => ({ name: m.name, value: m.value ?? undefined })), span);
+    return enumMembersTerm(gate.enumMembers(name).map((m) => ({ name: m.name, value: m.value ?? undefined })), span,
+      gate.enums.get(name)?.ambient ? "none" : "stated");
   return {
     k: "object",
     fields: gate.enumEntries(name).map((e) => ({ name: e.key, optional: false, readonly: true,

@@ -8,8 +8,9 @@
 // C1, enums: for every host enum the contract reads (`hostEnums` in
 // tools/compiler-api.mts), each member of its `.enum.d.ts` is a plain integer
 // literal equal to the value of the runtime object Node loads for
-// `#enums/<file>` under the `default` condition, the runtime object's keys are
-// exactly the members and their reverse mappings, and the entry points that
+// `#enums/<file>` under the `default` condition, the runtime object's own keys are
+// exactly the members and their reverse mappings, data properties, each
+// reverse key holding the name of a member with its value, and the entry points that
 // export the enum export that object.
 //
 // C4, node lists: every transparent row of a node list answers as a dense
@@ -25,7 +26,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { compilerApiFamily, hostViews, hostEnums, hostPackage } from "../tools/compiler-api.mts";
-import { declarationsDigest, installationRoot, isHostFile, reviewedFamilies, useFamiliesForTests } from "../tools/family-activation.mts";
+import { declarationsDigest, enumObjectMatches, installationRoot, isHostFile, reviewedFamilies, useFamiliesForTests } from "../tools/family-activation.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
@@ -164,24 +165,18 @@ for (const { name, file } of hostEnums) {
   const values = new Map(runtimeEntries);
   for (const { member, value } of declared)
     assert.equal(values.get(member), value, `${name}.${member}: declared ${value}, at run time ${values.get(member)}`);
-  // The runtime object's keys: the members, and for each numeric value the
-  // reverse mapping to the last member declaring it.
-  const expected = new Set(declared.map((d) => d.member));
-  for (const { value } of declared) expected.add(String(value));
-  assert.deepEqual(new Set(values.keys()), expected, `${name}: the runtime object's keys are its members and reverse mappings`);
-  // Each key an own data property holding a primitive: a read of it runs no
-  // code. The object is mutable; that it is never written is F5.
-  for (const key of Reflect.ownKeys(runtime)) {
-    const descriptor = Reflect.getOwnPropertyDescriptor(runtime, key);
-    assert.ok(descriptor && "value" in descriptor && !descriptor.get && !descriptor.set &&
-      (typeof descriptor.value === "number" || typeof descriptor.value === "string"),
-      `${name}.${String(key)}: an own data property holding a primitive`);
-  }
+  // The runtime object is the emitted enum object (`emitted-enum`): each
+  // member an own data property holding its value, at each value's key an
+  // own data property holding the name of a member with that value, and no
+  // other own key, so a read of a key runs no code. The object is mutable;
+  // that it is never written is F5.
+  assert.ok(enumObjectMatches(runtime, declared.map(({ member, value }) => ({ name: member, value }))),
+    `${name}: the runtime object's own keys are its members and reverse mappings, data properties`);
   for (const exported of [ast, sync])
     if (name in exported) assert.equal(exported[name], runtime, `${name}: an entry point exports the object #enums loads`);
   members += declared.length;
 }
-console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the runtime value, an own data property holding a primitive`);
+console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the runtime value, with its reverse mapping, own data properties`);
 
 // C4 for node lists (COMPILER-API.md, "Node lists"; T4): on lists of lengths
 // around 16, where index getters move from the prototype to the instance,

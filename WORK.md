@@ -47,6 +47,7 @@ design, not its progress.
 | [A call returning `never`](docs/PROGRAM-TYPING.md#vacuous-edges) | closed: an edge out of a context with a slot of the empty type establishes any target claim, plain and branch edges alike; the producer keeps the normal edge out of an expression statement claimed at the empty type, carrying every value and local slot at the empty type with storage bindings unchanged; `never-call-narrowing` and `compiler-api-never-guard` verify, a returning call claimed at the empty type is refused (2026-10-20) | — |
 | [Contextual function types](docs/SOURCE-ELABORATION.md#source-closures-and-their-annotations) | closed: a closure parameter TypeScript types by a function type is read as written where the program writes it, else through its one call signature as instantiated; `closure-contextual-callable` and `compiler-api-contextual-callable` verify, `invalid-closure-contextual-callable` is refused (run under Node) (2026-10-20) | — |
 | [Assigned closure parameters](#assigned-closure-parameters) | closed: reads use a slot or cell by the flow graph's decision (2026-10-21, [slice measurement](#census-closure-parameter-slots)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past the `let`-union refusal |
+| [Enum reverse keys](docs/SOURCE-CONTRACTS.md#enums) | closed: an enum's object states, at each numeric value TypeScript computes, its reverse key at `string` where TypeScript's emit builds it or its runtime object is checked (`emitted-enum`); `enum-reverse-keys`, `enum-reverse-value-import` and `compiler-api-enum-reverse` verify, a key at `number` or outside the values, a string member's value and an ambient or declaration file's enum are refused (run under Node), forged claims refused at the read (2026-10-21, [slice measurement](#census-enum-reverse-keys)) | — |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
@@ -647,9 +648,10 @@ first three items 2026-10-19):
   `fragment-statements.mts` past `protocolPattern`'s call of `gate.fail`
   read a closure's assigned parameter after a host guard, a
   [slot](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)
-  of the closure's activation, and stop at `ts.SyntaxKind[s.kind]`, a
-  numeric enum's reverse lookup ("missing field 242",
-  [record](#census-closure-parameter-slots));
+  of the closure's activation, read `ts.SyntaxKind[s.kind]`, a numeric
+  enum's reverse lookup, at `string`, and stop in `readCannotThrow` at the
+  closure `d => d.modifiers?.some(…)`, whose signature claim is outside the
+  source annotation ([record](#census-enum-reverse-keys));
 - a callback's parameter written without a type is read at its contextual
   type, records, indexes and aliases without parameters included; no slice
   stops there;
@@ -794,6 +796,15 @@ expression on a `let` holding a union of objects" (`hoistTarget`'s `first`
 and `assignedNames`'s `targets`, `while (ts.isParenthesizedExpression(x))
 x = x.expression`); on the branch both stop at "missing field 242", the
 reverse lookup `ts.SyntaxKind[s.kind]` in `statements`.
+
+<a id="census-enum-reverse-keys"></a>
+The same two slices on 5191b20 (main) and on the branch stating an enum's
+reverse keys (2026-10-21): neither verifies on either. On main both stop at
+"missing field 242", `ts.SyntaxKind[s.kind]` in `statements`; on the branch
+both read it at `string` and stop in search at "closure signature claim is
+outside the source annotation", the closure
+`d => d.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword)` in
+`readCannotThrow`.
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:

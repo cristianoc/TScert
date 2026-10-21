@@ -573,12 +573,20 @@ export function tagEnumObject(description: FamilyDescription): unknown {
  * its name and the value TypeScript computes), is the runtime object the
  * family's activated entry point exports under the enum's name, as Node
  * loaded it (HOST-FAMILIES.md, "Activation"; C1 of the compiler API, for
- * every family): each member an own data property holding its value, and
- * every other own key the reverse mapping of a numeric member. False where
- * the family's guard table is not active, or the entry point exports no
- * such object. */
+ * every family, `enumObjectMatches`). False where the family's guard table
+ * is not active, or the entry point exports no such object. */
 export function tagEnumMatches(description: FamilyDescription, declared: readonly { name: string; value: string | number | undefined }[]): boolean {
-  const object = tagEnumObject(description);
+  return enumObjectMatches(tagEnumObject(description), declared);
+}
+
+/** Whether `object` is the object of an enum declared with the members
+ * `declared`, each its name and the value TypeScript computes, as
+ * TypeScript's emit builds it (SOURCE-CONTRACTS.md, "Enums",
+ * `emitted-enum`): each member an own data property holding its value; for
+ * each numeric value, the own data property its `ToString` names holding the
+ * name of a member with that value, the reverse mapping; and no other own
+ * key. */
+export function enumObjectMatches(object: unknown, declared: readonly { name: string; value: string | number | undefined }[]): boolean {
   if (typeof object !== "object" || object === null || !declared.length) return false;
   const members = new Map<string, string | number>();
   for (const { name, value } of declared) {
@@ -587,8 +595,15 @@ export function tagEnumMatches(description: FamilyDescription, declared: readonl
     if (!property || !("value" in property) || property.value !== value) return false;
     members.set(name, value);
   }
-  return Reflect.ownKeys(object).every(key => typeof key === "string" && (members.has(key) || [...members].some(([name, value]) =>
-    typeof value === "number" && String(value) === key && Object.getOwnPropertyDescriptor(object, key)?.value === name)));
+  // A reverse key's own data property, holding the name of a member with
+  // the value its key names.
+  const reverse = (key: string): boolean => {
+    const property = Object.getOwnPropertyDescriptor(object, key);
+    return !!property && "value" in property && typeof property.value === "string" &&
+      String(members.get(property.value)) === key && typeof members.get(property.value) === "number";
+  };
+  return [...members.values()].every(value => typeof value !== "number" || reverse(String(value))) &&
+    Reflect.ownKeys(object).every(key => typeof key === "string" && (members.has(key) || reverse(key)));
 }
 
 /** The entry of the listed guard of a declaration's name, for the run's tag

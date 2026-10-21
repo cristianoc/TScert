@@ -252,33 +252,61 @@ export function literalTerm(value: string | number, at: [number, number]): TypeT
  * run time. */
 export type EnumMemberValue = { name: string; value: string | number | undefined };
 
+/** Whether an enum's object holds the reverse mapping at its numeric values'
+ * keys (SOURCE-CONTRACTS.md, "Enums"): `stated` where TypeScript's emit
+ * builds it or its runtime object is checked to hold it, `none` for the
+ * environment's object, of which the members alone are assumed. */
+export type EnumReverse = "stated" | "none";
+
 /** The object type of an enum one of whose members' values is known only at
- * run time, or of an ambient enum: each member a readonly field at its
- * value's literal type, or at `number` where its value is known only at run
- * time (TypeScript requires such a member to be a number). It states no
- * reverse mapping, whose keys are values known only at run time, or, for an
- * ambient enum, the environment's. */
-export function enumMembersTerm(members: readonly EnumMemberValue[], at: [number, number]): TypeTerm {
-  return { k: "object", span: at, stringIndex: null, calls: [], fields: members.map(m => ({
-    name: m.name, optional: false, readonly: true,
-    type: m.value === undefined ? { k: "atom", name: "number", span: at } : literalTerm(m.value, at), span: at })) };
+ * run time, or of an enum another module or the environment declares: each
+ * member a readonly field at its value's literal type, or at `number` where
+ * its value is known only at run time (TypeScript requires such a member to
+ * be a number); with `reverse` stated, O^ρ(E), also each
+ * numeric value TypeScript computes a readonly field at `string` under its
+ * `ToString`, which holds the name of a member with that value. The keys are
+ * in JavaScript's order where they are known: array index keys ascending,
+ * then the others as the emit creates them. A reverse key of a value known
+ * only at run time is no field. */
+export function enumMembersTerm(members: readonly EnumMemberValue[], at: [number, number], reverse: EnumReverse): TypeTerm {
+  const fields = new Map<string, Extract<TypeTerm, { k: "object" }>["fields"][number]>();
+  const names = new Set(members.map(m => m.name));
+  for (const m of members) {
+    fields.set(m.name, { name: m.name, optional: false, readonly: true,
+      type: m.value === undefined ? { k: "atom", name: "number", span: at } : literalTerm(m.value, at), span: at });
+    if (reverse === "none" || typeof m.value !== "number") continue;
+    const key = String(m.value);
+    // No member is named by a canonical numeric string (TS2452; `NaN` and
+    // `Infinity` are no finite value's key), so a reverse key replaces none.
+    if (names.has(key)) throw Error(`an enum member named ${key} would be replaced by a reverse mapping`);
+    if (!fields.has(key))
+      fields.set(key, { name: key, optional: false, readonly: true, type: { k: "atom", name: "string", span: at }, span: at });
+  }
+  const index = (k: string) => /^(0|[1-9][0-9]*)$/.test(k) && Number(k) < 4294967295;
+  const keyed = [...fields].map(([key, field]) => ({ key, field }));
+  return { k: "object", span: at, stringIndex: null, calls: [], fields: [
+    ...keyed.filter(f => index(f.key)).sort((a, b) => Number(a.key) - Number(b.key)).map(f => f.field),
+    ...keyed.filter(f => !index(f.key)).map(f => f.field),
+  ] };
 }
 
 /** The intrinsic building the object of the enum `name` one of whose
  * members' values is known only at run time. */
 export const enumIntrinsicName = (name: string): string => `%Enum:${name}%`;
 
-/** `%Enum:E%(o: O): O`, with `O` the enum's `enumMembersTerm`: given the
- * fresh object of its members at their values, it returns that object with
- * the reverse mapping TypeScript's emit adds, for each numeric member in
- * turn the property its value's `ToString` names, holding the member's
- * name. Those keys are canonical numeric strings, none a member's name (the
- * parser refuses a member named `NaN` or `Infinity`, and TypeScript any other
- * numeric name), so every member keeps its field. */
+/** `%Enum:E%(o: O°): O^ρ`, with `O°` and `O^ρ` the enum's `enumMembersTerm`
+ * without and with its reverse keys: given the fresh object of its members
+ * at their values, it returns that object with the reverse mapping
+ * TypeScript's emit adds, for each numeric member in turn the property its
+ * value's `ToString` names, holding the member's name. Those keys are
+ * canonical numeric strings, none a member's name (the parser refuses a
+ * member named `NaN` or `Infinity`, and TypeScript any other numeric name),
+ * so every member keeps its field, and each key of a value TypeScript
+ * computes holds the name of the last member with that value, a string. */
 export function enumIntrinsic(name: string, members: readonly EnumMemberValue[]):
     { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
-  const object = enumMembersTerm(members, span);
-  return { name: enumIntrinsicName(name), typeParams: [], type: fn([object], object) };
+  return { name: enumIntrinsicName(name), typeParams: [],
+    type: fn([enumMembersTerm(members, span, "none")], enumMembersTerm(members, span, "stated")) };
 }
 
 /** The intrinsics' binders and signatures, given the standard library's

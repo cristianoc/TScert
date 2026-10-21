@@ -23,7 +23,9 @@
       "@fixture/whole": ["./whole.ts", "./defaulted.ts"],
       "@fixture/defaulted": ["./defaulted.ts"],
       "@fixture/defaulted-key": ["./defaulted-key.ts"],
-      "@fixture/default-function": ["./default-function.ts"]
+      "@fixture/default-function": ["./default-function.ts"],
+      "@fixture/grades": ["./grades.ts"],
+      "@fixture/grades-relay": ["./grades-relay.ts"]
     }
   },
   "include": [
@@ -43,6 +45,9 @@
     "./whole.ts",
     "./defaulted.ts",
     "./defaulted-key.ts",
-    "./generated-names.d.ts"
+    "./generated-names.d.ts",
+    "./grades.ts",
+    "./grades-relay.ts",
+    "./grades-ambient.d.ts"
   ]
 }

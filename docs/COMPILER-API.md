@@ -214,9 +214,11 @@ are ordinary types.
    of type `unknown`. A brand is such a member; reading one gives
    `undefined`.
 3. **Enums.** A host enum $`E`$, a `declare enum` the package's modules
-   export through the `#enums/*` imports, is read by the `ambient-enum`
-   rule ([enums](SOURCE-CONTRACTS.md#enums)): the value `E` is
-   $`\mathcal O^{\circ}(E)`$ and `E.M` the literal type of `M`'s value. The
+   export through the `#enums/*` imports and the contract lists, is read by
+   the `emitted-enum` rule ([enums](SOURCE-CONTRACTS.md#enums)): the value
+   `E` is $`\mathcal O^{\rho}(E)`$, its members and, at each value's key, a
+   member's name, which C1 checks of the runtime object, and `E.M` the
+   literal type of `M`'s value. The
    type `E` at a position of a host declaration is `number`, since
    TypeScript admits any number at a numeric enum type and the flag enums
    hold combinations there. A literal member type `SyntaxKind.Identifier`
@@ -838,8 +840,9 @@ as regression evidence.
 - **C1, enums.** For every enum the contract reads (`hostEnums`), every
   member of its `.enum.d.ts` is an integer literal equal to the value of the
   runtime object Node loads for `#enums/<name>` under the `default`
-  condition, the object's keys are the members and their reverse mappings,
-  each an own data property holding a primitive, and the entry points
+  condition, the object's own keys are the members and their reverse
+  mappings, each an own data property, a reverse key holding the name of a
+  member with its value (`enumObjectMatches`), and the entry points
   exporting the enum export that object. The object is mutable; that it is
   never written is F5.
 - **C2, guards (regression evidence).** The

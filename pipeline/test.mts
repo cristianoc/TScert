@@ -3453,6 +3453,43 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   process.stdout.write("forged enum claims: the tag enum read at a writable record, refused at the read\n");
 }
 {
+  // An enum's reverse keys (SOURCE-CONTRACTS.md, "Enums"), by claims
+  // bypassing the producer. The key of a read at the enum's values, claimed
+  // at `number`, which it meets, leaves the read at an arbitrary number:
+  // refused, the object stating a reverse key at its values alone.
+  const artifacts = run("enum-reverse-keys");
+  const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const read = text.indexOf("Open[k]");
+  {
+    const claims = readClaims(artifacts);
+    const key = must(claims.functions.find((f) => f.name === "openName"), "openName's claims").expressions
+      .find((e) => e.pos[0] === read + "Open[".length);
+    must(key, "the claim of the key").type = [rowOf(claims, "num")];
+    const forged = writeClaims(artifacts, "forged-enum-reverse-number", claims);
+    const searched = produceWith(artifacts, forged, "forged-enum-reverse-number");
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    assert.match(searched.stdout + searched.stderr, /a numeric array key needs a proved array-index singleton/);
+  }
+  // An ambient enum's object states its members alone. The claims of the
+  // same source reading a constant declared with a reverse key, `Grede`,
+  // stated of the ambient enum `Grade`'s read, are refused at that read.
+  const refused = run("invalid-ambient-enum-reverse");
+  const source = readFileSync(join(refused, "source.ts"), "utf8");
+  const dir = runDirectory("tscert-ambient-reverse-");
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022" },
+    include: ["*.ts"] }));
+  const shadowed = join(dir, "shadowed.ts");
+  writeFileSync(shadowed, source.replace("return Grade[0]", "return Grede[0]"));
+  const kept = check(shadowed, tsconfigOf(dir));
+  assert.equal(kept.status, "verified", JSON.stringify(kept));
+  const claims = { ...readClaims(kept.artifacts), file: join(refused, "source.ts"),
+    sourceSha256: createHash("sha256").update(source).digest("hex") };
+  const at = source.indexOf("Grade[0]");
+  refusedAt(refused, writeClaims(refused, "forged-ambient-enum-reverse", claims),
+    "forged-ambient-enum-reverse", `at [${at},${at + "Grade".length})`);
+  process.stdout.write("forged enum reverse claims: a key at number, and an ambient enum's reverse key, refused\n");
+}
+{
   // A correction of a method to absent (HOST-FAMILIES.md, "The family
   // contract"): under a description correcting `getText` at one tag, the
   // method is an optional member of every reading covering that tag, the

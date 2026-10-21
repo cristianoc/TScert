@@ -22,7 +22,7 @@ import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, 
   primitivePrototypeName, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
-  literalTerm, assertionFailureName, type EnumMemberValue } from "./intrinsics.mts";
+  literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
 import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
 import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
@@ -555,7 +555,7 @@ export function collectDeclarations(file: string, options: {
   enumMember?: (span: Span, value: string | number | undefined) => void;
   /** Told each imported enum's local name and members: the client's
    * annotations read its type and its members' literal types. */
-  importedEnum?: (local: string, members: readonly EnumMemberValue[]) => void;
+  importedEnum?: (local: string, members: readonly EnumMemberValue[], reverse: EnumReverse) => void;
   /** Told each import binding of a listed guard of the compiler API's family
    * (HOST-FAMILIES.md, "Calls"): its local name, its entry, the domain its
    * declared parameter states, the field a node guard tests (the family's
@@ -623,6 +623,10 @@ export function collectDeclarations(file: string, options: {
     if (options.client && options.client.getFullText() !== client.getFullText())
       throw new DeclarationError([0, 0], "TypeScript client source bytes differ");
     const { idOf, libraryFile } = moduleIds(clientFile, root, program);
+    // A module of the program: a source file outside the standard library,
+    // the host packages and any installed package.
+    const programFile = (file: SourceFile): boolean => !file.isDeclarationFile && !libraryFile(file) &&
+      !isHostFile(file.fileName) && !file.fileName.split(sep).includes("node_modules");
     // A read of a host class's member its named view does not list is
     // refused where it is written, naming the view (COMPILER-API.md, reading
     // rule 4, L6).
@@ -767,6 +771,16 @@ export function collectDeclarations(file: string, options: {
       return !!description && description.tag.constants.enum === name && bound !== false &&
         enums.every(e => familyOfFile(e.getSourceFile().fileName) === description) &&
         tagEnumMatches(description, enumMembersOf(enums, name));
+    };
+    // Whether an enum's object holds its reverse mapping (SOURCE-CONTRACTS.md,
+    // "Enums", `emitted-enum`): every declaration TypeScript merges is a
+    // program module's, outside an ambient context, so TypeScript's emit
+    // builds it; or the enum is a host enum whose runtime object is checked
+    // to hold it (C1, `tagEnumMatches`). Any other enum's object is the
+    // environment's, its members alone assumed.
+    const enumReverse = (enums: readonly ts.EnumDeclaration[], name: string): EnumReverse => {
+      if (enums.every(e => programFile(e.getSourceFile()) && !(e.flags & ts.NodeFlags.Ambient))) return "stated";
+      return enums.every(e => isHostFile(e.getSourceFile().fileName)) && readableHostEnum(enums, name, null) ? "stated" : "none";
     };
     // The host families (HOST-FAMILIES.md): each active description's, read
     // through it by `familyTable`, from the declarations of the description's
@@ -942,10 +956,8 @@ export function collectDeclarations(file: string, options: {
     // imported module of the run is lowered.
     const closure = (): SourceFile[] => {
       const files: SourceFile[] = [];
-      const program = (file: SourceFile): boolean => !file.isDeclarationFile && !libraryFile(file) &&
-        !isHostFile(file.fileName) && !file.fileName.split(sep).includes("node_modules");
       const visit = (file: SourceFile): void => {
-        if (files.includes(file) || !program(file)) return;
+        if (files.includes(file) || !programFile(file)) return;
         files.push(file);
         for (const statement of file.statements) {
           if (!ts.isImportDeclaration(statement)) continue;
@@ -1074,7 +1086,7 @@ export function collectDeclarations(file: string, options: {
       if (ts.isTypeQueryNode(node) && !node.typeArguments?.length) {
         const named = memberName(node.exprName);
         const enums = named ? enumsOf(named) : null;
-        return named && enums ? enumMembersTerm(enumMembersOf(enums, named.text), span) : null;
+        return named && enums ? enumMembersTerm(enumMembersOf(enums, named.text), span, enumReverse(enums, enums[0]?.name.text ?? named.text)) : null;
       }
       if (!ts.isTypeReferenceNode(node) || !ts.isQualifiedName(node.typeName)) return null;
       const owner = memberName(node.typeName.left);
@@ -1521,7 +1533,7 @@ export function collectDeclarations(file: string, options: {
         if (enums.some(e => isHostFile(e.getSourceFile().fileName)) && !readableHostEnum(enums, name, bound))
           throw Error(`the host enum ${name} is not one the compiler-API contract reads (compiler-api.mts), nor a family's tag enum its runtime object matches`);
         return { declaration: { module: idOf(source), name, span }, construct: false, typeParams: [],
-          type: enumMembersTerm(enumMembersOf(enums, what), span) };
+          type: enumMembersTerm(enumMembersOf(enums, what), span, enumReverse(enums, name)) };
       }
       if (nodes.length > 1) {
         const overloads = nodes.filter((n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n) && !n.body);
@@ -1881,7 +1893,7 @@ export function collectDeclarations(file: string, options: {
         const nodes = resolveDeclarations(binding.at, binding.name);
         const enums = enumsOf(binding.at);
         if (enums) {
-          options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name));
+          options.importedEnum?.(binding.name, enumMembersOf(enums, binding.name), enumReverse(enums, enums[0]?.name.text ?? binding.name));
           if (!binding.typeOnly)
             values.push({ binding: { local: binding.name, imported: binding.imported,
               specifier: binding.specifier, span: binding.span }, ...valueOf(nodes, binding.name, bindingGuard(binding), boundHostEnum(binding, enums)) });
@@ -3005,7 +3017,7 @@ export function collectDeclarations(file: string, options: {
       if (modifier(ts.SyntaxKind.DeclareKeyword)) {
         values.push({ binding: { local: statement.name.text, imported: statement.name.text, specifier: ambientSpecifier, span: at },
           declaration: { module: idOf(client), name: statement.name.text, span: at }, construct: false, typeParams: [],
-          type: enumMembersTerm(members, at) });
+          type: enumMembersTerm(members, at, "none") });
         continue;
       }
       if (members.every(m => m.value !== undefined)) continue;
