@@ -490,8 +490,8 @@ digest covering every manifest payload field (including exit status and
 measurement metadata), and file digests; missing, incomplete or corrupt
 entries cause recomputation.
 Cleanup removes temporary directories only when their writers are known
-to have stopped. A reader copies and validates a whole entry before use;
-concurrent eviction causes a retry or miss.
+to have stopped. A reader reads a whole entry into its memory and validates
+that copy before use; concurrent eviction causes a retry or miss.
 
 **Replay and trust.** The parser is part of the trusted source boundary.
 Replaying its output and replaying a successful check additionally trust
@@ -521,7 +521,8 @@ observations rather than deterministic judgments.
 **Controls.** The common invocation mechanism provides force execution.
 Forged-document checks, mutation-verifier controls and injected tool-failure
 controls use it for the operation they test. Their baseline artifacts may
-come from the store. Mutation selections, failure-injection settings and
+come from the store. The mutation verifier is a test build the store keeps
+under the digest of every input its build reads. Mutation selections, failure-injection settings and
 host-family overrides remain explicit invocation inputs. Store tests cover
 dependency invalidation, concurrent publication, interrupted writers,
 timeout/success races and writable artifact isolation.
@@ -543,8 +544,12 @@ measurement.
 **Location and size.** The store lives outside every checkout at
 `$XDG_CACHE_HOME/tscert/stages`, defaulting to `~/.cache/tscert/stages`.
 `TSCERT_STAGE_STORE` selects another directory; `off` forces execution.
-`make clean-store` removes finished entries, timeout observations and abandoned
-publication directories on this host. It retains immutable, content-addressed
+Beside entries it keeps values a key's digest determines: the load-command
+listing of an executable or library (`otool`), by the file's digest and the
+system's build, read when a process identifies its runtime's linked
+libraries; and test builds. `make clean-store` removes finished entries,
+these values, timeout observations and abandoned publication directories on
+this host. It retains immutable, content-addressed
 source locations, validated at each use, so active parses keep their inputs.
 Eviction is approximate and affects reuse only; readers treat concurrent
 removal as a miss.

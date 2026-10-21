@@ -16,7 +16,7 @@
  * disagree with the file system (`observed` reports it). */
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync,
-  type Dirent } from "node:fs";
+  type BigIntStats, type Dirent } from "node:fs";
 import { createRequire, isBuiltin, registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
@@ -354,8 +354,7 @@ export const present = (path: string): boolean => io("stat", path, () => kindOf(
  * time on every write. The rule of the stage store's executable digests,
  * used for the implementation's identity, never for an observation. */
 const fileDigests = new Map<string, { signature: string; digest: string }>();
-function fileDigest(path: string): string {
-  const s = statSync(path, { bigint: true });
+function fileDigest(path: string, s: BigIntStats = statSync(path, { bigint: true })): string {
   const signature = `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
   const known = fileDigests.get(path);
   if (known?.signature === signature) return known.digest;
@@ -365,21 +364,23 @@ function fileDigest(path: string): string {
 }
 /** The digest of the tree at `path`, links followed: a file by its content,
  * a directory by its entries' names and digests in name order, anything
- * else by its kind; null where the path names nothing. A link cycle is a
- * failure. Unobserved: the implementation's identity. */
+ * else by its kind; null where the path names nothing. A link cycle (a
+ * directory inside itself, by device and inode) is a failure. Unobserved:
+ * the implementation's identity. */
 export function treeDigest(path: string): string | null {
   const walk = (at: string, above: readonly string[]): string | null => {
+    let s: BigIntStats;
     try {
-      const s = statSync(at);
-      if (!s.isDirectory()) return s.isFile() ? `f${fileDigest(at)}` : "o";
+      s = statSync(at, { bigint: true });
+      if (!s.isDirectory()) return s.isFile() ? `f${fileDigest(at, s)}` : "o";
     } catch (error) {
       if (absence(error)) return null;
       throw error;
     }
-    const real = realpathSync(at);
-    if (above.includes(real)) throw Error(`a link cycle at ${at}`);
+    const self = `${s.dev}:${s.ino}`;
+    if (above.includes(self)) throw Error(`a link cycle at ${at}`);
     const names = readdirSync(at).sort(byBytes);
-    return `d${sha256(names.map((n) => `${n}\0${walk(join(at, n), [...above, real]) ?? "-"}`).join("\0"))}`;
+    return `d${sha256(names.map((n) => `${n}\0${walk(join(at, n), [...above, self]) ?? "-"}`).join("\0"))}`;
   };
   return io("digest", path, () => walk(path, []));
 }

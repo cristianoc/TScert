@@ -134,15 +134,28 @@ export const sha256 = (bytes: string | Buffer): string => createHash("sha256").u
 /** A file's digest, memoized within the process by its status (device,
  * inode, size, modification and change times): a file rewritten in place
  * changes its change time. */
-const digests = new Map<string, { signature: string; digest: string }>();
-function fileDigest(path: string): string {
+const digests = new Map<string, { signature: string; digest: string; imports: string[] | null }>();
+function known(path: string): { signature: string; digest: string; imports: string[] | null } {
   const s = statSync(path, { bigint: true });
   const signature = `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
-  const known = digests.get(path);
-  if (known?.signature === signature) return known.digest;
-  const digest = sha256(readFileSync(path));
-  digests.set(path, { signature, digest });
-  return digest;
+  const held = digests.get(path);
+  if (held?.signature === signature) return held;
+  const fresh = { signature, digest: sha256(readFileSync(path)), imports: null };
+  digests.set(path, fresh);
+  return fresh;
+}
+const fileDigest = (path: string): string => known(path).digest;
+
+/** The modules `file` imports by a relative specifier, read from its text,
+ * kept with its digest where the text read is the one digested. */
+function relativeImports(file: string): string[] {
+  const held = known(file);
+  if (held.imports) return held.imports;
+  const bytes = readFileSync(file);
+  const imports = [...bytes.toString("utf8").matchAll(/(?:from|import)\s+"(\.\.?\/[^"]+\.m?ts)"/g)]
+    .map((m) => resolve(dirname(file), m[1]));
+  if (sha256(bytes) === held.digest) held.imports = imports;
+  return imports;
 }
 
 /** The repository modules `file` imports by a relative specifier, itself
@@ -152,9 +165,7 @@ function moduleClosure(file: string): string[] {
   for (let work = [file], next = work.shift(); next !== undefined; next = work.shift()) {
     if (seen.includes(next)) continue;
     seen.push(next);
-    const text = readFileSync(next, "utf8");
-    for (const m of text.matchAll(/(?:from|import)\s+"(\.\.?\/[^"]+\.m?ts)"/g))
-      work.push(resolve(dirname(next), m[1]));
+    work.push(...relativeImports(next));
   }
   return seen;
 }
@@ -209,8 +220,12 @@ export function linkedLibraries(executable: string): Canonical | string {
     const identified: Canonical[] = [];
     found = identified;
     const seen = new Set<string>();
-    for (let work = [executable], next = work.shift(); next !== undefined; next = work.shift()) {
-      const listed = otool("-L", next);
+    // Each file to list: its real path and its digest.
+    const start = realpathSync(executable);
+    for (let work = [{ real: start, digest: fileDigest(start) }], item = work.shift(); item !== undefined;
+        item = work.shift()) {
+      const next = item.real;
+      const listed = otool("-L", next, item.digest);
       if (listed.status !== 0) {
         found = `otool -L ${next} failed: ${listed.stderr.trim().split("\n")[0] ?? ""}`;
         break;
@@ -236,8 +251,9 @@ export function linkedLibraries(executable: string): Canonical | string {
         if (onSystemVolume(p)) identified.push([p, `system ${build}`]);
         else {
           const real = realpathSync(p);
-          identified.push([p, fileDigest(real)]);
-          work.push(real);
+          const digest = fileDigest(real);
+          identified.push([p, digest]);
+          work.push({ real, digest });
         }
       }
     }
@@ -245,16 +261,29 @@ export function linkedLibraries(executable: string): Canonical | string {
   return found;
 }
 
-/** `otool` of a file, memoized by the file's content: what a listing reads is
- * the file's load commands, so a changed file is listed again; the names it
- * lists are resolved, and the libraries they name digested, at every use. */
+/** `otool` of a file (`digest` its content's), memoized by the file's
+ * content and the system's build, which identifies `/usr/bin/otool`: what a
+ * listing reads is the file's load commands, so a changed file is listed
+ * again; the names it lists are resolved, and the libraries they name
+ * digested, at every use. A successful listing is kept in the store's memo
+ * too, for the next process; its first line, the file's path as named, is
+ * never read. */
 const listings = new Map<string, { status: number | null; stdout: string; stderr: string }>();
-function otool(flag: "-L" | "-l", file: string): { status: number | null; stdout: string; stderr: string } {
-  const key = `${flag}:${fileDigest(realpathSync(file))}`;
-  const known = listings.get(key);
-  if (known) return known;
-  const listed = spawnSync("/usr/bin/otool", [flag, file], { encoding: "utf8", env: {} });
-  const result = { status: listed.status, stdout: listed.stdout, stderr: listed.stderr };
+function otool(flag: "-L" | "-l", file: string, digest: string = fileDigest(realpathSync(file))):
+    { status: number | null; stdout: string; stderr: string } {
+  const key = `${flag}:${digest}`;
+  const held = listings.get(key);
+  if (held) return held;
+  const store = currentStore();
+  const memoKey = sha256(canonical(["otool", osBuild(), flag, digest]));
+  const stored = store?.memo("otool", memoKey) ?? null;
+  let result: { status: number | null; stdout: string; stderr: string };
+  if (stored !== null) result = { status: 0, stdout: stored, stderr: "" };
+  else {
+    const listed = spawnSync("/usr/bin/otool", [flag, file], { encoding: "utf8", env: {} });
+    result = { status: listed.status, stdout: listed.stdout, stderr: listed.stderr };
+    if (result.status === 0 && osBuild() !== null) store?.publishMemo("otool", memoKey, result.stdout);
+  }
   listings.set(key, result);
   return result;
 }
@@ -452,6 +481,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
   try {
     const argv: string[] = [];
     const inputs: Canonical[] = [];
+    const inputFiles: [string, Buffer][] = [];
     const outputs: { role: string; path: string }[] = [];
     const roles = new Set<string>();
     const inputRoles = new Map<string, string>();
@@ -475,7 +505,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
       }
       argv.push(role);
       const bytes = readOrAbsent(a.path);
-      if (bytes !== null) writeFileSync(join(directory, role), bytes);
+      if (bytes !== null) inputFiles.push([role, bytes]);
       inputs.push([role, bytes === null ? null : sha256(bytes)]);
     }
     const implementation = executableIdentity(program, call.environment);
@@ -530,6 +560,9 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
           stdout: "", stderr: "", record: done };
       }
     }
+    // The inputs are bound into the execution directory by the bytes the key
+    // digests, when the stage executes.
+    for (const [role, bytes] of inputFiles) writeFileSync(join(directory, role), bytes);
     const p = spawnSync(program, argv, {
       cwd: directory,
       env: { ...call.environment },
@@ -619,10 +652,16 @@ export function producerCall(program: string, args: readonly string[]): ProcessC
 export const ran = (record: AttemptRecord): boolean =>
   record.execution === "executed" || record.execution === "timed-out" || record.execution === "failed";
 
+/** This process's forced executions: their number and wall time, which a
+ * suite reports as what its controls' tested operations cost. */
+export const forcedExecutions: { count: number; elapsedMs: number } = { count: 0, elapsedMs: 0 };
+
 /** A control's run of the operation it tests: forced, and required to have
  * executed. */
 export function forced(call: ProcessCall, limitMs: number = 30_000): Invoked {
   const invoked = invokeProcess(call, { limitMs, force: true, recorder: null });
+  forcedExecutions.count++;
+  forcedExecutions.elapsedMs += invoked.record.elapsedMs;
   if (!ran(invoked.record)) throw Error(`control: ${call.stage} was not executed (${invoked.record.execution})`);
   return invoked;
 }
