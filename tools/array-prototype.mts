@@ -29,7 +29,7 @@ import * as ts from "typescript/unstable/ast";
 import type { Node } from "typescript/unstable/ast";
 import { oneTerm, signatures, typeTerm, type TermScope } from "./type-term.mts";
 import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
+import { closedFootprints, emptyEffect, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
 export type OverlayEntry = {
@@ -112,6 +112,7 @@ const callback = (value: TypeTerm, result: TypeTerm,
 const findCallback = (effect: CallEffect, footprint: ClosedFootprint): TypeTerm =>
   callback(footprint.store === "keep" ? element : maybeElement, atomOf("unknown"), effect);
 const mappedElement: TypeTerm = { k: "binder", name: "U", span: at };
+const guarded: TypeTerm = { k: "binder", name: "S", span: at };
 /** A destructive member's: within `{value: any, store: keep}` but for its
  * receiver's store, which it may change arbitrarily. */
 const receiverStoreEffect: CallEffect = { ...footprintEffect({ value: "any", store: "keep" }), receiverStore: true };
@@ -198,10 +199,23 @@ export const overlay: readonly OverlayEntry[] = [
     signature: "some(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): boolean;",
     stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
       result: atomOf("boolean") })) },
+  // `filter` is reviewed against its guard overload, whose declaration binds
+  // `S`, and states both of TypeScript's: the predicate one at each
+  // footprint, and the guard one at a callback promising `S` of the value it
+  // is passed (`native-guard-filter`). The native appends the very value it
+  // passed where the answer is `true`, which the promise leaves an `S`, and
+  // type membership survives every write the callbacks after it make; so
+  // the result holds `S`s, without the bound `S extends T`. The callback is
+  // at the top footprint, the one a closure's promise signature is checked
+  // at, and so is the call.
   { name: "filter", from: "ReadonlyArray",
-    signature: "filter(predicate: (value: T, index: number, array: readonly T[]) => unknown, thisArg?: any): T[];",
-    stated: atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
-      result: arrayOf(element, false) }), true) },
+    signature: "filter<S extends T>(predicate: (value: T, index: number, array: readonly T[]) => value is S, thisArg?: any): S[];",
+    stated: [
+      ...atEachFootprint((effect) => ({ params: [callback(element, atomOf("unknown"), effect)],
+        result: arrayOf(element, false) }), true),
+      { params: [callback(element, guarded, promiseEffect(false, 0))], result: arrayOf(guarded, false),
+        effect: { ...ordinaryEffect, fresh: true } },
+    ] },
   // The members below, through `at`, read the receiver's elements, convert
   // only numbers (an index, a bound) and, for `join` and `toString`,
   // elements meeting the standard conversion contract, compare by strict

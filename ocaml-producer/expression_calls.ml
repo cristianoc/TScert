@@ -196,17 +196,28 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
               when p.required=[] && p.optional_elements=[] && a.required=[] && a.optional_elements=[] ->
             (match p.rest,a.rest with Some p,Some a -> bind p a | _ -> [])
           | _ -> [] in
+        (* A guard closure's written promise is the type a callback
+           parameter stating that promise promises: its result operand, as
+           TypeScript infers `filter<S>`'s `S` from the predicate. *)
+        let promised (s:Semantic.signature) = List.concat (List.mapi (fun i (arg:expr) ->
+          match arg.node,param_at s i with
+          | Lambda (_,_,_,_,_,_,Some (stated,written),_),Some (Atoms [Shape {calls=[c];_}])
+              when c.call_effect.promise <> None && c.call_effect.promise = stated.promise ->
+            bind c.result written
+          | _ -> []) args) in
         let seed (s:Semantic.signature) =
           let own = List.map (fun (q:Semantic.quantifier) -> q.identity) s.quantified in
-          let found = bind s.receiver receiver_type @ (match expected with
+          let found = bind s.receiver receiver_type @ promised s @ (match expected with
             | Some t -> bind s.result t
             | None -> []) in
           let seeds = List.filter_map (fun (r,t) ->
             if List.mem r own then Some (r,ValueArgument t) else None) found in
           {s with params=List.map (Inference.substitute seeds) s.params} in
+        (* A callback parameter with its footprint set aside; its promise
+           stays, since a promise signature's result is the promised type. *)
         let plain = function
           | Atoms [Shape ({calls=_::_;_} as sh)] -> Atoms [Shape {sh with calls=List.map (fun (c:Semantic.signature) ->
-              {c with call_effect=Semantic.ordinary_effect}) sh.calls}]
+              {c with call_effect={Semantic.ordinary_effect with promise=c.call_effect.promise}}) sh.calls}]
           | t -> t in
         let candidates = List.map seed candidates in
         (* A parameter still naming a candidate's own binder, one neither
@@ -238,8 +249,26 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           | Atoms [Shape ({calls=_::_;_} as sh)] -> Atoms [Shape {sh with calls=List.map (fun (c:Semantic.signature) ->
               {c with call_effect=own.call_effect}) sh.calls}]
           | t -> t in
+        let promise_of (arg:expr) = match arg.node with
+          | Lambda (_,_,_,_,_,_,Some (stated,_),_) -> stated.promise
+          | _ -> None in
+        (* The candidates a closure literal is typed at: for a guard closure,
+           those whose callback states its written promise where any does,
+           else those whose callback states no promise. *)
+        let states promise = function
+          | Some (Atoms [Shape {calls=_::_ as calls;_}]) ->
+            List.for_all (fun (c:Semantic.signature) -> c.call_effect.promise = promise) calls
+          | _ -> promise = None in
         List.mapi (fun i arg ->
-          match List.map (fun s -> param_at s i) candidates with
+          let params = List.map (fun s -> param_at s i) candidates in
+          let params = match arg.node with
+            | Lambda _ ->
+              (match List.filter (states (promise_of arg)) params, List.filter (states None) params with
+               | [],[] -> params
+               | [],plain -> plain
+               | promised,_ -> promised)
+            | _ -> params in
+          match params with
           | Some p :: rest when List.for_all (fun q -> q = Some p) rest ->
             expr ~expected:p env arg,Some p
           | Some p :: rest when own_signature arg <> None
@@ -587,7 +616,19 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
                | _ -> true)
             | _ -> true) (List.combine args actuals)) in
         let proposals = List.filter member_effects proposals in
+        (* Of the matching signatures, those whose parameter states the
+           promise a guard closure passed there writes come first, as
+           TypeScript resolves `filter`'s guard overload at a type
+           predicate. *)
+        let states_written ((s:Semantic.signature),_,_) = List.for_all Fun.id (List.mapi (fun i (arg:expr) ->
+          match arg.node,param_at s i with
+          | Lambda (_,_,_,_,_,_,Some (stated,_),_),Some (Atoms [Shape {calls=_::_ as calls;_}]) ->
+            List.for_all (fun (c:Semantic.signature) -> c.call_effect.promise = stated.promise) calls
+          | Lambda (_,_,_,_,_,_,Some _,_),_ -> false
+          | _ -> true) args) in
         let matching = List.filter matches_actuals proposals in
+        let matching = List.filter states_written matching @
+          List.filter (fun p -> not (states_written p)) matching in
         let receiver_matches ((s:Semantic.signature),substitution,_) =
           plausible_subtype_with
             (fun t -> excludes_undefined (declared_head declarations [] t))

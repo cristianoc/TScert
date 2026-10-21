@@ -40,9 +40,18 @@ let rec plausible_subtype_with excludes actual expected =
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           Semantic.effect_covers p.call_effect q.call_effect &&
           ({p with call_effect=q.call_effect}=q ||
+           (* A promise signature promising a larger type is met by one
+              promising a smaller type: its `true` leaves the actual in the
+              larger type too. *)
+           (not (Semantic.plain_effect q.call_effect) &&
+            {p with call_effect=q.call_effect;result=q.result}=q &&
+            plausible_subtype_with excludes p.result q.result) ||
            (* A function taking fewer parameters meets a signature passing
-              more: a call discards the actuals past its parameters. *)
+              more: a call discards the actuals past its parameters. A
+              promise at the longer signature is met only by code checked
+              there, a closure claimed at it (`Closures`). *)
            (p.variadic=None && p.rest_pack=None && q.variadic=None && q.rest_pack=None &&
+            Semantic.plain_effect q.call_effect &&
             List.length p.params < List.length q.params &&
             {p with call_effect=q.call_effect}
               = {q with params=List.filteri (fun i _ -> i < List.length p.params) q.params}))) a.calls) b.calls
@@ -151,6 +160,14 @@ let rec declared_head declarations seen = function
     if List.mem id seen then unsupported "unguarded callable alias cycle";
     declared_head declarations (id::seen) (definition declarations id args)
   | t -> t
+(* `plausible_subtype` up to the declarations at the two heads: a declared
+   alias and what it names are one type (the compiler API's `Statement`,
+   which TypeScript reads as `StatementBase`). A proposal heuristic; Lean
+   decides inclusion. *)
+let plausible_subtype_declared declarations actual expected =
+  plausible_subtype actual expected ||
+  let head t = try declared_head declarations [] t with Json.Error _ -> t in
+  plausible_subtype (head actual) (head expected)
 (* The first operand of an intersection a read succeeds on; where none has
    it, the principal operand's reason. *)
 let first_part read parts =

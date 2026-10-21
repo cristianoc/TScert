@@ -416,7 +416,10 @@ path may use a checked structural derivation; it cannot assume its unfinished
 instance. Its structural recurrence requires the guarded family rule.
 
 Instance inference supplies alternatives from syntactic substitution,
-equivalent spellings and structural matching. Its constructor receives the
+equivalent spellings and structural matching. A binder matching does not
+determine is proposed at the empty union where no target operand mentions it
+(`filter`'s `S` at a plain predicate), and stands for itself where one does;
+the substitution, bound and image checks decide either proposal. Its constructor receives the
 substitution operation and constructs choices. `compareInstancesState` validates
 those choices, selecting a successful one and retaining exhaustion when no
 alternative succeeds. This selection serves ordinary subtype comparisons and

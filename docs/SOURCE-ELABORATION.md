@@ -1464,6 +1464,30 @@ keeping each claimed parameter within its annotation:
      {(R,\vec A,B)\in L}\ \textsf{offer}
 ```
 
+A guard closure, one whose result annotation writes a promise
+$`x_p\ \mathsf{is}\ T`$, is offered a promise signature stating that
+promise at the written type, and is claimed at it with the promise; the
+promise goal checks its body there as at its own arity
+([user-defined guards](SOURCE-CONTRACTS.md#user-defined-guards)):
+
+```math
+\frac{\lambda(\vec x{:}\vec D)\colon x_p\ \mathsf{is}\ T\Rightarrow t\ \text{flows to a position expecting}\ (R;\vec A)\to T'\,[\mathsf{guards}\ p]\quad |\vec x|<|\vec A|}
+     {(R,\vec A,T)\,[\mathsf{guards}\ p]\in L}\ \textsf{offer-promise}
+```
+
+Of a callee's signatures (`filter`'s plain and guard ones), a guard closure
+literal is expected at those whose callback states its written promise,
+where any does, each binder that promise's type determines read at it; any
+other closure, and a guard closure no signature's callback states the
+promise of, at those whose callback states none. The producer proposes the
+call at a signature stating a guard closure's promise before the others, a
+search order only: Lean checks the selected signature and every argument.
+A promise signature promising a type meets one promising a larger type
+(`TypePromise.result`), so a result expected at a wider type keeps the guard
+overload (`guard-closure-callback`). A promise at a signature binding more
+parameters is met only by code checked there, so a guard read as a value
+meets only the plain signatures.
+
 Written and contextual parameter types use the same source type language and
 annotation admissibility checks. Scope checking traverses every type
 constructor, including reference arguments and generic method binders. Named
