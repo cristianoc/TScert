@@ -335,7 +335,7 @@ export type NamespaceMemberSpans = { local: string; imported: string; specifier:
  * identity, its own parameters' count and how many have no default, and the
  * spellings of the enclosing type parameters it closes over, outermost
  * first, which come first among its definition's parameters. */
-export type BlockType = { declaration: DeclarationIdentity; required: number; total: number; captured: string[] };
+export type BlockType = { computed: boolean; declaration: DeclarationIdentity; required: number; total: number; captured: string[] };
 
 /** The client's imports, each the binding `name` the client reads, the
  * identifier `at` TypeScript resolves to the export, and the span a refusal
@@ -1409,14 +1409,7 @@ export function collectDeclarations(file: string, options: {
           if (!(ts.isArrayTypeNode(body) || ts.isTupleTypeNode(body) || ts.isTypeReferenceNode(body) ||
               (ts.isTypeOperatorNode(body) && body.operator === ts.SyntaxKind.ReadonlyKeyword)))
             return null;
-          const outer = valueScope(alias, what);
-          return typeTerm({ ...outer, named: (part, pos, read) => {
-            const index = ts.isIdentifier(part.typeName) ? parameters.lastIndexOf(part.typeName.text) : -1;
-            const argument = reference.args[index];
-            if (index < 0 || !argument) return outer.named(part, pos, read);
-            if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${part.typeName.getText(alias.getSourceFile())}`);
-            return argument;
-          } }, body, alias);
+          return instantiateAt(alias, reference.args, null)(body);
         },
         symbol: symbolOf,
         literalKey: literalKeyOf,
@@ -1810,7 +1803,12 @@ export function collectDeclarations(file: string, options: {
       const namesParameter = (n: Node): boolean =>
         (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && parameters.includes(n.typeName.text)) ||
         (n.forEachChild(c => namesParameter(c) || undefined) ?? false);
-      const outer = valueScope(declaration, what);
+      const outer = valueScope(declaration, what, [], parameter => {
+        const index = merged.findIndex(p => p.name.parent && nodeKey(p.name.parent) === nodeKey(parameter));
+        const argument = args[index];
+        if (!argument) throw Error(`${what} has no argument for the captured type parameter ${parameter.name.text}`);
+        return argument;
+      });
       const evaluate: NonNullable<TermScope["computed"]> = (part, pos, read) => {
         if (!namesParameter(part)) return computedType(computedContext, part, pos, read);
         if (!use) throw Error(`${what}: ${part.getText(source)} names the declaration's parameters, ` +
@@ -3232,12 +3230,12 @@ export function collectDeclarations(file: string, options: {
         const what = `${idOf(client)}#${name.text}`;
         if (ts.isTypeAliasDeclaration(target) && associatedAlias(target))
           throw Error(`an associated-result alias declared in a block is outside the fragment: ${what}`);
-        if (computedAlias(target, aliasOf)) continue;
+        const computed = computedAlias(target, aliasOf);
         const captured = capturedOf(target);
         for (const parameter of captured) capturedAt(node, what)(parameter);
         const own = parametersOf(target).filter(p => !p.captured);
-        blockStarts.push({ node: target, span });
-        options.blockType?.(span, { declaration: identityOf(target), captured: captured.map(p => p.name.text),
+        if (!computed) blockStarts.push({ node: target, span });
+        options.blockType?.(span, { computed, declaration: identityOf(target), captured: captured.map(p => p.name.text),
           required: own.filter(p => !p.default).length, total: own.length });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;

@@ -722,6 +722,7 @@ export class Gate {
         const block = this.blockTypeAt(node);
         if (block) {
           if ("refused" in block) return this.fail(node, block.refused);
+          if (block.computed) return this.fail(node, "computed block type evaluation missing");
           const closed = block.captured.map((spelling): TypeTerm => {
             if (!this.hasTypeParam(spelling))
               this.fail(node, `the type ${name} declared in a block closes over ${spelling}, which is not in scope here`);
@@ -1929,16 +1930,11 @@ function lowerFile(file: string, carriesContext: boolean,
         definition.parameters.length, identity, node,
         definition.expression ?? gate.fail(first, `a root without an equation: ${identity.module}#${identity.name}`));
     }
-    // A type declared in a block is no root: a reference names it by the
-    // identity TypeScript bound (`blockTypes`), its equation the graph's.
-    for (const [key, block] of gate.blockTypes) {
-      if ("refused" in block) continue;
-      const identity = block.declaration;
-      const definition = declarations.definitions.find(d => classes.identityKey(d.declaration) === classes.identityKey(identity));
-      const node = blockNodes.find(n => gate.span(n).join(":") === key) ?? first;
-      if (!definition) return gate.fail(node, `type definition missing: ${identity.module}#${identity.name}`);
-      if (definition.expression) gate.registerEquation(identity, definition.parameters.length, definition.expression);
-    }
+    // Every collected equation is available by identity, including block
+    // aliases reached only through another alias's equation.
+    for (const definition of declarations.definitions)
+      if (definition.expression)
+        gate.registerEquation(definition.declaration, definition.parameters.length, definition.expression);
   }
   // Carried context skips aliases its old fragment could not state. Every
   // retained declaration now has one source equation, shared with imports.

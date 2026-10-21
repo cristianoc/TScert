@@ -332,7 +332,11 @@ together. A reference is read at the declaration TypeScript binds it to
 (`blockTypes` in `declaration-graph.mts`), so a block declaration shadows
 a module declaration, a library type or a type parameter of the same
 spelling inside its block and nowhere else, and a type parameter of a
-nearer generic function shadows it in turn. Its captured arguments are the
+nearer generic function shadows it in turn. This resolution also applies to
+computed aliases, before standard `Awaited`, associated-result and
+qualification rules. Every collected equation is available to rest-type
+expansion by declaration identity, including equations reached through
+another block alias. Its captured arguments are the
 binders themselves, each required to be the binder TypeScript resolves
 that spelling to at the reference:
 
@@ -351,7 +355,8 @@ $`\vec\sigma`$. Every reader of an
 application completes its arguments through the one completion
 (`completeArguments`), which takes the captured arguments from its
 reader's scope (a binder at a use, the declaration's own captured position
-in an equation, the written application's binder in the bounds sweep) or
+in an equation or default, matched by declaration identity to the enclosing
+instantiation's arguments, the written application's binder in the bounds sweep) or
 refuses the application, so no reader reads a block type at $`\vec\sigma`$
 alone. A block declaration whose equation the readers cannot represent is
 refused at its use, as a module declaration is. One TypeScript computes
