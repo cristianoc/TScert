@@ -252,13 +252,17 @@ export function linkedLibraries(executable: string): Canonical | string {
 
 /** The load commands of a Mach-O file that name libraries (its own install
  * name and every library it loads: required, weak, re-exported, lazy,
- * upward) and its run paths, in their order, over every architecture of a
- * universal file; or why the file is no Mach-O file read here. Memoized by
+ * upward), its run paths, in their order, and how many linker options it
+ * carries; or why the file is no Mach-O file read here: one holding a
+ * command that names a library or changes dyld's search otherwise
+ * (`LC_LAZY_LOAD_DYLIB_INFO`, `LC_DYLD_ENVIRONMENT`), or a universal file
+ * whose architectures differ in their libraries or run paths. Memoized by
  * the file's digest (`digest`), where the bytes read are the ones it names. */
-type LoadCommands = { libraries: readonly string[]; runPaths: readonly string[] };
+type LoadCommands = { libraries: readonly string[]; runPaths: readonly string[]; linkerOptions: number };
 const loadCommandsOf = new Map<string, LoadCommands | string>();
 const dylibCommands: ReadonlySet<number> = new Set([0xc, 0xd, 0x80000018, 0x8000001f, 0x20, 0x80000023]);
-const runPathCommand = 0x8000001c;
+const runPathCommand = 0x8000001c, linkerOptionCommand = 0x2d;
+const unreadCommands: ReadonlyMap<number, string> = new Map([[0x27, "LC_DYLD_ENVIRONMENT"], [0x3a, "LC_LAZY_LOAD_DYLIB_INFO"]]);
 function loadCommands(file: string, digest: string): LoadCommands | string {
   const held = loadCommandsOf.get(digest);
   if (held !== undefined) return held;
@@ -271,9 +275,10 @@ function loadCommands(file: string, digest: string): LoadCommands | string {
       if (read !== length) throw Error(`the file ends at ${offset + read} before ${offset + length}`);
       return buffer;
     };
-    const libraries: string[] = [], runPaths: string[] = [];
     // One architecture's image at `base`: a 32- or 64-bit little-endian header.
-    const image = (base: number): void => {
+    const image = (base: number): LoadCommands => {
+      const libraries: string[] = [], runPaths: string[] = [];
+      let linkerOptions = 0;
       const header = bytes(base, 28);
       const magic = header.readUInt32LE(0);
       if (magic !== 0xfeedface && magic !== 0xfeedfacf) throw Error(`no little-endian Mach-O header at ${base}`);
@@ -289,10 +294,14 @@ function loadCommands(file: string, digest: string): LoadCommands | string {
         if (start + 8 > size) throw Error("the load commands end early");
         const command = commands.readUInt32LE(start), length = commands.readUInt32LE(start + 4);
         if (length < 8 || start + length > size) throw Error("a load command's size is out of range");
+        const unread = unreadCommands.get(command);
+        if (unread !== undefined) throw Error(`it holds ${unread}`);
         if (dylibCommands.has(command)) libraries.push(name(start, start + length));
         if (command === runPathCommand) runPaths.push(name(start, start + length));
+        if (command === linkerOptionCommand) linkerOptions++;
         start += length;
       }
+      return { libraries, runPaths, linkerOptions };
     };
     const magic = bytes(0, 4).readUInt32BE(0);
     if (magic === 0xcafebabe || magic === 0xcafebabf) {
@@ -300,10 +309,15 @@ function loadCommands(file: string, digest: string): LoadCommands | string {
       const wide = magic === 0xcafebabf, width = wide ? 32 : 20;
       const count = bytes(4, 4).readUInt32BE(0);
       const entries = bytes(8, count * width);
-      for (let i = 0; i < count; i++)
-        image(wide ? Number(entries.readBigUInt64BE(i * width + 8)) : entries.readUInt32BE(i * width + 8));
-    } else image(0);
-    found = { libraries, runPaths };
+      const slices = Array.from({ length: count }, (_, i) =>
+        image(wide ? Number(entries.readBigUInt64BE(i * width + 8)) : entries.readUInt32BE(i * width + 8)));
+      // dyld loads one architecture; the others must agree with it.
+      const first = slices[0];
+      if (first === undefined) throw Error("a universal file without architectures");
+      const named = (c: LoadCommands): string => JSON.stringify([c.libraries, c.runPaths]);
+      if (slices.some((c) => named(c) !== named(first))) throw Error("its architectures differ in their libraries or run paths");
+      found = { ...first, linkerOptions: slices.reduce((n, c) => n + c.linkerOptions, 0) };
+    } else found = image(0);
   } catch (error) {
     found = `its load commands are not read: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
@@ -311,6 +325,13 @@ function loadCommands(file: string, digest: string): LoadCommands | string {
   }
   if (fileDigest(file) === digest) loadCommandsOf.set(digest, found);
   return found;
+}
+
+/** How many linker options (`LC_LINKER_OPTION`) a Mach-O file, an object
+ * for a link, carries; or why its load commands are not read. */
+export function linkerOptions(file: string): number | string {
+  const commands = loadCommands(file, fileDigest(realpathSync(file)));
+  return typeof commands === "string" ? commands : commands.linkerOptions;
 }
 
 /** A library name relative to its loader, resolved, or null. */

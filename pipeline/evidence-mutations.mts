@@ -5,7 +5,7 @@ import { chmodSync, existsSync, readdirSync, readFileSync, realpathSync, statSyn
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { currentStore, forced, linkedLibraries, verifierCall, type Canonical } from "./stages.mts";
+import { currentStore, forced, linkedLibraries, linkerOptions, verifierCall, type Canonical } from "./stages.mts";
 import { sourceKey } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 
@@ -170,11 +170,19 @@ export function mutationVerifier(): string {
     response = response.replace(JSON.stringify(original + ".o.export"), JSON.stringify(o));
   }
   const inputs = linkInputs(response, toolchain).filter((path) => !compiles.some((c) => path === c.c + ".o"));
+  // The link reads what its arguments name: an object's linker options
+  // (`LC_LINKER_OPTION`) would name libraries no argument does. The
+  // build's objects carry none, and the linker ignores those of archive
+  // members.
+  const noLinkerOptions = (objects: readonly string[]): void => {
+    for (const object of objects) assert.equal(linkerOptions(object), 0, `${object}: linker options in a mutation link input`);
+  };
+  noLinkerOptions(inputs.filter((path) => /\.(o|o\.export)$/.test(path)));
   // Clang's resource tree includes its builtin runtime archive. Standard
   // search paths and default libraries are disabled in the actual link.
   const resource = command(clang, ["--no-default-config", "-print-resource-dir"], env);
   const runtime = join(resource, "lib/darwin/libclang_rt.osx.a");
-  const linkArgs = [...nativeArgs, "--ld-path=" + linker, "-nostdlib", "-Wl,-Z", "-lSystem", runtime];
+  const linkArgs = [...nativeArgs, "--ld-path=" + linker, "-nostdlib", "-Wl,-Z", "-Wl,-ignore_auto_link", "-lSystem", runtime];
   const identifyDependencies = (): Canonical[] => [clang, linker, "/bin/sh"].map((program) => {
     const libraries = linkedLibraries(program);
     assert.ok(typeof libraries !== "string", `${program}: ${String(libraries)}`);
@@ -208,6 +216,7 @@ export function mutationVerifier(): string {
       return "";
     }
   }).join(""));
+  noLinkerOptions(compiles.map(({ c }) => c + ".o"));
   const rsp = join(dir, "mutation.rsp");
   writeFileSync(rsp, response);
   command(clang, ["-o", executable, "@" + rsp, ...linkArgs], env);
