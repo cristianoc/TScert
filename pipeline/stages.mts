@@ -361,6 +361,17 @@ function resolveLoaderName(name: string, loader: string, executable: string, loa
   return null;
 }
 
+/** The mutation verifiers this process runs, by real path: builds of the
+ * verifier with test-only mutations (`evidence-mutations.mts`), audited as
+ * the verifier is. */
+const mutationBuilds = new Set<string>();
+/** Treat `executable`, a mutation verifier built from the repository's
+ * verifier build, as an audited program: its I/O is the verifier's, and the
+ * variable `TSCERT_TEST_MUTATIONS`, which its invocation's environment fixes. */
+export function auditMutationVerifier(executable: string): void {
+  mutationBuilds.add(realpathSync(executable));
+}
+
 /** The programs whose I/O is audited, beside the repository's builds: a
  * test's stand-ins, each with the files it reads or runs. */
 const auditedForTests = new Map<string, readonly string[]>();
@@ -378,7 +389,9 @@ export function auditForTests(program: string, dependencies: readonly string[]):
  * they start no process, do not read their working directory's path, and
  * read no environment variable the invocation does not fix (the Lean
  * runtime's and OCaml's are unset). Any other program (a test's stand-in,
- * the mutation verifier) has dependencies that are not identified. */
+ * a stand-in for an injected failure) has dependencies that are not
+ * identified. A mutation verifier (`auditMutationVerifier`) is audited as
+ * the verifier is, beside the one variable that selects its mutations. */
 function executableIdentity(program: string, environment: Readonly<Record<string, string>>):
     { identity: Canonical } | { unidentified: string } {
   if (Object.keys(environment).some((name) => name.startsWith("DYLD_")))
@@ -389,7 +402,7 @@ function executableIdentity(program: string, environment: Readonly<Record<string
   } catch {
     return { unidentified: `${program} does not resolve` };
   }
-  const builds = [verifierBuild, producerBuild].some((b) => {
+  const builds = mutationBuilds.has(real) || [verifierBuild, producerBuild].some((b) => {
     try {
       return realpathSync(b) === real;
     } catch {
@@ -559,6 +572,8 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
       implementation: "identity" in implementation ? implementation.identity : null,
       argv,
       environment: call.environment,
+      protocol: call.protocol.refusal === null ? null
+        : { status: call.protocol.refusal.status, prefix: call.protocol.refusal.prefix },
       inputs,
       outputs: outputs.map((o) => o.role),
     };
@@ -694,17 +709,23 @@ export function producerCall(program: string, args: readonly string[]): ProcessC
 export const ran = (record: AttemptRecord): boolean =>
   record.execution === "executed" || record.execution === "timed-out" || record.execution === "failed";
 
-/** This process's forced executions: their number and wall time, which a
- * suite reports as what its controls' tested operations cost. */
-export const forcedExecutions: { count: number; elapsedMs: number } = { count: 0, elapsedMs: 0 };
+/** This process's control operations: how many executed and how many
+ * replayed, and the wall time of those that executed. */
+export const controlOperations: { executed: number; replayed: number; elapsedMs: number } =
+  { executed: 0, replayed: 0, elapsedMs: 0 };
 
-/** A control's run of the operation it tests: forced, and required to have
- * executed. */
-export function forced(call: ProcessCall, limitMs: number = 30_000): Invoked {
-  const invoked = invokeProcess(call, { limitMs, force: true, recorder: null });
-  forcedExecutions.count++;
-  forcedExecutions.elapsedMs += invoked.record.elapsedMs;
-  if (!ran(invoked.record)) throw Error(`control: ${call.stage} was not executed (${invoked.record.execution})`);
+/** A control's run of the operation it tests (DESIGN.md, "The stage store",
+ * controls): an invocation like any other, replayed where the store holds a
+ * finished result for its key, and required to have run or to have replayed
+ * that result; a replayed timeout is no run. */
+export function tested(call: ProcessCall, limitMs: number = 30_000): Invoked {
+  const invoked = invokeProcess(call, { limitMs, force: false, recorder: null });
+  const { execution } = invoked.record;
+  if (execution === "replayed") controlOperations.replayed++;
+  else if (ran(invoked.record)) {
+    controlOperations.executed++;
+    controlOperations.elapsedMs += invoked.record.elapsedMs;
+  } else throw Error(`control: ${call.stage} neither ran nor replayed a finished result (${execution})`);
   return invoked;
 }
 

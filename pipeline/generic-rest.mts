@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { forced, verifierCall } from "./stages.mts";
+import { tested, verifierCall } from "./stages.mts";
 import { runInNewContext } from "node:vm";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import type { Ast } from "../tools/fragment.mts";
@@ -25,7 +25,7 @@ export function checkGenericRest(verifier: string, artifacts: string): void {
     writeFileSync(claimed, JSON.stringify(changed));
     writeFileSync(parsed, JSON.stringify(tree));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const p = forced(verifierCall(verifier, [
+      const p = tested(verifierCall(verifier, [
           mode,
           parsed,
           claimed,

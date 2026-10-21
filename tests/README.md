@@ -1,13 +1,15 @@
 # Verification regressions
 
-`make test` runs the fast checks, which need no build
-([`test-all.sh`](../test-all.sh)); `make suite` builds, then runs the pipeline
-cases and controls ([`pipeline/test.mts`](../pipeline/test.mts)).
+`make test` builds, then runs the fast checks and the controls
+([`test-all.sh`](../test-all.sh), [`pipeline/test.mts`](../pipeline/test.mts));
+`make suite` builds, then runs the pipeline cases
+([`pipeline/run-cases.mts`](../pipeline/run-cases.mts)).
 
 The pipeline cases are listed in [`pipeline/cases.mts`](../pipeline/cases.mts),
 each a source file under [`pipeline/examples/`](../pipeline/examples/) with its
-expected outcome, run by `pipeline/run-cases.mts` (`make cases P=…`) and, with
-the controls no case can make, by `pipeline/test.mts`. Two families in
+expected outcome, run by `pipeline/run-cases.mts` (`make suite`, and
+`make cases P=…` for those whose names contain `P`); the controls no case can
+make are `pipeline/test.mts`'s. Two families in
 `pipeline/examples/` hold one source per feature, every function checked:
 
 - `stateful-source/`: storage contracts, refinements, loops, generics and the
@@ -93,9 +95,11 @@ an isolated mutation executable in the run directory from the current Lake
 build's generated C and link response file. Run `(cd lean && lake build)` first.
 The helper uses the pinned toolchain's compiler; it reads the Lake cache and
 writes only to the run directory. `pipeline/test.mts` builds it once per run,
-beside its cases (`node pipeline/evidence-mutations.mts --build`), and gives
-it to its control processes. The production verifier and Lean sources
-contain no mutation switches.
+beside its controls (`node pipeline/evidence-mutations.mts --build`), and
+gives it to its control processes; its invocations replay from the stage
+store by its executable's digest and the mutation selection
+([controls](../docs/DESIGN.md#the-stage-store)). The production verifier and
+Lean sources contain no mutation switches.
 
 The mutations bypass mapped/observed edge coverage, read-link entailment or
 heap-cell entailment, retain all links through `withStable`, or retain links

@@ -431,9 +431,9 @@ configuration's; its path is the Fragment's file identity, which every
 later document embeds. A process stage runs in a fresh directory holding
 its input files under fixed role names, with relative arguments and an
 explicit environment. The audited programs, the repository's builds of the
-verifier and the producer, read only the files their arguments name and do
-not observe that directory's path, which is excluded from the key. Any other
-program executes without replay.
+verifier and the producer and the controls' mutation verifier, read only the
+files their arguments name and do not observe that directory's path, which
+is excluded from the key. Any other program executes without replay.
 
 Logs belong to the stage invocation whose paths they describe. Each
 caller receives fresh writable copies of the artifacts under its own run
@@ -518,19 +518,45 @@ documents and diagnostics. These checks support the implementation audit;
 they are not a proof of executable determinism. Resource timeouts are
 observations rather than deterministic judgments.
 
-**Controls.** The common invocation mechanism provides force execution.
-Forged-document checks, mutation-verifier controls and injected tool-failure
-controls use it for the operation they test. Their baseline artifacts may
-come from the store: the controls of `pipeline/test.mts` run after its cases,
-in a pool of processes, and replay every stage but the one each tests. The
-mutation verifier is built once per run of that suite, from the current
-build, beside its cases. Mutation selections, failure-injection settings and
-host-family overrides remain explicit invocation inputs. Store tests cover
-dependency invalidation, concurrent publication, interrupted writers,
-timeout/success races and writable artifact isolation.
-Controls assert that the tested operation actually executed, including every
-mutation variant and injected failure; forced executions remain subject to
-normal input binding and result validation.
+**Controls.** A control tests the verifier, the producer or the pipeline on
+an input no case makes: a forged or tampered document, a mutation of the
+verifier, an injected tool failure, a host-family override. The controls of
+`pipeline/test.mts` run in `make test`, in a pool of processes. Every
+operation a control runs is a stage invocation of the common mechanism and
+replays from the store like any other: its key binds the executable by
+content, its argument vector, its environment and the bytes of every input
+file, so the operation executes again exactly when one of these changes. A
+control's own code (its forgery and its assertions) runs every time, over
+the operation's result, executed or replayed.
+
+- *Executables.* The repository's verifier and producer builds, and the
+  mutation verifier. The mutation verifier is built at each run of the
+  controls from the current build's generated C and Lake's link response,
+  and is audited as the verifier is: its identity is its executable's digest
+  and linked libraries, and it reads, beyond the verifier's I/O, only the
+  variable `TSCERT_TEST_MUTATIONS`, which its invocation's environment
+  fixes. A mutation selection is therefore part of the key, and a rebuild
+  giving the same bytes replays its entries.
+- *Protocol.* The exit protocol that decides whether an exit is a finished
+  result (the refusal's status and prefix) is part of the key.
+- *Settings.* A host-family override is an input of the parse (the active
+  family descriptions). An injected tool failure is written into a stand-in
+  program, which no audit identifies: its invocations execute every time,
+  and the stages it does not replace replay.
+- *Baselines.* A control deriving its input from a case's honest documents
+  obtains them through the pipeline: the case is checked (its stages
+  replayed when warm) and its outcome required to be the case's expected
+  one.
+- *Ran.* Each operation's attempt must have executed, or replayed a finished
+  result the store holds for its key; a replayed timeout fails the control.
+  `TSCERT_STAGE_STORE=off` executes every operation of every control.
+
+The controls of the store itself (`tests/stage-store.mts`, the observed
+stages' replay controls, the cold and warm comparison of `pipeline/test.mts`)
+name fresh stores of their own and execute every time: their subject is the
+replay mechanism. Store tests cover dependency invalidation, concurrent
+publication, interrupted writers, timeout/success races and writable
+artifact isolation.
 
 **Timing.** Every invocation records monotonic elapsed wall time, its
 configured limit and whether it executed, replayed, timed out, failed
@@ -676,6 +702,7 @@ trusted obligation below.
 | The execution model agrees with JavaScript on the supported operations, including that Lean's compiled `Float` operations are IEEE-754's and `Float.pow` is C's `pow`, which `binop` corrects where `**` differs. | `Semantics/Calculus.lean`; [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) runs the model where no proof and no pipeline case compares it with JavaScript (NaN, the prototype chain, evaluation order, stuck subterms, reentry), and `tests/node-runs.mts` runs the examples under Node beside their outcomes |
 | Lean's kernel, its compiler (including the `@[csimp]` replacements, each proved equal to its definition) and the executed verifier binary are correct. The binary initializes the Lean runtime and the modules it imports, not the rest of the Lean library (`lean_initialize` is replaced, [runtime_init.c](../lean/c/runtime_init.c)). | `lean/lakefile.toml` |
 | A replayed check is the verifier's own judgment of exactly the inputs its key binds, so the premise of `checkJson_safe` holds of them: the stage store binds each stored check to the digests of its Fragment, claims and evidence documents, its argument vector (file key, subtype rounds), the verifier executable and its libraries, the adapter's loaded code and the Node runtime, and validates them and every stored file before replay; replay requires both the running Node process and the explicit stage-child environment to contain no `DYLD_` variable; its entries are written only by the user's own pipeline processes. The verifier's check mode reads the three files its arguments name and prints its judgment; the verifier reads no clock, randomness, environment variable or working directory, and runs no task or foreign code beyond Lean's runtime. Cold and replayed runs agree (the replay control of `pipeline/test.mts`). | [The stage store](#the-stage-store), [`pipeline/stages.mts`](../pipeline/stages.mts), [`pipeline/stage-store.mts`](../pipeline/stage-store.mts), [`RequestCli.lean`](../lean/Verification/Source/RequestCli.lean) |
+| A control passing over replayed operations shows what it showed when they executed: each replayed operation is its executable's own result for exactly the inputs its key binds, under the same binding, validation and audit as a replayed check (the executable by content, its argument vector, its environment, its exit protocol and every input file's bytes). The mutation verifier's audit is the verifier's, beside the one variable `TSCERT_TEST_MUTATIONS` its invocation fixes. A control's own forgery and assertions run at every run. | [Controls](#the-stage-store), [`pipeline/stages.mts`](../pipeline/stages.mts) (`tested`), [`pipeline/evidence-mutations.mts`](../pipeline/evidence-mutations.mts) |
 | A replayed parse is the parser's own result for exactly the inputs its key binds: the stage store binds each stored parse (and each stored TypeScript diagnostics list) to its pre-key (the source's bytes, its snapshot path, resolution file and project, the active family descriptions, the front end's loaded code and the compiler package's and its executable package's files, the profile, the case sensitivity of the executable's file system, the system's build, the Node runtime) and to its observations, every answer the file system gave the stage, each made again and compared before replay. The observations are complete: the front end reads only through `tools/files.mts` (a fast check of the stages' code closure); the compiler, confined by its sandbox profile on macOS, reaches the user's files only through the API's five queries, every one answered by an observation; compiler and loaded-code identities are compared with disk before the stage runs and again before it is published; Node's resolver and loader read what [Node's resolution algorithm](REFERENCES.md#nodejs-modules) and the load hook state, observed before and after, a package resolving through `exports` or `imports` holding no symbolic link in its own tree, and every string target in a package import's scope `imports` map starting with `./` (including targets within condition objects and arrays); the stages open fresh compilers, and the process's caches record their observations, Node's checked for first-answer consistency. An incomplete Node resolver or loader observation makes the current execution unpublishable and retires the worker; later observed executions require a fresh process, while validated replays remain available. Elsewhere, or where other observations are not accounted for, the stage executes without publication. | [Observed stages](#the-stage-store), [`tools/files.mts`](../tools/files.mts), [`tools/compiler-channel.mts`](../tools/compiler-channel.mts), [`pipeline/stages.mts`](../pipeline/stages.mts), `tests/observed-stages.mts` |
 
 **Assumed values.** Each is an input slot of the units that use it, at its

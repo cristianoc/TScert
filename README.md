@@ -63,16 +63,18 @@ OCaml producer and Lean, over unit tests of intermediate steps; tests written
 while researching a feature retire once a pipeline case covers it
 ([AGENTS.md](AGENTS.md#which-tests-to-keep)).
 
-- `make test` runs the fast checks, in seconds, with nothing built
+- `make test` builds Lean and the producer (`make build`, a no-op when
+  nothing changed), then runs the fast checks and the controls
   ([test-all.sh](test-all.sh) starts them together and reports them in order):
   front-end types, JSON field names, assertions with their reasons, documents,
-  examples run under Node, the trusted inputs and the rule inventory. Its
-  summary counts test executables, not functions or assertions, and marks an
-  incomplete run after an early failure.
-- `make suite` builds Lean and the producer (`make build`), then runs every
-  pipeline case and the forged documents and claims no case can make
-  ([pipeline/test.mts](pipeline/test.mts)), showing how many cases have
-  finished.
+  examples run under Node, the trusted inputs, the rule inventory, and the
+  forged documents and claims no case can make
+  ([pipeline/test.mts](pipeline/test.mts)), whose operations replay from the
+  stage store. Its summary counts test executables, not functions or
+  assertions, and marks an incomplete run after an early failure.
+- `make suite` builds Lean and the producer, then runs every pipeline case
+  ([pipeline/run-cases.mts](pipeline/run-cases.mts)), showing how many cases
+  have finished.
 - `make cases P=…` runs the pipeline cases whose file names contain `P`;
   `make check FILE=…` runs one source file through the pipeline. `make help`
   lists every target.

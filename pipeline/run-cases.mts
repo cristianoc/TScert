@@ -1,9 +1,8 @@
-// Fast iteration: check only the inventory cases whose file names match, each
+// The pipeline cases (`make suite`): each case of the inventory whose file
+// name contains a pattern, every case with none, several at once, each
 // against its expected outcome, phase and diagnostic.
 //   node pipeline/run-cases.mts module- generic-rest
-// With no pattern, every case, several at once. This is the loop `test.mts`
-// runs first; the rest of `test.mts` (pinned imports, tampering controls) is
-// not run here.
+// The controls no case can make are `test.mts`'s (`make test`).
 import assert from "node:assert/strict";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
@@ -61,6 +60,8 @@ export function expectOutcome(test: Case, result: Outcome): Outcome {
     if (result.status !== "verified")
       assert.match(result.detail, test.diagnostic, `${test.file}: wrong failure`);
   }
+  if (result.status !== "verified" && test.kind === "negative" && (test.phase === "search" || test.phase === "check"))
+    assert.match(result.detail, /at \[\d+,\d+\)|obligation at \d+/, `${test.file}: a control failing at no located obligation`);
   return result;
 }
 
@@ -72,19 +73,22 @@ if (import.meta.filename === resolve(process.argv[1] ?? "")) {
     process.stderr.write(`no case matches ${patterns.join(" ")}\n`);
     process.exit(2);
   }
-  let failed = 0;
+  let failed = 0, verifiedFunctions = 0;
   const outcomes = await pooled(selected, runCase);
   for (const [i, test] of selected.entries()) {
     try {
       const settled = outcomes[i];
       if (settled.status === "rejected") throw settled.reason;
       const result = expectOutcome(test, settled.value);
+      if (result.status === "verified") verifiedFunctions += result.functions.length;
       process.stdout.write(`${test.file}: ${result.status} (${result.phase}, ${test.kind})\n`);
     } catch (error) {
       failed++;
       process.stdout.write(`${test.file}: FAILED ${error instanceof Error ? error.message.split("\n")[0] : error}\n`);
     }
   }
-  process.stdout.write(`${selected.length - failed} of ${selected.length} cases as expected\n`);
+  process.stdout.write(`${selected.length - failed} of ${selected.length} cases as expected; ${verifiedFunctions} functions ` +
+    `verified; ${selected.filter((c) => c.kind === "negative").length} negative controls; ` +
+    `${selected.filter((c) => c.kind === "gap").length} named gaps\n`);
   process.exitCode = failed ? 1 : 0;
 }

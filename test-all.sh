@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# The fast checks around the parser -> OCaml producer -> Lean pipeline:
-# front-end types, JSON field names, assertions, documents and the rule
-# inventory. The pipeline cases and controls are pipeline/test.mts.
+# The checks of `make test`, after its build: front-end types, JSON field
+# names, assertions, documents, the rule inventory, and the controls no
+# pipeline case can make (pipeline/test.mts). The pipeline cases are
+# pipeline/run-cases.mts (`make suite`).
 # Usage: test-all.sh
 set -uo pipefail
 
@@ -120,7 +121,7 @@ run_test "Trusted inputs" node tests/trusted-inputs.mts
 run_test "Tool failures stay tool failures" node tests/tool-failures.mts
 # tests/stage-store.mts checks the stage store with stand-in stages: invalidation, concurrent writers, interrupted writers, timeouts, isolation.
 run_test "Stage store" node tests/stage-store.mts
-# The stages' code reads the file system only through tools/files.mts; the observed stages' replay controls are pipeline/test.mts's.
+# The stages' code reads the file system only through tools/files.mts; the observed stages' replay controls run beside the controls.
 run_test "Observed stages read through files.mts" node tests/observed-stages.mts --reads
 # tests/compiler-api.mts binds the compiler-API contract to the installed package: C1, its enums.
 run_test "Compiler-API contract" node tests/compiler-api.mts
@@ -134,6 +135,8 @@ run_test "RegExp shapes" node tests/regexp-shapes.mts
 run_test "Claim text of malformed input" node tests/claim-text.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node tests/rule-inventory.mts
+# pipeline/test.mts runs the controls no case can make, their operations replayed from the stage store, and the observed stages' replay controls.
+run_test "Controls" node pipeline/test.mts
 
 report_tests
 

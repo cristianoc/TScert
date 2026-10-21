@@ -24,11 +24,11 @@ build-lean: ## build the Lean verifier
 build-producer: ## build the OCaml producer
 	dune build --root ocaml-producer
 
-test: ## the fast checks: front-end types, JSON field names, assertions, documents, rule inventory
+test: build ## build, then the fast checks and the controls no case can make (replayed from the stage store)
 	@./test-all.sh
 
-suite: build ## build, then the pipeline cases and the controls no case can make
-	node pipeline/test.mts
+suite: build ## build, then the pipeline cases
+	node pipeline/run-cases.mts
 
 cases: ## the pipeline cases whose file names contain P (all of them when P is empty)
 	node pipeline/run-cases.mts $(P)

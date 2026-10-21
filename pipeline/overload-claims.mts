@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { forced, verifierCall } from "./stages.mts";
+import { tested, verifierCall } from "./stages.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { readClaimsFile, sourceKey } from "./verify-source.mts";
 
@@ -94,7 +94,7 @@ export function checkOverloads(verifier: string, artifacts: string): void {
     const file = join(artifacts, "forged-overload.json");
     writeFileSync(file, JSON.stringify(claims));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const p = forced(verifierCall(verifier, [
+      const p = tested(verifierCall(verifier, [
           mode,
           join(artifacts, "fragment.json"),
           file,
