@@ -164,8 +164,10 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
   };
   let thrown: { error: unknown } | null = null;
   try {
-    const snapshot = api.updateSnapshot({ openFiles: [file],
-      ...(tsconfigPath ? { openProjects: [tsconfigPath] } : {}) });
+    // A named project is opened alone: opening the file as well would load
+    // the project the compiler finds for it besides the named one.
+    opened = tsconfigPath === undefined;
+    const snapshot = api.updateSnapshot(tsconfigPath ? { openProjects: [tsconfigPath] } : { openFiles: [file] });
     const project = tsconfigPath
       ? snapshot.getProject(tsconfigPath)
       : snapshot.getDefaultProjectForFile(file);

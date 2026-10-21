@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { present } from "../tools/files.mts";
 import { spawnSync } from "node:child_process";
 import { forced, verifierCall } from "./stages.mts";
 import { sourceKey } from "./verify-source.mts";
@@ -50,10 +51,13 @@ static lean_object *some(lean_object *a) {
 `;
 
 /** Build a separate executable from the current build's C, with opt-in mutations.
- * No mutation flag is compiled into the production verifier. */
+ * No mutation flag is compiled into the production verifier. Its modules
+ * compile at once; the link is the build's own. A process builds it once,
+ * or uses the one `useMutationVerifier` names. */
 export function mutationVerifier(): string {
   if (executable) return executable;
   const dir = runDirectory("evidence-mutations-");
+  const compiles: { c: string; args: string[] }[] = [];
   const toolchain = command("lean", ["--print-prefix"]);
   const clang = join(toolchain, "bin", "clang");
   let response = readFileSync(join(lean, ".lake/build/bin/verifier.rsp"), "utf8");
@@ -109,16 +113,29 @@ export function mutationVerifier(): string {
     const c = join(dir, module.replaceAll("/", "-") + ".c");
     const o = c + ".o";
     writeFileSync(c, text.replace("#include <lean/lean.h>", "#include <lean/lean.h>\n" + header));
-    command(clang, ["-c", c, "-o", o, "-I", join(toolchain, "include"), "--sysroot", toolchain,
-      "-nostdinc", "-isystem", join(toolchain, "include/clang"), "-O1", "-DNDEBUG", "-DLEAN_EXPORTING"]);
+    compiles.push({ c, args: ["-c", c, "-o", o, "-I", join(toolchain, "include"), "--sysroot", toolchain,
+      "-nostdinc", "-isystem", join(toolchain, "include/clang"), "-O1", "-DNDEBUG", "-DLEAN_EXPORTING"] });
     assert.ok(response.includes(JSON.stringify(original + ".o.export")));
     response = response.replace(JSON.stringify(original + ".o.export"), JSON.stringify(o));
   }
+  // Each module its own clang process, all at once.
+  const quote = (text: string): string => `'${text.replace(/'/g, `'\\''`)}'`;
+  const script = compiles.map(({ c, args }) => `${[clang, ...args].map(quote).join(" ")} > ${quote(c + ".log")} 2>&1 & p="$p $!"`)
+    .join("\n") + "\ns=0\nfor q in $p; do wait $q || s=1; done\nexit $s\n";
+  const compiled = spawnSync("/bin/sh", ["-c", script], { cwd: lean, encoding: "utf8", timeout: 180_000 });
+  assert.ifError(compiled.error);
+  assert.equal(compiled.status, 0, compiles.map(({ c }) => present(c + ".log") ? readFileSync(c + ".log", "utf8") : "").join(""));
   const rsp = join(dir, "mutation.rsp");
   writeFileSync(rsp, response);
   executable = join(dir, "mutation-verifier");
   command(clang, ["-o", executable, "@" + rsp]);
   return executable;
+}
+
+/** Use the mutation verifier at `path`, which another process of this run
+ * built from the same build (`pipeline/test.mts`'s control processes). */
+export function useMutationVerifier(path: string): void {
+  executable = path;
 }
 
 /** Require acceptance under the selected mutation and refusal with each
@@ -148,3 +165,8 @@ export function forgedEvidence(artifacts: string, claims: string, name: string, 
   checkMutation(artifacts, claims, path, mutations);
   return path;
 }
+
+// The build alone, its executable's path printed: for a suite that builds it
+// once beside its other work.
+if (import.meta.filename === resolve(process.argv[1] ?? "") && process.argv[2] === "--build")
+  process.stdout.write(mutationVerifier() + "\n");

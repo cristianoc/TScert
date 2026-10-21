@@ -35,9 +35,9 @@ answers to their reads, on macOS, where the compiler runs confined by
 
 - The front end reads the file system only through `tools/files.mts`, and
   opens its compiler only through `openFrontEndCompiler`
-  (`tools/compiler-channel.mts`); `tests/observed-stages.mts` refuses a
-  module of the stages' code that imports a file-system, module or process
-  API itself.
+  (`tools/compiler-channel.mts`); `tests/observed-stages.mts --reads`, a fast
+  check, refuses a module of the stages' code that imports a file-system,
+  module or process API itself.
 
 - `TSCERT_STAGE_STORE=<dir>` selects the store, by default
   `$XDG_CACHE_HOME/tscert/stages` (`~/.cache/tscert/stages`), shared by every
@@ -178,9 +178,19 @@ runs `pipeline/test.mts`. Two rules decide where a check goes.
 - **Suites start together.** A suite is `run_test "Name" command args…`; its
   output is buffered and reported in order, and a failure is counted, never
   fatal.
-- **A fast check needs no build.** A check that runs neither the verifier nor
-  the producer is a suite of `test-all.sh`; one that needs either belongs in
-  `pipeline/test.mts`.
+- **A fast check needs no build and runs no stage.** A check that runs
+  neither the verifier nor the producer, nor a pipeline stage (the parse
+  included), is a suite of `test-all.sh`; one that does belongs in
+  `pipeline/test.mts`, as the observed stages' replay controls do
+  (`tests/observed-stages.mts`, beside the rest of that suite).
+- **Controls run in a pool.** Each control block of `pipeline/test.mts`
+  registers with `control(…)`; after the cases, a pool of control processes,
+  one per core, runs them, each control executing its tested operations
+  (`forced`) and replaying every other stage from the store the cases
+  filled. A control is independent of the others: it reads its cases'
+  artifacts through `run(…)`, a copy of its own, and states its own family
+  overrides. The suite reports the controls' wall time and the number and
+  summed time of their forced executions.
 
 ## What a result means
 

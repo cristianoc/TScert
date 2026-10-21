@@ -13,11 +13,10 @@
 //   <root>/observed/<stage>/<pre-key>/<key>    a reference to an observed stage's entry
 //   <root>/sources/<digest>/<name>             a stable snapshot location
 //   <root>/tmp/<host>/<pid>.<attempt>/         a writer's unpublished entry
-import { cpSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { runDirectory } from "./run-directory.mts";
 
 const sha256 = (bytes: string | Buffer): string => createHash("sha256").update(bytes).digest("hex");
 
@@ -144,6 +143,45 @@ const failedWith = (error: unknown, ...codes: string[]): boolean =>
 const resultPayload = (m: Manifest): string =>
   JSON.stringify([m.input, m.exitStatus, m.stdout, m.stderr, m.outputs.map((o) => [o.role, o.digest])]);
 
+/** An entry directory as read: its listing, its manifest's text and its
+ * files' bytes. */
+type EntryCopy = { listed: string; outs: string; manifest: string; stdout: Buffer; stderr: Buffer;
+  outputs: ReadonlyMap<string, Buffer> };
+/** The whole entry directory at `directory` read into memory, or null where
+ * it is not an entry's shape; a file removed meanwhile throws. */
+function readEntry(directory: string): EntryCopy | null {
+  const listed = readdirSync(directory).sort().join();
+  if (listed !== "manifest.json,out,stderr,stdout") return null;
+  const roles = readdirSync(join(directory, "out")).sort();
+  return {
+    listed, outs: roles.join(), manifest: readFileSync(join(directory, "manifest.json"), "utf8"),
+    stdout: readFileSync(join(directory, "stdout")), stderr: readFileSync(join(directory, "stderr")),
+    outputs: new Map(roles.map((role) => [role, readFileSync(join(directory, "out", role))])),
+  };
+}
+/** An entry copy's manifest where the whole copy is valid for `key` at
+ * `input` (its manifest, its key, its input, every file's digest and no file
+ * beyond them), else null. */
+function validated(copy: EntryCopy, stage: string, key: string, input: string | null): Manifest | null {
+  let manifest: Manifest | null;
+  try {
+    manifest = readManifest(JSON.parse(copy.manifest));
+  } catch {
+    return null;
+  }
+  if (!manifest || manifest.key !== key || manifest.stage !== stage || sha256(manifest.input) !== key ||
+      (input !== null && manifest.input !== input))
+    return null;
+  if (copy.listed !== "manifest.json,out,stderr,stdout" || copy.outs !== manifest.outputs.map((o) => o.role).sort().join())
+    return null;
+  if (!matches(copy.stdout, manifest.stdout) || !matches(copy.stderr, manifest.stderr)) return null;
+  for (const o of manifest.outputs) {
+    const bytes = copy.outputs.get(o.role);
+    if (bytes === undefined || !matches(bytes, o.digest)) return null;
+  }
+  return manifest;
+}
+
 /** An in-process test barrier after an entry is complete and before rename. */
 let beforePublishForTests: ((directory: string) => void) | null = null;
 export function pausePublicationForTests(hook: ((directory: string) => void) | null): void {
@@ -170,64 +208,42 @@ export class Store {
   }
 
   /** The finished result stored for `key` at exactly `input`: the entry is
-   * copied whole into this run's directory and validated there (its
+   * read whole into this process's memory, and that copy validated (its
    * manifest, its key, its input, every file's digest and no file beyond
-   * them); a missing, incomplete, corrupt or concurrently removed entry is a
-   * miss. */
+   * them) and returned; a missing, incomplete, corrupt or concurrently
+   * removed entry is a miss. */
   finished(stage: string, key: string, input: string | null): { result: StoredResult; lookupMs: number; validationMs: number } | null {
     const started = performance.now();
-    const copy = join(runDirectory(`stage-entry-${stage}-`), "entry");
+    let copy: EntryCopy | null;
     try {
-      cpSync(this.entry(stage, key), copy, { recursive: true });
-    } catch (error) {
-      if (failedWith(error, "ENOENT", "ENOTDIR")) return null;
-      throw error;
-    }
-    const copied = performance.now();
-    try {
-      const manifest = this.validated(copy, stage, key, input);
-      if (!manifest) return null;
-      const outputs = manifest.outputs.map((o): readonly [string, Buffer] => [o.role, readFileSync(join(copy, "out", o.role))]);
-      return {
-        result: {
-          input: manifest.input, exitStatus: manifest.exitStatus,
-          stdout: readFileSync(join(copy, "stdout")), stderr: readFileSync(join(copy, "stderr")), outputs,
-          measurement: manifest.measurement,
-        },
-        lookupMs: copied - started,
-        validationMs: performance.now() - copied,
-      };
-    } finally {
-      rmSync(dirname(copy), { recursive: true, force: true });
-    }
-  }
-  /** An entry directory's manifest where the whole entry is valid for
-   * `key` at `input`, else null. */
-  private validated(directory: string, stage: string, key: string, input: string | null): Manifest | null {
-    let manifest: Manifest | null;
-    try {
-      manifest = readManifest(JSON.parse(readFileSync(join(directory, "manifest.json"), "utf8")));
-    } catch {
-      return null;
-    }
-    if (!manifest || manifest.key !== key || manifest.stage !== stage || sha256(manifest.input) !== key ||
-        (input !== null && manifest.input !== input))
-      return null;
-    try {
-      const listed = readdirSync(directory).sort().join();
-      const outs = readdirSync(join(directory, "out")).sort().join();
-      if (listed !== "manifest.json,out,stderr,stdout" || outs !== manifest.outputs.map((o) => o.role).sort().join())
-        return null;
-      if (!matches(readFileSync(join(directory, "stdout")), manifest.stdout) ||
-          !matches(readFileSync(join(directory, "stderr")), manifest.stderr))
-        return null;
-      for (const o of manifest.outputs)
-        if (!matches(readFileSync(join(directory, "out", o.role)), o.digest)) return null;
+      copy = readEntry(this.entry(stage, key));
     } catch (error) {
       if (failedWith(error, "ENOENT", "ENOTDIR", "EISDIR")) return null;
       throw error;
     }
-    return manifest;
+    const copied = performance.now();
+    const manifest = copy && validated(copy, stage, key, input);
+    if (!copy || !manifest) return null;
+    const outputs = manifest.outputs.map((o): readonly [string, Buffer] => [o.role, copy.outputs.get(o.role) ?? Buffer.alloc(0)]);
+    return {
+      result: {
+        input: manifest.input, exitStatus: manifest.exitStatus, stdout: copy.stdout, stderr: copy.stderr, outputs,
+        measurement: manifest.measurement,
+      },
+      lookupMs: copied - started,
+      validationMs: performance.now() - copied,
+    };
+  }
+  /** The entry directory's manifest where the whole entry is valid for `key`
+   * at `input`, else null. */
+  private validatedAt(directory: string, stage: string, key: string, input: string | null): Manifest | null {
+    try {
+      const copy = readEntry(directory);
+      return copy && validated(copy, stage, key, input);
+    } catch (error) {
+      if (failedWith(error, "ENOENT", "ENOTDIR", "EISDIR")) return null;
+      throw error;
+    }
   }
 
   /** Publish a finished result for `key`: built whole in a temporary
@@ -259,7 +275,7 @@ export class Store {
       } catch (error) {
         if (!failedWith(error, "EEXIST", "ENOTEMPTY")) throw error;
       }
-      const present = this.validated(destination, stage, key, null);
+      const present = this.validatedAt(destination, stage, key, null);
       if (!present) return "invalid present";
       if (resultPayload(present) !== resultPayload(manifest))
         throw new StoreError(`store error: two different results for ${stage} entry ${key} (attempts ` +

@@ -6,8 +6,11 @@
 // TypeScript's diagnostics replay by the same mechanism. The confined
 // compiler is killed on a read the API's queries do not serve, and the stages'
 // code reads the file system only through tools/files.mts. Replay controls
-// use fresh processes; the retirement control reuses one. No build is needed.
-// --node-only runs the controls that do not require sandbox-exec.
+// use fresh processes, and the parse's run real compilers: they are a suite
+// of pipeline/test.mts. The retirement control reuses one process.
+// --node-only runs the controls that do not require sandbox-exec; --reads
+// only the check that the stages' code reads through tools/files.mts, a fast
+// check of test-all.sh.
 import assert from "node:assert/strict";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
@@ -15,20 +18,38 @@ import { dirname, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Recorder, captureCodeIdentity, invokeInProcess, textCodec, codeIdentity, sha256, type Canonical } from "../pipeline/stages.mts";
 import { Store } from "../pipeline/stage-store.mts";
-import { parseSource, typeScriptErrors } from "../pipeline/verify-source.mts";
-import { compilerApiFamily } from "../tools/compiler-api.mts";
 import { launcherForTests, openCompiler, useInstallationForTests } from "../tools/compiler-channel.mts";
-import { useFamiliesForTests } from "../tools/family-activation.mts";
 import { nodeResolve, processRetirement, observed, observationsHold, type Observation } from "../tools/files.mts";
 
 const here = import.meta.dirname;
 const repository = resolve(here, "..");
 
+// --- the stages' code reads the file system only through tools/files.mts
+if (process.argv[2] === "--reads") {
+  const closure = codeIdentity([join(repository, "pipeline", "parse-stage.mts")]);
+  const modules = Array.isArray(closure) ? closure.map((entry) => Array.isArray(entry) ? String(entry[0]) : "") : [];
+  assert.ok(modules.includes("tools/files.mts") && modules.includes("tools/fragment-parse.mts"), modules.join(", "));
+  const reading = /from "node:(fs|fs\/promises|module|child_process|worker_threads|vm)"|import\.meta\.resolve\(/;
+  for (const module of modules) {
+    // The store's own modules read its entries, never a stage's inputs.
+    if (["tools/files.mts", "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/run-directory.mts"].includes(module))
+      continue;
+    const text = readFileSync(join(repository, module), "utf8").replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");
+    assert.doesNotMatch(text, reading, `${module} reads the file system other than through tools/files.mts`);
+  }
+  process.stdout.write("observed stages: the stages' code reads the file system only through tools/files.mts\n");
+  process.exit(0);
+}
+
 // A run of one observed stage in this process, printed as its attempt.
 if (process.argv[2] === "--run") {
   const [stage, source, project, families, installation] = process.argv.slice(3);
-  if (families === "changed")
+  // A child loads the front end only where its stage uses it.
+  if (families === "changed") {
+    const { compilerApiFamily } = await import("../tools/compiler-api.mts");
+    const { useFamiliesForTests } = await import("../tools/family-activation.mts");
     useFamiliesForTests([{ ...compilerApiFamily, corrections: compilerApiFamily.corrections.slice(1) }]);
+  }
   if (installation !== "-") useInstallationForTests(installation);
   const recorder = new Recorder(null);
   if (stage === "resolution" || stage === "mutation") {
@@ -40,8 +61,11 @@ if (process.argv[2] === "--run") {
         writeFileSync(path, readFileSync(path, "utf8") + "\n");
         return "installation changed during execution";
       } }, { force: false, recorder });
-  } else if (stage === "diagnostics") typeScriptErrors(recorder, source, project);
-  else parseSource(source, project, runDirectory("observed-"), recorder);
+  } else {
+    const { parseSource, typeScriptErrors } = await import("../pipeline/verify-source.mts");
+    if (stage === "diagnostics") typeScriptErrors(recorder, source, project);
+    else parseSource(source, project, runDirectory("observed-"), recorder);
+  }
   const record = recorder.records.find((r) => r.stage === (stage === "resolution" || stage === "mutation" ? "parse" : stage));
   process.stdout.write(JSON.stringify({ execution: record?.execution, ineligible: record?.ineligible, key: record?.key }));
   process.exit(0);
@@ -390,18 +414,6 @@ if (process.argv[2] !== "--node-only") {
 
 }
 
-// --- the stages' code reads the file system only through tools/files.mts
-const closure = codeIdentity([join(repository, "pipeline", "parse-stage.mts")]);
-const modules = Array.isArray(closure) ? closure.map((entry) => Array.isArray(entry) ? String(entry[0]) : "") : [];
-assert.ok(modules.includes("tools/files.mts") && modules.includes("tools/fragment-parse.mts"), modules.join(", "));
-const reading = /from "node:(fs|fs\/promises|module|child_process|worker_threads|vm)"|import\.meta\.resolve\(/;
-for (const module of modules) {
-  // The store's own modules read its entries, never a stage's inputs.
-  if (["tools/files.mts", "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/run-directory.mts"].includes(module))
-    continue;
-  const text = readFileSync(join(repository, module), "utf8").replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");
-  assert.doesNotMatch(text, reading, `${module} reads the file system other than through tools/files.mts`);
-}
 process.stdout.write(process.argv[2] === "--node-only"
-  ? "observed stages: Node resolution, retirement, compiler identity, reads in one place\n"
-  : "observed stages: replay, invalidation, forged entries, confinement, reads in one place\n");
+  ? "observed stages: Node resolution, retirement, compiler identity\n"
+  : "observed stages: replay, invalidation, forged entries, confinement\n");

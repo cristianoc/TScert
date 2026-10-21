@@ -39,9 +39,13 @@ const invoke = (call: ProcessCall, limitMs: number = 10_000, force: boolean = fa
   invokeProcess(call, { limitMs, force, recorder });
 /** A fresh store, the one the mechanism uses from now on. */
 function freshStore(name: string): Store {
-  const root = join(dir, name);
-  process.env["TSCERT_STAGE_STORE"] = root;
-  return new Store(root);
+  return use(new Store(join(dir, name)));
+}
+/** `store`, the one the mechanism uses from now on: a section running
+ * beside others names its store again before each invocation it makes. */
+function use(store: Store): Store {
+  process.env["TSCERT_STAGE_STORE"] = store.root;
+  return store;
 }
 
 // A real writer held after constructing its entry and before atomic rename.
@@ -68,7 +72,7 @@ async function writer(store: Store, kind: string, attempt: string, invocation: r
 }> {
   const args = invocation.length ? ["--paused-invocation", ...invocation] : ["--writer", store.root, kind, attempt];
   const child = spawn(process.execPath, [import.meta.filename, ...args],
-    { env: process.env, timeout: 30_000, killSignal: "SIGKILL" });
+    { env: { ...process.env, TSCERT_STAGE_STORE: store.root }, timeout: 30_000, killSignal: "SIGKILL" });
   const closed = new Promise<number | null>((done, fail) => {
     child.on("error", fail);
     child.on("close", done);
@@ -222,7 +226,7 @@ if (eligible) {
   // publishes takes precedence over the observation, also over a timeout
   // observed later.
   freshStore("timeouts");
-  const program = script("slow.sh", `/bin/sleep 1; /bin/cat "$2"`, ["/bin/cat", "/bin/sleep"]);
+  const program = script("slow.sh", `/bin/sleep 0.6; /bin/cat "$2"`, ["/bin/cat", "/bin/sleep"]);
   const input = file("slow.json", "slow");
   const timed = invoke(lower(program, input), 300);
   assert.equal(timed.record.execution, "timed-out");
@@ -292,12 +296,30 @@ if (eligible) {
   process.stdout.write("manifest integrity: changed exit status or measurement is a miss and is not replaced\n");
 }
 
-if (eligible) {
+/** A child process of this test, its status and output: for a section
+ * running beside others. */
+const childRun = (args: readonly string[], env: NodeJS.ProcessEnv, options: readonly string[] = []):
+    Promise<{ status: number | null; stdout: string; stderr: string }> => new Promise((done, fail) => {
+  const p = spawn(process.execPath, [...options, import.meta.filename, ...args], { env });
+  let stdout = "", stderr = "";
+  p.stdout.setEncoding("utf8");
+  p.stderr.setEncoding("utf8");
+  p.stdout.on("data", (text: unknown) => { stdout += String(text); });
+  p.stderr.on("data", (text: unknown) => { stderr += String(text); });
+  p.on("error", fail);
+  p.on("close", (status: number | null) => done({ status, stdout, stderr }));
+});
+
+// The sections below wait on child processes: they run at once, each in a
+// store of its own, naming it before each invocation of its own.
+const sections: Promise<void>[] = [];
+if (eligible) sections.push((async (): Promise<void> => {
   // Concurrent publication by two processes: both execute, one publishes,
   // the other finds the same result present; a stage giving two results for
   // one key is a store error.
   const child = (program: string, input: string): Promise<string> => new Promise((done, fail) => {
-    const p = spawn(process.execPath, [import.meta.filename, "--child", program, input], { env: process.env });
+    const p = spawn(process.execPath, [import.meta.filename, "--child", program, input],
+      { env: { ...process.env, TSCERT_STAGE_STORE: store.root } });
     let out = "";
     p.stdout.setEncoding("utf8");
     p.stdout.on("data", (text: unknown) => { out += String(text); });
@@ -311,16 +333,17 @@ if (eligible) {
   const both = await Promise.all([child(steady, input), child(steady, input)]);
   for (const out of both) assert.deepEqual(parsed(out), { execution: "executed", stdout: "same" });
   assert.equal(readdirSync(join(store.root, "entries", "lower")).length, 1);
+  use(store);
   assert.equal(invoke(lower(steady, input)).record.execution, "replayed");
   const varying = script("varying.sh", `/bin/sleep 1; echo $$`, ["/bin/sleep"]);
   const outcomes = (await Promise.all([child(varying, input), child(varying, input)])).map(parsed);
   assert.equal(outcomes.filter((o) => typeof o === "object" && o !== null && "error" in o && o.error === "store").length, 1, JSON.stringify(outcomes));
   process.stdout.write("concurrent publication: one entry for two writers; two results for one key a store error\n");
-}
+})());
 
 
-{
-  const store = freshStore("killed-writer");
+sections.push((async (): Promise<void> => {
+  const store = new Store(join(dir, "killed-writer"));
   const held = await writer(store, "finished", "interrupted");
   assert.ok(existsSync(join(held.directory, "manifest.json")), "entry complete before rename");
   assert.equal(store.finished("lower", sha256("concurrent input"), "concurrent input"), null);
@@ -336,9 +359,9 @@ if (eligible) {
   store.clean();
   assert.equal(existsSync(held.directory), false, "cleanup removes the dead writer");
   process.stdout.write("interrupted publication: real writer killed before rename; reader misses, fresh writer publishes, cleanup removes abandoned entry\n");
-}
-for (const order of [["timeout", "finished"], ["finished", "timeout"]]) {
-  const store = freshStore("race-" + order.join("-"));
+})());
+for (const order of [["timeout", "finished"], ["finished", "timeout"]]) sections.push((async (): Promise<void> => {
+  const store = new Store(join(dir, "race-" + order.join("-")));
   const timeout = await writer(store, "timeout", "timeout");
   const finished = await writer(store, "finished", "finished");
   for (const kind of order) {
@@ -349,7 +372,7 @@ for (const order of [["timeout", "finished"], ["finished", "timeout"]]) {
   assert.ok(store.timeout("lower", sha256("concurrent input"), "concurrent input", 300, "test"));
   assert.equal(store.finished("lower", sha256("concurrent input"), "concurrent input")?.result.stdout.toString(), "whole");
   process.stdout.write(`concurrent publication ${order.join(" then ")}: later reader gets finished result\n`);
-}
+})());
 {
   const log = file("interrupted-log.jsonl", "");
   const recorder = new Recorder(log);
@@ -378,8 +401,8 @@ for (const order of [["timeout", "finished"], ["finished", "timeout"]]) {
   assert.equal(stale.record.execution, "executed");
 }
 
-if (eligible) {
-  const store = freshStore("interrupted-invocation");
+if (eligible) sections.push((async (): Promise<void> => {
+  const store = new Store(join(dir, "interrupted-invocation"));
   const program = script("pause.sh", '/bin/cat "$2"', ["/bin/cat", "/bin/sleep"]);
   const input = file("pause.json", "whole"), log = file("pause.jsonl", "");
   const held = await writer(store, "", "", [program, input, "10000", log]);
@@ -391,14 +414,17 @@ if (eligible) {
   assert.equal(interrupted.limitMs, 10000);
   assert.ok(interrupted.manifest !== null);
   assert.ok(interrupted.elapsedMs > 0);
+  use(store);
   assert.equal(invoke(lower(program, input)).record.execution, "executed", "dead writer never published");
   assert.equal(invoke(lower(program, input)).record.execution, "replayed");
   store.clean();
   assert.equal(existsSync(held.directory), false);
-}
-if (eligible) for (const order of [["timeout", "finished"], ["finished", "timeout"]]) {
-  const store = freshStore("invocation-race-" + order.join("-"));
-  const program = script("race.sh", '/bin/sleep 1; /bin/cat "$2"', ["/bin/cat", "/bin/sleep"]);
+})());
+// The two orders one after the other: they share their stand-in and logs.
+if (eligible) sections.push((async (): Promise<void> => {
+for (const order of [["timeout", "finished"], ["finished", "timeout"]]) {
+  const store = new Store(join(dir, "invocation-race-" + order.join("-")));
+  const program = script("race.sh", '/bin/sleep 0.6; /bin/cat "$2"', ["/bin/cat", "/bin/sleep"]);
   const input = file("race.json", "whole");
   const timeoutLog = file("race-timeout.jsonl", ""), finishedLog = file("race-finished.jsonl", "");
   const [timeout, finished] = await Promise.all([
@@ -414,13 +440,15 @@ if (eligible) for (const order of [["timeout", "finished"], ["finished", "timeou
   assert.equal(timed.execution, "timed-out");
   assert.equal(done.execution, "executed");
   assert.equal(timed.key, done.key);
+  use(store);
   const later = invoke(lower(program, input), 300);
   assert.equal(later.record.execution, "replayed");
   assert.equal(later.stdout, "whole");
   process.stdout.write(`actual invocation race ${order.join(" then ")}: finished result replays\n`);
 }
+})());
 if (platform() === "darwin") {
-  // Minimal Mach-O load commands let otool traverse a real dependency graph
+  // Minimal Mach-O load commands give a real dependency graph to traverse
   // without compiling or executing a fixture.
   const macho = (path: string, dependencies: readonly string[]): void => {
     const commands = dependencies.map((dependency) => {
@@ -452,16 +480,43 @@ if (platform() === "darwin") {
   macho(executable, [other]);
   const relinked = linkedLibraries(executable);
   assert.notEqual(canonical(relinked), canonical(changed), "relink follows current dependency closure");
+  // Universal files: slices at 4096 and 8192, the second described in the
+  // table or, as dyld also reads it, right after a table of one.
+  const universal = (path: string, counted: number, slices: readonly (readonly string[])[]): void => {
+    const table = Buffer.alloc(4096);
+    table.writeUInt32BE(0xcafebabe, 0);
+    table.writeUInt32BE(counted, 4);
+    const images = slices.map((dependencies, i) => {
+      const slice = join(dir, `slice-${i}`);
+      macho(slice, dependencies);
+      const bytes = readFileSync(slice);
+      table.writeUInt32BE(i === 0 ? 0x01000007 : 0x0100000c, 8 + 20 * i);
+      table.writeUInt32BE(4096 * (i + 1), 8 + 20 * i + 8);
+      table.writeUInt32BE(bytes.length, 8 + 20 * i + 12);
+      return Buffer.concat([bytes, Buffer.alloc(4096 - bytes.length)]);
+    });
+    writeFileSync(path, Buffer.concat([table, ...images]));
+  };
+  const fat = join(dir, "universal");
+  universal(fat, 2, [[library], [library]]);
+  assert.ok(typeof linkedLibraries(fat) !== "string", "a universal file whose architectures agree is identified");
+  universal(fat, 2, [[library], [other]]);
+  assert.match(String(linkedLibraries(fat)), /architectures differ/, "architectures loading different libraries");
+  universal(fat, 1, [[library], [other]]);
+  assert.match(String(linkedLibraries(fat)), /architectures differ/, "an arm64 slice after the table is read");
+  process.stdout.write("linked libraries: a library replaced or relinked changes the identity; a universal file's architectures must agree\n");
 }
 {
-  // A copy of the pipeline's modules beside the front end they import.
-  const copied = join(dir, "loaded-copy", "pipeline");
-  mkdirSync(copied, { recursive: true });
-  symlinkSync(resolve(import.meta.dirname, "../tools"), join(dir, "loaded-copy", "tools"));
-  for (const name of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts"])
-    copyFileSync(resolve(import.meta.dirname, "../pipeline", name), join(copied, name));
-  const driver = join(copied, "test.mts");
-  writeFileSync(driver, String.raw`
+  // Each identity control owns the modules it edits.
+  const drivers = ["claims-assembly.mts", "stages.mts"].map((name) => {
+    const root = join(dir, "loaded-copy-" + name);
+    const copied = join(root, "pipeline");
+    mkdirSync(copied, { recursive: true });
+    symlinkSync(resolve(import.meta.dirname, "../tools"), join(root, "tools"));
+    for (const module of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts"])
+      copyFileSync(resolve(import.meta.dirname, "../pipeline", module), join(copied, module));
+    const driver = join(copied, "test.mts");
+    writeFileSync(driver, String.raw`
 import assert from "node:assert/strict";
 import { appendFileSync } from "node:fs";
 import { assembleClaims, assemblyImplementation } from "./claims-assembly.mts";
@@ -470,7 +525,8 @@ const run = (): ReturnType<typeof invokeInProcess<string>> => invokeInProcess({
   stage: "assemble", implementation: assemblyImplementation, inputs: [], codec: textCodec,
   run: (): string => assembleClaims('{"modules":[]}', [])
 }, { force: false, recorder: null });
-run();
+assert.notEqual(run().record.key, null);
+assert.equal(run().record.execution, "replayed");
 appendFileSync(new URL(process.argv[2], import.meta.url), "\n// edited during worker lifetime\n");
 const result = run();
 assert.equal(result.value, '{"modules":[]}');
@@ -478,26 +534,37 @@ assert.equal(result.record.execution, "executed");
 assert.equal(result.record.key, null);
 assert.match(result.record.ineligible ?? "", /loaded .*modules differ from disk/);
 `);
-  for (const name of ["claims-assembly.mts", "stages.mts"]) {
-    const child = spawnSync(process.execPath, [driver, "./" + name], { encoding: "utf8", env: process.env });
-    assert.equal(child.status, 0, child.stderr);
-  }
+    return { name, driver };
+  });
   const program = script("runtime.sh", '/bin/cat "$2"');
   const input = file("runtime.json", "runtime"), preload = file("preload.mjs", "");
-  for (const args of [["--import", preload], ["--require", preload], ["--experimental-loader", preload], ["--experimental_loader", preload], ["-r", preload]]) {
-    const child = spawnSync(process.execPath, [...args, import.meta.filename, "--runtime-child", program, input],
-      { encoding: "utf8", env: process.env });
+  const env = { ...process.env, TSCERT_STAGE_STORE: join(dir, "loaded-copy-store") };
+  const options = [["--import", preload], ["--require", preload], ["--experimental-loader", preload], ["--experimental_loader", preload], ["-r", preload]];
+  sections.push((async (): Promise<void> => {
+    const children = await Promise.all([
+      ...drivers.map(({ name, driver }) => new Promise<{ status: number | null; stderr: string }>((done, fail) => {
+        const p = spawn(process.execPath, [driver, "./" + name], { env });
+        let stderr = "";
+        p.stderr.setEncoding("utf8");
+        p.stderr.on("data", (text: unknown) => { stderr += String(text); });
+        p.on("error", fail);
+        p.on("close", (status: number | null) => done({ status, stderr }));
+      })),
+    ]);
+    for (const child of children) assert.equal(child.status, 0, child.stderr);
+    const preloaded = await Promise.all(options.map((args) => childRun(["--runtime-child", program, input], env, args)));
+    for (const [i, child] of preloaded.entries()) {
+      assert.equal(child.status, 0, child.stderr);
+      const [record] = readInvocationLog(file(`runtime-log-${i}.jsonl`, JSON.stringify({ event: "end", record: JSON.parse(child.stdout) }) + "\n"));
+      assert.equal(record.key, null);
+      assert.equal(record.execution, "executed");
+      assert.match(record.ineligible ?? "", /Node import, require or loader/);
+    }
+    const child = await childRun(["--runtime-child", program, input], { ...env, NODE_OPTIONS: `--import="${preload}"` });
     assert.equal(child.status, 0, child.stderr);
-    const [record] = readInvocationLog(file("runtime-log.jsonl", JSON.stringify({ event: "end", record: JSON.parse(child.stdout) }) + "\n"));
-    assert.equal(record.key, null);
-    assert.equal(record.execution, "executed");
-    assert.match(record.ineligible ?? "", /Node import, require or loader/);
-  }
-  const child = spawnSync(process.execPath, [import.meta.filename, "--runtime-child", program, input],
-    { encoding: "utf8", env: { ...process.env, NODE_OPTIONS: `--import="${preload}"` } });
-  assert.equal(child.status, 0, child.stderr);
-  assert.match(child.stdout, /Node import, require or loader/);
-  process.stdout.write("loaded code and Node preload options: changed or unidentified dependencies execute without a key\n");
+    assert.match(child.stdout, /Node import, require or loader/);
+    process.stdout.write("loaded code and Node preload options: changed or unidentified dependencies execute without a key\n");
+  })());
 }
 {
   const store = freshStore("snapshot-cleanup");
@@ -509,5 +576,6 @@ assert.match(result.record.ineligible ?? "", /loaded .*modules differ from disk/
   assert.equal(store.stableDirectory("sources", files), snapshot);
   process.stdout.write("cleanup preserves validated source snapshots for active readers\n");
 }
+await Promise.all(sections);
 assert.throws(() => invoke(lower(script("any.sh", "/bin/cat \"$2\""), file("x.json", "x")), 0), /positive integer/);
 process.stdout.write("limits: a stage's limit is a positive integer number of milliseconds\n");
