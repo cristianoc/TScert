@@ -20,7 +20,7 @@ make lowering FILE=f.ts [FN=name]   # the program graph a source lowers to
 make semantic-diff REV=rev          # render the commit records of a commit or range
 make build       # build-lean and build-producer: the Lean verifier and the OCaml producer
 make setup       # the node dependencies
-make clean-store # remove the stage store's entries
+make clean-store # remove stage entries and timeout observations; keep source snapshots
 make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of a directory's functions
 ```
 
@@ -33,7 +33,8 @@ from [the stage store](docs/DESIGN.md#the-stage-store) by content.
 - `TSCERT_STAGE_STORE=<dir>` selects the store, by default
   `$XDG_CACHE_HOME/tscert/stages` (`~/.cache/tscert/stages`), shared by every
   checkout and worktree; `TSCERT_STAGE_STORE=off` executes every stage.
-  `make clean-store` removes the entries.
+  `make clean-store` removes finished entries, timeout observations and abandoned
+  publication directories on this host; it retains stable source snapshots.
 - A branch uses the default store. Keys include the executables' and the
   adapters' digests, so a branch's changed verifier, producer or adapter
   never replays another build's entries; an agent testing the store itself

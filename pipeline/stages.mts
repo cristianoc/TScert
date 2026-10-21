@@ -8,7 +8,7 @@
 // invocation of a replayed stage is looked up in the store
 // (`stage-store.mts`) by its key, and its finished result or timeout is
 // published there.
-//   node pipeline/stages.mts clean    removes the store's entries
+//   node pipeline/stages.mts clean    removes entries and timeout observations
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -341,15 +341,27 @@ function executableIdentity(program: string): { identity: Canonical } | { uniden
 /** The Node runtime the adapters run on: its executable and linked
  * libraries by content, its options (`execArgv`, `NODE_OPTIONS`); or why it
  * is not identified. */
-function nodeIdentity(): { identity: Canonical } | { unidentified: string } {
+function diskNodeIdentity(): { identity: Canonical } | { unidentified: string } {
   const options = [...process.execArgv, process.env["NODE_OPTIONS"] ?? ""].join(" ");
   if (/(?:^|[\s"'])(?:--(?:import|require|loader|experimental[-_]loader)(?:[=\s"']|$)|-r)/.test(options))
     return { unidentified: "Node import, require or loader options have unidentified code dependencies" };
   const real = realpathSync(process.execPath);
   const linked = linkedLibraries(real);
   if (typeof linked === "string") return { unidentified: `Node: ${linked}` };
-  return { identity: { executable: fileDigest(real), libraries: linked, options: process.execArgv,
+  return { identity: { executable: fileDigest(real), libraries: linked, options: [...process.execArgv],
     nodeOptions: process.env["NODE_OPTIONS"] ?? null, platform: platform(), arch: arch() } };
+}
+
+/** The runtime identity captured with the adapter's loaded code. */
+const loadedRuntime = diskNodeIdentity();
+function nodeIdentity(): { identity: Canonical } | { unidentified: string } {
+  if ("unidentified" in loadedRuntime) return loadedRuntime;
+  try {
+    if (canonical(diskNodeIdentity()) === canonical(loadedRuntime)) return loadedRuntime;
+  } catch {
+    // A missing or unreadable runtime dependency cannot authorize replay.
+  }
+  return { unidentified: "loaded Node runtime differs from disk" };
 }
 
 // ---------------------------------------------------------------------------

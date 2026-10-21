@@ -12,7 +12,7 @@
 // The step limit is TSCERT_STEP_LIMIT's, the store TSCERT_STAGE_STORE's.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
@@ -37,10 +37,10 @@ type InvocationReference = {
   limitMs: number | null;
   elapsedMs: number;
   cpu: Cpu;
-  /** For a replay, the stored attempt's elapsed time and the replay's own
-   * lookup, validation and materialization. */
-  replay: { storedAttempt: string; storedElapsedMs: number; lookupMs: number; validationMs: number;
-    materializationMs: number } | null;
+  /** For a replay, the stored attempt's limit and elapsed time, and the
+   * replay's own lookup, validation and materialization. */
+  replay: { storedAttempt: string; storedLimitMs: number | null; storedElapsedMs: number; lookupMs: number;
+    validationMs: number; materializationMs: number } | null;
 };
 type SliceRecord = {
   slice: string;
@@ -157,7 +157,10 @@ function writeStable(path: string, text: string): void {
 function prepare(out: string, directory: string): void {
   const copy = (from: string, to: string, select: (name: string) => boolean): void => {
     mkdirSync(to, { recursive: true });
-    for (const name of readdirSync(from).filter(select).sort())
+    const names = new Set(readdirSync(from).filter(select).sort());
+    for (const name of readdirSync(to).filter(select))
+      if (!names.has(name) && !name.startsWith("slice-")) rmSync(join(to, name), { force: true });
+    for (const name of names)
       writeStable(join(to, name), readFileSync(join(from, name), "utf8"));
   };
   copy(join(repository, "tools"), join(out, "tools"),
@@ -191,7 +194,8 @@ function reference(r: AttemptRecord): InvocationReference {
   return {
     attempt: r.attempt, stage: r.stage, key: r.key, execution: r.execution, limitMs: r.limitMs, elapsedMs: r.elapsedMs,
     cpu: r.cpu,
-    replay: r.replay && { storedAttempt: r.replay.stored.attempt, storedElapsedMs: r.replay.stored.elapsedMs,
+    replay: r.replay && { storedAttempt: r.replay.stored.attempt, storedLimitMs: r.replay.stored.limitMs,
+      storedElapsedMs: r.replay.stored.elapsedMs,
       lookupMs: r.replay.lookupMs, validationMs: r.replay.validationMs, materializationMs: r.replay.materializationMs },
   };
 }
@@ -233,14 +237,18 @@ async function census(args: string[]): Promise<void> {
   prepare(out, directory);
   const root = join(out, directory);
   const all: Slice[] = [];
-  for (const file of readdirSync(root).filter((f) => f.endsWith(".mts") && !f.startsWith("slice-")).sort()) {
+  for (const file of readdirSync(join(repository, directory)).filter((f) => f.endsWith(".mts") && !f.startsWith("slice-")).sort()) {
     if (files && !files.includes(file)) continue;
     all.push(...slicesOf(file, join(root, file), readFileSync(join(root, file), "utf8")));
   }
   closeParser();
   const chosen = functions ? all.filter((s) => functions.includes(s.fn)) : all;
+  const sliceNames = new Set(chosen.map((s) => s.slice));
+  for (const name of readdirSync(root))
+    if (name.startsWith("slice-") && name.endsWith(".mts") && !sliceNames.has(name))
+      rmSync(join(root, name), { force: true });
+  for (const s of chosen) writeStable(join(root, s.slice), s.text);
   const selected = shardPart ? chosen.filter((_, i) => i % shardPart[1] === shardPart[0] - 1) : chosen;
-  for (const s of selected) writeStable(join(root, s.slice), s.text);
   process.stderr.write(`${selected.length} of ${all.length} slices\n`);
 
   const project = join(out, "tools");
@@ -325,11 +333,12 @@ function readReference(value: unknown): InvocationReference {
   let readReplay: InvocationReference["replay"] = null;
   if (replay !== null) {
     const r: { [key: string]: unknown } = typeof replay === "object" && replay !== null ? { ...replay } : {};
-    const { storedAttempt, storedElapsedMs, lookupMs, validationMs, materializationMs } = r;
-    if (typeof storedAttempt !== "string" || typeof storedElapsedMs !== "number" || typeof lookupMs !== "number" ||
+    const { storedAttempt, storedLimitMs, storedElapsedMs, lookupMs, validationMs, materializationMs } = r;
+    if (!(storedLimitMs === null || typeof storedLimitMs === "number") ||
+        typeof storedAttempt !== "string" || typeof storedElapsedMs !== "number" || typeof lookupMs !== "number" ||
         typeof validationMs !== "number" || typeof materializationMs !== "number")
       throw Error("not a replay reference");
-    readReplay = { storedAttempt, storedElapsedMs, lookupMs, validationMs, materializationMs };
+    readReplay = { storedAttempt, storedLimitMs, storedElapsedMs, lookupMs, validationMs, materializationMs };
   }
   return { attempt, stage: foundStage, key, execution: foundExecution, limitMs, elapsedMs, cpu: readCpu,
     replay: readReplay };

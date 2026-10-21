@@ -445,5 +445,15 @@ assert.match(result.record.ineligible ?? "", /loaded .*modules differ from disk/
   assert.match(child.stdout, /Node import, require or loader/);
   process.stdout.write("loaded code and Node preload options: changed or unidentified dependencies execute without a key\n");
 }
+{
+  const store = freshStore("snapshot-cleanup");
+  const files: [string, Buffer][] = [["source.ts", Buffer.from("export const value = 1;\n")]];
+  const snapshot = store.stableDirectory("sources", files);
+  assert.ok(snapshot);
+  store.clean();
+  assert.equal(readFileSync(join(snapshot, "source.ts"), "utf8"), files[0][1].toString());
+  assert.equal(store.stableDirectory("sources", files), snapshot);
+  process.stdout.write("cleanup preserves validated source snapshots for active readers\n");
+}
 assert.throws(() => invoke(lower(script("any.sh", "/bin/cat \"$2\""), file("x.json", "x")), 0), /positive integer/);
 process.stdout.write("limits: a stage's limit is a positive integer number of milliseconds\n");

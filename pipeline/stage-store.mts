@@ -337,11 +337,11 @@ export class Store {
     return valid() ? destination : null;
   }
 
-  /** Remove every stored entry, observation and stable location, and each
+  /** Remove every stored entry and timeout observation, and each
    * temporary directory whose writer has stopped: one of this host whose
    * process is gone. */
   clean(): void {
-    for (const part of ["entries", "timeouts", "sources"]) rmSync(join(this.root, part), { recursive: true, force: true });
+    for (const part of ["entries", "timeouts"]) rmSync(join(this.root, part), { recursive: true, force: true });
     const here = join(this.root, "tmp", hostname());
     let temporaries: string[];
     try {

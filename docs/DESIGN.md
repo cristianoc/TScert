@@ -417,8 +417,11 @@ measurement.
 **Location and size.** The store lives outside every checkout at
 `$XDG_CACHE_HOME/tscert/stages`, defaulting to `~/.cache/tscert/stages`.
 `TSCERT_STAGE_STORE` selects another directory; `off` forces execution.
-`make clean-store` removes stored entries. Eviction is approximate and
-affects reuse only; readers treat concurrent removal as a miss.
+`make clean-store` removes finished entries, timeout observations and abandoned
+publication directories on this host. It retains immutable, content-addressed
+source locations, validated at each use, so active parses keep their inputs.
+Eviction is approximate and affects reuse only; readers treat concurrent
+removal as a miss.
 
 **Census records.** Each slice has a persistent record of its source
 identity, outcome, execution policy and ordered invocation references,

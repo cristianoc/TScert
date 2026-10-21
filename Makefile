@@ -36,7 +36,7 @@ cases: ## the pipeline cases whose file names contain P (all of them when P is e
 check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir]
 	node pipeline/verify-source.mts $(FILE) $(if $(PROJECT),--project $(PROJECT))
 
-clean-store: ## remove the stage store's entries (TSCERT_STAGE_STORE, by default ~/.cache/tscert/stages)
+clean-store: ## remove stage entries and timeouts; keep source snapshots (TSCERT_STAGE_STORE, default ~/.cache/tscert/stages)
 	node pipeline/stages.mts clean
 
 census: ## the census of a directory's functions: DIR=tools, FILES=a.mts,…, FUNCTIONS=f,…, SHARD=i/n; a record per run
