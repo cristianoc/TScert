@@ -68,13 +68,19 @@ build:
 
 ```sh
 cp -c -R <main checkout>/lean/.lake lean/.lake
+rm lean/.lake/build/bin/verifier
+(cd lean && lake build verifier)
 ```
 
 On APFS `cp -c` copies on write: it takes a fraction of a second and no disk
 until files change. Lake decides what to rebuild from file contents, not
 timestamps or paths, so the clone stays valid in the new directory. A build
 at the same commit then rebuilds nothing, and an edit rebuilds only the
-changed module and its dependents. The saving is complete when the main
+changed module and its dependents. The link step is the exception: the
+copied `verifier.rsp` names the main checkout's object files by absolute
+path, and `pipeline/evidence-mutations.mts` relinks a mutated verifier from
+it, so removing the copied executable makes Lake relink it (about 1 s) from
+the worktree's own objects. The saving is complete when the main
 checkout's cache is built at or near the worktree's commit; otherwise Lake
 rebuilds just the modules that differ. Each worktree keeps its own `.lake`,
 so builds in different worktrees may run in parallel. Nothing else needs
