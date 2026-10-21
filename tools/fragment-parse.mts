@@ -709,6 +709,8 @@ export class Gate {
       named: (node, span, read) => {
         const name = ts.isIdentifier(node.typeName) ? node.typeName.text
           : this.namespaceMember(node.typeName) ?? this.fail(node, "type reference outside the fragment");
+        const block = this.blockTypeAt(node);
+        if (block && "refused" in block) return this.fail(node, block.refused);
         // An application of an alias TypeScript computes from its parameters
         // is a computed type, evaluated where it is written: the graph
         // answers a reference only where TypeScript binds it to one.
@@ -719,9 +721,7 @@ export class Gate {
         }
         // A type declared in a block, at the binders it closes over, which
         // TypeScript resolves to themselves here (`blockTypes`).
-        const block = this.blockTypeAt(node);
         if (block) {
-          if ("refused" in block) return this.fail(node, block.refused);
           if (block.computed) return this.fail(node, "computed block type evaluation missing");
           const closed = block.captured.map((spelling): TypeTerm => {
             if (!this.hasTypeParam(spelling))

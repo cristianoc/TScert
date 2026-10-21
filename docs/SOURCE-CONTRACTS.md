@@ -351,15 +351,19 @@ argument there denotes $`X_i`$ (`block-type-hidden-binder-refused`), as is
 a block type naming another whose captured binder a nearer declaration
 hides at its own block; so is a contextual type TypeScript states at a
 block type closing over a binder, whose alias arguments state only
-$`\vec\sigma`$. Every reader of an
-application completes its arguments through the one completion
-(`completeArguments`), which takes the captured arguments from its
-reader's scope (a binder at a use, the declaration's own captured position
-in an equation or default, matched by declaration identity to the enclosing
-instantiation's arguments, the written application's binder in the bounds sweep) or
-refuses the application, so no reader reads a block type at $`\vec\sigma`$
-alone. A block declaration whose equation the readers cannot represent is
-refused at its use, as a module declaration is. One TypeScript computes
+$`\vec\sigma`$. An application of a declaration completes its arguments
+through `completeArguments`, which takes the captured arguments from its
+reader's scope (a binder at a use; in an equation or a default, the
+instantiation's argument at the declaration's own captured position for
+the same binder, by identity; the written application's binder in the
+bounds sweep) or refuses the application. The evaluation of a computed
+alias (`computed-types.mts`) completes its own arguments as written, each
+in its scope, which a conditional's distribution over a union member needs,
+and takes the captured ones through the same identity check at the use
+(`capturedAt`). A reference whose captured binder is hidden is refused
+before any evaluation (`block-type-computed-hidden-binder-refused`). A
+block declaration whose equation the readers cannot represent is refused at
+its use, as a module declaration is. One TypeScript computes
 from its parameters is evaluated at each application
 (`computed-types.mts`), its captured parameters at the binders there; a
 computed form naming the parameters of one closing over a binder, which

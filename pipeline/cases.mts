@@ -2184,6 +2184,8 @@ export const cases: Case[] = [
     /source expression obligation at \[462,470\): evidence search failed/),
   gap("block-type-hidden-binder-refused", "a reference to a block type where a nearer type parameter hides one it closes over: no binder there denotes the captured one",
     "unsupported", "source", /closes over the type parameter T, which a nearer declaration of that name hides here/),
+  gap("block-type-computed-hidden-binder-refused", "a computed block alias captures a type parameter hidden by a nearer binder at its use",
+    "unsupported", "source", /closes over the type parameter T, which a nearer declaration of that name hides here \(line 4, col 14\)/),
   positive("non-regular-alias", "an alias referring to itself at a longer tuple is one recursive head applied to its instances"),
   positive("local-inheritance", "a local interface extending another: an inherited field and an own field read"),
   negative("invalid-local-inheritance", "A local inherited field cannot establish a wrong result type"),
