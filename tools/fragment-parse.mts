@@ -1303,7 +1303,7 @@ function lowerFile(file: string, carriesContext: boolean,
     if (blockReference(node)) blockNodes.push(node);
     node.forEachChild(findBlockReferences);
   };
-  if (blockNames.size && !carriesContext) findBlockReferences(source);
+  if (blockNames.size) findBlockReferences(source);
   // A spelling a block's type may bind is listed at every reference, since
   // its first one may be bound to that block's type.
   const globalNodes: Identifier[] = [];

@@ -361,7 +361,12 @@ alias (`computed-types.mts`) completes its own arguments as written, each
 in its scope, which a conditional's distribution over a union member needs,
 and takes the captured ones through the same identity check at the use
 (`capturedAt`). A reference whose captured binder is hidden is refused
-before any evaluation (`block-type-computed-hidden-binder-refused`). A
+before any evaluation, including a default naming a computed alias and a
+larger computed form naming a block type: each named block type is checked
+at the captured binder identities before TypeScript evaluates the form
+(`block-type-computed-hidden-binder-refused`,
+`block-type-computed-default-hidden-binder-refused`,
+`block-type-computed-form-hidden-binder-refused`). A
 block declaration whose equation the readers cannot represent is refused at
 its use, as a module declaration is. One TypeScript computes
 from its parameters is evaluated at each application

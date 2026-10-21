@@ -231,3 +231,32 @@ export function first(h: Holder<number>): number {
   closeParser();
   process.stdout.write("imported module binders: named by the module's identity, literal types and keys kept\n");
 }
+
+// Carried context retains the declaration identity of erased block types.
+{
+  const dir = runDirectory("tscert-block-context-");
+  const file = join(dir, "client.ts");
+  const text = `type A<U> = { v: string };
+export function f(): number {
+  type A<U> = { v: number };
+  const a: A<number> = { v: 1 };
+  return a.v;
+}
+`;
+  writeFileSync(file, text);
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
+    compilerOptions: { strict: true, noEmit: true }, include: ["*.ts"],
+  }));
+  try {
+    const ast = parseFile(file, true);
+    const statement = must(ast.functions[0], "the function").body[0];
+    assert.ok(statement?.k === "const", "the erased alias precedes the constant");
+    const annotation = must(statement.bindings[0], "the binding").annot;
+    assert.ok(annotation?.k === "reference", "the annotation names a declaration");
+    const target = must(annotation.reference.target, "the annotation's declaration identity");
+    assert.equal(target.span[0], text.indexOf("type A", 1), "the annotation names the block alias");
+  } finally {
+    closeParser();
+  }
+  process.stdout.write("carried context: block annotations retain their lexical declaration identity\n");
+}

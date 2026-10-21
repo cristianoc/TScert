@@ -1692,6 +1692,16 @@ export function collectDeclarations(file: string, options: {
       applied: (alias, args, use) => instantiateAt(alias, [...capturedOf(alias).map(capturedAt(use,
         `${idOf(alias.getSourceFile())}#${alias.name.text}`)), ...args], use),
       equation: reference => valueScope(client, "an alias's equation").equation?.(reference) ?? null,
+      // Each block type the form names, at the binders it closes over.
+      captures: node => {
+        const visit = (n: Node): void => {
+          if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName))
+            for (const d of typeDeclarationsOf(n.typeName))
+              if (inBlock(d)) capturedOf(d).forEach(capturedAt(n, `${idOf(d.getSourceFile())}#${n.typeName.text}`));
+          n.forEachChild(visit);
+        };
+        visit(node);
+      },
       // A `unique symbol` type is the type of the one constant or readonly
       // property declaring it (`Symbol.iterator`'s is `SymbolConstructor`'s
       // `iterator`), which names its symbol as a computed key does.
@@ -1815,6 +1825,7 @@ export function collectDeclarations(file: string, options: {
           "and is evaluated only at an application written in source");
         if (merged.some(p => p.captured)) throw Error(`${what}: ${part.getText(source)} names the parameters of ` +
           "a type declared in a block, which TypeScript evaluates only where it closes over no type parameter");
+        computedContext.captures(part);
         return probe({ declaration, parameters: merged, form: part, use, span: pos, what });
       };
       const scope: TermScope = { ...outer,
