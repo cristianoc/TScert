@@ -47,12 +47,20 @@ if (process.argv[2] === "--run") {
   process.exit(0);
 }
 
+if (process.argv[2] === "--resolve") {
+  process.stdout.write(nodeResolve(process.argv[3], process.argv[4]) ?? "unresolved");
+  process.exit(0);
+}
+
 // An incomplete resolution can populate Node's caches without observing the
 // link target. Later execution must be refused even when every observation holds.
 if (process.argv[2] === "--retarget") {
   const directory = process.argv[3];
   const parent = join(directory, "main.ts");
-  const target = join(directory, "node_modules/exported/target.js");
+  const inward = process.argv[4] === "#guard";
+  const specifier = inward ? "#guard" : "exported";
+  const reason = inward ? /non-relative target/ : /symbolic link/;
+  const target = join(directory, inward ? "node_modules/redirected/target.js" : "node_modules/exported/target.js");
   const implementation = captureCodeIdentity([]);
   const invoke = (name: string, run: () => string): ReturnType<typeof invokeInProcess<string>> =>
     invokeInProcess({ stage: "parse", implementation, inputs: [{ role: "control", bytes: name }],
@@ -61,22 +69,25 @@ if (process.argv[2] === "--retarget") {
   assert.equal(invoke("stable", stable).record.execution, "executed");
   let observations: readonly Observation[] = [];
   const first = invoke("linked", () => {
-    const made = observed(() => nodeResolve("exported", parent) ?? "unresolved");
+    const made = observed(() => nodeResolve(specifier, parent) ?? "unresolved");
     observations = made.observations;
     return made.value;
   });
-  assert.match(first.value, /third\.js$/);
+  assert.match(first.value, inward ? /\/a\.js$/ : /third\.js$/);
   assert.equal(first.record.execution, "executed");
   assert.equal(first.record.key, null);
-  assert.match(first.record.ineligible ?? "", /symbolic link/);
-  assert.match(processRetirement() ?? "", /symbolic link/);
+  assert.match(first.record.ineligible ?? "", reason);
+  assert.match(processRetirement() ?? "", reason);
   rmSync(target);
-  symlinkSync("other.js", target);
+  symlinkSync(inward ? "../../b.js" : "other.js", target);
   assert.equal(observationsHold(observations), true);
+  const fresh = spawnSync(process.execPath, [import.meta.filename, "--resolve", specifier, parent], { encoding: "utf8" });
+  assert.equal(fresh.status, 0, fresh.stderr);
+  assert.match(fresh.stdout, inward ? /\/b\.js$/ : /other\.js$/);
   let executed = false;
   assert.throws(() => invoke("linked", () => {
     executed = true;
-    return nodeResolve("exported", parent) ?? "unresolved";
+    return nodeResolve(specifier, parent) ?? "unresolved";
   }), /fresh process is needed/);
   assert.equal(executed, false);
   assert.equal(invoke("stable", stable).record.execution, "replayed");
@@ -144,6 +155,15 @@ assert.match(mutated.ineligible ?? "", /compiler differs/);
 assert.equal(mutated.key, null);
 
 // --- Node resolution, through the same observed-stage entry point
+// The compiler package's conditional and wildcard imports remain replayable.
+for (const specifier of ["#getExePath", "#enums/characterCodes", "#vscode-jsonrpc/node"]) {
+  const parent = join(installation, "node_modules/typescript/dist/api/sync/api.js");
+  const attempt = run("resolution", specifier, "-", parent);
+  assert.equal(attempt.execution, "executed");
+  assert.equal(attempt.ineligible, null);
+  assert.equal(run("resolution", specifier, "-", parent).execution, "replayed");
+}
+
 write("node_modules/exported/package.json", JSON.stringify({ name: "exported", exports: "./target.js" }));
 write("node_modules/exported/target.js", "export {};\n");
 write("node_modules/exported/other.js", "export {};\n");
@@ -190,10 +210,12 @@ assert.match(run("resolution", "null-exports").ineligible ?? "", /states no expo
 
 // A package import to the scope's own file replays; one redirected to another
 // package lookup is not accounted for.
-write("package.json", JSON.stringify({ imports: { "#guard": "redirected/guard", "#local": "./local.js" } }));
+write("package.json", JSON.stringify({ imports: { "#local": { default: ["./local.js"] } } }));
 write("local.js", "export {};\n");
 assert.equal(run("resolution", "#local").ineligible, null);
 assert.equal(run("resolution", "#local").execution, "replayed");
+write("package.json", JSON.stringify({ imports: { "#guard": { default: ["redirected/guard"] }, "#local": "./local.js" } }));
+assert.match(run("resolution", "#local").ineligible ?? "", /non-relative target/);
 const external = join(dir, "node_modules/redirected");
 mkdirSync(external, { recursive: true });
 writeFileSync(join(external, "package.json"), JSON.stringify({ exports: { "./guard": "./a.js" } }));
@@ -202,7 +224,7 @@ writeFileSync(join(external, "b.js"), "export {};\n");
 const incompleteImport = (): void => {
   const attempt = run("resolution", "#guard");
   assert.equal(attempt.execution, "executed");
-  assert.match(attempt.ineligible ?? "", /outside its package scope's own files/);
+  assert.match(attempt.ineligible ?? "", /non-relative target/);
   assert.equal(attempt.key, null);
 };
 incompleteImport();
@@ -211,6 +233,15 @@ incompleteImport();
 write("node_modules/redirected/package.json", JSON.stringify({ exports: { "./guard": "./near.js" } }));
 write("node_modules/redirected/near.js", "export {};\n");
 incompleteImport();
+// The redirected package's link points inward; retargeting preserves every
+// recorded answer, but fresh resolution changes and the worker must retire.
+write("a.js", "export {};\n");
+write("b.js", "export {};\n");
+write("node_modules/redirected/package.json", JSON.stringify({ exports: { "./guard": "./target.js" } }));
+symlinkSync("../../a.js", join(fixture, "node_modules/redirected/target.js"));
+const inwardRetarget = spawnSync(process.execPath, [import.meta.filename, "--retarget", fixture, "#guard"],
+  { encoding: "utf8", env: { ...process.env, TSCERT_STAGE_STORE: join(dir, "inward-store") } });
+assert.equal(inwardRetarget.status, 0, inwardRetarget.stderr);
 rmSync(join(fixture, "package.json"));
 rmSync(join(fixture, "local.js"));
 

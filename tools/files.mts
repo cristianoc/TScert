@@ -521,6 +521,13 @@ function manifestField(bytes: Buffer | null, field: string): unknown {
     return undefined;
   }
 }
+/** Every string target in a JSON imports map is relative to its scope. */
+function relativeImportTargets(value: unknown): boolean {
+  if (typeof value === "string") return value.startsWith("./");
+  if (typeof value === "object" && value !== null)
+    return Object.values(value).every((target: unknown) => relativeImportTargets(target));
+  return true;
+}
 /** The package scope of a module: the nearest `package.json` of its
  * directory or a directory above, read, as Node's loader finds it. */
 function observeScope(module: string, checkLinks: boolean = false): { directory: string; bytes: Buffer | null } | null {
@@ -559,29 +566,33 @@ function observePackageLinks(directory: string): void {
  * its target; for a built-in, nothing. A package without `exports` is not
  * accounted for. Whether a package or a scope resolves the specifier, so
  * that its target is to be found. */
-function observeResolution(specifier: string, parent: string): { found: boolean; scope: string | null } {
-  if (isBuiltin(specifier) || /^(node|data):/.test(specifier)) return { found: false, scope: null };
-  // A package import resolves through its package scope's `imports`: to a
-  // file of the scope's own tree, or through another package lookup, which
-  // its target shows (`nodeResolve`).
-  if (specifier.startsWith("#")) return { found: true, scope: observeScope(parent, true)?.directory ?? null };
+function observeResolution(specifier: string, parent: string): boolean {
+  if (isBuiltin(specifier) || /^(node|data):/.test(specifier)) return false;
+  // Another package lookup can resolve back into the scope through an
+  // unobserved link, so completeness depends on the map's targets.
+  if (specifier.startsWith("#")) {
+    const scope = observeScope(parent, true);
+    if (scope && !relativeImportTargets(manifestField(scope.bytes, "imports")))
+      nodeUnobservable(`the package import ${specifier} has a non-relative target in its scope's imports`);
+    return true;
+  }
   if (/^(\.{0,2}\/|file:)/.test(specifier)) {
     let target: string;
     try {
       target = fileURLToPath(new URL(specifier, pathToFileURL(parent)));
     } catch {
-      return { found: false, scope: null };
+      return false;
     }
     kindOf(target, true);
     realOf(target, true);
-    return { found: true, scope: null };
+    return true;
   }
   const name = packageOf(specifier);
   // A self-reference resolves through its package scope's `exports`.
   const scope = observeScope(parent);
   if (scope && manifestField(scope.bytes, "name") === name && manifestField(scope.bytes, "exports") != null) {
     observeScope(parent, true);
-    return { found: true, scope: null };
+    return true;
   }
   for (const at of ancestors(dirname(parent))) {
     const candidate = join(at, "node_modules", ...name.split("/"));
@@ -590,9 +601,9 @@ function observeResolution(specifier: string, parent: string): { found: boolean;
     observePackageLinks(candidate);
     if (manifestField(readAnswer(join(candidate, "package.json"), true).bytes, "exports") == null)
       nodeUnobservable(`the package ${name} of ${specifier} states no exports`);
-    return { found: true, scope: null };
+    return true;
   }
-  return { found: false, scope: null };
+  return false;
 }
 
 /** The URL Node's own ES module resolver resolves `specifier` to from the
@@ -630,15 +641,7 @@ export function nodeResolve(specifier: string, parent: string): string | null {
     const target = fileURLToPath(parsed);
     kindOf(target, true);
     realOf(target, true);
-    // A package import's target is the scope's own file, outside any
-    // `node_modules`; one reached through another package lookup is not
-    // accounted for.
-    const scope = after.value.scope === null ? null : realOf(after.value.scope, true);
-    const real = realOf(target, true);
-    const within = scope === null || real === null ? null : relative(scope, real).split(sep);
-    if (specifier.startsWith("#") && (within === null || within[0] === ".." || within.includes("node_modules")))
-      nodeUnobservable(`the package import ${specifier} resolves outside its package scope's own files`);
-  } else if (after.value.found && !/^(\.{0,2}\/|file:)/.test(specifier))
+  } else if (after.value && !/^(\.{0,2}\/|file:)/.test(specifier))
     nodeUnobservable(`${specifier} is unresolved in the package found for it`);
   // A query or a fragment names another instance of the same file: refused.
   return parsed && parsed.protocol === "file:" && parsed.search === "" && parsed.hash === "" ? url : null;
