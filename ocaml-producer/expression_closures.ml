@@ -307,8 +307,9 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          same parameters, and its body is checked at each, returning its plain
          result under both (Lean's `lambdaCode`). *)
       (* The signatures its context offers beside its own, which bind more
-         parameters, stay plain: Lean finds the promise at the closure's own
-         arity (`ClosureSetup`). *)
+         parameters, keep a promise only where it is the closure's written
+         one (`offer-promise`), else stay plain; Lean finds the written
+         promise at the closure's own arity (`ClosureSetup`). *)
       let own = match guard,own with
         | None,_ -> own
         | Some (promise_effect,promised),Atoms [Shape ({calls=call :: offered;_} as shape)]

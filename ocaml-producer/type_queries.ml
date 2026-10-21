@@ -40,8 +40,9 @@ let rec plausible_subtype_with excludes actual expected =
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           Semantic.effect_covers p.call_effect q.call_effect &&
           ({p with call_effect=q.call_effect}=q ||
-           (* A promise signature promising less is met by one promising
-              more: its `true` leaves the actual in the larger type too. *)
+           (* A promise signature promising a larger type is met by one
+              promising a smaller type: its `true` leaves the actual in the
+              larger type too. *)
            (not (Semantic.plain_effect q.call_effect) &&
             {p with call_effect=q.call_effect;result=q.result}=q &&
             plausible_subtype_with excludes p.result q.result) ||
