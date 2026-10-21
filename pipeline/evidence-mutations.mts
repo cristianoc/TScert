@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { forced, verifierCall } from "./stages.mts";
+import { sourceKey } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 
 const lean = resolve(import.meta.dirname, "../lean");
@@ -129,7 +130,7 @@ export function checkMutation(artifacts: string, claims: string, path: string, m
   if (mutations === "handler") variants.push("stable");
   for (const [i, variant] of variants.entries()) {
     const result = forced(verifierCall(mutationVerifier(), ["--check-source-claims", join(artifacts, "fragment.json"),
-      claims, join(artifacts, "source.ts"), path], { TSCERT_TEST_MUTATIONS: variant }));
+      claims, sourceKey(artifacts), path], { TSCERT_TEST_MUTATIONS: variant }));
     assert.ifError(result.error);
     assert.equal(result.status, i === 0 ? 0 : 1,
       `${path}, mutation ${variant || "none"}: ${result.stdout}${result.stderr}`);
@@ -141,7 +142,7 @@ export function checkMutation(artifacts: string, claims: string, path: string, m
 export function forgedEvidence(artifacts: string, claims: string, name: string, mutations: string): string {
   const path = join(artifacts, `${name}-generated.json`);
   const result = forced(verifierCall(mutationVerifier(), ["--produce-source-claims", join(artifacts, "fragment.json"),
-    claims, join(artifacts, "source.ts"), path, "12"], { TSCERT_TEST_MUTATIONS: mutations }));
+    claims, sourceKey(artifacts), path, "12"], { TSCERT_TEST_MUTATIONS: mutations }));
   assert.ifError(result.error);
   assert.equal(result.status, 0, `${name}, ${mutations}: ${result.stdout}${result.stderr}`);
   checkMutation(artifacts, claims, path, mutations);

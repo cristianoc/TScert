@@ -7,7 +7,7 @@ import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
 import { stripTypes } from "../tools/strip-types.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
-import { producerExecutable, readFragmentFile, readClaimsFile } from "./verify-source.mts";
+import { producerExecutable, readFragmentFile, readClaimsFile, sourceKey } from "./verify-source.mts";
 
 /** Reachable pattern defaults require claims even when a producer omits them. */
 export function checkPatternDefaults(verifier: string, artifacts: string): void {
@@ -27,14 +27,14 @@ export function checkPatternDefaults(verifier: string, artifacts: string): void 
   writeFileSync(forged, JSON.stringify(claims));
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
     const result = forced(verifierCall(verifier, [mode, join(artifacts, "fragment.json"), forged,
-      join(artifacts, "source.ts"), join(artifacts, "evidence.json"),
+      sourceKey(artifacts), join(artifacts, "evidence.json"),
       ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(result.error);
     assert.equal(result.signal, null);
     assert.equal(result.status, 1);
     assert.match(result.stdout + result.stderr, /no claimed type for the expression/);
   }
-  const source = stripTypes(readFileSync(join(artifacts, "source.ts"), "utf8"))
+  const source = stripTypes(readFileSync(sourceKey(artifacts), "utf8"))
     .replace(/^export /gm, "");
   assert.equal(runInNewContext(source + "\noptionalDefault({})"), false);
   assert.equal(runInNewContext(source + "\noptionalDefault({ f: 3 })"), 3);
@@ -46,7 +46,7 @@ export function checkPatternDefaults(verifier: string, artifacts: string): void 
 /** The producer's refusal is not the verifier's protection. Forge a claim for
  * the later read and require both Lean entry points to reject its scope. */
 export function checkDefaults(verifier: string, artifacts: string): void {
-  const source = join(artifacts, "source.ts");
+  const source = sourceKey(artifacts);
   const ast: Ast = readFragmentFile(join(artifacts, "fragment.json"));
   const claims: SourceClaims = readClaimsFile(join(artifacts, "claims.json"));
   const first = ast.functions[0]?.body[0];
@@ -169,7 +169,7 @@ export function checkSchemeDefaults(verifier: string, artifacts: string): void {
         mode,
         join(artifacts, "fragment.json"),
         join(artifacts, "claims.json"),
-        join(artifacts, "source.ts"),
+        sourceKey(artifacts),
         join(artifacts, "evidence.json"),
         ...(mode === "--produce-source-claims" ? ["12"] : []),
       ]));
@@ -217,7 +217,7 @@ export function checkEarlyDefault(verifier: string, artifacts: string): void {
         mode,
         join(artifacts, "fragment.json"),
         join(artifacts, "claims.json"),
-        join(artifacts, "source.ts"),
+        sourceKey(artifacts),
         join(artifacts, "evidence.json"),
         ...(mode === "--produce-source-claims" ? ["12"] : []),
       ]));

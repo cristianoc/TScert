@@ -18,7 +18,8 @@ import { decodeFlowDocument } from "../tools/source-flow.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { assembleClaims } from "./claims-assembly.mts";
-import { invokeInProcess, invokeProcess, producerBuild, producerCall, Recorder, refusalEnd, verifierBuild, verifierCall,
+import { currentStore, invokeInProcess, invokeProcess, producerBuild, producerCall, Recorder, refusalEnd, textCodec,
+  verifierBuild, verifierCall,
   type ProcessCall } from "./stages.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
@@ -36,6 +37,12 @@ export function readFragmentFile(file: string): Ast {
   const parsed: unknown = JSON.parse(wireText(readFileSync(file), file));
   requireWellFormed(parsed, file);
   return parsed as Ast; // asserted: the parser wrote the file from an Ast; a check of every field the tests read would cost more than it guards a test's forgery
+}
+
+/** The file identity a run's Fragment names, its snapshot's path: what the
+ * verifier's search and check take as the file key. */
+export function sourceKey(artifacts: string): string {
+  return readFragmentFile(join(artifacts, "fragment.json")).file;
 }
 
 /** A claims document this pipeline's producer wrote, read back by a test that
@@ -93,7 +100,10 @@ function stepLimit(): number {
   if (given === undefined || given === "") return 60_000;
   const seconds = Number(given);
   if (!Number.isFinite(seconds) || seconds <= 0) throw Error(`TSCERT_STEP_LIMIT is no positive number of seconds: ${given}`);
-  return Math.round(seconds * 1000);
+  const milliseconds = Math.round(seconds * 1000);
+  if (!Number.isSafeInteger(milliseconds) || milliseconds <= 0)
+    throw Error(`TSCERT_STEP_LIMIT must convert to a positive integer number of milliseconds: ${given}`);
+  return milliseconds;
 }
 /** A step run: its exit code, its output, and what it reports on failure. */
 export type Ran = { code: number; out: string; detail: string };
@@ -109,6 +119,11 @@ export function runStep(call: ProcessCall, recorder: Recorder | null = null): Ra
     throw Error(
       `timeout: ${step} did not finish within ${stepTimeoutMs / 1000} s`,
     );
+  // A reused observation reports an earlier attempt's timeout, at a limit no
+  // smaller than this one, not proof that this one would time out.
+  if (p.record.execution === "timeout-replayed")
+    throw Error(`timeout: ${step} did not finish within ${(p.record.replay?.stored.limitMs ?? stepTimeoutMs) / 1000} s ` +
+      `(an earlier attempt, ${p.record.replay?.stored.attempt ?? "unknown"}; a longer TSCERT_STEP_LIMIT runs it again)`);
   // A step killed by a signal (the verifier aborting on a stack overflow)
   // or that did not start is a failure of the tool, no verdict, reported
   // with the first line it wrote.
@@ -421,16 +436,18 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
     if (subtypeRounds !== undefined && (!Number.isSafeInteger(subtypeRounds) || subtypeRounds < 0))
       throw Error("subtype rounds must be a natural number");
     // Parse a snapshot, not a path whose contents may change during verification.
-    const snapshot = join(artifacts, "source.ts");
     const bytes = readFileSync(resolve(source));
-    writeFileSync(snapshot, bytes);
-    writeFileSync(
-      join(artifacts, "tsconfig.json"),
-      JSON.stringify({
-        compilerOptions: { strict: true, noEmit: true, target: "es2022" },
-        files: ["source.ts", resolvableDeclaration],
-      }),
-    );
+    const configuration = Buffer.from(JSON.stringify({
+      compilerOptions: { strict: true, noEmit: true, target: "es2022" },
+      files: ["source.ts", resolvableDeclaration],
+    }));
+    writeFileSync(join(artifacts, "source.ts"), bytes);
+    writeFileSync(join(artifacts, "tsconfig.json"), configuration);
+    // The snapshot's path is the Fragment's file identity, which every later
+    // stage's input embeds: with the store, it is a stable location named by
+    // the snapshot's and its configuration's contents, the same in every run.
+    const snapshot = join(currentStore()?.stableDirectory("sources", [["source.ts", bytes],
+      ["tsconfig.json", configuration]]) ?? artifacts, "source.ts");
     // A caller may name the TypeScript project the source belongs to. The
     // snapshot is parsed, and TypeScript resolves its imports as the original
     // file in that project; the parser requires both to have the same bytes.
@@ -524,6 +541,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
       const assembled = invokeInProcess({
         stage: "assemble",
         implementation: { modules: [assembly] },
+        codec: textCodec,
         inputs: [{ role: "proposal", bytes: proposed.out }, ...used.map((text, i) => ({ role: `module-${i}`, bytes: text }))],
         run: () => assembleClaims(proposed.out, used),
       }, { force: false, recorder }).value;

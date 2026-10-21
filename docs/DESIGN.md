@@ -306,6 +306,15 @@ retains the original source's project and import-resolution context.
 Any path affecting resolution, document identity or output remains an
 input unless an explicit stage adapter establishes a stable equivalent.
 
+The source snapshot lives at a store location named by its bytes and its
+configuration's; its path is the Fragment's file identity, which every
+later document embeds. A process stage runs in a fresh directory holding
+its input files under fixed role names, with relative arguments and an
+explicit environment. The audited programs, the repository's builds of the
+verifier and the producer, read only the files their arguments name and do
+not observe that directory's path, which is excluded from the key. Any other
+program executes without replay.
+
 Logs belong to the stage invocation whose paths they describe. Each
 caller receives fresh writable copies of the artifacts under its own run
 root, and its Outcome names that directory. Shared entries are immutable.

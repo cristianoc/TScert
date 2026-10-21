@@ -2,15 +2,22 @@
 // stage store"). Every stage of `verify-source.mts` and every control of the
 // suites runs through `invokeProcess` or `invokeInProcess`: an invocation
 // binds its input files by content into a fresh execution directory, runs
-// with a fixed argument vector, working directory and environment, and
-// records its attempt (timing, limit, outcome and, where its dependencies are
-// identified, its complete stage key).
+// with a fixed argument vector and environment, and records its attempt
+// (its input description, timing, limit, outcome and, where its
+// dependencies are identified, its complete stage key). A replay-eligible
+// invocation of a replayed stage is looked up in the store
+// (`stage-store.mts`) by its key, and its finished result or timeout is
+// published there.
+//   node pipeline/stages.mts clean    removes the store's entries
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { arch, homedir, platform } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { runDirectory } from "./run-directory.mts";
+import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
+
+export type { Cpu, Measurement } from "./stage-store.mts";
 
 const here = import.meta.dirname;
 
@@ -19,6 +26,12 @@ export type StageName = "parse" | "lower" | "propose" | "assemble" | "search" | 
 const stageNames: readonly StageName[] = ["parse", "lower", "propose", "assemble", "search", "check", "explain",
   "diagnostics"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
+
+/** The stages that replay. The check and the parse execute without replay:
+ * replaying the check would need an audit of its result binding, and the
+ * parse's filesystem observations are not recorded (WORK.md, the stage
+ * store); TypeScript's diagnostics likewise. */
+const replayedStages: ReadonlySet<StageName> = new Set<StageName>(["lower", "propose", "assemble", "search", "explain"]);
 
 /** The repository's builds of the two audited programs, at their build
  * locations: the Lean verifier and the OCaml producer. */
@@ -33,8 +46,8 @@ export type Execution = "executed" | "replayed" | "timeout-replayed" | "timed-ou
 const executions: readonly Execution[] = ["executed", "replayed", "timeout-replayed", "timed-out", "failed",
   "interrupted"];
 
-/** CPU time, with the processes it covers, or why none is measured. */
-export type Cpu = { userMs: number; systemMs: number; covers: string } | { unavailable: string };
+/** What a replay measured, beside the stored attempt's own measurement. */
+export type Replay = { lookupMs: number; validationMs: number; materializationMs: number; stored: Measurement };
 
 /** One attempt of one stage invocation. */
 export type AttemptRecord = {
@@ -44,14 +57,22 @@ export type AttemptRecord = {
    * replay-eligible (`ineligible` says why). */
   key: string | null;
   ineligible: string | null;
+  /** The invocation's input description: the key's preimage where it has
+   * a key, its known inputs where it has none. */
+  manifest: Canonical;
+  /** Where a process stage ran: its program and its execution directory,
+   * outside the key. */
+  context: { program: string; directory: string } | null;
   forced: boolean;
   /** The enforced wall-clock limit, or null for a stage with none of its own. */
   limitMs: number | null;
   execution: Execution;
   exitStatus: number | null;
-  /** Monotonic elapsed wall time of the attempt. */
+  /** Monotonic elapsed wall time of the attempt: its execution, or its
+   * lookup, validation and materialization. */
   elapsedMs: number;
   cpu: Cpu;
+  replay: Replay | null;
 };
 
 /** The invocation records of one run, in the order the invocations started,
@@ -82,6 +103,11 @@ export function storeSetting(): { off: true } | { off: false; directory: string 
   if (named) return { off: false, directory: resolve(named) };
   const cache = process.env["XDG_CACHE_HOME"] || join(homedir(), ".cache");
   return { off: false, directory: join(cache, "tscert", "stages") };
+}
+/** The store, or null where it is off. */
+export function currentStore(): Store | null {
+  const setting = storeSetting();
+  return setting.off ? null : new Store(setting.directory);
 }
 
 /** A JSON value with object keys sorted, arrays in their order: the
@@ -126,21 +152,15 @@ function moduleClosure(file: string): string[] {
   }
   return seen;
 }
-/** The digest of modules' sources, transitively, by their repository paths. */
-const closureDigests = new Map<string, Canonical>();
+/** The digests of modules' sources, transitively, by their repository paths. */
 export function codeIdentity(files: readonly string[]): Canonical {
-  const key = files.join("\n");
-  const known = closureDigests.get(key);
-  if (known !== undefined) return known;
   const repository = resolve(here, "..");
   const all = [...new Set(files.flatMap(moduleClosure))].sort();
-  const identity = all.map((f) => [f.startsWith(repository + "/") ? f.slice(repository.length + 1) : f, fileDigest(f)]);
-  closureDigests.set(key, identity);
-  return identity;
+  return all.map((f) => [f.startsWith(repository + "/") ? f.slice(repository.length + 1) : f, fileDigest(f)]);
 }
 
-/** The operating system's build, which identifies the libraries of its sealed
- * system volume (`/usr/lib`, `/System`) on macOS; null elsewhere. */
+/** The operating system's build, which identifies the files of its sealed
+ * system volume on macOS; null elsewhere. */
 let systemBuild: string | null | undefined;
 function osBuild(): string | null {
   if (systemBuild !== undefined) return systemBuild;
@@ -152,41 +172,110 @@ function osBuild(): string | null {
   }
   return systemBuild;
 }
-const systemPrefixes = ["/usr/lib/", "/System/"];
+/** The directories of macOS's sealed system volume. */
+const systemPrefixes = ["/usr/lib/", "/System/", "/bin/", "/usr/bin/"];
+const onSystemVolume = (path: string): boolean => systemPrefixes.some((s) => path.startsWith(s));
 
-/** The dynamic libraries an executable links, each by its digest or, on the
- * sealed system volume, by the system's build; or why they are not
- * identified. */
+/** The dynamic libraries an executable links, transitively: each outside
+ * the system volume by its digest, each on it by the system's build; or why
+ * they are not identified. */
 const libraries = new Map<string, Canonical | string>();
-function linkedLibraries(executable: string, digest: string): Canonical | string {
-  const known = libraries.get(digest);
+function linkedLibraries(executable: string): Canonical | string {
+  const known = libraries.get(executable);
   if (known !== undefined) return known;
-  let found: Canonical | string;
   const build = osBuild();
+  let found: Canonical | string;
   if (platform() !== "darwin" || build === null) found = "dynamic libraries are identified on macOS only";
   else {
-    const listed = spawnSync("/usr/bin/otool", ["-L", executable], { encoding: "utf8", env: {} });
-    if (listed.status !== 0) found = `otool -L failed: ${listed.stderr.trim().split("\n")[0] ?? ""}`;
-    else {
-      const paths = listed.stdout.split("\n").slice(1).map((l) => l.trim().split(" (")[0]).filter((p) => p !== "");
-      const unidentified = paths.find((p) => !systemPrefixes.some((s) => p.startsWith(s)));
-      found = unidentified !== undefined
-        ? `a library outside the system volume: ${unidentified}`
-        : paths.map((p) => [p, `system ${build}`]);
+    const identified: Canonical[] = [];
+    found = identified;
+    const seen = new Set<string>();
+    for (let work = [executable], next = work.shift(); next !== undefined; next = work.shift()) {
+      const listed = spawnSync("/usr/bin/otool", ["-L", next], { encoding: "utf8", env: {} });
+      if (listed.status !== 0) {
+        found = `otool -L ${next} failed: ${listed.stderr.trim().split("\n")[0] ?? ""}`;
+        break;
+      }
+      const named = listed.stdout.split("\n").slice(1).map((l) => l.trim().split(" (")[0]).filter((p) => p !== "");
+      // A name relative to the loader or its run paths is resolved as dyld
+      // resolves it: `@loader_path` by the loading file's directory,
+      // `@executable_path` by the executable's, `@rpath` by the first run
+      // path of the loader or the executable naming an existing file.
+      const paths: string[] = [];
+      for (const p of named) {
+        const resolved = p.startsWith("@") ? resolveLoaderName(p, next, executable) : p;
+        if (resolved === null) {
+          found = `a library dyld's rules do not resolve here: ${p} (from ${next})`;
+          break;
+        }
+        paths.push(resolved);
+      }
+      if (typeof found === "string") break;
+      for (const p of paths) {
+        if (seen.has(p)) continue;
+        seen.add(p);
+        if (onSystemVolume(p)) identified.push([p, `system ${build}`]);
+        else {
+          const real = realpathSync(p);
+          identified.push([p, fileDigest(real)]);
+          work.push(real);
+        }
+      }
     }
   }
-  libraries.set(digest, found);
+  libraries.set(executable, found);
   return found;
+}
+
+/** The run paths a Mach-O file declares (`LC_RPATH`). */
+function runPaths(file: string): string[] {
+  const listed = spawnSync("/usr/bin/otool", ["-l", file], { encoding: "utf8", env: {} });
+  if (listed.status !== 0) return [];
+  return [...listed.stdout.matchAll(/cmd LC_RPATH\s+cmdsize \d+\s+path (.+?) \(offset \d+\)/g)].map((m) => m[1]);
+}
+/** A library name relative to its loader, resolved, or null. */
+function resolveLoaderName(name: string, loader: string, executable: string): string | null {
+  const expand = (path: string): string => path.replace(/^@loader_path/, dirname(loader))
+    .replace(/^@executable_path/, dirname(executable));
+  const exists = (path: string): boolean => {
+    try {
+      statSync(path);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (name.startsWith("@loader_path/") || name.startsWith("@executable_path/")) {
+    const path = resolve(expand(name));
+    return exists(path) ? path : null;
+  }
+  if (!name.startsWith("@rpath/")) return null;
+  const rest = name.slice("@rpath/".length);
+  for (const base of [...runPaths(loader), ...(loader === executable ? [] : runPaths(executable))]) {
+    const path = resolve(expand(base), rest);
+    if (exists(path)) return path;
+  }
+  return null;
+}
+
+/** The programs whose I/O is audited, beside the repository's builds: a
+ * test's stand-ins, each with the files it reads or runs. */
+const auditedForTests = new Map<string, readonly string[]>();
+/** Treat `program` as audited, its only dependencies itself, its
+ * interpreter and `dependencies`: for the store's tests, whose stand-in
+ * stages are shell scripts. */
+export function auditForTests(program: string, dependencies: readonly string[]): void {
+  auditedForTests.set(realpathSync(program), dependencies);
 }
 
 /** The identity of an audited program's executable: its digest, its linked
  * libraries and the platform it runs on; or why it has none. Only the
  * repository's builds of the verifier and the producer are audited: their
  * I/O is the files their arguments name, standard output and standard error;
- * they start no process and read no environment variable the invocation
- * does not fix (the Lean runtime's and OCaml's are unset). Any other program
- * (a test's stand-in, the mutation verifier) has dependencies that are not
- * identified. */
+ * they start no process, do not read their working directory's path, and
+ * read no environment variable the invocation does not fix (the Lean
+ * runtime's and OCaml's are unset). Any other program (a test's stand-in,
+ * the mutation verifier) has dependencies that are not identified. */
 function executableIdentity(program: string): { identity: Canonical } | { unidentified: string } {
   let real: string;
   try {
@@ -194,18 +283,40 @@ function executableIdentity(program: string): { identity: Canonical } | { uniden
   } catch {
     return { unidentified: `${program} does not resolve` };
   }
-  const audited = [verifierBuild, producerBuild].some((b) => {
+  const builds = [verifierBuild, producerBuild].some((b) => {
     try {
       return realpathSync(b) === real;
     } catch {
       return false;
     }
   });
-  if (!audited) return { unidentified: `${basename(program)} is not the repository's build of an audited program` };
-  const digest = fileDigest(real);
-  const linked = linkedLibraries(real, digest);
+  const declared = auditedForTests.get(real);
+  if (!builds && declared === undefined)
+    return { unidentified: `${basename(program)} is not the repository's build of an audited program` };
+  const files: Canonical[] = [];
+  if (declared !== undefined) {
+    // A script: itself, its interpreter and what it declares.
+    const interpreter = /^#!(\S+)/.exec(readFileSync(real, "utf8"))?.[1];
+    for (const dependency of [...(interpreter ? [interpreter] : []), ...declared]) {
+      if (onSystemVolume(dependency) && osBuild() !== null) files.push([dependency, `system ${osBuild()}`]);
+      else files.push([dependency, fileDigest(realpathSync(dependency))]);
+    }
+    return { identity: { executable: fileDigest(real), files, platform: platform(), arch: arch() } };
+  }
+  const linked = linkedLibraries(real);
   if (typeof linked === "string") return { unidentified: linked };
-  return { identity: { executable: digest, libraries: linked, platform: platform(), arch: arch() } };
+  return { identity: { executable: fileDigest(real), libraries: linked, platform: platform(), arch: arch() } };
+}
+
+/** The Node runtime the adapters run on: its executable and linked
+ * libraries by content, its options (`execArgv`, `NODE_OPTIONS`); or why it
+ * is not identified. */
+function nodeIdentity(): { identity: Canonical } | { unidentified: string } {
+  const real = realpathSync(process.execPath);
+  const linked = linkedLibraries(real);
+  if (typeof linked === "string") return { unidentified: `Node: ${linked}` };
+  return { identity: { executable: fileDigest(real), libraries: linked, options: process.execArgv,
+    nodeOptions: process.env["NODE_OPTIONS"] ?? null, platform: platform(), arch: arch() } };
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +366,8 @@ export type InvokeOptions = {
 
 /** The largest output a stage may print. */
 const maxBuffer = 16 * 1024 * 1024;
+/** What, beside the limit, decides whether a process stage times out. */
+const resourcePolicy = canonical({ maxBuffer, killSignal: "SIGTERM", spawn: "spawnSync" });
 const text = (bytes: Buffer): string => new TextDecoder("utf-8").decode(bytes);
 
 /** Whether a stage's exit is a finished result under its protocol. */
@@ -269,17 +382,27 @@ export function finishedExit(protocol: Protocol, status: number | null, stdout: 
 /** Run a process stage: its inputs copied by content into a fresh execution
  * directory under their roles' names, the program run there with relative
  * arguments and the call's environment, its outputs copied to the caller's
- * paths. */
+ * paths. A replay-eligible invocation of a replayed stage, not forced,
+ * replays a finished result stored at its key, or reports a timeout
+ * observed there at a limit no smaller than its own; executed, its finished
+ * result or its timeout is published. */
 export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoked {
+  if (!Number.isSafeInteger(options.limitMs) || options.limitMs <= 0)
+    throw Error("a process stage limit must be a positive integer number of milliseconds");
+  // The program as the caller's working directory names it.
+  const program = resolve(call.program);
   const attempt = randomUUID();
   const started = performance.now();
-  const forced = options.force || storeSetting().off;
+  const store = currentStore();
+  const forced = options.force || store === null;
   const directory = runDirectory(`stage-${call.stage}-`);
   try {
     const argv: string[] = [];
     const inputs: Canonical[] = [];
     const outputs: { role: string; path: string }[] = [];
     const roles = new Set<string>();
+    const inputRoles = new Map<string, string>();
+    for (const a of call.arguments) if ("input" in a) inputRoles.set(resolve(a.path), a.input);
     for (const a of call.arguments) {
       if ("text" in a) {
         argv.push(a.text);
@@ -288,52 +411,102 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
       const role = "input" in a ? a.input : a.output;
       if (roles.has(role) || role !== basename(role)) throw Error(`stage ${call.stage}: role ${role} is not one file name`);
       roles.add(role);
-      argv.push(role);
       if ("output" in a) {
-        outputs.push({ role, path: a.path });
+        // An output at an input's path names that input, as the caller's
+        // arguments do: the program sees the alias, and a refusal leaves the
+        // caller's input intact.
+        const alias = inputRoles.get(resolve(a.path));
+        argv.push(alias ?? role);
+        if (alias === undefined) outputs.push({ role, path: a.path });
         continue;
       }
+      argv.push(role);
       const bytes = readOrAbsent(a.path);
       if (bytes !== null) writeFileSync(join(directory, role), bytes);
       inputs.push([role, bytes === null ? null : sha256(bytes)]);
     }
-    const implementation = executableIdentity(call.program);
+    const implementation = executableIdentity(program);
+    const runtime = nodeIdentity();
     const manifest: Canonical = {
       stage: call.stage,
       adapter: codeIdentity([import.meta.filename]),
+      runtime: "identity" in runtime ? runtime.identity : null,
       implementation: "identity" in implementation ? implementation.identity : null,
       argv,
       environment: call.environment,
       inputs,
       outputs: outputs.map((o) => o.role),
     };
-    const key = "identity" in implementation ? sha256(canonical(manifest)) : null;
-    const ineligible = "unidentified" in implementation ? implementation.unidentified : null;
+    const input = canonical(manifest);
+    const ineligible = "unidentified" in implementation ? implementation.unidentified
+      : "unidentified" in runtime ? runtime.unidentified : null;
+    const key = ineligible === null ? sha256(input) : null;
+    const record = (execution: Execution, exitStatus: number | null, replay: Replay | null): AttemptRecord => ({
+      attempt, stage: call.stage, key, ineligible, manifest, context: { program, directory }, forced,
+      limitMs: options.limitMs, execution, exitStatus, elapsedMs: performance.now() - started,
+      cpu: replay ? replay.stored.cpu : { unavailable: "the child process's CPU time is not measured" }, replay,
+    });
     options.recorder?.start(attempt, call.stage, key);
-    const p = spawnSync(call.program, argv, {
+    const replaying = key !== null && store !== null && replayedStages.has(call.stage) ? { key, store } : null;
+    if (replaying && !forced) {
+      const found = replaying.store.finished(call.stage, replaying.key, input);
+      if (found) {
+        const materializing = performance.now();
+        const produced = new Map(found.result.outputs);
+        for (const o of outputs) {
+          const bytes = produced.get(o.role);
+          if (bytes !== undefined) writeFileSync(o.path, bytes);
+        }
+        const done = record("replayed", found.result.exitStatus, { lookupMs: found.lookupMs,
+          validationMs: found.validationMs, materializationMs: performance.now() - materializing,
+          stored: found.result.measurement });
+        options.recorder?.finish(done);
+        return { status: found.result.exitStatus, signal: null, error: undefined, stdoutBytes: found.result.stdout,
+          stderrBytes: found.result.stderr, stdout: text(found.result.stdout), stderr: text(found.result.stderr),
+          record: done };
+      }
+      const observed = replaying.store.timeout(call.stage, replaying.key, input, options.limitMs, resourcePolicy);
+      if (observed) {
+        const { observation } = observed;
+        const done = record("timeout-replayed", null, { lookupMs: observed.lookupMs, validationMs: 0,
+          materializationMs: 0, stored: { attempt: observation.attempt, elapsedMs: observation.elapsedMs,
+            limitMs: observation.limitMs, cpu: { unavailable: "a timeout's CPU time is not measured" } } });
+        options.recorder?.finish(done);
+        return { status: null, signal: null, error: undefined, stdoutBytes: Buffer.alloc(0), stderrBytes: Buffer.alloc(0),
+          stdout: "", stderr: "", record: done };
+      }
+    }
+    const p = spawnSync(program, argv, {
       cwd: directory,
       env: { ...call.environment },
       timeout: options.limitMs,
       maxBuffer,
     });
+    const elapsedMs = performance.now() - started;
     const stdoutBytes = p.stdout ? Buffer.from(p.stdout) : Buffer.alloc(0);
     const stderrBytes = p.stderr ? Buffer.from(p.stderr) : Buffer.alloc(0);
     const stdout = text(stdoutBytes), stderr = text(stderrBytes);
+    // A timeout is the expiry of this attempt's own enforced limit.
     const timedOut = (p.error && "code" in p.error && p.error.code === "ETIMEDOUT") ?? false;
-    const execution: Execution = timedOut ? "timed-out"
-      : p.error || p.signal || p.status === null || !finishedExit(call.protocol, p.status, stdout, stderr) ? "failed"
-      : "executed";
+    const finished = !p.error && !p.signal && p.status !== null && finishedExit(call.protocol, p.status, stdout, stderr);
+    const execution: Execution = timedOut ? "timed-out" : finished ? "executed" : "failed";
+    const produced: [string, Buffer][] = [];
     for (const o of outputs) {
       const bytes = readOrAbsent(join(directory, o.role));
-      if (bytes !== null) writeFileSync(o.path, bytes);
+      if (bytes === null) continue;
+      produced.push([o.role, bytes]);
+      writeFileSync(o.path, bytes);
     }
-    const record: AttemptRecord = {
-      attempt, stage: call.stage, key, ineligible, forced, limitMs: options.limitMs, execution,
-      exitStatus: p.status, elapsedMs: performance.now() - started,
-      cpu: { unavailable: "the child process's CPU time is not measured" },
-    };
-    options.recorder?.finish(record);
-    return { status: p.status, signal: p.signal, error: p.error, stdoutBytes, stderrBytes, stdout, stderr, record };
+    const done = record(execution, p.status, null);
+    if (replaying && execution === "executed")
+      replaying.store.publishFinished(call.stage, replaying.key, { input, exitStatus: p.status, stdout: stdoutBytes,
+        stderr: stderrBytes, outputs: produced, measurement: { attempt, elapsedMs, limitMs: options.limitMs,
+          cpu: done.cpu } });
+    if (replaying && execution === "timed-out")
+      replaying.store.publishTimeout(call.stage, replaying.key, { input, attempt, elapsedMs, limitMs: options.limitMs,
+        policy: resourcePolicy });
+    options.recorder?.finish(done);
+    return { status: p.status, signal: p.signal, error: p.error, stdoutBytes, stderrBytes, stdout, stderr, record: done };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -403,7 +576,8 @@ export function forced(call: ProcessCall, limitMs: number = 30_000): Invoked {
 // ---------------------------------------------------------------------------
 // In-process stages
 
-/** A stage computed in this process: its known inputs by role, and its run. */
+/** A stage computed in this process: its known inputs by role, and its run.
+ * A replayed stage's value is text, the result its entry stores. */
 export type InProcessCall<T> = {
   stage: StageName;
   /** The modules implementing the stage, whose sources identify it; or why
@@ -411,48 +585,94 @@ export type InProcessCall<T> = {
   implementation: { modules: readonly string[] } | { unidentified: string };
   inputs: readonly { role: string; bytes: string | Buffer }[];
   run: () => T;
+  /** The value as stored, and back: for a stage that replays. */
+  codec?: { encode: (value: T) => Buffer; decode: (bytes: Buffer) => T };
 };
 
 /** Run an in-process stage, recording its attempt: an exception it throws is
- * an operational failure, recorded and thrown on. */
+ * an operational failure, recorded and thrown on. A replay-eligible
+ * invocation of a replayed stage with a codec replays and publishes as a
+ * process stage does. */
 export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boolean; recorder: Recorder | null }):
     { value: T; record: AttemptRecord } {
   const attempt = randomUUID();
   const started = performance.now();
   const cpu = process.cpuUsage();
-  const forced = options.force || storeSetting().off;
+  const store = currentStore();
+  const forced = options.force || store === null;
+  const runtime = nodeIdentity();
   const manifest: Canonical = {
     stage: call.stage,
-    implementation: "modules" in call.implementation
-      ? { code: codeIdentity(call.implementation.modules), node: process.version, platform: platform(), arch: arch() }
-      : null,
+    adapter: codeIdentity([import.meta.filename]),
+    runtime: "identity" in runtime ? runtime.identity : null,
+    implementation: "modules" in call.implementation ? codeIdentity(call.implementation.modules) : null,
     inputs: call.inputs.map((i) => [i.role, sha256(i.bytes)]),
   };
-  const key = "modules" in call.implementation ? sha256(canonical(manifest)) : null;
-  const ineligible = "unidentified" in call.implementation ? call.implementation.unidentified : null;
+  const input = canonical(manifest);
+  const ineligible = "unidentified" in call.implementation ? call.implementation.unidentified
+    : "unidentified" in runtime ? runtime.unidentified : null;
+  const key = ineligible === null ? sha256(input) : null;
   options.recorder?.start(attempt, call.stage, key);
-  const record = (execution: Execution): AttemptRecord => {
+  const record = (execution: Execution, replay: Replay | null): AttemptRecord => {
     const used = process.cpuUsage(cpu);
     return {
-      attempt, stage: call.stage, key, ineligible, forced, limitMs: null, execution, exitStatus: null,
-      elapsedMs: performance.now() - started,
-      cpu: { userMs: used.user / 1000, systemMs: used.system / 1000, covers: "the pipeline's process" },
+      attempt, stage: call.stage, key, ineligible, manifest, context: null, forced, limitMs: null, execution,
+      exitStatus: null, elapsedMs: performance.now() - started,
+      cpu: replay ? replay.stored.cpu : { userMs: used.user / 1000, systemMs: used.system / 1000,
+        covers: "the pipeline's process" },
+      replay,
     };
   };
+  const replaying = key !== null && store !== null && call.codec && replayedStages.has(call.stage)
+    ? { key, store, codec: call.codec } : null;
+  if (replaying && !forced) {
+    const found = replaying.store.finished(call.stage, replaying.key, input);
+    if (found) {
+      const materializing = performance.now();
+      const value = replaying.codec.decode(found.result.stdout);
+      const done = record("replayed", { lookupMs: found.lookupMs, validationMs: found.validationMs,
+        materializationMs: performance.now() - materializing, stored: found.result.measurement });
+      options.recorder?.finish(done);
+      return { value, record: done };
+    }
+  }
   let value: T;
   try {
     value = call.run();
   } catch (error) {
-    options.recorder?.finish(record("failed"));
+    options.recorder?.finish(record("failed", null));
     throw error;
   }
-  const done = record("executed");
+  const done = record("executed", null);
+  if (replaying) {
+    const result: StoredResult = { input, exitStatus: 0, stdout: replaying.codec.encode(value), stderr: Buffer.alloc(0),
+      outputs: [], measurement: { attempt, elapsedMs: done.elapsedMs, limitMs: null, cpu: done.cpu } };
+    replaying.store.publishFinished(call.stage, replaying.key, result);
+  }
   options.recorder?.finish(done);
   return { value, record: done };
 }
 
+/** A text value stored as its UTF-8 bytes. */
+export const textCodec: { encode: (value: string) => Buffer; decode: (bytes: Buffer) => string } = {
+  encode: (value: string): Buffer => Buffer.from(value, "utf8"),
+  decode: (bytes: Buffer): string => bytes.toString("utf8"),
+};
+
 // ---------------------------------------------------------------------------
 // Records read back
+
+/** Decode a manifest's JSON values. */
+function readCanonical(value: unknown): Canonical {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (Array.isArray(value)) return value.map((entry: unknown) => readCanonical(entry));
+  if (typeof value === "object") {
+    const fields: { [key: string]: unknown } = { ...value };
+    return Object.fromEntries(Object.entries(fields).map(([key, entry]) => [key, readCanonical(entry)]));
+  }
+  throw Error("not a manifest JSON value");
+}
 
 /** An invocation record a run wrote, read field by field. */
 export function readAttemptRecord(value: unknown): AttemptRecord {
@@ -461,20 +681,43 @@ export function readAttemptRecord(value: unknown): AttemptRecord {
   };
   if (typeof value !== "object" || value === null) return fail();
   const v: { [key: string]: unknown } = { ...value };
+  const fields = ["attempt", "stage", "key", "ineligible", "manifest", "context", "forced", "limitMs", "execution",
+    "exitStatus", "elapsedMs", "cpu", "replay"];
+  if (Object.keys(v).sort().join() !== [...fields].sort().join()) return fail();
   const nullableString = (x: unknown): x is string | null => x === null || typeof x === "string";
   const nullableNumber = (x: unknown): x is number | null => x === null || typeof x === "number";
-  const { attempt, stage, key, ineligible, forced, limitMs, execution, exitStatus, elapsedMs, cpu } = v;
+  const { attempt, stage, key, ineligible, forced, limitMs, execution, exitStatus, elapsedMs } = v;
+  const manifest = readCanonical(v["manifest"]);
+  const found = executions.find((e) => e === execution);
+  const measured = readMeasurement({ attempt: "", elapsedMs: 0, limitMs: null, cpu: v["cpu"] });
   if (typeof attempt !== "string" || !isStageName(stage) || !nullableString(key) || !nullableString(ineligible) ||
-      typeof forced !== "boolean" || !nullableNumber(limitMs) || !executions.some((e) => e === execution) ||
-      !nullableNumber(exitStatus) || typeof elapsedMs !== "number" || typeof cpu !== "object" || cpu === null)
+      typeof forced !== "boolean" || !nullableNumber(limitMs) || found === undefined ||
+      !nullableNumber(exitStatus) || typeof elapsedMs !== "number" || !measured)
     return fail();
-  const c: { [key: string]: unknown } = { ...cpu };
-  const readCpu: Cpu = typeof c["unavailable"] === "string" ? { unavailable: c["unavailable"] }
-    : typeof c["userMs"] === "number" && typeof c["systemMs"] === "number" && typeof c["covers"] === "string"
-      ? { userMs: c["userMs"], systemMs: c["systemMs"], covers: c["covers"] }
-      : fail();
-  const found = executions.find((e) => e === execution) ?? fail();
-  return { attempt, stage, key, ineligible, forced, limitMs, execution: found, exitStatus, elapsedMs, cpu: readCpu };
+  const c = v["context"];
+  let context: AttemptRecord["context"] = null;
+  if (c !== null) {
+    const f: { [key: string]: unknown } = typeof c === "object" && c !== null ? { ...c } : fail();
+    const { program, directory } = f;
+    if (Object.keys(f).sort().join() !== "directory,program" || typeof program !== "string" ||
+        typeof directory !== "string")
+      return fail();
+    context = { program, directory };
+  }
+  const r = v["replay"];
+  let replay: Replay | null = null;
+  if (r !== null) {
+    const f: { [key: string]: unknown } = typeof r === "object" && r !== null ? { ...r } : fail();
+    const { lookupMs, validationMs, materializationMs } = f;
+    const stored = readMeasurement(f["stored"]);
+    if (Object.keys(f).sort().join() !== "lookupMs,materializationMs,stored,validationMs" ||
+        typeof lookupMs !== "number" || typeof validationMs !== "number" || typeof materializationMs !== "number" ||
+        !stored)
+      return fail();
+    replay = { lookupMs, validationMs, materializationMs, stored };
+  }
+  return { attempt, stage, key, ineligible, manifest, context, forced, limitMs, execution: found, exitStatus, elapsedMs,
+    cpu: measured.cpu, replay };
 }
 
 /** The attempts of a run's invocation log (`Recorder`), in order; an attempt
@@ -483,26 +726,38 @@ export function readInvocationLog(file: string): AttemptRecord[] {
   const bytes = readOrAbsent(file);
   if (bytes === null) return [];
   const records: AttemptRecord[] = [];
-  const open = new Map<string, { stage: StageName; key: string | null; at: number }>();
+  const open = new Map<string, number>();
   for (const line of bytes.toString("utf8").split("\n")) {
     if (line === "") continue;
     const event: unknown = JSON.parse(line);
     if (typeof event !== "object" || event === null) throw Error(`not an invocation event: ${line.slice(0, 200)}`);
     const e: { [key: string]: unknown } = { ...event };
-    if (e["event"] === "start" && typeof e["attempt"] === "string" && isStageName(e["stage"]) &&
-        (e["key"] === null || typeof e["key"] === "string")) {
-      open.set(e["attempt"], { stage: e["stage"], key: e["key"], at: records.length });
-      records.push({ attempt: e["attempt"], stage: e["stage"], key: e["key"], ineligible: null, forced: false,
+    const attempt = e["attempt"], stage = e["stage"], key = e["key"];
+    if (e["event"] === "start" && typeof attempt === "string" && isStageName(stage) &&
+        (key === null || typeof key === "string")) {
+      open.set(attempt, records.length);
+      records.push({ attempt, stage, key, ineligible: null, manifest: null, context: null, forced: false,
         limitMs: null, execution: "interrupted", exitStatus: null, elapsedMs: 0,
-        cpu: { unavailable: "the attempt was interrupted" } });
+        cpu: { unavailable: "the attempt was interrupted" }, replay: null });
     } else if (e["event"] === "end") {
       const record = readAttemptRecord(e["record"]);
-      const started = open.get(record.attempt);
-      if (started) {
-        records[started.at] = record;
+      const at = open.get(record.attempt);
+      if (at !== undefined) {
+        records[at] = record;
         open.delete(record.attempt);
       } else records.push(record);
     } else throw Error(`not an invocation event: ${line.slice(0, 200)}`);
   }
   return records;
+}
+
+if (import.meta.filename === resolve(process.argv[1] ?? "") && process.argv[2] === "clean") {
+  const store = currentStore();
+  if (!store) {
+    process.stderr.write("TSCERT_STAGE_STORE is off: there is no store to clean\n");
+    process.exitCode = 2;
+  } else {
+    store.clean();
+    process.stdout.write(`cleaned ${store.root}\n`);
+  }
 }

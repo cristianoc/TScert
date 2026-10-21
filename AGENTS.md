@@ -20,12 +20,30 @@ make lowering FILE=f.ts [FN=name]   # the program graph a source lowers to
 make semantic-diff REV=rev          # render the commit records of a commit or range
 make build       # build-lean and build-producer: the Lean verifier and the OCaml producer
 make setup       # the node dependencies
+make clean-store # remove the stage store's entries
 ```
 
-Each process stage of the pipeline is killed after 60 s;
-`TSCERT_STEP_LIMIT=<seconds>` sets another limit. A run's directory holds
-`invocations.jsonl`, each stage invocation's attempt with its limit, outcome
-and elapsed time ([the invocation mechanism](pipeline/stages.mts)).
+### The stage store
+
+Every stage invocation goes through [one mechanism](pipeline/stages.mts),
+and the lowering, proposal, claims assembly, search and explanations replay
+from [the stage store](docs/DESIGN.md#the-stage-store) by content.
+
+- `TSCERT_STAGE_STORE=<dir>` selects the store, by default
+  `$XDG_CACHE_HOME/tscert/stages` (`~/.cache/tscert/stages`), shared by every
+  checkout and worktree; `TSCERT_STAGE_STORE=off` executes every stage.
+  `make clean-store` removes the entries.
+- A branch uses the default store. Keys include the executables' and the
+  adapters' digests, so a branch's changed verifier, producer or adapter
+  never replays another build's entries; an agent testing the store itself
+  names a store under `$TMPDIR`.
+- Each process stage is killed after 60 s; `TSCERT_STEP_LIMIT=<seconds>`
+  sets another limit. A timeout is recorded with its limit: a run at that
+  limit or a smaller one reports it again, a longer limit executes the
+  stage.
+- A run's directory holds `invocations.jsonl`, each stage invocation's
+  attempt: its stage key, limit, outcome (executed, replayed, timed out,
+  failed) and elapsed time.
 
 ### Iterating: run what the change touches
 

@@ -5,7 +5,7 @@ OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
 .PHONY: help setup build build-lean build-producer test suite cases check lowering compiler-api-shapes semantic-diff fmt \
-  check-fmt setup-git-hooks
+  check-fmt setup-git-hooks clean-store
 
 help: ## list the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | expand -t 16
@@ -35,6 +35,9 @@ cases: ## the pipeline cases whose file names contain P (all of them when P is e
 
 check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir]
 	node pipeline/verify-source.mts $(FILE) $(if $(PROJECT),--project $(PROJECT))
+
+clean-store: ## remove the stage store's entries (TSCERT_STAGE_STORE, by default ~/.cache/tscert/stages)
+	node pipeline/stages.mts clean
 
 lowering: ## the program graph a source lowers to: FILE=path.ts [FN=function]
 	node dev/lowering-dump.mts $(FILE) $(FN)

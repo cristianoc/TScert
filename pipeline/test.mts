@@ -10,8 +10,10 @@ import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { forced, producerCall, ran as ranStage, readInvocationLog, verifierCall, type Invoked } from "./stages.mts";
-import { check, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, verifier, type Outcome } from "./verify-source.mts";
+import { forced, producerCall, ran as ranStage, readInvocationLog, verifierCall, type AttemptRecord, type Invoked }
+  from "./stages.mts";
+import { check, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
+  type Outcome } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { compilerApiFamily, hostEnums } from "../tools/compiler-api.mts";
@@ -94,7 +96,7 @@ function must<T>(value: T | null | undefined, message: string): T {
  * require a refusal; its words, for the caller to match. */
 const invoke = (claims: string, evidence: string, artifacts: string,
   ast: string = join(artifacts, "fragment.json")): string => {
-  const p = forced(verifierCall(verifier, ["--check-source-claims", ast, claims, join(artifacts, "source.ts"), evidence]));
+  const p = forced(verifierCall(verifier, ["--check-source-claims", ast, claims, sourceKey(artifacts), evidence]));
   assert.ifError(p.error);
   assert.equal(p.signal, null);
   assert.equal(p.status, 1, p.stdout + p.stderr);
@@ -103,7 +105,7 @@ const invoke = (claims: string, evidence: string, artifacts: string,
 /** Search for evidence of forged claims, or of a forged parser document. */
 const produceWith = (artifacts: string, claims: string, name: string,
     fragmentPath: string = join(artifacts, "fragment.json")): Invoked =>
-  forced(verifierCall(verifier, ["--produce-source-claims", fragmentPath, claims, join(artifacts, "source.ts"),
+  forced(verifierCall(verifier, ["--produce-source-claims", fragmentPath, claims, sourceKey(artifacts),
     join(artifacts, `${name}-evidence.json`), "12"]));
 /** Require search over forged claims to fail at the obligation named `at`. */
 const refusedAt = (artifacts: string, claims: string, name: string, at: string): void => {
@@ -152,6 +154,20 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
 
 {
   const good = run("values");
+  // Output rebinding preserves the verifier's refusal of aliases to either
+  // input, and leaves those input bytes intact.
+  for (const name of ["fragment.json", "claims.json"]) {
+    const input = join(good, name);
+    const before = readFileSync(input);
+    const result = forced(verifierCall(verifier, ["--produce-source-claims",
+      join(good, "fragment.json"), join(good, "claims.json"), sourceKey(good), input, "12"]));
+    assert.ifError(result.error);
+    assert.equal(result.signal, null);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.equal(result.record.execution, "executed");
+    assert.match(result.stdout + result.stderr, /evidence output must differ from the input files/);
+    assert.deepEqual(readFileSync(input), before);
+  }
   const fragment: unknown = JSON.parse(readFileSync(join(good, "fragment.json"), "utf8"));
   assert.ok(fragment && typeof fragment === "object" && !Array.isArray(fragment));
   const forged = structuredClone(fragment);
@@ -201,7 +217,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   writeFileSync(claims, proposal.stdout);
   writeFileSync(evidence, "{}");
   const searched = forced(verifierCall(verifier, ["--produce-source-claims",
-    join(erased, "fragment.json"), claims, join(erased, "source.ts"), evidence, "12"]));
+    join(erased, "fragment.json"), claims, sourceKey(erased), evidence, "12"]));
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
   assert.match(searched.stdout + searched.stderr, /generic contract.*cannot be erased/);
   assert.match(invoke(claims, evidence, erased), /generic contract.*cannot be erased/);
@@ -321,7 +337,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const path = join(good, `${name}.fragment.json`);
     writeFileSync(path, edit(readFragmentFile(join(good, "fragment.json"))));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const result = forced(verifierCall(verifier, [mode, path, claims, join(good, "source.ts"),
+      const result = forced(verifierCall(verifier, [mode, path, claims, sourceKey(good),
         mode === "--produce-source-claims" ? join(good, `${name}-evidence.json`) : evidence,
         ...(mode === "--produce-source-claims" ? ["12"] : [])]));
       assert.ifError(result.error);
@@ -406,12 +422,12 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
       : JSON.stringify({ ...fake, bases: [], expression: JSON.parse(body) });
     return JSON.stringify(ast).replace(JSON.stringify(fake), replaced);
   };
-  const at = readFileSync(join(inherited, "source.ts"), "utf8").indexOf("return f;") + "return ".length;
+  const at = readFileSync(sourceKey(inherited), "utf8").indexOf("return f;") + "return ".length;
   {
     const exact = join(inherited, "tag-fake-exact.fragment.json");
     writeFileSync(exact, fakeAt(readFragmentFile(join(inherited, "fragment.json")), "exact"));
     const produced = forced(verifierCall(verifier, ["--produce-source-claims", exact, join(inherited, "claims.json"),
-      join(inherited, "source.ts"), join(inherited, "tag-fake-exact-evidence.json"), "12"]));
+      sourceKey(inherited), join(inherited, "tag-fake-exact-evidence.json"), "12"]));
     assert.equal(produced.status, 0, produced.stdout + produced.stderr);
   }
   tagged(inherited, "tag-fake-untagged", ast => fakeAt(ast, "untagged"),
@@ -452,7 +468,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     // `local`'s allocation, a record with a callable `then`, claimed as the
     // `Promise<number>` `returned`'s result is claimed at.
     const claims = readClaims(artifacts);
-    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const source = readFileSync(sourceKey(artifacts), "utf8");
     const start = source.indexOf("{ then: (x: number): number => x + 1 }");
     const fn = must(claims.functions.find(f => f.name === "local"), "local's claims");
     const allocation = must(fn.expressions.find(e => e.pos[0] === start), "the allocation's claim");
@@ -476,7 +492,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // evidence of the original claim for it.
   const growth = run("tag-key-growth");
   const claims = readClaims(growth);
-  const source = readFileSync(join(growth, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(growth), "utf8");
   const start = source.indexOf("d[k] = 1") + "d[".length;
   const fn = must(claims.functions.find(f => f.name === "grown"), "grown's claims");
   const key = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + 1), "the key's claim");
@@ -495,7 +511,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // the original claim for it.
   const keyed = run("object-computed-literal-key");
   const claims = readClaims(keyed);
-  const source = readFileSync(join(keyed, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(keyed), "utf8");
   const start = source.indexOf("[awaitName]: 0") + 1;
   const fn = must(claims.functions.find(f => f.name === "names"), "names' claims");
   const read = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + "awaitName".length),
@@ -520,7 +536,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const path = join(keyed, `${name}.fragment.json`);
     writeFileSync(path, text.replace(field, `{"name":${to},"e":{"k":"comma"`));
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
-      const result = forced(verifierCall(verifier, [mode, path, join(keyed, "claims.json"), join(keyed, "source.ts"),
+      const result = forced(verifierCall(verifier, [mode, path, join(keyed, "claims.json"), sourceKey(keyed),
         join(keyed, mode === "--produce-source-claims" ? `${name}-evidence.json` : "evidence.json"),
         ...(mode === "--produce-source-claims" ? ["12"] : [])]));
       assert.equal(result.status, 1, result.stdout + result.stderr);
@@ -535,7 +551,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // holding `stack` beside it, is refused where evidence is produced, and
   // checking refuses the evidence of the original claim for it.
   const errors = run("error-subclass");
-  const source = readFileSync(join(errors, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(errors), "utf8");
   const start = source.indexOf("new Decline()");
   const at = `[${start},${start + "new Decline()".length})`;
   const forgeries: [name: string, owned: string[], viewed: string[]][] = [
@@ -562,7 +578,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // claiming that read, or the step's value it binds, at a string is
   // refused where evidence is produced and where it is checked.
   const patterns = run("for-of-pattern-program-iterable");
-  const source = readFileSync(join(patterns, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(patterns), "utf8");
   const head = source.indexOf("const [key, n] of pairs");
   const pattern = head + "const ".length;
   // A string where the pattern reads the pair is refused where the pattern
@@ -600,7 +616,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   };
   const fragment = renamed("fragment.json");
   const accepted = forced(verifierCall(verifier, ["--check-source-claims", fragment, renamed("claims.json"),
-    join(methods, "source.ts"), renamed("evidence.json")]));
+    sourceKey(methods), renamed("evidence.json")]));
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
   assert.ok(readFileSync(fragment, "utf8").includes('"name":"stack"'), "the forged fragment names a member `stack`");
   process.stdout.write("forged stack member: accepted by Lean, the reservation enforced by the parser alone\n");
@@ -611,7 +627,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // otherwise typable document the reserved-write check alone refuses, at
   // the write, where evidence is produced and where it is checked.
   const twin = run("reserved-write-twin");
-  const source = readFileSync(join(twin, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(twin), "utf8");
   for (const [key, write] of [["stackPattern", "o.stackPattern"], ["stackUpdate", 'o.stackUpdate += "s"'],
       ["stackLogical", 'o.stackLogical ??= "s"'], ["stackCallback", "o.stackCallback = v"], ["stackComputed", 'o[k] = "s"']] as const) {
     const renamed = (file: string): string => {
@@ -637,7 +653,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // evidence of the original claim for it.
   const optional = run("optional-method-call");
   const claims = readClaims(optional);
-  const source = readFileSync(join(optional, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(optional), "utf8");
   const start = source.indexOf("equation?.(x) ??");
   const fn = must(claims.functions.find(f => f.name === "withDefault"), "withDefault's claims");
   const receiver = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + "equation".length),
@@ -657,7 +673,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // test establishes is refused where evidence is produced and where it is
   // checked.
   const good = run("logical-narrowing-past-reads");
-  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(good), "utf8");
   const claims = readClaims(good);
   const fn = must(claims.functions.find(f => f.name === "untested"), "untested function");
   const start = source.indexOf("Number.isSafeInteger(v);\n}\n", source.indexOf("function untested")) + "Number.isSafeInteger(".length;
@@ -666,7 +682,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const forged = writeClaims(good, "untested-number", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
     const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+      sourceKey(good), join(good, mode === "--produce-source-claims"
         ? "untested-number-evidence.json" : "evidence.json"),
       ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(result.error);
@@ -681,7 +697,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // the callee's signature: `warn`, which returns, claimed at the empty type
   // is refused where evidence is produced and where it is checked.
   const good = run("never-call-narrowing");
-  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(good), "utf8");
   const claims = readClaims(good);
   const fn = must(claims.functions.find(f => f.name === "warned"), "warned function");
   const call = 'warn("not a string")';
@@ -727,7 +743,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   };
   const outside = "closure signature claim is outside the source annotation";
   const records = run("closure-contextual-records");
-  const text = readFileSync(join(records, "source.ts"), "utf8");
+  const text = readFileSync(sourceKey(records), "utf8");
   const closure = text.indexOf("(o) => o.a");
   const atClosure = `at [${closure},${closure + "(o) => o.a".length}): ${outside}`;
   const map = text.indexOf("pairs.map");
@@ -748,7 +764,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // `Box<undefined>`: the arrow's parameter names the declaration at
   // another argument, so the claims keep their rows.
   const instances = run("closure-contextual-optional-instances");
-  const source = readFileSync(join(instances, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(instances), "utf8");
   const absent = source.indexOf("(b) => b.v", source.indexOf("Box<never>"));
   const atAbsent = `at [${absent},${absent + "(b) => b.v".length}): ${outside}`;
   {
@@ -773,7 +789,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // forged claim is refused where evidence is produced and where it is
   // checked.
   const good = run("early-bindings");
-  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(good), "utf8");
   const forge = (name: string, edit: (fn: SourceClaims["functions"][number], claims: SourceClaims) => void,
       at: string): void => {
     const claims = readClaims(good);
@@ -837,7 +853,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     invoke(epath, join(cells, "evidence.json"), cells);
     const stale = readClaims(cells);
     const sfn = must(stale.functions.find(f => f.name === "afterCall"), "afterCall");
-    const src = readFileSync(join(cells, "source.ts"), "utf8");
+    const src = readFileSync(sourceKey(cells), "utf8");
     const at = src.indexOf("return count;", src.indexOf("function afterCall")) + "return ".length;
     const read = must(sfn.expressions.find(x => x.pos[0] === at && x.pos[1] === at + "count".length), "the read after the call");
     read.type = [rowOf(stale, { numLit: { bits: "4607182418800017408" } })];
@@ -852,7 +868,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // read of `n` claimed at the first arm is refused where evidence is
   // produced and where it is checked.
   const good = run("field-test-disjunction");
-  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(good), "utf8");
   const claims = readClaims(good);
   const fn = must(claims.functions.find(f => f.name === "mixed"), "mixed function");
   const start = source.indexOf("return n.kind", source.indexOf("function mixed")) + "return ".length;
@@ -862,7 +878,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const forged = writeClaims(good, "disjunction-one-arm", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
     const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+      sourceKey(good), join(good, mode === "--produce-source-claims"
         ? "disjunction-one-arm-evidence.json" : "evidence.json"),
       ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(result.error);
@@ -878,7 +894,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // than an array is refused where the elements are produced and checked.
   const good = run("array-literal-spread");
   assert.equal(runExample("array-literal-spread", "snapshot()"), 22);
-  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(good), "utf8");
   const claims = readClaims(good);
   const fn = must(claims.functions.find(f => f.name === "appended"), "appended function");
   const start = source.indexOf("[...xs, x]") + "[...".length;
@@ -889,7 +905,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const forged = writeClaims(good, "array-spread-number", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
     const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+      sourceKey(good), join(good, mode === "--produce-source-claims"
         ? "array-spread-forged-evidence.json" : "evidence.json"),
       ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(result.error);
@@ -899,7 +915,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
 {
   const good = run("constructor-tuple-spread");
   assert.equal(runExample("constructor-tuple-spread", "snapshot()"), 12);
-  const source = readFileSync(join(good, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(good), "utf8");
   const claims = readClaims(good);
   const fn = must(claims.functions.find(f => f.name === "snapshot"), "snapshot function");
   const flow = decodeFlowDocument(JSON.parse(readFileSync(join(good, "flow.json"), "utf8")));
@@ -929,7 +945,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   const forged = writeClaims(good, "constructor-spread-number", claims);
   for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
     const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-      join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+      sourceKey(good), join(good, mode === "--produce-source-claims"
         ? "constructor-forged-evidence.json" : "evidence.json"),
       ...(mode === "--produce-source-claims" ? ["12"] : [])]));
     assert.ifError(result.error);
@@ -953,7 +969,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
     const forged = writeClaims(good, `prototype-${variant}`, claims);
     for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
       const result = forced(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
-        join(good, "source.ts"), join(good, mode === "--produce-source-claims"
+        sourceKey(good), join(good, mode === "--produce-source-claims"
           ? `prototype-${variant}-evidence.json` : "evidence.json"),
         ...(mode === "--produce-source-claims" ? ["12"] : [])]));
       assert.ifError(result.error);
@@ -974,7 +990,7 @@ const run = (file: string): string => must(artifactsOf.get(file), `case ${file}'
   // fresh instance meets the instance type; the untampered one is derived there.
   // `make` alone is kept, so the construct code is the first obligation.
   const classGeneric = run("class-generic-method");
-  const source = readFileSync(join(classGeneric, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(classGeneric), "utf8");
   const claims = readClaims(classGeneric);
   claims.functions = claims.functions.filter((f) => f.name === "make");
   const makeClaims = writeClaims(classGeneric, "make-claims", claims);
@@ -1143,7 +1159,7 @@ for (const [artifacts, arity, refusal] of [
   // is checked by the body's return obligation.
   const localClosure = run("closure-result-contract");
   const claims = readClaims(localClosure);
-  const source = readFileSync(join(localClosure, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(localClosure), "utf8");
   const fn = must(claims.functions.find((f) => f.name === "minus"), "minus's claims");
   const closure = must(fn.expressions.find((e) => e.pos[0] === source.indexOf("(p: number")),
     "the unannotated closure's expression claim");
@@ -1231,7 +1247,7 @@ for (const [artifacts, arity, refusal] of [
   // A deferred closure body owns execution points separate from creation.
   const artifacts = run("closure-graph-try");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const fn = must(claims.functions[0], "guarded");
   const creation = must(fn.expressions.find((e) => e.pos[0] === source.indexOf("(): number =>")), "closure creation");
   const at = source.indexOf("return g();") + "return ".length;
@@ -1246,7 +1262,7 @@ for (const [artifacts, arity, refusal] of [
   // A copied finalizer's source site belongs to each actual finalizer action.
   const artifacts = run("try-finally-jump");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const fn = must(claims.functions.find((f) => f.name === "breakThroughFinally"), "breakThroughFinally");
   const at = source.indexOf("count = count * 2");
   const copies = fn.expressions.filter((e) => e.pos[0] === at && e.pos[1] === at + "count = count * 2".length);
@@ -1270,7 +1286,7 @@ for (const [artifacts, arity, refusal] of [
     ["invalid-known-condition", "stale([])", undefined],
   ] as const) {
     const artifacts = run(file);
-    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const source = readFileSync(sourceKey(artifacts), "utf8");
     const claims = readClaims(artifacts);
     const condition = "ready || zs[0]";
     const at = source.lastIndexOf(condition);
@@ -1294,7 +1310,7 @@ for (const [artifacts, arity, refusal] of [
   // and not where nothing wrote it; an entry narrowing the cell to its null arm
   // is refused at its entry, though its observation holds.
   const cellUnion = run("cell-union-capture");
-  const source = readFileSync(join(cellUnion, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(cellUnion), "utf8");
   const within = (fn: string, text: string): number => {
     const start = source.indexOf(`function ${fn}(`);
     const at = source.indexOf(text, start);
@@ -1340,7 +1356,7 @@ for (const [artifacts, arity, refusal] of [
   // The result of a call through a captured union of functions is not narrowed
   // to one alternative's: claimed `true`, the call is refused where it is.
   const callableUnion = run("callable-union-capture");
-  const source = readFileSync(join(callableUnion, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(callableUnion), "utf8");
   const claims = readClaims(callableUnion);
   const at = source.indexOf("f(unit)");
   must(claims.functions.flatMap((f) => f.expressions).find((e) => e.pos[0] === at && e.pos[1] === at + 7),
@@ -1360,7 +1376,7 @@ for (const [artifacts, arity, refusal] of [
     typeof clause === "object" && "pack" in clause ? [clause.pack.first] : []))
     .find((t) => t.rest !== null), "merge's claimed rest").rest;
   must(rest, "the rest's labels").unshift(4);
-  const member = readFileSync(join(collections, "source.ts"), "utf8").indexOf("cs.input1.merge");
+  const member = readFileSync(sourceKey(collections), "utf8").indexOf("cs.input1.merge");
   refusedAt(collections, writeClaims(collections, "forged-wider-rest", claims), "forged-wider-rest",
     `source expression obligation at [${member},${member + "cs.input1.merge".length})`);
 }
@@ -1415,7 +1431,7 @@ for (const [artifacts, arity, refusal] of [
         bounds: [{ among: false, keys: ["x", "[[proto]]"] }] } })],
   ] as const) {
     const artifacts = run(file);
-    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const source = readFileSync(sourceKey(artifacts), "utf8");
     const claims = readClaims(artifacts);
     const str = claims.types.findIndex((row) => row.length === 1 && row[0] === "str");
     assert.ok(str >= 0, "the string row");
@@ -1476,7 +1492,7 @@ for (const [artifacts, arity, refusal] of [
   // reads from the source; a producer cannot retype the callee.
   const moduleFunctions = run("module-functions");
   const claims = readClaims(moduleFunctions);
-  const source = readFileSync(join(moduleFunctions, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(moduleFunctions), "utf8");
   const fn = must(claims.functions.find((f) => f.name === "twice"), "twice");
   const callee = source.indexOf("id(id(x))");
   const site = must(fn.expressions.find((e) => e.pos[0] === callee && e.pos[1] === callee + 2), "the outer callee's claim");
@@ -1489,7 +1505,7 @@ for (const [artifacts, arity, refusal] of [
   // the longer signature its use expects is refused where it is read.
   const collects = run("invalid-named-function-arity");
   const claims = readClaims(collects);
-  const source = readFileSync(join(collects, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(collects), "utf8");
   const fn = must(claims.functions.find((f) => f.name === "widen"), "widen");
   const at = source.indexOf("collects;");
   must(fn.expressions.find((e) => e.pos[0] === at && e.pos[1] === at + "collects".length), "the read's claim").type = fn.result;
@@ -1501,7 +1517,7 @@ for (const [artifacts, arity, refusal] of [
   // the constant's initializer at another type is refused.
   const moduleInit = run("module-init");
   const claims = readClaims(moduleInit);
-  const source = readFileSync(join(moduleInit, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(moduleInit), "utf8");
   const init = must(claims.init, "the initialization unit's claims");
   must(init.expressions.find((e) => e.pos[0] === source.indexOf("true;")), "the initializer's claim").type = [0];
   invoke(writeClaims(moduleInit, "forged-initializer", claims), join(moduleInit, "evidence.json"), moduleInit);
@@ -1523,7 +1539,7 @@ for (const [artifacts, arity, refusal] of [
     const claims = readClaims(twoCalls);
     const sites = must(claims.functions[0], "the containing function").expressions.filter((e) => e.instantiate);
     assert.equal(sites.length, 2, "both eliminations must carry a substitution");
-    const source = readFileSync(join(twoCalls, "source.ts"), "utf8");
+    const source = readFileSync(sourceKey(twoCalls), "utf8");
     const countCall = must(sites.find((e) => source.slice(e.pos[0], e.pos[1]) === "id(count)"), "the numeric call");
     mutate(must(countCall.instantiate, "the numeric substitution"));
     invoke(writeClaims(twoCalls, `forged-${name}`, claims), join(twoCalls, "evidence.json"), twoCalls);
@@ -1574,7 +1590,7 @@ for (const [artifacts, arity, refusal] of [
   g.type.scheme.result = [1, 2];
   // The body `value` is a `T`, and the return-contract obligation at it asks
   // for a boolean: no derivation exists.
-  const body = readFileSync(join(returned, "source.ts"), "utf8").indexOf("value;");
+  const body = readFileSync(sourceKey(returned), "utf8").indexOf("value;");
   refusedAt(returned, writeClaims(returned, "forged-nested-claim", grounded), "forged-nested",
     `source expression obligation at [${body},${body + "value".length}): evidence search failed: no derivation of its return-contract claim`);
   const escaped = structuredClone(returnedClaims);
@@ -1597,7 +1613,7 @@ for (const [artifacts, arity, refusal] of [
     assert.throws(() => runExample(file, witness), /Cannot read properties/);
   }
   const artifacts = run("nullish-field-observations");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   // The null branch cannot establish the opposite field observation.
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find((f) => f.name === "direct"), "direct function");
@@ -1644,7 +1660,7 @@ for (const [artifacts, arity, refusal] of [
   // A void parameter admits numbers and objects as well as undefined.
   // A forged singleton claim must fail at the parameter read.
   const artifacts = run("void-source-values");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "compareArguments"), "compareArguments's claims");
   const at = source.indexOf("left !== right");
@@ -1659,7 +1675,7 @@ for (const [artifacts, arity, refusal] of [
   // An unconstrained source generic admits unknown, but its independently
   // extracted bound excludes calculus top and its internal stores.
   const artifacts = run("generic-unknown-arguments");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "forward"), "forward's claims");
   const at = source.indexOf("identity(value)", source.indexOf("function forward"));
@@ -1742,12 +1758,12 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
     const borrowed = produceWith(artifacts, claims, "weakened-array-tojson", weak);
     assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
     const evidence = join(artifacts, "weakened-array-tojson-evidence.json");
-    const accepted = forced(verifierCall(verifier, ["--check-source-claims", weak, claims, join(artifacts, "source.ts"), evidence]));
+    const accepted = forced(verifierCall(verifier, ["--check-source-claims", weak, claims, sourceKey(artifacts), evidence]));
     assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
     return { artifacts, claims, evidence };
   };
   const direct = borrow("invalid-array-tojson-write");
-  const source = readFileSync(join(direct.artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(direct.artifacts), "utf8");
   const at = source.indexOf("xs.toJSON = f");
   const searched = produceWith(direct.artifacts, direct.claims, "forged-array-tojson-write");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
@@ -1764,7 +1780,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   assert.match(invoke(direct.claims, direct.evidence, direct.artifacts),
     new RegExp(`^reject: source evidence refusal at \\[${at},${at + "xs.toJSON = f;".length}\\)`, "m"));
   const view = borrow("invalid-array-tojson-view");
-  const viewSource = readFileSync(join(view.artifacts, "source.ts"), "utf8");
+  const viewSource = readFileSync(sourceKey(view.artifacts), "utf8");
   const viewAt = viewSource.indexOf("alias.toJSON = f");
   const refusal = `source refusal at [${viewAt},${viewAt + "alias.toJSON = f".length}): a write of 'toJSON'`;
   const viewSearched = produceWith(view.artifacts, view.claims, "forged-array-tojson-view");
@@ -1805,7 +1821,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   const borrowed = produceWith(artifacts, claims, "weakened-process-on", weak);
   assert.equal(borrowed.status, 0, borrowed.stdout + borrowed.stderr);
   const evidence = join(artifacts, "weakened-process-on-evidence.json");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf("process.on(\"SIGTERM\", listener)");
   const searched = produceWith(artifacts, claims, "forged-process-on");
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
@@ -1821,7 +1837,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   // Own-key exclusion preserves the inherited constructor read. A forged
   // undefined claim must fail both search and evidence consumption.
   const artifacts = run("native-promise-constructor-read");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "constructorValue"), "constructorValue's claims");
   const at = source.indexOf("p.constructor");
@@ -1901,7 +1917,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   const claims = join(artifacts, "claims.json");
   const searched = produceWith(artifacts, claims, "forged-generic-input-bound", forged);
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf("wrapper;", source.indexOf("function widenResult"));
   assert.ok((searched.stdout + searched.stderr).includes(
     `source expression obligation at [${at},${at + "wrapper".length})`), searched.stdout + searched.stderr);
@@ -1912,7 +1928,7 @@ process.stdout.write("forged claims at each kind of point: read and checked ther
   // Scheme matching must keep both the native receiver bound and finally's
   // fixed cleanup result contract. These forged methods broaden one operand.
   const artifacts = run("native-promise-reactions");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf("p.finally");
   for (const part of ["receiver", "cleanup"] as const) {
     const claims = readClaims(artifacts);
@@ -2014,7 +2030,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
 ] as const) {
   const artifacts = run(file);
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf(marker);
   const closure = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at),
     "the callback's source claim");
@@ -2033,7 +2049,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   assert.equal(produce.status, accepted ? 0 : 1, produce.stdout + produce.stderr);
   if (accepted) {
     const consume = forced(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"),
-      input, join(artifacts, "source.ts"), join(artifacts, "qualified-callback-evidence.json")]));
+      input, sourceKey(artifacts), join(artifacts, "qualified-callback-evidence.json")]));
     assert.ifError(consume.error);
     assert.equal(consume.status, 0, consume.stdout + consume.stderr);
   } else {
@@ -2066,7 +2082,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // evidence, which selected the non-empty form, refuses it there.
   const artifacts = run("split-non-empty");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf('"\\n"');
   const separator = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at),
     "the separator's claim");
@@ -2087,7 +2103,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // honest evidence at the general form, forged at `[string, ...string[]]`,
   // is refused in search and in checking, whatever the producer proposes.
   const artifacts = run("split-non-empty");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   for (const name of ["popped", "aliasShrunk", "annotated"]) {
     const claims = readClaims(artifacts);
     const call = 'text.split(",")';
@@ -2114,7 +2130,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // guard the forged claim no longer lowers, refuses it there.
   const artifacts = run("nullish-member-reads");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf("b.n;", source.indexOf("function size("));
   const receiver = must(claims.functions.flatMap(f => f.expressions).find(e => e.pos[0] === at && e.pos[1] === at + 1),
     "the receiver's claim");
@@ -2136,7 +2152,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // claim and checking the honest evidence against it refuses it there.
   const artifacts = run("map-stable-fresh-store");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf("(a: string[])");
   const closure = must([...claims.functions.flatMap(f => f.expressions), ...(claims.init?.expressions ?? [])]
     .find(e => e.pos[0] === at), "the constant's closure claim");
@@ -2165,7 +2181,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // refusal located there too.
   const artifacts = run("class-constructor-effect");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const classes: [number, number] = [source.indexOf("class Counted"), source.indexOf("class Plain")];
   const within = (at: [number, number]) => classes[0] <= at[0] && at[1] <= classes[1];
   const signatures = claims.types.flatMap(row => row.flatMap(clause =>
@@ -2194,7 +2210,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // against the forged claim.
   const artifacts = run("set-string-construction");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const expressions = claims.functions.flatMap(f => f.expressions);
   const at = (text: string) => must(expressions.find(e => e.pos[0] === source.indexOf(text) &&
     e.pos[1] === source.indexOf(text) + text.length), `the claim of ${text}`);
@@ -2214,7 +2230,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // refused, whatever the producer proposes.
   const artifacts = run("optional-call-loop-cell");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const start = source.indexOf("?.push");
   const forged = claims.functions.flatMap(f => f.expressions).filter(e => e.pos[0] === start);
   assert.ok(forged.length > 0, "the optional body's claims");
@@ -2234,7 +2250,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // where the arrow is created.
   const artifacts = run("arrow-constant-callback");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const init = must(claims.init, "the initialization unit's claims");
   const closure = must(init.expressions.find(e => e.pos[0] === source.indexOf("(s: string): string => s.toUpperCase")),
     "the constant's arrow claim");
@@ -2269,7 +2285,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // the forged claims is a footprint refusal.
   const artifacts = run("map-stable-regexp-replace");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const expressions = claims.functions.flatMap(f => f.expressions);
   const arrowAt = (start: number, arity: number) => {
     const claim = must(expressions.find(e => e.pos[0] === start && Array.isArray(e.type) && e.type.length === 1),
@@ -2302,7 +2318,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // evidence production refuses at a node of its body, and the evidence for
   // the honest claims does not justify the forged ones.
   const artifacts = run("optional-call-loop-cell");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   for (const footprint of narrowerFootprints.filter((f) => f.value !== "any" || f.store === "keep")) {
     const claims = readClaims(artifacts);
     must(claims.functions.find(f => f.name === "collect"), "collect's claims").footprint = footprint;
@@ -2361,7 +2377,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // `{ kind: "a" | "b" }` may still hold "b". Claimed excluded there, the
   // edge is refused where evidence is produced and where it is checked.
   const artifacts = run("field-contents-exclusion");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const chained = must(claims.functions.find(f => f.name === "chained"), "chained's claims");
   const at = source.indexOf(`if (k.kind === "b")`, source.indexOf("function chained"));
@@ -2386,7 +2402,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   for (const [file, afterNames] of [["field-tag-read", ["afterWrite", "afterCall"]],
       ["dictionary-field-tag-read", ["afterCall"]]] as const) {
     const artifacts = run(file);
-    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const source = readFileSync(sourceKey(artifacts), "utf8");
     const claims = readClaims(artifacts);
     const size = must(claims.functions.find(f => f.name === "size"), "size's claims");
     const tested = source.indexOf("return t.mapping.map", source.indexOf("function size"));
@@ -2435,7 +2451,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // checked.
   const artifacts = run("field-equality-union");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const fn = must(claims.functions.find(f => f.name === "kindOf"), "kindOf's claims");
   const from = source.indexOf("function kindOf");
   const test = must(fn.entries.find(e => e.start === source.indexOf("if (c.kind", from)), "the entry of the test");
@@ -2635,7 +2651,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   const accepted = produceWith(artifacts, kept, "forged-element-write-kept");
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
   const checked = forced(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), kept,
-    join(artifacts, "source.ts"), join(artifacts, "forged-element-write-kept-evidence.json")]));
+    sourceKey(artifacts), join(artifacts, "forged-element-write-kept-evidence.json")]));
   assert.equal(checked.status, 0, checked.stdout + checked.stderr);
   for (const [name, footprint] of [["setThird", { value: "any", store: "keep" }],
       ["setSecond", emptyFootprint]] as const) {
@@ -2654,7 +2670,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // the guarded type where the condition throws, the claims are refused
   // where evidence is produced and where the honest evidence is checked.
   const artifacts = run("guard-negated-short-circuit");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const from = source.indexOf("function bounded");
   const bang = source.indexOf("!isRecord(v) || n > 3", from);
   const forge = (name: string, edit: (fn: SourceClaims["functions"][number]) => void): string => {
@@ -2692,7 +2708,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // `false` where it returns `true`, the claims are refused where evidence
   // is produced and where the honest evidence is checked.
   const artifacts = run("guard-boolean-return");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "isFields"), "isFields' claims");
   const at = source.indexOf("return typeof v");
@@ -2710,7 +2726,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
     ["guard-boolean-return-boundaries", "guardOf", "function guardOf", "=> typeof v", 1, 2],
   ] as const) {
     const where = run(file);
-    const text0 = readFileSync(join(where, "source.ts"), "utf8");
+    const text0 = readFileSync(sourceKey(where), "utf8");
     const forgedClaims = readClaims(where);
     const fnClaims = must(forgedClaims.functions.find(f => f.name === name), `${name}'s claims`);
     const offset = text0.indexOf(text, text0.indexOf(from)) + (before === 2 ? 1 : 0);
@@ -2736,7 +2752,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // promise, the closure is refused where evidence is produced and where the
   // honest evidence is checked.
   const artifacts = run("guard-closure-callback");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const fn = must(claims.functions.find(f => f.name === "allPresent"), "allPresent's claims");
   const at = source.indexOf("(x): x is string");
@@ -2799,7 +2815,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // each refused where evidence is produced and where the honest evidence is
   // checked.
   const artifacts = run("filter-guard-callback");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf("(d): d is Declaration => d.kind === \"declaration\")");
   assert.ok(at >= 0, "the guard closure of `declarations`");
   type ClosureArrow = Extract<SourceClaims["types"][number][number], { arrs: unknown }>["arrs"]["arrows"][number];
@@ -2844,7 +2860,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   assert.equal(searched.status, "exhausted", JSON.stringify(searched));
   const artifacts = run("declaration-preserving-callback");
   const checking = forced(verifierCall(verifier, ["--subtype-rounds", "1", "--check-source-claims",
-    join(artifacts, "fragment.json"), join(artifacts, "claims.json"), join(artifacts, "source.ts"),
+    join(artifacts, "fragment.json"), join(artifacts, "claims.json"), sourceKey(artifacts),
     join(artifacts, "evidence.json")]));
   assert.equal(checking.status, 1, checking.stdout + checking.stderr);
   const failure = readDiagnostic(checking.stdout + checking.stderr);
@@ -2879,7 +2895,7 @@ for (const [file, marker, arity, accepted, footprint, consumed] of [
   // effect: its call claimed at any narrower footprint, with the callback
   // through it, is refused.
   const artifacts = run("invalid-preserving-callback-value-import");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   for (const footprint of narrowerFootprints) {
     const claims = readClaims(artifacts);
     const expressions = claims.functions.flatMap(f => f.expressions);
@@ -2934,7 +2950,7 @@ const bypassed = (artifacts: string, name: string, at: [number, number], change:
 const weakenedOperand = (file: string, name: string, operation: string, operand: string): void => {
   const artifacts = run(file);
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const op = source.indexOf(operation);
   assert.ok(op >= 0, `${file}: ${operation}`);
   const start = op + operation.indexOf(operand);
@@ -2969,7 +2985,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // its body exceeds, is refused in search and in checking the honest
   // evidence, within the closure.
   const artifacts = run("recursive-constants");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   for (const [name, label] of [["depth", "result"], ["writes", "footprint"]] as const) {
     const claims = readClaims(artifacts);
     const start = source.indexOf("const visit = ", source.indexOf(`function ${name}(`)) + "const visit = ".length;
@@ -3026,7 +3042,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     // on the host `Node`, the claims and evidence so made refused against the
     // honest document, whose shape omits it.
     const dot = check(example("invalid-host-fixture-jsdoc-dot"), project);
-    const read = readFileSync(join(dot.artifacts, "source.ts"), "utf8").indexOf("n.jsDoc");
+    const read = readFileSync(sourceKey(dot.artifacts), "utf8").indexOf("n.jsDoc");
     bypassed(dot.artifacts, "forged-host-jsdoc", [read, read + "n.jsDoc".length], fragment => {
       const definition = must(fragment.declarations?.definitions.find(d => d.declaration.name === "Node"), "the host Node");
       assert(definition.expression?.k === "object");
@@ -3084,7 +3100,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // "b" is refused, the edge's field slice keeping only the "a" arm.
   const artifacts = run("readonly-view-narrowing");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const measure = must(claims.functions.find((f) => f.name === "measure"), "measure's claims");
   const at = source.indexOf("o.x");
   const read = must(measure.expressions.find((e) => e.pos[0] === at && e.pos[1] === at + 1), "the read of o on the true edge");
@@ -3110,7 +3126,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   const str = rowOf(claims, "str");
   const tru = rowOf(claims, { boolLit: { value: true } });
   for (const entry of guard.entries) for (const b of entry.bindings) if (b.name === x.name) b.type = [str];
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   // The answers' literals at the first two code units of the `return`
   // (`booleanReturn`) keep their claims.
   const answer = (e: { pos: [number, number] }): boolean =>
@@ -3139,7 +3155,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   writeFileSync(ast, JSON.stringify(fragment));
   const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-unpromised-guard", ast);
   assert.equal(searched.status, 1, searched.stdout + searched.stderr);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const call = source.indexOf("isPresence(v)");
   assert.match(searched.stdout + searched.stderr,
     new RegExp(`source expression obligation at \\[${call},${call + "isPresence".length}\\): evidence search failed`));
@@ -3153,7 +3169,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // and its body's claims for that signature, the closure is refused.
   const artifacts = run("type-guards");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf("(v: unknown): v is number =>");
   const init = must(claims.init, "the module's claims");
   const arrow = must(init.arrows?.find((a) => a.pos[0] === at), "isNumber's arrow claims");
@@ -3177,7 +3193,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // where it holds of every argument, the closure is refused.
   const artifacts = run("type-guards");
   const claims = readClaims(artifacts);
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const at = source.indexOf("(v: unknown): v is number =>");
   const init = must(claims.init, "the module's claims");
   const arrow = must(init.arrows?.find((a) => a.pos[0] === at), "isNumber's arrow claims");
@@ -3246,7 +3262,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // excluded, and its `parent` then at `Node`, bypass the producer and are
   // refused by the search.
   const artifacts = run("invalid-compiler-api-residual-parent");
-  const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const text = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const expressions = must(claims.functions[0], "up's claims").expressions;
   const at = (start: number, length: number) =>
@@ -3346,7 +3362,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     [...detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= position && position < Number(m[2]));
   for (const [name, file, function_, forge] of forgeries) {
     const artifacts = run(file);
-    const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const text = readFileSync(sourceKey(artifacts), "utf8");
     const claims = readClaims(artifacts);
     shapes = claims;
     const unit: Unit = function_ === "%init%" ? must(claims.init, "the initialization claims")
@@ -3387,7 +3403,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   ];
   for (const [name, file, function_, call, forge] of forgeries) {
     const artifacts = run(file);
-    const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const text = readFileSync(sourceKey(artifacts), "utf8");
     const index = readClaims(artifacts).functions.findIndex((f) => f.name === function_);
     const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
     assert.ok(isObject(evidence) && isObject(evidence.main) && Array.isArray(evidence.main.functions), "the case's evidence");
@@ -3428,7 +3444,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   ];
   for (const [file, text] of calls) {
     const artifacts = run(file);
-    const start = readFileSync(join(artifacts, "source.ts"), "utf8").indexOf(text);
+    const start = readFileSync(sourceKey(artifacts), "utf8").indexOf(text);
     const document: unknown = JSON.parse(readFileSync(join(artifacts, "fragment.json"), "utf8"));
     const found: Record<string, unknown>[] = [];
     const visit = (v: unknown): void => {
@@ -3504,7 +3520,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // writable record its alias is bound to are refused by the search at that
   // read: the enum object's type is its declaration's, whatever is claimed.
   const artifacts = run("invalid-compiler-api-enum-field-write");
-  const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const text = readFileSync(sourceKey(artifacts), "utf8");
   const claims = readClaims(artifacts);
   const expressions = must(claims.functions[0], "rewrite's claims").expressions;
   const at = (start: number, length: number) =>
@@ -3521,7 +3537,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // at `number`, which it meets, leaves the read at an arbitrary number:
   // refused, the object stating a reverse key at its values alone.
   const artifacts = run("enum-reverse-keys");
-  const text = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const text = readFileSync(sourceKey(artifacts), "utf8");
   const read = text.indexOf("Open[k]");
   {
     const claims = readClaims(artifacts);
@@ -3537,7 +3553,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // same source reading a constant declared with a reverse key, `Grede`,
   // stated of the ambient enum `Grade`'s read, are refused at that read.
   const refused = run("invalid-ambient-enum-reverse");
-  const source = readFileSync(join(refused, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(refused), "utf8");
   const dir = runDirectory("tscert-ambient-reverse-");
   writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: "es2022" },
     include: ["*.ts"] }));
@@ -3545,7 +3561,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   writeFileSync(shadowed, source.replace("return Grade[0]", "return Grede[0]"));
   const kept = check(shadowed, tsconfigOf(dir));
   assert.equal(kept.status, "verified", JSON.stringify(kept));
-  const claims = { ...readClaims(kept.artifacts), file: join(refused, "source.ts"),
+  const claims = { ...readClaims(kept.artifacts), file: sourceKey(refused),
     sourceSha256: createHash("sha256").update(source).digest("hex") };
   const at = source.indexOf("Grade[0]");
   refusedAt(refused, writeClaims(refused, "forged-ambient-enum-reverse", claims),
@@ -3605,10 +3621,10 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const identities = (dir: string): string[] => must(readFragmentFile(join(dir, "fragment.json")).declarations, "the declarations")
       .definitions.map((d) => JSON.stringify(d.declaration));
     assert.deepEqual(identities(artifacts), identities(plain), `${name}: both documents name the same definitions in order`);
-    const at = readFileSync(join(artifacts, "source.ts"), "utf8").indexOf(read);
+    const at = readFileSync(sourceKey(artifacts), "utf8").indexOf(read);
     // Accepted with the plain document, refused with the corrected one: by
     // the search at the read, and by the checker at the call.
-    const accepted = verifierOn(join(plain, "fragment.json"), join(plain, "claims.json"), join(plain, "source.ts"), join(plain, "evidence.json"));
+    const accepted = verifierOn(join(plain, "fragment.json"), join(plain, "claims.json"), sourceKey(plain), join(plain, "evidence.json"));
     assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
     const fragment = readFragmentFile(join(artifacts, "fragment.json"));
     const forged = join(artifacts, "forged-corrected.json");
@@ -3618,7 +3634,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     const searched = produceWith(artifacts, forged, "forged-corrected");
     assert.ok(searched.status === 1 && located(searched.stdout + searched.stderr, at),
       `${name} at ${kind}: the search refuses at ${read}: ${searched.stdout + searched.stderr}`);
-    const checked = verifierOn(join(artifacts, "fragment.json"), forged, join(artifacts, "source.ts"), join(plain, "evidence.json"));
+    const checked = verifierOn(join(artifacts, "fragment.json"), forged, sourceKey(artifacts), join(plain, "evidence.json"));
     assert.ok(checked.status === 1 && located(checked.stdout + checked.stderr, at),
       `${name} at ${kind}: the checker refuses at ${read}: ${checked.stdout + checked.stderr}`);
   }
@@ -3905,7 +3921,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     assert.ok(searched.status === 1 && located(searched.stdout + searched.stderr, at),
       `${slug}: the search refuses at the read: ${searched.stdout + searched.stderr}`);
     const checked = forced(verifierCall(verifier, ["--check-source-claims", join(corrected.artifacts, "fragment.json"), forged,
-      join(corrected.artifacts, "source.ts"), join(plain.artifacts, "evidence.json")]), 60_000);
+      sourceKey(corrected.artifacts), join(plain.artifacts, "evidence.json")]), 60_000);
     // The checker names the read, or refuses the evidence as a whole where
     // the corrected document's rows leave it justifying no claim.
     assert.ok(checked.status === 1 && (located(checked.stdout + checked.stderr, at) ||
@@ -4089,7 +4105,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // mutation executable searches their complete evidence and checks it with
   // every selected bypass necessary: coverage, links, or cell knowledge.
   const artifacts = run("path-witness-controls");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const honest = readClaims(artifacts);
   const before = must(honest.functions.find(f => f.name === "before"), "witness before");
   const refined = must(before.entries.find(e => source.startsWith("return 1;", e.start)), "refined entry");
@@ -4183,10 +4199,10 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // receiver or another field is refused by heap knowledge. Each forged
   // document is accepted with exactly the check it isolates disabled.
   const artifacts = run("path-chain-controls");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const honest = readClaims(artifacts);
   const accepted = forced(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"), join(artifacts, "claims.json"),
-    join(artifacts, "source.ts"), join(artifacts, "evidence.json")]));
+    sourceKey(artifacts), join(artifacts, "evidence.json")]));
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
   const chain = (path: readonly string[]): boolean => path.length === 2 && path[0] === "mid" && path[1] === "leaf";
   const before = must(honest.functions.find(f => f.name === "before"), "chain before");
@@ -4274,7 +4290,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   // honest claims and a claim keeping the covered arm beside the computed
   // name, are accepted.
   const artifacts = run("compiler-api-guard-false-sets");
-  const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
   const honest = readClaims(artifacts);
   const fragment = readFragmentFile(join(artifacts, "fragment.json"));
   const names = must(fragment.declarations, "the declarations").definitions.map(d => d.declaration.name);
@@ -4408,7 +4424,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   };
   const honest = forged("stable-link-honest", s => [...s]);
   const accepted = forced(verifierCall(verifier, ["--check-source-claims", honest, join(artifacts, "claims.json"),
-    join(artifacts, "source.ts"), join(artifacts, "evidence.json")]));
+    sourceKey(artifacts), join(artifacts, "evidence.json")]));
   assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
   const unstable = forged("forged-stable-link", s => s.filter(k => k !== "name"));
   const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-stable-link", unstable);
@@ -4431,7 +4447,7 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
   for (const kind of ["mixed", "record", "let", "catch"] as const) {
     const artifacts = run(`invalid-compiler-api-stable-${kind === "let" ? "let-cell" : kind}`);
     const fragment = readFragmentFile(join(artifacts, "fragment.json"));
-    const source = readFileSync(join(artifacts, "source.ts"), "utf8");
+    const source = readFileSync(sourceKey(artifacts), "utf8");
     const body = must(fragment.functions[0], "the function").body;
     // Select the catch from the parsed tree, never from a keyword in a comment.
     const caught = body.find(s => s.k === "try");
@@ -4517,4 +4533,51 @@ const weakenedOperand = (file: string, name: string, operation: string, operand:
     }
   }
   process.stdout.write("stable-link negatives: honest pre-test claims and evidence; mixed, record and let isolate the call, catch isolates the incoming handler edge at [405,424)\n");
+}
+
+{
+  // Replay: a cold run in a fresh store and a warm run in another run root
+  // agree on their outcome, documents and logs; the warm run replays every
+  // replayed stage (module runs and explanations included) and executes the
+  // parse and the check. A changed source executes again.
+  const store = runDirectory("tscert-replay-store-");
+  const runAt = (source: string, project: string | null): { outcome: Outcome; records: AttemptRecord[] } => {
+    const root = runDirectory("tscert-replay-root-");
+    const ran = spawnSync(process.execPath, [join(here, "verify-source.mts"), source,
+      ...(project ? ["--project", project] : [])],
+      { encoding: "utf8", timeout: 240_000, env: { ...process.env, TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: root } });
+    const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+    return { outcome, records: readInvocationLog(join(outcome.artifacts, invocationLog)) };
+  };
+  const documents = ["fragment.json", "flow.json", "claims.json", "evidence.json", "parse.log", "flow.log",
+    "proposal.log", "search.log", "check.log", "typescript-diagnostics.json"];
+  const contents = (artifacts: string): Map<string, string> => new Map(documents.flatMap((name): [string, string][] =>
+    present(join(artifacts, name)) ? [[name, readFileSync(join(artifacts, name), "utf8")]] : []));
+  const replayed = new Set(["lower", "propose", "assemble", "search", "explain"]);
+  const runs: [string, string | null][] = [["certified-nested-value-import", "pipeline/imports-project"],
+    ["invalid-closure-contextual-result", null]];
+  for (const [name, project] of runs) {
+    const source = join(here, "examples", `${name}.ts`);
+    const projectPath = project ? resolve(here, "..", project) : null;
+    const cold = runAt(source, projectPath), warm = runAt(source, projectPath);
+    const { artifacts: coldArtifacts, ...coldOutcome } = cold.outcome;
+    const { artifacts: warmArtifacts, ...warmOutcome } = warm.outcome;
+    assert.notEqual(coldArtifacts, warmArtifacts);
+    assert.deepEqual(warmOutcome, coldOutcome, `${name}: the same outcome`);
+    assert.deepEqual(contents(warmArtifacts), contents(coldArtifacts), `${name}: the same documents and logs`);
+    assert.deepEqual(warm.records.map((r) => r.stage), cold.records.map((r) => r.stage), `${name}: the same stages`);
+    for (const r of cold.records) assert.ok(ranStage(r), `${name}: cold ${r.stage} executed`);
+    for (const r of warm.records)
+      assert.equal(r.execution, replayed.has(r.stage) ? "replayed" : "executed", `${name}: warm ${r.stage}`);
+    assert.ok(warm.records.filter((r) => r.stage === "lower").length > (project ? 1 : 0), `${name}: module runs replayed`);
+    assert.ok(project !== null || warm.records.some((r) => r.stage === "explain"), `${name}: its explanation replayed`);
+  }
+  const changed = join(runDirectory("tscert-replay-changed-"), "changed.ts");
+  writeFileSync(changed, readFileSync(join(here, "examples", "values.ts"), "utf8") + "\n// changed\n");
+  const before = runAt(join(here, "examples", "values.ts"), null);
+  const after = runAt(changed, null);
+  assert.equal(after.outcome.status, before.outcome.status);
+  for (const r of after.records) assert.ok(ranStage(r), `a changed source: ${r.stage} executed`);
+  process.stdout.write("replay: cold and warm runs in other run roots agree on outcomes, documents and logs; the warm run " +
+    "replays lowering, proposal, assembly, search and explanations, modules included; a changed source executes\n");
 }

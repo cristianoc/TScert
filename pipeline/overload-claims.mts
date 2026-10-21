@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { forced, verifierCall } from "./stages.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";
-import { readClaimsFile } from "./verify-source.mts";
+import { readClaimsFile, sourceKey } from "./verify-source.mts";
 
 /** Per-signature claims cross the same independent boundary as ordinary claims. */
 export function checkOverloads(verifier: string, artifacts: string): void {
@@ -98,7 +98,7 @@ export function checkOverloads(verifier: string, artifacts: string): void {
           mode,
           join(artifacts, "fragment.json"),
           file,
-          join(artifacts, "source.ts"),
+          sourceKey(artifacts),
           join(artifacts, "evidence.json"),
           ...(mode === "--produce-source-claims" ? ["12"] : []),
         ]));
