@@ -524,9 +524,13 @@ controls use it for the operation they test. Their baseline artifacts may
 come from the store: the controls of `pipeline/test.mts` run after its cases,
 in a pool of processes, and replay every stage but the one each tests. The
 mutation verifier is a test build the store keeps under the digest of every
-input its build reads. Mutation selections, failure-injection settings and
-host-family overrides remain explicit invocation inputs. Store tests cover
-dependency invalidation, concurrent publication, interrupted writers,
+input its supported build recipe reads: generated C, objects, library-search
+candidates (including absent candidates), the include and compiler-resource
+trees, compiler and linker contents and dynamic dependencies, arguments and
+an explicit environment. Unrecognized link inputs are refused. Mutation
+selections, failure-injection settings and host-family overrides remain
+explicit invocation inputs. Store tests cover dependency invalidation,
+concurrent publication, interrupted writers,
 timeout/success races and writable artifact isolation.
 Controls assert that the tested operation actually executed, including every
 mutation variant and injected failure; forced executions remain subject to
@@ -548,11 +552,14 @@ measurement.
 `TSCERT_STAGE_STORE` selects another directory; `off` forces execution.
 Beside entries it keeps values a key's digest determines: the load-command
 listing of an executable or library (`otool`), by the file's digest and the
-system's build, read when a process identifies its runtime's linked
-libraries; and test builds. `make clean-store` removes finished entries,
-these values, timeout observations and abandoned publication directories on
-this host. It retains immutable, content-addressed
-source locations, validated at each use, so active parses keep their inputs.
+resolved developer tool and its transitive dynamic dependencies (system
+libraries by the OS build), read when a process identifies its runtime's
+linked libraries; and test builds. Tool identification uses fresh listings
+from the resolved tool; an unidentified tool's listings execute without reuse.
+`make clean-store` removes finished entries, these values, timeout
+observations and abandoned publication directories on this host. It retains
+immutable, content-addressed source locations, validated at each use, so
+active parses keep their inputs.
 Eviction is approximate and affects reuse only; readers treat concurrent
 removal as a miss.
 

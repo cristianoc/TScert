@@ -261,29 +261,38 @@ export function linkedLibraries(executable: string): Canonical | string {
   return found;
 }
 
-/** `otool` of a file (`digest` its content's), memoized by the file's
- * content and the system's build, which identifies `/usr/bin/otool`: what a
- * listing reads is the file's load commands, so a changed file is listed
- * again; the names it lists are resolved, and the libraries they name
- * digested, at every use. A successful listing is kept in the store's memo
- * too, for the next process; its first line, the file's path as named, is
- * never read. */
+/** Resolve the developer-tool shim before memoizing listings. Bootstrap the
+ * tool's own dependency identity with fresh listings from that same tool. */
+let listingTool: string | undefined;
+let listingIdentity: Canonical | undefined;
+let identifyingListingTool: boolean = false;
 const listings = new Map<string, { status: number | null; stdout: string; stderr: string }>();
 function otool(flag: "-L" | "-l", file: string, digest: string = fileDigest(realpathSync(file))):
     { status: number | null; stdout: string; stderr: string } {
-  const key = `${flag}:${digest}`;
+  if (listingTool === undefined) {
+    const selected = spawnSync("/usr/bin/xcrun", ["--find", "otool"], { encoding: "utf8", env: {} });
+    listingTool = selected.status === 0 ? selected.stdout.trim() : "/usr/bin/otool";
+    identifyingListingTool = true;
+    try {
+      const libraries = linkedLibraries(listingTool);
+      if (selected.status === 0 && typeof libraries !== "string")
+        listingIdentity = [realpathSync(listingTool), fileDigest(realpathSync(listingTool)), libraries, osBuild()];
+    } finally {
+      identifyingListingTool = false;
+    }
+  }
+  const fresh = (): { status: number | null; stdout: string; stderr: string } => {
+    const listed = spawnSync(listingTool ?? "/usr/bin/otool", [flag, file], { encoding: "utf8", env: {} });
+    return { status: listed.status, stdout: listed.stdout ?? "", stderr: listed.stderr ?? String(listed.error ?? "") };
+  };
+  if (identifyingListingTool || listingIdentity === undefined) return fresh();
+  const key = sha256(canonical(["otool", listingIdentity, flag, digest]));
   const held = listings.get(key);
   if (held) return held;
   const store = currentStore();
-  const memoKey = sha256(canonical(["otool", osBuild(), flag, digest]));
-  const stored = store?.memo("otool", memoKey) ?? null;
-  let result: { status: number | null; stdout: string; stderr: string };
-  if (stored !== null) result = { status: 0, stdout: stored, stderr: "" };
-  else {
-    const listed = spawnSync("/usr/bin/otool", [flag, file], { encoding: "utf8", env: {} });
-    result = { status: listed.status, stdout: listed.stdout, stderr: listed.stderr };
-    if (result.status === 0 && osBuild() !== null) store?.publishMemo("otool", memoKey, result.stdout);
-  }
+  const stored = store?.memo("otool", key) ?? null;
+  const result = stored === null ? fresh() : { status: 0, stdout: stored, stderr: "" };
+  if (stored === null && result.status === 0) store?.publishMemo("otool", key, result.stdout);
   listings.set(key, result);
   return result;
 }

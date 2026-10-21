@@ -1,11 +1,11 @@
 // Test-only native mutations. All compiler outputs live in the run directory;
 // the verifier, Lean sources and Lake cache are read-only inputs.
 import assert from "node:assert/strict";
-import { chmodSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { currentStore, forced, verifierCall } from "./stages.mts";
+import { currentStore, forced, linkedLibraries, verifierCall } from "./stages.mts";
 import { sourceKey } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 
@@ -13,8 +13,8 @@ const lean = resolve(import.meta.dirname, "../lean");
 const prefix = "lp_verification_Verification_";
 let executable: string | undefined;
 
-function command(program: string, args: string[]): string {
-  const result = spawnSync(program, args, { cwd: lean, encoding: "utf8", timeout: 180_000 });
+function command(program: string, args: string[], env?: Record<string, string>): string {
+  const result = spawnSync(program, args, { cwd: lean, env, encoding: "utf8", timeout: 180_000 });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return result.stdout.trim();
@@ -50,18 +50,67 @@ static lean_object *some(lean_object *a) {
 }
 `;
 
-/** Build a separate executable from the current build's C, with opt-in mutations.
- * No mutation flag is compiled into the production verifier. The modules
- * compile in parallel; the executable is kept in the stage store under the
- * digest of everything the build reads (the toolchain's versioned
- * directory, each mutated module's text, the compiler's arguments, the link's
- * response text and every file it names), and a later run with the same
- * inputs copies it from there. */
+/** Digest the bounded native build inputs, following symlinks by content. */
+function buildFiles(paths: string[]): [string, string][] {
+  return paths.sort().flatMap((path) => {
+    if (!existsSync(path)) return [[path, "absent"]];
+    if (statSync(path).isDirectory())
+      return buildFiles(readdirSync(path).map((name) => join(path, name)));
+    return [[path, createHash("sha256").update(readFileSync(path)).digest("hex")]];
+  });
+}
+
+/** The supported Lake link recipe has explicit objects, search directories
+ * and libraries. Refuse other flags so new build inputs require an audit. */
+function linkInputs(response: string, toolchain: string): string[] {
+  const tokens = response.trim().split("\n").map((line) => {
+    const value: unknown = JSON.parse(line);
+    assert.ok(typeof value === "string");
+    return value;
+  });
+  const paths: string[] = [];
+  const directories: string[] = [];
+  const libraries = ["System"];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === "-L") {
+      const directory = tokens[++i];
+      assert.ok(directory);
+      directories.push(resolve(lean, directory));
+    } else if (token === "--sysroot") {
+      assert.equal(tokens[++i], toolchain);
+    } else if (/^-l[A-Za-z0-9_+]+$/.test(token)) {
+      libraries.push(token.slice(2));
+    } else if (token === "-fuse-ld=lld" || token === "-Wl,-dead_strip") {
+      continue;
+    } else {
+      assert.ok(!token.startsWith("-") && /\.(c|o|o\.export)$/.test(token), `unsupported mutation link input: ${token}`);
+      paths.push(resolve(lean, token));
+    }
+  }
+  for (const library of libraries) {
+    // Bind every candidate, including absence, so changes in search order
+    // and newly introduced higher-priority files are covered.
+    const candidates = directories.flatMap((directory) =>
+      ["tbd", "dylib", "a"].map((suffix) => join(directory, `lib${library}.${suffix}`)));
+    assert.ok(candidates.some((path) => existsSync(path)), `unresolved library: ${library}`);
+    paths.push(...candidates);
+  }
+  return paths;
+}
+
+/** Build an isolated executable with opt-in mutations. The store key covers
+ * the supported link recipe, its library candidates, headers, compiler and
+ * linker with their dynamic dependencies, and the explicit build environment. */
 export function mutationVerifier(): string {
   if (executable) return executable;
   const dir = runDirectory("evidence-mutations-");
   const toolchain = command("lean", ["--print-prefix"]);
   const clang = join(toolchain, "bin", "clang");
+  const linker = join(toolchain, "bin", "ld64.lld");
+  const env = { PATH: "/usr/bin:/bin", TMPDIR: dir, LC_ALL: "C", SOURCE_DATE_EPOCH: "0" };
+  const nativeArgs = ["--no-default-config", "-nostdinc", "-I", join(toolchain, "include"),
+    "-isystem", join(toolchain, "include/clang")];
   const compiles: { c: string; text: string; args: string[] }[] = [];
   let response = readFileSync(join(lean, ".lake/build/bin/verifier.rsp"), "utf8");
   const modules = ["Programs/PointClaims", "Programs/BranchRefinement", "Semantics/HeapLinks",
@@ -116,25 +165,25 @@ export function mutationVerifier(): string {
     const c = join(dir, module.replaceAll("/", "-") + ".c");
     const o = c + ".o";
     compiles.push({ c, text: text.replace("#include <lean/lean.h>", "#include <lean/lean.h>\n" + header),
-      args: ["-c", c, "-o", o, "-I", join(toolchain, "include"), "--sysroot", toolchain,
-        "-nostdinc", "-isystem", join(toolchain, "include/clang"), "-O1", "-DNDEBUG", "-DLEAN_EXPORTING"] });
+      args: [...nativeArgs, "-c", c, "-o", o, "--sysroot", toolchain, "-O1", "-DNDEBUG", "-DLEAN_EXPORTING"] });
     assert.ok(response.includes(JSON.stringify(original + ".o.export")));
     response = response.replace(JSON.stringify(original + ".o.export"), JSON.stringify(o));
   }
-  // Every file the link names beside the mutated objects, by its digest:
-  // the build's objects and its runtime initialization (relative to `lean`).
-  const named = [...response.matchAll(/"([^"]+)"/g)].map((m) => m[1])
-    .filter((p) => !compiles.some((c) => p === c.c + ".o"))
-    .flatMap((p) => {
-      const path = resolve(lean, p);
-      try {
-        return statSync(path).isFile() ? [[p, createHash("sha256").update(readFileSync(path)).digest("hex")]] : [];
-      } catch {
-        return [];
-      }
-    });
-  // The run directory's path, which the commands name, is not an input.
-  const key = createHash("sha256").update(JSON.stringify({ toolchain, header,
+  const inputs = linkInputs(response, toolchain).filter((path) => !compiles.some((c) => path === c.c + ".o"));
+  // Clang's resource tree includes its builtin runtime archive. Standard
+  // search paths and default libraries are disabled in the actual link.
+  const resource = command(clang, ["--no-default-config", "-print-resource-dir"], env);
+  const runtime = join(resource, "lib/darwin/libclang_rt.osx.a");
+  const linkArgs = [...nativeArgs, "--ld-path=" + linker, "-nostdlib", "-Wl,-Z", "-lSystem", runtime];
+  const dependencies = [clang, linker, "/bin/sh"].map((program) => {
+    const libraries = linkedLibraries(program);
+    assert.ok(typeof libraries !== "string", `${program}: ${String(libraries)}`);
+    return [realpathSync(program), libraries];
+  });
+  const named = buildFiles([...inputs, clang, linker, join(toolchain, "include"), resource]);
+  // Temporary output paths have no semantic role in these commands.
+  const key = createHash("sha256").update(JSON.stringify({ toolchain, header, dependencies,
+    env: { ...env, TMPDIR: "<dir>" }, linkArgs,
     compiles: compiles.map((c) => [c.text, c.args.map((a) => a.replaceAll(dir, "<dir>"))]),
     response: response.replaceAll(dir, "<dir>"), named })).digest("hex");
   executable = join(dir, "mutation-verifier");
@@ -148,7 +197,7 @@ export function mutationVerifier(): string {
   const quote = (text: string): string => `'${text.replace(/'/g, `'\\''`)}'`;
   const script = compiles.map(({ c, args }) => `${[clang, ...args].map(quote).join(" ")} > ${quote(c + ".log")} 2>&1 & p="$p $!"`)
     .join("\n") + "\ns=0\nfor q in $p; do wait $q || s=1; done\nexit $s\n";
-  const compiled = spawnSync("/bin/sh", ["-c", script], { cwd: lean, encoding: "utf8", timeout: 180_000 });
+  const compiled = spawnSync("/bin/sh", ["-c", script], { cwd: lean, env, encoding: "utf8", timeout: 180_000 });
   assert.ifError(compiled.error);
   assert.equal(compiled.status, 0, compiles.map(({ c }) => {
     try {
@@ -159,7 +208,7 @@ export function mutationVerifier(): string {
   }).join(""));
   const rsp = join(dir, "mutation.rsp");
   writeFileSync(rsp, response);
-  command(clang, ["-o", executable, "@" + rsp]);
+  command(clang, ["-o", executable, "@" + rsp, ...linkArgs], env);
   store?.publishBuilt("mutation-verifier", key, "mutation-verifier", executable);
   return executable;
 }

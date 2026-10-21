@@ -482,14 +482,16 @@ if (platform() === "darwin") {
   assert.notEqual(canonical(relinked), canonical(changed), "relink follows current dependency closure");
 }
 {
-  // A copy of the pipeline's modules beside the front end they import.
-  const copied = join(dir, "loaded-copy", "pipeline");
-  mkdirSync(copied, { recursive: true });
-  symlinkSync(resolve(import.meta.dirname, "../tools"), join(dir, "loaded-copy", "tools"));
-  for (const name of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts"])
-    copyFileSync(resolve(import.meta.dirname, "../pipeline", name), join(copied, name));
-  const driver = join(copied, "test.mts");
-  writeFileSync(driver, String.raw`
+  // Each identity control owns the modules it edits.
+  const drivers = ["claims-assembly.mts", "stages.mts"].map((name) => {
+    const root = join(dir, "loaded-copy-" + name);
+    const copied = join(root, "pipeline");
+    mkdirSync(copied, { recursive: true });
+    symlinkSync(resolve(import.meta.dirname, "../tools"), join(root, "tools"));
+    for (const module of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts"])
+      copyFileSync(resolve(import.meta.dirname, "../pipeline", module), join(copied, module));
+    const driver = join(copied, "test.mts");
+    writeFileSync(driver, String.raw`
 import assert from "node:assert/strict";
 import { appendFileSync } from "node:fs";
 import { assembleClaims, assemblyImplementation } from "./claims-assembly.mts";
@@ -498,7 +500,8 @@ const run = (): ReturnType<typeof invokeInProcess<string>> => invokeInProcess({
   stage: "assemble", implementation: assemblyImplementation, inputs: [], codec: textCodec,
   run: (): string => assembleClaims('{"modules":[]}', [])
 }, { force: false, recorder: null });
-run();
+assert.notEqual(run().record.key, null);
+assert.equal(run().record.execution, "replayed");
 appendFileSync(new URL(process.argv[2], import.meta.url), "\n// edited during worker lifetime\n");
 const result = run();
 assert.equal(result.value, '{"modules":[]}');
@@ -506,13 +509,15 @@ assert.equal(result.record.execution, "executed");
 assert.equal(result.record.key, null);
 assert.match(result.record.ineligible ?? "", /loaded .*modules differ from disk/);
 `);
+    return { name, driver };
+  });
   const program = script("runtime.sh", '/bin/cat "$2"');
   const input = file("runtime.json", "runtime"), preload = file("preload.mjs", "");
   const env = { ...process.env, TSCERT_STAGE_STORE: join(dir, "loaded-copy-store") };
   const options = [["--import", preload], ["--require", preload], ["--experimental-loader", preload], ["--experimental_loader", preload], ["-r", preload]];
   sections.push((async (): Promise<void> => {
     const children = await Promise.all([
-      ...["claims-assembly.mts", "stages.mts"].map((name) => new Promise<{ status: number | null; stderr: string }>((done, fail) => {
+      ...drivers.map(({ name, driver }) => new Promise<{ status: number | null; stderr: string }>((done, fail) => {
         const p = spawn(process.execPath, [driver, "./" + name], { env });
         let stderr = "";
         p.stderr.setEncoding("utf8");
