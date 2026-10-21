@@ -50,9 +50,11 @@ export type OverlayEntry = {
   unbound?: string[];
   /** The declared `this` result is the receiver. */
   resultIsReceiver?: boolean;
-  /** The result stated as this standard library interface at `T`, which the
-   * declared result implies: a weaker contract than the declaration's. */
-  resultAs?: "Iterator";
+  /** The result stated as this standard library interface at the declared
+   * result's one argument, which the declared result implies: a weaker
+   * contract than the declaration's (`ArrayIterator<T>` read as `Iterator<T>`
+   * or, keeping its `[Symbol.iterator]`, as `IterableIterator<T>`). */
+  resultAs?: "Iterator" | "IterableIterator";
   /** A reviewed restriction on a quantified parameter. Required when native
    * coercion could otherwise call an arbitrary client method. */
   bounds?: Readonly<Record<string, TypeTerm>>;
@@ -263,8 +265,22 @@ export const overlay: readonly OverlayEntry[] = [
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.
   { name: "[Symbol.iterator]", from: "ReadonlyArray",
     signature: "[Symbol.iterator](): ArrayIterator<T>;", resultAs: "Iterator", effect: emptyEffect },
-  // Not listed: `concat` names `ConcatArray`, and `values`, `keys` and
-  // `entries` are not needed yet.
+  // `values` is the same function as `[Symbol.iterator]`; `keys` and
+  // `entries` are iterators of the same kind (CreateArrayIterator), each step
+  // reading the receiver's current length (its own data property) and, for
+  // `entries`, its element at the index as `[Symbol.iterator]`'s does,
+  // yielding the index or a fresh pair (CreateArrayFromList). Each call
+  // allocates a fresh iterator and runs no code. The result is read as an
+  // `IterableIterator`: the iterator is its own (`%IteratorPrototype%`'s
+  // `[Symbol.iterator]` returns it), and a loop steps it by the iterator
+  // protocol, its chain holding no `return` (DESIGN.md, "Trust surface").
+  { name: "values", from: "ReadonlyArray", signature: "values(): ArrayIterator<T>;", resultAs: "IterableIterator",
+    effect: emptyEffect },
+  { name: "keys", from: "ReadonlyArray", signature: "keys(): ArrayIterator<number>;", resultAs: "IterableIterator",
+    effect: emptyEffect },
+  { name: "entries", from: "ReadonlyArray", signature: "entries(): ArrayIterator<[number, T]>;",
+    resultAs: "IterableIterator", effect: emptyEffect },
+  // Not listed: `concat` names `ConcatArray`.
 ];
 
 
@@ -766,7 +782,7 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     libraries.set(name, parts);
     return parts;
   };
-  const interfaceOf = (name: "Iterator") => {
+  const interfaceOf = (name: "Iterator" | "IterableIterator") => {
     const parts = declared(name);
     standard(parts);
     const [first] = parts;
@@ -832,8 +848,16 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
     const receiver = proto.receiver(entry.from);
     const nameOf = (p: ts.ParameterDeclaration) => ts.isIdentifier(p.name) ? p.name.text : "";
     const parameters = member.parameters.filter(p => !entry.drop?.includes(nameOf(p)));
+    // The weaker result: the interface at the declared result's one argument
+    // (`[number, T]` of `entries(): ArrayIterator<[number, T]>`).
+    const resultArgument = (): TypeTerm => {
+      const declared = member.type;
+      const [argument, ...others] = declared && ts.isTypeReferenceNode(declared) ? declared.typeArguments ?? [] : [];
+      if (!argument || others.length) throw Error(`${entry.from}.${entry.name} has no element type to state`);
+      return typeTerm(scope, argument, member);
+    };
     const stated = entry.result ?? (entry.resultAs
-      ? library.reference(interfaceOf(entry.resultAs), [{ k: "binder", name: "T", span }], span)
+      ? library.reference(interfaceOf(entry.resultAs), [resultArgument()], span)
       : entry.resultIsReceiver ? receiver : undefined);
     const forms = entry.stated
       ? entry.stated.map(f => ({ k: "function", effect: f.effect ?? entry.effect ?? proto.effect, receiver: f.receiver ?? null,

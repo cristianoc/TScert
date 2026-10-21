@@ -819,6 +819,19 @@ export function forInStmt(this: Gate, node: ts.ForInStatement): Stmt {
   };
 }
 
+/** The destructuring of a pattern binding a `for...of`, `const p = %element`,
+ * which each iteration runs first, before the body: a `const` pattern
+ * statement's over a value another reference may hold (an array's loop
+ * reads its element in place, and a program's iterator may keep what it
+ * yields), at the entry `pos`, its read of the element at `at`. */
+export function forOfPattern(this: Gate, d: ts.VariableDeclaration, name: ts.BindingPattern, element: string,
+    pos: Span, at: Span): Stmt {
+  const gate: Gate = this;
+  const target = gate.pattern(name, new Set(), false);
+  gate.initializedBefore(d, [[target, null]]);
+  return { k: "destructure", pos, target, default_: null, init: { k: "id", pos: at, name: element } };
+}
+
 /** `for (const x of e) S` over an iterable the program defines, an object
  * with its own `[Symbol.iterator]`, as ECMA-262's ForIn/OfBodyEvaluation
  * runs it: GetIterator, then IteratorStepValue until done, the body per
@@ -830,8 +843,8 @@ export function forInStmt(this: Gate, node: ts.ForInStatement): Stmt {
  *     while (true) {
  *       const %result = %next();
  *       if (%result.done) break;
- *       const x = %result.value;
- *       closing { S } close {
+ *       const x = %result.value;      // a pattern p: const %element = %result.value;
+ *       closing { S } close {         //   closing { const p = %element; S } close …
  *         const %return = %iterator.return;
  *         if (typeof %return !== "undefined") { const %closed: object = %return.call(%iterator); }
  *       }
@@ -847,7 +860,7 @@ export function forInStmt(this: Gate, node: ts.ForInStatement): Stmt {
  * TypeError IteratorClose throws otherwise being then impossible. Each part
  * has a claim site of its own: a token of the header or a run of them. */
 export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.VariableDeclarationList,
-    name: ts.Identifier, method: boolean): Stmt {
+    name: ts.BindingName, method: boolean): Stmt {
   const gate: Gate = this;
   const s = node.getStart(gate.file);
   const p = gate.token(s + "for".length, "(", node);
@@ -864,7 +877,7 @@ export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.Vari
   if (symbol === null) gate.fail(node, "a program's iterable needs the well-known `Symbol.iterator`, which the declarations do not list");
   const getIterator: Expr = { k: "invoke", pos: [o, e1], args: [],
     callee: { k: "read", pos: [o, o + "of".length], field: { symbol }, e: gate.expr(node.expression) } };
-  const bound: Expr = { k: "bindWithReceiver", pos: [s, q + 1], args: [],
+  const nextBound: Expr = { k: "bindWithReceiver", pos: [s, q + 1], args: [],
     callee: { k: "read", pos: [p, q + 1], field: "next", e: iteratorAt() }, receiver: iteratorAt() };
   // The close's sites: the header's runs of tokens the steps do not use.
   const entries = [o, o + 1, q];
@@ -873,20 +886,34 @@ export function protocolForOf(this: Gate, node: ts.ForOfStatement, list: ts.Vari
     entry: () => entries.shift() ?? gate.fail(node, "internal: the close's entries"),
     span: () => spans.shift() ?? gate.fail(node, "internal: the close's sites"),
   }, method);
+  // A pattern binds the step's value to a name no source spells, and
+  // destructures it first in the closing region: ForIn/OfBodyEvaluation
+  // initializes the pattern after IteratorValue and before the body, and
+  // closes the iterator on its abrupt completion. The destructuring is a
+  // `const` pattern statement's over a value another reference may hold.
+  // Its entry is the keyword's fourth offset and its read of the value the
+  // run from the keyword to the pattern; in a compact head (`let[x]`) these
+  // meet the pattern's own spans, and the execution points the claims are
+  // attached to (`checkPointSites`) keep them apart.
+  const bound = ts.isIdentifier(name) ? gate.local(name) : `%element@${c}`;
+  const [d] = list.declarations;
+  if (!d) return gate.fail(node, "internal: a `for...of` head without its declaration");
+  const destructure: Stmt[] = ts.isIdentifier(name) ? []
+    : [gate.forOfPattern(d, name, bound, [c + 3, c + 4], [c, n0])];
   const step: Stmt[] = [
     { k: "const", pos: [c, c + "const".length], bindings: [{ early: false, name: result, namePos: [c, c + "const".length],
       annot: null, init: { k: "apply", pos: [s, s + "for".length], callee: id([c, e1], next), args: [] } }] },
     { k: "if", pos: [c + 1, c + 2],
       cond: { k: "read", pos: [c, c + "const".length], field: "done", e: id([p, p + 1], result) },
       then: [{ k: "break", pos: [c + 2, c + 3], label: null }], else_: null },
-    { k: "const", pos: [n0, n1], bindings: [{ early: false, name: gate.local(name), namePos: [n0, n1], annot: null,
+    { k: "const", pos: [n0, n1], bindings: [{ early: false, name: bound, namePos: [n0, n1], annot: null,
       init: { k: "read", pos: [n0, n1], field: "value", e: id([c, n1], result) } }] },
-    { k: "closing", pos: [s + 1, s + 2], close, body: gate.block(node.statement) },
+    { k: "closing", pos: [s + 1, s + 2], close, body: [...destructure, ...gate.block(node.statement)] },
   ];
   return { k: "block", pos: gate.span(node), label: null, body: [
     { k: "const", pos: [s, s + "for".length], bindings: [
       { early: false, name: iterator, namePos: [s, s + "for".length], annot: null, init: getIterator },
-      { early: false, name: next, namePos: [p, p + 1], annot: null, init: bound }] },
+      { early: false, name: next, namePos: [p, p + 1], annot: null, init: nextBound }] },
     { k: "while", pos: [p, end], cond: { k: "lit", pos: [s, p + 1], lit: { a: "booleanlit", v: "true" } },
       body: step, update: [] },
   ] };
@@ -1345,14 +1372,15 @@ export function controlStmt(this: Gate, node: Statement): Stmt {
     // pattern is a `const` pattern statement's.
     if (ts.isObjectBindingPattern(d.name) || ts.isArrayBindingPattern(d.name)) {
       const iterate = gate.iterations.get(gate.span(node.expression).join(":")) ?? iterateName;
-      if (iterate.startsWith("client"))
-        gate.fail(d, "a pattern binding a `for...of` over a program's iterable is outside the fragment");
+      if (iterate === "client-unclosable")
+        gate.fail(node.expression, UNCLOSABLE);
+      // Over a program's iterable, the protocol's steps, the pattern
+      // destructuring each value first in the closing region.
+      if (iterate === "client" || iterate === "client-method")
+        return gate.protocolForOf(node, list, d.name, iterate === "client-method");
       const c = list.getStart(gate.file);
       const element = `%element@${c}`;
-      const target = gate.pattern(d.name, new Set(), false);
-      gate.initializedBefore(d, [[target, null]]);
-      const bind: Stmt = { k: "destructure", pos: gate.span(d), target, default_: null,
-        init: { k: "id", pos: [c, c + "const".length], name: element } };
+      const bind = gate.forOfPattern(d, d.name, element, gate.span(d), [c, c + "const".length]);
       return {
         k: "forOf",
         pos: gate.span(node),

@@ -1094,6 +1094,27 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("for-of-program-iterable",
     "const log = { closed: 0 }; JSON.stringify([firstEven(new Countdowns(5, log)), log.closed])"), "[4,1]");
   assert.equal(runExample("for-of-program-iterable", "bodyThrows(new Brittle()).message"), "body");
+  // A pattern binding the loop is destructured in the closing region: a
+  // `break` after it closes once, a throwing default closes the iterator and
+  // its error leaves, the end closes nothing; each iteration's bindings are
+  // its own.
+  const items = "new Items(new Link({ name: 'ab' }, ['a', 1], new Link({ name: 'c', size: 5 }, ['b', 2], null)), { closed: 0 })";
+  const itemCloses = (call: string) =>
+    runExample("for-of-pattern-program-iterable", `const l = ${items}; const r = ${call}; JSON.stringify([r, l.log.closed])`);
+  assert.equal(itemCloses("sizes(l)"), "[7,0]");
+  assert.equal(itemCloses("firstSized(l)"), '["c",1]');
+  assert.equal(itemCloses("strict(l).message"), '["no size for ab",1]');
+  assert.equal(itemCloses("namers(l).map((f) => f()).join()"), '["ab,c",0]');
+  assert.equal(runExample("for-of-pattern-program-iterable",
+    "const p = new Pairs(new Link({ name: '' }, ['a', 1], new Link({ name: '' }, ['b', 2], null))); [indexed(['x', 'y']), spelled(['x', 'y']), total(p), keyed(p)].join('|')"),
+    "0:x 1:y |01xy|3|a=1;b=2;");
+  // A short yielded array leaves the position `undefined`; a default
+  // refilling the array the iterator holds leaves `b` `undefined` too, the
+  // array's iterator having found its end.
+  assert.equal(runExample("invalid-for-of-pattern-program-iterable", "String(second(new Rows(new Row([1], null))))"),
+    "undefined");
+  assert.equal(runExample("for-of-pattern-program-iterable-default-refused", "JSON.stringify(grown(new Shared([])))"),
+    "[0,null]");
   process.stdout.write("examples run as JavaScript: results as their outcomes say\n");
 }
 

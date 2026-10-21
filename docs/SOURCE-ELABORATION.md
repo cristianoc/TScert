@@ -1045,8 +1045,10 @@ body, as JavaScript binds it per iteration:
 ```
 
 with $`\%e`$ a name no source spells and the inner declaration a `const`
-pattern's; a loop over an iterable the program defines takes no pattern
-(`for-of-pattern-binding`, `invalid-for-of-pattern-string`).
+pattern's (`for-of-pattern-binding`, `invalid-for-of-pattern-string`); over an
+iterable the program defines, the inner declaration is the first statement
+of the protocol's closing region
+([iterator protocol](SOURCE-CONTRACTS.md#the-iterator-protocol)).
 
 A default replaces a read that is `undefined`, and only then runs. With
 $`R'`$ the read's labels told apart clause by clause (`byClause`: a label that
