@@ -3448,9 +3448,8 @@ enum object's index signature `[x: number]: string` (`string | undefined`
 under `noUncheckedIndexedAccess`). A string member has no reverse key
 (`invalid-string-enum-reverse`). Each negative but the declaration file's
 runs under Node, the ambient one over an object without the reverse
-mapping; claims bypassing the producer that state a reverse key at `number`,
-at a literal outside the values or of an ambient enum are refused at the
-read (`pipeline/test.mts`).
+mapping; claims bypassing the producer that read a reverse key at `number`
+or of an ambient enum are refused (`pipeline/test.mts`).
 
 ## Const assertions
 
