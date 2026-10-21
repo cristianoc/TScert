@@ -363,10 +363,14 @@ and takes the captured ones through the same identity check at the use
 (`capturedAt`). A reference whose captured binder is hidden is refused
 before any evaluation, including a default naming a computed alias and a
 larger computed form naming a block type: each named block type is checked
-at the captured binder identities before TypeScript evaluates the form
+at the captured binder identities, transitively through the block types it
+names, with cycles visited once. This check precedes consuming a computed
+result, including mapped keys and mapped modifiers
 (`block-type-computed-hidden-binder-refused`,
 `block-type-computed-default-hidden-binder-refused`,
-`block-type-computed-form-hidden-binder-refused`). A
+`block-type-computed-form-hidden-binder-refused`,
+`block-type-computed-indirect-hidden-binder-refused`,
+`block-type-computed-mapped-hidden-binder-refused`). A
 block declaration whose equation the readers cannot represent is refused at
 its use, as a module declaration is. One TypeScript computes
 from its parameters is evaluated at each application

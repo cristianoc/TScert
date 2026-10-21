@@ -1269,6 +1269,7 @@ export function collectDeclarations(file: string, options: {
     // A mapped type's keys as TypeScript computes them, where they are a
     // union of literals and primitives.
     const keyTypeOf = (node: TypeNode): TypeTerm | null => {
+      computedContext.captures(node);
       const type = checker.getTypeFromTypeNode(node);
       return type ? literalUnion(type, [node.getStart(node.getSourceFile()), node.end]) : null;
     };
@@ -1276,6 +1277,7 @@ export function collectDeclarations(file: string, options: {
     // with its modifiers, readonly where the mapping makes it so
     // (`checkFlags & 8`), or null where it resolves to no property.
     const mappedModifiersOf = (node: ts.MappedTypeNode): MappedMember[] | null => {
+      computedContext.captures(node);
       const type = checker.getTypeFromTypeNode(node);
       const members = type ? checker.getPropertiesOfType(type).map(p => ({ name: p.name,
         optional: (p.flags & SymbolFlags.Optional) !== 0, readonly: (p.checkFlags & 8) !== 0 })) : [];
@@ -1772,8 +1774,13 @@ export function collectDeclarations(file: string, options: {
       const groups: ts.TypeParameterDeclaration[][] = [];
       for (let at: Node | undefined = block; at; at = at.parent)
         groups.unshift(childrenOf(at, "typeParameters").filter((p): p is ts.TypeParameterDeclaration =>
-          ts.isTypeParameterDeclaration(p) && found.has(nodeKey(p)) && resolvesTo(p, block)));
+          ts.isTypeParameterDeclaration(p) && found.has(nodeKey(p))));
       const result = groups.flat();
+      // One named only through another block's type, which a nearer
+      // declaration hides at this block, has no argument here.
+      const hidden = result.find(p => !resolvesTo(p, block));
+      if (hidden) throw Error(`${idOf(declaration.getSourceFile())}#${nameOf(declaration)?.getText(declaration.getSourceFile()) ?? "a type"} ` +
+        `names a type closing over the type parameter ${hidden.name.text}, which a nearer declaration of that name hides at its block`);
       captures.set(nodeKey(declaration), result);
       return result;
     };
@@ -3184,11 +3191,21 @@ export function collectDeclarations(file: string, options: {
     }
     for (const span of options.keyTypes ?? []) {
       const node = typeNodeAt(client, span);
-      options.keyType?.(span, node ? keyTypeOf(node) : null);
+      try {
+        options.keyType?.(span, node ? keyTypeOf(node) : null);
+      } catch (error) {
+        if (error instanceof DeclarationError) throw error;
+        throw new DeclarationError(span, messageOf(error), error);
+      }
     }
     for (const span of options.mappedTypes ?? []) {
       const node = typeNodeAt(client, span);
-      options.mappedType?.(span, node && ts.isMappedTypeNode(node) ? mappedModifiersOf(node) : null);
+      try {
+        options.mappedType?.(span, node && ts.isMappedTypeNode(node) ? mappedModifiersOf(node) : null);
+      } catch (error) {
+        if (error instanceof DeclarationError) throw error;
+        throw new DeclarationError(span, messageOf(error), error);
+      }
     }
     for (const span of options.symbolNames ?? []) {
       const node = expressionAt(client, span);
