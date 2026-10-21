@@ -448,7 +448,7 @@ for (const order of [["timeout", "finished"], ["finished", "timeout"]]) {
 }
 })());
 if (platform() === "darwin") {
-  // Minimal Mach-O load commands let otool traverse a real dependency graph
+  // Minimal Mach-O load commands give a real dependency graph to traverse
   // without compiling or executing a fixture.
   const macho = (path: string, dependencies: readonly string[]): void => {
     const commands = dependencies.map((dependency) => {

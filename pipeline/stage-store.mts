@@ -11,7 +11,6 @@
 //       stdout, stderr, out/<role>
 //   <root>/timeouts/<stage>/<key>/<attempt>/observation.json
 //   <root>/observed/<stage>/<pre-key>/<key>    a reference to an observed stage's entry
-//   <root>/memo/<category>/<key>               a value determined by what its key digests
 //   <root>/builds/<category>/<key>/<name>, sha256   a test build and its digest
 //   <root>/sources/<digest>/<name>             a stable snapshot location
 //   <root>/tmp/<host>/<pid>.<attempt>/         a writer's unpublished entry
@@ -362,46 +361,6 @@ export class Store {
     }
   }
 
-  /** The text stored under `key` in `category` by `publishMemo`: a value
-   * determined by what `key` digests, validated by its own digest; null
-   * where there is none or it is not intact. */
-  memo(category: string, key: string): string | null {
-    let text: string;
-    try {
-      text = readFileSync(join(this.root, "memo", category, key), "utf8");
-    } catch (error) {
-      if (failedWith(error, "ENOENT", "ENOTDIR", "EISDIR")) return null;
-      throw error;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      return null;
-    }
-    const m = fieldsOf(parsed);
-    const value = m?.["value"], digest = m?.["sha256"];
-    return m && exactly(m, ["key", "value", "sha256"]) && m["key"] === key && typeof value === "string" &&
-      digest === sha256(value) ? value : null;
-  }
-  /** Store `value` under `key` in `category`, published by atomic rename:
-   * a reader finds the earlier value or this one, whole. */
-  publishMemo(category: string, key: string, value: string): void {
-    const building = this.temporary(`memo-${key}`);
-    try {
-      writeFileSync(join(building, "value.json"), JSON.stringify({ key, value, sha256: sha256(value) }), { mode: 0o444 });
-      const destination = join(this.root, "memo", category, key);
-      mkdirSync(dirname(destination), { recursive: true });
-      try {
-        renameSync(join(building, "value.json"), destination);
-      } catch (error) {
-        if (!failedWith(error, "EEXIST", "ENOTEMPTY", "EISDIR")) throw error;
-      }
-    } finally {
-      rmSync(building, { recursive: true, force: true });
-    }
-  }
-
   /** Copy the file `name` built for `key` in `category` to `to`, where an
    * intact one is stored (its bytes the digest stored beside it, validated
    * in the copy); false where none is. */
@@ -471,7 +430,7 @@ export class Store {
    * temporary directory whose writer has stopped: one of this host whose
    * process is gone. */
   clean(): void {
-    for (const part of ["entries", "timeouts", "observed", "memo", "builds"]) rmSync(join(this.root, part), { recursive: true, force: true });
+    for (const part of ["entries", "timeouts", "observed", "builds"]) rmSync(join(this.root, part), { recursive: true, force: true });
     const here = join(this.root, "tmp", hostname());
     let temporaries: string[];
     try {

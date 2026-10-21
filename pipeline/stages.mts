@@ -11,7 +11,7 @@
 //   node pipeline/stages.mts clean    removes entries and timeout observations
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { arch, homedir, platform } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { runDirectory } from "./run-directory.mts";
@@ -211,146 +211,111 @@ const onSystemVolume = (path: string): boolean => systemPrefixes.some((s) => pat
 
 /** The dynamic libraries an executable links, transitively: each outside
  * the system volume by its digest, each on it by the system's build; or why
- * they are not identified. */
+ * they are not identified. A file's libraries are the names its Mach-O load
+ * commands state (`loadCommands`). */
 export function linkedLibraries(executable: string): Canonical | string {
-  return identifyLibraries(executable);
-}
-type Listing = { status: number | null; stdout: string; stderr: string };
-type ListFile = (flag: "-L" | "-l", file: string, digest?: string) => Listing;
-function identifyLibraries(executable: string, files?: Map<string, string>, list: ListFile = otool): Canonical | string {
   const build = osBuild();
-  let found: Canonical | string;
-  if (platform() !== "darwin" || build === null) found = "dynamic libraries are identified on macOS only";
-  else {
-    const identified: Canonical[] = [];
-    found = identified;
-    const seen = new Set<string>();
-    // Each file to list: its real path and its digest.
-    const start = realpathSync(executable);
-    files?.set(executable, canonical([start, fileDigest(start)]));
-    for (let work = [{ real: start, digest: fileDigest(start) }], item = work.shift(); item !== undefined;
-        item = work.shift()) {
-      const next = item.real;
-      const listed = list("-L", next, item.digest);
-      if (listed.status !== 0) {
-        found = `otool -L ${next} failed: ${listed.stderr.trim().split("\n")[0] ?? ""}`;
-        break;
-      }
-      const named = listed.stdout.split("\n").slice(1).map((l) => l.trim().split(" (")[0]).filter((p) => p !== "");
-      // A name relative to the loader or its run paths is resolved as dyld
-      // resolves it: `@loader_path` by the loading file's directory,
-      // `@executable_path` by the executable's, `@rpath` by the first run
-      // path of the loader or the executable naming an existing file.
-      const paths: string[] = [];
-      for (const p of named) {
-        const resolved = p.startsWith("@") ? resolveLoaderName(p, next, executable, list) : p;
-        if (resolved === null) {
-          found = `a library dyld's rules do not resolve here: ${p} (from ${next})`;
-          break;
-        }
-        paths.push(resolved);
-      }
-      if (typeof found === "string") break;
-      for (const p of paths) {
-        if (seen.has(p)) continue;
-        seen.add(p);
-        if (onSystemVolume(p)) identified.push([p, `system ${build}`]);
-        else {
-          const real = realpathSync(p);
-          const digest = fileDigest(real);
-          if (!files?.has(p)) files?.set(p, canonical([real, digest]));
-          identified.push([p, digest]);
-          work.push({ real, digest });
-        }
+  if (platform() !== "darwin" || build === null) return "dynamic libraries are identified on macOS only";
+  const identified: Canonical[] = [];
+  const seen = new Set<string>();
+  // Each file to read: the executable as named, then each library by its
+  // real path; each with its digest.
+  for (let work = [{ path: executable, digest: fileDigest(realpathSync(executable)) }], item = work.shift();
+      item !== undefined; item = work.shift()) {
+    const next = item.path;
+    const commands = loadCommands(next, item.digest);
+    if (typeof commands === "string") return `${next}: ${commands}`;
+    // A name relative to the loader or its run paths is resolved as dyld
+    // resolves it: `@loader_path` by the loading file's directory,
+    // `@executable_path` by the executable's, `@rpath` by the first run
+    // path of the loader or the executable naming an existing file.
+    const paths: string[] = [];
+    for (const p of commands.libraries) {
+      const resolved = p.startsWith("@") ? resolveLoaderName(p, next, executable, commands.runPaths) : p;
+      if (resolved === null) return `a library dyld's rules do not resolve here: ${p} (from ${next})`;
+      paths.push(resolved);
+    }
+    for (const p of paths) {
+      if (seen.has(p)) continue;
+      seen.add(p);
+      if (onSystemVolume(p)) identified.push([p, `system ${build}`]);
+      else {
+        const real = realpathSync(p);
+        const digest = fileDigest(real);
+        identified.push([p, digest]);
+        work.push({ path: real, digest });
       }
     }
   }
+  return identified;
+}
+
+/** The load commands of a Mach-O file that name libraries (its own install
+ * name and every library it loads: required, weak, re-exported, lazy,
+ * upward) and its run paths, in their order, over every architecture of a
+ * universal file; or why the file is no Mach-O file read here. Memoized by
+ * the file's digest (`digest`), where the bytes read are the ones it names. */
+type LoadCommands = { libraries: readonly string[]; runPaths: readonly string[] };
+const loadCommandsOf = new Map<string, LoadCommands | string>();
+const dylibCommands: ReadonlySet<number> = new Set([0xc, 0xd, 0x80000018, 0x8000001f, 0x20, 0x80000023]);
+const runPathCommand = 0x8000001c;
+function loadCommands(file: string, digest: string): LoadCommands | string {
+  const held = loadCommandsOf.get(digest);
+  if (held !== undefined) return held;
+  let found: LoadCommands | string;
+  const descriptor = openSync(file, "r");
+  try {
+    const bytes = (offset: number, length: number): Buffer => {
+      const buffer = Buffer.alloc(length);
+      const read = readSync(descriptor, buffer, 0, length, offset);
+      if (read !== length) throw Error(`the file ends at ${offset + read} before ${offset + length}`);
+      return buffer;
+    };
+    const libraries: string[] = [], runPaths: string[] = [];
+    // One architecture's image at `base`: a 32- or 64-bit little-endian header.
+    const image = (base: number): void => {
+      const header = bytes(base, 28);
+      const magic = header.readUInt32LE(0);
+      if (magic !== 0xfeedface && magic !== 0xfeedfacf) throw Error(`no little-endian Mach-O header at ${base}`);
+      const count = header.readUInt32LE(16), size = header.readUInt32LE(20);
+      const commands = bytes(base + (magic === 0xfeedfacf ? 32 : 28), size);
+      const name = (start: number, end: number): string => {
+        const offset = commands.readUInt32LE(start + 8);
+        if (offset < 12 || start + offset >= end) throw Error("a load command's name lies outside it");
+        const nul = commands.indexOf(0, start + offset);
+        return commands.toString("utf8", start + offset, nul < 0 || nul > end ? end : nul);
+      };
+      for (let i = 0, start = 0; i < count; i++) {
+        if (start + 8 > size) throw Error("the load commands end early");
+        const command = commands.readUInt32LE(start), length = commands.readUInt32LE(start + 4);
+        if (length < 8 || start + length > size) throw Error("a load command's size is out of range");
+        if (dylibCommands.has(command)) libraries.push(name(start, start + length));
+        if (command === runPathCommand) runPaths.push(name(start, start + length));
+        start += length;
+      }
+    };
+    const magic = bytes(0, 4).readUInt32BE(0);
+    if (magic === 0xcafebabe || magic === 0xcafebabf) {
+      // A universal file: big-endian architecture entries, 32- or 64-bit offsets.
+      const wide = magic === 0xcafebabf, width = wide ? 32 : 20;
+      const count = bytes(4, 4).readUInt32BE(0);
+      const entries = bytes(8, count * width);
+      for (let i = 0; i < count; i++)
+        image(wide ? Number(entries.readBigUInt64BE(i * width + 8)) : entries.readUInt32BE(i * width + 8));
+    } else image(0);
+    found = { libraries, runPaths };
+  } catch (error) {
+    found = `its load commands are not read: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    closeSync(descriptor);
+  }
+  if (fileDigest(file) === digest) loadCommandsOf.set(digest, found);
   return found;
 }
 
-/** Resolve the developer-tool shim before memoizing listings. Bootstrap the
- * tool's own dependency identity with fresh listings from that same tool. */
-let listingTool: string | undefined;
-let listingIdentity: Canonical | undefined;
-const listingFiles = new Map<string, string>();
-let identifyingListingTool: boolean = false;
-const listings = new Map<string, Listing>();
-const bootstrapListings = new Map<string, Listing>();
-const bootstrapListing: ListFile = (flag, file, digest = fileDigest(realpathSync(file))) =>
-  bootstrapListings.get(canonical([flag, digest])) ??
-  { status: 1, stdout: "", stderr: "unidentified listing-tool dependency" };
-/** Recheck contents and library resolution using only bootstrap listings. */
-function listingToolUnchanged(): boolean {
-  try {
-    if (listingTool === undefined || listingIdentity === undefined) return false;
-    for (const [path, identity] of listingFiles) {
-      const real = realpathSync(path);
-      if (canonical([real, fileDigest(real)]) !== identity) return false;
-    }
-    const libraries = identifyLibraries(listingTool, undefined, bootstrapListing);
-    return typeof libraries !== "string" && canonical(listingIdentity) ===
-      canonical([realpathSync(listingTool), fileDigest(realpathSync(listingTool)), libraries, osBuild()]);
-  } catch {
-    return false;
-  }
-}
-function otool(flag: "-L" | "-l", file: string, digest: string = fileDigest(realpathSync(file))):
-    { status: number | null; stdout: string; stderr: string } {
-  if (listingTool === undefined) {
-    const selected = spawnSync("/usr/bin/xcrun", ["--find", "otool"], { encoding: "utf8", env: {} });
-    listingTool = selected.status === 0 ? selected.stdout.trim() : "/usr/bin/otool";
-    identifyingListingTool = true;
-    try {
-      const libraries = identifyLibraries(listingTool, listingFiles);
-      if (selected.status === 0 && typeof libraries !== "string") {
-        listingIdentity = [realpathSync(listingTool), fileDigest(realpathSync(listingTool)), libraries, osBuild()];
-        if (!listingToolUnchanged()) listingIdentity = undefined;
-      }
-    } finally {
-      identifyingListingTool = false;
-    }
-  }
-  const fresh = (): { status: number | null; stdout: string; stderr: string } => {
-    const listed = spawnSync(listingTool ?? "/usr/bin/otool", [flag, file], { encoding: "utf8", env: {} });
-    return { status: listed.status, stdout: listed.stdout ?? "", stderr: listed.stderr ?? String(listed.error ?? "") };
-  };
-  if (identifyingListingTool) {
-    const result = fresh();
-    if (result.status === 0) bootstrapListings.set(canonical([flag, digest]), result);
-    return result;
-  }
-  if (listingIdentity === undefined) return fresh();
-  // A listing kept under the key was made by the tool the key identifies,
-  // of the content the key digests: it is reused whatever the tool is now.
-  // A fresh listing is kept and published under the key only where the tool
-  // is the identified one before and after it runs.
-  const key = sha256(canonical(["otool", listingIdentity, flag, digest]));
-  const held = listings.get(key);
-  if (held) return held;
-  const store = currentStore();
-  const stored = store?.memo("otool", key) ?? null;
-  if (stored !== null) {
-    const result = { status: 0, stdout: stored, stderr: "" };
-    listings.set(key, result);
-    return result;
-  }
-  const changed = { status: 1, stdout: "", stderr: "otool or its dependencies differ from their identified contents" };
-  if (!listingToolUnchanged()) return changed;
-  const result = fresh();
-  if (!listingToolUnchanged()) return changed;
-  if (result.status === 0) store?.publishMemo("otool", key, result.stdout);
-  listings.set(key, result);
-  return result;
-}
-
-/** The run paths a Mach-O file declares (`LC_RPATH`). */
-function runPaths(file: string, list: ListFile): string[] {
-  const listed = list("-l", file);
-  if (listed.status !== 0) return [];
-  return [...listed.stdout.matchAll(/cmd LC_RPATH\s+cmdsize \d+\s+path (.+?) \(offset \d+\)/g)].map((m) => m[1]);
-}
 /** A library name relative to its loader, resolved, or null. */
-function resolveLoaderName(name: string, loader: string, executable: string, list: ListFile): string | null {
+function resolveLoaderName(name: string, loader: string, executable: string, loaderRunPaths: readonly string[]):
+    string | null {
   const expand = (path: string): string => path.replace(/^@loader_path/, dirname(loader))
     .replace(/^@executable_path/, dirname(executable));
   const exists = (path: string): boolean => {
@@ -367,7 +332,13 @@ function resolveLoaderName(name: string, loader: string, executable: string, lis
   }
   if (!name.startsWith("@rpath/")) return null;
   const rest = name.slice("@rpath/".length);
-  for (const base of [...runPaths(loader, list), ...(loader === executable ? [] : runPaths(executable, list))]) {
+  let executableRunPaths: readonly string[] = [];
+  if (loader !== executable) {
+    const commands = loadCommands(executable, fileDigest(executable));
+    if (typeof commands === "string") return null;
+    executableRunPaths = commands.runPaths;
+  }
+  for (const base of [...loaderRunPaths, ...executableRunPaths]) {
     const path = resolve(expand(base), rest);
     if (exists(path)) return path;
   }

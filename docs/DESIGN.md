@@ -550,13 +550,8 @@ measurement.
 **Location and size.** The store lives outside every checkout at
 `$XDG_CACHE_HOME/tscert/stages`, defaulting to `~/.cache/tscert/stages`.
 `TSCERT_STAGE_STORE` selects another directory; `off` forces execution.
-Beside entries it keeps values a key's digest determines: the load-command
-listing of an executable or library (`otool`), by the file's digest and the
-resolved developer tool and its transitive dynamic dependencies (system
-libraries by the OS build), read when a process identifies its runtime's
-linked libraries; and test builds. Tool identification uses fresh listings
-from the resolved tool; an unidentified tool's listings execute without reuse.
-`make clean-store` removes finished entries, these values, timeout
+Beside entries it keeps test builds, each under the digest of its build's
+inputs. `make clean-store` removes finished entries, test builds, timeout
 observations and abandoned publication directories on this host. It retains
 immutable, content-addressed source locations, validated at each use, so
 active parses keep their inputs.
