@@ -243,6 +243,184 @@ The outcome is one of:
 A whole-file failure can precede claim generation.
 Neither an unsupported result nor an infrastructure error is a safety verdict.
 
+### The stage store
+
+The entry point uses one content-addressed store for stage invocations,
+including imported modules and repeated proposal/search attempts. Every
+runner uses this mechanism. Each invocation has an explicit input
+description, immutable inputs and a recorded result.
+
+**Keys.** A key is the SHA-256 of a canonical encoding of the stage,
+its implementation and its complete input description. Ordering is retained
+where it affects execution. The implementation includes the stage adapter,
+its code dependencies and the executable/runtime implementation it uses.
+A package version or executable pathname alone does not identify it.
+
+Each invocation fixes or records its arguments, working directory,
+observable environment and runtime options. Executable dependencies and
+in-process configuration are inputs too. An invocation whose dependencies
+cannot be identified executes without replay.
+
+All stages use the common invocation mechanism. Replay requires complete
+dependency identification, consistent compiler state where applicable,
+established path equivalence and audited result binding. An invocation
+failing these requirements executes without replay and retains its timing
+and outcome records. The every-stage caching requirement is satisfied only
+when every stage in the table supports replay for ordinary census, case and
+suite runs.
+
+An invocation whose dependencies cannot be identified has an attempt
+identity and a record of its known inputs, but no reusable stage key. Its
+result and timeout observations are retained only as attempt records;
+neither is published or reused as a stage entry. The stage-key publication
+and timeout-reuse rules apply only to replay-eligible invocations. Force
+execution of a replay-eligible invocation retains its complete stage key.
+
+| Stage | Inputs in addition to its implementation and execution context |
+| --- | --- |
+| parse | source bytes and logical identity; project and resolution context; active host-family descriptions; the complete filesystem observations of parsing, declaration collection and host activation |
+| lower | the exact Fragment document |
+| propose | the exact Fragment, flow and qualified-read documents, including whether the optional argument is present |
+| assemble claims | the raw proposal and ordered transitive module-claim documents selected by the reads |
+| search | the exact Fragment and assembled claims; explicit file identity; source snapshot binding; search depth and subtype rounds |
+| check | the exact Fragment, assembled claims and evidence; explicit file identity; source snapshot binding; subtype rounds |
+| explain | the Fragment and flow passed to the producer's `--explain` mode |
+| TypeScript diagnostics | source identity, project context and the complete compiler dependency observations |
+
+Filesystem observations include file contents, failed lookups, directory
+queries, symlink resolution and configuration discovery. A candidate parse
+or diagnostic entry is reusable only after its dependency observations
+have been validated against the current input snapshot. The bytes and
+observations used for execution are the ones recorded in its key;
+persistent compiler state must agree with that snapshot.
+
+Each imported module uses the same lower and propose stages. Each
+withdrawal recomputes the eligible reads and transitive claims assembly.
+A replayed search refusal drives the same withdrawal decision as a fresh
+refusal. The orchestration and diagnostic presentation run under their
+current implementation; a stored raw refusal is not a stored final Outcome.
+
+**Locations.** Stages use stable file identities and execution locations
+independent of an invocation's temporary artifact directory. The parser
+retains the original source's project and import-resolution context.
+Any path affecting resolution, document identity or output remains an
+input unless an explicit stage adapter establishes a stable equivalent.
+
+Logs belong to the stage invocation whose paths they describe. Each
+caller receives fresh writable copies of the artifacts under its own run
+root, and its Outcome names that directory. Shared entries are immutable.
+The run root controls artifact lifetime; it is excluded from semantic keys
+only where stage execution is independent of it. Store data outlives run
+directory cleanup.
+
+**Entries and timeouts.** A finished entry contains the complete input
+manifest, exit status, stdout, stderr and a manifest of output files with
+their digests. This includes parser diagnostics and auxiliary stage outputs.
+Only a complete success or recognized refusal is a finished result.
+Operational failures are not reusable results.
+
+A timeout is a separate immutable observation recording its stage key,
+attempt identity, elapsed execution time, enforced limit and resource
+policy. Limits and measurement metadata are outside the stage key. Under the
+same resource policy, a request may reuse an observation whose enforced
+limit is at least the requested limit. A larger requested limit executes the
+stage. Force execution bypasses both finished results and timeout
+observations. Reuse reports an earlier timeout, not proof that execution
+would time out again.
+
+An aggregate worker deadline records interruption of the run. A stage
+timeout requires identification of the attempt and evidence that its own
+enforced limit expired; identifying the active stage alone is insufficient.
+Completed entries remain reusable. Readers check for a finished entry before
+returning a timeout observation; a finished entry visible at that check
+takes precedence.
+
+**Publication.** Writers build complete entries in unique temporary
+directories on the store's filesystem, close their files and publish by
+atomic rename to the stage-key destination. Published entry directories are
+nonempty and immutable. A destination-exists failure requires validation of
+the existing entry. Finished results are compared by input manifest, exit
+status, stdout, stderr and output-file names and digests; attempt
+identities, timings and load measurements are excluded. Different result
+payloads for one key are a store error. If the existing entry is invalid,
+the caller may use its freshly computed result without publishing it;
+replacement requires coordinated removal of the invalid entry.
+
+Finished entries and timeout observations have separate destinations.
+Publication never deletes a timeout entry to replace it with a finished
+result, so a late timeout cannot overwrite success. Duplicate computation
+is permitted.
+
+Timeout observations use unique attempt destinations and the same
+complete-directory publication protocol. Concurrent observations coexist.
+
+Atomic publication provides visibility across process interruption.
+Power-loss durability requires a separately specified and validated
+filesystem flush protocol. Readers validate complete manifests and file
+digests; missing, incomplete or corrupt entries cause recomputation.
+Cleanup removes temporary directories only when their writers are known
+to have stopped. A reader copies and validates a whole entry before use;
+concurrent eviction causes a retry or miss.
+
+**Replay and trust.** The parser is part of the trusted source boundary.
+Replaying its output and replaying a successful check additionally trust
+the store implementation, its binding of results to exact inputs and the
+integrity of its stored results. The store is private to the user and
+shared among that user's cooperating processes. Digests detect accidental
+corruption; they do not authenticate results supplied by an untrusted
+writer.
+
+`SourceClaimJson.checkJson_safe` establishes safety from the corresponding
+successful `checkJson` evaluation. The memoizer must preserve that premise
+when replaying a check. This is an additional implementation obligation,
+outside that theorem.
+
+The production check's pure computation supports a deterministic judgment
+for fixed inputs. Replay eligibility requires an audit of the executable's
+I/O and runtime dependencies. Cold and replayed runs are compared across
+different run roots and worker histories, including their judgments,
+documents and diagnostics. These checks support the implementation audit;
+they are not a proof of executable determinism. Resource timeouts are
+observations rather than deterministic judgments.
+
+**Controls.** The common invocation mechanism provides force execution.
+Forged-document checks, mutation-verifier controls and injected tool-failure
+controls use it for the operation they test. Their baseline artifacts may
+come from the store. Mutation selections, failure-injection settings and
+host-family overrides remain explicit invocation inputs. Store tests cover
+dependency invalidation, concurrent publication, interrupted writers,
+timeout/success races and writable artifact isolation.
+Controls assert that the tested operation actually executed, including every
+mutation variant and injected failure; forced executions remain subject to
+normal input binding and result validation.
+
+**Timing.** Every invocation records monotonic elapsed wall time, its
+configured limit and whether it executed, replayed, timed out, failed
+operationally or was interrupted. Replay records lookup, validation and
+materialization time separately from the stored execution measurements. CPU
+measurements, when available, state which processes they cover; unavailable
+measurements are explicit. Timing and load metadata are outside semantic
+keys and result equality. Census records retain these measurements for each
+attempt, including module stages and withdrawals, after entry eviction. They
+describe observed execution cost; a timeout supplies only a partial
+measurement.
+
+**Location and size.** The store lives outside every checkout at
+`$XDG_CACHE_HOME/tscert/stages`, defaulting to `~/.cache/tscert/stages`.
+`TSCERT_STAGE_STORE` selects another directory; `off` forces execution.
+`make clean-store` removes stored entries. Eviction is approximate and
+affects reuse only; readers treat concurrent removal as a miss.
+
+**Census records.** Each slice has a persistent record of its source
+identity, outcome, execution policy and ordered invocation references,
+including module stages and withdrawal attempts. Each reference identifies
+its attempt and, where available, its complete stage key. These records survive artifact
+cleanup and store eviction. Processes may partition the slices and share
+stage entries. A later census runs the current orchestration and presentation, validating
+dependencies through the common stage mechanism. Census records retain
+historical outcomes and measurements; they do not independently authorize
+replay of a final Outcome. Missing stage entries execute again.
+
 ### What "verified" means
 
 `SourceClaimJson.checkJson_safe` connects successful source-claim checking to
