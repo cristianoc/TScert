@@ -331,6 +331,12 @@ function computedAt(file: SourceFile, span: Span): TypeNode | null {
 export type NamespaceMemberSpans = { local: string; imported: string; specifier: string;
   uses: { span: Span; name: Span; value: boolean; callee: boolean }[] };
 
+/** The type declared in a block a reference names (`blockTypes`): its
+ * identity, its own parameters' count and how many have no default, and the
+ * spellings of the enclosing type parameters it closes over, outermost
+ * first, which come first among its definition's parameters. */
+export type BlockType = { computed: boolean; declaration: DeclarationIdentity; required: number; total: number; captured: string[] };
+
 /** The client's imports, each the binding `name` the client reads, the
  * identifier `at` TypeScript resolves to the export, and the span a refusal
  * names: a named import's specifier and its import declaration, a namespace
@@ -588,6 +594,15 @@ export function collectDeclarations(file: string, options: {
   * with the reason it has none. */
   computed?: readonly Span[];
   computedType?: (span: Span, result: TypeTerm | { refused: string }) => void;
+  /** The client's type references spelling a name some type declared in
+   * one of its blocks has: each TypeScript binds to such a declaration is
+   * reported to `blockType` with that declaration, which joins the graph,
+   * its own arity and the spellings of the type parameters it closes over,
+   * each the binder TypeScript resolves at the reference; or with the
+   * reason it is refused (SOURCE-CONTRACTS.md, "Block-scoped type
+   * declarations"). */
+  blockTypes?: readonly Span[];
+  blockType?: (span: Span, result: BlockType | { refused: string }) => void;
   /** Told, for each client reference omitting arguments of a declaration,
    * the omitted arguments: each parameter's default at the arguments before
    * it, or the reason it has none. */
@@ -1254,6 +1269,7 @@ export function collectDeclarations(file: string, options: {
     // A mapped type's keys as TypeScript computes them, where they are a
     // union of literals and primitives.
     const keyTypeOf = (node: TypeNode): TypeTerm | null => {
+      computedContext.captures(node);
       const type = checker.getTypeFromTypeNode(node);
       return type ? literalUnion(type, [node.getStart(node.getSourceFile()), node.end]) : null;
     };
@@ -1261,6 +1277,7 @@ export function collectDeclarations(file: string, options: {
     // with its modifiers, readonly where the mapping makes it so
     // (`checkFlags & 8`), or null where it resolves to no property.
     const mappedModifiersOf = (node: ts.MappedTypeNode): MappedMember[] | null => {
+      computedContext.captures(node);
       const type = checker.getTypeFromTypeNode(node);
       const members = type ? checker.getPropertiesOfType(type).map(p => ({ name: p.name,
         optional: (p.flags & SymbolFlags.Optional) !== 0, readonly: (p.checkFlags & 8) !== 0 })) : [];
@@ -1371,7 +1388,10 @@ export function collectDeclarations(file: string, options: {
     // The declarations of the values read, whose declared types are swept for
     // their written applications.
     const valueDeclarations: Node[] = [];
-    const valueScope = (node: Node, what: string, binders: string[] = []): TermScope => {
+    // `captured` states a block type's captured parameter at a reference;
+    // by default the binder of its spelling, which `binders` must hold.
+    const valueScope = (node: Node, what: string, binders: string[] = [],
+        captured?: (parameter: ts.TypeParameterDeclaration) => TypeTerm): TermScope => {
       const source = node.getSourceFile();
       return {
         source,
@@ -1384,21 +1404,14 @@ export function collectDeclarations(file: string, options: {
         // An alias's body, its parameters read as the reference's arguments.
         equation: (reference) => {
           const alias = reference.reference.target && aliasNodes.get(aliasKey(reference.reference.target));
-          const parameters = (alias?.typeParameters ?? []).map(p => p.name.text);
+          const parameters = alias ? parametersOf(alias).map(p => p.name.text) : [];
           if (!alias || reference.args.length !== parameters.length) return null;
           let body = alias.type;
           while (ts.isParenthesizedTypeNode(body)) body = body.type;
           if (!(ts.isArrayTypeNode(body) || ts.isTupleTypeNode(body) || ts.isTypeReferenceNode(body) ||
               (ts.isTypeOperatorNode(body) && body.operator === ts.SyntaxKind.ReadonlyKeyword)))
             return null;
-          const outer = valueScope(alias, what);
-          return typeTerm({ ...outer, named: (part, pos, read) => {
-            const index = ts.isIdentifier(part.typeName) ? parameters.indexOf(part.typeName.text) : -1;
-            const argument = reference.args[index];
-            if (index < 0 || !argument) return outer.named(part, pos, read);
-            if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${part.typeName.getText(alias.getSourceFile())}`);
-            return argument;
-          } }, body, alias);
+          return instantiateAt(alias, reference.args, null)(body);
         },
         symbol: symbolOf,
         literalKey: literalKeyOf,
@@ -1410,7 +1423,10 @@ export function collectDeclarations(file: string, options: {
         named: (part, pos, read) => {
           const name = memberName(part.typeName);
           if (!name) throw Error(`a qualified type reference in ${what}`);
-          if (ts.isIdentifier(part.typeName) && binders.includes(name.text)) {
+          // A binder's spelling, unless TypeScript binds it to a type
+          // declared in a nearer block.
+          if (ts.isIdentifier(part.typeName) && binders.includes(name.text) &&
+              !typeDeclarationsOf(name).some(isTypeDeclaration)) {
             if (part.typeArguments?.length) throw Error(`type parameter applied as constructor: ${name.text}`);
             return { k: "binder", name: name.text, span: pos };
           }
@@ -1427,8 +1443,12 @@ export function collectDeclarations(file: string, options: {
           // computes at this reference's arguments.
           if (computedAlias(targetNode, aliasOf)) return computedType(computedContext, part, pos, read);
           const args = part.typeArguments ?? [];
-          const completed = completeArguments(targetNode, args.map(read), part,
-            `${identityOf(targetNode).module}#${name.text}`);
+          const target = `${identityOf(targetNode).module}#${name.text}`;
+          const completed = completeArguments(targetNode, args.map(read), part, target, captured ?? (parameter => {
+            if (!binders.includes(parameter.name.text))
+              throw Error(`${target} closes over the type parameter ${parameter.name.text}, which ${what} does not bind`);
+            return capturedAt(part, target)(parameter);
+          }));
           valueStarts.push(targetNode);
           return { k: "reference", reference: { name: name.text, span: pos,
             arguments: args.map((arg): Span => [arg.getStart(source), arg.end]), target: identityOf(targetNode) },
@@ -1670,8 +1690,20 @@ export function collectDeclarations(file: string, options: {
       },
       value: (nodes, what) => valueOf(nodes, what),
       alias: aliasOf,
-      applied: (alias, args, use) => instantiateAt(alias, args, use),
+      // A block alias's captured arguments are the binders at the use.
+      applied: (alias, args, use) => instantiateAt(alias, [...capturedOf(alias).map(capturedAt(use,
+        `${idOf(alias.getSourceFile())}#${alias.name.text}`)), ...args], use),
       equation: reference => valueScope(client, "an alias's equation").equation?.(reference) ?? null,
+      // Each block type the form names, at the binders it closes over.
+      captures: node => {
+        const visit = (n: Node): void => {
+          if (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName))
+            for (const d of typeDeclarationsOf(n.typeName))
+              if (inBlock(d)) capturedOf(d).forEach(capturedAt(n, `${idOf(d.getSourceFile())}#${n.typeName.text}`));
+          n.forEachChild(visit);
+        };
+        visit(node);
+      },
       // A `unique symbol` type is the type of the one constant or readonly
       // property declaring it (`Symbol.iterator`'s is `SymbolConstructor`'s
       // `iterator`), which names its symbol as a computed key does.
@@ -1696,12 +1728,78 @@ export function collectDeclarations(file: string, options: {
     // together, as TypeScript merges them: each position's name from the
     // declaration binding the longest list, its bound and default from a
     // declaration stating them (TypeScript requires those to agree).
+    // A type declared in a block closes over the enclosing type parameters
+    // its equation names, directly or through another block's type, each
+    // one TypeScript resolves at its block, outermost first: they come
+    // first among its parameters, each argument the binder itself, which
+    // needs no bound (SOURCE-CONTRACTS.md, "Block-scoped type declarations").
+    const nodeKey = (n: Node): string => `${n.getSourceFile().fileName}:${n.kind}:${n.pos}:${n.end}`;
+    const sameNode = (a: Node, b: Node): boolean => nodeKey(a) === nodeKey(b);
+    const resolvesTo = (parameter: ts.TypeParameterDeclaration, at: Node): boolean =>
+      (checker.resolveName(parameter.name.text, SymbolFlags.Type, at, false)?.declarations ?? [])
+        .some(d => { const n = d.resolve(); return !!n && sameNode(n, parameter); });
+    const inBlock = (declaration: Node): boolean => {
+      const block = declaration.parent;
+      return isTypeDeclaration(declaration) && !!block && !ts.isSourceFile(block) && !ts.isModuleBlock(block);
+    };
+    // The type parameters a block's type names, through the block types it
+    // names too, by node key.
+    const mentioned = (declaration: Node, found: Set<string>, seen: Set<string>): void => {
+      const name = nameOf(declaration);
+      const parts = name && ts.isIdentifier(name) ? typeDeclarationsOf(name).filter(isTypeDeclaration) : [declaration];
+      for (const part of parts) {
+        if (seen.has(nodeKey(part))) continue;
+        seen.add(nodeKey(part));
+        const visit = (n: Node): void => {
+          const spelled = ts.isTypeReferenceNode(n) ? n.typeName
+            : ts.isExpressionWithTypeArguments(n) ? n.expression : null;
+          if (spelled && ts.isIdentifier(spelled))
+            for (const d of typeDeclarationsOf(spelled)) {
+              if (ts.isTypeParameterDeclaration(d)) found.add(nodeKey(d));
+              else if (inBlock(d)) mentioned(d, found, seen);
+            }
+          n.forEachChild(visit);
+        };
+        visit(part);
+      }
+    };
+    const captures = new Map<string, ts.TypeParameterDeclaration[]>();
+    const capturedOf = (declaration: Node): ts.TypeParameterDeclaration[] => {
+      const block = declaration.parent;
+      if (!inBlock(declaration) || !block) return [];
+      const known = captures.get(nodeKey(declaration));
+      if (known) return known;
+      const found = new Set<string>();
+      mentioned(declaration, found, new Set());
+      const groups: ts.TypeParameterDeclaration[][] = [];
+      for (let at: Node | undefined = block; at; at = at.parent)
+        groups.unshift(childrenOf(at, "typeParameters").filter((p): p is ts.TypeParameterDeclaration =>
+          ts.isTypeParameterDeclaration(p) && found.has(nodeKey(p))));
+      const result = groups.flat();
+      // One named only through another block's type, which a nearer
+      // declaration hides at this block, has no argument here.
+      const hidden = result.find(p => !resolvesTo(p, block));
+      if (hidden) throw Error(`${idOf(declaration.getSourceFile())}#${nameOf(declaration)?.getText(declaration.getSourceFile()) ?? "a type"} ` +
+        `names a type closing over the type parameter ${hidden.name.text}, which a nearer declaration of that name hides at its block`);
+      captures.set(nodeKey(declaration), result);
+      return result;
+    };
     const parametersOf = (declaration: Node): MergedParameter[] => {
       const name = nameOf(declaration);
       const parts = name && ts.isIdentifier(name) ? typeDeclarationsOf(name).filter(isTypeDeclaration) : [];
       const own = isTypeDeclaration(declaration) ? [declaration] : [];
-      return mergedParameters(parts.length ? parts : own).map(merged => ({ name: merged.parameter.name,
-        constraint: merged.bound?.at.constraint, default: merged.default?.at.defaultType }));
+      const captured = capturedOf(declaration).map((p): MergedParameter =>
+        ({ name: p.name, constraint: undefined, default: undefined, captured: true }));
+      return [...captured, ...mergedParameters(parts.length ? parts : own).map(merged => ({ name: merged.parameter.name,
+        constraint: merged.bound?.at.constraint, default: merged.default?.at.defaultType }))];
+    };
+    // A block type's captured parameter at a use outside a declaration's
+    // body: the binder itself, which TypeScript must resolve its spelling
+    // to there.
+    const capturedAt = (use: Node, what: string) => (parameter: ts.TypeParameterDeclaration): TypeTerm => {
+      if (!resolvesTo(parameter, use))
+        throw Error(`${what} closes over the type parameter ${parameter.name.text}, which a nearer declaration of that name hides here`);
+      return { k: "binder", name: parameter.name.text, span: [use.getStart(use.getSourceFile()), use.end] };
     };
     // A declaration's bound or default read at an application's arguments:
     // each parameter its argument; a computed form naming the parameters,
@@ -1713,19 +1811,28 @@ export function collectDeclarations(file: string, options: {
       const what = `${idOf(source)}#${nameOf(declaration)?.getText(source) ?? "a declaration"}`;
       const merged = parametersOf(declaration);
       const parameters = merged.map(p => p.name.text);
+      // An own parameter shadows a captured one of its spelling.
       const argumentOf = (part: Node): TypeTerm | undefined => {
         const index = ts.isTypeReferenceNode(part) && ts.isIdentifier(part.typeName) && !part.typeArguments?.length
-          ? parameters.indexOf(part.typeName.text) : -1;
+          ? parameters.lastIndexOf(part.typeName.text) : -1;
         return index < 0 ? undefined : args[index];
       };
       const namesParameter = (n: Node): boolean =>
         (ts.isTypeReferenceNode(n) && ts.isIdentifier(n.typeName) && parameters.includes(n.typeName.text)) ||
         (n.forEachChild(c => namesParameter(c) || undefined) ?? false);
-      const outer = valueScope(declaration, what);
+      const outer = valueScope(declaration, what, [], parameter => {
+        const index = merged.findIndex(p => p.name.parent && nodeKey(p.name.parent) === nodeKey(parameter));
+        const argument = args[index];
+        if (!argument) throw Error(`${what} has no argument for the captured type parameter ${parameter.name.text}`);
+        return argument;
+      });
       const evaluate: NonNullable<TermScope["computed"]> = (part, pos, read) => {
         if (!namesParameter(part)) return computedType(computedContext, part, pos, read);
         if (!use) throw Error(`${what}: ${part.getText(source)} names the declaration's parameters, ` +
           "and is evaluated only at an application written in source");
+        if (merged.some(p => p.captured)) throw Error(`${what}: ${part.getText(source)} names the parameters of ` +
+          "a type declared in a block, which TypeScript evaluates only where it closes over no type parameter");
+        computedContext.captures(part);
         return probe({ declaration, parameters: merged, form: part, use, span: pos, what });
       };
       const scope: TermScope = { ...outer,
@@ -1742,12 +1849,21 @@ export function collectDeclarations(file: string, options: {
     // The arguments of an application `use` of `declaration`: those written,
     // then each omitted one its parameter's default read at the arguments
     // before it (`instantiateAt`).
+    // A block type's captured arguments come first, each the reader's
+    // (`captured`); a reader stating none refuses such a type.
     const completeArguments = (declaration: Node, written: readonly TypeTerm[], use: Node | null,
-        what: string): TypeTerm[] => {
+        what: string, captured?: (parameter: ts.TypeParameterDeclaration) => TypeTerm): TypeTerm[] => {
       const parameters = parametersOf(declaration);
-      if (written.length > parameters.length) throw Error(`${what} applied to too many type arguments`);
-      const completed = [...written];
-      for (const parameter of parameters.slice(written.length)) {
+      const closed = parameters.flatMap(p => {
+        if (!p.captured) return [];
+        const at = p.name.parent;
+        if (!captured || !at || !ts.isTypeParameterDeclaration(at))
+          throw Error(`${what} is declared in a block and closes over the type parameter ${p.name.text}, which this reading does not state`);
+        return [captured(at)];
+      });
+      if (closed.length + written.length > parameters.length) throw Error(`${what} applied to too many type arguments`);
+      const completed = [...closed, ...written];
+      for (const parameter of parameters.slice(completed.length)) {
         if (!parameter.default) throw Error(`${what}'s ${parameter.name.text} has neither an argument nor a default`);
         completed.push(instantiateAt(declaration, completed, use)(parameter.default));
       }
@@ -2869,7 +2985,9 @@ export function collectDeclarations(file: string, options: {
           const actuals = type.getAliasSymbol() ? type.getAliasTypeArguments()
             : isTypeReference(type) ? checker.getTypeArguments(type) : [];
           const args = actuals.map(argument => contextualTerm(argument, span));
-          if (args.length !== (node.typeParameters?.length ?? 0))
+          // A type declared in a block closing over a type parameter has
+          // arguments TypeScript's type does not state.
+          if (args.length !== parametersOf(node).length)
             throw Error(`the contextual type ${text()} does not state every declaration argument`);
           const declared = declarationOf([node], text());
           contextualStarts.push({ node: declared, span });
@@ -3073,11 +3191,21 @@ export function collectDeclarations(file: string, options: {
     }
     for (const span of options.keyTypes ?? []) {
       const node = typeNodeAt(client, span);
-      options.keyType?.(span, node ? keyTypeOf(node) : null);
+      try {
+        options.keyType?.(span, node ? keyTypeOf(node) : null);
+      } catch (error) {
+        if (error instanceof DeclarationError) throw error;
+        throw new DeclarationError(span, messageOf(error), error);
+      }
     }
     for (const span of options.mappedTypes ?? []) {
       const node = typeNodeAt(client, span);
-      options.mappedType?.(span, node && ts.isMappedTypeNode(node) ? mappedModifiersOf(node) : null);
+      try {
+        options.mappedType?.(span, node && ts.isMappedTypeNode(node) ? mappedModifiersOf(node) : null);
+      } catch (error) {
+        if (error instanceof DeclarationError) throw error;
+        throw new DeclarationError(span, messageOf(error), error);
+      }
     }
     for (const span of options.symbolNames ?? []) {
       const node = expressionAt(client, span);
@@ -3112,6 +3240,36 @@ export function collectDeclarations(file: string, options: {
         options.computedType?.(span, { refused: refusalAt(span, error) });
       }
     }
+    // The client's references to types declared in its blocks, each the
+    // declaration TypeScript binds it to; one TypeScript computes from its
+    // parameters is a computed type above.
+    const blockStarts: { node: TypeDeclaration; span: Span }[] = [];
+    for (const span of options.blockTypes ?? []) {
+      const node = typeNodeAt(client, span);
+      if (!node || !ts.isTypeReferenceNode(node) || !ts.isIdentifier(node.typeName))
+        throw new DeclarationError(span, "TypeScript type reference missing");
+      const name = node.typeName;
+      const declared = typeDeclarationsOf(name);
+      if (!declared.some(d => (ts.isTypeAliasDeclaration(d) || ts.isInterfaceDeclaration(d)) &&
+          !!d.parent && !ts.isSourceFile(d.parent) && !ts.isModuleBlock(d.parent)))
+        continue;
+      try {
+        const target = lookup(name, name.text);
+        const what = `${idOf(client)}#${name.text}`;
+        if (ts.isTypeAliasDeclaration(target) && associatedAlias(target))
+          throw Error(`an associated-result alias declared in a block is outside the fragment: ${what}`);
+        const computed = computedAlias(target, aliasOf);
+        const captured = capturedOf(target);
+        for (const parameter of captured) capturedAt(node, what)(parameter);
+        const own = parametersOf(target).filter(p => !p.captured);
+        if (!computed) blockStarts.push({ node: target, span });
+        options.blockType?.(span, { computed, declaration: identityOf(target), captured: captured.map(p => p.name.text),
+          required: own.filter(p => !p.default).length, total: own.length });
+      } catch (error) {
+        if (error instanceof DeclarationError) throw error;
+        options.blockType?.(span, { refused: refusalAt(span, error) });
+      }
+    }
     // The client's references that omit arguments of a declaration: the
     // omitted ones completed at the written ones (`completeArguments`) and
     // reported to `completion`, or refused with the reason.
@@ -3127,8 +3285,10 @@ export function collectDeclarations(file: string, options: {
             const target = lookup(name, name.text);
             if (!computedAlias(target, aliasOf)) {
               const scope = valueScope(node, `${idOf(client)}#${node.getText(client)}`, enclosingBinders(node));
-              const completed = completeArguments(target, written.map(arg => typeTerm(scope, arg)), node, name.text);
-              options.completion?.(span, completed.slice(written.length));
+              const closed = capturedOf(target).length;
+              const completed = completeArguments(target, written.map(arg => typeTerm(scope, arg)), node, name.text,
+                capturedAt(node, name.text));
+              options.completion?.(span, completed.slice(closed + written.length));
             }
           } catch (error) {
             if (error instanceof DeclarationError) throw error;
@@ -3144,7 +3304,12 @@ export function collectDeclarations(file: string, options: {
     // its bounds; a library one is stated for its bounds only.
     const sweepScope = (at: Node, binder: (declaration: ts.TypeParameterDeclaration) => string | undefined): TermScope => {
       const what = `${idOf(at.getSourceFile())}#${at.getText(at.getSourceFile())}`;
-      const base = valueScope(at, what);
+      const base = valueScope(at, what, [], parameter => {
+        const name = binder(parameter);
+        if (name === undefined)
+          throw Error(`a type declared in a block closes over ${parameter.name.text}, which the written application's scope in ${what} does not bind`);
+        return { k: "binder", name, span: [at.getStart(at.getSourceFile()), at.end] };
+      });
       return { ...base, named: (part, pos, read) => {
         // A merged declaration's parameter is one per part: the one in scope.
         const parameters = (ts.isIdentifier(part.typeName) ? typeDeclarationsOf(part.typeName) : [])
@@ -3271,6 +3436,7 @@ export function collectDeclarations(file: string, options: {
       ...valueStarts.map((node, index): { node: TypeDeclaration; span: Span } =>
         ({ node, span: values[Math.min(index, values.length - 1)]?.binding.span ?? [0, 0] })),
       ...contextualStarts,
+      ...blockStarts,
     ];
     const collectFrom = (list: readonly { node: TypeDeclaration; span: Span }[]): void => {
       for (const { node: start, span } of list) {
@@ -4143,7 +4309,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   /** A declaration's type parameters, its merged declarations together. */
   parameters: (declaration: Node) => readonly MergedParameter[];
   /** An application's arguments completed with its defaults. */
-  complete: (declaration: Node, written: readonly TypeTerm[], use: Node | null, what: string) => TypeTerm[];
+  complete: (declaration: Node, written: readonly TypeTerm[], use: Node | null, what: string,
+    captured?: (parameter: ts.TypeParameterDeclaration) => TypeTerm) => TypeTerm[];
   /** The type an enum's name denotes where a file writes it, or null for a
    * name that is no enum's. */
   enumType: (identifier: Identifier, at: SourceFile, span: Span) => TypeTerm | null;
@@ -4175,10 +4342,25 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     }
     const source = node.getSourceFile();
     // Its parameters, its merged declarations together.
+    // A block type's captured parameters come first; an own parameter
+    // shadows a captured one of its spelling (`lastIndexOf`).
     const parameterNodes = context.parameters(node);
     const parameterNames = parameterNodes.map(parameter => parameter.name.text);
-    if (new Set(parameterNames).size !== parameterNames.length)
+    const capturedNames = parameterNodes.filter(p => p.captured).map(p => p.name.text);
+    const ownNames = parameterNames.slice(capturedNames.length);
+    if (new Set(ownNames).size !== ownNames.length)
       throw Error(`duplicate binder in ${identity.module}#${identity.name}`);
+    // A captured parameter at a reference in the body: this declaration's
+    // own position for the same type parameter.
+    const capturedHere = (parameter: ts.TypeParameterDeclaration): TypeTerm => {
+      const index = parameterNodes.findIndex(p => {
+        const at = p.name.parent;
+        return !!p.captured && !!at && at.pos === parameter.pos && at.end === parameter.end &&
+          at.getSourceFile().fileName === parameter.getSourceFile().fileName;
+      });
+      if (index < 0) throw Error(`a type declared in a block closes over ${parameter.name.text}, which ${identity.module}#${identity.name} does not`);
+      return { k: "parameter", index, span: [parameter.getStart(parameter.getSourceFile()), parameter.end] };
+    };
     const reference = (source: SourceFile, identifier: Identifier, arguments_: readonly TypeNode[], pos: Span,
         read: (part: TypeNode) => TypeTerm, base = false, written?: ts.TypeReferenceNode): TypeTerm => {
       const what = `${identity.module}#${identifier.text}`;
@@ -4214,7 +4396,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       if (written && computedAlias(targetNode, context.alias)) return computed(written, pos, read);
       const target = identityOf(targetNode);
       const completed = context.complete(targetNode, arguments_.map(read), written ?? null,
-        `${target.module}#${target.name}`);
+        `${target.module}#${target.name}`, capturedHere);
       const edge: Reference = { name: identifier.text, span: pos,
         arguments: arguments_.map(arg => [arg.getStart(source), arg.end]), target };
       queue.push(targetNode);
@@ -4258,7 +4440,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           if (part.typeArguments?.length) throw Error(`an enum type takes no type arguments: ${name.text}`);
           return enumType;
         }
-        const index = own ? names.indexOf(name.text) : -1;
+        const index = own ? names.lastIndexOf(name.text) : -1;
         if (index < 0) return reference(source, name, part.typeArguments ?? [], pos, read, false, part);
         if (part.typeArguments?.length)
           throw Error(`type parameter applied as constructor: ${name.text}`);
@@ -4268,7 +4450,7 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     const scope = scopeOf(source);
     const parts = partners.get(node) ?? [node];
     const partScope = (part: TypeDeclaration): TermScope =>
-      scopeOf(part.getSourceFile(), (part.typeParameters ?? []).map(parameter => parameter.name.text));
+      scopeOf(part.getSourceFile(), [...capturedNames, ...(part.typeParameters ?? []).map(parameter => parameter.name.text)]);
     // A bound or default is read in the scope of the declaration stating it.
     const statedIn = (at: { part: TypeDeclaration; type: TypeNode | undefined }): TypeTerm | null =>
       at.type ? typeTerm(partScope(at.part), at.type) : null;
@@ -4277,7 +4459,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       if (sawDefault && !parameter.default)
         throw Error(`required type parameter after default in ${identity.module}#${identity.name}`);
       sawDefault ||= !!parameter.default;
-      const own = node.typeParameters?.[index] ?? parameter.name.parent;
+      const own = (parameter.captured ? undefined : node.typeParameters?.[index - capturedNames.length]) ??
+        parameter.name.parent;
       const parameterSpan: Span = [own.getStart(own.getSourceFile()), own.end];
       return { name: parameter.name.text, span: parameterSpan, defaulted: !!parameter.default };
     });

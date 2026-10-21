@@ -22,6 +22,16 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  assert.equal(await runExample("invalid-block-type-awaited", `test("text")`), "text",
+    "invalid-block-type-awaited: y holds a string despite the local alias's number contract");
+  // `outer.v` is the enclosing `T`, here a string: the result is the number
+  // stored there at `Both`'s own `T`.
+  assert.equal(runExample("invalid-block-type-captured-shadow", `swap("s", 1)`), 1,
+    "invalid-block-type-captured-shadow: a number returned at T := string");
+  // Past the block, `Box` is the module's `{ v: string }`: the result holds
+  // the number the block's `Box` admitted.
+  assert.equal(runExample("invalid-block-type-scope", "typeof leak(1).v"), "number",
+    "invalid-block-type-scope: the result's `v` is a number despite its string contract");
   // At `B := { name: "a"; size: number }`, a value meeting the binder: the
   // copy's `name` is "x", which the binder excludes.
   assert.equal(runExample("invalid-spread-binder-result", `relabel({ name: "a", size: 1 }).name`), "x",

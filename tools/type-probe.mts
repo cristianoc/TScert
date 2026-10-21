@@ -55,8 +55,11 @@ export type ProbeProgram = <T>(files: ReadonlyMap<string, string>,
 export type ProbeRequest = { declaration: Node; parameters: readonly MergedParameter[]; form: TypeNode; use: Node;
   span: Span; what: string };
 /** A declaration's type parameter at one position, its merged declarations
- * together: its name, and the bound and default some declaration states. */
-export type MergedParameter = { name: Identifier; constraint: TypeNode | undefined; default: TypeNode | undefined };
+ * together: its name, and the bound and default some declaration states;
+ * `captured` for an enclosing type parameter a type declared in a block
+ * closes over (SOURCE-CONTRACTS.md, "Block-scoped type declarations"). */
+export type MergedParameter = { name: Identifier; constraint: TypeNode | undefined; default: TypeNode | undefined;
+  captured?: true };
 
 /** Original text copied into the probe: `[start, end)` of `file`. */
 type Copy = { file: string; start: number; end: number };

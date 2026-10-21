@@ -37,6 +37,11 @@ export type ComputedContext = {
   /** A generic alias's equation at a reference's arguments, when it is an
    * array, a tuple or another alias's application; null otherwise. */
   equation(reference: Extract<TypeTerm, { k: "reference" }>): TypeTerm | null;
+  /** Throws where `node` names a type declared in a block one of whose
+   * captured binders a nearer declaration hides there (SOURCE-CONTRACTS.md,
+   * "Block-scoped type declarations"): TypeScript's evaluation would read
+   * it past that refusal. */
+  captures(node: TypeNode): void;
   /** The identity of the symbol a `unique symbol` type names: the index of
    * the `unique symbol` constant or well-known symbol declaring it among the
    * listed symbols, as a computed key `[k]` naming it is read. Throws the
@@ -119,6 +124,7 @@ export function computedType(context: ComputedContext, node: TypeNode, span: Spa
     read: (node: TypeNode) => TypeTerm): TypeTerm {
   const { checker } = context;
   const form = computedForm(node) ?? "a computed type";
+  context.captures(node);
   const type = checker.getTypeFromTypeNode(node);
   if (!type || type.isErrorType()) throw Error(`TypeScript computes no type for this ${form}: it is not valid TypeScript`);
   const literals = literalUnion(type, span, context.unique);

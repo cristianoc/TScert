@@ -553,6 +553,7 @@ export function statements(this: Gate, list: readonly Statement[]): Stmt[] {
     else n.forEachChild(names);
   };
   for (const s of list.slice(live.length)) {
+    if (typeStatement(s)) continue;
     const at = hoisted(s);
     if (at) gate.fail(at, "a hoisted declaration after a statement that always jumps is outside the fragment");
     if (ts.isVariableStatement(s))
@@ -568,8 +569,16 @@ export function statements(this: Gate, list: readonly Statement[]): Stmt[] {
     if (at) gate.fail(at, "a name declared only in dead code is outside the fragment");
   }
   gate.markEarly(live);
-  // An empty statement, `;`, does nothing.
-  return live.filter((s) => !ts.isEmptyStatement(s)).flatMap((s) => gate.hoisting(s));
+  // An empty statement, `;`, does nothing; nor does a type declaration.
+  return live.filter((s) => !ts.isEmptyStatement(s) && !typeStatement(s)).flatMap((s) => gate.hoisting(s));
+}
+
+/** A `type` or `interface` statement: TypeScript erases it, so it runs
+ * nothing, wherever it is; it binds a type name over its block, which the
+ * type readers resolve as TypeScript does (SOURCE-CONTRACTS.md,
+ * "Block-scoped type declarations"). */
+function typeStatement(s: Statement): boolean {
+  return ts.isTypeAliasDeclaration(s) || ts.isInterfaceDeclaration(s);
 }
 
 /** The early bindings of a statement list (SOURCE-MODEL.md, "Lexical

@@ -50,6 +50,7 @@ design, not its progress.
 | [Assigned closure parameters](#assigned-closure-parameters) | closed: reads use a slot or cell by the flow graph's decision (2026-10-21, [slice measurement](#census-closure-parameter-slots)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past the `let`-union refusal |
 | [Patterns binding a `for...of` over a program's iterable](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) | closed: each step's value is destructured first in the closing region, by the array loop's lowering; an array's `values`, `keys` and `entries` are read at `IterableIterator` of their declared argument and stepped by the protocol (2026-10-21, [slice measurement](#census-for-of-patterns)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past the `for...of` pattern refusal |
 | [Enum reverse keys](docs/SOURCE-CONTRACTS.md#enums) | closed: an enum's object states, at each numeric value TypeScript computes, its reverse key at `string` where TypeScript's emit builds it or its runtime object is checked (`emitted-enum`); `enum-reverse-keys`, `enum-reverse-value-import` and `compiler-api-enum-reverse` verify, a key at `number` or outside the values, a string member's value and an ambient or declaration file's enum are refused (run under Node), forged claims refused at the read (2026-10-21, [slice measurement](#census-enum-reverse-keys)) | — |
+| [Block-scoped type declarations](docs/SOURCE-CONTRACTS.md#block-scoped-type-declarations) | closed: a `type` or `interface` in a block runs nothing and names its block, each reference read at the declaration TypeScript binds, its equation lifted over the enclosing type parameters resolved there; `block-type-aliases` and `block-type-captures` verify, `invalid-block-type-scope` is refused (run under Node), a reference where a nearer binder hides a captured one, directly or through another block type, is refused, in a computed form, a mapped type and a default too (2026-10-21, [slice measurement](#census-block-types)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past the type alias statement refusal |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
@@ -650,8 +651,10 @@ first three items 2026-10-19):
   path is through the read link;
 - a pattern binding a `for...of` over a program's iterable (17), the slices
   of `type-term.mts` past their contextual function types (2026-10-20,
-  [census](#census-never-callable)), which stop past it at a type alias
-  statement in a function body ([record](#census-for-of-patterns)); the slices of
+  [census](#census-never-callable)), which read past it a type alias
+  statement in a function body ([record](#census-for-of-patterns)) and stop
+  in the producer at an iterator's bound `next`
+  ([record](#census-block-types)); the slices of
   `fragment-statements.mts` past `protocolPattern`'s call of `gate.fail`
   read a closure's assigned parameter after a host guard, a
   [slot](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)
@@ -834,6 +837,16 @@ either. On main both stop at the gate's "a pattern binding a `for...of` over
 a program's iterable", `quantified`'s `for (const [index, p] of
 typeParameters.entries())`; on the branch both stop at "statement outside the
 fragment (TypeAliasDeclaration)", a type alias declared in a function body.
+
+<a id="census-block-types"></a>
+The same two slices on 0242a5e (main) and on the branch reading block-scoped
+type declarations (2026-10-21): neither verifies on either. On main both stop
+at the gate's "statement outside the fragment (TypeAliasDeclaration)",
+`members`'s `type Index`; on the branch both read it and stop in the
+producer at "bind requires a single arrow and a valid argument prefix": the
+slices' only bound calls are the iterators' `next` the protocol lowering
+binds, in `visitType` and in `quantified`'s and `signatures`' `for (const
+[index, p] of ….entries())`.
 
 Of the 341 slices (2026-10-19, cb0d236), 82 fail in the producer and 69
 in search; of the drivers' 48, 4 and 8. By the judgment that fails:

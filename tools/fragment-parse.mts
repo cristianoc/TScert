@@ -34,8 +34,8 @@ import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFa
 import { childOf, isStatic, nameOf } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
-import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, libraryTerm, tsconfigOf, type LibraryType,
-  type SeenDiagnostic }
+import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, libraryTerm, tsconfigOf, type BlockType,
+  type LibraryType, type SeenDiagnostic }
   from "./declaration-graph.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openCompiler, releaseCompiler } from "./compiler-channel.mts";
@@ -167,9 +167,10 @@ export class Gate {
    * reference names the declaration TypeScript resolved the spelling to. */
   /** The equations of the declared aliases that name an array, a tuple or
    * another alias, over their parameters: what a rest parameter typed by one
-   * collects into (`restType`, `restTerm`). */
-  readonly aliasEquations: Map<string, { total: number; declaration: DeclarationIdentity;
-    expression: TypeTerm }> = new Map();
+   * collects into (`restType`, `restTerm`), by identity (`identityKey`):
+   * a module root's and a type declared in a block's, whose parameters
+   * start with those it closes over. */
+  readonly aliasEquations: Map<string, { total: number; expression: TypeTerm }> = new Map();
   readonly declaredTypes: Map<string,
     { required: number; total: number; declaration: DeclarationIdentity }> = new Map();
   /** Global spellings TypeScript binds to a standard library type read at
@@ -196,6 +197,10 @@ export class Gate {
    * span: each the parameter's default at the arguments before it, or the
    * reason it has none. */
   readonly completions: Map<string, TypeTerm[] | { refused: string }> = new Map();
+  /** The file's type references TypeScript binds to a type declared in one
+   * of its blocks, by span: that declaration, or the reason it is refused
+   * (`blockTypes` of the declaration graph). */
+  readonly blockTypes: Map<string, BlockType | { refused: string }> = new Map();
   /** The computed keys of the file's annotations' type literals, by span of
    * the key expression: the `unique symbol` each names, as the declaration
    * document lists it, or the reason it names none. */
@@ -414,7 +419,7 @@ export class Gate {
     if (!bound || !ts.isTypeReferenceNode(bound) || !ts.isIdentifier(bound.typeName) ||
         bound.typeArguments?.length) return null;
     const name = bound.typeName.text;
-    if (this.hasTypeParam(name)) return null;
+    if (this.hasTypeParam(name) || this.blockTypeAt(bound)) return null;
     return name === "Resolvable" && this.standardResolvable ? "resolvable"
       : name === "Awaitable" && this.standardAwaitable ? "awaitable" : null;
   }
@@ -498,6 +503,7 @@ export class Gate {
   classBody: typeof classes.classBody = classes.classBody;
 
   registerDeclaredType: typeof classes.registerDeclaredType = classes.registerDeclaredType;
+  registerEquation: typeof classes.registerEquation = classes.registerEquation;
 
   /** A failure of the tool: reported as a tool failure, never as a gate
    * refusal, so no verdict on the source follows. The report carries what
@@ -611,13 +617,19 @@ export class Gate {
    * binder of an enclosing function or a declaration root; every declaration
    * root was resolved by TypeScript's checker. */
   readonly scope: TermScope;
+  /** The type declared in a block TypeScript binds a reference to, if any:
+   * it shadows every other meaning of its spelling. */
+  blockTypeAt(node: Node): BlockType | { refused: string } | undefined {
+    return this.blockTypes.get(this.span(node).join(":"));
+  }
   termScope(): TermScope {
     return {
       source: this.file,
       annotation: true,
       awaited: node => this.standardAwaited && ts.isIdentifier(node.typeName) &&
-        node.typeName.text === "Awaited" && !this.hasTypeParam("Awaited"),
-      associatedAlias: node => ts.isIdentifier(node.typeName) && !this.hasTypeParam(node.typeName.text)
+        node.typeName.text === "Awaited" && !this.hasTypeParam("Awaited") && !this.blockTypeAt(node),
+      associatedAlias: node => ts.isIdentifier(node.typeName) && !this.hasTypeParam(node.typeName.text) &&
+          !this.blockTypeAt(node)
         ? this.resolutionAliases.get(node.typeName.text) ?? null : null,
       associated: (input, span, node) => {
         const owner = input.k === "binder" ? this.resolutionScopes.flat()
@@ -684,12 +696,8 @@ export class Gate {
       // The alias the reference names, as TypeScript resolved it, at every
       // one of its parameters.
       equation: (reference) => {
-        const alias = this.aliasEquations.get(reference.reference.name);
-        const target = reference.reference.target;
-        if (!alias || reference.args.length !== alias.total || !target ||
-            target.module !== alias.declaration.module || target.name !== alias.declaration.name ||
-            target.span[0] !== alias.declaration.span[0] || target.span[1] !== alias.declaration.span[1])
-          return null;
+        const alias = this.aliasEquations.get(classes.identityKey(reference.reference.target));
+        if (!alias || reference.args.length !== alias.total) return null;
         return substitute(alias.expression, reference.args);
       },
       computed: (node, span) => {
@@ -701,12 +709,26 @@ export class Gate {
       named: (node, span, read) => {
         const name = ts.isIdentifier(node.typeName) ? node.typeName.text
           : this.namespaceMember(node.typeName) ?? this.fail(node, "type reference outside the fragment");
+        const block = this.blockTypeAt(node);
+        if (block && "refused" in block) return this.fail(node, block.refused);
         // An application of an alias TypeScript computes from its parameters
-        // is a computed type, evaluated where it is written.
-        const computed = this.hasTypeParam(name) ? undefined : this.computedTypes.get(`${span[0]}:${span[1]}`);
+        // is a computed type, evaluated where it is written: the graph
+        // answers a reference only where TypeScript binds it to one.
+        const computed = this.computedTypes.get(`${span[0]}:${span[1]}`);
         if (computed) {
           if ("refused" in computed) return this.fail(node, computed.refused);
           return computed;
+        }
+        // A type declared in a block, at the binders it closes over, which
+        // TypeScript resolves to themselves here (`blockTypes`).
+        if (block) {
+          if (block.computed) return this.fail(node, "computed block type evaluation missing");
+          const closed = block.captured.map((spelling): TypeTerm => {
+            if (!this.hasTypeParam(spelling))
+              this.fail(node, `the type ${name} declared in a block closes over ${spelling}, which is not in scope here`);
+            return { k: "binder", name: this.typeParamName(spelling), span };
+          });
+          return this.declaredReference(node, name, span, block, closed, read);
         }
         if (this.enums.has(name) && !this.hasTypeParam(name)) {
           if (node.typeArguments?.length) this.fail(node, "an enum type takes no type arguments");
@@ -727,26 +749,34 @@ export class Gate {
             part => this.keyTypes.get(this.span(part).join(":")) ?? null), span,
             message => this.fail(node, message));
         const declared = this.declaredTypes.get(name);
-        if (declared !== undefined && !this.hasTypeParam(name)) {
-          const args = node.typeArguments ?? [];
-          if (args.length < declared.required || args.length > declared.total) {
-            const count = declared.required === declared.total
-              ? `${declared.total}`
-              : `${declared.required} to ${declared.total}`;
-            this.fail(node, `type '${name}' needs ${count} type argument(s)`);
-          }
-          const omitted = args.length < declared.total ? this.completions.get(`${span[0]}:${span[1]}`) : [];
-          if (!omitted) return this.fail(node, `type '${name}' has no completion of its omitted arguments`);
-          if ("refused" in omitted) return this.fail(node, omitted.refused);
-          return { k: "reference", reference: { name, span,
-            arguments: args.map(arg => this.span(arg)), target: declared.declaration },
-            args: [...args.map(read), ...omitted], span };
-        }
+        if (declared !== undefined && !this.hasTypeParam(name))
+          return this.declaredReference(node, name, span, declared, [], read);
         if (node.typeArguments?.length) this.fail(node, "unknown type alias");
         if (!this.hasTypeParam(name)) this.fail(node, "unknown type parameter");
         return { k: "binder", name: this.typeParamName(name), span };
       },
     };
+  }
+
+  /** A reference to a declaration of the graph: its captured arguments
+   * (`closed`, a type declared in a block's), the written ones, and the
+   * omitted ones completed at them. */
+  declaredReference(node: ts.TypeReferenceNode, name: string, span: Span,
+      declared: { required: number; total: number; declaration: DeclarationIdentity }, closed: TypeTerm[],
+      read: (part: TypeNode) => TypeTerm): TypeTerm {
+    const args = node.typeArguments ?? [];
+    if (args.length < declared.required || args.length > declared.total) {
+      const count = declared.required === declared.total
+        ? `${declared.total}`
+        : `${declared.required} to ${declared.total}`;
+      this.fail(node, `type '${name}' needs ${count} type argument(s)`);
+    }
+    const omitted = args.length < declared.total ? this.completions.get(`${span[0]}:${span[1]}`) : [];
+    if (!omitted) return this.fail(node, `type '${name}' has no completion of its omitted arguments`);
+    if ("refused" in omitted) return this.fail(node, omitted.refused);
+    return { k: "reference", reference: { name, span,
+      arguments: args.map(arg => this.span(arg)), target: declared.declaration },
+      args: [...closed, ...args.map(read), ...omitted], span };
   }
 
   typeOf(node: TypeNode | undefined, at: Node | null = null): TypeTerm {
@@ -1252,11 +1282,35 @@ function lowerFile(file: string, carriesContext: boolean,
     ...imported,
     ...[...aliasNodes, ...interfaceNodes, ...classNodes, ...enumNodes].flatMap(node => node.name ? [node.name.text] : []),
   ]);
+  // The names the types declared in the file's blocks bind, and the
+  // references outside a type declaration spelling one: TypeScript decides
+  // which it binds to such a declaration (`blockTypes`, SOURCE-CONTRACTS.md,
+  // "Block-scoped type declarations"). A declaration's body is the graph's
+  // to read.
+  const blockNames = new Set<string>();
+  const findBlockTypes = (node: Node): void => {
+    if ((ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) && node.parent &&
+        !ts.isSourceFile(node.parent))
+      blockNames.add(node.name.text);
+    node.forEachChild(findBlockTypes);
+  };
+  findBlockTypes(source);
+  const blockReference = (node: Node): node is ts.TypeReferenceNode =>
+    ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && blockNames.has(node.typeName.text);
+  const blockNodes: ts.TypeReferenceNode[] = [];
+  const findBlockReferences = (node: Node): void => {
+    if (ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) return;
+    if (blockReference(node)) blockNodes.push(node);
+    node.forEachChild(findBlockReferences);
+  };
+  if (blockNames.size) findBlockReferences(source);
+  // A spelling a block's type may bind is listed at every reference, since
+  // its first one may be bound to that block's type.
   const globalNodes: Identifier[] = [];
   const findGlobals = (node: Node): void => {
     const typeName = ts.isTypeReferenceNode(node) ? node.typeName : null;
-    if (typeName && ts.isIdentifier(typeName) &&
-        !rooted.has(typeName.text) && !globalNodes.some(g => g.text === typeName.text))
+    if (typeName && ts.isIdentifier(typeName) && !rooted.has(typeName.text) &&
+        (blockNames.has(typeName.text) || !globalNodes.some(g => g.text === typeName.text)))
       globalNodes.push(typeName);
     node.forEachChild(findGlobals);
   };
@@ -1654,9 +1708,11 @@ function lowerFile(file: string, carriesContext: boolean,
     }
     // An application of a global or an imported type is one where the alias
     // it names is computed (`Extract<T, U>`), which the declaration graph decides.
-    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeArguments?.length &&
+    // A reference a block's type may bind is listed too: the graph decides
+    // whether TypeScript binds it to one it computes.
+    if ((ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeArguments?.length &&
         (!rooted.has(node.typeName.text) || imported.has(node.typeName.text)) &&
-        !enclosingBinders(node).includes(node.typeName.text))
+        !enclosingBinders(node).includes(node.typeName.text)) || blockReference(node))
       computedNodes.push(node);
     // So does the computed key of a class method or an object literal's
     // property or method, `[Symbol.iterator]() { … }`.
@@ -1682,13 +1738,13 @@ function lowerFile(file: string, carriesContext: boolean,
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || mappedNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
       restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length ||
-      regexpNodes.length || dispatchNodes.length) {
-    const first = importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
+      regexpNodes.length || dispatchNodes.length || blockNodes.length) {
+    const first =importNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? firstArray ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
       spreadNodes[0] ?? restTargets[0]?.node ?? privateNodes[0] ?? inKeyNodes[0] ?? receiverTargetNodes[0] ?? libraryNameNodes[0] ?? elementReadNodes[0] ??
-      regexpNodes[0] ?? dispatchNodes[0];
+      regexpNodes[0] ?? dispatchNodes[0] ?? blockNodes[0];
     if (!first) throw Error("missing declaration root");
     // Named, default and namespace imports. A type import joins the
     // declaration graph; a value import is an assumption at the type its
@@ -1796,6 +1852,8 @@ function lowerFile(file: string, carriesContext: boolean,
         restSlice: ([start, end]) => gate.slices.add(`${start}:${end}`),
         computed: computedNodes.map(node => gate.span(node)),
         computedType: ([start, end], result) => gate.computedTypes.set(`${start}:${end}`, result),
+        blockTypes: blockNodes.map(node => gate.span(node)),
+        blockType: ([start, end], result) => gate.blockTypes.set(`${start}:${end}`, result),
         completion: ([start, end], result) => gate.completions.set(`${start}:${end}`, result),
         symbolNames: symbolNameNodes.map(node => gate.span(node)),
         keyTypes: keyTypeNodes.map(node => gate.span(node)),
@@ -1838,7 +1896,7 @@ function lowerFile(file: string, carriesContext: boolean,
             ...(firstAsync ? [firstAsync] : []), ...keyNodes, ...ambientNames.map(topStatement), ...staticNodes,
             ...classTestNodes, ...classReadNodes, ...contextualNodes, ...assignNodes,
             ...receiverNodes, ...enumNodes, ...constEnumNodes, ...computedNodes, ...symbolNameNodes,
-            ...keyTypeNodes, ...bindingNodes, ...privateNodes].find(node =>
+            ...keyTypeNodes, ...bindingNodes, ...privateNodes, ...blockNodes].find(node =>
             node.getStart(source) === error.at[0] && node.end === error.at[1]) ?? expressionAt(source, error.at) ?? first
         : first;
       const failure = toolFailureOf(error);
@@ -1872,6 +1930,11 @@ function lowerFile(file: string, carriesContext: boolean,
         definition.parameters.length, identity, node,
         definition.expression ?? gate.fail(first, `a root without an equation: ${identity.module}#${identity.name}`));
     }
+    // Every collected equation is available by identity, including block
+    // aliases reached only through another alias's equation.
+    for (const definition of declarations.definitions)
+      if (definition.expression)
+        gate.registerEquation(definition.declaration, definition.parameters.length, definition.expression);
   }
   // Carried context skips aliases its old fragment could not state. Every
   // retained declaration now has one source equation, shared with imports.

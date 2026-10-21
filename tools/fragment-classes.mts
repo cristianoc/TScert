@@ -847,8 +847,21 @@ export function registerDeclaredType(this: Gate, name: string, required: number,
   if (gate.declaredTypes.has(name))
     gate.fail(node, "duplicate type name");
   gate.declaredTypes.set(name, { required, total, declaration });
+  gate.registerEquation(declaration, total, expression);
+}
+
+/** A declaration's key among the gate's equations. */
+export function identityKey(declaration: DeclarationIdentity): string {
+  return JSON.stringify([declaration.module, declaration.span, declaration.name]);
+}
+
+/** A declaration's equation, where a rest parameter typed by it reads it
+ * (`aliasEquations`): an array, a tuple or another alias. */
+export function registerEquation(this: Gate, declaration: DeclarationIdentity, total: number,
+    expression: TypeTerm): void {
+  const gate: Gate = this;
   if (expression.k === "array" || expression.k === "tuple" || expression.k === "reference")
-    gate.aliasEquations.set(name, { total, declaration, expression });
+    gate.aliasEquations.set(identityKey(declaration), { total, expression });
 }
 
 /** The key a member name spells: its text, or a private name's symbol,
