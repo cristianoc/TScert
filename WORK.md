@@ -79,7 +79,10 @@ design, not its progress.
 | [A chain compared with a literal](docs/SOURCE-ELABORATION.md#derived-source-forms) | closed: `x?.p ⊙ c` with `⊙` an equality and `c` a literal is the test of `x`, then `x.p ⊙ c`, `&&` or `\|\|` by what `undefined ⊙ c` gives; `optional-chain-test` verifies, `invalid-optional-chain-test-false`, `-undefined`, `-operand`, `-loose`, `-write`, `-ambient` and `-getter` are refused (run under Node) (2026-10-22, [slice measurement](#census-chain-comparison)) | `fragment-expressions.mts#expr` and `#binary` move past "missing field target" at `lambda`'s `b.target` |
 | [Investigation of a conditional expression over a tested optional field](#conditional-optional-field) | closed: the arm's read of `o` rebinds its slot to the claim there, a view of the field, which the join's claim of `o` at its declared type does not cover (2026-10-22) | the cause of the refusal of `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` is established, with a reproducer and a concrete repair obligation |
 | [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
-| [Investigation of a defaulted parameter's flow](#defaulted-parameter-flow) | open: an investigation, cause unknown | the cause of `spread-defaulted-set-refused`'s edge refusal is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a defaulted parameter's flow](#defaulted-parameter-flow) | closed: `Set<T>` did not meet `ReadonlySet<T>`, the one read through the overlay, the other as declared; `ReadonlySet` and `ReadonlyMap` are read through the overlay at the readers' restriction ([library types](docs/SOURCE-CONTRACTS.md#prototype-contracts)); `readonly-collection-views` verifies, `invalid-readonly-set-has-effect` is refused (run under Node) (2026-10-22, [slice measurement](#census-intersection-path-test)) | the cause of `spread-defaulted-set-refused`'s edge refusal is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a path test over an intersection](#intersection-path-test) | closed: the producer stated no refinement of a path whose root's type is an intersection it keeps unresolved, a generic application among its operands, so the entry held the path's witness at the top type; a root's operand stating the member gives it (`record_field`); `path-test-intersection-application` verifies, `invalid-path-test-intersection-alias`, `-call` and `-application` are refused (run under Node) (2026-10-22, [slice measurement](#census-intersection-path-test)) | the cause of the refusal at `visitType`'s `if (binder.default) scoped(binder.default)` is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a member two intersection operands state](#meet-member-disagreement) | open: an investigation, cause unknown | the cause of `path-test-intersection-disagree`'s refusal is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a closure passed to a narrower array's `forEach`](#closure-narrower-foreach) | open: an investigation, cause unknown | the cause of the refusal of `calls.forEach(go)` with `go` a closure over a wider parameter is established, with a reproducer and a concrete repair obligation |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
@@ -193,20 +196,53 @@ which lacked f1d0301, refused it at the second `k.name`.
 <a id="defaulted-parameter-flow"></a>
 **Investigation of a defaulted parameter's flow.** A parameter declared a
 `ReadonlySet<string>` whose default is a fresh `Set<string>`, the form of
-`type-term.mts#visitType`, holds either past the default, and Lean's
-incoming claim at the next point is `ReadonlySet<string> | Set<string>`,
-while the producer's claim there is `Set<string> | { size: never = (number) }`;
-the edge does not establish it, with or without a spread of the parameter
-(`spread-defaulted-set-refused`):
+`type-term.mts#visitType`, holds either past the default. The judgment the
+edge needs is `Set<string> ≤ ReadonlySet<string>`, and it did not hold of
+the rows: `Set` is read through the interface overlay (`forEach` without
+`thisArg`, iterators read as `Iterator`), `ReadonlySet` was read as declared
+(`forEach` with `thisArg`, iterators at `SetIterator`). The same judgment
+refused passing a `Set<string>` to a `ReadonlySet<string>` parameter. Both
+views are the overlay's (`readonly-collection-views`).
+
+<a id="intersection-path-test"></a>
+**Investigation of a path test over an intersection.**
+`if (binder.default) use(binder.default)` with `binder: Param<Term> &
+{ default: Term | null }` was refused at the second read: the entry of the
+branch held the witness of `binder.default` at the top type, since the
+producer stated no current-content assertion of `binder` there. Its
+`record_field`, which decides whether a root's type states the member,
+answered no for an intersection it keeps unresolved (an operand a generic
+application). Lean's row for the same type is the meet, which holds the
+field, and the witness edge checks the assertion as for any root.
+
+<a id="meet-member-disagreement"></a>
+**Investigation of a member two intersection operands state.** With
+`binder: Param<string> & { bound: "a" | "b" | null }`,
+`if (binder.bound) return binder.bound;` at `"a" | "b" | "none"` is refused
+(`path-test-intersection-disagree`): the producer reads the member at the
+first operand's `string | null`. Proposing it at `"a" | "b" | null` instead,
+the operands' meet, the search found no derivation of the condition's read
+at that type, though Lean's row states `bound` at both (observed
+2026-10-22).
+
+<a id="closure-narrower-foreach"></a>
+**Investigation of a closure passed to a narrower array's `forEach`.**
+`type-term.mts#visitType`'s `term.calls.forEach(go)`, with `go` a closure
+`(part: TypeTerm) => void` and `calls` an array of the function arm, is
+refused: no derivation of the invoke. Reduced:
 
 ```typescript
-export function merged(more: readonly string[], bound: ReadonlySet<string> = new Set()): number {
-  return new Set([...bound, ...more]).size;
+type F = { k: "f"; n: number };
+type T = { k: "a"; n: number } | F;
+export function visit(t: T): void {}
+export function each(calls: F[]): void {
+  const go = (part: T): void => visit(part);
+  calls.forEach(go);
 }
 ```
 
-The investigation concerns the producer's row for the union of the declared
-type and the default's after `DefaultValue`.
+The same closure over a `T[]` verifies, and so does `calls.forEach(visit)`
+with the module function (observed 2026-10-22).
 
 <a id="assigned-parameters-with-defaults"></a>
 **Investigation of assigned parameters with defaults.** The producer refuses
@@ -816,7 +852,9 @@ first three items 2026-10-19):
   statement in a function body ([record](#census-for-of-patterns)), an
   iterator's `next` bound to a union of hosts ([record](#census-block-types)),
   and stop in the producer at "missing field positions", `signatures`' test
-  `"positions" in contract` ([record](#census-union-host-bind)); the slices of
+  `"positions" in contract` ([record](#census-union-host-bind)), then at a
+  closure passed to `forEach` of an array of a narrower element
+  ([record](#census-intersection-path-test)); the slices of
   `fragment-statements.mts` past `protocolPattern`'s call of `gate.fail`
   read a closure's assigned parameter after a host guard, a
   [slot](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)
@@ -1214,6 +1252,16 @@ the producer at "bind requires a single arrow and a valid argument prefix",
 `Set<string>`, whose iterator is a union of two; on the branch both stop in
 the producer at "missing field positions", `signatures`' `"positions" in
 contract`.
+
+<a id="census-intersection-path-test"></a>
+The same two slices on d99275a (main) and on the branch reading a path test
+over an intersection and the readers' views of `Set` and `Map` (2026-10-22):
+neither verifies on either. On main both stop in search at "no derivation of
+its node-typing claim", `visitType`'s `binder.default` read after `if
+(binder.default)`. On the branch both pass it and `visitType`'s call
+`visitType(part, visit, inner)` with `inner` a `Set<string>`, and stop in
+search at "no derivation of its node-typing claim", `term.calls.forEach(go)`
+([investigation](#closure-narrower-foreach)).
 
 <a id="census-recursive-constants"></a>
 The same two slices on a8f729d (main) and on the branch proposing a

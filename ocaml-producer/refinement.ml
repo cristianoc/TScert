@@ -178,6 +178,9 @@ let record_field ?(allow_optional=false) declarations t field =
           (try has (id::seen) (definition declarations id args) with Json.Error _ -> false)
         | _ -> false) atoms
     | Some (Union ts) -> ts <> [] && List.for_all (has seen) ts
+    (* A value of an intersection is a value of each operand: it has the
+       field where one operand states it. *)
+    | Some (Meet (t,ts)) -> List.exists (has seen) (t::ts)
     | _ -> false in
   has [] t
 (* Whether every record arm states the field a stable member (HOST-FAMILIES.md,

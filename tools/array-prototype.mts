@@ -53,8 +53,10 @@ export type OverlayEntry = {
   /** The result stated as this standard library interface at the declared
    * result's one argument, which the declared result implies: a weaker
    * contract than the declaration's (`ArrayIterator<T>` read as `Iterator<T>`
-   * or, keeping its `[Symbol.iterator]`, as `IterableIterator<T>`). */
-  resultAs?: "Iterator" | "IterableIterator";
+   * or, keeping its `[Symbol.iterator]`, as `IterableIterator<T>`), or as
+   * the native collection iterator (`NativeIterator`, a `Set`'s or a
+   * `Map`'s `SetIterator<T>` or `MapIterator<T>`). */
+  resultAs?: "Iterator" | "IterableIterator" | "NativeIterator";
   /** A reviewed restriction on a quantified parameter. Required when native
    * coercion could otherwise call an arbitrary client method. */
   bounds?: Readonly<Record<string, TypeTerm>>;
@@ -433,12 +435,12 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "[Symbol.toStringTag]", from: "Set", signature: "readonly [Symbol.toStringTag]: string;" },
     // As for arrays: `SetIterator<T>` is an `Iterator<T>`.
     { name: "[Symbol.iterator]", from: "Set", signature: "[Symbol.iterator](): SetIterator<T>;",
-      resultAs: "Iterator", effect: emptyEffect },
+      resultAs: "NativeIterator", effect: emptyEffect },
     // A `SetIterator<T>` is read as an `Iterator<T>` too; a `for...of` over
     // one steps it as the host's (`intrinsics.mts`).
-    { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "Iterator", effect: emptyEffect },
-    { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "Iterator", effect: emptyEffect },
-    { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator", effect: emptyEffect },
+    { name: "keys", from: "Set", signature: "keys(): SetIterator<T>;", resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "values", from: "Set", signature: "values(): SetIterator<T>;", resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "entries", from: "Set", signature: "entries(): SetIterator<[T, T]>;", resultAs: "NativeIterator", effect: emptyEffect },
   ],
   Map: [
     { name: "clear", from: "Map", signature: "clear(): void;", effect: changesValues },
@@ -454,10 +456,42 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "size", from: "Map", signature: "readonly size: number;" },
     { name: "[Symbol.toStringTag]", from: "Map", signature: "readonly [Symbol.toStringTag]: string;" },
     { name: "[Symbol.iterator]", from: "Map", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
-      resultAs: "Iterator", effect: emptyEffect },
-    { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "Iterator", effect: emptyEffect },
-    { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "Iterator", effect: emptyEffect },
-    { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator", effect: emptyEffect },
+      resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "keys", from: "Map", signature: "keys(): MapIterator<K>;", resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "NativeIterator", effect: emptyEffect },
+    { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "NativeIterator", effect: emptyEffect },
+  ],
+  // The readers' views of a `Set` and a `Map`, read through the overlay as
+  // `ReadonlyArray` is through `ArrayProto`, at the restriction of the
+  // collection's own readers (`thisArg` dropped, an iterator read as an
+  // `Iterator`), so that a `Set<T>` is a `ReadonlySet<T>` and a `Map<K, V>`
+  // a `ReadonlyMap<K, V>`. A program's object may meet these interfaces,
+  // which state no `[Symbol.toStringTag]`: each member keeps the effect its
+  // declaration states, and an iteration runs the iterator protocol.
+  ReadonlySet: [
+    { name: "forEach", from: "ReadonlySet",
+      signature: "forEach(callbackfn: (value: T, value2: T, set: ReadonlySet<T>) => void, thisArg?: any): void;",
+      drop: ["thisArg"] },
+    { name: "has", from: "ReadonlySet", signature: "has(value: T): boolean;" },
+    { name: "size", from: "ReadonlySet", signature: "readonly size: number;" },
+    { name: "[Symbol.iterator]", from: "ReadonlySet", signature: "[Symbol.iterator](): SetIterator<T>;",
+      resultAs: "Iterator" },
+    { name: "keys", from: "ReadonlySet", signature: "keys(): SetIterator<T>;", resultAs: "Iterator" },
+    { name: "values", from: "ReadonlySet", signature: "values(): SetIterator<T>;", resultAs: "Iterator" },
+    { name: "entries", from: "ReadonlySet", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator" },
+  ],
+  ReadonlyMap: [
+    { name: "forEach", from: "ReadonlyMap",
+      signature: "forEach(callbackfn: (value: V, key: K, map: ReadonlyMap<K, V>) => void, thisArg?: any): void;",
+      drop: ["thisArg"] },
+    { name: "get", from: "ReadonlyMap", signature: "get(key: K): V | undefined;" },
+    { name: "has", from: "ReadonlyMap", signature: "has(key: K): boolean;" },
+    { name: "size", from: "ReadonlyMap", signature: "readonly size: number;" },
+    { name: "[Symbol.iterator]", from: "ReadonlyMap", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
+      resultAs: "Iterator" },
+    { name: "keys", from: "ReadonlyMap", signature: "keys(): MapIterator<K>;", resultAs: "Iterator" },
+    { name: "values", from: "ReadonlyMap", signature: "values(): MapIterator<V>;", resultAs: "Iterator" },
+    { name: "entries", from: "ReadonlyMap", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator" },
   ],
   Date: [
     ...["valueOf", "getTime", "getFullYear", "getUTCFullYear", "getMonth", "getUTCMonth", "getDate",
@@ -469,6 +503,31 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
       .map((name): OverlayEntry => ({ name, from: "Date", signature: `${name}(): string;`, effect: emptyEffect })),
   ],
 };
+
+/** The native collection iterator `NativeCollectionIterator<T>`, what a
+ * `Set`'s or a `Map`'s `keys`, `values`, `entries` and `[Symbol.iterator]`
+ * return: the library's `Iterator<T>`, marked by `[⟨CollectionIterator⟩]:
+ * undefined`, a key no source declaration, literal or class states. So only
+ * those members give a value of it, and the host iteration intrinsic
+ * `%Iterate:Iterator%`, which steps it as the built-in iterator does,
+ * requires it: an `Iterator<T>` of any other source, a `ReadonlySet`'s
+ * included, runs the iterator protocol or is refused there. */
+export const collectionIteratorMark: DeclarationIdentity =
+  { module: "tscert/collections", name: "CollectionIterator", span: [0, 0] };
+export const nativeCollectionIteratorIdentity: DeclarationIdentity =
+  { module: "tscert/collections", name: "NativeCollectionIterator", span: [0, 0] };
+export function nativeCollectionIteratorDefinition(mark: number,
+    iterator: (element: TypeTerm) => TypeTerm): TypeDefinition {
+  return { declaration: nativeCollectionIteratorIdentity, bases: [],
+    parameters: [{ name: "T", span: [0, 0], defaulted: false }],
+    expression: { k: "intersection", span: [0, 0], parts: [iterator({ k: "parameter", index: 0, span: [0, 0] }),
+      { k: "object", stringIndex: null, calls: [], span: [0, 0], fields: [{ name: { symbol: mark },
+        optional: false, readonly: true, type: { k: "atom", name: "undefined", span: [0, 0] }, span: [0, 0] }] }] } };
+}
+/** The native collection iterator over `element`. */
+export const nativeCollectionIterator = (element: TypeTerm): TypeTerm => ({ k: "reference", args: [element],
+  span: [0, 0], reference: { name: nativeCollectionIteratorIdentity.name, span: [0, 0], arguments: [[0, 0]],
+    target: nativeCollectionIteratorIdentity } });
 
 /** What the overlay reads through the declaration graph: the symbol a
  * computed key names, and a reference to a standard library interface, which
@@ -870,6 +929,8 @@ function prototype(checker: Checker, at: Node, library: OverlayLibrary, proto: P
       if (!argument || others.length) throw Error(`${entry.from}.${entry.name} has no element type to state`);
       return typeTerm(scope, argument, member);
     };
+    // A prototype's iterator is no collection's: its result is a library interface.
+    if (entry.resultAs === "NativeIterator") throw Error(`${entry.from}.${entry.name}: a prototype states no collection iterator`);
     const stated = entry.result ?? (entry.resultAs
       ? library.reference(interfaceOf(entry.resultAs), [resultArgument()], span)
       : entry.resultIsReceiver ? receiver : undefined);

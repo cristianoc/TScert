@@ -1685,7 +1685,10 @@ other signature or its receiver condition from the declared scheme.
      {⟦I\langle\vec X\rangle⟧_\Omega=\{k_1:⟦m_1⟧_{\omega_1};\ \ldots;\ k_n:⟦m_n⟧_{\omega_n}\}}\ \textsf{library-interface}
 ```
 
-a supertype of the declared interface. A member's signatures state the
+a supertype of the declared interface in its members and their
+signatures; the effects, and a `Set`'s and a `Map`'s marked iterators below,
+are host assumptions about the built-in prototypes, not consequences of
+that structure. A member's signatures state the
 entry's effect: the empty footprint for the readers, `has`, `get`, `keys`,
 `values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`,
 `toString` and `toISOString`; `{value: any, store: keep}` for the members
@@ -1696,9 +1699,24 @@ write only the receiver's internal slots, which hold no array store; none for
 nothing state the empty footprint on their construct signatures: they read the
 array through the host's iterator and allocate. $`⟦m⟧_\omega`$ drops
 `thisArg`, reads a `this` result as the receiver, and reads a declared
-iterator result as `Iterator<T>`, which it extends. A property is a readonly
+iterator result as `Iterator<T>`, which it extends, or, for `Set`'s and
+`Map`'s `keys`, `values`, `entries` and `[Symbol.iterator]`, as the native
+collection iterator, `Iterator<T>` marked as the built-in one
+([loops and spreads](#loops-and-spreads-over-iterables)). A property is a readonly
 view. A string's own `length` and indices are the calculus's `lenStr` and
 `elemStr`, never the prototype's; `s[i]` is `string | undefined`.
+
+`ReadonlySet<T>` and `ReadonlyMap<K, V>`, the readers' views of a `Set` and a
+`Map`, are read through the same mechanism at the restriction of the
+collection's own readers (`forEach` without `thisArg`, `has`, `get`, `size`,
+`keys`, `values`, `entries` and `[Symbol.iterator]`, each iterator result an
+`Iterator`, which the native collection iterator meets), so that `Set<T>` meets `ReadonlySet<T>` and `Map<K, V>` meets
+`ReadonlyMap<K, V>` by width and by the callback's parameter, as `Array`
+meets `ReadonlyArray` (`readonly-collection-views`). They state no
+`[Symbol.toStringTag]`, so a program's object may meet them: each member
+states the effect its declaration does, which is no footprint
+(`invalid-readonly-set-has-effect`, run under Node), and a loop or a spread
+over one runs the [iterator protocol](#the-iterator-protocol).
 
 ### Native footprints
 
@@ -2959,13 +2977,20 @@ With $`\mathit{Step}(E)=()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:E\}\mid
 \mathtt{\%Iterate{:}string\%}:(\mathsf{string})\Rightarrow\mathit{Step}(\mathsf{string}) & \text{a string, by code point}\\
 \mathtt{\%Iterate{:}Set\%}:\forall T.\ (\mathsf{Set}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \\
 \mathtt{\%Iterate{:}Map\%}:\forall K\,V.\ (\mathsf{Map}\langle K,V\rangle)\Rightarrow\mathit{Step}([K,V]) & \text{a fresh entry per step}\\
-\mathtt{\%Iterate{:}Iterator\%}:\forall T.\ (\mathsf{Iterator}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \text{a SetIterator or MapIterator}
+\mathtt{\%Iterate{:}Iterator\%}:\forall T.\ (\mathsf{NativeCollectionIterator}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \text{a SetIterator or MapIterator}
 \end{array}
 ```
 
 `Set` and `Map` are the [interface overlay](#library-types)'s, whose
-`keys`, `values` and `entries` give a `SetIterator` or `MapIterator` read as
-an `Iterator` of its argument. None of these iterators has a `return`, so a
+`keys`, `values`, `entries` and `[Symbol.iterator]` give a `SetIterator` or
+`MapIterator` read as the native collection iterator
+$`\mathsf{NativeCollectionIterator}\langle T\rangle`$: `Iterator<T>` with
+a key $`\langle\mathit{CollectionIterator}\rangle`$ at `undefined`, a
+synthetic symbol no source declaration, literal or class states, so no
+other value meets it. A value TypeScript types `SetIterator` or
+`MapIterator` from any other source, a `ReadonlySet`'s or `ReadonlyMap`'s
+iterator included, is no argument of `%Iterate:Iterator%`, and its loop is
+refused (`invalid-readonly-set-iterator-native`, run under Node). None of these iterators has a `return`, so a
 loop left early by `break`, `return` or a throw calls nothing. An iterable of
 any other kind with a `[Symbol.iterator]` (an `Iterable<T>`, a class or a
 record with one), or a union with one, is the program's, and runs the

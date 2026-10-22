@@ -1239,6 +1239,19 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-slot-path-closure", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }))", "undefined"],
     ["invalid-slot-path-alias", "String(keyText({ key: { kind: 'name', text: 'a' } }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }, 1))", "undefined"],
     ["invalid-slot-path-call", "(() => { const b = { key: { kind: 'name', text: 'a' } }; return String(keyText(b, 1, () => { b.key = { kind: 'paren', inner: b.key }; })); })()", "undefined"],
+    // A member of an intersection's operand holds what its test saw until
+    // a write: one through an alias, or a call's, between the test and the
+    // read gives `null` where a string is returned.
+    ["path-test-intersection-application", "JSON.stringify([count({ k: 'scheme', binders: [{ name: 'T', bound: { k: 'leaf', n: 1 }, default: { k: 'leaf', n: 2 } }, { name: 'U', bound: null, default: null }] }), defaultOf({ name: 'T', bound: null, default: null }).n, boundOr({ name: 'T', bound: 0, default: null })])", "[3,0,0]"],
+    ["invalid-path-test-intersection-alias", "String(wrong({ name: 'T', bound: null, default: 'a' }))", "null"],
+    ["invalid-path-test-intersection-call", "(() => { const b = { name: 'T', bound: null, default: 'a' }; return String(wrong(b, () => { b.default = null; })); })()", "null"],
+    ["invalid-path-test-intersection-application", "String(wrong({ name: 'T', bound: 'a', default: null }))", "null"],
+    // A program's object with its own `has`, or its own iterator, is a
+    // `ReadonlySet`: its `has` or its iterator's `next` shrinks the list,
+    // and `findIndex` hands the callback `undefined`.
+    ["invalid-readonly-set-has-effect", "(() => { const list = [1, 2], seen = []; const drain = { next: () => ({ done: true, value: undefined }), [Symbol.iterator]() { return this; } }; first({ size: 0, has: (n) => { seen.push(n); list.pop(); return false; }, forEach: () => {}, keys: () => drain, values: () => drain, entries: () => drain, [Symbol.iterator]: () => drain }, list); return String(seen[1]); })()", "undefined"],
+    ["invalid-readonly-set-iterator-native", "(() => { const list = [1, 2]; const drain = { next: () => { list.pop(); return { done: true, value: undefined }; }, [Symbol.iterator]() { return this; } }; return String(first({ size: 0, has: () => false, forEach: () => {}, keys: () => drain, values: () => drain, entries: () => drain, [Symbol.iterator]: () => drain }, list)); })()", "undefined"],
+    ["readonly-collection-views", "JSON.stringify([size(), merged(['a', 'b']), scoped(['a', 'a', 'b']), counted(['x', 'y', 'x'])])", "[0,2,4,[\"x\",\"y\"]]"],
     ["slot-object-growth", "JSON.stringify(grownSlot('x', false)()) + JSON.stringify(grownSlot('x', true)())", "{\"x\":1,\"count\":2}{\"x\":1,\"count\":2}"],
     ["invalid-evolving-use-contract", "build(6)", "many"],
     ["invalid-generic-callee-use-contract", "count(3).head", "many"],
