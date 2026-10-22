@@ -159,6 +159,13 @@ It prints the outcome and the directory holding what the run wrote: the
 source snapshot, the parser's `fragment.json`, the producer's `claims.json`
 and the verifier's `evidence.json`.
 
+A change to TScert's own source made so that it verifies (a guard that
+promised more than its body, a type stated at its source, a tag instead of an
+`in` test) is recorded in [source rewrites](docs/SOURCE-REWRITES.md) in the
+same commit: the property the original code lacked, the general rewrite, and
+the commit. A refusal that a verifier fix would remove is fixed in the
+verifier instead.
+
 ## Which tests to keep
 
 The end-to-end pipeline cases are the primary signal: a source file through
