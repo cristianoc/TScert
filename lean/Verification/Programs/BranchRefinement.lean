@@ -334,11 +334,10 @@ theorem restricts_sound [DecidableEq ι] {G : NormalGraph ι} {c c' : Clause (Ty
       obtain ⟨⟨hrefs, hviews, hopt, hmeth, hkeys, hstable⟩, hinv⟩ := hv
       refine ⟨⟨hrefs, ?_, hopt, hmeth, hkeys, hstable⟩, by simpa [builtinInvariant, Clause.carriesInvariant] using hinv⟩
       -- The stable location at `f`: the tested value is its one value.
-      obtain ⟨sflds, soid, sl, sc, value, hsv, hsl, hsc, hstab⟩ := stableKeysT_at hstable hst
+      obtain ⟨sflds, soid, hsv, hsa⟩ := stableKeysT_at hstable hst
       have heq : flds = sflds ∧ code = .absent := by rw [hl] at hsv; cases hsv; exact ⟨rfl, rfl⟩
       obtain ⟨rfl, rfl⟩ := heq
-      rw [hf] at hsl
-      cases hsl
+      obtain ⟨sc, value, hsc, hstab⟩ := hsa.present hf
       have hvalue : u = value := by
         have := HeapOk.stable_value hh (Nat.succ_pos n) hsc hstab
         rw [hu] at this; exact Option.some.inj this

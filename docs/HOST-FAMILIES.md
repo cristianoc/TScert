@@ -726,29 +726,38 @@ in `pipeline/test.mts` the forged entries `afterRoot` and `backEdge` of
 #### Stable keys
 
 A record clause states a set $`\sigma`$ of **stable keys**, each one of its
-required views. The notion belongs to no family: an object meets them when
-it owns each $`f\in\sigma`$ at a location whose contract $`c`$ is
-**stable**:
+readonly members, a view or an optional readonly field. The notion belongs
+to no family: an object meets them when it reads each $`f\in\sigma`$ one
+way for its life, owning $`f`$ at a location whose contract $`c`$ is
+**stable**, or lacking both $`f`$ and a prototype:
 
 ```math
-\exists v_0.\ \forall j, U, u.\ c_j(U,u)\Rightarrow u=v_0
+\mathit{flds}(f)=l\ \Rightarrow\ \exists v_0.\ \forall j, U, u.\ c_j(U,u)\Rightarrow u=v_0
+\qquad
+\mathit{flds}(f)=\varnothing\ \Rightarrow\ \mathit{flds}(\mathsf{proto})=\varnothing
 ```
 
-the same $`v_0`$ at every level and world. Extension keeps every contract
-of a world and truncation restricts it, so both keep a stable key. Subtyping
+the same $`v_0`$ at every level and world, $`c=W(l)`$. An object's map of
+locations is part of its value, which no step changes, so whether it owns
+$`f`$ never changes; an absent $`f`$ of an object without a prototype reads
+`undefined` (`Step.readMissing`) in every heap. A stable key at a view is
+owned, since the view requires the location; one at an optional field is
+owned or absent, and stays so. Extension keeps every contract of a world
+and truncation restricts it, so both keep a stable key. Subtyping
 may forget a source's stable keys and proves every key the target states
 stable; an ordinary record states none, so a node remains below
 `{ readonly flags: number }`. A meet states the keys either operand states;
 a join, such as a [residual](#residuals), the keys every operand states.
 
 The semantic predicate `stableKeysT` in
-[Types.lean](../lean/Verification/Types/Types.lean) states the location and
-stable-contract requirement. `stableKeysT_at` supplies that contract;
+[Types.lean](../lean/Verification/Types/Types.lean) states the requirement,
+each key's reading by `StableAt`. `stableKeysT_at` supplies the object and
+its reading, `StableAt.present` a present key's stable contract;
 `stableKeysT_adm`, `stableKeysT_weaken` and `stableKeysT_append` prove
 admissibility, forgetting keys and conjunction. The theorem
-`HeapObservations.stable_key_frame` in
-[HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean)
-frames the heap value at a stated key on normal return. A record or
+`HeapFacts.stable_key_frame` in
+[HeapFacts.lean](../lean/Verification/Semantics/HeapFacts.lean) frames what a
+read of a stated key gives on normal return (`ReadGave.stable_frame`). A record or
 dictionary clause states its stable keys (`Clause.refs`'s last part), whose
 meaning is `stableKeysT` (`semWithArgs_stable`). In the declaration document
 a marked object term states them as `"stable": [key, …]`, nonempty, which
@@ -760,30 +769,32 @@ reading is the one authorized introduction, at host values, by F1′. The
 checks split by who can make them:
 
 - **The trusted front end** writes a stable key only for a member the
-  active family's reading authorizes: a required property member of the
-  shape the description's table selects, not among the description's
-  exclusions. The interpreter refuses a description whose stable-member
-  rule names an excluded member or one the shape lacks.
+  active family's reading authorizes: a property member, required or
+  optional, of the shape the description's table selects, not among the
+  description's exclusions. The interpreter refuses a description whose
+  stable-member rule names an excluded member or one the shape lacks.
 - **Lean** accepts stable keys only on an object term carrying a family's
-  marker, and only each a required view of that term; a stable key at an
-  optional member or at a key the term does not state is refused by the
-  decoder. The claims wire has no form for them, so a claim states them
-  only by naming a declaration.
+  marker, and only each a readonly member of that term, a view or an
+  optional readonly field; a stable key at a writable member or at a key
+  the term does not state is refused by the decoder. The claims wire has
+  no form for them, so a claim states them only by naming a declaration.
 
 No program allocation owns `[[host]]`, so no program object meets a type
 stating a stable key, whatever claim names one.
 
-The stable members of a shape are those the description names: required
-property members of the shape, the tag among them. A method is none, nor an
-optional member (a correction's absent member among them), nor a member of
-a program record, of a look-alike declaration, of a host view (`Type`,
-`Symbol`, `Checker`, `API`) or of a node list. Spelling (`readonly`, a member
-name) makes nothing stable.
+The stable members of a shape are those the description names: property
+members of the shape, required or optional, the tag and a correction's
+optional members among them. A method is none, nor a member the
+description omits, nor a member of a program record, of a look-alike
+declaration, of a host view (`Type`, `Symbol`, `Checker`, `API`) or of a node
+list. Spelling (`readonly`, a member name) makes nothing stable.
 
 #### Stable links
 
 A read link through a member every arm of its cell's claim states stable
-holds through every step:
+holds through every step, an optional link (a read of a member the object
+may lack) among them, and so does a cell fact of such a read
+([linked reads](#linked-reads)):
 
 ```math
 \frac{x.f\mapsto y\in\Sigma\quad \forall a\in\Gamma(x).\ f\in\sigma(a)\quad
@@ -795,7 +806,10 @@ for every term $`t`$: a call, a write, a closure's run, on the term's normal
 return. A claim with an arm that does not state $`f`$ stable keeps no link
 through $`f`$.
 
-It is sound by a frame property of stable contracts. Let $`c`$ be stable at
+It is sound by a frame property of stable keys. An absent stable key of an
+object without a prototype reads `undefined` from the object's value
+alone, so its read gives `undefined` in every heap. A present one is a
+location whose contract is stable: let $`c`$ be stable at
 $`v_0`$ in $`W`$ at level $`n+1`$. A heap meeting $`W`$ holds $`v_0`$ at
 $`c`$'s location; every state an execution reaches at a positive remaining
 level $`m`$ meets a world extending $`W`$ truncated to $`m`$, whose
@@ -808,18 +822,22 @@ its heap holds $`v_0`$ there too:
 ```
 
 The semantic lemmas are `HeapOk.stable_value_future` in
-[Heaps.lean](../lean/Verification/Semantics/Heaps.lean) and
+[Heaps.lean](../lean/Verification/Semantics/Heaps.lean),
 `HeapObservations.stable_frame` in
-[HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean).
-The checker applies the rule to every step: each step's output keeps the
-input's read links through a member every clause of the receiver's type
-states stable (`HeapExpressionRules.withStable`, proved by
-`withStable_sound` from `stable_frame`), the one place every expression
-checker passes through (`Checker.keepingStable`). The rule is
+[HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean)
+and `ReadGave.stable_frame` in
+[HeapFacts.lean](../lean/Verification/Semantics/HeapFacts.lean), which
+frames a read's result, present or absent. The checker applies the rule to
+every step: each step's output keeps the input's read links and cell facts
+through a member every clause of the receiver's type states stable
+(`HeapExpressionRules.withStable`, `stableLinks` and `stableCells`, proved
+by `withStable_sound` from `ReadGave.stable_frame`), the one place every
+expression checker passes through (`Checker.keepingStable`). The rule is
 [stable-link](PROGRAM-TYPING.md#checked-expression-postconditions).
 
 So $`v_0=\rho(y)`$, the value the link observed, and the location holds it
-in every later heap. The root $`x`$ is a slot, which no step but a write of
+in every later heap; for an absent key, $`\rho(y)`$ is `undefined`, which
+every later read gives. The root $`x`$ is a slot, which no step but a write of
 $`x`$ rebinds ([paths rooted at a slot](#paths-rooted-at-a-slot)); a `let`
 root held in a cell is read into a slot by a plain read link, which a call
 or a write of the cell ends.
@@ -856,16 +874,19 @@ name. A family supplies, in its description, data alone:
 - the marker, which the decoder requires of a shape stating stable keys;
 - the stable-member rule's exclusions, each a property member its owner
   declares, checked against the declaration as reviewed;
-- its allocating members, omitted from every shape and checked likewise.
+- its omitted members, whose reads give no one value for a node's life,
+  omitted from every shape and checked likewise.
 
-It gets, for every required property member of its shapes the rule does
-not exclude, a stable key in the declaration document; the tag of a
-residual is stable where the tag member of every shape it stands for is,
-and with it the stable-link rule: a test of a path through such members
-holds past every call and write. A host view of the package, a node list,
-an optional or corrected member, and a member of a program record state
-none, by the same rule. The compiler API's description excludes no member
-(its allocating `jsDoc` is no member of any shape,
+It gets, for every property member of its shapes, required or optional,
+corrected ones included, that the rule does not exclude, a stable key in
+the declaration document; the tag of a residual is stable where the tag
+member of every shape it stands for is, and a residual's member where
+every source member is, and with them the stable-link rule: a test of a
+path through such members, the member present or absent, holds past every
+call and write. A host view of the package, a node list and a member of a
+program record state none, by the same rule. The compiler API's
+description excludes no member (its omitted `jsDoc` and
+`SourceFile.tokenCache` are no members of any shape,
 [reading rule 1](COMPILER-API.md#reading-rules)); the
 [string-tagged stand-in](#a-string-tagged-stand-in) excludes none, and a
 run under a description excluding `Call.callee` refuses the read its run
@@ -884,10 +905,14 @@ Linked reads and guards on any argument add none: a read of a structural
 input's member is a data property's by the caller contract, a read of a host
 value's member is a read of its model (T4), and a guard's test is its
 entry's (F3).
-Stable keys add none beyond F1′: the stable contracts of a host value's
-stable members are F1′'s modeled realization of F2, the introduction
-obligation of a stable key at a host value. C4 reads every member of every
-node twice on the corpus, regression evidence for F2.
+Stable keys add none beyond F1′: the stable readings of a host value's
+stable members, required and optional, are F1′'s modeled realization of F2,
+the introduction obligation of a stable key at a host value. F2 and F1′
+cover optional members: the audit of the compiler API's implementation is
+[stable members as readonly views](COMPILER-API.md#stable-members-as-readonly-views).
+C4 reads every property member of every node of the corpus twice and again
+after the entry point's token functions have run over its file, regression
+evidence for F2.
 
 ## Identity through program code
 
@@ -981,13 +1006,14 @@ It states:
   - `base`: a named declaration;
 - **corrections:** the audited members the declarations state required and
   the runtime leaves absent, each read as optional, with its text;
-- **allocating members:** the members whose read allocates, each omitted
-  from every shape, with its text; no ordinary read or read link reaches
-  one, since two reads of it give two values;
+- **omitted members:** the members whose reads give no one value for a
+  node's life, each with its text and why: a read that allocates, or a
+  member the package assigns on a node it built earlier; each is omitted
+  from every shape, so no ordinary read or read link reaches one;
 - **marker:** the value $`m_F`$ of `[[host]]`;
-- **stable members:** every required property member of a shape, the tag
-  included, but the listed exclusions, with the regression check that reads
-  each twice on a corpus;
+- **stable members:** every property member of a shape, required or
+  optional, the tag and the corrected members included, but the listed
+  exclusions, with the regression check that reads each twice on a corpus;
 - **guards:** the [guard table](#the-guard-table), each entry an export's
   identity and reviewed text, its kind, domain and exact tag set.
 
@@ -1068,14 +1094,16 @@ bind them to the reviewed files.
   $`t`$, each holding a value of the member's type.
 - **F1′ (modeled realization).** Every model value of an admitted external
   value holding $`m_F`$ under `[[host]]` meets $`S_t`$ for its tag $`t`$ at
-  every later step, and the locations of its stable members have stable
-  contracts. This is the model's side: what F2 says of the runtime, F1′ says
+  every later step, and each of its stable members, required or optional,
+  is owned at a location with a stable contract or, absent, absent from an
+  object without a prototype. This is the model's side: what F2 says of the runtime, F1′ says
   of the world the run is checked in, and with F1 it makes the marker and the
   shape table correspond in both directions, which the agreement of two
   units' residuals needs.
 - **F2 (runtime stability).** Each stable member, the tag among them,
   returns the same value on every read, and nothing the package or its
-  clients do after creation changes it.
+  clients do after creation changes it; an optional one is present with one
+  value or absent, reading `undefined`, for the object's life.
 - **F3 (guard identity).** Each guard table entry's statement holds of the
   function Node runs for its export identity, resolved as the entry
   records, under the audited digest. Activation reads that resolution from
@@ -1117,10 +1145,11 @@ The description of `typescript` 7.0.2's syntax trees
   `base` `NodeBase` (`JSTypeAliasDeclaration`, `JSImportDeclaration`);
 - corrections: the [corrections](COMPILER-API.md#corrections) table;
 - marker: `"RemoteNode"`;
-- allocating members: `Node.jsDoc`, which builds a fresh array on each
-  read (reading rule 1);
-- stable members: every required property member of a shape, no
-  exclusion; checked by C4;
+- omitted members: `Node.jsDoc`, which builds a fresh array on each read,
+  and `SourceFile.tokenCache`, which the entry point's token functions
+  assign on the file they are given (reading rule 1);
+- stable members: every property member of a shape, required or optional,
+  no exclusion; checked by C4;
 - guards: the table of the exports of `typescript/unstable/ast` whose
   functions, in `dist/ast/is.generated.js` and `dist/ast/is.js`, meet the
   recognition contract; `isLeftHandSideExpression` and `isUnaryExpression`,
@@ -1150,7 +1179,7 @@ Its description states no stable-member exclusion, so a callee tested and
 read past a call verifies; under one excluding `Call.callee` the same read
 is refused, under one excluding `Literal.type` no residual standing for
 `Literal` states its tag stable, and under one listing `Unit.notes` as
-allocating a read of it is refused (`pipeline/string-family-fixture-project/`,
+omitted a read of it is refused (`pipeline/string-family-fixture-project/`,
 where Node and TypeScript resolve the stand-in's specifier alike).
 
 ### A second instance: a readonly Babel interface
@@ -1339,8 +1368,8 @@ the compiler API the first instance throughout.
         node.operand.text`), past a write of a program record, and past an
         external call that receives the node; a node still passed where
         `{ readonly flags: number }` is expected;
-      - refused: the same path through a `Type`'s member, and through a
-        node's optional member, past a call; a claim of two arms of which
+      - refused: the same path through a `Type`'s member past a call; a
+        claim of two arms of which
         one states the member stable, past a call; the refinement read in
         the `catch` of a `try` whose block tested it; each part-a negative
         with a call between the test and the read, kept refused;
@@ -1350,6 +1379,16 @@ the compiler API the first instance throughout.
         state (Lean's decoder); an unmarked term stating one (Lean's
         decoder); a description whose stable-member rule names an excluded
         member (the front end's interpreter);
+      - optional members (the owner's decision of 2026-10-22): positive,
+        `compiler-api-stable-optional` (`patternStmt`'s test, calls and
+        read, a member tested absent, a corrected member); refused, a
+        program record's and a look-alike's optional member past a call
+        (run under Node), the omitted `tokenCache` at its read (run under
+        Node), a node passed where a writable field of its member's name is
+        expected; the case's document without the optional members' stable
+        keys refused in search and in checking; the decoder refusing a
+        writable stable member and an unmarked one, an optional readonly one
+        decoded;
       - forged: a claim reading a program record's member past a call at
         the refined type, refused in search and in checking (neighbour: a
         host member's, accepted); a subtyping into a target stating a

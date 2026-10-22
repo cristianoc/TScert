@@ -30,6 +30,7 @@ import { declarationsDigest, enumObjectMatches, installationRoot, isHostFile, re
 import { stringFamily } from "../pipeline/string-family.mts";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
+import { syntax } from "../tools/syntax.mts";
 
 // The package the front end resolves, from tools/.
 const root = dirname(createRequire(resolve(import.meta.dirname, "../tools/package.json"))
@@ -345,12 +346,13 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   console.log(`views: ${hostViews.length} named views, ${members} members, each declared as reviewed by its owner`);
 }
 
-// C4 for the allocating members: each is declared as reviewed, and under Node
-// two reads of a documented node's `jsDoc` give different arrays, while a
-// stable member gives one value.
+// C4 for the omitted members: each is declared as reviewed; under Node two
+// reads of a documented node's `jsDoc` give different arrays, while a stable
+// member gives one value, and a parsed file's `tokenCache`, absent, is a
+// `Map` after `getTokenAtPosition` at its `=`.
 {
   const declarations = readFileSync(join(root, "dist", "ast", "ast.d.ts"), "utf8");
-  for (const { owner, member, text } of compilerApiFamily.allocating)
+  for (const { owner, member, text } of compilerApiFamily.omitted)
     assert.ok(declarations.includes(text), `${owner}.${member} is declared as reviewed: ${text}`);
   const file = join(runDirectory("tscert-jsdoc-"), "documented.ts");
   const source = "/** The answer. */\nexport const answer = 42;\n";
@@ -368,8 +370,12 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   // host objects).
   const copy: Record<string, unknown> = { ...statement };
   assert.ok(!("kind" in copy) && "parent" in copy, "a spread of a node copies parent and no kind");
+  const before: unknown = Reflect.get(tree, "tokenCache");
+  syntax.getTokenAtPosition(tree, source.indexOf("="));
+  const after: unknown = Reflect.get(tree, "tokenCache");
+  assert.ok(before === undefined && after instanceof Map, "getTokenAtPosition assigns tokenCache on the file it is given");
   closeParser();
-  console.log("C4: jsDoc allocates on each read; a stable member does not");
+  console.log("C4: jsDoc allocates on each read; tokenCache is assigned by getTokenAtPosition; a stable member is neither");
 }
 
 // The residual's correction under Node (HOST-FAMILIES.md, "Residuals"): the
@@ -451,15 +457,15 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const dir = runDirectory("tscert-stable-");
   mkdirSync(join(dir, "node_modules"));
   symlinkSync(root, join(dir, "node_modules", hostPackage.name));
-  const load = async (name: string): Promise<(...args: unknown[]) => unknown> => {
+  const load = async (name: string, exported: string = "nameText"): Promise<(...args: unknown[]) => unknown> => {
     const fixture = join(dir, `${name}.ts`);
     copyFileSync(resolve(import.meta.dirname, `../pipeline/examples/${name}.ts`), fixture);
     const module: unknown = await import(pathToFileURL(fixture).href);
     assert.ok(isNamespace(module), `${name} is a module`);
-    const nameText: unknown = Reflect.get(module, "nameText");
+    const value: unknown = Reflect.get(module, exported);
     const callable = (f: unknown): f is (...args: unknown[]) => unknown => typeof f === "function";
-    assert.ok(callable(nameText), `${name} exports nameText`);
-    return nameText;
+    assert.ok(callable(value), `${name} exports ${exported}`);
+    return value;
   };
   const kinds: unknown = Reflect.get(ast, "SyntaxKind");
   assert.ok(isNamespace(kinds), "the package exports SyntaxKind");
@@ -483,7 +489,23 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const cell = await load("invalid-compiler-api-stable-let-cell");
   assert.equal(cell({ name: { kind: identifier, text: "a" } }, { name: { kind: computed } }), undefined,
     "invalid-compiler-api-stable-let-cell: the callback replaces the mutable name");
-  console.log("stable links: a record's member, a mixed path's first member, a chain's middle member and a let root replaced by the call, each read returns undefined under Node");
+  // An optional member of a program record and of a look-alike, removed by
+  // the call between the test and the read.
+  for (const name of ["invalid-compiler-api-stable-optional-record", "invalid-compiler-api-stable-optional-lookalike"]) {
+    const initializerOf = await load(name, "initializerOf");
+    const declaration: { kind: unknown; initializer?: object } = { kind: identifier, initializer: { kind: identifier } };
+    assert.equal(initializerOf(declaration, () => { delete declaration.initializer; }), undefined,
+      `${name}: the call removes the optional member`);
+  }
+  // The omitted `tokenCache`: absent at the test, a `Map` after the call.
+  const cached = await load("invalid-compiler-api-token-cache", "cached");
+  const tokenSource = "export const answer = 42;\n";
+  const tokenFile = join(dir, "tokens.ts");
+  writeFileSync(tokenFile, tokenSource);
+  assert.equal(cached(openText(tokenFile, tokenSource), tokenSource.indexOf("=")), 2,
+    "invalid-compiler-api-token-cache: absent at the test, present after getTokenAtPosition");
+  closeParser();
+  console.log("stable links: a record's member, a mixed path's first member, a chain's middle member, a let root, a record's and a look-alike's optional member replaced or removed by the call, each read returns undefined under Node; tokenCache absent, then present");
 }
 
 // The guards' fixtures under Node (HOST-FAMILIES.md, "Guard recognition"):

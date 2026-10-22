@@ -146,6 +146,48 @@ theorem ReadGave.step {flds field h v c oid} (hr : ReadGave flds field h v) :
   | some l => rw [hf] at hr; exact .readField hf hr
   | none => rw [hf] at hr; rw [hr.2]; exact .readMissing hf hr.1
 
+/-- **A stable key frames its read** (HOST-FAMILIES.md, "Stable links"):
+what a read of a key the object reads one way for its life (`StableAt`) gave,
+every heap a normally returning execution reaches gives again. A present
+key's location holds its contract's one value
+(`HeapObservations.stable_frame`); an absent key of an object without a
+prototype reads `undefined` from the value alone. A thrown outcome carries no
+postcondition, so this supplies nothing to an exceptional edge. -/
+theorem ReadGave.stable_frame {T Q} {flds : List (PropKey × Nat)} {field : PropKey} {u : Tm} :
+    ∀ {n W h t}, StableAt W flds field → HeapOk n W h → ReadGave flds field h u →
+      HeapObservations.SafePost Ξ T Q n W h t →
+      HeapObservations.SafePost Ξ T (fun h' v => Q h' v ∧ ReadGave flds field h' u) n W h t := by
+  intro n W h t hs hh hr hp
+  cases n with
+  | zero => trivial
+  | succ n =>
+    unfold ReadGave at hr
+    cases hl : flds.lookup field with
+    | none =>
+      rw [hl] at hr
+      exact HeapObservations.consequence (fun _ _ _ h => h)
+        (fun _ _ hq => ⟨hq, by simp only [ReadGave, hl]; exact hr⟩) hp
+    | some l =>
+      rw [hl] at hr
+      obtain ⟨c, value, hw, hc⟩ := hs.present hl
+      have hval := hh.stable_value (Nat.zero_lt_succ n) hw hc
+      rw [hr] at hval
+      obtain rfl := Option.some.inj hval
+      exact HeapObservations.consequence (fun _ _ _ h => h)
+        (fun _ _ hq => ⟨hq.1, ReadGave.present hl hq.2⟩) (HeapObservations.stable_frame hw hc hh hp)
+
+/-- A semantic stable-key requirement frames the read of that key through a
+normally returning execution. -/
+theorem stable_key_frame {T Q} {keys : List PropKey} {key : PropKey}
+    {n : Nat} {W : WorldT n} {h : Heap} {object t : Tm}
+    (hk : key ∈ keys) (ho : stableKeysT keys n W object)
+    (hh : HeapOk n W h) (hs : HeapObservations.SafePost Ξ T Q n W h t) :
+    ∃ (flds : List (PropKey × Nat)) (oid : Nat), object = .objAt flds .absent oid ∧
+      ∀ u, ReadGave flds key h u →
+        HeapObservations.SafePost Ξ T (fun h' v => Q h' v ∧ ReadGave flds key h' u) n W h t := by
+  obtain ⟨flds, oid, he, hst⟩ := stableKeysT_at ho hk
+  exact ⟨flds, oid, he, fun _ hr => ReadGave.stable_frame hst hh hr hs⟩
+
 /-- A property-read observation at the current heap. The field may be absent.
 Value facts reuse the shape and ignore the field. -/
 structure Fact where

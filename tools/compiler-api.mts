@@ -86,12 +86,19 @@ export const compilerApiFamily: FamilyDescription = {
     { kind: "TaggedTemplateExpression", owner: "TaggedTemplateExpression", member: "questionDotToken", text: "readonly questionDotToken: QuestionDotToken;" },
     { kind: "JSDocTemplateTag", owner: "JSDocTemplateTag", member: "constraint", text: "readonly constraint: Node;" },
   ],
-  // The members of host types whose read allocates (reading rule 1): `jsDoc`
-  // builds a fresh array on each read (`node.generated.js:221`). The
-  // declaration reader omits each from every shape, so every read of it is a
-  // read of a member the type does not state.
-  allocating: [{ owner: "Node", member: "jsDoc", text: "readonly jsDoc?: readonly Node[] | undefined;" }],
-  // Every required property member is stable (reading rule 1, checked by C4).
+  // The members of host types whose reads give no one value for a node's
+  // life (reading rule 1): `jsDoc` builds a fresh array on each read
+  // (`node.generated.js:221`); `SourceFile.tokenCache`, which no getter
+  // backs, the entry point's own token functions assign on the file they are
+  // given (`astnav.js:510-513`, `getOrCreateToken`), absent before and a
+  // `Map` after. The declaration reader omits each from every shape, so every
+  // read of it is a read of a member the type does not state.
+  omitted: [
+    { owner: "Node", member: "jsDoc", text: "readonly jsDoc?: readonly Node[] | undefined;", why: "allocates" },
+    { owner: "SourceFile", member: "tokenCache", text: "tokenCache?: Map<string, Node>;", why: "assigned" },
+  ],
+  // Every property member of a shape, required or optional, is stable
+  // (reading rule 1, checked by C3's walk).
   stable: { excluded: [] },
   guards: compilerApiGuards,
 };

@@ -40,10 +40,12 @@ export type FamilyCorrection = { kind: string; owner: string; member: string; te
 /** A property member the stable-member rule leaves out (HOST-FAMILIES.md,
  * "Stable keys"): its owner, its name and its text as reviewed. */
 export type StableExclusion = { owner: string; member: string; text: string };
-/** A member whose read allocates (HOST-FAMILIES.md, "The family
- * contract"): its owner, its name and its text as reviewed. No shape states
+/** A member whose reads give no one value for a node's life
+ * (HOST-FAMILIES.md, "The family contract"): its owner, its name, its text as
+ * reviewed, and why: each read builds a fresh value (`allocates`), or the
+ * package assigns it on a node it built earlier (`assigned`). No shape states
  * it, so every read of it is of a member the shape does not state. */
-export type AllocatingMember = { owner: string; member: string; text: string };
+export type OmittedMember = { owner: string; member: string; text: string; why: "allocates" | "assigned" };
 
 /** An entry of a guard table (HOST-FAMILIES.md, "The guard table"): the
  * export's name, a node guard or a tag guard, its declared domain, its exact
@@ -97,10 +99,12 @@ export type FamilyDescription = {
   tag: { field: string; primitive: "number" | "string"; constants: { enum: string } };
   table: readonly FamilyRule[];
   corrections: readonly FamilyCorrection[];
-  /** The members whose read allocates, each omitted from every shape. */
-  allocating: readonly AllocatingMember[];
-  /** The stable-member rule: every required property member of a shape,
-   * the tag included, is stable but these. */
+  /** The members whose reads give no one value for a node's life, each
+   * omitted from every shape. */
+  omitted: readonly OmittedMember[];
+  /** The stable-member rule: every property member of a shape, required or
+   * optional, the tag and the corrected members included, is stable but
+   * these. */
   stable: { excluded: readonly StableExclusion[] };
   /** The guard table: the guards read from an audited entry, every other
    * guard of the family read without predicate. */
@@ -225,7 +229,7 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
   // Flattening: the nearest declaration of each name. A name two bases
   // state through different declarations, neither below the other, is
   // refused: its contract would be their meet, which no rule here forms.
-  const allocating = new Set(description.allocating.map(x => `${x.owner}.${x.member}`));
+  const omitted = new Set(description.omitted.map(x => `${x.owner}.${x.member}`));
   const flatCache = new Map<InterfaceDeclaration, FlatMember[]>();
   const flatten = (d: InterfaceDeclaration): FlatMember[] => {
     const known = flatCache.get(d);
@@ -237,7 +241,7 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
       if (existing) own[own.indexOf(existing)] = { ...existing, members: [...existing.members, m] };
       else own.push({ name, owner: d, members: [m] });
     }
-    const result = own.filter(f => !allocating.has(`${f.owner.name.text}.${f.name}`));
+    const result = own.filter(f => !omitted.has(`${f.owner.name.text}.${f.name}`));
     const names = new Set(own.map(f => f.name));
     const inherited = new Map<string, FlatMember[]>();
     for (const b of graph.bases(d))
@@ -342,12 +346,12 @@ export function familyTable(description: FamilyDescription, graph: FamilyGraph):
   }
   // The members whose read allocates, each checked against the declaration
   // it was reviewed at.
-  for (const x of description.allocating) {
+  for (const x of description.omitted) {
     const owner = named(x.owner);
     const members = owner.members.filter(m => graph.name(m) === x.member);
     const [only] = members;
     if (!only || members.length !== 1 || graph.text(only) !== x.text)
-      graph.fail(`the allocating member ${x.owner}.${x.member} is not declared as reviewed: ${x.text}`);
+      graph.fail(`the omitted member ${x.owner}.${x.member} is not declared as reviewed: ${x.text}`);
   }
   // The stable-member rule's exclusions, each checked against the
   // declaration it was reviewed at: a property member that declaration

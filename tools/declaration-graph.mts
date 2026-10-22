@@ -4576,11 +4576,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           type: hostBrands(type, true, context.isBrand,
             message => { throw Error(`${message} in ${identity.module}#${identity.name}.${f.name}`); }) };
       };
-      // A shape's stable members: its required property members the
-      // stable-member rule names, the tag among them (HOST-FAMILIES.md,
-      // "Stable keys").
+      // A shape's stable members: its property members, required or
+      // optional, the stable-member rule names, the tag among them
+      // (HOST-FAMILIES.md, "Stable keys").
       const shape = (fields: Field[], stable: readonly string[]): TypeTerm => {
-        const keys = fields.flatMap(f => typeof f.name === "string" && !f.optional && stable.includes(f.name) ? [f.name] : []);
+        const keys = fields.flatMap(f => typeof f.name === "string" && stable.includes(f.name) ? [f.name] : []);
         return { k: "object", fields, stringIndex: null, calls: [], span, host: marker, ...(keys.length ? { stable: keys } : {}) };
       };
       const reference = (target: TypeDeclaration, args: TypeTerm[]): TypeTerm => {
@@ -4713,13 +4713,14 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // A host type's members are readonly views, whether or not they are
     // declared `readonly` (COMPILER-API.md, reading rule 1): a client write
     // to one is refused, and a test of one narrows as an invariant field's.
-    // A member whose read allocates is no member of the host type's shape
-    // (the active family description's `allocating`, declared as reviewed): every read of it, in any
-    // form, is a read of a member the type does not state, and no structural
-    // type requiring it admits a value of the host type.
+    // A member whose reads give no one value for a node's life is no member
+    // of the host type's shape (the active family description's `omitted`,
+    // declared as reviewed): every read of it, in any form, is a read of a
+    // member the type does not state, and no structural type requiring it
+    // admits a value of the host type.
     if (context.hostType(node) && expression.k === "object") {
       const omitted = ts.isInterfaceDeclaration(node)
-        ? (familyOfFile(node.getSourceFile().fileName)?.allocating ?? []).filter(m => m.owner === node.name.text).map(m => ({ name: m.member, text: m.text })) : [];
+        ? (familyOfFile(node.getSourceFile().fileName)?.omitted ?? []).filter(m => m.owner === node.name.text).map(m => ({ name: m.member, text: m.text })) : [];
       for (const entry of omitted) {
         const declared = parts.flatMap(part => ts.isInterfaceDeclaration(part) ? part.members : [])
           .filter(m => { const name = nameOf(m); return !!name && ts.isIdentifier(name) && name.text === entry.name; });

@@ -54,7 +54,7 @@ const description: FamilyDescription = {
   tag: { field: "kind", primitive: "number", constants: { enum: "K" } },
   table: [{ rule: "literal" }, { rule: "generic", declarations: ["Tok", "Tagged"] }, { rule: "base", declaration: "Base" }],
   corrections: [],
-  allocating: [],
+  omitted: [],
   stable: { excluded: [] },
   guards: { entryPoint: "", conditions: [], entryModule: "", closure: { files: {}, edges: [] }, helpers: {}, guards: [], excluded: [] },
 };
@@ -124,15 +124,15 @@ assert.throws(() => familyTable({ ...description,
 assert.throws(() => familyTable({ ...description,
   stable: { excluded: [{ owner: "Lit", member: "x", text: "readonly x: string;" }] } }, graph(interfaces)),
   /the stable-member rule excludes Lit\.x, which is not declared as reviewed/);
-// An allocating member (HOST-FAMILIES.md, "The family contract") is no
-// member of any shape; one not declared as reviewed is refused.
+// An omitted member (HOST-FAMILIES.md, "The family contract") is no member
+// of any shape; one not declared as reviewed is refused.
 assert.ok(table.flatten(lit).some(f => f.name === "note"), "an unlisted member is a member");
-const allocating = familyTable({ ...description,
-  allocating: [{ owner: "Base", member: "note", text: "readonly note?: string;" }] }, graph(interfaces));
-assert.ok(!allocating.flatten(lit).some(f => f.name === "note"), "an allocating member is no member");
+const omitting = familyTable({ ...description,
+  omitted: [{ owner: "Base", member: "note", text: "readonly note?: string;", why: "allocates" }] }, graph(interfaces));
+assert.ok(!omitting.flatten(lit).some(f => f.name === "note"), "an omitted member is no member");
 assert.throws(() => familyTable({ ...description,
-  allocating: [{ owner: "Base", member: "note", text: "readonly note: string;" }] }, graph(interfaces)),
-  /the allocating member Base\.note is not declared as reviewed/);
+  omitted: [{ owner: "Base", member: "note", text: "readonly note: string;", why: "allocates" }] }, graph(interfaces)),
+  /the omitted member Base\.note is not declared as reviewed/);
 closeParser();
 
 // A generic shape with a parameter beside its tag parameter, which the
@@ -186,7 +186,7 @@ export interface Both extends Left, Right { readonly kind: K.A; }
 }
 console.log("family interpreter: a tag-only generic merged at its tag set, a tag-dependent one kept per tag; " +
   "a residual's common members; a refinement no shape; a stable-member exclusion as reviewed, and one naming no member or another text refused; " +
-  "an allocating member omitted, one at another text refused; " +
+  "an omitted member no member, one at another text refused; " +
   "a generic with a parameter beside its tag, and an unrelated inherited name, refused");
 
 // A tag enum's runtime object (`enumObjectMatches`, HOST-FAMILIES.md,

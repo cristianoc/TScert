@@ -57,7 +57,7 @@ states one invariant for syntax trees and derives the guards from it.
   edges, since the test is the guard's body.
 - **Everything else is the declaration**, read by five general rules for
   host declarations: stable members are readonly views and a member whose
-  read allocates is refused; an `any` member is an optional `unknown`; a
+  reads give no one value for a node's life is refused; an `any` member is an optional `unknown`; a
   numeric enum type at a package position is `number`; each host class is
   read through a named view; branded strings are opaque host-introduced
   types. Values of host types come from the package alone.
@@ -78,7 +78,11 @@ against `typescript` 7.0.2.
   two reads of a child field give the same object. One getter allocates:
   `jsDoc` builds a fresh array on each read (`node.generated.js:221`); every
   other getter of `RemoteNode`, `RemoteSourceFile` and `RemoteNodeBase`
-  returns a primitive or a memoized object. The class's data fields
+  returns a primitive or a memoized object. No getter backs
+  `SourceFile.tokenCache`, which the entry point's token functions
+  (`getTokenAtPosition`, `getTouchingToken`, `getTouchingPropertyName`,
+  `findPrecedingToken`, `findNextToken`) assign on the file they are given
+  (`astnav.js:510-513`): absent, then a `Map`. The class's data fields
   (`parent`, `view`, `index`, `_byteIndex`) are writable and written only by
   the constructor; `RemoteSourceFile` passes `undefined` as `parent`
   (`node.js:34`).
@@ -201,9 +205,12 @@ are ordinary types.
    value every time (a data property the package writes only in its
    constructor, or a getter decoding the immutable buffer and returning a
    primitive or a memoized object) is a **readonly view**, whether or not
-   its declaration is `readonly`, so a client write to it is refused. The
-   contract lists the members whose read allocates (`jsDoc`), each a
-   correction that omits it from its host type's shape. Every form that
+   its declaration is `readonly`, so a client write to it is refused, and
+   an optional one is as stable as a required one
+   ([below](#stable-members-as-readonly-views)). The contract lists the
+   members whose reads give no one value for a node's life, `jsDoc`, whose
+   read allocates, and `SourceFile.tokenCache`, which the package assigns on
+   a file it built earlier, each omitted from its host type's shape. Every form that
    reads it is then a read of a member the type does not state, refused by
    ordinary typing whatever its key's spelling: `o.m`, `o?.m`, `o["m"]`, a
    key a constant holds or a template computes, a pattern's key. A
@@ -522,10 +529,43 @@ a host type is read as a readonly view:
 - *Introduction.* A host value meets the view by T1.
 
 A view states no equality between two reads: a readonly `parent` may give
-different values. That stable members return the same value on every read is
-the host assumption T1; no rule of the node shapes or the guards reads it,
-since a guard's membership test reads `kind` once and the field slice's
-exclusion is timeless.
+different values. That stable members return the same value on every read,
+an optional one present with one value or absent, is the host assumption
+T1; no rule of the node shapes or the guards reads it, since a guard's
+membership test reads `kind` once and the field slice's exclusion is
+timeless.
+
+**Optional members.** The audit of `typescript` 7.0.2's implementation, on
+2026-10-22, of every property member a node shape states optional,
+corrections included:
+
+- a node's data is a `DataView` over a response payload, a fresh
+  `Buffer.allocUnsafeSlow` with its own `ArrayBuffer`, filled once before
+  the request returns (`syncChannel.js:404-417`, `readBin`) and written by
+  no code afterwards; the fields holding it (`view`, `_byteIndex`,
+  `_sourceFile`) are no shape's members;
+- 47 child members (`initializer`, `type`, `name`, `body`, `modifiers`, …)
+  are prototype getters of `getNamedChild` (`node.generated.js:293-303`),
+  `undefined` where the kind's `childProperties` row lacks the name or the
+  buffer's presence bit is clear, and otherwise the child memoized in
+  `sourceFile.nodes`, which is written only at an empty index and never
+  cleared (`node.generated.js:165, 281`; `node.js:43, 112`);
+- `phaseModifier`, `rawText` and `templateFlags` are switches on `kind` over
+  the buffer's bits, `undefined` at the kinds they lack;
+- `fullSignature` and the brands have no getter and no own key, and nothing
+  in the package assigns them: `undefined` on every read; `parent`, optional
+  on `SourceFile` by correction, is an own data field the constructors
+  alone assign (`node.infrastructure.js:84`), the package's other writes of
+  `parent` (`clone.js`, `astnav.js`) being to objects it builds before
+  returning them;
+- `SourceFile.tokenCache`, which `astnav.js:510-513` assigns, is omitted
+  (reading rule 1);
+- source files are shared across snapshots only where content and parse
+  options agree, and the cache that holds them never writes one
+  (`sourceFileCache.js`).
+
+C4 reads every such member twice on the corpus and again after the token
+functions have run over each file.
 [Stable members](HOST-FAMILIES.md#stable-members) are the one rule that
 reads it.
 
@@ -884,8 +924,12 @@ as regression evidence.
   corrections. Each kind has one shape by the rule of
   [the node invariant](#the-node-invariant).
 - **C4, members, lists and operations (regression evidence).** On the
-  corpus, every member of every node is read twice: the stable members give
-  the same value, and the allocating ones are exactly the contract's list.
+  corpus (C3's walk), every property member of every node's shape,
+  required or optional, is read twice and again after the entry point's
+  token functions have run over its file, each giving one value, a member
+  no prototype getter backs being `parent` or one of a reviewed list; the
+  omitted ones are the contract's list, `jsDoc` giving two arrays to two
+  reads and `tokenCache` absent, then a `Map` after `getTokenAtPosition`.
   For node lists of lengths 0, 1, 15, 16, 17 and 32, each transparent
   operation of the operation table runs, with callbacks that record their
   arguments and their `this`:
@@ -923,9 +967,10 @@ the corpus runs are regression evidence, not proofs.
 - **T1 (node invariant).** Every object whose prototype chain carries
   $`\kappa_{\mathit{RemoteNode}}`$ has a `kind` in $`\mathcal K`$; for that
   kind $`k`$ it has every member $`S_k`$ states, holding a value of the
-  member's type, and its model value holds `"RemoteNode"` under `[[host]]`; its stable members return the same value on every read,
-  and nothing the package does after construction changes them (F1 and F2
-  of [host families](HOST-FAMILIES.md#trust-rows)).
+  member's type, and its model value holds `"RemoteNode"` under `[[host]]`; its stable members, required and optional, return the same value on every read,
+  an optional one present with one value or absent, and nothing the
+  package does after construction changes them (F1 and F2 of
+  [host families](HOST-FAMILIES.md#trust-rows)).
 - **T1′ (marker to invariant).** Every model value of an admitted external
   value that holds `"RemoteNode"` under `[[host]]` meets $`S_k`$ for
   its `kind` $`k`$, at every later step, and the locations of its stable
@@ -1046,7 +1091,7 @@ JavaScript and could be admitted with more machinery:
 | L1  | A guard outside the accepted syntax is refused at its use               | `isLeftHandSideExpression`, `isUnaryExpression` as narrowings       |
 | L2  | A node list admits only the operations of its table                     | `nodes.pos`, `nodes.at(i)`, `for…in` over a node list               |
 | L3  | A namespace import is used only through member reads and qualified type names, each member one binding; a member stating a `this` parameter is not called through it | `const m = ts`, `ts[name]`, passing `ts`, `ts.f()` for `f(this: X)` |
-| L4  | A member whose read allocates is refused at its read; it could be stated as a host operation returning a fresh array | Reading `node.jsDoc`  |
+| L4  | A member whose reads give no one value for a node's life is refused at its read; one that allocates could be stated as a host operation returning a fresh array | Reading `node.jsDoc`, `sourceFile.tokenCache`  |
 | L5  | A host parameter of a branded type is refused; an opaque primitive type would admit the package's own values | Passing a `Path` back to `getSourceFileMetadataByPath` |
 | L6  | A host class member outside its named view is refused at its use        | Calling a `Checker` method the view does not list                   |
 | L7  | A merge's accumulator needs a type excluding host values, which a fresh copy's type states only through a field, a closed bound or an index | A spread after a spread of a value whose copy states none (`{ ...c, n: 1 }` with `c` holding only private fields); a key-adding write on a local annotated by optional fields alone (`const o: { a?: number } = {}; o.a = 3`) |
@@ -1107,6 +1152,12 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
   `invalid-compiler-api-stable-view` (a host view's member past a call);
   the case's document without the tested member's stable key refused in
   search and in checking; malformed stable keys refused by the decoder;
+  optional members: positive `compiler-api-stable-optional`, refused
+  `invalid-compiler-api-stable-optional-record` and
+  `-lookalike` (run under Node), `invalid-compiler-api-token-cache` (run
+  under Node) and `invalid-compiler-api-stable-optional-write`, and the
+  case's document without the optional members' stable keys refused in
+  search and in checking;
 - host provenance, each refused: a node assigned to a variable of a mutable
   structural type and written; `{ ...node }` and `Object.assign({}, node)`
   passed to `getTypeAtLocation`; a node widened to `unknown`, refined by
@@ -1180,7 +1231,7 @@ Pipeline cases (`pipeline/cases.mts`), each a source importing the package:
 The pieces, by file:
 
 - `tools/compiler-api.mts`: the host package's name and modules; the host
-  types and their views; the corrections; the allocating members; the
+  types and their views; the corrections; the omitted members; the
   stated `Type` guards; the refused guards; the installation and digest of
   C0, in the family description. Each entry carries the declaration text
   reviewed, as in `library-globals.mts`.
@@ -1229,7 +1280,7 @@ precede the node invariant.
 The reading rules split along the same dependencies:
 
 - Reading rule 1 reads stable members as readonly views, with the
-  refusal of a member whose read allocates; the narrowing it needs is the
+  refusal of a member whose reads give no one value; the narrowing it needs is the
   field slice's on views.
 - The corrections apply to node shapes, which the node invariant builds:
   three of the ten are members a kind inherits
@@ -1248,7 +1299,7 @@ The reading rules split along the same dependencies:
   and `__String` of the audited host files, each checked against its
   reviewed text.
 
-So the pieces land in this order: rule 1 with the allocating-member
+So the pieces land in this order: rule 1 with the omitted-member
 refusal; the restricted-value policy, then $`\mathsf{NodeList}`$; then rules 2, 4 and 5, the contract file (views,
 branded types, the corrections table, every reviewed declaration text) and
 the node invariant, each tested on the host types the front end reads,

@@ -41,7 +41,8 @@ inductive Clause (α : Type) where
   only where the object has it (`optT`). Methods are host-relative members
   (`methodT`): read from the object and invoked on it. Each key bound says
   which keys the object may own (`ownKeysT`). Each stable key is owned at a
-  location whose contract admits one value (`stableKeysT`, HOST-FAMILIES.md,
+  location whose contract admits one value, or not owned by an object without
+  a prototype (`stableKeysT`, HOST-FAMILIES.md,
   "Stable keys"). -/
   | refs (first : List (PropKey × α)) (rest : List (List (PropKey × α)))
       (views : List (PropKey × α)) (optional : List (OptionalField α) := [])
@@ -1015,13 +1016,13 @@ def Clause.stableKeys : Clause α → List PropKey
   | .refs _ _ _ _ _ _ st | .dict _ _ _ _ _ _ _ _ st => st
   | _ => []
 
-/-- A member of a clause stating a stable key owns the key at a location
-whose contract admits one value (HOST-FAMILIES.md, "Stable keys"). -/
+/-- A member of a clause stating a stable key reads the key one way for its
+life: owned at a location whose contract admits one value, or not owned by an
+object without a prototype (HOST-FAMILIES.md, "Stable keys"). -/
 theorem semWithArgs_stable {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v} {k : PropKey}
     (h : semWithArgs Ξ X P c n W v) (hk : k ∈ c.stableKeys) :
-    ∃ (flds : List (PropKey × Nat)) (oid l : Nat) (ct : Ctr n) (value : Val),
-      v = .objAt flds .absent oid ∧ flds.lookup k = some l ∧
-        lookup W l = some ct ∧ CtrStable ct value := by
+    ∃ (flds : List (PropKey × Nat)) (oid : Nat),
+      v = .objAt flds .absent oid ∧ StableAt W flds k := by
   cases c with
   | refs a bs vs os ms ks st => exact stableKeysT_at h.2.2.2.2.2 hk
   | dict a bs vs ds os ms ks cs st => exact stableKeysT_at h.2.2.2.2.2.2 hk

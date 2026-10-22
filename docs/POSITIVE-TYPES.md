@@ -124,8 +124,9 @@ $c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
 &\iff \textstyle\bigwedge_i\mathsf{rec}(\varphi_i)\land
       \mathsf{view}(\psi)\land\mathsf{opt}(\omega)\land\mathsf{meth}(\mu)\land
       \bigwedge_{b\in\beta}\mathsf{own}(b)\land\mathsf{stable}(\sigma),\\
-\mathsf{stable}(\sigma)_n(W,v)&\iff\forall\kappa\in\sigma.\;v=\ell\land\exists l,c,v_0.\;
-      \mathit{flds}(\kappa)=l\land W(l)=c\land\forall j,U,u.\;c_j(U,u)\Rightarrow u=v_0,\\
+\mathsf{stable}(\sigma)_n(W,v)&\iff\forall\kappa\in\sigma.\;v=\ell\land
+      (\forall l.\;\mathit{flds}(\kappa)=l\Rightarrow\exists c,v_0.\;W(l)=c\land\forall j,U,u.\;c_j(U,u)\Rightarrow u=v_0)\\
+&\qquad\land(\mathit{flds}(\kappa)=\varnothing\Rightarrow\mathit{flds}(\mathsf{proto})=\varnothing),\\
 \mathsf{own}(b)_n(W,v)&\iff v=\ell\land\forall\kappa\in\mathrm{dom}(\mathit{flds}).\;b\vDash\kappa,\\
 \mathsf{rec}(\overline{\kappa{:}T})_n(W,v)
 &\iff v=\ell\land\forall(\kappa{:}T).\;\exists l,c.\;
@@ -152,9 +153,11 @@ $c_j\equiv T_j$ when $r=\mathsf{w}$ and $c_j\subseteq T_j$ when $r=\mathsf{ro}$
   $\mathsf{Ref}\,\{\mathsf{value}{:}A\}$.
 - **Views** only read: the location's contract implies the view's type, so a
   view grants no write.
-- **Stable keys** are owned at locations whose contracts admit one value
-  (`stableKeysT`), so every heap a run reaches holds that value there
-  ([stable members](HOST-FAMILIES.md#stable-keys)). A meet states the stable
+- **Stable keys** are owned at locations whose contracts admit one value,
+  so every heap a run reaches holds that value there, or, at an optional
+  readonly field, absent from an object without a prototype, so every read
+  gives `undefined` (`stableKeysT`,
+  [stable members](HOST-FAMILIES.md#stable-keys)). A meet states the stable
   keys of both operands; a record is below another only where it states
   every stable key the other states; dictionaries carry them as records do.
 - **`length`.** A view of `length` is also met by an object owning the array
