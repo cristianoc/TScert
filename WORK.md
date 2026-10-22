@@ -48,6 +48,7 @@ design, not its progress.
 | [A call returning `never`](docs/PROGRAM-TYPING.md#vacuous-edges) | closed: an edge out of a context with a slot of the empty type establishes any target claim, plain and branch edges alike; the producer keeps the normal edge out of an expression statement claimed at the empty type, carrying every value and local slot at the empty type with storage bindings unchanged; `never-call-narrowing` and `compiler-api-never-guard` verify, a returning call claimed at the empty type is refused (2026-10-20) | — |
 | [Contextual function types](docs/SOURCE-ELABORATION.md#source-closures-and-their-annotations) | closed: a closure parameter TypeScript types by a function type is read as written where the program writes it, else through its one call signature as instantiated; `closure-contextual-callable` and `compiler-api-contextual-callable` verify, `invalid-closure-contextual-callable` is refused (run under Node) (2026-10-20) | — |
 | [Assigned closure parameters](#assigned-closure-parameters) | closed: reads use a slot or cell by the flow graph's decision (2026-10-21, [slice measurement](#census-closure-parameter-slots)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past the `let`-union refusal |
+| [Closure parameters at a union's arms](#closure-parameters-at-arms) | closed: a closure's unassigned parameter, a constructor's and a contract row's are held at their declared union's arms, as a function's; `in-test-closure` verifies, `invalid-in-open-closure` and `invalid-in-test-closure-alias` are refused (run under Node) (2026-10-22, [slice measurement](#census-closure-arms)) | `fragment-expressions.mts#expr` and the slices reaching it move past "missing field computed" |
 | [Patterns binding a `for...of` over a program's iterable](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) | closed: each step's value is destructured first in the closing region, by the array loop's lowering; an array's `values`, `keys` and `entries` are read at `IterableIterator` of their declared argument and stepped by the protocol (2026-10-21, [slice measurement](#census-for-of-patterns)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past the `for...of` pattern refusal |
 | [Enum reverse keys](docs/SOURCE-CONTRACTS.md#enums) | closed: an enum's object states, at each numeric value TypeScript computes, its reverse key at `string` where TypeScript's emit builds it or its runtime object is checked (`emitted-enum`); `enum-reverse-keys`, `enum-reverse-value-import` and `compiler-api-enum-reverse` verify, a key at `number` or outside the values, a string member's value and an ambient or declaration file's enum are refused (run under Node), forged claims refused at the read (2026-10-21, [slice measurement](#census-enum-reverse-keys)) | — |
 | [Block-scoped type declarations](docs/SOURCE-CONTRACTS.md#block-scoped-type-declarations) | closed: a `type` or `interface` in a block runs nothing and names its block, each reference read at the declaration TypeScript binds, its equation lifted over the enclosing type parameters resolved there; `block-type-aliases` and `block-type-captures` verify, `invalid-block-type-scope` is refused (run under Node), a reference where a nearer binder hides a captured one, directly or through another block type, is refused, in a computed form, a mapped type and a default too (2026-10-21, [slice measurement](#census-block-types)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past the type alias statement refusal |
@@ -100,6 +101,13 @@ slot or cell according to the flow graph's decision, under the
 [mutable-binding rules](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants).
 The [slice measurement](#census-closure-parameter-slots) records the refusals
 for `protocolPattern` and `patternStmt` in `fragment-statements.mts`.
+
+<a id="closure-parameters-at-arms"></a>
+**Closure parameters at a union's arms.** An immutable parameter declared at
+a named union, of a function or a closure, is held at the union's arms, so a
+failed `in` test drops the arms owning the key. The
+[slice measurement](#census-closure-arms) records the refusals of `expr` and
+`binary` in `fragment-expressions.mts`.
 
 <a id="assigned-parameters-with-defaults"></a>
 **Investigation of assigned parameters with defaults.** The producer refuses
@@ -830,6 +838,18 @@ CPU), each stops at "a numeric array key needs a proved array-index
 singleton", the read `node.elements[node.elements.length - 1]` in
 `pattern`, which both reach, a refusal the lowering reports without a
 location.
+
+<a id="census-closure-arms"></a>
+Two slices of `fragment-expressions.mts`, `expr` and `binary`, which calls
+it, on eb3a427 (main) and on the branch holding a closure's parameter at
+its union's arms and reading each enum's members once in the declaration
+graph, each census with a fresh store (2026-10-22): neither verifies on
+either. On main both stop at "missing field computed" (10456), the read
+`p.computed` after `"spread" in p` in a `map` callback, each parse taking
+28.3 s (the census 31 s); on the branch both stop at "missing field
+refused" (24491), `inferred && "refused" in inferred`, where the passed
+test keeps the open record arm `{ functionType; bagType }`, each parse
+taking 9.7 s (the census 12 s).
 
 <a id="census-for-of-patterns"></a>
 Two slices of `type-term.mts`, `readTypeTerm` and `typeTerm`, which calls it,

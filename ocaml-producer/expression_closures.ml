@@ -40,7 +40,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          receiver it reads, and runs it later, when a cell it captures holds
          what its contract admits. The class value's type is its construct
          signature. *)
-      let inner = List.fold_left (fun env (n,t) -> extend env n (Value t)) (forget env) ps in
+      let inner = List.fold_left (fun env (n,t) -> extend env n (Value (arms declarations t))) (forget env) ps in
       let fresh = prepare_constructor (tails body) in
       let allocated_type = match body.node with
         | BlockBody ss ->
@@ -178,8 +178,10 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         let input=if List.mem_assoc i defaults then union t (Atoms [Undef]) else t in
         (* An assigned parameter is a cell where the flow graph holds it in
            one (a closure writes it, or reads it after a write), and a slot
-           of the activation otherwise, as a function's parameter is. *)
-        extend env n (if not assigned then Value input
+           of the activation otherwise, as a function's parameter is. An
+           unassigned one is held at its declared union's arms, as a
+           function's is. *)
+        extend env n (if not assigned then Value (arms declarations input)
           else if held_in_cell n body.pos then holding t input
           else Local (t,arms declarations input))) env (List.mapi (fun i p -> i,p) ps) in
       (* A closure literal without a result annotation expected at one
@@ -333,7 +335,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
               so a body's entries are stated per signature like its
               expressions. *)
            collect_overload_row_claims (fun () ->
-             let env_row = List.fold_left2 (fun env (n,_) t -> extend env n (Value t))
+             let env_row = List.fold_left2 (fun env (n,_) t -> extend env n (Value (arms declarations t)))
                env ps s.params in
              ignore (infer_closure_body ~expected:s.result env_row)) in
          let rows = List.map row calls in
