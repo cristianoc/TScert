@@ -563,8 +563,13 @@ intersection's the meets of one arm of each operand, so a union operand
 distributes:
 
 ```math
-\mathrm{arms}(A \mathbin{\&} B)=\{\,a\sqcap b \mid a\in\mathrm{arms}(A),\ b\in\mathrm{arms}(B),\ a\sqcap b\ \text{defined}\,\}
+\mathrm{arms}(A \mathbin{\&} B)=\{\,a\sqcap b \mid a\in\mathrm{arms}(A),\ b\in\mathrm{arms}(B),\ a\sqcap b\neq\varnothing\,\}
 ```
+
+Each meet $`a\sqcap b`$ has one of three outcomes: empty ($`\varnothing`$),
+a record or primitive the copy reads, or refused. An empty meet contributes
+no arm; a refused meet refuses the whole spread, whatever the other meets
+of the union are; and the spread is refused where no arm remains.
 
 For each product, the producer gathers every record operand before choosing
 fields. For a key $`k`$, let $`I_k`$ index the operands stating it, with read
@@ -619,9 +624,11 @@ source with no surviving alternative. A callable is met with a record only where
 record's fields are required writable data fields, whether the intersection
 is written in an annotation or reached through a declaration. Every callable
 operand in a product contributes all its signatures to one overloaded
-callable, so grouping them through an alias preserves support. Lean's
-`sourceMeetLists` uses `PositiveNormalization.meet`, whose function/function,
-callable/function and callable/callable clauses retain both signature lists.
+callable, so the producer's proposal is the same whether they are written
+flat or grouped through an alias; Lean's clause meet keeps both signature
+lists of two callables. Lean reads an alias of function types met with a
+record as an empty intersection (`spread-intersection-callable-alias`), so
+the verifier refuses that grouping.
 
 Within an intersection product, `Top` (`unknown`) is the identity; a source
 consisting only of `Top` has no supported copy. `Exact` records are supported
