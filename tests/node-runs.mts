@@ -41,6 +41,9 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-program-node-array-last", "last({ length: 1 })"],
     ["invalid-array-past-end", `pastTheEnd(["a"])`],
     ["invalid-array-before-last", `beforeLast(["a"])`],
+    // `map`'s result holds a hole where its callback shrank the array; a
+    // spread passes it to `push` as `undefined`.
+    ["invalid-push-spread-sparse", "wrong([1, 2])"],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
@@ -685,6 +688,10 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   // A callee generic over `Array<A>` reverses a tuple found in `unknown`.
   assert.throws(() => runExample("invalid-open-array-generic-call", "caller()"), /toFixed is not a function/);
   // An array's `length` is not one of its own enumerable properties.
+  assert.equal(runExample("invalid-push-spread-wider", `wrong([1], ["s"])`), "s",
+    "invalid-push-spread-wider: a string pushed through the wider view lands in the array of numbers");
+  assert.equal(runExample("invalid-push-receiver-element", "wrong([], null)"), "other",
+    "invalid-push-receiver-element: the array of Stmt holds a { k: \"other\" }");
   assert.equal(runExample("invalid-array-spread-length", "count([1, 2])"), undefined,
     "invalid-array-spread-length: the copy has no length despite its number contract");
   // `Array.isArray` on `unknown`: TypeScript reads the array as `any[]`.

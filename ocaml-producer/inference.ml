@@ -540,7 +540,13 @@ let infer ?receiver ?expected ?(expand = fun _ -> None) ?(native = fun _ -> fals
        when one is available. *)
     let declared_upper = List.find_opt (function
       | Atoms [Named (_,[])] -> true | _ -> false) v.upper in
-    let candidate = match join v.lower,declared_upper with
+    (* A type both below and above the binder, as a writable array's element
+       gives it (`push` of a `Stmt[]`), is its only solution: the actuals are
+       checked at it. *)
+    let fixed = List.find_opt (fun t -> List.mem t v.upper) v.lower in
+    let candidate = match fixed,join v.lower,declared_upper with
+      | (Some _ as chosen),_,_ -> chosen
+      | None,joined,declared -> match joined,declared with
       (* A join of primitives an explicit bound of literals does not admit
          (`number` at `K extends 0 | 1`): the bound, as TypeScript keeps the
          literals the constraint names. *)

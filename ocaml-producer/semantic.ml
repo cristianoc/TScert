@@ -234,6 +234,14 @@ let array_element ?(readonly=false) = function
     when s.required=[] && s.optional_elements=[] && (readonly || not s.readonly) -> s.rest
   | _ -> None
 
+(* The values a spread of such an array passes: its element, and `undefined`
+   for a hole where its presence is sparse; a dense or readable store's holes
+   read at the element (Lean's `SpreadsInto`). *)
+let spread_element ?(readonly=false) t = match t, array_element ~readonly t with
+  | Atoms [Shape {elements=Some s;_}], Some element ->
+    Some (if s.presence = Sparse then union element (Atoms [Undef]) else element)
+  | _ -> None
+
 let rec admits_undefined = function
   | Atoms xs -> List.exists (function Undef | Top -> true | _ -> false) xs
   | Rigid _ -> false
