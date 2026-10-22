@@ -690,7 +690,9 @@ an object of the external heap whose host classification T4 states, fixed
 when it enters: the classification is an assumption about the package's
 values, not a fact the pipeline establishes. The model's value is an ordinary dense
 readonly array of the $`v_i`$, under `Array.prototype`'s contract, so the
-operations of the table are the existing readonly-array rules, and
+operations of the table are the existing readonly-array rules, `l[i]` at a
+`number` key [`%ElementAt%`'s](PROGRAM-TYPING.md#reads-at-an-index-from-the-length)
+among them, and
 `Array.isArray` gives `true` as it does at run time. A node list is a
 restricted value ([restricted values](#restricted-values)): every operation
 on which its model would not hold of a node list is stuck on it and carries
@@ -700,7 +702,8 @@ at meets, `unknown`, readonly arrays and readonly records included. The node lis
 
 Each row of the table holds of a node list for the reasons above, which T4
 states and C4 runs: lengths around 16 (where index getters move from the
-prototype to the instance), reentrant callbacks and callbacks that throw,
+prototype to the instance), numeric keys that are no index (`-1`, a
+fraction, past the end, `NaN`, the infinities), reentrant callbacks and callbacks that throw,
 repeated and interleaved iterators, and every listed `Array.prototype`
 member. An indexed read writes the list's hidden cursor (`_cursorIndex`,
 `_cursorNodeIndex`) and materializes nodes into `sourceFile.nodes`; the

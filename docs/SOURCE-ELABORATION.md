@@ -850,8 +850,10 @@ where the operator is read as a value, and each operand keeps its own
 (`logical-string-values`: `s && s` of a string in a condition).
 
 In a type guard or an assertion function, a `return` of a Boolean by its
-form (a shape, key, instance or equality test, a negation, a comparison, or
-`&&` and `||` of such) returns its truth's Boolean, a condition:
+form (a shape, key, instance or equality test, a family guard's call, the
+test of its argument's tags ([a guard on any argument](HOST-FAMILIES.md#a-guard-on-any-argument)),
+a negation, a comparison, or `&&` and `||` of such)
+returns its truth's Boolean, a condition:
 
 ```math
 \mathsf{return}\ e\;\equiv\;\mathsf{if}\ (e)\ \mathsf{return}\ \mathsf{true};\ \mathsf{else}\ \mathsf{return}\ \mathsf{false}

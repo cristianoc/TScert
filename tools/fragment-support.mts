@@ -604,11 +604,12 @@ export function shadowingLocals(source: SourceFile): Map<string, Identifier> {
 
 
 /** Whether an expression's value is a Boolean by its form: a test of a
- * shape, a key or an instance, an equality, a negation, a comparison, or
- * `&&` and `||` of such. Its value is then its truth. */
+ * shape, a key, an instance or a family guard's tags, an equality, a
+ * negation, a comparison, or `&&` and `||` of such. Its value is then its
+ * truth. */
 export function booleanForm(e: Expr): boolean {
   switch (e.k) {
-    case "typeofTest": case "arrayTest": case "inTest": case "instanceTest": case "not": return true;
+    case "typeofTest": case "arrayTest": case "inTest": case "instanceTest": case "tagMember": case "not": return true;
     case "bin": return e.op === "===" || e.op === "!==" || e.op === "==" || e.op === "!=" ||
       ((e.op === "&&" || e.op === "||") && booleanForm(e.l) && booleanForm(e.r));
     case "arith": return e.op === "lt" || e.op === "le" || e.op === "gt" || e.op === "ge";

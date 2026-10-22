@@ -103,7 +103,7 @@ before the member is read. -/
     let prepared ← comparisonsExpr fc prepared
     -- An element of an array's store, at the position the key names.
     if let .elemAt _ _ keyExpr := prepared then
-      let index ← arrayKeyTerm (← exprType fc keyExpr)
+      let index ← arrayKeyTerm keyExpr.span (← exprType fc keyExpr)
       return .element (.var i) index (← exprType fc original)
     let fld ← match prepared with
       | .read _ fld _ => pure fld

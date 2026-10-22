@@ -143,7 +143,7 @@ dispatch retains its receiver as the correlated dispatch value. -/
         throw (locatedRefusal (← table) call.span .schemeElimination
           ("explicit type arguments on an element call are outside the fragment: an element that " ++
             "is a generic closure is claimed at a quantified callable, which the claim format does not encode"))
-      let index ← arrayKeyTerm (← exprType fc key)
+      let index ← arrayKeyTerm key.span (← exprType fc key)
       pure (none, Tm.elemAt (.readAt SourceTypes.storeField (.var i)) index)
     | _ => throw "a method call's target must name a field or an element"
   if (← executionDispatch fc call).isSome then return (O, .var i)

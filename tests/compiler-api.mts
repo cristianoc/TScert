@@ -201,6 +201,10 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
       elements.forEach((e, i) => assert.equal(list[i], e, `${what}: index ${i}`));
       assert.equal(list[n], undefined, `${what}: past the end`);
       assert.equal(Reflect.get(list, "0.5"), undefined, `${what}: a non-integer index`);
+      // Every other numeric key, `length - 1` of an empty list among them.
+      for (const key of [-1, -0.5, n + 1, 2 ** 32, 2 ** 53, NaN, Infinity, -Infinity])
+        assert.equal(list[key], undefined, `${what}: the numeric key ${key}`);
+      assert.equal(list[-0], elements[0], `${what}: -0 names the index 0`);
       assert.deepEqual([...list], elements, `${what}: spread`);
       const seen: unknown[] = [];
       for (const x of list) seen.push(x);
@@ -547,6 +551,23 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(unary(typeNode.asTypeNode), "the fixture exports asTypeNode");
   const heritage = first(join(dir, "heritage.ts"), "class A extends B<C> {}\n", 234);
   assert.equal(typeNode.asTypeNode(heritage), heritage, "asTypeNode returns the ExpressionWithTypeArguments");
+  // The empty pattern of `const {} = o` has no last element: the read at
+  // `length - 1` is `undefined`, returned where an element is promised.
+  const nodeListLast = await fixture("invalid-compiler-api-node-list-last");
+  assert.ok(unary(nodeListLast.lastElement), "the fixture exports lastElement");
+  const emptyPattern = first(join(dir, "empty-pattern.ts"), "const {} = o;\n", Number(syntaxKind.ObjectBindingPattern));
+  assert.equal(nodeListLast.lastElement(emptyPattern), undefined, "lastElement returns undefined on an empty pattern");
+  // Guards returning a family guard's test under `&&` and `||`: each answers
+  // `true` of an identifier, which they promise is a function declaration.
+  const binary = (v: unknown): v is (x: unknown, y: unknown) => unknown => typeof v === "function";
+  const andPromise = await fixture("invalid-compiler-api-guard-and-promise");
+  assert.ok(binary(andPromise.named), "the fixture exports named");
+  const kept: unknown = andPromise.named([name], "x");
+  assert.ok(Array.isArray(kept) && kept.length === 1 && kept[0] === name,
+    "named keeps an identifier as a function declaration");
+  const orPromise = await fixture("invalid-compiler-api-guard-or-promise");
+  assert.ok(binary(orPromise.isDeclaration), "the fixture exports isDeclaration");
+  assert.equal(orPromise.isDeclaration(name, true), true, "isDeclaration answers true of an identifier");
   // Another subpath of a package whose manifest maps it to other code: the
   // guard's declaration in TypeScript, a function answering `true` under
   // Node.
@@ -589,5 +610,5 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const sum = first(join(dir, "sum.ts"), "x + 1;\n", Number(syntaxKind.ExpressionStatement));
   assert.equal(callback.firstName(sum), undefined, "firstName returns the text of a binary expression");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind and a callback's asserted identifier's text are undefined");
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards returning a test under && and || answer true of an identifier");
 }

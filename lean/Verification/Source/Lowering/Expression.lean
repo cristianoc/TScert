@@ -449,7 +449,7 @@ slots are introduced only after the operand supplying their type is checked. -/
       let read := DirectProof.node H (.elemAt (.var 1) (.var 0)) (T ++ [Labels.undef]) (.elemStr T [Labels.undef])
         [DirectProof.var H 1 r.type, DirectProof.var H 0 k.type]
       return DirectProof.letE Γ r (DirectProof.letE (r.type::Γ) k (DirectProof.cast H A read))
-    let index ← arrayKeyTerm k.type
+    let index ← arrayKeyTerm key.span k.type
     let .num b := index | throw "internal array index term"
     let read ← elemReadPlan G H (DirectProof.var H 1 r.type) b
     pure (DirectProof.letE Γ r (DirectProof.letE (r.type::Γ) k (DirectProof.cast H A read)))
