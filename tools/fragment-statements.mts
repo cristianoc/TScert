@@ -281,20 +281,48 @@ export function hoistTarget(this: Gate, s: Statement): ts.SpreadElement | null {
 }
 
 /** Whether reading the name `id` cannot throw nor run code, and gives the
- * value it gives at any other read where the file assigns it nowhere: a
- * parameter, a function declaration with a body, a function body's `let` or
- * `const` the early-binding analysis finds initialized at every read
- * (`markEarly`), or a name the file declares nowhere that TypeScript binds
- * to the standard library's `var`s or functions alone (`libraryValues`); a
- * module binding, an import, a class, an ambient or unresolved name is not
+ * value it gives at any other read where the file assigns it nowhere. The
+ * walk out from `id` stops at the first binding of its name: a parameter
+ * read after its own declaration, a function declaration with a body, a
+ * block's or a `switch` clause's `let` or `const` (of a pattern too) the
+ * early-binding analysis finds initialized at every read (`markEarly`), a
+ * loop's `let` or `const` binding read in the loop's body (or a `for`
+ * loop's test or update), a `catch` clause's binding read in its block; past
+ * every binding, a name TypeScript binds to the standard library's `var`s or
+ * functions alone (`libraryValues`). A module binding, an import, a class,
+ * an enum, a namespace, a named function or class expression's own name, a
+ * binding of another `switch` clause, an ambient or unresolved name is not
  * one. */
 export function readCannotThrow(this: Gate, id: ts.Identifier): boolean {
   const gate: Gate = this;
   for (let at: Node | undefined = id.parent; at; at = at.parent) {
-    if (functionLikeNode(at) && at.parameters.some(p => ts.isIdentifier(p.name) && p.name.text === id.text))
-      return true;
-    const statements = ts.isBlock(at) || ts.isSourceFile(at) || ts.isCaseClause(at) || ts.isDefaultClause(at)
-      ? at.statements : null;
+    // A parameter is bound before the body runs and before the later
+    // parameters' defaults; read in its own, or in an earlier one's, it is
+    // uninitialized.
+    const parameter = functionLikeNode(at) ? at.parameters.find(p => bindsName(p.name, id.text)) : undefined;
+    if (parameter) return id.pos >= parameter.end;
+    // A loop's `let` or `const` binding is bound before its body runs, and
+    // before a `for` loop's test and update; a `catch` clause's before its
+    // block. Read in the head declaring it, it is uninitialized; a `var`
+    // there holds `undefined` until its initializer runs.
+    const loop = ts.isForOfStatement(at) || ts.isForInStatement(at) || ts.isForStatement(at) ? at : undefined;
+    const loopHead = loop?.initializer;
+    if (loop && loopHead && ts.isVariableDeclarationList(loopHead) &&
+        loopHead.declarations.some(d => bindsName(d.name, id.text)))
+      return !!(loopHead.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) &&
+        [loop.statement, ...(ts.isForStatement(loop) ? [loop.condition, loop.incrementor] : [])]
+          .some(region => !!region && within(id, region));
+    if (ts.isCatchClause(at) && at.variableDeclaration && bindsName(at.variableDeclaration.name, id.text))
+      return within(id, at.block);
+    // A named function or class expression binds its name within itself:
+    // the walk stops there, at a binding read through no slot of the
+    // Fragment's.
+    if ((ts.isFunctionExpression(at) || ts.isClassExpression(at)) && at.name?.text === id.text) return false;
+    // A `switch`'s clauses share one scope: a binding of one clause read
+    // in another may be uninitialized.
+    const clauses = ts.isCaseBlock(at) ? at.clauses : null;
+    const statements: readonly Statement[] | null = ts.isBlock(at) || ts.isSourceFile(at) ? at.statements
+      : clauses ? clauses.flatMap((c): Statement[] => [...c.statements]) : null;
     if (!statements) continue;
     for (const st of statements) {
       // A function declaration with a body is created when its scope is
@@ -306,16 +334,31 @@ export function readCannotThrow(this: Gate, id: ts.Identifier): boolean {
         return named.some(d => !!d.body) &&
           !named.some(d => d.modifiers?.some(m => m.kind === ts.SyntaxKind.DeclareKeyword));
       }
-      if (ts.isClassDeclaration(st) && st.name?.text === id.text) return false;
+      if ((ts.isClassDeclaration(st) || ts.isEnumDeclaration(st) || ts.isModuleDeclaration(st)) &&
+          st.name && ts.isIdentifier(st.name) && st.name.text === id.text) return false;
       if (ts.isImportDeclaration(st) && importedNames(st).includes(id.text)) return false;
       if (ts.isVariableStatement(st))
         for (const d of st.declarationList.declarations)
-          if (ts.isIdentifier(d.name) && d.name.text === id.text)
-            return !ts.isSourceFile(at) && !gate.earlyDecls.has(d);
+          if (bindsName(d.name, id.text)) {
+            if (ts.isSourceFile(at) || !(st.declarationList.flags & (ts.NodeFlags.Let | ts.NodeFlags.Const)) ||
+                (clauses && !clauses.some(c => within(st, c) && within(id, c))))
+              return false;
+            // A pattern's binding read where it may be uninitialized is
+            // refused by the early-binding analysis (`markEarly`).
+            return ts.isIdentifier(d.name) ? !gate.earlyDecls.has(d) : true;
+          }
     }
   }
   return gate.libraryValues.has(gate.span(id).join(":"));
 }
+
+/** Whether a binding name, an identifier or a pattern, binds `name`. */
+const bindsName = (b: ts.BindingName, name: string): boolean =>
+  ts.isIdentifier(b) ? b.text === name
+    : b.elements.some(e => !ts.isOmittedExpression(e) && !!e.name && bindsName(e.name, name));
+
+/** Whether `n` lies within `region`. */
+const within = (n: Node, region: Node): boolean => n.pos >= region.pos && n.end <= region.end;
 
 /** The local names an import declaration binds. */
 const importedNames = (st: ts.ImportDeclaration): string[] => {

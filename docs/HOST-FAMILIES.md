@@ -447,9 +447,13 @@ binds to another family's function of the same name and domain is an
 ordinary call (`pipeline/test.mts`). A call with
 a spread or more than one argument is refused.
 
-**A call on an immutable name** $`x`$, a binding the existing
-classification calls immutable (a `const`, or a parameter no statement
-assigns), is written as the Fragment's membership test, `tagMember`, of
+**A call on an immutable name** $`x`$, a binding the file assigns
+nowhere, read where it is initialized (`readCannotThrow`, which stops at
+the read's nearest binding of the name: a parameter after its own
+declaration, a block's or a `switch` clause's `const` or `let` initialized
+at every read, a loop's binding in the loop's body and, for a `for` loop,
+its test and update, a `catch` clause's binding in its block), is written
+as the Fragment's membership test, `tagMember`, of
 $`x`$, or of its tag field, against the entry's exact tag set, after the
 obligation that $`x`$ is within the guard's declared parameter type $`P`$:
 
