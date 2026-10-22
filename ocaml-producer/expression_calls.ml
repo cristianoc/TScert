@@ -374,9 +374,15 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            try Some (Inference.infer ~expand:(expand_named declarations) ~receiver:receiver_type
                   {signature with params=[];variadic=None} []).substitution
            with Json.Error _ -> None) in
-         let built (arg:expr) i = match arg.node,Lazy.force fixed,param_at signature i with
-           | (Alloc _ | ArrayLiteral _),Some solution,Some p
-             when not (List.exists (fun (_,a) -> a = ValueArgument top) solution) ->
+         (* A literal, or a choice one of whose values is one
+            (`fallback ?? { k: "break" }`). *)
+         let rec literal (arg:expr) = match arg.node with
+           | Alloc _ | ArrayLiteral _ -> true
+           | Conditional (_,a,b) | Coalesce (a,b) | Logical (_,a,b) -> literal a || literal b
+           | _ -> false in
+         let built (arg:expr) i = match Lazy.force fixed,param_at signature i with
+           | Some solution,Some p
+             when literal arg && not (List.exists (fun (_,a) -> a = ValueArgument top) solution) ->
              let t = Inference.substitute solution p in
              if Semantic.mentions_rigid t then None else Some t
            | _ -> None in
@@ -385,9 +391,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            if not (List.mem i spreads) then [actual]
            else if i < List.length signature.params then
              Proposal_diagnostics.unsupported "a spread cannot fill fixed parameters of a variadic signature"
-           else match Semantic.tuple_positions ~readonly:true actual, Semantic.array_element ~readonly:true actual with
+           else match Semantic.tuple_positions ~readonly:true actual, Semantic.spread_element ~readonly:true actual with
              | Some positions,_ -> positions
-             | None,Some element -> [union element (Atoms [Undef])]
+             | None,Some element -> [element]
              | _ -> Proposal_diagnostics.unsupported "generic spread requires an array or a tuple of required positions") args) in
          let missing = max 0 (List.length signature.params - List.length actuals) in
          let substitution,result = infer_explicit ~receiver:receiver_type signature
