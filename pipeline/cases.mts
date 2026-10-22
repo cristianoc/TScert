@@ -2266,6 +2266,8 @@ export const cases: Case[] = [
   negative("invalid-for-of-program-iterable-next", "an iterator whose `next` yields strings gives the loop string elements"),
   positive("bind-union-host", "the protocol over a union of iterables: `next` and `return` bound to whichever host the iterator is (`unionVar`, then `bindMember`), the bound function returning the union of the hosts' results, each `TReturn` kept; `break`, a closure's body, a `Set` beside a `ReadonlySet`, an alias in a union, one host"),
   positive("bind-union-host-nullable", "a nullable union of iterator hosts narrowed before the loop binds next"),
+  { file: "invalid-bind-union-host-nullable", area: "`[Symbol.iterator]()` returns `A | B | undefined`: the parser refuses the missing return contract on the undefined arm at the loop's source, before next is read or bound (run under Node)",
+    kind: "negative", status: "unsupported", phase: "source", diagnostic: /an iterable whose iterator's type states no `return` is outside the fragment here:.*\(line 30, col 23\)/ },
   { file: "invalid-bind-union-host-primitive", area: "a numeric iterator arm: the parser refuses the missing return contract before bound-member lowering (run under Node)",
     kind: "negative", status: "unsupported", phase: "source", diagnostic: /an iterable whose iterator's type states no `return` is outside the fragment here/ },
   { file: "invalid-bind-union-host-tag-set", area: "a numeric tag-set iterator arm: the parser refuses the missing return contract before bound-member lowering (run under Node)",

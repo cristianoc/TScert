@@ -52,6 +52,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   for (const file of ["invalid-bind-union-host-primitive", "invalid-bind-union-host-tag-set"])
     assert.throws(() => runExample(file, "first(new Source(1))"), /not an object/,
       `${file}: GetIterator throws on a numeric iterator`);
+  assert.throws(() => runExample("invalid-bind-union-host-nullable", "first(new Source(undefined))"), /not an object/,
+    "invalid-bind-union-host-nullable: GetIterator throws on an undefined iterator");
   assert.throws(() => runExample("invalid-bind-union-host-missing-member", "first(new Source(new Missing()))"), /not a function/,
     "invalid-bind-union-host-missing-member: the step calls an absent next");
   assert.throws(() => runExample("invalid-bind-union-host-non-object", "first(new Bare())"), /not an object/,
