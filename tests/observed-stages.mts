@@ -17,7 +17,7 @@ import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, rmSync, symlin
 import { dirname, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Recorder, invokeInProcess } from "../pipeline/stages.mts";
-import { captureCodeIdentity, codeIdentity, sha256, type Canonical } from "../pipeline/stage-execution.mts";
+import { captureCodeIdentity, codeIdentity, moduleSpecifiers, sha256, type Canonical } from "../pipeline/stage-execution.mts";
 import { textCodec } from "../pipeline/in-process-execution.mts";
 import { Store } from "../pipeline/stage-store.mts";
 import { compilerImplementation, launcherForTests, openCompiler, useInstallationForTests } from "../tools/compiler-channel.mts";
@@ -48,6 +48,29 @@ if (process.argv[2] === "--reads") {
   // comment or a string, and a relative path it follows, do not.
   const scratch = runDirectory("loads-");
   const loads: [string, boolean][] = [
+    ['const n = 1 / "/"; await import(name); const s = "//";', false],
+    [String.raw`e\u0076al(code);`, false],
+    [String.raw`import { runInNewContext } from "node:v\u006d";`, false],
+    ['eval(code);', false],
+    ['#!/usr/bin/env node\rawait import(name);', false],
+    ['export default /"/; await import(name); const s = "//";', false],
+    ['outer: while (true) { break outer\n /"/.test("x"); await import(name); }', false],
+    ['export default /x/;', true],
+    ['import { runInNewContext } from "node:vm";', false],
+    ['x++ / "/"; await import(name); const s = "//";', false],
+    ['x-- / "/"; await import(name); const s = "//";', false],
+    ['const n = x! / "/"; await import(name); const s = "//";', false],
+    ['const n = x!! / "/"; await import(name); const s = "//";', false],
+    ['const n = x<T> / "/"; await import(name); const s = "//";', false],
+    ['const of = 1; of / "/"; await import(name); const s = "//";', false],
+    ['const π = 1; π / "/"; await import(name); const s = "//";', false],
+    ['// comment\rawait import(name);', false],
+    ['// comment\u2028await import(name);', false],
+    ['const n = 1 / 2; const m = .5 / 2 + 1e-3 / 2 + 0x10 / 2 + 10n / 2n;', true],
+    ['const n = x.return / 2 + x.of / 2 + x?.throw / 2;', true],
+    ['const r = /["`]/; const s = `${1 / 2}:${/x/.test("x")}`;', true],
+    ['const r = () => /x/; const b = !/x/.test("y");', true],
+    ['const n = "12" / 2; const m = `12` / 2; const k = a[0] / 2; const r = /x/ / 2;', true],
     ['const n = 1 / (await import(name)).n / 2;', false],
     ['const s = `${/}/.test("}") ? import(name) : 0}`;', false],
     ['const s = `${/[}]/.test("}") ? import(name) : 0}`;', false],
@@ -73,21 +96,31 @@ if (process.argv[2] === "--reads") {
     assert.ok(!processAdapter.includes(module), `the process adapter's closure holds ${module}`);
   const modules = closureOf("pipeline/parse-stage.mts", ["typescript"]);
   assert.ok(modules.includes("tools/files.mts") && modules.includes("tools/fragment-parse.mts"), modules.join(", "));
-  const reading = /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?)["'](?:node:)?(?:fs(?:\/promises)?|module|child_process|worker_threads|vm)["']|import\s*\.\s*meta\s*\.\s*resolve\s*\(/;
+  const reading = (text: string): boolean => {
+    const found = moduleSpecifiers(text);
+    return "unaccounted" in found || found.specifiers.some((s) =>
+      ["fs", "fs/promises", "module", "child_process", "worker_threads", "vm"].includes(s.replace(/^node:/, "")));
+  };
   for (const specifier of ["fs", "fs/promises", "module", "child_process", "worker_threads", "vm"]) {
     for (const prefix of ["", "node:"]) for (const quote of ['"', "'"]) {
       const literal = quote + prefix + specifier + quote;
-      for (const source of [`import x from ${literal};`, `import ${literal};`, `await import(${literal});`])
-        assert.match(source, reading, source);
+      for (const source of [`import x from ${literal};`, `import ${literal};`, `await import(${literal});`,
+        `import { readFileSync } from /* c */ ${literal};`, `export { x } from /* c */ ${literal};`])
+        assert.ok(reading(source), source);
     }
   }
+  for (const source of [String.raw`import { readFileSync } from "node:\u0066s";`,
+    String.raw`await import("node:\x66s");`, 'import /* c */ . meta /* c */ . resolve("x");'])
+    assert.ok(reading(source), source);
+  for (const source of ['import { join } from /* c */ "node:path";', '// import "node:fs";',
+    'const text = \'import "node:fs";\';']) assert.ok(!reading(source), source);
   for (const module of modules) {
     // The execution adapters read the code they identify and a process
     // stage's inputs, never an observed stage's.
     if (["tools/files.mts", "pipeline/stage-execution.mts", "pipeline/run-directory.mts"].includes(module))
       continue;
     const text = readFileSync(join(repository, module), "utf8");
-    assert.doesNotMatch(text, reading, `${module} reads the file system other than through tools/files.mts`);
+    assert.ok(!reading(text), `${module} reads the file system other than through tools/files.mts`);
   }
   process.stdout.write("observed stages: the keyed closures are identified and hold no policy, store or orchestration module; " +
     "the stages' code reads the file system only through tools/files.mts\n");

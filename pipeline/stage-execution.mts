@@ -64,21 +64,16 @@ const fileDigest = (path: string): string => known(path).digest;
  * for. */
 type Dependencies = { modules: string[]; packages: string[] } | { unaccounted: string };
 
-/** A token of a module's code: a name, a string literal's value, a template
+/** A token of a module's code: a name, a number, a string literal's value, a template
  * literal's or a regular expression literal's text, or another character. */
-type Token = { kind: "name" | "string" | "template" | "regex" | "other"; text: string };
+type Token = { kind: "name" | "number" | "string" | "template" | "regex" | "other"; text: string };
 
 /** Names after which a `/` begins a regular expression literal. */
 const beforeExpression: ReadonlySet<string> = new Set(["return", "typeof", "instanceof", "in", "of", "new", "delete",
-  "void", "throw", "case", "do", "else", "yield", "await"]);
+  "void", "throw", "case", "do", "else", "yield", "await", "default", "extends"]);
 
-/** The tokens of a module's code, comments left out; or why it is not
- * tokenized: a string or regular expression literal that ends a line, or a
- * comment, template or placeholder that ends the text. A `/` begins a
- * regular expression where an expression may begin (after an operator, an
- * opening bracket, a comma or one of `beforeExpression`). A regex containing
- * braces inside a template placeholder, a slash after `)` or `}`, and
- * apparent regex flags outside the language leave the text unidentified. */
+/** Tokens with comments omitted. Slash classification uses the preceding
+ * token; grammar-dependent contexts and identifier escapes are refused. */
 function tokenize(text: string): Token[] | string {
   const out: Token[] = [];
   // The templates whose placeholder is open, by the brace depth inside it.
@@ -103,14 +98,14 @@ function tokenize(text: string): Token[] | string {
       i++;
     }
   };
-  let i = text.startsWith("#!") ? text.indexOf("\n") : 0;
+  let i = text.startsWith("#!") ? text.search(/[\n\r\u2028\u2029]/) : 0;
   if (i < 0) return out;
   while (i < text.length) {
     const c = text[i];
     if (/\s/.test(c)) { i++; continue; }
     if (c === "/" && text[i + 1] === "/") {
-      const end = text.indexOf("\n", i);
-      i = end < 0 ? text.length : end;
+      const end = text.slice(i).search(/[\n\r\u2028\u2029]/) + i;
+      i = end < i ? text.length : end;
       continue;
     }
     if (c === "/" && text[i + 1] === "*") {
@@ -122,7 +117,7 @@ function tokenize(text: string): Token[] | string {
     if (c === "'" || c === '"') {
       let j = i + 1, value = "";
       for (; j < text.length && text[j] !== c; j++) {
-        if (text[j] === "\n") return "a string literal that ends a line";
+        if (/[\n\r\u2028\u2029]/.test(text[j])) return "a string literal that ends a line";
         if (text[j] === "\\") { value += text.slice(j, j + 2); j++; continue; }
         value += text[j];
       }
@@ -139,15 +134,27 @@ function tokenize(text: string): Token[] | string {
     }
     if (c === "/") {
       const last = out.at(-1);
-      if (last?.kind === "other" && (last.text === ")" || last.text === "}"))
-        return "a slash after a closing parenthesis or brace";
-      const regex = last === undefined || (last.kind === "other" && !")]}".includes(last.text)) ||
-        (last.kind === "name" && beforeExpression.has(last.text));
+      if (last?.kind === "other" && [")", "}", "++", "--", ">"].includes(last.text))
+        return `a slash in a grammar-dependent context at offset ${i}`;
+      const previous = out.at(-2);
+      let beforeBang = out.length - 1;
+      while (out[beforeBang]?.text === "!") beforeBang--;
+      const operand = out[beforeBang];
+      if (last?.text === "!" && operand !== undefined &&
+        (operand.kind !== "other" || [")", "}", "]"].includes(operand.text)))
+        return "a slash after a possible non-null assertion";
+      if (last?.kind === "name" && previous?.kind === "name" && ["break", "continue"].includes(previous.text))
+        return "a slash after a statement label";
+      const property = previous?.text === ".";
+      if (last?.kind === "name" && !property && ["of", "yield", "break", "continue", "debugger"].includes(last.text))
+        return "a slash after a contextual or statement keyword";
+      const regex = last === undefined || (last.kind === "other" && last.text !== "]") ||
+        (last.kind === "name" && !property && beforeExpression.has(last.text));
       if (regex) {
         let j = i + 1, inClass = false;
         for (; j < text.length; j++) {
           const d = text[j];
-          if (d === "\n") return "a regular expression literal that ends a line";
+          if (/[\n\r\u2028\u2029]/.test(d)) return "a regular expression literal that ends a line";
           if (d === "\\") { j++; continue; }
           if (d === "[") inClass = true;
           else if (d === "]") inClass = false;
@@ -166,16 +173,27 @@ function tokenize(text: string): Token[] | string {
         continue;
       }
     }
-    const name = /^[A-Za-z_$][\w$]*/.exec(text.slice(i, i + 256));
+    if (c === "\\") return "an escape outside a literal";
+    const name = /^[$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*/u.exec(text.slice(i));
     if (name) {
       out.push({ kind: "name", text: name[0] });
       i += name[0].length;
       continue;
     }
-    const number = /^[0-9][\w.]*/.exec(text.slice(i, i + 256));
+    const number = /^(?:0[xX][\da-fA-F_]+n?|0[bB][01_]+n?|0[oO][0-7_]+n?|(?:[0-9][\d_]*(?:\.[\d_]*)?|\.[\d_]+)(?:[eE][+-]?[\d_]+)?n?)/.exec(text.slice(i));
     if (number) {
-      out.push({ kind: "other", text: number[0] });
+      out.push({ kind: "number", text: number[0] });
       i += number[0].length;
+      continue;
+    }
+    if (c === "=" && text[i + 1] === ">") {
+      out.push({ kind: "other", text: "=>" });
+      i += 2;
+      continue;
+    }
+    if ((c === "+" || c === "-") && text[i + 1] === c) {
+      out.push({ kind: "other", text: c + c });
+      i += 2;
       continue;
     }
     if (c === "{") depth++;
@@ -204,10 +222,49 @@ const loaderModules: ReadonlySet<string> = new Set(["node:vm", "node:module", "n
  * for, with its reason. */
 const reviewed: ReadonlyMap<string, { reason: string; loaders: readonly string[] }> = new Map([
   ["tools/files.mts", { reason: "its loads are the loader's observations (DESIGN.md, observed stages)",
-    loaders: ["node:module", "createRequire", "registerHooks"] }],
+    loaders: ["node:module", "createRequire", "registerHooks", "import.meta.resolve"] }],
 ]);
 const repository = resolve(here, "..");
 const repositoryPath = (f: string): string => f.startsWith(repository + "/") ? f.slice(repository.length + 1) : f;
+
+/** Literal module specifiers and loader checks shared by identity discovery
+ * and the observed-read guard. Escaped specifiers are refused, so returned
+ * strings are their decoded values. */
+export function moduleSpecifiers(text: string, accounted: readonly string[] = []):
+    { specifiers: string[] } | { unaccounted: string } {
+  const tokens = tokenize(text);
+  if (typeof tokens === "string") return { unaccounted: tokens };
+  // A supposed regex may be division around executable code. Inspect its
+  // raw text as well: load-related words make that ambiguity ineligible,
+  // even where the words would only be part of a real regex pattern.
+  for (const t of tokens) {
+    if (t.kind === "regex" &&
+      t.text.match(/[A-Za-z_$][\w$]*/g)?.some((word) => word === "import" || word === "from" || loaders.has(word)))
+      return { unaccounted: "load syntax inside an ambiguous regular expression" };
+  }
+  const specifiers: string[] = [];
+  for (const [i, t] of tokens.entries()) {
+    const next = tokens[i + 1], after = tokens[i + 2];
+    if (t.kind === "name" && loaders.has(t.text) && !accounted.includes(t.text))
+      return { unaccounted: `names ${t.text}, whose load is not read` };
+    if (t.kind !== "name" || next === undefined) continue;
+    if (t.text === "import" && tokens.slice(i + 1, i + 5).map((t) => t.text).join("") === ".meta.resolve" &&
+      !accounted.includes("import.meta.resolve")) return { unaccounted: "uses import.meta.resolve" };
+    if ((t.text === "from" || t.text === "import") && next.kind === "string") specifiers.push(next.text);
+    if (t.text === "import" && next.text === "(") {
+      if (after?.kind !== "string" || tokens[i + 3]?.text !== ")")
+        return { unaccounted: "imports a computed specifier" };
+      specifiers.push(after.text);
+    }
+  }
+  for (const specifier of specifiers) {
+    if (specifier.includes("\\")) return { unaccounted: "an escaped module specifier" };
+    const builtin = specifier.startsWith("node:") ? specifier : `node:${specifier}`;
+    if (loaderModules.has(builtin) && !accounted.includes(builtin))
+      return { unaccounted: `imports ${specifier}, whose loads are not read` };
+  }
+  return { specifiers };
+}
 
 /** The dependencies of `file`, read from its text and kept with its digest
  * where the text read is the one digested. Every quoted relative path in the
@@ -225,7 +282,6 @@ function dependencies(file: string): Dependencies {
   const bytes = readFileSync(file);
   const text = bytes.toString("utf8");
   const at = repositoryPath(file);
-  const accounted = (loader: string): boolean => reviewed.get(at)?.loaders.includes(loader) ?? false;
   const scanned = ((): Dependencies => {
     const modules = new Set<string>(), packages = new Set<string>();
     for (const m of text.matchAll(/(["'])(\.\.?\/[^"'\s]+\.(?:mts|ts|mjs|js|cts|cjs|json))\1/g)) {
@@ -234,32 +290,10 @@ function dependencies(file: string): Dependencies {
       // is checked below.
       if (isFile(target)) modules.add(target);
     }
-    const tokens = tokenize(text);
-    if (typeof tokens === "string") return { unaccounted: `${at} is not read: ${tokens}` };
-    // A supposed regex may be division around executable code. Inspect its
-    // raw text as well: load-related words make that ambiguity ineligible,
-    // even where the words would only be part of a real regex pattern.
-    for (const t of tokens) {
-      if (t.kind === "regex" &&
-        t.text.match(/[A-Za-z_$][\w$]*/g)?.some((word) => word === "import" || word === "from" || loaders.has(word)))
-        return { unaccounted: `${at} has load syntax inside an ambiguous regular expression` };
-    }
-    const specifiers: string[] = [];
-    for (const [i, t] of tokens.entries()) {
-      const next = tokens[i + 1], after = tokens[i + 2];
-      if (t.kind === "name" && loaders.has(t.text) && !accounted(t.text))
-        return { unaccounted: `${at} names ${t.text}, whose load is not read` };
-      if (t.kind !== "name" || next === undefined) continue;
-      if ((t.text === "from" || t.text === "import") && next.kind === "string") specifiers.push(next.text);
-      if (t.text === "import" && next.text === "(") {
-        if (after?.kind !== "string" || tokens[i + 3]?.text !== ")")
-          return { unaccounted: `${at} imports a computed specifier` };
-        specifiers.push(after.text);
-      }
-    }
+    const found = moduleSpecifiers(text, reviewed.get(at)?.loaders);
+    if ("unaccounted" in found) return { unaccounted: `${at}: ${found.unaccounted}` };
+    const { specifiers } = found;
     for (const specifier of specifiers) {
-      if (loaderModules.has(specifier) && !accounted(specifier))
-        return { unaccounted: `${at} imports ${specifier}, whose loads are not read` };
       if (specifier.startsWith("node:")) continue;
       if (specifier.startsWith("./") || specifier.startsWith("../")) {
         if (!modules.has(resolve(dirname(file), specifier)))

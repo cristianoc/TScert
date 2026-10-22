@@ -296,13 +296,17 @@ unidentified package makes replay ineligible, as do an `import(` of
 anything but a string literal, the names `require`, `createRequire`,
 `registerHooks`, `eval` and `Function` anywhere in the code, an import of
 `node:vm`, `node:module` or `node:worker_threads`, and a text the tokenizer
-does not read (a string or regular expression literal that ends a line, a
-comment or template that ends the text). Since a `/` may begin a regular
-expression or divide, the scan also makes replay ineligible for a slash
-after a closing parenthesis or brace, braces in a regular expression inside
-a template placeholder, flags outside `dgimsuvy`, and the words `import`,
-`from` or a loader name inside a regular expression, which division could
-enclose as code.
+does not read. Numbers have their own token kind. A slash divides after a
+value token or `]`; it begins a regex after an expression-introducing
+keyword (except a property name) or other punctuation. Grammar-dependent
+contexts are refused: closing parentheses or braces, increment/decrement,
+possible TypeScript non-null assertions or type arguments, and contextual
+or statement keywords. Identifier escapes and escaped module specifiers
+also leave code unidentified. Regex flags outside `dgimsuvy`, braces in a
+regex inside a template placeholder, and load-related words in a regex are
+conservatively refused. The filesystem-import guard uses the same token
+and specifier scan, including comments between a loading keyword and its
+specifier. Unreviewed `import.meta.resolve` is refused by that scan.
 
 A reviewed list exempts named loaders in named modules, each with its
 reason: `tools/files.mts`, whose loads are the loader's observations.
