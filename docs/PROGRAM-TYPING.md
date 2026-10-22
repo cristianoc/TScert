@@ -645,6 +645,15 @@ alone; the hosts' must have the same parameters and effect, and the result is
 the union of their results. A union with a host holding $`k`$ as a field, or
 not at all, is not this term, and binding a union of callables has no rule.
 
+A method call $`x.k(\vec a)`$ whose actuals run code reads the member before
+them, as JavaScript evaluates the callee reference before the arguments: its
+head, saved before the actuals, is this term on the receiver's saved slot
+(`memberHead`), for one host and for a union of hosts alike, and the call
+invokes the saved head with the saved receiver, which the bound descriptor
+does not read. On a union of hosts the producer claims the head at the one
+signature above. An actual that writes the receiver's binding leaves the call
+on the object read first.
+
 A variadic target with an element rest (`bindRestE`, `restsT_bound`) gives
 its first fixed positions to the prefix and, past them, its element $`E`$; the
 result keeps the positions left and the rest $`P`$, which admits the prefix's

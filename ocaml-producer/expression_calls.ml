@@ -11,6 +11,7 @@ module type Inputs = sig
   include Analysis_capabilities.Evolution
   include Analysis_capabilities.Instance_publication
   include Analysis_capabilities.Claim_operations
+  include Analysis_capabilities.Expression_publication
   val observe_method_call : Json.t -> unit
 end
 module Make (S : Inputs) = struct
@@ -71,6 +72,19 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           Atoms [Shape {shape with calls=List.filter (fun (s:Semantic.signature) ->
             Semantic.plain_effect s.call_effect) calls}]
         | t -> t in
+      (* A method called on a union of hosts each holding it: Lean binds each
+         host's member to it before the actuals run (`memberHead`), as for
+         `o.m.bind(o)`, so the head is claimed as that bound function, one
+         signature at any receiver ([Semantic.bound_union]). Arms with no
+         common signature keep their own. *)
+      let callee = match e.node, target.node, callee with
+        | Invoke _, Read _, Atoms (_::_::_ as arms) ->
+          let fits (s:Semantic.signature) = Semantic.plain_effect s.call_effect && s.quantified=[]
+            && s.rest_pack=None && (s.variadic<>None || List.length args<=List.length s.params) in
+          (match Semantic.bound_union fits arms with
+           | Some t -> restate_expression target.pos t; t
+           | None -> callee)
+        | _ -> callee in
       (* The receiver the call passes: the `.call` operand, the object a
          method is read from, or `undefined`. A scheme infers from it too. *)
       let receiver_type = match receiver, target.node with
