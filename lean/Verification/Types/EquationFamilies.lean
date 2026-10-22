@@ -77,6 +77,28 @@ def substituteAll (σ : List (Label sig × List (Label sig))) (A : List (Label s
     List (Label sig) :=
   A.flatMap fun l => l.substitute (replace σ)
 
+/-- `substituteAll`, returning the type itself where nothing is substituted
+and its meets are canonical (`substituteAll_eq_self`). -/
+def substituteAllSelf (σ : List (Label sig × List (Label sig))) (A : List (Label sig)) :
+    List (Label sig) :=
+  if σ.isEmpty && A.all (·.1.canonical) then A else A.flatMap fun l => l.substitute (replace σ)
+
+@[csimp] theorem substituteAll_eq_self : @substituteAll = @substituteAllSelf := by
+  funext sig σ A
+  unfold substituteAll substituteAllSelf
+  split
+  · next h =>
+    simp only [Bool.and_eq_true, List.isEmpty_iff, List.all_eq_true] at h
+    obtain ⟨rfl, hc⟩ := h
+    have hσ : ∀ l : Label sig, replace [] l = [l] := fun _ => rfl
+    induction A with
+    | nil => rfl
+    | cons l A ih =>
+      rw [List.flatMap_cons, Label.substitute_self _ hσ l (hc l List.mem_cons_self),
+        ih fun l hl => hc l (List.mem_cons_of_mem _ hl)]
+      rfl
+  · rfl
+
 private theorem meaning_cons (G : NormalGraph ι) (η : MixedAssignment ι) (l : ι) (A : List ι)
     (n : Nat) (W : WorldT n) (x : ParameterSpace.mixed.Carrier) :
     mixedMeaning G η (l :: A) n W x ↔ mixedMeaning G η [l] n W x ∨ mixedMeaning G η A n W x := by

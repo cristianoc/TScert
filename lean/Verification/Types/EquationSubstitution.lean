@@ -58,6 +58,85 @@ end
 def Label.substitute (σ : Label sig → List (Label sig)) (l : Label sig) : List (Label sig) :=
   Tree.substitute σ l.1 l.2
 
+mutual
+/-- Whether each meet within a tree is its canonical form (`canonMeet`):
+substituting every parameter by itself then returns the tree
+(`Tree.substitute_self`). -/
+def Tree.canonical : Tree → Bool
+  | .app _ args => args.canonical
+  | .meet ps => decide (canonMeet ps.toList = .meet ps) && ps.canonical
+  | .bound .. | .var .. | .argument _ | .local _ => true
+def Types.canonical : Types → Bool
+  | .nil => true
+  | .cons t ts => t.canonical && ts.canonical
+def Args.canonical : Args → Bool
+  | .nil => true
+  | .cons ts args => ts.canonical && args.canonical
+end
+
+theorem choices_singletons (xs : List α) : choices (xs.map fun x => [x]) = [xs] := by
+  induction xs with
+  | nil => rfl
+  | cons x xs ih => simp [choices, ih]
+
+theorem Types.labels_toList (ts : Types) (valid : ts.scoped sig 0 0 = true) :
+    (ts.labels valid).map Subtype.val = ts.toList := by
+  have h := congrArg Types.toList (Types.labels_val ts valid)
+  rwa [Types.toList_ofList] at h
+
+mutual
+theorem Tree.substitute_self (σ : Label sig → List (Label sig)) (hσ : ∀ l, σ l = [l]) :
+    ∀ (t : Tree) (valid : t.scoped sig 0 0 = true), t.canonical = true →
+      Tree.substitute σ t valid = [⟨t, valid⟩]
+  | .app h ts, valid, hc => by
+    have ha := Args.substitute_self σ hσ ts (Bool.and_eq_true_iff.mp valid).2 (by simpa [Tree.canonical] using hc)
+    simp only [Tree.substitute, List.cons.injEq, and_true]
+    apply Subtype.ext
+    simp only [Scope.label, Scope.rawArgs, ha]
+    exact congrArg (Tree.app h) (Scope.ofRaw_args h ts (Bool.and_eq_true_iff.mp valid).1
+      (Bool.and_eq_true_iff.mp valid).2)
+  | .bound h ts i, valid, _ => hσ _
+  | .var o i k, valid, _ => hσ _
+  | .meet ps, valid, hc => by
+    simp only [Tree.canonical, Bool.and_eq_true, decide_eq_true_eq] at hc
+    have hp := Types.substituteParts_self σ hσ ps (Bool.and_eq_true_iff.mp valid).1 hc.2
+    simp only [Tree.substitute, hp, choices_singletons, List.map_cons, List.map_nil, List.cons.injEq, and_true]
+    apply Subtype.ext
+    simp only [Label.meetOf, Types.labels_toList, hc.1]
+  | .argument i, valid, _ => by simp [Tree.scoped] at valid
+  | .local i, valid, _ => by simp [Tree.scoped] at valid
+theorem Types.substituteParts_self (σ : Label sig → List (Label sig)) (hσ : ∀ l, σ l = [l]) :
+    ∀ (ts : Types) (valid : ts.scoped sig 0 0 = true), ts.canonical = true →
+      Types.substituteParts σ ts valid = (ts.labels valid).map fun l => [l]
+  | .nil, _, _ => rfl
+  | .cons t ts, valid, hc => by
+    simp only [Types.canonical, Bool.and_eq_true] at hc
+    simp only [Types.substituteParts, Types.labels, List.map_cons,
+      Tree.substitute_self σ hσ t _ hc.1, Types.substituteParts_self σ hσ ts _ hc.2]
+theorem Types.substitute_self (σ : Label sig → List (Label sig)) (hσ : ∀ l, σ l = [l]) :
+    ∀ (ts : Types) (valid : ts.scoped sig 0 0 = true), ts.canonical = true →
+      Types.substitute σ ts valid = ts.labels valid
+  | .nil, _, _ => rfl
+  | .cons t ts, valid, hc => by
+    simp only [Types.canonical, Bool.and_eq_true] at hc
+    simp only [Types.substitute, Types.labels, Tree.substitute_self σ hσ t _ hc.1,
+      Types.substitute_self σ hσ ts _ hc.2, List.singleton_append]
+theorem Args.substitute_self (σ : Label sig → List (Label sig)) (hσ : ∀ l, σ l = [l]) :
+    ∀ (args : Args) (valid : args.scoped sig 0 0 = true), args.canonical = true →
+      (Args.substitute σ args valid).1 = args.labels valid
+  | .nil, _, _ => rfl
+  | .cons ts args, valid, hc => by
+    simp only [Args.canonical, Bool.and_eq_true] at hc
+    simp only [Args.substitute, Args.labels, Types.substitute_self σ hσ ts _ hc.1,
+      Args.substitute_self σ hσ args _ hc.2]
+end
+
+/-- Substituting every parameter by itself returns a label whose meets are
+canonical. -/
+theorem Label.substitute_self (σ : Label sig → List (Label sig)) (hσ : ∀ l, σ l = [l])
+    (l : Label sig) (hc : l.1.canonical = true) : l.substitute σ = [l] :=
+  Tree.substitute_self σ hσ l.1 l.2 hc
+
 /-- A semantic parameter map is enough to justify the complete structural
 substitution, because application congruence covers every recursive equation. -/
 def Equations.ParameterImages (equations : Equations)

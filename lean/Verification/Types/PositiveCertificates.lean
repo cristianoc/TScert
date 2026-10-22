@@ -259,9 +259,13 @@ proposal, checked. -/
 @[nospecialize] def premTable [DecidableEq ι] (G : NormalGraph ι) (sub : Option (Renaming G)) (f : Entry ι)
     (A B : List ι) : Bool :=
   decide ((A, B) ∈ f.table) || match sub with
-    | some r => f.table.any fun p => decide (RenamesBound G r (r.rename p A B)) &&
-        A.all (fun l => decide (l ∈ r.substitute (r.rename p A B) p.1)) &&
-        (r.substitute (r.rename p A B) p.2).all (fun b => decide (b ∈ B))
+    | some r => f.table.any fun p =>
+        -- The renaming and its images computed once per row.
+        let σ := r.rename p A B
+        decide (RenamesBound G r σ) &&
+        (let S := r.substitute σ p.1
+         A.all (fun l => decide (l ∈ S))) &&
+        (r.substitute σ p.2).all (fun b => decide (b ∈ B))
     | none => false
 
 /-- `Inst` at the instance `w`, its hypotheses decided by `prem` on strictly
