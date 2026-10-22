@@ -69,4 +69,43 @@ def NormalGraph.ofRowMap (row : ι → GraphRow ι)
       | .meet _ _ ps => ps
       | .clauses .. | .scheme .. | .param .. => [] }
 
+/-- Whether a row is a clause row, a scheme, a parameter or a meet. -/
+inductive RowForm where
+  | clauses | scheme | param | meet
+  deriving DecidableEq
+
+def GraphRow.form : GraphRow ι α → RowForm
+  | .clauses .. => .clauses
+  | .scheme .. => .scheme
+  | .param .. => .param
+  | .meet .. => .meet
+
+theorem GraphRow.form_map (b : ι → κ) (o : α → β) (r : GraphRow ι α) :
+    GraphRow.form (r.map b o) = GraphRow.form r := by
+  cases r <;> rfl
+
+/-- `ofRowMap` with each field read at a label of another form answered from
+the form alone: a test of a row's form (`NormalGraph.plain`) reads `form`
+and builds no row. Equal to `ofRowMap` when `form` is each row's form
+(`ofRowMapForms_eq`). -/
+def NormalGraph.ofRowMapForms (row : ι → GraphRow ι) (form : ι → RowForm)
+    (builtins : Option (ArrayBuiltins ι) := none)
+    (domain : SchemeDomain ι .mixed := .ordinary)
+    (literal : LitKey → Option ι := fun _ => none) : NormalGraph ι :=
+  let G := NormalGraph.ofRowMap row builtins domain literal
+  { G with
+    rows t := if form t == .clauses then G.rows t else []
+    schemes t := if form t == .scheme then G.schemes t else none
+    parameterKinds t := if form t == .param then G.parameterKinds t else none
+    meets t := if form t == .meet then G.meets t else none
+    meetParams t := if form t == .meet then G.meetParams t else [] }
+
+theorem NormalGraph.ofRowMapForms_eq {row : ι → GraphRow ι} {form : ι → RowForm}
+    (h : ∀ t, form t = (row t).form) (builtins : Option (ArrayBuiltins ι))
+    (domain : SchemeDomain ι .mixed) (literal : LitKey → Option ι) :
+    NormalGraph.ofRowMapForms row form builtins domain literal =
+      NormalGraph.ofRowMap row builtins domain literal := by
+  simp only [NormalGraph.ofRowMapForms, NormalGraph.ofRowMap]
+  congr 1 <;> funext t <;> rw [h t] <;> cases row t <;> simp [GraphRow.form, GraphRow.union]
+
 end Verification.PositiveGraphs

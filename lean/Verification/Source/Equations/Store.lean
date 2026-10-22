@@ -27,14 +27,6 @@ abbrev State := EquationLowering.State
 
 /-! ### Rows -/
 
-/-- An application's row: its head's template at its arguments, a local its
-owned parameter (`Equations.baseRow`). -/
-def instantiateRow (h : Nat) (args : Args) (body : GraphRow Tree (List Tree)) : GraphRow Tree :=
-  let argF (i : Nat) : Union := ((args.toList[i]?).map Types.toList).getD []
-  let locF (j : Nat) : Union := [.bound h args j]
-  let sub (U : Union) : Union := U.flatMap (treeSubst argF locF)
-  body.map (fun t => (sub [t]).headD t) sub
-
 /-- A label's row, not a meet's (`Equations.baseRow`). -/
 def baseRow (s : State) (t : Tree) : GraphRow Tree :=
   match t with
@@ -100,17 +92,6 @@ def lookup (s : State) (cs : List (Clause (List Tree))) : Option Tree :=
 def rowGraph (s : State) : NormalGraph Tree := NormalGraph.ofRowMap (rowOf s) (builtins s) .ordinary
   fun | .num b => lookup s [.numLit b] | .str v => lookup s [.strLit v]
 
-/-- Whether a row is a clause row, a scheme, a parameter or a meet. -/
-inductive RowForm where
-  | clauses | scheme | param | meet
-  deriving DecidableEq
-
-def GraphRow.form : GraphRow Tree α → RowForm
-  | .clauses .. => .clauses
-  | .scheme .. => .scheme
-  | .param .. => .param
-  | .meet .. => .meet
-
 /-- A label's row form (`rowOf`'s), read without instantiating a template:
 an instance has its template's form (`GraphRow.map` keeps it), and a meet is
 a meet row exactly when one of its parts is no clause row (`meetRowOf`). -/
@@ -128,14 +109,10 @@ def rowForm (s : State) (t : Tree) : RowForm :=
   | .meet ps => if ps.toList.all (baseForm s · == .clauses) then .clauses else .meet
   | t => baseForm s t
 
-/-- Each nullary head's row, instantiated when first read. -/
-def nullaryRows (s : State) : Array (Thunk (GraphRow Tree)) :=
-  Array.ofFn (n := s.heads.size) fun h => Thunk.mk fun _ => rowOf s (.app h.val .nil)
-
-/-- A label's row, a nullary head's read from `rows` where it holds one. -/
-def cachedRow (s : State) (rows : Thunk (Array (Thunk (GraphRow Tree)))) (t : Tree) : GraphRow Tree :=
+/-- A label's row, a nullary head's read from the state's (`State.nullary`). -/
+def cachedRow (s : State) (t : Tree) : GraphRow Tree :=
   match t with
-  | .app h .nil => match rows.get[h]? with
+  | .app h .nil => match s.nullary[h]? with
     | some r => r.get
     | none => rowOf s t
   | t => rowOf s t
@@ -143,21 +120,11 @@ def cachedRow (s : State) (rows : Thunk (Array (Thunk (GraphRow Tree)))) (t : Tr
 /-- The rows' graph, read through two shortcuts: a field at a label of
 another form is answered from the label's form alone, so a test of a row's
 form (`NormalGraph.plain`) instantiates no template, and a nullary head's
-row is instantiated at most once per graph, which a search reads at every
-step. Equal to `rowGraph` (`graph_eq`). -/
+row is instantiated at most once while its head is unchanged, which a search
+reads at every step. Equal to `rowGraph` (`graph_eq`). -/
 def graph (s : State) : NormalGraph Tree :=
-  let G := NormalGraph.ofRowMap (cachedRow s (Thunk.mk fun _ => nullaryRows s)) (builtins s) .ordinary
+  NormalGraph.ofRowMapForms (cachedRow s) (rowForm s) (builtins s) .ordinary
     fun | .num b => lookup s [.numLit b] | .str v => lookup s [.strLit v]
-  { G with
-    rows t := if rowForm s t == .clauses then G.rows t else []
-    schemes t := if rowForm s t == .scheme then G.schemes t else none
-    parameterKinds t := if rowForm s t == .param then G.parameterKinds t else none
-    meets t := if rowForm s t == .meet then G.meets t else none
-    meetParams t := if rowForm s t == .meet then G.meetParams t else [] }
-
-theorem GraphRow.form_map (b : Tree → Tree) (o : α → β) (r : GraphRow Tree α) :
-    GraphRow.form (r.map b o) = GraphRow.form r := by
-  cases r <;> rfl
 
 theorem baseForm_eq (s : State) (t : Tree) : baseForm s t = GraphRow.form (baseRow s t) := by
   match t with
@@ -173,14 +140,6 @@ theorem baseForm_eq (s : State) (t : Tree) : baseForm s t = GraphRow.form (baseR
   | .meet _ => rfl
   | .argument _ => rfl
   | .local _ => rfl
-
-theorem meetRigid_nil_iff (parts : List (Tree × GraphRow Tree)) :
-    meetRigid parts = [] ↔ parts.all (fun p => GraphRow.form p.2 == .clauses) := by
-  induction parts with
-  | nil => simp [meetRigid]
-  | cons x rest ih =>
-    obtain ⟨q, r⟩ := x
-    cases r <;> simp [meetRigid, GraphRow.form, ih]
 
 theorem rowForm_eq (s : State) (t : Tree) : rowForm s t = GraphRow.form (rowOf s t) := by
   match t with
@@ -204,17 +163,17 @@ theorem rowForm_eq (s : State) (t : Tree) : rowForm s t = GraphRow.form (rowOf s
 /-- The store's graph is the rows' graph. -/
 theorem graph_eq (s : State) : graph s = rowGraph s := by
   have hf := rowForm_eq s
-  have hc : cachedRow s (Thunk.mk fun _ => nullaryRows s) = rowOf s := by
+  have hc : cachedRow s = rowOf s := by
     funext t
     unfold cachedRow
     split
     · next h =>
-      simp only [Thunk.get, nullaryRows]
-      by_cases hh : h < s.heads.size <;> simp [hh]
+      rw [s.nullary_eq]
+      by_cases hh : h < s.heads.size <;> simp [hh, nullaryOf, Thunk.get, nullaryRow, rowOf, baseRow] <;>
+        (cases s.heads[h].body <;> rfl)
     · rfl
-  simp only [graph, rowGraph, NormalGraph.ofRowMap, hc]
-  congr 1 <;> funext t <;> rw [hf t] <;>
-    cases rowOf s t <;> simp [GraphRow.form, GraphRow.union]
+  simp only [graph, rowGraph, hc]
+  exact NormalGraph.ofRowMapForms_eq hf _ _ _
 
 /-- A value parameter within clauses and further parameters, `p ⊓ cs ⊓ also`:
 the meet label of its parts (§3.3), the clauses a head of their own. -/

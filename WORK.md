@@ -45,6 +45,7 @@ design, not its progress.
 | [Reads at an index computed from the length](docs/PROGRAM-TYPING.md#reads-at-an-index-from-the-length) | closed: a node list read at a `number` key is `%ElementAt%`'s, at its element type or `undefined`; `array-last-element` and `compiler-api-node-list-index` verify, the eleven bypasses listed there are refused, each run under Node (2026-10-22) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past "a numeric array key needs a proved array-index singleton" |
 | [A family guard's test in a guard's Boolean return](docs/SOURCE-ELABORATION.md#derived-source-forms) | closed: a family guard's call is a Boolean by its form; `compiler-api-guard-and-return` verifies, `invalid-compiler-api-guard-and-promise` and `invalid-compiler-api-guard-or-promise` are refused, each run under Node (2026-10-22) | `readCannotThrow`'s `(d): d is ts.FunctionDeclaration => ts.isFunctionDeclaration(d) && d.name?.text === id.text` verifies |
 | [The search past 60 s on `fragment-statements.mts`](#fragment-statements-search) | closed: `protocolPattern`'s and `patternStmt`'s searches take 13 s each in their census and alone, where they took 88 s; both then stop at `statements`' `list.findIndex((s) => gate.abrupt(s))` (2026-10-22, [slice measurement](#census-index-from-length)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within the census's 60 s limit |
+| [The search past 100 s on `fragment-statements.mts`](#fragment-statements-search-rows) | closed: `protocolPattern`'s search on 526bf6e's artifacts takes 27 s of CPU alone, where it took 103 s, with the same refusal (2026-10-22, load averages 3 to 36) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within 30 s alone |
 | [Calls through a field](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification) | closed: a call through a field reads the field's contract, checked at every write, and a declared field's is its annotation, which for an ordinary arrow states no effect; so `statements`' `findIndex` callback calling `gate.abrupt` is the unrestricted one, and `abrupt`, which reads nothing of the gate, is a module function called by its binding ([source rewrite](docs/SOURCE-REWRITES.md#a-function-called-through-a-field-whose-annotation-states-no-effect)); `find-index-module-function` verifies, `invalid-field-call-effect`, `invalid-readonly-field-call-effect`, `invalid-field-call-effect-alias` and `invalid-field-call-effect-cell` are refused (run under Node) (2026-10-22, [slice measurement](#census-field-calls)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `statements`' `list.findIndex((s) => gate.abrupt(s))` |
 | [Pushing at the receiver's element](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: a spread of a dense or readable array passes its elements at their type, and `undefined` only from a sparse one (`SpreadsInto`); a binder below and above one type, as a writable receiver's element places it, is that type, and an actual that is a literal, or a choice with a literal among its values, is built at it; `push-spread` and `push-receiver-element` verify, `invalid-push-spread-sparse`, `invalid-push-spread-wider` and `invalid-push-receiver-element` are refused (run under Node) (2026-10-22, [slice measurement](#census-push-element)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `gate.hoisted.push(...statements)` and `dispatch.push(fallback ?? { … })` |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
@@ -410,6 +411,29 @@ identities. With a named type's row instantiated once per graph, a row's
 form read from its template, and the declarations indexed by identity,
 the slice's search takes 13 s alone, with the same refusal, and its
 comparisons 7 s; the twelve repeated comparisons take 0.55 s each.
+
+<a id="fragment-statements-search-rows"></a>
+**The search past 100 s on `fragment-statements.mts`.** On 526bf6e's
+artifacts the slice of `protocolPattern` reaches proof search, and its search
+stage takes 103 s of CPU alone (2026-10-22). Sampled, two thirds of proof
+search instantiated rows of the checked equations: a test of a row's form
+(`NormalGraph.plain`) instantiated the label's template three times, and a
+row of an application at arguments was instantiated at every read. In
+lowering, 70% of the witness checks' comparisons tested a union's labels
+against another's one by one, quadratically, and each new graph of the
+extraction's store instantiated the named types' rows again; each
+request's search vocabulary was closed three times, by a quadratic
+`eraseDups` over every known label at every round. With one form test for
+both stores (`NormalGraph.ofRowMapForms`), the rows of the applications and
+meets the named types' rows name kept with the checked equations
+(`Equations.memo`), a union's inclusion read along its order
+(`subsetIn`), the named types' rows kept in the extraction's store while
+their heads are unchanged (`State.nullary`), and the vocabulary closed once
+per request over its new labels, the search takes 27 s with the same
+refusal. Of that, a quarter is the witness checks' comparisons, one of them
+repeated twelve times at the same store, and a quarter is the per-item
+check of `produceUsing`, which compares a union of 42 or 44 node arms with
+`Node`'s 130 about twenty times each.
 
 <a id="generic-instance-union-arms"></a>
 **A generic method's instance at a union of arms**, an investigation:

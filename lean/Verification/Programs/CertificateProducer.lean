@@ -1142,14 +1142,22 @@ came from a different context. No execution budget is inspected. -/
           pure (.node ⟨Γ,.ite c t e,A⟩ .ifBool [pc,pt,pe])
     | _ => return none
 
+/-- A list's elements not in `seen`, each once, in the order of their first
+occurrence, with `seen` grown by them: `eraseDups` where the hash agrees
+with equality, as every label type's does. -/
+@[nospecialize] def keepFirst {α : Type} [BEq α] [Hashable α] (seen : Std.HashSet α) (l : List α) :
+    Std.HashSet α × Array α :=
+  l.foldl (fun (seen, kept) a => if seen.contains a then (seen, kept) else (seen.insert a, kept.push a))
+    (seen, #[])
+
 /-- Gather graph labels, every operand of their clauses and supplied union
 types. Hints may add intermediate types; they cannot change claims or bypass
 evidence checking. -/
-@[nospecialize] def vocabulary [DecidableEq ι] [Instantiates ι] (G : NormalGraph ι) (labels : List ι)
+@[nospecialize] def vocabulary [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (labels : List ι)
     (claims : List (PointClaim ι)) (hints : List (Ty ι)) : List (Ty ι) :=
-  ([] :: (labels.map fun i => [i]) ++ hints ++
+  (keepFirst {} ([] :: (labels.map fun i => [i]) ++ hints ++
     claims.flatMap (fun c => c.type :: c.context) ++
-    labels.flatMap (fun i => (G i).flatMap Clause.operands)).eraseDups
+    labels.flatMap (fun i => (G i).flatMap Clause.operands))).2.toList
 
 inductive Failure (ι : Type) where
   | claimCount

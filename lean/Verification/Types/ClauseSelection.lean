@@ -177,10 +177,11 @@ that key holds a literal the type does not admit. -/
 @[nospecialize] def litExcl (a b : Clause (List ι)) : Bool :=
   (fixedOf b).any fun (f, B) => G.plainTy B &&
     let src := (entriesOf a).filter (·.1 == f)
+    let ds := clausesOf G B
     !src.isEmpty && src.all fun (_, A) => (clausesOf G A).any fun c =>
       -- A tag set's elements are literals of the entry too.
       c.elements.any fun e => match litVal e with
-      | some v => (clausesOf G B).all fun d => !admitsVal d v
+      | some v => ds.all fun d => !admitsVal d v
       | none => false
 
 /-- **R5.** A record source and a dictionary target, the source with no bound

@@ -50,32 +50,39 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
 a coercion does not consider every unrelated signature in the table. The
 consumer still checks against the complete graph and the exact request. -/
 @[nospecialize] def SourceRequest.searchLabels (r : SourceRequest σ ι) : List ι :=
-  let roots := ([Labels.nul,Labels.tru,Labels.fls,Labels.undef] ++ r.result ++ r.inputs.flatten ++ r.hints ++
+  let roots := [Labels.nul,Labels.tru,Labels.fls,Labels.undef] ++ r.result ++ r.inputs.flatten ++ r.hints ++
     r.promise.toList.flatMap (fun (p : Bool × Nat × Ty ι) => p.2.2) ++
     r.claims.flatMap (fun (c : PointClaim ι) => c.type ++ c.context.flatten) ++
     -- A closure's code is searched with the request's vocabulary: what its
     -- claims mention is part of it (a generic closure's binder rows).
     r.codes.flatMap (fun (q : RequestJson.CodeRequest ι) => q.claims.flatMap (fun (c : PointClaim ι) => c.type ++ c.context.flatten)) ++
-    r.obligations.flatMap (fun (o : ExpressionClaims.Required ι) => o.sequent.type ++ o.sequent.context.flatten)).eraseDups
+    r.obligations.flatMap (fun (o : ExpressionClaims.Required ι) => o.sequent.type ++ o.sequent.context.flatten)
   -- Readonly array coercions depend on the store's element unions two levels
   -- below the object. Close the vocabulary over the reachable graph,
   -- stopping at the fixpoint, where a step adds no label, or at the store's
-  -- bound on labels: an equation graph's rows reach infinitely many.
+  -- bound on labels: an equation graph's rows reach infinitely many. Each
+  -- label's row is read once, in the step after it is added: the labels an
+  -- earlier one reaches are already known.
   Id.run do
-    let mut known := roots
+    let (seen, first) := keepFirst {} roots
+    let mut seen := seen
+    let mut known := first
+    let mut frontier := first
     for _ in List.range (StoreView.bound r.types) do
-      if known.length ≥ StoreView.bound r.types then break
+      if known.size ≥ StoreView.bound r.types then break
       -- A meet row's clauses name a type the store may hold as a row of its
       -- own, a bounded binder's bound: a read through the binder is at it.
-      let next := (known ++ known.flatMap (fun i =>
+      let (seen', fresh) := keepFirst seen (frontier.toList.flatMap (fun i =>
         let row := StoreView.row r.types i
         row.union.flatMap (fun c => (RequestJson.clauseTypes c).flatten) ++
         (match row with
           | .meet _ cs _ => (StoreView.lookup r.types cs).toList
-          | _ => []))).eraseDups
-      if next.length == known.length then break
-      known := next
-    return known
+          | _ => [])))
+      if fresh.isEmpty then break
+      seen := seen'
+      known := known ++ fresh
+      frontier := fresh
+    return known.toList
 
 end
 
