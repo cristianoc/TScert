@@ -205,8 +205,9 @@ def Equations.ofRaw (heads : List RawHead) : Except String Equations :=
       .ok { signature := sig, body := fun i => (templateOf? sig i (raw i)).toOption.get (hall i) }
     else .error "equations: a head is not a template"
 
-/-- The same equations, each template read once and each nullary head's row
-computed once: `Equations.ofRaw` states a head's template as the validator's
+/-- The same equations, each template read once, each nullary head's row
+computed once, and each row of an application at arguments or a meet that a
+nullary head's row names computed at most once: `Equations.ofRaw` states a head's template as the validator's
 result at that head, which reading a row would otherwise recompute, and
 checking reads the rows of named types at every step. -/
 def Equations.memo (E : Equations) : Equations :=
@@ -230,13 +231,25 @@ def Equations.memo (E : Equations) : Equations :=
         | .clauses [.strLit s] => m.insert (.str s) p.1.1
         | _ => m
       | none => m) {}
+  -- The applications at arguments and the meets the nullary heads' rows
+  -- name, each one's row computed when first read.
+  let named : Std.HashMap Tree { p : Label E.signature × Thunk (GraphRow (Label E.signature)) //
+      p.2.get = rowFrom E.signature body p.1 } :=
+    rows.foldl (fun m r => match r with
+      | some p => p.1.2.operands.foldl (fun m ts => ts.foldl (fun m l => match l.1 with
+          | .app _ (.cons ..) | .meet _ =>
+            if m.contains l.1 then m else m.insert l.1 ⟨(l, Thunk.mk fun _ => rowFrom E.signature body l), rfl⟩
+          | _ => m) m) m
+      | none => m) {}
   { signature := E.signature, body, builtins := E.builtins, domain := E.domain
     literal := fun k => literals[k]?
     cached := fun l => match l.1 with
       | .app h .nil => match rows[h]? with
         | some (some p) => if l = p.1.1 then some p.1.2 else none
         | _ => none
-      | _ => none
+      | t => match named[t]? with
+        | some p => if l = p.1.1 then some p.1.2.get else none
+        | none => none
     cached_row := by
       intro l r h
       split at h
@@ -248,6 +261,13 @@ def Equations.memo (E : Equations) : Equations :=
             rw [← h, p.2, ← hl]
           · contradiction
         · contradiction
-      · contradiction }
+      · split at h
+        · next p _ =>
+          split at h
+          · next hl =>
+            simp only [Option.some.injEq] at h
+            rw [← h, p.2, ← hl]
+          · contradiction
+        · contradiction }
 
 end Verification.EquationGraphs

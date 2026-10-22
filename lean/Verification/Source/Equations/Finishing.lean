@@ -129,7 +129,8 @@ def Built.store (b : Built) : State :=
   let owned (d : Draft) : Draft := match d.kind with
     | .method o key => { d with kind := .method (f o) key }
     | _ => d
-  { s with heads := drafts.map owned, keys := keys, jobs := [], processing := [], obligations := [],
+  { s with heads := drafts.map owned, nullary := nullaryOf (drafts.map owned), nullary_eq := rfl,
+           keys := keys, jobs := [], processing := [], obligations := [],
            meetChecks := [], unitBinders := [],
            scopes := s.scopes.map (fun (p, bs) => (p, bs.map fun (n, x) => (n, rnB x))),
            proto := s.proto.map f, nativeStable := s.nativeStable.map b.rn }

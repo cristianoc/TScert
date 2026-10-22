@@ -1093,12 +1093,51 @@ variance the checker computed. -/
     | _ => none
   | _, _ => none
 
+/-- The labels after the first `a` of a list, where it holds one. -/
+@[nospecialize] def afterFirst [DecidableEq ι] (a : ι) : List ι → Option (List ι)
+  | [] => none
+  | b :: bs => if b = a then some bs else afterFirst a bs
+
+theorem afterFirst_some [DecidableEq ι] {a : ι} {l r : List ι} (h : afterFirst a l = some r) :
+    a ∈ l ∧ ∀ x ∈ r, x ∈ l := by
+  induction l with
+  | nil => simp [afterFirst] at h
+  | cons b bs ih =>
+    unfold afterFirst at h
+    split at h
+    · next hb => cases h; subst hb; exact ⟨List.mem_cons_self, fun x hx => List.mem_cons_of_mem _ hx⟩
+    · obtain ⟨ha, hr⟩ := ih h
+      exact ⟨List.mem_cons_of_mem _ ha, fun x hx => List.mem_cons_of_mem _ (hr x hx)⟩
+
+/-- `A.all (· ∈ B)`, each label sought first after where the previous one
+was found, in `rest`: linear for two unions in one order
+(`subsetIn_eq`). -/
+@[nospecialize] def subsetIn [DecidableEq ι] (B : List ι) : List ι → List ι → Bool
+  | [], _ => true
+  | a :: as, rest => match afterFirst a rest with
+    | some rest' => subsetIn B as rest'
+    | none => a ∈ B && subsetIn B as B
+
+theorem subsetIn_eq [DecidableEq ι] (B A rest : List ι) (h : ∀ x ∈ rest, x ∈ B) :
+    subsetIn B A rest = A.all (· ∈ B) := by
+  induction A generalizing rest with
+  | nil => rfl
+  | cons a as ih =>
+    unfold subsetIn
+    split
+    · next rest' hr =>
+      obtain ⟨ha, hr'⟩ := afterFirst_some hr
+      rw [ih rest' fun x hx => h x (hr' x hx)]
+      simp [h a ha]
+    · rw [ih B fun _ hx => hx]
+      simp
+
 /-- The rows a pair needs: none for an inclusion, its per-position pairs'
 through `Var`, else the pair itself. -/
 @[nospecialize] def rowsFor [DecidableEq ι] {G : NormalGraph ι} (images : InstanceImageCheck G) :
     Nat → List ι → List ι → List (List ι × List ι)
   | 0, A, B => [(A, B)]
-  | d + 1, A, B => if A.all (· ∈ B) then [] else match varPairs images A B with
+  | d + 1, A, B => if subsetIn B A B then [] else match varPairs images A B with
     | some ps => ps.flatMap fun (X, Y) => rowsFor images d X Y
     | none => [(A, B)]
 
@@ -1224,7 +1263,7 @@ the execution budget. -/
     let cand := (frontier.flatMap fun p =>
       (reached p).flatMap fun p => match images.sub with
           | some _ => rowsFor images varDepthDefault p.1 p.2
-          | none => if p.1.all (· ∈ p.2) then [] else [p])
+          | none => if subsetIn p.2 p.1 p.2 then [] else [p])
     let step (st : Except SearchStop (Table ι × Table ι)) (p : List ι × List ι) :
         Except SearchStop (Table ι × Table ι) := do
       let (tbl, fresh) ← st

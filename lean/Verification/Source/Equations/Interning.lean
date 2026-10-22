@@ -37,11 +37,16 @@ def alloc (key : String) (draft : Draft) (job : Nat → Option Job) : M Nat := d
   if let some h := (← get).keys.get? key then return h
   let h := (← get).heads.size
   modify fun s =>
-    { s with heads := s.heads.push draft, keys := s.keys.insert key h, jobs := s.jobs ++ (job h).toList }
+    { s with heads := s.heads.push draft, keys := s.keys.insert key h, jobs := s.jobs ++ (job h).toList
+             nullary := s.nullary.push (Thunk.mk fun _ => nullaryRow (s.heads.push draft) s.heads.size)
+             nullary_eq := by rw [s.nullary_eq, nullaryOf_push] }
   return h
 
 def setBody (h : Nat) (row : GraphRow Tree (List Tree)) : M Unit :=
-  modify fun s => { s with heads := s.heads.modify h fun d => { d with body := some row } }
+  modify fun s =>
+    let heads := s.heads.modify h fun d => { d with body := some row }
+    { s with heads, nullary := s.nullary.set! h (Thunk.mk fun _ => nullaryRow heads h)
+             nullary_eq := by rw [s.nullary_eq, nullaryOf_modify] }
 
 def draft (h : Nat) : M Draft := do
   match (← get).heads[h]? with

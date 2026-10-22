@@ -24,14 +24,14 @@ set_option maxHeartbeats 1000000
   let fresh := match b.init with | .alloc .. | .arrayLit .. => true | _ => false
   let bound : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, fresh := fresh }
   let next ← after (bound::scope)
-  let annotation ← emitAt b.init.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
-    (scope := held ⟨b.name,some b.init.span⟩::scope)
   -- A function literal reading the constant: its self entry
   -- (SOURCE-MODEL.md, "Recursive constants").
   let self := match b.init with
     | .lambda .. => if b.init.freeNames.contains b.name then some b.name else none
     | _ => none
-  withSelfConstant self (LoweringExecution.compileExpr recursive fc scope Γ b.init annotation)
+  withSelfConstant self (LoweringExecution.compileExprThen recursive fc scope Γ b.init fun Γ =>
+    emitAt b.init.span (.var 0) (.effect next) (A::Γ) B "binding-annotation" (some pos.1)
+      (scope := held ⟨b.name,some b.init.span⟩::scope))
 
 /-- A mutable declaration allocates one private cell at its explicit lifetime
     contract, with obligations for the annotation and initializer. -/
@@ -54,19 +54,19 @@ set_option maxHeartbeats 1000000
     -- binding's first value.
     let binding : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, storage := .slot contract }
     let continued ← after (binding::scope)
-    let stored ← emitAt b.init.span (.var 0) (.effect continued) (A::Γ) contract
-      "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
-    return ← LoweringExecution.compileExpr recursive fc scope Γ b.init stored
+    return ← LoweringExecution.compileExprThen recursive fc scope Γ b.init fun Γ =>
+      emitAt b.init.span (.var 0) (.effect continued) (A::Γ) contract
+        "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
   let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
   let binding : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, storage := .cell contract reference, apart := some Γ }
   let continued ← after (binding::scope)
   let drop := ⟨continued.label, some ((continued.mapping.getD (List.range (Γ.length+1))).map
     (fun j => if j == 0 then 0 else j+1))⟩
-  let allocate ← emitAt b.init.span (.makeAt .absent [valueField] [.var 0]) (.bind drop)
-    (A::Γ) reference "binding-storage" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
-  let stored ← emitAt b.init.span (.var 0) (.effect allocate) (A::Γ) contract
-    "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
-  LoweringExecution.compileExpr recursive fc scope Γ b.init stored
+  LoweringExecution.compileExprThen recursive fc scope Γ b.init fun Γ => do
+    let allocate ← emitAt b.init.span (.makeAt .absent [valueField] [.var 0]) (.bind drop)
+      (A::Γ) reference "binding-storage" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
+    emitAt b.init.span (.var 0) (.effect allocate) (A::Γ) contract
+      "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
 
 /-- A binding schedule's continuation receives lexical bindings and its
     original frame; intermediate expression values are projected away. -/

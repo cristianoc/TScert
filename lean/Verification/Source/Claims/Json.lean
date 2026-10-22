@@ -193,14 +193,16 @@ def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
   -- image check, starts its own.
   let mut answers : CertificateProducer.Answered (EquationStore.CheckedLabel F.equations F.primitive) := {}
   let mut proofLists := #[]
-  for r in rs do
-    let (e, next) ← ExpressionClaims.produceUsing G I r.searchLabels (StoreView.valid r.types)
+  -- Each request's search vocabulary, read by its three searches.
+  let vocabularies := rs.map (·.searchLabels)
+  for (r, labels) in rs.zip vocabularies do
+    let (e, next) ← ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
       (StoreView.projection r.types) fuel r.obligations answers
     answers := next
     proofLists := proofLists.push e
   let mut responses := #[]
-  for (r, proofs) in rs.zip proofLists.toList do
-    let (rendered, next) := ExpressionClaims.renderKnownUsing G I r.searchLabels (StoreView.valid r.types)
+  for ((r, labels), proofs) in (rs.zip vocabularies).zip proofLists.toList do
+    let (rendered, next) := ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types)
       r.nodePlans answers
     answers := next
     let known := proofs ++ rendered
@@ -208,12 +210,12 @@ def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
     -- check: its search keeps that check.
     if r.qualification.isNone then
       let (c, next) ← RequestJson.produceResponseUsing G I (HeapExpressionRules.Checker.ordinary G I) r.toRequest
-        fuel [] known r.sourceMap (some r.searchLabels) r.assertions r.cuts r.codeHints r.checker r.aliases answers
+        fuel [] known r.sourceMap (some labels) r.assertions r.cuts r.codeHints r.checker r.aliases answers
       answers := next
       responses := responses.push c
     else
       let (c, _) ← RequestJson.produceResponseUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
-        r.checker r.toRequest fuel [] known r.sourceMap (some r.searchLabels) r.assertions r.cuts
+        r.checker r.toRequest fuel [] known r.sourceMap (some labels) r.assertions r.cuts
         r.codeHints r.checker r.aliases
       responses := responses.push c
   let es := proofLists.toList

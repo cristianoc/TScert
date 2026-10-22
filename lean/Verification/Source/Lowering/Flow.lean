@@ -154,12 +154,12 @@ set_option maxHeartbeats 1000000
         let continued ← successor next scope
         let A ← exprType fc binding.init
         let value := held ⟨"",some binding.init.span⟩ :: scope
-        let written ← emitAt binding.init.span (.writeAt valueField (.var (i+1)) (.var 0))
-          (.effect ⟨continued.label, some ((continued.mapping.getD (List.range Γ.length)).map (·+1))⟩)
-          (A::Γ) [Labels.nul] "binding-storage" (some pos.1) (scope := value)
-        let checked ← emitAt binding.init.span (.var 0) (.effect written) (A::Γ) C "storage-contract"
-          (some pos.1) (scope := value)
-        LoweringExecution.compileExpr recursive fc scope Γ binding.init checked
+        LoweringExecution.compileExprThen recursive fc scope Γ binding.init fun Γ => do
+          let written ← emitAt binding.init.span (.writeAt valueField (.var (i+1)) (.var 0))
+            (.effect ⟨continued.label, some ((continued.mapping.getD (List.range Γ.length)).map (·+1))⟩)
+            (A::Γ) [Labels.nul] "binding-storage" (some pos.1) (scope := value)
+          emitAt binding.init.span (.var 0) (.effect written) (A::Γ) C "storage-contract"
+            (some pos.1) (scope := value)
       else if let .declaration _ true _ _ := action then
         LoweringBindings.mutableBinding recursive fc pos (successor next) scope Γ binding
       else LoweringBindings.constant recursive fc pos (successor next) scope Γ binding

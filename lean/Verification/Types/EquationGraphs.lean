@@ -760,6 +760,27 @@ def meetRowOf [DecidableEq ι] (parts : List (ι × GraphRow ι)) : GraphRow ι 
   | [] => .clauses (mergeSets ((meetAll ((meetClauseLists parts).eraseDups)).filter Clause.isValue))
   | p :: ps => .meet p (meetAll ((meetClauseLists parts).eraseDups)) ps
 
+theorem meetRigid_nil_iff (parts : List (ι × GraphRow ι)) :
+    meetRigid parts = [] ↔ parts.all (fun p => GraphRow.form p.2 == .clauses) := by
+  induction parts with
+  | nil => simp [meetRigid]
+  | cons x rest ih =>
+    obtain ⟨q, r⟩ := x
+    cases r <;> simp [meetRigid, GraphRow.form, ih]
+
+/-- A meet's row is a clause row exactly when each part's is. -/
+theorem meetRowOf_form [DecidableEq ι] (parts : List (ι × GraphRow ι)) :
+    (meetRowOf parts).form =
+      if parts.all (fun p => GraphRow.form p.2 == .clauses) then .clauses else .meet := by
+  unfold meetRowOf
+  have h := meetRigid_nil_iff parts
+  split
+  · next hn => rw [if_pos (h.mp hn)]; rfl
+  · next p ps hn =>
+    have : ¬ (parts.all (fun p => GraphRow.form p.2 == .clauses) = true) := fun ha => by
+      rw [h.mpr ha] at hn; cases hn
+    rw [if_neg this]; rfl
+
 /-- The row of a label that is not a meet, from a signature's templates
 (`Equations.baseRow`). -/
 def baseRowFrom (sig : Signature) (body : (head : Fin sig.length) → Template sig head)
@@ -845,6 +866,56 @@ theorem Equations.row_eq_rowFrom (equations : Equations) (label : Label equation
 
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
   NormalGraph.ofRowMap equations.row equations.builtins equations.domain equations.literal
+
+/-- The form of a label's row that is not a meet, read from its head's
+template without instantiating it (`Equations.baseForm_eq`). -/
+def Equations.baseForm (equations : Equations) (label : Label equations.signature) : RowForm :=
+  match label with
+  | ⟨.app h _, valid⟩ =>
+    GraphRow.form (equations.body ⟨h, arityOk_exists (Bool.and_eq_true_iff.mp valid).1⟩).1
+  | ⟨.bound .., _⟩ | ⟨.var .., _⟩ => .param
+  | _ => .clauses
+
+/-- The form of a label's row (`Equations.form_eq`): a meet's is a clause
+row exactly when each part's is. -/
+def Equations.form (equations : Equations) (label : Label equations.signature) : RowForm :=
+  match label with
+  | ⟨.meet ps, valid⟩ =>
+    if (ps.labels (Bool.and_eq_true_iff.mp valid).1).all (equations.baseForm · == .clauses) then .clauses
+    else .meet
+  | _ => equations.baseForm label
+
+theorem Equations.baseForm_eq (equations : Equations) (label : Label equations.signature) :
+    equations.baseForm label = (equations.baseRow label).form := by
+  obtain ⟨t, valid⟩ := label
+  cases t with
+  | app h args =>
+    simp only [baseForm, baseRow, Label.view, Scope.ofRaw, Template.instantiate, GraphRow.form_map]
+  | bound | var | meet => simp [baseForm, baseRow, Label.view, GraphRow.form]
+  | argument | «local» => simp [Tree.scoped] at valid
+
+theorem Equations.form_eq (equations : Equations) (label : Label equations.signature) :
+    equations.form label = (equations.row label).form := by
+  obtain ⟨t, valid⟩ := label
+  cases t with
+  | meet ps =>
+    simp only [Equations.form, Equations.row, Label.view, meetRowOf_form, List.all_map,
+      Function.comp_def, Equations.baseForm_eq]
+  | app | bound | var =>
+    simp only [Equations.form, Equations.row, Label.view]
+    exact equations.baseForm_eq _
+  | argument | «local» => simp [Tree.scoped] at valid
+
+/-- `Equations.graph`, each field read at a label of another form answered
+from the form: a test of a row's form instantiates no template. The
+compiler runs it in place of `graph` (`graph_eq_forms`). -/
+def Equations.graphForms (equations : Equations) : NormalGraph (Label equations.signature) :=
+  NormalGraph.ofRowMapForms equations.row equations.form equations.builtins equations.domain
+    equations.literal
+
+@[csimp] theorem Equations.graph_eq_forms : @Equations.graph = @Equations.graphForms := by
+  funext E
+  exact (NormalGraph.ofRowMapForms_eq E.form_eq _ _ _).symm
 
 /-- A bound parameter has the kind declared at its own lexical owner. -/
 @[simp] theorem Equations.kind_bound (equations : Equations) (scope : Scope equations.signature)

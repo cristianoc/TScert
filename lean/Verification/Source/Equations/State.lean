@@ -67,6 +67,56 @@ structure ArrayParts where
 def ArrayParts.map (f : Union → Union) (a : ArrayParts) : ArrayParts :=
   { a with required := a.required.map f, optional := a.optional.map f, rest := a.rest.map f }
 
+/-- An application's row: its head's template at its arguments, a local its
+owned parameter (`Equations.baseRow`). -/
+def instantiateRow (h : Nat) (args : Args) (body : GraphRow Tree (List Tree)) : GraphRow Tree :=
+  let argF (i : Nat) : Union := ((args.toList[i]?).map Types.toList).getD []
+  let locF (j : Nat) : Union := [.bound h args j]
+  let sub (U : Union) : Union := U.flatMap (treeSubst argF locF)
+  body.map (fun t => (sub [t]).headD t) sub
+
+/-- A head's row at no arguments; an empty clause row for a head without a
+body. -/
+def nullaryRow (heads : Array Draft) (h : Nat) : GraphRow Tree :=
+  match heads[h]?.bind (·.body) with
+  | some body => instantiateRow h .nil body
+  | none => .clauses []
+
+/-- Each head's row at no arguments, instantiated when first read. -/
+def nullaryOf (heads : Array Draft) : Array (Thunk (GraphRow Tree)) :=
+  Array.ofFn (n := heads.size) fun h => Thunk.mk fun _ => nullaryRow heads h
+
+/-- A pushed head keeps every other head's row read so far. -/
+theorem nullaryOf_push (heads : Array Draft) (d : Draft) :
+    nullaryOf (heads.push d) =
+      (nullaryOf heads).push (Thunk.mk fun _ => nullaryRow (heads.push d) heads.size) := by
+  apply Array.ext
+  · simp [nullaryOf]
+  · intro i h1 h2
+    rw [Array.getElem_push]
+    split
+    · next hi =>
+      have hi' : i < heads.size := by simpa [nullaryOf] using hi
+      simp only [nullaryOf, Array.getElem_ofFn, nullaryRow, Array.getElem?_push_lt hi', Array.getElem?_eq_getElem hi']
+    · next hi =>
+      have : i = heads.size := by simp [nullaryOf] at h1 hi; omega
+      subst this
+      simp [nullaryOf]
+
+/-- A head's body set keeps every other head's row read so far. -/
+theorem nullaryOf_modify (heads : Array Draft) (h : Nat) (f : Draft → Draft) :
+    nullaryOf (heads.modify h f) =
+      (nullaryOf heads).set! h (Thunk.mk fun _ => nullaryRow (heads.modify h f) h) := by
+  apply Array.ext
+  · simp [nullaryOf]
+  · intro i h1 h2
+    have hi' : i < (nullaryOf heads).size := by simpa [nullaryOf] using h1
+    simp only [Array.set!_eq_setIfInBounds, Array.getElem_setIfInBounds hi']
+    split
+    · next hi => subst hi; simp [nullaryOf]
+    · next hi =>
+      simp only [nullaryOf, Array.getElem_ofFn, nullaryRow, Array.getElem?_modify, hi, if_false]
+
 structure State where
   /-- Execution policy; the equation document records only the types. -/
   subtypeBudget : PositiveCertificates.SearchBudget := {}
@@ -74,6 +124,10 @@ structure State where
   /-- `doc`'s indices by identity (`identityIndex doc`). -/
   identities : Std.HashMap Json (List Nat) := {}
   heads : Array Draft := #[]
+  /-- `heads`' rows at no arguments, each instantiated when first read and
+  kept while its head is unchanged (`EquationStore.graph`). -/
+  nullary : Array (Thunk (GraphRow Tree)) := nullaryOf heads
+  nullary_eq : nullary = nullaryOf heads := by rfl
   keys : Std.HashMap String Nat := {}
   jobs : List Job := []
   processing : List Nat := []

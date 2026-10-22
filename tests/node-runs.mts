@@ -56,6 +56,21 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-bind-union-host-this", "first(new Borrowed())"],
     ["invalid-bind-union-host-effect", "(() => { const b = new Box(1); return kept(new Drain(b), b); })()"],
     ["invalid-bind-union-host-getter", "(() => { const b = new Box(1); return kept(new Lazy(b), b); })()"],
+    // Past a read that does not complete on every path, or past a write of
+    // its receiver, the receiver is still the `undefined` an empty list's
+    // element is.
+    ["invalid-read-narrows-optional", "wrong([])"],
+    ["invalid-read-narrows-write", "wrong([{}])"],
+    ["invalid-read-narrows-expression-write", "wrong([{}])"],
+    ["invalid-read-narrows-loop", "wrong([{}])"],
+    ["invalid-read-narrows-finally", "wrong([{}])"],
+    ["invalid-read-narrows-join", "wrong([{}], true, true)"],
+    ["invalid-read-narrows-alias", "wrong([{}])"],
+    ["invalid-read-narrows-catch", "wrong([])"],
+    ["invalid-read-narrows-branch", "wrong([], false)"],
+    ["invalid-read-narrows-and", "wrong([], false)"],
+    ["invalid-read-narrows-closure", "wrong([])"],
+    ["invalid-read-narrows-getter", "wrong()"],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
