@@ -459,6 +459,38 @@ export const interfaceOverlay: Readonly<Record<string, readonly OverlayEntry[]>>
     { name: "values", from: "Map", signature: "values(): MapIterator<V>;", resultAs: "Iterator", effect: emptyEffect },
     { name: "entries", from: "Map", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator", effect: emptyEffect },
   ],
+  // The readers' views of a `Set` and a `Map`, read through the overlay as
+  // `ReadonlyArray` is through `ArrayProto`, at the restriction of the
+  // collection's own readers (`thisArg` dropped, an iterator read as an
+  // `Iterator`), so that a `Set<T>` is a `ReadonlySet<T>` and a `Map<K, V>`
+  // a `ReadonlyMap<K, V>`. A program's object may meet these interfaces,
+  // which state no `[Symbol.toStringTag]`: each member keeps the effect its
+  // declaration states, and an iteration runs the iterator protocol.
+  ReadonlySet: [
+    { name: "forEach", from: "ReadonlySet",
+      signature: "forEach(callbackfn: (value: T, value2: T, set: ReadonlySet<T>) => void, thisArg?: any): void;",
+      drop: ["thisArg"] },
+    { name: "has", from: "ReadonlySet", signature: "has(value: T): boolean;" },
+    { name: "size", from: "ReadonlySet", signature: "readonly size: number;" },
+    { name: "[Symbol.iterator]", from: "ReadonlySet", signature: "[Symbol.iterator](): SetIterator<T>;",
+      resultAs: "Iterator" },
+    { name: "keys", from: "ReadonlySet", signature: "keys(): SetIterator<T>;", resultAs: "Iterator" },
+    { name: "values", from: "ReadonlySet", signature: "values(): SetIterator<T>;", resultAs: "Iterator" },
+    { name: "entries", from: "ReadonlySet", signature: "entries(): SetIterator<[T, T]>;", resultAs: "Iterator" },
+  ],
+  ReadonlyMap: [
+    { name: "forEach", from: "ReadonlyMap",
+      signature: "forEach(callbackfn: (value: V, key: K, map: ReadonlyMap<K, V>) => void, thisArg?: any): void;",
+      drop: ["thisArg"] },
+    { name: "get", from: "ReadonlyMap", signature: "get(key: K): V | undefined;" },
+    { name: "has", from: "ReadonlyMap", signature: "has(key: K): boolean;" },
+    { name: "size", from: "ReadonlyMap", signature: "readonly size: number;" },
+    { name: "[Symbol.iterator]", from: "ReadonlyMap", signature: "[Symbol.iterator](): MapIterator<[K, V]>;",
+      resultAs: "Iterator" },
+    { name: "keys", from: "ReadonlyMap", signature: "keys(): MapIterator<K>;", resultAs: "Iterator" },
+    { name: "values", from: "ReadonlyMap", signature: "values(): MapIterator<V>;", resultAs: "Iterator" },
+    { name: "entries", from: "ReadonlyMap", signature: "entries(): MapIterator<[K, V]>;", resultAs: "Iterator" },
+  ],
   Date: [
     ...["valueOf", "getTime", "getFullYear", "getUTCFullYear", "getMonth", "getUTCMonth", "getDate",
       "getUTCDate", "getDay", "getUTCDay", "getHours", "getUTCHours", "getMinutes", "getUTCMinutes",
