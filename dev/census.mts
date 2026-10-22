@@ -275,8 +275,13 @@ async function census(args: string[]): Promise<void> {
   process.stderr.write(`${selected.length} of ${all.length} slices\n`);
 
   const project = join(out, "tools");
+  // Progress: the slices' outcomes and their stages' executions so far.
   let finished = 0;
-  const rows = await Promise.all(selected.map(async (s): Promise<SliceRecord> => {
+  const outcomes = new Map<string, number>();
+  const executions = new Map<string, number>();
+  const bump = (m: Map<string, number>, k: string): void => void m.set(k, (m.get(k) ?? 0) + 1);
+  const tally = (m: Map<string, number>): string => [...m].map(([k, n]) => `${k} ${n}`).join(", ");
+  const sliceRow = async (s: Slice): Promise<SliceRecord> => {
     const path = join(root, s.slice);
     const base = { slice: s.slice, file: s.file, fn: s.fn, lines: s.text.split("\n").length,
       sourceSha256: createHash("sha256").update(s.text).digest("hex") };
@@ -288,11 +293,17 @@ async function census(args: string[]): Promise<void> {
     } catch (error) {
       return { ...base, status: "error", phase: "-", detail: String(error).split("\n")[0], functions: 0,
         invocations: invocationsOfRequest(path) };
-    } finally {
-      finished++;
-      if (finished % 10 === 0 || finished === selected.length)
-        process.stderr.write(`${finished} of ${selected.length} slices\n`);
     }
+  };
+  const rows = await Promise.all(selected.map(async (s): Promise<SliceRecord> => {
+    const row = await sliceRow(s);
+    finished++;
+    bump(outcomes, row.detail.startsWith("timeout:") ? "timeout" : row.status);
+    for (const i of row.invocations) bump(executions, i.execution);
+    if (finished % 10 === 0 || finished === selected.length)
+      process.stderr.write(`${finished} of ${selected.length} slices, ${((performance.now() - started) / 1000).toFixed(0)} s` +
+        ` · ${tally(outcomes)} · stages ${tally(executions)}\n`);
+    return row;
   }));
   const setting = storeSetting();
   const record: CensusRecord = {
