@@ -60,7 +60,15 @@ open S
   let rec run_execution ?(observe = fun _ _ -> ()) env = function
     | Execution.Observe (source,evaluate) -> observe source env; run_execution ~observe env evaluate
     | Execution.Atom (_,operation) -> (match operation.Execution.impact with
-      | Execution.None_ -> env
+      (* A completed member read narrows its receiver: reading a member of
+         `null` or `undefined` throws, so past it the constant or owned local
+         it names holds an object or primitive (Lean's `readNarrowing`). *)
+      | Execution.None_ -> (match expression_hint operation.Execution.source with
+        | Some {node=Read ({node=Id n;_},_);_} ->
+          (match List.assoc_opt n env with
+           | Some (Value _ | Local _) -> refine_value env n without_nullish
+           | _ -> env)
+        | _ -> env)
       (* A step that may write cells keeps the path entries through stable
          members, as Lean keeps their read links. *)
       | Execution.Havoc -> forget ~keep:(Refinement.stable_path declarations env) env

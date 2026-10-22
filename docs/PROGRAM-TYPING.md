@@ -1291,6 +1291,49 @@ operand's other values (`nullish-member-reads`, `nullish-member-order`,
 `invalid-nullish-member-reads`; a receiver forged without `undefined` is
 refused in `pipeline/test.mts`).
 
+<a id="a-completed-read-narrows-its-receiver"></a>
+**A completed read narrows its receiver.** Past a read `x.k` that did not
+throw, `x` is neither `null` nor `undefined`. Let $`x`$ be a binding the
+activation holds in a slot, an immutable binding or an owned local, at
+$`B`$, and let the read's operand be $`x`$ or a value the expression's plan
+saved from $`x`$ while $`x`$ holds it. The guard tests the operand's slot
+before the operand is read. Its false edge binds the operand's own slot
+and at most one immediate origin: the immutable binding or owned local
+named by its `executionOrigins` entry, accepted by `readAliases`, while
+that binding still holds the saved value:
+
+```math
+\mathsf{tagBind}\ \mathsf{isNullish}(s):\quad
+\mathsf{false}\mapsto \Gamma\,[\,s\mapsto B^{-},\ x\mapsto B^{-}\,],
+\qquad B^{-}=\mathsf{tagSlice}_G(B,\mathsf{isNullish},\mathsf{false})
+```
+
+with $`s`$ the operand's slot and $`x`$ that immediate origin, when present.
+Computed reads `d[k]` and method reads/calls keep their own nullish guard
+and narrow nothing past the expression. Every node after the guard, to the
+end of the statement, continues at $`\Gamma[x\mapsto B^{-}]`$
+(`readNarrowing`, `executionAfterContext`, `compileExprThen`), so the
+statement's successors receive $`x`$ at $`B^{-}`$; a write of $`x`$
+rebinds its slot, which ends the narrowing. A read that completes on some
+paths only narrows only along them: `x?.k`, the right operand of `&&`, an
+arm of a conditional, a closure's body, a read whose throw a handler catches
+(`invalid-read-narrows-optional`, `-and`, `-branch`, `-closure`, `-catch`),
+and a read of a copy taken before $`x`$ was rebound narrows the copy
+(`-alias`, `-write`); each is run under Node, and each one's claims forged to
+narrow $`x`$ are refused at the edge in `pipeline/test.mts`. A binding held
+in a cell, which a closure may write, is not narrowed. A getter's write of
+the binding it is read from is excluded with accessors
+(`invalid-read-narrows-getter`).
+
+Proved: the narrowing is typed by existing rules only. `tagBind` refines the
+tested slot on its edge (`branch_target_sound`, by `ObservedSub`), and every
+edge into a statement entry is checked against its claims, so a claim the
+graph does not establish is refused. Not proved: that the slots the false
+edge binds hold the tested value. The lowering binds the operand's own slot
+and its one accepted immediate origin (`readAliases`), a review obligation
+of the lowering. At a shared sequence continuation, an origin mentioning a
+local that the evaluated plan may rebind is invalidated (`executionRebound`).
+
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
 bigints, for string concatenation, relational comparison and equality alike ([its
 meaning](SEMANTICS.md#operational-language), `binop`). A clause pair

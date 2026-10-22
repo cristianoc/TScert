@@ -44,6 +44,21 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     // `map`'s result holds a hole where its callback shrank the array; a
     // spread passes it to `push` as `undefined`.
     ["invalid-push-spread-sparse", "wrong([1, 2])"],
+    // Past a read that does not complete on every path, or past a write of
+    // its receiver, the receiver is still the `undefined` an empty list's
+    // element is.
+    ["invalid-read-narrows-optional", "wrong([])"],
+    ["invalid-read-narrows-write", "wrong([{}])"],
+    ["invalid-read-narrows-expression-write", "wrong([{}])"],
+    ["invalid-read-narrows-loop", "wrong([{}])"],
+    ["invalid-read-narrows-finally", "wrong([{}])"],
+    ["invalid-read-narrows-join", "wrong([{}], true, true)"],
+    ["invalid-read-narrows-alias", "wrong([{}])"],
+    ["invalid-read-narrows-catch", "wrong([])"],
+    ["invalid-read-narrows-branch", "wrong([], false)"],
+    ["invalid-read-narrows-and", "wrong([], false)"],
+    ["invalid-read-narrows-closure", "wrong([])"],
+    ["invalid-read-narrows-getter", "wrong()"],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);

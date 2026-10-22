@@ -4145,6 +4145,37 @@ control(async (): Promise<void> => {
   process.stdout.write("step failures: an exit without a complete refusal, and a failed --explain, are tool failures\n");
 });
 
+control(async (): Promise<void> => {
+  // A receiver is narrowed only past a read of it that completes on every
+  // path: each negative's claims, forged to state `d` without `undefined` at
+  // its `return d;`, are refused at that statement's incoming edge, whatever
+  // the producer proposed.
+  for (const name of ["optional", "write", "alias", "catch", "branch", "and", "expression-write", "loop", "finally", "join"]) {
+    const file = `invalid-read-narrows-${name}`;
+    const artifacts = run(file);
+    const source = readFileSync(sourceKey(artifacts), "utf8");
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === "wrong"), `${file}: wrong`);
+    const entry = must(fn.entries.find(e => source.startsWith("return d;", e.start)), `${file}: return d;`);
+    const d = must(entry.bindings.find(b => b.name === "d"), `${file}: d`);
+    const undefinedRow = claims.types.findIndex(row => JSON.stringify(row) === JSON.stringify(["undef"]));
+    const labels = d.type;
+    assert.ok(Array.isArray(labels), `${file}: d's claim is a union of labels`);
+    const narrowed = labels.filter(label => label !== undefinedRow);
+    assert.ok(narrowed.length < labels.length, `${file}: d admits undefined at return d;`);
+    d.type = narrowed;
+    // The returned read of `d` claimed narrowed too, so that only the edge
+    // into the statement is left to refuse.
+    const read = must(fn.expressions.find(e => e.pos[0] === entry.start + "return ".length &&
+      e.pos[1] === entry.start + "return d".length), `${file}: the returned d`);
+    read.type = narrowed;
+    const input = writeClaims(artifacts, `forged-read-narrows-${name}`, claims);
+    refusedAt(artifacts, input, `forged-read-narrows-${name}`,
+      `source incoming edge obligation at [${entry.start},${entry.start + "return d;".length})`);
+  }
+  process.stdout.write("read narrowing: a receiver claimed narrowed past no completed read is refused at the edge, in 10 negatives\n");
+});
+
 mutationControl(async (): Promise<void> => {
   // Constant returns isolate the entry obligation from subsequent read typing.
   // Forged claims select named paths at source statements. The test-only

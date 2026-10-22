@@ -46,6 +46,7 @@ design, not its progress.
 | [A family guard's test in a guard's Boolean return](docs/SOURCE-ELABORATION.md#derived-source-forms) | closed: a family guard's call is a Boolean by its form; `compiler-api-guard-and-return` verifies, `invalid-compiler-api-guard-and-promise` and `invalid-compiler-api-guard-or-promise` are refused, each run under Node (2026-10-22) | `readCannotThrow`'s `(d): d is ts.FunctionDeclaration => ts.isFunctionDeclaration(d) && d.name?.text === id.text` verifies |
 | [The search past 60 s on `fragment-statements.mts`](#fragment-statements-search) | closed: `protocolPattern`'s and `patternStmt`'s searches take 13 s each in their census and alone, where they took 88 s; both then stop at `statements`' `list.findIndex((s) => gate.abrupt(s))` (2026-10-22, [slice measurement](#census-index-from-length)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within the census's 60 s limit |
 | [The search past 100 s on `fragment-statements.mts`](#fragment-statements-search-rows) | closed: `protocolPattern`'s search on 526bf6e's artifacts takes 27 s of CPU alone, where it took 103 s, with the same refusal (2026-10-22, load averages 3 to 36) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within 30 s alone |
+| [A completed read narrows its receiver](docs/PROGRAM-TYPING.md#a-completed-read-narrows-its-receiver) | closed: past a read `x.k` of an immutable binding or an owned local, the statements after it hold `x` without `null` and `undefined` until `x` is written; `read-narrows-receiver` verifies, negative cases cover optional reads, writes, aliases, handlers, branches, closures and shared expression joins; the Node counterexamples pass; pipeline validation of the four expression/frame regressions is blocked by the compiler child exiting with unexpected EOF (2026-10-22, [slice measurement](#census-read-narrowing)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past ``gate.fail(d, "a `const` needs an initializer")`` |
 | [Calls through a field](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification) | closed: a call through a field reads the field's contract, checked at every write, and a declared field's is its annotation, which for an ordinary arrow states no effect; so `statements`' `findIndex` callback calling `gate.abrupt` is the unrestricted one, and `abrupt`, which reads nothing of the gate, is a module function called by its binding ([source rewrite](docs/SOURCE-REWRITES.md#a-function-called-through-a-field-whose-annotation-states-no-effect)); `find-index-module-function` verifies, `invalid-field-call-effect`, `invalid-readonly-field-call-effect`, `invalid-field-call-effect-alias` and `invalid-field-call-effect-cell` are refused (run under Node) (2026-10-22, [slice measurement](#census-field-calls)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `statements`' `list.findIndex((s) => gate.abrupt(s))` |
 | [Pushing at the receiver's element](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: a spread of a dense or readable array passes its elements at their type, and `undefined` only from a sparse one (`SpreadsInto`); a binder below and above one type, as a writable receiver's element places it, is that type, and an actual that is a literal, or a choice with a literal among its values, is built at it; `push-spread` and `push-receiver-element` verify, `invalid-push-spread-sparse`, `invalid-push-spread-wider` and `invalid-push-receiver-element` are refused (run under Node) (2026-10-22, [slice measurement](#census-push-element)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `gate.hoisted.push(...statements)` and `dispatch.push(fallback ?? { … })` |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
@@ -921,6 +922,17 @@ stop in search after 151 s each at "source expression obligation",
 ``gate.fail(d, "a `const` needs an initializer")`` in `patternStmt`, where
 `d`, `list.declarations[0]`, is claimed at `undefined |
 VariableDeclaration`.
+
+<a id="census-read-narrowing"></a>
+The same two slices on 526bf6e (main) and on the branch instantiating rows
+once and narrowing a receiver past a completed read (2026-10-22,
+`TSCERT_STEP_LIMIT=600`, load averages 5 to 15): neither verifies on either.
+On main both stop in search after 103 s each at "source expression
+obligation", ``gate.fail(d, "a `const` needs an initializer")`` in
+`patternStmt`. On the branch both pass it and stop in search after 40 s
+each at "source expression obligation", the read `d.initializer` in
+`gate.span(d.initializer)`, which `if (!d.initializer) gate.fail(…)`
+precedes.
 
 <a id="census-closure-arms"></a>
 Two slices of `fragment-expressions.mts`, `expr` and `binary`, which calls

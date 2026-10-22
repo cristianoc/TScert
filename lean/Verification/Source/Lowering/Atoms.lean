@@ -49,11 +49,14 @@ new observation of their source expression. -/
 `undefined`"). The operand in slot `o` of `K` is tested: a nullish one
 throws a fresh object owning no key, the abstraction `binopThrows` throws for
 the error, and the others continue at `next`, emitted for `K` with slot `o`
-refined to the values other than `null` and `undefined`. -/
+refined to the values other than `null` and `undefined`, and with it each
+slot of `aliases`, which holds the same value. -/
 @[nospecialize] def nullishGuard (pos : Span) (K : List (Ty Tree)) (o : Nat) (N : Ty Tree)
-    (scope : List (ScopeBinding Tree)) (next : Target) : Compiler Target := do
+    (scope : List (ScopeBinding Tree)) (next : Target) (aliases : List Nat := []) : Compiler Target := do
   let refined := fun (t : Target) => (⟨t.label, some ((t.mapping.getD (List.range K.length)).map
     (fun i => if i == o then 0 else i+1))⟩ : Target)
+  let past := fun (t : Target) => (⟨t.label, some ((t.mapping.getD (List.range K.length)).map
+    (fun i => if i == o || aliases.contains i then 0 else i+1))⟩ : Target)
   let Δ := K.set o N
   let E ← lower (SourceTypes.use (.refs [] [] [] [] [] [⟨true, []⟩]))
   recordHints [E]
@@ -61,7 +64,7 @@ refined to the values other than `null` and `undefined`. -/
     (scope := held ⟨"",some pos⟩ :: scope)
   let raise ← emitAt pos (.makeAt .absent [] []) (.bind raise) Δ [E] "nullish-member" (scope := scope)
   let some B := K[o]? | throw "internal nullish guard slot"
-  emitAt pos (.var o) (.tagBind .isNullish (refined raise) (refined next)) K B "tag-dispatch" (scope := scope)
+  emitAt pos (.var o) (.tagBind .isNullish (refined raise) (past next)) K B "tag-dispatch" (scope := scope)
 
 /-- `next`, emitted for `K` with slot `o` at `F`, behind a nullish guard
 where `split` holds one. -/
@@ -70,6 +73,33 @@ where `split` holds one. -/
   match split with
   | none => pure next
   | some (N, _) => nullishGuard pos K o N scope next
+
+/-- The slots holding the value a member read's receiver `a` reads: the
+immutable binding or owned local it names, and the one the execution plan
+saved it from while that one still holds it (`executionOrigins`). -/
+@[nospecialize] def readAliases (scope : List (ScopeBinding Tree)) (a : Fragment.Expr) : Compiler (List Nat) := do
+  let .var _ n := a | return []
+  let origin := match (← executionOrigins).lookup n with
+    | some (.var _ o) => if o == n then none else valueSlot scope o
+    | _ => none
+  return ((valueSlot scope n).toList ++ origin.toList).eraseDups
+
+/-- **A completed member read narrows its receiver.** A read `a.f` throws
+where `a` is `null` or `undefined` (`nullishGuard`), so past it the slots
+holding `a`'s value hold it without `null` and `undefined`: each slot of
+`readAliases`, the first `a`'s own, at its type's slice. None where that
+type admits neither, or nothing else. -/
+@[nospecialize] def readNarrowing (scope : List (ScopeBinding Tree))
+    (Γ : List (Ty Tree)) (e : Fragment.Expr) : Compiler (List (Nat × Ty Tree)) := do
+  let .read _ _ a := e | return []
+  let n :: rest ← readAliases scope a | return []
+  let some T := Γ[n]? | return []
+  let some (_, F) := nullishSplit (SourceTypes.graph (← table)) T | return []
+  return (n :: rest).map (·, F)
+
+/-- `Γ` past a member read: its receiver's slots narrowed (`readNarrowing`). -/
+def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (Ty Tree) :=
+  narrowing.foldl (fun Γ (i, F) => Γ.set i F) Γ
 
 /-- Call lowering compiles its operands through the supplied atomic compiler. -/
 @[nospecialize] private def compileCall
@@ -529,8 +559,23 @@ Mappings discard only the temporaries introduced by this expression. -/
     compileAtom recursive fc scope Γ rhs write
   | .lit _ v => emitAt e.span (← SourceTypes.value v) (.bind next) Γ A (scope := scope)
   | .read _ fld a =>
-    let B₀ ← exprType fc a
     -- A nullish operand throws before the read; the read is of the others.
+    -- An operand held in a slot is guarded in its slot, before it is read,
+    -- and so is every slot holding its value: from the guard on they hold it
+    -- at its type without `null` and `undefined` (`readNarrowing`).
+    let narrowing ← readNarrowing scope Γ e
+    let entry := Γ
+    let Γ := narrowed Γ narrowing
+    let (B₀, operand, finish) ← match narrowing with
+      | (n, F) :: rest => do
+        let some T := entry[n]? | throw "internal read receiver slot"
+        let some (N, _) := nullishSplit (SourceTypes.graph (← table)) T
+          | throw "internal read receiver guard"
+        pure (F, fun (t : Target) => emitAt a.span (.var n) (.bind t) Γ F (scope := scope),
+          fun (t : Target) => nullishGuard e.span entry n N scope t (rest.map (·.1)))
+      | [] => do
+        pure (← exprType fc a, fun (t : Target) => compileAtom recursive fc scope Γ a t,
+          fun (t : Target) => pure t)
     let split := nullishSplit (SourceTypes.graph (← table)) B₀
     let B := (split.map (·.2)).getD B₀
     let behind := fun (t : Target) => guarded e.span (B₀::Γ) 0 split (held ⟨"",some a.span⟩ :: scope) t
@@ -566,7 +611,7 @@ Mappings discard only the temporaries introduced by this expression. -/
         (fun i => if i == 0 then 0 else i+1))⟩ : Target)
       let test ← emitAt e.span (.var 0) (.tagBind .isArray (refined array) (refined other)) (B::Γ) B
         "tag-dispatch" (scope := receiver :: scope)
-      return ← compileAtom recursive fc scope Γ a (← behind test)
+      return ← finish (← operand (← behind test))
     -- `length` through a view admits an array: the read tests the receiver
     -- (`lenView`).
     let object := if fld == "length" && arraysOnly G B
@@ -584,10 +629,10 @@ Mappings discard only the temporaries introduced by this expression. -/
           (scope := held ⟨"",some e.span⟩ :: held ⟨"",some a.span⟩ :: scope)
         let store ← emitAt e.span (.readAt SourceTypes.storeField (.var 0)) (.bind length) (B::Γ) S
           (scope := held ⟨"",some a.span⟩ :: scope)
-        return ← compileAtom recursive fc scope Γ a (← behind store)
+        return ← finish (← operand (← behind store))
     let node ← emitAt e.span (dispatchTerm arms fld 0 object) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
-    compileAtom recursive fc scope Γ a (← behind node)
+    finish (← operand (← behind node))
   | .not _ a =>
     let B ← exprType fc a
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map

@@ -136,6 +136,15 @@ held in a slot. -/
   | .referenceWrite _ reference _ | .updateSaved _ reference _ _ => (localSlot scope reference).map (·.1)
   | _ => none
 
+/-- Locals a plan may rebind on any of its paths. -/
+@[nospecialize] private partial def executionRebound (scope : List (ScopeBinding Tree)) :
+    SourceExecution.Plan → List String
+  | .atom _ operation => ((rebound scope operation).bind (scope[·]?)).toList.map (·.source.name)
+  | .observe _ evaluate => executionRebound scope evaluate
+  | .sequence _ _ evaluate next => executionRebound scope evaluate ++ executionRebound scope next
+  | .choose _ _ _ _ evaluate yes no =>
+    executionRebound scope evaluate ++ executionRebound scope yes ++ executionRebound scope no
+
 @[nospecialize] private partial def executionClaim (fc : SourceClaims.Function Tree)
     (source : Span) (fallback : Compiler (Ty Tree)) : Compiler (Ty Tree) :=
   match fc.exprs.lookup source with
@@ -392,7 +401,8 @@ one for an increment), and the slot of the old value. -/
       if let .objectAssign _ (.var _ name) _ := original then
         let some i := valueSlot scope name | throw "internal execution plan: missing owned Object.assign target"
         return Γ.set i (← executionOperationType fc scope Γ operation)
-    pure Γ
+    -- A completed member read narrows its receiver (`readNarrowing`).
+    return LoweringAtoms.narrowed Γ (← LoweringAtoms.readNarrowing scope Γ prepared)
   | _ => pure Γ
 
 /-- Every prepared primitive is checked at the original expression's claim,
@@ -472,10 +482,12 @@ one for an increment), and the slot of the old value. -/
   let returned := match promiseNarrowing (SourceTypes.graph (← table)) scope Γ true original with
     | some (j, T) => Γ.set j T
     | none => Γ
-  let cast ← emitAt original.span (.var 0) (.bind ⟨next.label, some mapping⟩)
-    (B::returned) A "expression-claim" (scope := held ⟨"",some original.span⟩ :: scope)
   withPreparedAtom original do
     let prepared ← comparisonsExpr fc prepared
+    -- A completed member read narrows its receiver (`readNarrowing`).
+    let returned := LoweringAtoms.narrowed returned (← LoweringAtoms.readNarrowing scope Γ prepared)
+    let cast ← emitAt original.span (.var 0) (.bind ⟨next.label, some mapping⟩)
+      (B::returned) A "expression-claim" (scope := held ⟨"",some original.span⟩ :: scope)
     LoweringAtoms.compileAtom recursive fc scope Γ prepared cast
 
 @[nospecialize] private partial def compileExecutionOperation (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
@@ -786,7 +798,12 @@ prepared predicate without replaying an effectful source operand. -/
       let A ← executionPlanType fc scope Γ evaluate
       let previous ← executionBindings
       let bound : ScopeBinding Tree := { source := ⟨binding.name,some binding.source⟩, fixed := some A }
-      let after ← withExecutionBindings { previous with types := (binding.name,A)::previous.types }
+      -- The shared continuation must not recover a saved value through a
+      -- local that either evaluated arm may have rebound.
+      let rebound := executionRebound scope evaluate
+      let origins := previous.origins.filter fun (_, origin) =>
+        !origin.freeNames.any rebound.contains
+      let after ← withExecutionBindings { types := (binding.name,A)::previous.types, origins }
         (executePlanTail recursive fc (bound::scope) (A::Γ) next k)
       return ← executePlanTail recursive fc scope Γ evaluate fun _ Δ _ => do
         let offset := Δ.length - Γ.length
@@ -915,6 +932,19 @@ The final pure predicate uses the retained operands to justify refinements. -/
     (e : Fragment.Expr) (next : Target) : Compiler Target :=
   executePlanTail recursive fc scope Γ (SourceExecution.build e) fun _ Δ _ => do
     let offset := Δ.length - Γ.length
+    return ⟨next.label,some ((next.mapping.getD (List.range (Γ.length+1))).map
+      (fun i => if i == 0 then 0 else offset+i-1))⟩
+
+/-- `compileExpr` with the nodes after the value built for the frame the
+    expression leaves: `tail` receives each path's frame, a slot narrowed
+    where the expression narrowed it (`readNarrowing`), and builds what
+    follows the value for that frame and the value. -/
+@[nospecialize] partial def compileExprThen (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree)
+    (scope : List (ScopeBinding Tree)) (Γ : List (Ty Tree))
+    (e : Fragment.Expr) (tail : List (Ty Tree) → Compiler Target) : Compiler Target :=
+  executePlanTail recursive fc scope Γ (SourceExecution.build e) fun _ Δ _ => do
+    let offset := Δ.length - Γ.length
+    let next ← tail (Δ.drop offset)
     return ⟨next.label,some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else offset+i-1))⟩
 
