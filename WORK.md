@@ -62,7 +62,8 @@ design, not its progress.
 | [Investigation of `memberOf`'s read past a spread guard](#member-of-spread-guard) | closed: a guard's call on a `for...of` binding was an ordinary call, `readCannotThrow` not recognizing the binding; the walk stops at every binding it passes (2026-10-22, [slice measurement](#census-member-of-spread-guard)) | the cause of the producer's "missing field name" at `memberOf`'s `p.name` is established, with a reproducer |
 | [Paths rooted at a slot](docs/HOST-FAMILIES.md#paths-rooted-at-a-slot) | closed: a member path may start at a `let` or assigned parameter held in a slot, its read links and entry witnesses ending at the root's next write; `slot-path` and `compiler-api-slot-path` verify, `invalid-slot-path-write`, `-loop`, `-finally`, `-pattern`, `-closure`, `-alias` and `-call` are refused (run under Node), forged entries after a write and at a loop head its back edge enters refused in search and in checking, each accepted with its check disabled (2026-10-22, [slice measurement](#census-slot-paths)) | `fragment-expressions.mts#expr` and `#binary` move past "missing field text" at `memberMayBeWritten`'s `target.argumentExpression.text` |
 | [A member bound to a union of hosts](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: `o.k.bind(o)` at a union of hosts each holding `k` as a member splits the host's slot and binds each host's member (`unionVar`, then `bindMember`), the producer proposing the hosts' common signature with the union of their results; the iterator protocol so binds `next` and `return` over a union of iterables; `bind-union-host` verifies, the bypasses listed in [the iterator protocol](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) are refused (run under Node), a forged claim of one host's result refused in search and in checking (2026-10-22, [slice measurement](#census-union-host-bind)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past "bind requires a single arrow and a valid argument prefix" |
-| [Investigation of a length comparison over a node list or `[]`](#node-list-length-test) | open: an investigation, cause unknown | the cause of the refusal of `if (xs.length !== ps.length)` with `ps = alias.typeParameters ?? []` is established, with a reproducer and a concrete repair obligation |
+| [The length of a union of arrays](docs/PROGRAM-TYPING.md#the-length-of-a-union-of-arrays) | closed: `length` of a union of array contracts is read by the same term derived at each member (`unionVar`), in a condition's term and in a statement; `compiler-api-node-list-length-test` and `array-union-length-test` verify, `invalid-array-record-length-cast` is refused (2026-10-22) | `if (xs.length !== ps.length)` with `ps = alias.typeParameters ?? []` verifies |
+| [Investigation of a field re-read under a negated disjunction](#negated-disjunction-reread) | open: an investigation, cause unknown | the cause of the refusal of `if (!(k.name === "a" \|\| k.name === "b"))` is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a defaulted parameter's flow](#defaulted-parameter-flow) | open: an investigation, cause unknown | the cause of `spread-defaulted-set-refused`'s edge refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
@@ -121,25 +122,24 @@ failed `in` test drops the arms owning the key. The
 [slice measurement](#census-closure-arms) records the refusals of `expr` and
 `binary` in `fragment-expressions.mts`.
 
-<a id="node-list-length-test"></a>
-**Investigation of a length comparison over a node list or `[]`.** Lean's
-search refuses this function with "read of a field 'length' the contract
-does not name", a refusal with no location:
+<a id="negated-disjunction-reread"></a>
+**Investigation of a field re-read under a negated disjunction.** Lean's
+search refuses this function at the second `k.name`: "No rule derives this
+readAt at `"b" | "c" | "d"` from k":
 
 ```typescript
-export function count(alias: ts.TypeAliasDeclaration, arguments_: readonly number[]): boolean {
-  const parameters = alias.typeParameters ?? [];
-  if (arguments_.length !== parameters.length) return true;
+export function f(k: { name: "a" | "b" | "c" | "d" }): boolean {
+  if (!(k.name === "a" || k.name === "b")) return true;
   return false;
 }
 ```
 
-The same comparison verifies returned as a value
-(`return arguments_.length !== parameters.length`) or held in a constant
-tested after, and verifies as a branch test with both operands
-`readonly` arrays of the program. `type-term.mts#readTypeTerm` holds it,
-in the associated-result alias's check
-`arguments_.length !== parameters.length || parameters.some(…)`.
+The same disjunction verifies as a branch test without `!`, and returned as a
+value with or without it. In the refused check's context a path witness
+(`.path:0`) holds `"b" | "c" | "d"`, the field's content past the first test,
+while the term reads `k`'s field at its declared type. `type-term.mts`'s
+`expandMapped` holds the form, in `keys.some(k => !(k.k === "atom" &&
+(k.name === … || k.name === … || …)) && …)`.
 
 <a id="defaulted-parameter-flow"></a>
 **Investigation of a defaulted parameter's flow.** A parameter declared a
@@ -996,10 +996,21 @@ by `k` ([the rewrite](docs/SOURCE-REWRITES.md#a-rest-parameters-reading-tested-w
 producer at "missing field positions" (`signatures`); on the branch both
 stop in Lean's search at "read of a field 'length' the contract does not
 name", with no location, the alias check's length comparison
-([the investigation](#node-list-length-test)). With that comparison
+([the reading](docs/PROGRAM-TYPING.md#the-length-of-a-union-of-arrays)). With that comparison
 removed from the slice, the search stops at a closure of `mapped`,
 `keys.some(k => !(k.k === "atom" && (k.name === …)))`: "No rule derives
 this readAt" at `k.name`.
+
+<a id="census-union-length"></a>
+The same two slices on 451642b (main) and on the branch reading `length`
+of a union of arrays at each member
+([the reading](docs/PROGRAM-TYPING.md#the-length-of-a-union-of-arrays))
+(2026-10-22): neither verifies on either. On main both stop at "read of a
+field 'length' the contract does not name"; on the branch both stop at the
+closure of `expandMapped` (`mapped`), "closure expression claim at
+[26388,26394): evidence search failed", the second `k.name` of
+`!(k.k === "atom" && (k.name === "string" || k.name === "number" || …))`
+([the investigation](#negated-disjunction-reread)).
 
 <a id="callable-alias-meet"></a>
 **Investigation of an alias of function types met with a record.**

@@ -10,6 +10,15 @@ open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJso
 open Fragment LabelStore
 open EquationGraphs (Tree)
 
+/-- Locate a read's refusal at its member access, preserving diagnostics and
+internal errors. -/
+@[nospecialize] def locatedRead (pos : Span) (action : Compiler (DirectProof.Plan Tree)) :
+    Compiler (DirectProof.Plan Tree) := do
+  let T ← table
+  tryCatch action fun reason =>
+    if hasDiagnostic reason || reason.startsWith "internal" then throw reason
+    else throw (locatedRefusal T pos .expressionClaim reason)
+
 section
 variable {ι : Type} [Labels ι]
 
@@ -504,6 +513,37 @@ bag, or an explicit union of cell contracts each naming the field. -/
       DirectProof.cast ([label] :: Γ) R plan
     pure (DirectProof.letE Γ a (DirectProof.node (a.type::Γ)
       (.readAt fld (.var 0)) R (.unionVar 0) children))
+
+/-- The `length` of the array in slot `i`, its store's, read as a number,
+the term `lenOf (readAt store i)`: of one array contract, its store's field
+read, then that store's length; of a union of array contracts, the same term
+derived at each member (`unionVar`), each member one array contract. -/
+@[nospecialize] def arrayLengthAt (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree))
+    (i : Nat) : Compiler (DirectProof.Plan Tree) := do
+  let some C := Γ[i]? | throw "internal array-length slot mismatch"
+  let N : Ty Tree := [← lower (SourceTypes.use .num)]
+  let lengthOf := fun (H : List (Ty Tree)) (A : Ty Tree) => do
+    let store ← readCell G H SourceTypes.storeField (DirectProof.var H i A)
+    pure (DirectProof.node H (.lenOf store.term) N .len [store])
+  if (storeOf G C).isSome then return ← lengthOf Γ C
+  let children ← (ProgramTyping.members G C).mapM fun label => do
+    if (storeOf G [label]).isNone then
+      throw "a read of `length` of a union some member of which is not one array contract"
+    lengthOf (Γ.set i [label]) [label]
+  pure (DirectProof.node Γ (.lenOf (.readAt SourceTypes.storeField (.var i))) N (.unionVar i) children)
+
+/-- An array's `length` (`arrayLengthAt`), of the value a plan yields: of
+one array contract, its store read from that value; of a union, a slot's
+where the plan reads one, else the value held in a slot of its own. -/
+@[nospecialize] def arrayLength (G : PositiveGraphs.NormalGraph Tree) (Γ : List (Ty Tree))
+    (a : DirectProof.Plan Tree) : Compiler (DirectProof.Plan Tree) := do
+  if (storeOf G a.type).isSome then
+    let store ← readCell G Γ SourceTypes.storeField a
+    return DirectProof.node Γ (.lenOf store.term) [← lower (SourceTypes.use .num)] .len [store]
+  match a.term with
+  | .var i => if Γ[i]? == some a.type then return ← arrayLengthAt G Γ i
+  | _ => pure ()
+  pure (DirectProof.letE Γ a (← arrayLengthAt G (a.type :: Γ) 0))
 
 /-- A member access's operand type admitting `null` or `undefined` beside
 other values: the slice the access throws at and the slice it reads, where

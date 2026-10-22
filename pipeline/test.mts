@@ -188,6 +188,30 @@ const run = (file: string): string => {
 };
 
 control(async (): Promise<void> => {
+  // A producer normally gives each array alternative its own label. One
+  // label containing both clauses reaches the read's derivation refusal.
+  const artifacts = run("length-array-or-record");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("x.length");
+  const fn = must(claims.functions.find(f => f.name === "size"), "size's claims");
+  const receiver = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + 1),
+    "the length read's receiver");
+  const row: Row = ["num", "str"].map(atom => {
+    assert.ok(atom === "num" || atom === "str");
+    const store = rowOf(claims, { list: { first: { required: [], optional: [],
+      rest: [rowOf(claims, atom)], readonly: true, presence: "readable" }, rest: [] } });
+    return { refs: { first: [], rest: [], views: [["[]", [store]]] } };
+  });
+  receiver.type = [claims.types.push(row) - 1];
+  const forged = writeClaims(artifacts, "forged-grouped-array-length", claims);
+  const at = `source refusal at [${start},${start + "x.length".length}): a read of \`length\` of a union some member of which is not one array contract`;
+  refusedAt(artifacts, forged, "forged-grouped-array-length", at);
+  assert.ok(invoke(forged, join(artifacts, "evidence.json"), artifacts).includes(at));
+  process.stdout.write("grouped array length claim: refused at the member access in search and check\n");
+});
+
+control(async (): Promise<void> => {
   const good = run("values");
   // Output rebinding preserves the verifier's refusal of aliases to either
   // input, and leaves those input bytes intact.

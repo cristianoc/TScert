@@ -292,12 +292,10 @@ slots are introduced only after the operand supplying their type is checked. -/
       let K := a.type :: Γ
       let arms ← primitiveArms (held ⟨"",some receiver.span⟩ :: scope) K a.type fld
       -- An array's `length` is its store's, read as a number, as the graph
-      -- reads it.
-      if arms.isEmpty && fld == "length" && (storeOf G a.type).isSome then
-        let store ← readCell G Γ SourceTypes.storeField a
-        let N : Ty Tree := [← lower (SourceTypes.use .num)]
-        pure (DirectProof.node Γ (.lenOf store.term) N .len [store])
-      else if arms.isEmpty then readCell G Γ fld a
+      -- reads it, of one array contract or of each of a union's. A read
+      -- refused is refused at the member access.
+      if arms.isEmpty && fld == "length" && arraysOnly G a.type then locatedRead e.span (arrayLength G Γ a)
+      else if arms.isEmpty then locatedRead e.span (readCell G Γ fld a)
       else pure (DirectProof.letE Γ a (← memberReadPlan G K 0 fld A arms))
   | .index _ (some fld) receiver key => do
     -- The receiver, then the key, then the read: the key's own claim was
