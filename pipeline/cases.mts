@@ -93,6 +93,7 @@ export const cases: Case[] = [
     /source expression obligation at \[260,263\): evidence search failed: no derivation of its binding-annotation claim/),
   negative("invalid-native-find-mutation", "find visits missing positions after a callback shrinks the array", /closure signature claim is outside/),
   positive("find-index-module-function", "a `findIndex` callback calling a recursive module function, by its binding and through a fresh literal's field: each read at the signature certified from its body, so each visit passes an element"),
+  positive("coalesce-array-literal", "an array literal right of `??` where no type is expected, built at the left's array type as TypeScript types it: `(xs ?? [[]]).map(…)` reads one array type"),
   positive("find-recursive-constant","a `find` callback calling a recursive constant, module-level, local and annotated: its body reads its self entry at the footprint proposed for the closure, which the closure's check establishes, so each visit passes an element"),
   negative("invalid-find-recursive-constant-mutation", "a `find` callback calling a recursive constant that shrinks the array: the closure's footprint is not the empty one, so the element is `T | undefined` (run under Node)",
     /source direct obligation at \[502,521\): closure signature claim is outside the source annotation\nobligation: The required subtype relation was not established: undefined \| number ≤ number/),
