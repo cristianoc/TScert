@@ -32,9 +32,27 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-program-node-array-last", "last({ length: 1 })"],
     ["invalid-array-past-end", `pastTheEnd(["a"])`],
     ["invalid-array-before-last", `beforeLast(["a"])`],
+    // The protocol's `next` of a union's host: called with no actual, on
+    // the iterator as receiver, its effect (and a getter's) on a tested field.
+    ["invalid-bind-union-host-arity", "first(new From())"],
+    ["invalid-for-of-next-arity", "first(new From())"],
+    ["invalid-bind-union-host-this", "first(new Borrowed())"],
+    ["invalid-bind-union-host-effect", "(() => { const b = new Box(1); return kept(new Drain(b), b); })()"],
+    ["invalid-bind-union-host-getter", "(() => { const b = new Box(1); return kept(new Lazy(b), b); })()"],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // A union's host whose `next` yields a string where its overload says a
+  // number; a done step's value, the host's return value, read as a number.
+  assert.equal(runExample("invalid-bind-union-host-overload", "first(new Mixed())"), "s",
+    "invalid-bind-union-host-overload: the loop's value is a string despite the number contract");
+  assert.equal(runExample("invalid-bind-union-host-return", "peek(new Repeat(0))"), "finished",
+    "invalid-bind-union-host-return: a done step's value is the host's return value");
+  // A step's result that is no object, and an absent `next`: the protocol throws.
+  assert.throws(() => runExample("invalid-bind-union-host-non-object", "first(new Bare())"), /not an object/,
+    "invalid-bind-union-host-non-object: IteratorStepValue throws on a number");
+  assert.throws(() => runExample("invalid-bind-union-host-optional", "first(new Maybe())"), /not a function/,
+    "invalid-bind-union-host-optional: the step calls an absent next");
   assert.equal(await runExample("invalid-block-type-awaited", `test("text")`), "text",
     "invalid-block-type-awaited: y holds a string despite the local alias's number contract");
   // `outer.v` is the enclosing `T`, here a string: the result is the number

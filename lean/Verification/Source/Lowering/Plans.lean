@@ -337,6 +337,18 @@ other member is read as a field. -/
   | .var i, true => .letE (.readAt fld (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])
   | _, _ => .readAt fld obj
 
+/-- The labels of a union of hosts `O` each of whose one object clause holds
+`fld` as a member: `o.fld.bind(o)` at `O` splits the host's slot (`unionVar`)
+and binds each label's member to it (`bindMember`). Empty unless `O` has at
+least two labels, each such a host. -/
+@[nospecialize] def unionMemberHosts (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) : List ι :=
+  let ls := ProgramTyping.members G O
+  if ls.length > 1 && ls.all (fun l => (ProgramTyping.memberOf G [l] fld).isSome) then ls else []
+
+/-- The term of a member read from the object in slot `i` and bound to it. -/
+@[nospecialize] def boundMemberTerm (fld : PropKey) (i : Nat) : Tm :=
+  .letE (.readAt fld (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])
+
 /-- The row a field read gives before any claim replaces it: the object's own
 field or view, or, for a key an own-key bound does not admit, its prototype's, as
 `readCell` and the top level's search read it. -/

@@ -1279,6 +1279,35 @@ control(async (): Promise<void> => {
   process.stdout.write("evolving use contract: a forged contract refused at the write\n");
 });
 
+control(async (): Promise<void> => {
+  // The protocol's `next` bound to a union of hosts returns the union of
+  // the hosts' results. A claim of one host's result alone, `Countdown`'s,
+  // whose done value is `undefined`, is refused for the union whose other
+  // host returns a string, as search and as evidence.
+  const artifacts = run("bind-union-host");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  type Claim = SourceClaims["functions"][number]["expressions"][number];
+  const boundNext = (name: string): Claim => {
+    const s = source.indexOf("for (", source.indexOf(`export function ${name}(`));
+    const q = source.indexOf(")", s);
+    const fn = must(claims.functions.find((f) => f.name === name), name);
+    return must(fn.expressions.find((e) => e.pos[0] === s && e.pos[1] === q + 1), `${name}'s bound next`);
+  };
+  const union = boundNext("total");
+  union.type = structuredClone(boundNext("countdown").type);
+  const forged = writeClaims(artifacts, "forged-union-host-next", claims);
+  const searched = produceWith(artifacts, forged, "forged-union-host-next");
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, detail);
+  // Refused where the member is read and bound, the run from the header's
+  // `(` to its `)`.
+  const read = source.indexOf("(", union.pos[0]);
+  assert.ok(detail.includes(`source expression obligation at [${read},${union.pos[1]})`), detail);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /claim|evidence/);
+  process.stdout.write("bound next of a union of hosts: one host's result claimed alone refused\n");
+});
+
 
 control(async (): Promise<void> => {
   // A deferred closure body owns execution points separate from creation.

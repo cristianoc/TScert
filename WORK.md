@@ -55,6 +55,8 @@ design, not its progress.
 | [Patterns binding a `for...of` over a program's iterable](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) | closed: each step's value is destructured first in the closing region, by the array loop's lowering; an array's `values`, `keys` and `entries` are read at `IterableIterator` of their declared argument and stepped by the protocol (2026-10-21, [slice measurement](#census-for-of-patterns)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past the `for...of` pattern refusal |
 | [Enum reverse keys](docs/SOURCE-CONTRACTS.md#enums) | closed: an enum's object states, at each numeric value TypeScript computes, its reverse key at `string` where TypeScript's emit builds it or its runtime object is checked (`emitted-enum`); `enum-reverse-keys`, `enum-reverse-value-import` and `compiler-api-enum-reverse` verify, a key at `number` or outside the values, a string member's value and an ambient or declaration file's enum are refused (run under Node), forged claims refused at the read (2026-10-21, [slice measurement](#census-enum-reverse-keys)) | — |
 | [Block-scoped type declarations](docs/SOURCE-CONTRACTS.md#block-scoped-type-declarations) | closed: a `type` or `interface` in a block runs nothing and names its block, each reference read at the declaration TypeScript binds, its equation lifted over the enclosing type parameters resolved there; `block-type-aliases` and `block-type-captures` verify, `invalid-block-type-scope` is refused (run under Node), a reference where a nearer binder hides a captured one, directly or through another block type, is refused, in a computed form, a mapped type and a default too (2026-10-21, [slice measurement](#census-block-types)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past the type alias statement refusal |
+| [A member bound to a union of hosts](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: `o.k.bind(o)` at a union of hosts each holding `k` as a member splits the host's slot and binds each host's member (`unionVar`, then `bindMember`), the producer proposing the hosts' common signature with the union of their results; the iterator protocol so binds `next` and `return` over a union of iterables; `bind-union-host` verifies, the bypasses listed in [the iterator protocol](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) are refused (run under Node), a forged claim of one host's result refused in search and in checking (2026-10-22, [slice measurement](#census-union-host-bind)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past "bind requires a single arrow and a valid argument prefix" |
+| [Investigation of a defaulted parameter's flow](#defaulted-parameter-flow) | open: an investigation, cause unknown | the cause of `spread-defaulted-set-refused`'s edge refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
@@ -111,6 +113,24 @@ a named union, of a function or a closure, is held at the union's arms, so a
 failed `in` test drops the arms owning the key. The
 [slice measurement](#census-closure-arms) records the refusals of `expr` and
 `binary` in `fragment-expressions.mts`.
+
+<a id="defaulted-parameter-flow"></a>
+**Investigation of a defaulted parameter's flow.** A parameter declared a
+`ReadonlySet<string>` whose default is a fresh `Set<string>`, the form of
+`type-term.mts#visitType`, holds either past the default, and Lean's
+incoming claim at the next point is `ReadonlySet<string> | Set<string>`,
+while the producer's claim there is `Set<string> | { size: never = (number) }`;
+the edge does not establish it, with or without a spread of the parameter
+(`spread-defaulted-set-refused`):
+
+```typescript
+export function merged(more: readonly string[], bound: ReadonlySet<string> = new Set()): number {
+  return new Set([...bound, ...more]).size;
+}
+```
+
+The investigation concerns the producer's row for the union of the declared
+type and the default's after `DefaultValue`.
 
 <a id="assigned-parameters-with-defaults"></a>
 **Investigation of assigned parameters with defaults.** The producer refuses
@@ -682,9 +702,10 @@ first three items 2026-10-19):
 - a pattern binding a `for...of` over a program's iterable (17), the slices
   of `type-term.mts` past their contextual function types (2026-10-20,
   [census](#census-never-callable)), which read past it a type alias
-  statement in a function body ([record](#census-for-of-patterns)) and stop
-  in the producer at an iterator's bound `next`
-  ([record](#census-block-types)); the slices of
+  statement in a function body ([record](#census-for-of-patterns)), an
+  iterator's `next` bound to a union of hosts ([record](#census-block-types)),
+  and stop in the producer at "missing field positions", `signatures`' test
+  `"positions" in contract` ([record](#census-union-host-bind)); the slices of
   `fragment-statements.mts` past `protocolPattern`'s call of `gate.fail`
   read a closure's assigned parameter after a host guard, a
   [slot](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)
@@ -903,6 +924,15 @@ producer at "bind requires a single arrow and a valid argument prefix": the
 slices' only bound calls are the iterators' `next` the protocol lowering
 binds, in `visitType` and in `quantified`'s and `signatures`' `for (const
 [index, p] of ….entries())`.
+
+<a id="census-union-host-bind"></a>
+The same two slices on 1e74ca1 (main) and on the branch binding a member to a
+union of hosts (2026-10-22): neither verifies on either. On main both stop in
+the producer at "bind requires a single arrow and a valid argument prefix",
+`visitType`'s spread of `bound`, a `ReadonlySet<string>` defaulted to a
+`Set<string>`, whose iterator is a union of two; on the branch both stop in
+the producer at "missing field positions", `signatures`' `"positions" in
+contract`.
 
 <a id="census-ddcf13a"></a>
 The `tools/` census of ddcf13a (main, after the stage store, the replayed

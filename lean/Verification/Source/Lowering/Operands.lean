@@ -155,6 +155,11 @@ dispatch retains its receiver as the correlated dispatch value. -/
   if let .bindWithReceiver .. := call then
     if fld.any (fun key => (ProgramTyping.memberOf G O key).isSome) then
       return (← exprType fc call, term)
+    -- A union of hosts each holding the member: the same term, which the
+    -- search proves by splitting the host's slot.
+    if let some key := fld then
+      if !(unionMemberHosts G O key).isEmpty then
+        return (← exprType fc call, boundMemberTerm key i)
   return (B, term)
 
 end

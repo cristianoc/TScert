@@ -460,8 +460,9 @@ slots are introduced only after the operand supplying their type is checked. -/
   | .bindWithReceiver _ f receiver args => do
     if let some (.bindWithReceiver _ (.read _ fld (.var _ x)) (.var _ y) []) :=
         (← originalExpression) then
+      let O ← exprType fc receiver
       if x == y && args.isEmpty &&
-          (ProgramTyping.memberOf G (← exprType fc receiver) fld).isSome then
+          ((ProgramTyping.memberOf G O fld).isSome || !(unionMemberHosts G O fld).isEmpty) then
         -- The shared method-read operation has already bound this member
         -- to the same receiver. Its saved result is the bound function.
         return DirectProof.cast Γ A (← closureExpr recursive fc scope Γ f)
