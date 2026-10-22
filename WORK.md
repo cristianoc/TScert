@@ -885,6 +885,20 @@ refused" (24491), `inferred && "refused" in inferred`, where the passed
 test keeps the open record arm `{ functionType; bagType }`, each parse
 taking 9.7 s (the census 12 s).
 
+<a id="census-answered-tag"></a>
+The same two slices on 1e74ca1 (main) and on the branch tagging the gate's
+answers by `ok` ([the rewrite](docs/SOURCE-REWRITES.md#a-key-tested-with-in-on-an-open-record))
+(2026-10-22): neither verifies on either. On main both stop at "missing
+field refused" (24491), `inferred.refused`; on the branch both stop at
+"missing field properties" (24978), `initial.properties` after
+`ts.isObjectLiteralExpression(initial)` with `initial = node.arguments[1]`,
+an index read TScert types `Expression | undefined`
+([required rewrite](docs/SOURCE-REWRITES.md#an-index-read-whose-range-a-check-elsewhere-establishes)).
+Reduced programs show the guard narrowing a parameter of type `Expression`
+and refusing the same read at `Expression | undefined`, and at
+`args[1]` of `readonly Expression[]`; with `initial !== undefined` tested
+first the read verifies.
+
 <a id="census-for-of-patterns"></a>
 Two slices of `type-term.mts`, `readTypeTerm` and `typeTerm`, which calls it,
 on 5191b20 (main) and on the branch destructuring a `for...of` pattern over a

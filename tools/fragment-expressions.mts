@@ -506,8 +506,8 @@ export function expr(this: Gate, node: Expression): Expr {
       if (!ts.isObjectLiteralExpression(initial))
         gate.fail(node, "Object.assign's callable form needs an object literal");
       const inferred = typeArguments ? null : gate.assignTypes.get(gate.span(node).join(":"));
-      if (inferred && "refused" in inferred) gate.fail(node, inferred.refused);
-      const [functionType, bagType] = inferred ? [inferred.functionType, inferred.bagType]
+      if (inferred && !inferred.ok) gate.fail(node, inferred.refused);
+      const [functionType, bagType] = inferred?.ok ? [inferred.value.functionType, inferred.value.bagType]
         : typeArguments?.length === 2 ? [gate.typeOf(typeArguments[0]), gate.typeOf(typeArguments[1])]
         : gate.fail(node, "Object.assign's callable form needs its two type arguments");
       // These names either replace an intrinsic used by the lowering or
@@ -723,10 +723,11 @@ export function objectFields(this: Gate, node: ts.ObjectLiteralExpression, seen:
   const literalKey = (name: Node): { key: string; check: () => Expr } | null => {
     if (!ts.isComputedPropertyName(name)) return null;
     const result = gate.symbolNames.get(gate.span(name.expression).join(":"));
-    if (result === undefined || typeof result === "number" || !("literal" in result)) return null;
+    if (result === undefined || !result.ok || typeof result.value === "number") return null;
+    const { literal, value } = result.value;
     const span = gate.span(name.expression);
-    return { key: result.literal, check: () => ({ k: "cast", pos: gate.span(name), cast: "satisfies",
-      annot: literalTerm(result.value, span), e: gate.expr(name.expression) }) };
+    return { key: literal, check: () => ({ k: "cast", pos: gate.span(name), cast: "satisfies",
+      annot: literalTerm(value, span), e: gate.expr(name.expression) }) };
   };
   // The key's check, then the value, evaluated in that order.
   const valued = (name: Node, value: () => Expr): Expr => {
