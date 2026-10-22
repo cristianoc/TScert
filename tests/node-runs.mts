@@ -21,6 +21,10 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-readonly-field-call-effect",
       "(() => { const xs = [1, 2], seen = []; first({ check: (n) => { seen.push(n); xs.pop(); return false; } }, xs); return seen.length === 2 ? seen[1] : 0; })()"],
     ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
+    // A value of `Names`' type whose `local` pops the mapped array: `map`
+    // skips the index it removed, a hole in the `string[]`.
+    ["invalid-map-method-call-effect",
+      `(() => { const xs = ["a", "b"]; return 1 in wrong({ prefix: "", local: (n) => { xs.pop(); return n; } }, xs) ? "dense" : undefined; })()`],
     ["invalid-map-primitive-method-mutation", `wrong(["a", "b"])`],
     ["invalid-native-join-coercion", "wrong({ value: 0 })"],
     ["invalid-native-sort-coercion", "wrong({ value: 0 })"],
