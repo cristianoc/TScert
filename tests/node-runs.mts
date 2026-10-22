@@ -49,6 +49,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   assert.equal(runExample("invalid-bind-union-host-return", "peek(new Repeat(0))"), "finished",
     "invalid-bind-union-host-return: a done step's value is the host's return value");
   // A step's result that is no object, and an absent `next`: the protocol throws.
+  for (const file of ["invalid-bind-union-host-primitive", "invalid-bind-union-host-tag-set"])
+    assert.throws(() => runExample(file, "first(new Source(1))"), /not an object/,
+      `${file}: GetIterator throws on a numeric iterator`);
+  assert.throws(() => runExample("invalid-bind-union-host-missing-member", "first(new Source(new Missing()))"), /not a function/,
+    "invalid-bind-union-host-missing-member: the step calls an absent next");
   assert.throws(() => runExample("invalid-bind-union-host-non-object", "first(new Bare())"), /not an object/,
     "invalid-bind-union-host-non-object: IteratorStepValue throws on a number");
   assert.throws(() => runExample("invalid-bind-union-host-optional", "first(new Maybe())"), /not a function/,

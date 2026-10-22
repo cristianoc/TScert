@@ -1310,6 +1310,69 @@ control(async (): Promise<void> => {
 
 
 control(async (): Promise<void> => {
+  // Source arrows carry ordinary effects. Inject unequal member effects
+  // into the fragment to exercise the producer's signature comparison.
+  const artifacts = run("bind-union-host");
+  const ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const host = must(ast.declarations.definitions.find(d => d.declaration.name === "Countdown"), "Countdown");
+  assert.ok(host.expression?.k === "object");
+  const next = must(host.expression.fields.find(f => f.name === "next"), "Countdown.next");
+  assert.ok(next.type.k === "function");
+  assert.deepEqual(next.type.effect, ordinaryEffect);
+  next.type.effect = emptyEffect;
+  const fragment = join(artifacts, "unequal-bound-member-effects.json");
+  writeFileSync(fragment, JSON.stringify(ast));
+  const lowered = tested(verifierCall(verifier, ["--lower-control-flow", fragment]));
+  assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
+  const flow = join(artifacts, "unequal-bound-member-effects-flow.json");
+  writeFileSync(flow, lowered.stdout);
+  const proposal = tested(producerCall(producerExecutable, [fragment, flow]));
+  assert.equal(proposal.status, 2, proposal.stdout + proposal.stderr);
+  assert.match(proposal.stdout + proposal.stderr,
+    /a method bound to a union of hosts needs each host's member at one signature: the same parameters and effect/);
+  process.stdout.write("unequal bound member effects: refused by the producer's union signature comparison\n");
+});
+
+for (const [file, name] of [["for-of-iterable-parameter", "first"], ["bind-union-host", "total"]]) control(async (): Promise<void> => {
+  // Only the bound function's claimed effect changes. Its hosts' members
+  // permit writes, so a claim preserving all locations needs refusal.
+  const artifacts = run(file);
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("for (", source.indexOf(`export function ${name}(`));
+  const end = source.indexOf(")", start) + 1;
+  const fn = must(claims.functions.find(f => f.name === name), name);
+  const bound = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === end), `${name}'s bound next`);
+  assert.ok(Array.isArray(bound.type) && bound.type.length === 1);
+  const label = bound.type[0];
+  assert.ok(typeof label === "number");
+  const row = structuredClone(must(claims.types[label], "the bound function's row"));
+  const arrows = row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
+  assert.equal(arrows.length, 1);
+  const arrow = must(arrows[0], "the bound signature");
+  assert.deepEqual(arrow.effect, ordinaryEffect);
+  arrow.effect = emptyEffect;
+  const preserving = claims.types.push(row) - 1;
+  // Mention both rows in the honest union so evidence and the forged claim
+  // use the same graph labels. The ordinary arm admits the actual effect.
+  bound.type.push(preserving);
+  const honest = writeClaims(artifacts, `bound-${name}-effect-baseline`, claims);
+  const baseline = produceWith(artifacts, honest, `bound-${name}-effect-baseline`);
+  assert.equal(baseline.status, 0, baseline.stdout + baseline.stderr);
+  bound.type = [preserving];
+  const forged = writeClaims(artifacts, `forged-bound-${name}-effect`, claims);
+  const searched = produceWith(artifacts, forged, `forged-bound-${name}-effect`);
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, detail);
+  const read = source.indexOf("(", start);
+  assert.ok(detail.includes(`source expression obligation at [${read},${end})`), detail);
+  const checked = invoke(forged, join(artifacts, `bound-${name}-effect-baseline-evidence.json`), artifacts);
+  assert.ok(checked.includes(`source evidence refusal at [${read},${end})`), checked);
+  process.stdout.write(`bound next effect of ${name}: excess preservation refused in search and checking at the binding\n`);
+});
+
+
+control(async (): Promise<void> => {
   // A deferred closure body owns execution points separate from creation.
   const artifacts = run("closure-graph-try");
   const claims = readClaims(artifacts);

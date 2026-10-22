@@ -615,10 +615,12 @@ where $`v`$ is in each of $`m.\mathsf{this}`$ (`memberOf_at`,
 step later, on the object $`v`$'s prototype holds (`Step.readProto`,
 `member_read_safe`), as the member's meaning says. The bound descriptor, which has
 no fields and allocates nothing, forwards any call to it with receiver $`v`$
-(`callsT_bound`, `restsT_bound`). The source form `o.m.bind(o)`, `o` one
-immutable name and `m` a method member of its type, is this term: `bind`
-of what `o.m` holds to `o` itself, a bound function whatever receiver it is
-later called with (`closureExpr`); the iterator protocol reads `next` so.
+(`callsT_bound`, `restsT_bound`). The protocol lowering writes this term as
+`o.m.bind(o)` in the fragment, with `o` one immutable name and `m` a method
+member of its type (`closureExpr`). The iterator protocol uses it for
+`next` and a required `return`. Source-written `.bind` is admitted by the
+parser only on a known local function; this fragment form describes the
+protocol's generated binding.
 
 A host of a union type binds the member of whichever host it is. With
 $`l_1,\ldots,l_n`$ ($`n\ge2`$) the labels of $`O`$ (`members`), each one object

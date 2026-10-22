@@ -3037,6 +3037,10 @@ C_i=\mathsf{const}\ m=i.\mathit{return};\ \mathsf{if}\ (\mathsf{typeof}\ m\ne\te
 \end{array}
 ```
 
+The protocol lowering writes `.bind` in the fragment to save a method with
+its receiver. Source-written `.bind` is admitted by the parser only on a
+known local function.
+
 GetIterator reads `next` once, and each step calls it on the iterator: the
 bound function is that call ([`bindMember`](PROGRAM-TYPING.md#judgments-and-constructor-views)). A
 `return` the iterator's type declares a required method is read bound the
