@@ -339,6 +339,10 @@ function computedAt(file: SourceFile, span: Span): TypeNode | null {
 export type NamespaceMemberSpans = { local: string; imported: string; specifier: string;
   uses: { span: Span; name: Span; value: boolean; callee: boolean }[] };
 
+/** What the gate reports for a node of the client: the answer TypeScript's
+ * reading gives, or the reason it gives none. `ok` decides the arm. */
+export type Answered<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly refused: string };
+
 /** The type declared in a block a reference names (`blockTypes`): its
  * identity, its own parameters' count and how many have no default, and the
  * spellings of the enclosing type parameters it closes over, outermost
@@ -552,15 +556,15 @@ export function collectDeclarations(file: string, options: {
    * annotation: each is reported to `staticType` with the type TypeScript
    * gives it, as a term (`contextualTerm`), or why none. */
   staticTypes?: readonly Span[];
-  staticType?: (span: Span, result: TypeTerm | { refused: string }) => void;
+  staticType?: (span: Span, result: Answered<TypeTerm>) => void;
   contextualParams?: readonly Span[];
-  contextualParam?: (span: Span, result: TypeTerm | { refused: string }) => void;
+  contextualParam?: (span: Span, result: Answered<TypeTerm>) => void;
   /** The client's calls `Object.assign(arrow, literal)` written without type
    * arguments: each is reported to `assignTypes` with the two TypeScript
    * infers, the arrow's function type and the literal's record, as the
    * callable form's annotations, or the reason no term states them. */
   assignCalls?: readonly Span[];
-  assignTypes?: (span: Span, result: { functionType: TypeTerm; bagType: TypeTerm } | { refused: string }) => void;
+  assignTypes?: (span: Span, result: Answered<{ functionType: TypeTerm; bagType: TypeTerm }>) => void;
   /** The client's top-level enum declarations: each must be one TypeScript
    * accepts, and each member, by its span, is reported to `enumMember` with
    * the value TypeScript computes for it, which is the value its emit writes
@@ -601,7 +605,7 @@ export function collectDeclarations(file: string, options: {
   * (`computed-types.mts`) and reported to `computedType` with its term, or
   * with the reason it has none. */
   computed?: readonly Span[];
-  computedType?: (span: Span, result: TypeTerm | { refused: string }) => void;
+  computedType?: (span: Span, result: Answered<TypeTerm>) => void;
   /** The client's type references spelling a name some type declared in
    * one of its blocks has: each TypeScript binds to such a declaration is
    * reported to `blockType` with that declaration, which joins the graph,
@@ -610,11 +614,11 @@ export function collectDeclarations(file: string, options: {
    * reason it is refused (SOURCE-CONTRACTS.md, "Block-scoped type
    * declarations"). */
   blockTypes?: readonly Span[];
-  blockType?: (span: Span, result: BlockType | { refused: string }) => void;
+  blockType?: (span: Span, result: Answered<BlockType>) => void;
   /** Told, for each client reference omitting arguments of a declaration,
    * the omitted arguments: each parameter's default at the arguments before
    * it, or the reason it has none. */
-  completion?: (span: Span, result: TypeTerm[] | { refused: string }) => void;
+  completion?: (span: Span, result: Answered<TypeTerm[]>) => void;
   /** Type nodes of the client's annotations that may be a mapped type's keys:
    * each is reported to `keyType` with the union of literals and primitives
    * TypeScript computes for it, or null. */
@@ -629,7 +633,7 @@ export function collectDeclarations(file: string, options: {
    * joins the symbols and is reported to `symbolName` with its index, any
    * other with the reason it names none. */
   symbolNames?: readonly Span[];
-  symbolName?: (span: Span, result: number | { literal: string; value: string | number } | { refused: string }) => void;
+  symbolName?: (span: Span, result: Answered<number | { literal: string; value: string | number }>) => void;
   /** Told each TypeScript error the gate reads while deciding whether a
    * declaration is clean, whether or not it refuses the source: every error
    * TypeScript reports in each file it examines, each once. */
@@ -3092,9 +3096,9 @@ export function collectDeclarations(file: string, options: {
       const type = symbol ? checker.getTypeOfSymbol(symbol) : undefined;
       try {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this static field no type");
-        options.staticType?.(span, contextualTerm(type, span));
+        options.staticType?.(span, { ok: true, value: contextualTerm(type, span) });
       } catch (error) {
-        options.staticType?.(span, { refused: refusalAt(span, error) });
+        options.staticType?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     for (const span of options.contextualParams ?? []) {
@@ -3103,9 +3107,9 @@ export function collectDeclarations(file: string, options: {
       const type = checker.getTypeAtLocation(parameter.name);
       try {
         if (!type || type.isErrorType()) throw Error("TypeScript gives this unannotated closure parameter no type");
-        options.contextualParam?.(span, contextualTerm(type, span));
+        options.contextualParam?.(span, { ok: true, value: contextualTerm(type, span) });
       } catch (error) {
-        options.contextualParam?.(span, { refused: refusalAt(span, error) });
+        options.contextualParam?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     // `Object.assign(arrow, literal)` without type arguments: the two
@@ -3138,11 +3142,11 @@ export function collectDeclarations(file: string, options: {
         if (!bagType || bagType.k !== "object")
           throw Error(`TypeScript infers Object.assign's source as ${checker.typeToString(source)}, not an object ` +
             "literal's record of literals and primitives");
-        options.assignTypes?.(span, { bagType, functionType: { k: "function", effect: ordinaryEffect, receiver: null,
-          params, rest: null, result: contextualTerm(returned, span), span } });
+        options.assignTypes?.(span, { ok: true, value: { bagType, functionType: { k: "function", effect: ordinaryEffect,
+          receiver: null, params, rest: null, result: contextualTerm(returned, span), span } } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        options.assignTypes?.(span, { refused: "the type arguments TypeScript infers for this Object.assign: " +
+        options.assignTypes?.(span, { ok: false, refused: "the type arguments TypeScript infers for this Object.assign: " +
           refusalAt(span, error) });
       }
     }
@@ -3243,17 +3247,17 @@ export function collectDeclarations(file: string, options: {
     for (const span of options.symbolNames ?? []) {
       const node = expressionAt(client, span);
       if (!node || !(ts.isIdentifier(node) || ts.isPropertyAccessExpression(node))) {
-        options.symbolName?.(span, { refused: "a computed key names a symbol constant" });
+        options.symbolName?.(span, { ok: false, refused: "a computed key names a symbol constant" });
         continue;
       }
       try {
         const literal = literalKeyOf(node);
         const type = checker.getTypeAtLocation(node);
         const value = type?.isStringLiteralType() || type?.isNumberLiteralType() ? type.value : null;
-        options.symbolName?.(span, literal !== null && value !== null ? { literal, value } : symbolOf(node));
+        options.symbolName?.(span, { ok: true, value: literal !== null && value !== null ? { literal, value } : symbolOf(node) });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        options.symbolName?.(span, { refused: refusalAt(span, error) });
+        options.symbolName?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     // The client's computed types: each evaluated where it is written, with
@@ -3267,10 +3271,10 @@ export function collectDeclarations(file: string, options: {
       const what = `${idOf(client)}#${node.getText(client)}`;
       const scope = valueScope(node, what, enclosingBinders(node));
       try {
-        options.computedType?.(span, computedType(computedContext, node, span, part => typeTerm(scope, part)));
+        options.computedType?.(span, { ok: true, value: computedType(computedContext, node, span, part => typeTerm(scope, part)) });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        options.computedType?.(span, { refused: refusalAt(span, error) });
+        options.computedType?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     // The client's references to types declared in its blocks, each the
@@ -3296,11 +3300,11 @@ export function collectDeclarations(file: string, options: {
         for (const parameter of captured) capturedAt(node, what)(parameter);
         const own = parametersOf(target).filter(p => !p.captured);
         if (!computed) blockStarts.push({ node: target, span });
-        options.blockType?.(span, { computed, declaration: identityOf(target), captured: captured.map(p => p.name.text),
-          required: own.filter(p => !p.default).length, total: own.length });
+        options.blockType?.(span, { ok: true, value: { computed, declaration: identityOf(target),
+          captured: captured.map(p => p.name.text), required: own.filter(p => !p.default).length, total: own.length } });
       } catch (error) {
         if (error instanceof DeclarationError) throw error;
-        options.blockType?.(span, { refused: refusalAt(span, error) });
+        options.blockType?.(span, { ok: false, refused: refusalAt(span, error) });
       }
     }
     // The client's references that omit arguments of a declaration: the
@@ -3321,11 +3325,11 @@ export function collectDeclarations(file: string, options: {
               const closed = capturedOf(target).length;
               const completed = completeArguments(target, written.map(arg => typeTerm(scope, arg)), node, name.text,
                 capturedAt(node, name.text));
-              options.completion?.(span, completed.slice(closed + written.length));
+              options.completion?.(span, { ok: true, value: completed.slice(closed + written.length) });
             }
           } catch (error) {
             if (error instanceof DeclarationError) throw error;
-            options.completion?.(span, { refused: refusalAt(span, error) });
+            options.completion?.(span, { ok: false, refused: refusalAt(span, error) });
           }
         }
       }

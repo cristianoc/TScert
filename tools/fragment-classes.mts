@@ -526,9 +526,9 @@ export function classBody(this: Gate, node: ClassDeclaration, name: ts.Identifie
         // initializer.
         if (ts.isIdentifier(member.name)) {
           const inferred = annot ? null : gate.staticTypes.get(gate.span(member.name).join(":"));
-          if (!annot && (!inferred || "refused" in inferred))
-            gate.fail(member, `a static field without an annotation, whose type TypeScript gives no term of the fragment states: ${inferred && "refused" in inferred ? inferred.refused : "no type"}`);
-          const type = annot ?? (inferred && !("refused" in inferred) ? inferred : gate.fail(member, "a static field's type"));
+          if (!annot && !inferred?.ok)
+            gate.fail(member, `a static field without an annotation, whose type TypeScript gives no term of the fragment states: ${inferred && !inferred.ok ? inferred.refused : "no type"}`);
+          const type = annot ?? (inferred?.ok ? inferred.value : gate.fail(member, "a static field's type"));
           staticFields.push({ name: member.name.text, binding, pos: gate.span(member.name), type });
         }
         continue;

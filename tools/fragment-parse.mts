@@ -33,8 +33,8 @@ import { messageOf, passToolFailure, toolFailureOf, toolFailureText, type ToolFa
 import { childOf, isStatic, nameOf } from "./syntax.mts";
 import { enclosingBinders } from "./computed-types.mts";
 // declaration-graph.mts collects the declarations the source reaches: the declaration document the Fragment carries for Lean to lower.
-import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, libraryTerm, tsconfigOf, type BlockType,
-  type LibraryType, type SeenDiagnostic }
+import { collectDeclarations, DeclarationError, expressionAt, libraryArguments, libraryTerm, tsconfigOf, type Answered,
+  type BlockType, type LibraryType, type SeenDiagnostic }
   from "./declaration-graph.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
@@ -185,19 +185,19 @@ export class Gate {
   /** The computed types of the file's annotations (`computedForm`), by span:
    * the term TypeScript's evaluation denotes, or the reason it has none
    * (`computed-types.mts`). */
-  readonly computedTypes: Map<string, TypeTerm | { refused: string }> = new Map();
+  readonly computedTypes: Map<string, Answered<TypeTerm>> = new Map();
   /** The omitted arguments of the file's references to declarations, by
    * span: each the parameter's default at the arguments before it, or the
    * reason it has none. */
-  readonly completions: Map<string, TypeTerm[] | { refused: string }> = new Map();
+  readonly completions: Map<string, Answered<TypeTerm[]>> = new Map();
   /** The file's type references TypeScript binds to a type declared in one
    * of its blocks, by span: that declaration, or the reason it is refused
    * (`blockTypes` of the declaration graph). */
-  readonly blockTypes: Map<string, BlockType | { refused: string }> = new Map();
+  readonly blockTypes: Map<string, Answered<BlockType>> = new Map();
   /** The computed keys of the file's annotations' type literals, by span of
    * the key expression: the `unique symbol` each names, as the declaration
    * document lists it, or the reason it names none. */
-  readonly symbolNames: Map<string, number | { literal: string; value: string | number } | { refused: string }> = new Map();
+  readonly symbolNames: Map<string, Answered<number | { literal: string; value: string | number }>> = new Map();
   /** Mapped types' keys and library mapped types' arguments in the file's
    * annotations, by span: the union of literals and primitives TypeScript
    * computes for each, or null. */
@@ -269,14 +269,14 @@ export class Gate {
   readonly typeIdentities: Set<string> = new Set();
   /** Closure parameters written without a type, by the span of their name:
    * the type TypeScript gives each from its context, or why none states it. */
-  readonly contextualParams: Map<string, TypeTerm | { refused: string }> = new Map();
+  readonly contextualParams: Map<string, Answered<TypeTerm>> = new Map();
   /** The type TypeScript gives each static field written without an
    * annotation, by its name's span, or why none. */
-  readonly staticTypes: Map<string, TypeTerm | { refused: string }> = new Map();
+  readonly staticTypes: Map<string, Answered<TypeTerm>> = new Map();
   /** The callable form's annotations TypeScript infers for an
    * `Object.assign(arrow, literal)` written without type arguments, by the
    * call's span, or why none. */
-  readonly assignTypes: Map<string, { functionType: TypeTerm; bagType: TypeTerm } | { refused: string }> = new Map();
+  readonly assignTypes: Map<string, Answered<{ functionType: TypeTerm; bagType: TypeTerm }>> = new Map();
   /** Local bindings that shadow a binding of an enclosing scope, and every
    * reference TypeScript resolves to one, by the span of the identifier: the
    * name the fragment gives the binding instead (`shadowName`). */
@@ -568,7 +568,8 @@ export class Gate {
    * would let the object pass for a host `Set` or `Map`, whose iteration is
    * trusted to be the host's. */
   writtenSymbol(name: ts.ComputedPropertyName, at: Node): number | null {
-    const symbol = this.symbolNames.get(this.span(name.expression).join(":"));
+    const found = this.symbolNames.get(this.span(name.expression).join(":"));
+    const symbol = found?.ok ? found.value : null;
     if (typeof symbol !== "number") return null;
     if (this.hostSymbols.has(symbol))
       this.fail(at, "a well-known symbol key other than `Symbol.iterator` and `Symbol.hasInstance` is outside the fragment: it changes how the host treats the object, which the model does not state, and `Symbol.toStringTag` would let it pass for a host collection whose iteration is trusted");
@@ -612,7 +613,7 @@ export class Gate {
   readonly scope: TermScope;
   /** The type declared in a block TypeScript binds a reference to, if any:
    * it shadows every other meaning of its spelling. */
-  blockTypeAt(node: Node): BlockType | { refused: string } | undefined {
+  blockTypeAt(node: Node): Answered<BlockType> | undefined {
     return this.blockTypes.get(this.span(node).join(":"));
   }
   termScope(): TermScope {
@@ -676,13 +677,13 @@ export class Gate {
         const [start, end] = this.span(name);
         const result = this.symbolNames.get(`${start}:${end}`);
         if (result === undefined) return this.fail(name, "a computed key names a symbol constant");
-        if (typeof result === "number") return result;
-        if ("literal" in result) return this.fail(name, "a computed key naming a literal is no symbol");
-        return this.fail(name, result.refused);
+        if (!result.ok) return this.fail(name, result.refused);
+        if (typeof result.value === "number") return result.value;
+        return this.fail(name, "a computed key naming a literal is no symbol");
       },
       literalKey: (name) => {
         const result = this.symbolNames.get(this.span(name).join(":"));
-        return result !== undefined && typeof result !== "number" && "literal" in result ? result.literal : null;
+        return result?.ok && typeof result.value !== "number" ? result.value.literal : null;
       },
       keys: (node) => this.keyTypes.get(this.span(node).join(":")) ?? null,
       modifiers: (node) => this.mappedMembers.get(this.span(node).join(":")) ?? null,
@@ -696,21 +697,22 @@ export class Gate {
       computed: (node, span) => {
         const result = this.computedTypes.get(`${span[0]}:${span[1]}`);
         if (!result) return this.fail(node, `type outside the fragment (${ts.SyntaxKind[node.kind]})`);
-        if ("refused" in result) return this.fail(node, result.refused);
-        return result;
+        if (!result.ok) return this.fail(node, result.refused);
+        return result.value;
       },
       named: (node, span, read) => {
         const name = ts.isIdentifier(node.typeName) ? node.typeName.text
           : this.namespaceMember(node.typeName) ?? this.fail(node, "type reference outside the fragment");
-        const block = this.blockTypeAt(node);
-        if (block && "refused" in block) return this.fail(node, block.refused);
+        const answered = this.blockTypeAt(node);
+        if (answered && !answered.ok) return this.fail(node, answered.refused);
+        const block = answered?.value;
         // An application of an alias TypeScript computes from its parameters
         // is a computed type, evaluated where it is written: the graph
         // answers a reference only where TypeScript binds it to one.
         const computed = this.computedTypes.get(`${span[0]}:${span[1]}`);
         if (computed) {
-          if ("refused" in computed) return this.fail(node, computed.refused);
-          return computed;
+          if (!computed.ok) return this.fail(node, computed.refused);
+          return computed.value;
         }
         // A type declared in a block, at the binders it closes over, which
         // TypeScript resolves to themselves here (`blockTypes`).
@@ -764,12 +766,13 @@ export class Gate {
         : `${declared.required} to ${declared.total}`;
       this.fail(node, `type '${name}' needs ${count} type argument(s)`);
     }
-    const omitted = args.length < declared.total ? this.completions.get(`${span[0]}:${span[1]}`) : [];
+    const omitted: Answered<TypeTerm[]> | undefined = args.length < declared.total
+      ? this.completions.get(`${span[0]}:${span[1]}`) : { ok: true, value: [] };
     if (!omitted) return this.fail(node, `type '${name}' has no completion of its omitted arguments`);
-    if ("refused" in omitted) return this.fail(node, omitted.refused);
+    if (!omitted.ok) return this.fail(node, omitted.refused);
     return { k: "reference", reference: { name, span,
       arguments: args.map(arg => this.span(arg)), target: declared.declaration },
-      args: [...closed, ...args.map(read), ...omitted], span };
+      args: [...closed, ...args.map(read), ...omitted.value], span };
   }
 
   typeOf(node: TypeNode | undefined, at: Node | null = null): TypeTerm {
@@ -793,9 +796,10 @@ export class Gate {
    * declaration graph, and its type parameters are in scope. */
   closureParamType(p: ts.ParameterDeclaration): TypeTerm {
     if (p.type || p.dotDotDotToken) return p.questionToken ? this.optionalTypeOf(p.type, p) : this.typeOf(p.type, p);
-    const found = this.contextualParams.get(this.span(p.name).join(":"));
-    if (!found) return this.typeOf(undefined, p);
-    if ("refused" in found) return this.fail(p, found.refused);
+    const answered = this.contextualParams.get(this.span(p.name).join(":"));
+    if (!answered) return this.typeOf(undefined, p);
+    if (!answered.ok) return this.fail(p, answered.refused);
+    const found = answered.value;
     visitType(found, (t, bound) => {
       if (t.k === "reference") {
         const target = t.reference.target;

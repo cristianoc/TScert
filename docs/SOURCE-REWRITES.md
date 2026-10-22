@@ -65,25 +65,46 @@ as `unknown` the same way.
 - **Commits:** 2288e06, c76d588 (`tools/computed-types.mts`,
   `pipeline/verify-source.mts`).
 
-## Rewrites required, not made
-
 ### A key tested with `in` on an open record
 
-`if (inferred && "refused" in inferred) gate.fail(node, inferred.refused)`
-(`tools/fragment-expressions.mts`, `tools/fragment-classes.mts`), where
-`inferred` is a result or `{ refused: string }` (in `fragment-expressions.mts`
-`{ functionType; bagType } | { refused: string }`, in `fragment-classes.mts` a
-type term or `{ refused: string }`). After the test, the result arm stays
-possible: an open record may own `refused` at any
-type, so reading `inferred.refused` as a string is refused on principle
-(`invalid-in-open`, `invalid-in-open-closure`). It blocks the
-`fragment-expressions.mts` slices (`expr`, `binary` and the functions
-calling `expr`), measured 2026-10-22.
+The gate's answers for a node (`staticType`, `contextualParam`,
+`assignTypes`, `computedType`, `blockType`, `completion`, `symbolName` of
+`tools/declaration-graph.mts`) were each a result or `{ refused: string }`,
+read with `if (inferred && "refused" in inferred) gate.fail(node,
+inferred.refused)`. After the test the result arm stays possible: an open
+record may own `refused` at any type, so reading `inferred.refused` as a
+string is refused on principle (`invalid-in-open`,
+`invalid-in-open-closure`).
 
-- **Rewrite to make:** a discriminant field on each arm (`kind: "refused"`
-  and `kind: "inferred"`), tested instead of the key, so the test decides the
-  arm whatever other fields a value carries.
+- **Rewrite:** every answer is one shape, `Answered<T>`, `{ ok: true; value:
+  T } | { ok: false; refused: string }`, produced and read by its `ok` tag.
 - **Pattern:** an `in` test that stands for a tag becomes a tag.
+- **Commit:** this entry's commit (`tools/declaration-graph.mts`,
+  `fragment-parse.mts`, `fragment-expressions.mts`, `fragment-classes.mts`).
+
+## Rewrites required, not made
+
+### An index read whose range a check elsewhere establishes
+
+`Object.assign`'s callable form reads `const initial = node.arguments[1]`
+and tests `ts.isObjectLiteralExpression(initial)`
+(`tools/fragment-expressions.mts`); `callableAssign` (`fragment-support.mts`)
+reads `node.arguments[0]` and `[1]` after `node.arguments.length === 2`.
+TypeScript types an index read at the element type; at run time a read past
+the end gives `undefined`, so TScert reads it at `Expression | undefined`.
+A compiler-API guard's promise holds on its domain, the family's nodes
+([the domain obligation](HOST-FAMILIES.md#calls)), so the guard narrows
+nothing for an argument that may be `undefined`, and the read
+`initial.properties` after it is refused ("missing field properties"). The
+length test that makes the read in range is in another function, an
+implicit correlation. It blocks `fragment-expressions.mts#expr` and
+`#binary` ([measurement](../WORK.md#census-answered-tag)).
+
+- **Rewrite to make:** the check returns what it establishes:
+  `callableAssign` returns the arrow and the object literal it tested, or
+  null, and its callers read those.
+- **Pattern:** a value whose presence another function checks becomes that
+  function's result.
 
 ## Changes for a tool's defect
 
