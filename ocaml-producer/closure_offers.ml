@@ -26,7 +26,9 @@ open S
     | {statement=If (_,a,b);_} :: _ -> tails_in a @ tails_in b
     | _ -> []
 
-  let named_closure n written (init:expr) = match written,init.node with
+  let named_closure n written (init:expr) =
+    let written = Option.map (fun t -> try declared_head declarations [] t with Json.Error _ -> t) written in
+    match written,init.node with
     | (None | Some (Atoms [Shape {calls=[_];fields=[];indexes=[];elements=None}])),Lambda (_,[],ps,_,false,_,_,_) ->
       register_closure n init.pos (List.map snd ps)
     | None,Alloc fs -> register_object n fs

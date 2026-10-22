@@ -17,6 +17,18 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-find-recursive-constant-mutation", "wrong([1, 2], { value: 0 })"],
     ["invalid-find-recursive-constant-field", "wrong([1, 2], { value: 0 })"],
     ["invalid-find-recursive-cell", "wrong([1, 2], { value: 0 })"],
+    // A recursive constant's self read or a name its body rebinds, called
+    // with a value outside the closure's parameter or with `map`'s index as
+    // a further parameter; a self read passed to `find` while the closure
+    // shrinks the array, handed `undefined` on a later visit.
+    ["invalid-recursive-constant-self-wider",
+      `wrong({ k: "a", parts: [] }, { k: undefined, parts: [{ k: "b", parts: [] }] })`],
+    ["invalid-recursive-constant-escape-wider", `wrong({ k: "a", parts: [] }, { k: undefined, parts: [] })`],
+    ["invalid-recursive-constant-callback-mutation", `wrong([{ k: "a" }, { k: "b" }, { k: "c" }])[3]`],
+    ["invalid-recursive-cell-callback", `wrong({ k: "a", parts: [{ k: "b", parts: [] }] })`],
+    ["invalid-recursive-constant-exceptional", `exceptional({ v: "a" })`],
+    ["invalid-recursive-constant-shadowed",
+      `wrong({ k: "a", parts: [{ k: "b", parts: [] }] }, [(u, at) => at.name])`],
     ["invalid-field-call-effect-cell", "wrong([1, 2], { value: 0 })"],
     ["invalid-readonly-field-call-effect",
       "(() => { const xs = [1, 2], seen = []; first({ check: (n) => { seen.push(n); xs.pop(); return false; } }, xs); return seen.length === 2 ? seen[1] : 0; })()"],
