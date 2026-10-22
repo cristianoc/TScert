@@ -2627,6 +2627,7 @@ export const cases: Case[] = [
   { ...negative("invalid-overload-value-import", "an overloaded call's result is its matching overload's, not the implementation's"),
     project: "pipeline/imports-project" },
   positive("ambient-overloads", "an ambient function with overloads, at each overload a call matches"),
+  positive("overload-optional-dictionary", "a writable dictionary with a narrower optional field or optional readonly view selects the later overload preserving that contract; the first overload permits incompatible writes"),
   negative("invalid-ambient-overloads", "an overloaded call's result is its matching overload's"),
   negative("invalid-module-init-order", "initialization cannot call a function that reads a constant not yet initialized",
     /reads 'late' before its declaration runs/),

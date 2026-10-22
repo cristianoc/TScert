@@ -1591,7 +1591,10 @@ the parameter met by the element's member of its key, an invariant field by
 an equal invariant field, a view by a required member within it, an optional
 member by a slot within it, a writable one by an equal writable slot, a
 method by a method within it, with contravariant receiver requirements
-and every target stable key stable in the source. An interface extending
+and every target stable key stable in the source. Each writable target index
+also preserves every overlapping source index contract and optional field
+or optional readonly view; the heuristic conservatively treats every string
+key as potentially numeric for this check. An interface extending
 another is within its base where its overriding members are within the
 base's (`closure-offer-extends`), and a compiler-API `Expression`, whose
 residual arm holds a brand beside the members of `Node`'s, is within `Node`

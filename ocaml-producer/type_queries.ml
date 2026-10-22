@@ -38,6 +38,7 @@ let rec plausible_subtype_with excludes actual expected =
         (match a.elements with Some s -> not s.readonly | None -> false)
       | Shape a,Shape b when plausible_fields excludes a.fields b.fields
                              && (a.indexes=b.indexes || b.indexes=[])
+                             && plausible_index_writes excludes a b.indexes
                              && plausible_elements excludes a.elements b.elements ->
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           Semantic.effect_covers p.call_effect q.call_effect &&
@@ -69,7 +70,9 @@ let rec plausible_subtype_with excludes actual expected =
    invariant field by an equal invariant field; a view by a required member
    within it; an optional member by a slot within it, a writable one by an
    equal writable slot; a method by a method within it, with contravariant receiver requirements;
-   every stable target key must be stable in the source. *)
+   every stable target key must be stable in the source. Writable target
+   indexes additionally preserve source index and optional-field contracts
+   through plausible_index_writes, including optional readonly views. *)
 and plausible_fields excludes actual expected =
   actual=expected || List.for_all (fun (q:Semantic.field) ->
     List.exists (fun (p:Semantic.field) -> p=q || (p.name=q.name && p.host=q.host &&
@@ -81,6 +84,24 @@ and plausible_fields excludes actual expected =
       | false,None -> not p.optional && plausible_subtype_with excludes p.read q.read
       | true,Some _ -> p.write<>None && p.read=q.read && p.write=q.write
       | true,None -> plausible_subtype_with excludes p.read q.read)) actual) expected
+and plausible_index_writes excludes actual expected =
+  let overlaps a b = match a,b with
+    | Symbols,Symbols -> true
+    | Symbols,_ | _,Symbols -> false
+    | _ -> true in
+  (* Conservatively let a numeric index reach every string key: a failure
+     to recognize a numeric spelling must not drop its field obligation. *)
+  let may keys name = match keys,name with
+    | (Strings | Numeric),Name _ | Symbols,Key _ -> true
+    | _ -> false in
+  List.for_all (fun (q:Semantic.index_signature) -> match q.writable with
+    | None -> true
+    | Some write ->
+      List.for_all (fun (p:Semantic.index_signature) ->
+        not (overlaps q.keys p.keys) || plausible_subtype_with excludes write p.value) actual.indexes &&
+      List.for_all (fun (p:Semantic.field) ->
+        not p.optional || not (may q.keys p.name) ||
+        plausible_subtype_with excludes write p.read) actual.fields) expected
 let plausible_subtype = plausible_subtype_with excludes_undefined
 let literal_type = function
   | LNull -> Atoms [Nul] | LUndefined -> Atoms [Undef]
