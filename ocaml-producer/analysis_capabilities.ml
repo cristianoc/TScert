@@ -83,6 +83,9 @@ end
 
 module type Expression_publication = sig
   val publish_expression : Json.t -> ty -> (string * type_argument) list option -> unit
+  (* The claim already published at a position at this point, stated again
+     at another type: the one claim there. *)
+  val restate_expression : Json.t -> ty -> unit
 end
 module type Instance_publication = sig
   val publish_instance : Json.t -> ty -> unit

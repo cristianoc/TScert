@@ -355,21 +355,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
         | _ -> false in
       let callee = match callee with
         | Atoms (_::_::_ as arms) when member_form ->
-          let chosen = List.map (function
-            | Shape {calls;_} -> List.find_opt fits calls
-            | _ -> None) arms in
-          (match chosen with
-           | Some (first:Semantic.signature) :: rest
-             when List.for_all (function
-               | Some (s:Semantic.signature) -> s.params = first.params && s.variadic = first.variadic
-                   && s.call_effect = first.call_effect
-               | None -> false) rest ->
-             let result = List.fold_left (fun r -> function
-               | Some (s:Semantic.signature) -> union r s.result | None -> r) (Atoms []) chosen in
-             (match first.variadic with
-              | Some element -> variadic_arrow ~call_effect:first.call_effect first.params element result
-              | None -> arrow ~call_effect:first.call_effect first.params result)
-           | _ -> Proposal_diagnostics.unsupported
+          (match Semantic.bound_union fits arms with
+           | Some t -> t
+           | None -> Proposal_diagnostics.unsupported
                "a method bound to a union of hosts needs each host's member at one signature: the same parameters and effect")
         | t -> t in
       (match callee with Atoms [Shape {calls=[signature];_}]

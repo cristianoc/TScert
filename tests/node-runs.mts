@@ -89,9 +89,20 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-read-narrows-path-alias-write", "wrong([{ initializer: 'a' }])"],
     ["invalid-read-narrows-path-call", "(() => { const l = [{ initializer: 'a' }]; return wrong(l, () => { l[0].initializer = undefined; }); })()"],
     ["invalid-read-narrows-path-argument-call", "(() => { const l = [{ initializer: 'a' }]; return wrong(l, () => { l[0].initializer = undefined; return 1; }); })()"],
+    // A method called on a union of hosts: an actual clearing the tested
+    // field, a member called on another receiver, and a template literal
+    // converting an object by its own `toString`, which clears the field.
+    ["invalid-union-method-head-refinement", `bad({ tag: "a", m() {} }, { v: "s" })`],
+    ["invalid-union-method-borrowed", `borrowed({ tag: "a", n: 1, k() { return this.n; } }, { tag: "b", k() { return 0; } })`],
+    ["invalid-template-own-to-string", `(() => { const box = { v: "s" }; return bad({ v: 1, toString() { box.v = undefined; return ""; } }, box); })()`],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // A method call on a union of hosts runs the member of the object read
+  // before its actual, which replaces the receiver's cell or binding.
+  assert.equal(runExample("union-method-head",
+    `(() => { const a = { tag: "a", name(n) { return "a" + n; } }, b = { tag: "b", name(n) { return "b" + n; } }; return [first({ o: a }, b), local(a, b)].join(); })()`),
+    "a1,a2", "union-method-head: the call's receiver is the object read before the actual");
   // `find` visits the hole a `length` write leaves, handing the callback
   // `undefined`, which the recursive constant returns as its number.
   assert.equal(runExample("invalid-find-recursive-constant-sparse", "wrong()"), 1,

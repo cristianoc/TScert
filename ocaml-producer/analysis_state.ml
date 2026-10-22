@@ -231,6 +231,9 @@ module Access (S : sig val state : t end) = struct
         let result=action () in result,output ())
   let publish_expression pos type_ instantiation =
     (!local).expressions <- {point=current_point ();pos;type_;instantiation} :: (!local).expressions
+  let restate_expression pos type_ =
+    (!local).expressions <- List.map (fun (x:expression) ->
+      if x.point=current_point () && x.pos=pos then {x with type_} else x) (!local).expressions
   let publish_entry start bindings =
     (!local).entries <- {point=current_point ();start;bindings} :: (!local).entries
   let publish_instance source type_ =

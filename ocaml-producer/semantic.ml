@@ -229,6 +229,28 @@ let rec widen = function
       | a -> [a]) xs)
   | Rigid _ as t -> t | Union ts -> List.fold_left union (Atoms []) (List.map widen ts)
   | Meet (t,ts) -> Meet (widen t,ts)
+(* A member bound to its host where the host is a union of hosts, each arm
+   given by its member's type: Lean splits the host's slot and binds each
+   arm's member to it (`unionVar`, then `bindMember`), so the bound function
+   is one signature, each arm's chosen by [fits], all at the same parameters
+   and effect, its result their union, at any receiver. None where an arm has
+   no such signature or two arms' differ. *)
+let bound_union fits arms =
+  let chosen = List.map (function
+    | Shape {calls;_} -> List.find_opt fits calls
+    | _ -> None) arms in
+  match chosen with
+  | Some (first:signature) :: rest
+    when List.for_all (function
+      | Some (s:signature) -> s.params = first.params && s.variadic = first.variadic
+          && s.call_effect = first.call_effect
+      | None -> false) rest ->
+    let result = List.fold_left (fun r -> function
+      | Some (s:signature) -> union r s.result | None -> r) (Atoms []) chosen in
+    Some (match first.variadic with
+      | Some element -> variadic_arrow ~call_effect:first.call_effect first.params element result
+      | None -> arrow ~call_effect:first.call_effect first.params result)
+  | _ -> None
 let array elements = Atoms [Shape {fields=[];indexes=[];calls=[];elements=Some elements}]
 (* A call may omit a trailing position exactly when its contract admits
    `undefined`: that is the value bound there. Optionality is a property of the

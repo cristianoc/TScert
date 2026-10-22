@@ -765,8 +765,9 @@ meets its contract, `T | undefined`.
 ## Node methods and callbacks
 
 `getText`, `getStart`, `getEnd`, `getFullStart`, `getWidth`,
-`getFullText`, `getSourceFile`, `getLineAndCharacterOfPosition` and
-`forEachChild` are read at their declarations as
+`getFullWidth`, `getLeadingTriviaWidth`, `getFullText`, `getSourceFile`,
+`getLineAndCharacterOfPosition` and `forEachChild` are read at their
+declarations as
 [host-relative methods](SOURCE-MODEL.md#method-members-are-host-relative),
 under T3. None makes a server request, so none runs the API's retained
 callbacks.

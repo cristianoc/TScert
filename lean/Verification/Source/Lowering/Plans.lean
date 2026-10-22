@@ -342,14 +342,6 @@ omits, each proving `undefined` at that position's contract. -/
 @[nospecialize] def boundMemberTerm (fld : PropKey) (i : Nat) : Tm :=
   .letE (.readAt fld (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])
 
-/-- A method call's head: a host-relative member is read from the object in a
-slot and bound to that same object (`bindMember`), before any actual runs; any
-other member is read as a field. -/
-@[nospecialize] def memberHead (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) (obj : Tm) : Tm :=
-  match obj, (ProgramTyping.memberOf G O fld).isSome with
-  | .var i, true => boundMemberTerm fld i
-  | _, _ => .readAt fld obj
-
 /-- The labels of a union of hosts `O` each of whose one object clause holds
 `fld` as a member: `o.fld.bind(o)` at `O` splits the host's slot (`unionVar`)
 and binds each label's member to it (`bindMember`). Empty unless `O` has at
@@ -357,6 +349,16 @@ least two labels, each such a host. -/
 @[nospecialize] def unionMemberHosts (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) : List ι :=
   let ls := ProgramTyping.members G O
   if ls.length > 1 && ls.all (fun l => (ProgramTyping.memberOf G [l] fld).isSome) then ls else []
+
+/-- A method call's head: a host-relative member is read from the object in a
+slot and bound to that same object (`bindMember`), before any actual runs; any
+other member is read as a field. A union of hosts each holding the member
+(`unionMemberHosts`) is such an object: the search splits the slot
+(`unionVar`) and binds each label's member to it. -/
+@[nospecialize] def memberHead (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) (obj : Tm) : Tm :=
+  match obj, (ProgramTyping.memberOf G O fld).isSome || !(unionMemberHosts G O fld).isEmpty with
+  | .var i, true => boundMemberTerm fld i
+  | _, _ => .readAt fld obj
 
 /-- The row a field read gives before any claim replaces it: the object's own
 field or view, or, for a key an own-key bound does not admit, its prototype's, as

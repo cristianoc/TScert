@@ -38,7 +38,7 @@ design, not its progress.
 | [Iteration left open](#iteration-left-open) | open | the iteration forms listed there are lowered |
 | [Enum-member case labels](#enum-member-case-labels) | open | `switch-enum-case-narrowing` verifies |
 | [Family identity controls](docs/HOST-FAMILIES.md#identity-through-program-code) | closed: each control verifies or is refused as stated, the negatives with a counterexample run under Node, and forged claims of `{ node }`, of a callback's result, of a re-exported guard's `false` edge and of a guard's wrapper at a node type refused in search and in checking (2026-10-20) | — |
-| [A generic method's instance at a union of arms](#generic-instance-union-arms) | open: an investigation, cause unknown | `compiler-api-node-callback-inline` verifies |
+| [A method call's head on a union of hosts](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: a method call whose actuals run code binds the member of each host of a union to it before the actuals (`memberHead`, `unionVar`, `bindMember`), the producer claiming the head at one signature; `compiler-api-union-method-head`, `union-method-head` (run under Node) and `compiler-api-node-callback-inline` verify, `invalid-union-method-head-refinement`, `invalid-union-method-borrowed` and `invalid-template-own-to-string` are refused (run under Node) (2026-10-22, [slice measurement](#census-union-method-head)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `collect`'s `` `${operand.getStart(gate.file)}` `` |
 | [Compiler enum binding identity](docs/HOST-FAMILIES.md#activation) | closed: all seven allowed enums require the audited runtime object through Node resolution, including program re-exports; 14 positive bindings verify and 14 mismatched bindings are refused with Node counterexamples (2026-10-20) | — |
 | [Instance candidate growth](lean/Verification/Tests/InstanceGrowthControls.lean) | closed: a shared 64-patch budget covers fixed and variadic targets before combinations are constructed; controls with 24 ambiguous targets produce at most 66 candidates (2026-10-20) | — |
 | [A family's installation](docs/HOST-FAMILIES.md#activation) | closed: each description names its package, installation and digest; the front end activates every active description's installation by that data, the compiler API's among them, refusing another digest, version or an installation Node does not find; the string-tagged stand-in activated by its description alone beside the compiler API's (2026-10-20) | — |
@@ -592,16 +592,6 @@ refusal. Of that, a quarter is the witness checks' comparisons, one of them
 repeated twelve times at the same store, and a quarter is the per-item
 check of `produceUsing`, which compares a union of 42 or 44 node arms with
 `Node`'s 130 about twenty times each.
-
-<a id="generic-instance-union-arms"></a>
-**A generic method's instance at a union of arms**, an investigation:
-`n.forEachChild((c: ts.Node): ts.Node => c)`, in a run whose selection
-reads `Node` as several arms, is refused in evidence search at the read of
-`forEachChild` ("No rule derives this readAt",
-`compiler-api-node-callback-inline`), where the same callback bound to a
-name, and the written callback in a run reading `Node` as one arm, verify.
-Which part of the instance's proposal or of its image check fails is not
-known.
 
 <a id="corrected-members"></a>
 **Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)
@@ -1337,6 +1327,19 @@ whose callback calls `gate.local` and `gate.span`. On the branch both pass
 it and stop in search after 58 s each at "no derivation of its node-typing
 claim", `operand.getStart` in `collect`'s
 `` `${operand.getStart(gate.file)}` ``.
+
+<a id="census-union-method-head"></a>
+The same two slices on 0e48e9f (main) and on the branch binding a
+[method call's head on a union of hosts](docs/PROGRAM-TYPING.md#judgments-and-constructor-views)
+(2026-10-22, `TSCERT_STEP_LIMIT=600`): neither verifies on either. On main
+both stop in search after 57 s each at "no derivation of its node-typing
+claim", `operand.getStart` in `collect`'s
+`` `${operand.getStart(gate.file)}` ``, where `operand`'s `Expression` is a
+union of 42 node arms. On the branch both pass it and stop in search after
+189 s each (a fresh store, load averages 6 to 15) at "a function value where
+a signature binding more parameters is expected",
+`e.elements.forEach(targets)` in `assignedNames`, `targets` a local closure
+`(e: Node): void` passed where `forEach` offers three parameters.
 
 <a id="census-spread-literals"></a>
 `fragment-expressions.mts#expr` and `#binary` on 784c8b8 (main) and on the
