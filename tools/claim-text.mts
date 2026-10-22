@@ -392,6 +392,8 @@ interface Table {
   /** The depth a lift starts at: a union below it shows its first
    * `nestedArms` arms, then `…`. */
   top: number;
+  /** The lifts made from this table, by depth and labels. */
+  lifted: Map<string, Shown>;
 }
 
 // A nested union of a family's arms is hundreds of objects, each with fields
@@ -653,7 +655,18 @@ function restElement(types: Table, rest: JsonRead): JsonRead {
   return t.rest;
 }
 
+// A lift is a function of its labels and depth within one table, so a label
+// list lifted once at a depth is reused there.
 function liftType(types: Table, labels: JsonRead, depth: number): Shown {
+  const at = `${depth}:${JSON.stringify(labels)}`;
+  const held = types.lifted.get(at);
+  if (held !== undefined) return held;
+  const lifted = liftLabels(types, labels, depth);
+  types.lifted.set(at, lifted);
+  return lifted;
+}
+
+function liftLabels(types: Table, labels: JsonRead, depth: number): Shown {
   if (!isList(labels)) return { top: false, atoms: ["(no type recorded)"] };
   if (
     labels.some((label) => {
@@ -675,22 +688,37 @@ function liftType(types: Table, labels: JsonRead, depth: number): Shown {
   const trueLabel = literalLabel(true),
     falseLabel = literalLabel(false);
   const both = trueLabel !== undefined && falseLabel !== undefined;
-  const atoms = labels.flatMap((label): JsonValue[] => {
-    if (both && label === falseLabel) return [];
-    if (both && label === trueLabel) return [{ a: "boolean" }];
-    if (isObject(label)) return [treeAtom(types, label, depth)];
-    if (isList(label)) return ["type " + JSON.stringify(label)];
+  // Each label's arms, lifted on demand: below the top, a union shows its
+  // first `nestedArms` arms, and the arms past them are counted, not lifted.
+  const arms = labels.map((label): { count: number; lift: () => JsonValue[] } => {
+    if (both && label === falseLabel) return { count: 0, lift: () => [] };
+    if (both && label === trueLabel)
+      return { count: 1, lift: () => [{ a: "boolean" }] };
+    if (isObject(label))
+      return { count: 1, lift: () => [treeAtom(types, label, depth)] };
+    if (isList(label))
+      return { count: 1, lift: () => ["type " + JSON.stringify(label)] };
     const name = typeof label === "number" ? types.names.get(label) : undefined;
-    if (name !== undefined) return [name];
+    if (name !== undefined) return { count: 1, lift: () => [name] };
     const row = rowAt(types, label);
-    if (!isList(row)) return ["type " + String(label)];
-    return row
-      .flatMap(setLiterals)
-      .map((clause) => liftClause(types, clause, depth));
+    if (!isList(row))
+      return { count: 1, lift: () => ["type " + String(label)] };
+    const clauses = row.flatMap(setLiterals);
+    return {
+      count: clauses.length,
+      lift: () => clauses.map((clause) => liftClause(types, clause, depth)),
+    };
   });
-  if (depth < types.top && atoms.length > nestedArms)
-    return { top: false, atoms: [...atoms.slice(0, nestedArms), "…"] };
-  return { top: false, atoms };
+  const total = arms.reduce((n, arm) => n + arm.count, 0);
+  if (depth < types.top && total > nestedArms) {
+    const atoms: JsonValue[] = [];
+    for (const arm of arms) {
+      if (atoms.length >= nestedArms) break;
+      atoms.push(...arm.lift().slice(0, nestedArms - atoms.length));
+    }
+    return { top: false, atoms: [...atoms, "…"] };
+  }
+  return { top: false, atoms: arms.flatMap((arm) => arm.lift()) };
 }
 
 // A source-claims label tree names a row only the verifier builds, so it is
@@ -727,7 +755,11 @@ function lift(
   depth: number = 3,
   names: readonly (readonly [number, string])[] = [],
 ): JsonValue {
-  return liftType({ rows, names: new Map(names), top: depth }, labels, depth);
+  return liftType(
+    { rows, names: new Map(names), top: depth, lifted: new Map() },
+    labels,
+    depth,
+  );
 }
 
 const same = (a: JsonValue, b: JsonValue): boolean =>
