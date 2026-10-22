@@ -166,15 +166,27 @@ let rec declared_head declarations seen = function
    `StatementBase`; `type T = A | F`, which holds `F` written inline). A
    proposal heuristic; Lean decides inclusion. *)
 let plausible_subtype_declared declarations actual expected =
-  let rec unfold seen = function
-    | Atoms atoms -> combine (List.map (function
-        | Named (id,args) as a when not (List.mem id seen) ->
-          (try unfold (id::seen) (definition declarations id args) with Json.Error _ -> Atoms [a])
-        | a -> Atoms [a]) atoms)
-    | Union ts -> combine (List.map (unfold seen) ts)
-    | t -> t in
-  List.exists (fun a -> List.exists (plausible_subtype a) [expected; unfold [] expected])
-    [actual; unfold [] actual]
+  let unfold t =
+    (* Each declared atom contributes once to the union; the path retains
+       the named atom at a cycle. Equations are read only as needed. *)
+    let expanded = Hashtbl.create 32 in
+    let rec walk seen = function
+      | Atoms atoms -> combine (List.map (function
+          | Named (id,args) as a when not (List.mem id seen) ->
+            if Hashtbl.mem expanded (id,args) then Atoms [] else begin
+              Hashtbl.add expanded (id,args) ();
+              try walk (id::seen) (definition declarations id args) with Json.Error _ -> Atoms [a]
+            end
+          | a -> Atoms [a]) atoms)
+      | Union ts -> combine (List.map (walk seen) ts)
+      | t -> t in
+    walk [] t in
+  let unfolded_actual = lazy (unfold actual) in
+  let unfolded_expected = lazy (unfold expected) in
+  plausible_subtype actual expected ||
+  plausible_subtype actual (Lazy.force unfolded_expected) ||
+  plausible_subtype (Lazy.force unfolded_actual) expected ||
+  plausible_subtype (Lazy.force unfolded_actual) (Lazy.force unfolded_expected)
 (* The first operand of an intersection a read succeeds on; where none has
    it, the principal operand's reason. *)
 let first_part read parts =
