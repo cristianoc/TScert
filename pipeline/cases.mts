@@ -571,6 +571,7 @@ export const cases: Case[] = [
     /^reject: a generic module function where a signature binding more parameters is expected[\s\S]*source expression obligation at \[361,372\): evidence search failed/),
   negative("invalid-closure-offer-flows", "a closure reading its optional second parameter is offered no longer signature, and its annotated binding is only the annotation", /source expression obligation at \[470,471\)/),
   positive("closure-offer-narrower-element", "a named closure whose parameter is a union, passed to `forEach`, `map`, `every`, `some` and `filter` over an array of one arm (declared, written inline, through an alias): offered the callback's signature at the element, its body claimed per signature, a test the narrower entry never takes included"),
+  positive("closure-offer-nested-publications", "a named closure offered a narrower callback signature returns a guard closure: the function owns the nested arrow publication across the outer signature rows"),
   negative("invalid-closure-offer-narrower-parameter", "a function whose parameter is narrower than the element, widened through a method signature TypeScript compares bivariantly (run under Node: `map` hands it the other arm)",
     /source expression obligation at \[485,490\): evidence search failed: no derivation of its binding-annotation claim/),
   negative("invalid-closure-offer-narrower-mutation", "a closure wider than the element shrinking the mapped array: the result has a hole (run under Node)",
