@@ -400,6 +400,25 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   console.log("residual: the fixture's up returns undefined on a source file under Node");
 }
 
+// A look-alike under Node: `invalid-compiler-api-closure-offer-lookalike`
+// hands its closure over `Node` a program record whose `kind` is an
+// identifier's, and the guard's true branch pushes its absent `text`.
+{
+  const dir = runDirectory("tscert-lookalike-");
+  mkdirSync(join(dir, "node_modules"));
+  symlinkSync(root, join(dir, "node_modules", hostPackage.name));
+  const fixture = join(dir, "lookalike.ts");
+  copyFileSync(resolve(import.meta.dirname, "../pipeline/examples/invalid-compiler-api-closure-offer-lookalike.ts"), fixture);
+  const module: unknown = await import(pathToFileURL(fixture).href);
+  assert.ok(isNamespace(module) && typeof module.wrong === "function", "the fixture exports wrong");
+  const syntaxKind: unknown = Reflect.get(ast, "SyntaxKind");
+  assert.ok(isNamespace(syntaxKind), "the package exports SyntaxKind");
+  const out: unknown = module.wrong([{ kind: syntaxKind.Identifier }]);
+  assert.ok(Array.isArray(out) && out.length === 1 && out[0] === undefined,
+    "the look-alike's absent text is pushed into the string[]");
+  console.log("look-alike: a program record read as an identifier pushes undefined under Node");
+}
+
 // The corrections under Node (COMPILER-API.md, "Corrections"): each negative
 // fixture `invalid-compiler-api-corrected-*` returns a corrected member at
 // the type the declarations state, and on a node of its kind the runtime

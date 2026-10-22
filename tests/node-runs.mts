@@ -33,6 +33,13 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-readonly-field-call-effect",
       "(() => { const xs = [1, 2], seen = []; first({ check: (n) => { seen.push(n); xs.pop(); return false; } }, xs); return seen.length === 2 ? seen[1] : 0; })()"],
     ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
+    // A function over an interface extending the element's, handed a base
+    // without `size`; a closure over a base calling an extending object's
+    // narrower method with a string; a closure over a base shrinking the
+    // array of an extending interface it is mapped over.
+    ["invalid-closure-offer-extends-narrower", `wrong([{ label: "a" }], { of: (b) => b.size })[0]`],
+    ["invalid-closure-offer-extends-method", `typeof wrong([{ step: (by) => by }])[0] === "string" ? undefined : 0`],
+    ["invalid-closure-offer-extends-mutation", `1 in wrong([{ label: "a", size: 1 }, { label: "b", size: 2 }]) ? 0 : undefined`],
     // A value of `Names`' type whose `local` pops the mapped array: `map`
     // skips the index it removed, a hole in the `string[]`.
     ["invalid-map-method-call-effect",

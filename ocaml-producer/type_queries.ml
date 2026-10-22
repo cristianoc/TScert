@@ -36,7 +36,9 @@ let rec plausible_subtype_with excludes actual expected =
         List.mem host_mark a.fields || a.indexes <> [] || a.calls <> [] ||
         List.exists (fun (f:Semantic.field) -> f.write <> None && not f.optional && not f.host) a.fields ||
         (match a.elements with Some s -> not s.readonly | None -> false)
-      | Shape a,Shape b when a.fields=b.fields && a.indexes=b.indexes && plausible_elements excludes a.elements b.elements ->
+      | Shape a,Shape b when plausible_fields excludes a.fields b.fields
+                             && (a.indexes=b.indexes || b.indexes=[])
+                             && plausible_elements excludes a.elements b.elements ->
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           Semantic.effect_covers p.call_effect q.call_effect &&
           ({p with call_effect=q.call_effect}=q ||
@@ -61,6 +63,20 @@ let rec plausible_subtype_with excludes actual expected =
   (* A value of an intersection is a value of each operand. *)
   | Meet (t,ts),_ -> List.exists (fun part -> plausible_subtype_with excludes part expected) (t::ts)
   | Rigid _,_ | _,(Rigid _ | Meet _) -> false
+(* Record width and depth, as Lean's record rule reads them
+   (POSITIVE-TYPES.md, "Records"): each expected member is met by the
+   actual's member of its key, which the actual may hold beside others. An
+   invariant field by an equal invariant field; a view by a required member
+   within it; an optional member by a slot within it, a writable one by an
+   equal writable slot; a method by a method within it. *)
+and plausible_fields excludes actual expected =
+  actual=expected || List.for_all (fun (q:Semantic.field) ->
+    List.exists (fun (p:Semantic.field) -> p=q || (p.name=q.name && p.host=q.host &&
+      match q.optional,q.write with
+      | false,Some _ -> not p.optional && p.read=q.read && p.write=q.write
+      | false,None -> not p.optional && plausible_subtype_with excludes p.read q.read
+      | true,Some _ -> p.write<>None && p.read=q.read && p.write=q.write
+      | true,None -> plausible_subtype_with excludes p.read q.read)) actual) expected
 let plausible_subtype = plausible_subtype_with excludes_undefined
 let literal_type = function
   | LNull -> Atoms [Nul] | LUndefined -> Atoms [Undef]
