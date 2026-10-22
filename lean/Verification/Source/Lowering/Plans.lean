@@ -10,6 +10,15 @@ open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJso
 open Fragment LabelStore
 open EquationGraphs (Tree)
 
+/-- Locate a read's refusal at its member access, preserving diagnostics and
+internal errors. -/
+@[nospecialize] def locatedRead (pos : Span) (action : Compiler (DirectProof.Plan Tree)) :
+    Compiler (DirectProof.Plan Tree) := do
+  let T ← table
+  tryCatch action fun reason =>
+    if hasDiagnostic reason || reason.startsWith "internal" then throw reason
+    else throw (locatedRefusal T pos .expressionClaim reason)
+
 section
 variable {ι : Type} [Labels ι]
 

@@ -587,7 +587,7 @@ Mappings discard only the temporaries introduced by this expression. -/
         return ← compileAtom recursive fc scope Γ a (← behind store)
       -- Of a union of arrays, the same term derived at each member
       -- (`arrayLengthAt`).
-      let plan ← arrayLengthAt G (B::Γ) 0
+      let plan ← locatedRead e.span (arrayLengthAt G (B::Γ) 0)
       let node ← emitPlanned e.span plan (.bind drop) (B::Γ) A
         (scope := held ⟨"",some a.span⟩ :: scope)
       return ← compileAtom recursive fc scope Γ a (← behind node)

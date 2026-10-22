@@ -294,13 +294,8 @@ slots are introduced only after the operand supplying their type is checked. -/
       -- An array's `length` is its store's, read as a number, as the graph
       -- reads it, of one array contract or of each of a union's. A read
       -- refused is refused at the member access.
-      let located := fun (action : Compiler (DirectProof.Plan Tree)) => do
-        let T ← table
-        tryCatch action fun reason =>
-          if hasDiagnostic reason then throw reason
-          else throw (locatedRefusal T e.span .expressionClaim reason)
-      if arms.isEmpty && fld == "length" && arraysOnly G a.type then located (arrayLength G Γ a)
-      else if arms.isEmpty then located (readCell G Γ fld a)
+      if arms.isEmpty && fld == "length" && arraysOnly G a.type then locatedRead e.span (arrayLength G Γ a)
+      else if arms.isEmpty then locatedRead e.span (readCell G Γ fld a)
       else pure (DirectProof.letE Γ a (← memberReadPlan G K 0 fld A arms))
   | .index _ (some fld) receiver key => do
     -- The receiver, then the key, then the read: the key's own claim was
