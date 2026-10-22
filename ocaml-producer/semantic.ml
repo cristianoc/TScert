@@ -172,10 +172,14 @@ and signature_mentions_rigid (s:signature) =
 (* Record operands are one object; a function type met with a record is the
    function carrying the record's fields, a callable object, as Lean meets
    them (`sourceMeetLists`). *)
+let callable_record_supported (x:shape) (y:shape) =
+  let plain_fields (r:shape) = r.indexes = [] && List.for_all (fun (f:field) ->
+    not f.optional && not f.host && f.write <> None) r.fields in
+  (x.calls = [] || plain_fields y) && (y.calls = [] || plain_fields x)
 let meet_objects a b = match a,b with
   | Atoms [Shape x],Atoms [Shape y]
     when (x.calls=[] || y.calls=[]) && x.elements=None && y.elements=None &&
-         (x.indexes=[] || y.indexes=[]) ->
+         (x.indexes=[] || y.indexes=[]) && callable_record_supported x y ->
     let names = List.map (fun (f:field) -> f.name) (x.fields @ y.fields) in
     if List.length names <> List.length (List.sort_uniq compare names) then None
     else Some (Atoms [Shape {x with fields=x.fields @ y.fields;

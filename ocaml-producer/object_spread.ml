@@ -31,7 +31,15 @@ let string_key (f:Semantic.field) = match f.name with Name _ -> true | Key _ -> 
    of each, `(A | B) & C` being `(A & C) | (B & C)`. These arms are a
    proposal: Lean normalizes the operand's claim into its own clauses
    (`sourceMeetLists`) and checks the copy against them (`MergeOk`). *)
-let meet_refused s = Proposal_diagnostics.unsupported ("a spread of an intersection " ^ s)
+exception Refused of string
+let unsupported s = raise (Refused s)
+let meet_refused s = unsupported ("a spread of an intersection " ^ s)
+(* Definition queries report unlocated unsupported errors. Convert those
+   at this boundary; all spread refusals then share structured control flow. *)
+let spread_definition declarations id args =
+  try definition declarations id args with
+  | Json.Error message when String.starts_with ~prefix:"unsupported: " message ->
+    unsupported (String.sub message 13 (String.length message - 13))
 let primitive_atom = function
   | Nul | Undef | True | False | Num | Str | NumLit _ | StrLit _ | Bigint | BigintLit _
   | Symbol | SymbolLit _ -> true
@@ -42,69 +50,79 @@ let atom_meet x y = match x,y with
   | (NumLit _,Num | StrLit _,Str | BigintLit _,Bigint | SymbolLit _,Symbol) -> [x]
   | (Num,NumLit _ | Str,StrLit _ | Bigint,BigintLit _ | Symbol,SymbolLit _) -> [y]
   | _ -> []
-(* A key two operands state, as the copy can state it: at the type of a
-   field within the other's (`Src.sure` gives a key at one of the source's
-   entries), a required one where either is required (an optional field is
-   absent or of its type). Where no such field is, the meet is not stated by
-   either field: refused. A key either states as a method, which the object
-   may hold on its prototype, is a method, which the copy does not state. *)
-let field_meet (f:Semantic.field) (g:Semantic.field) =
-  let optional = f.optional && g.optional in
+(* Select a field from all constraints on the key, with its own required
+   presence. The heuristic only proposes: Lean checks the copy's field. *)
+let field_meet fs =
+  let f = List.hd fs in
+  let optional = List.for_all (fun (f:Semantic.field) -> f.optional) fs in
+  let host = List.exists (fun (f:Semantic.field) -> f.host) fs in
   let combined (c:Semantic.field) = {c with optional;
-    write=(if f.write <> None && g.write <> None then c.write else None);
-    host=f.host || g.host; receivers=List.sort_uniq compare (f.receivers @ g.receivers);
-    stable=f.stable || g.stable} in
-  let within (c:Semantic.field) (d:Semantic.field) = c.read = d.read || Type_queries.plausible_subtype c.read d.read in
-  if f.host || g.host then combined f
-  else match List.find_opt (fun (c,d) -> (optional || not c.optional) && within c d) [f,g; g,f] with
-    | Some (c,_) -> combined c
-    | None -> meet_refused ("states the key " ^ key_text f.name ^ " in two operands, and neither field's type is \
-        within the other's at the presence the meet requires: the copy's field would be their meet, which no \
-        one field states")
-(* Two records on one object: every key either states, a key both state as
-   [field_meet] reads it. A callable met with a record is the callable
-   carrying the record's fields, which Lean's clauses state only for
-   required writable data fields (`sourceMeetLists`). *)
-let meet_records (x:shape) (y:shape) =
-  if x.elements <> None || y.elements <> None then meet_refused "with an array operand is outside the fragment";
-  if x.calls <> [] && y.calls <> [] then meet_refused "of two callable operands is outside the fragment";
-  if x.indexes <> [] && y.indexes <> [] then meet_refused "of two operands with index signatures is outside the fragment";
-  let plain_fields (r:shape) = r.indexes = [] && List.for_all (fun (f:Semantic.field) ->
-    not f.optional && not f.host && f.write <> None) r.fields in
-  if (x.calls <> [] && not (plain_fields y)) || (y.calls <> [] && not (plain_fields x)) then
+    write=(if List.for_all (fun (f:Semantic.field) -> f.write <> None) fs then c.write else None);
+    host; receivers=List.sort_uniq compare (List.concat_map (fun (f:Semantic.field) -> f.receivers) fs);
+    stable=List.exists (fun (f:Semantic.field) -> f.stable) fs} in
+  if host then combined f
+  else match List.find_opt (fun (c:Semantic.field) -> (optional || not c.optional) &&
+    List.for_all (fun (d:Semantic.field) -> Type_queries.plausible_subtype c.read d.read) fs) fs with
+    | Some c -> combined c
+    | None -> meet_refused ("states the key " ^ key_text f.name ^
+        " in several operands, and the proposal heuristic finds no field covering every constraint at the required presence")
+
+let meet_records records =
+  if List.exists (fun (r:shape) -> r.elements <> None) records then
+    meet_refused "with an array operand is outside the fragment";
+  if List.length (List.filter (fun (r:shape) -> r.calls <> []) records) > 1 then
+    meet_refused "of two callable operands is outside the fragment";
+  if List.length (List.filter (fun (r:shape) -> r.indexes <> []) records) > 1 then
+    meet_refused "of two operands with index signatures is outside the fragment";
+  let rec callable_pairs = function
+    | [] -> true
+    | x::xs -> List.for_all (callable_record_supported x) xs && callable_pairs xs in
+  if not (callable_pairs records) then
     meet_refused "of a callable and a record with readonly or optional fields, methods or an index is outside \
       the fragment: no clause states that callable";
-  let find fs k = List.find_opt (fun (g:Semantic.field) -> g.name = k) fs in
-  let fields = List.map (fun (f:Semantic.field) -> match find y.fields f.name with
-    | None -> f
-    | Some g -> field_meet f g) x.fields in
-  let own = List.filter (fun (g:Semantic.field) -> find x.fields g.name = None) y.fields in
-  Some (Atoms [Shape {fields=fields @ own;indexes=x.indexes @ y.indexes;calls=x.calls @ y.calls;elements=None}])
-(* Two arms' meet: [None] where no value is of both, as a primitive and a
-   record, whose clauses Lean's meet leaves none of. *)
-let meet_arm a b = match a,b with
-  | Atoms [Top],t | t,Atoms [Top] -> Some t
-  | Atoms [Shape x],Atoms [Shape y] -> meet_records x y
-  | Atoms [p],Atoms [q] when primitive_atom p && primitive_atom q ->
-    (match atom_meet p q with [] -> None | r -> Some (Atoms r))
-  | Atoms [p],Atoms [Shape _] | Atoms [Shape _],Atoms [p] when primitive_atom p -> None
-  | _ -> meet_refused "with an operand other than a record, a primitive or a union of them is outside the fragment"
-(* The arms a type's values fall in: a declaration's through its equation, a
-   union's each, an intersection's the meets of one arm of each operand. *)
-let rec meet_arms declarations seen t = match t with
+  let fields = List.concat_map (fun (r:shape) -> r.fields) records in
+  let names = List.sort_uniq compare (List.map (fun (f:Semantic.field) -> f.name) fields) in
+  Atoms [Shape {fields=List.map (fun name -> field_meet
+      (List.filter (fun (f:Semantic.field) -> f.name = name) fields)) names;
+    indexes=List.concat_map (fun (r:shape) -> r.indexes) records;
+    calls=List.concat_map (fun (r:shape) -> r.calls) records;elements=None}]
+
+(* Expand whole products before selecting fields. Nested intersections and
+   declarations retain all constraints until that selection. *)
+let rec arm_products declarations seen t = match t with
   | Atoms [Named (id,args)] ->
     if List.mem id seen then meet_refused "through a cyclic declaration is outside the fragment";
-    meet_arms declarations (id::seen) (definition declarations id args)
+    arm_products declarations (id::seen) (spread_definition declarations id args)
   | Atoms atoms when List.length atoms <> 1 ->
-    List.concat_map (fun a -> meet_arms declarations seen (Atoms [a])) atoms
-  | Atoms _ -> [t]
-  | Union ts -> List.concat_map (meet_arms declarations seen) ts
+    List.concat_map (fun a -> arm_products declarations seen (Atoms [a])) atoms
+  | Atoms _ | Rigid _ -> [[t]]
+  | Union ts -> List.concat_map (arm_products declarations seen) ts
   | Meet (t,ts) ->
     List.fold_left (fun acc part ->
-      let parts = meet_arms declarations seen part in
-      List.concat_map (fun a -> List.filter_map (meet_arm a) parts) acc)
-      (meet_arms declarations seen t) ts
-  | Rigid _ -> meet_refused "with a type parameter operand is outside the fragment"
+      let parts = arm_products declarations seen part in
+      List.concat_map (fun a -> List.map (fun b -> a @ b) parts) acc)
+      (arm_products declarations seen t) ts
+
+let meet_product parts =
+  let parts = List.filter (fun t -> t <> Atoms [Top]) parts in
+  let primitives = List.filter_map (function Atoms [p] when primitive_atom p -> Some p | _ -> None) parts in
+  let records = List.filter_map (function Atoms [Shape r] -> Some r | _ -> None) parts in
+  let primitive = List.fold_left (fun acc p -> List.concat_map (fun q -> atom_meet p q) acc)
+    (match primitives with [] -> [] | p::_ -> [p]) primitives in
+  (* Only emptiness recognized by Lean's arm meet drops a product. An
+     unsupported field meet, including disjoint literals, is a refusal. *)
+  if (primitives <> [] && records <> []) || (primitives <> [] && primitive = []) then None
+  else if List.exists (function Rigid _ -> true | _ -> false) parts then
+    meet_refused "with a type parameter operand is outside the fragment"
+  else if List.length primitives + List.length records <> List.length parts then
+    meet_refused "with an operand other than a record, a primitive or a union of them is outside the fragment"
+  else match records,primitives with
+    | _::_,_ -> Some (meet_records records)
+    | [],_::_ -> Some (Atoms primitive)
+    | [],[] -> Some (Atoms [Top])
+
+let meet_arms declarations seen t =
+  List.filter_map meet_product (arm_products declarations seen t)
 
 let rec alternatives_of ~target ~bound declarations seen t =
   let recur = alternatives_of ~target ~bound declarations in
@@ -127,8 +145,8 @@ let rec alternatives_of ~target ~bound declarations seen t =
           symbols=Option.map (fun (i:index_signature) -> i.value)
             (List.find_opt (fun (i:index_signature) -> i.keys=Symbols) indexes);numeric=None}]
       | Named (id,args) ->
-        if List.mem id seen then Proposal_diagnostics.unsupported "unguarded spread cycle";
-        recur (id::seen) (definition declarations id args)
+        if List.mem id seen then unsupported "unguarded spread cycle";
+        recur (id::seen) (spread_definition declarations id args)
       (* A string's own enumerable properties are its code units at its
          index keys, which no record states, and a `Function`'s whatever was
          assigned to it: the copy's type states none of their keys. *)
@@ -141,7 +159,7 @@ let rec alternatives_of ~target ~bound declarations seen t =
       (* An array's own enumerable properties are its elements, at its index
          keys, and whatever keys it carries, which its type does not state;
          at a canonical numeric key, its own field holds an element's type. *)
-      | Shape {elements=Some _;_} when target -> Proposal_diagnostics.unsupported "a copy onto an array: \
+      | Shape {elements=Some _;_} when target -> unsupported "a copy onto an array: \
           the copy is a new object, which holds no array store"
       | Shape {elements=Some s;_} ->
         [{empty_alternative with exact=false;
@@ -152,31 +170,30 @@ let rec alternatives_of ~target ~bound declarations seen t =
         [{afields=List.filter (fun (f:Semantic.field) ->
             not (method_field f) && f.name <> Name proto_key && string_key f) fields;exact=false;index=None;
           symbols=None;numeric=None}]
-      | Shape _ -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; \
+      | Shape _ -> unsupported "a spread copies the own enumerable properties of a plain object; \
           a function with an index signature owns what its type does not state"
-      | _ -> Proposal_diagnostics.unsupported "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment") atoms
+      | _ -> unsupported "a spread copies the own enumerable properties of a plain object; one of a string, an array, a function or a class value is outside the fragment") atoms
   | Union ts -> List.concat_map (recur seen) ts
   (* A value of an intersection is of one of its arms, each the one object
      an arm of every operand describes. *)
   | Meet _ ->
-    (match meet_arms declarations seen t with
-     | [] -> meet_refused "with no value is refused: its operands have no value in common"
-     | arms -> List.concat_map (recur seen) arms)
+    List.concat_map (recur seen) (meet_arms declarations seen t)
   (* A value of a type parameter is one of its bound, whose own enumerable
      properties it copies: the copy is typed at the bound's fields. *)
   | Rigid r -> (match bound r with
     | Some b -> recur seen b
-    | None -> Proposal_diagnostics.unsupported "a spread of a type parameter without an object bound is outside the fragment")
+    | None -> unsupported "a spread of a type parameter without an object bound is outside the fragment")
 
 (* The alternatives of the copy's source, written at [site]: a refusal names
    that span. *)
 let source_alternatives ?(target=false) ?(bound=fun _ -> None) ~site declarations seen t =
-  let prefix = "unsupported: " in
-  let located m = let rec scan i = i + 5 <= String.length m &&
-    (String.sub m i 5 = " at [" || scan (i + 1)) in scan 0 in
-  try alternatives_of ~target ~bound declarations seen t
-  with Json.Error m when String.starts_with ~prefix m && not (located m) ->
-    Json.fail (m ^ " at " ^ Proposal_diagnostics.span_text site)
+  try
+    let alternatives = alternatives_of ~target ~bound declarations seen t in
+    if alternatives = [] then
+      meet_refused "with no value is refused: its operands have no value in common";
+    alternatives
+  with Refused reason ->
+    Proposal_diagnostics.unsupported (reason ^ " at " ^ Proposal_diagnostics.span_text site)
 
 (* A source's properties defined over an alternative's: a key the source
    surely has takes its type; one the alternative has keeps its own where the

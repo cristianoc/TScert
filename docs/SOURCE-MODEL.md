@@ -566,38 +566,64 @@ distributes:
 \mathrm{arms}(A \mathbin{\&} B)=\{\,a\sqcap b \mid a\in\mathrm{arms}(A),\ b\in\mathrm{arms}(B),\ a\sqcap b\ \text{defined}\,\}
 ```
 
-Two records meet as one record of every key either states. A key both
-state, $`k{:}T`$ in one and $`k{:}U`$ in the other, each optional or not,
-is held at the field within the other, required where either is:
+For each product, the producer gathers every record operand before choosing
+fields. For a key $`k`$, let $`I_k`$ index the operands stating it, with read
+type $`T_i`$ and optionality $`o_i`$ ($`1`$ means optional). A candidate
+must itself supply the required presence. The proposal selects an existing
+field $`j\in I_k`$ satisfying
 
 ```math
-(k{:}T)\sqcap(k{:}U)=k{:}T\qquad\text{where } T\subseteq U\text{, and }k{:}T\text{ is required unless both are optional}
+\forall i\in I_k,\ H(T_j,T_i)
+\qquad\text{and}\qquad
+\bigl(\forall i\in I_k,\ o_i=1\bigr)\ \lor\ o_j=0.
 ```
 
-and symmetrically. An optional field is absent or of its type, so a value
-holding $`k`$ under both fields holds it within the narrower. A key either
-operand states as a method, which the object may hold on its prototype, is
-a method of the meet, which the copy does not state. A primitive and a
-record meet in no value, two primitives in their common values.
+Its proposed field is $`k{:}T_j`$, optional exactly when every $`o_i=1`$.
+Here $`H`$ is the producer's `plausible_subtype`
+([`type_queries.ml`](../ocaml-producer/type_queries.ml)), a proposal
+heuristic for inclusion: equality, literals within their primitive, members
+of unions, and shapes with equal fields; it compares named types as written,
+without expanding their declarations. Lean decides inclusion.
 
-The copy of each arm is the copy of a record above: it states the meet's
-own enumerable string-keyed fields, optional ones optional. The copy's type
-is the producer's proposal. Lean checks the merge against the clauses it
-normalizes the operand's claim to, where the two fields of a key are two
-constraints on its value
+Thus `{ k: string | number } & { k: string | boolean } & { k: string }`
+selects the third field, independently of operand order. An optional field
+cannot supply a required key merely because its read type passes the test.
+A key any operand states as a method, which the object may hold on its
+prototype, is a method of the proposal and the copy does not state it.
+
+Products with incompatible primitive atoms, or both a primitive and a
+record, contribute no arm, as Lean's clause meet drops them. Emptiness is
+decided over the enclosing union: an empty intersection arm contributes
+nothing, and the whole spread source is refused only when no alternatives
+remain. A product with an unsupported field selection is refused even when
+another product succeeds: `({ k: "a" } | { k: "b" }) & { k: "a" }` has such
+a product. The heuristic does not decide that contradictory field
+constraints make a record empty.
+
+The copy of each surviving arm states its own enumerable string-keyed
+fields, optional ones optional. The copy's type is the producer's proposal.
+Lean checks the merge against the clauses it normalizes the operand's claim
+to, where several fields of a key are constraints on its value
 ([allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)), and
 refuses a copy's field that no field of the source gives
 (`spread-intersection-meet` and its forged-claim control in
 `pipeline/test.mts`).
 
-Refused at the spread's operand: a key both operands state where neither
-field is within the other at the presence the meet requires, whose meet no
-one field states (`{ k: "a" } & { k: "b" }`, `{ k: string } & { k?: "a" }`);
-two operands with index signatures; two callable operands, or a callable
-and a record with readonly or optional fields, methods or an index, which
-no clause states; an operand that is an array, a type parameter, or other
-than a record, a primitive or a union of them; and an intersection with no
-arm.
+Refused at the spread's operand: a key with no candidate recognized by
+$`H`$ at the required presence (`{ k: "a" } & { k: "b" }`,
+`{ k: string } & { k?: "a" }`); two operands with index signatures; two
+callable operands; a callable met with a record with readonly or optional
+fields, methods or an index; an intersection operand that is an array, a
+type parameter, a cyclic declaration, or another unsupported shape; and a
+source with no surviving alternative. A callable is met with a record only where the
+record's fields are required writable data fields, whether the intersection
+is written in an annotation or reached through a declaration.
+
+Within an intersection product, `Top` (`unknown`) is the identity; a source
+consisting only of `Top` has no supported copy. `Exact` records are supported
+as standalone spread sources, but an `Exact` operand inside an intersection
+is outside this product algorithm, including when the other operand is
+`Top`. Exact own-key bounds require a separate meet operation.
 
 ### Arrays
 

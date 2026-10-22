@@ -14,6 +14,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-for-in-entry-call", "wrong({ a: 1 }, (v) => { delete v.a; })"],
     ["invalid-for-in-entry-field", "wrong({ inner: { a: 1, b: 2 } }, {})"],
     ["invalid-for-in-entry-rebound", "wrong({ a: 1, b: 2 }, {})"],
+    // A readonly field of a callable may be a non-enumerable property, which
+    // a copy lacks; an arm with no value supplies no field to the copy.
+    ["spread-intersection-callable-named", `copied(Object.defineProperty(() => 1, "tag", { value: "t" })).tag`],
+    ["spread-intersection-callable-direct", `copied(Object.defineProperty(() => 1, "tag", { value: "t" })).tag`],
+    ["invalid-spread-intersection-empty-arm-result", "copied({ b: 1 }).a"],
     // A function's `length` is not enumerable: its copy lacks it.
     ["invalid-spread-function-length", "arity((a, b) => a + b)"],
     // The closure calls its callable parameter with a number, which a
