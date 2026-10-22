@@ -47,6 +47,7 @@ design, not its progress.
 | [A family guard's test in a guard's Boolean return](docs/SOURCE-ELABORATION.md#derived-source-forms) | closed: a family guard's call is a Boolean by its form; `compiler-api-guard-and-return` verifies, `invalid-compiler-api-guard-and-promise` and `invalid-compiler-api-guard-or-promise` are refused, each run under Node (2026-10-22) | `readCannotThrow`'s `(d): d is ts.FunctionDeclaration => ts.isFunctionDeclaration(d) && d.name?.text === id.text` verifies |
 | [The search past 60 s on `fragment-statements.mts`](#fragment-statements-search) | closed: `protocolPattern`'s and `patternStmt`'s searches take 13 s each in their census and alone, where they took 88 s; both then stop at `statements`' `list.findIndex((s) => gate.abrupt(s))` (2026-10-22, [slice measurement](#census-index-from-length)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within the census's 60 s limit |
 | [The search past 100 s on `fragment-statements.mts`](#fragment-statements-search-rows) | closed: `protocolPattern`'s search on 526bf6e's artifacts takes 27 s of CPU alone, where it took 103 s, with the same refusal (2026-10-22, load averages 3 to 36) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within 30 s alone |
+| [The search past 190 s on `fragment-statements.mts`](#fragment-statements-search-meets) | open: `protocolPattern`'s search on dca7c93's artifacts takes 73 s of CPU alone, where it took 191 s, with the same refusal; in the census of both slices at a 600 s limit each search takes 73 s, where it took 197 s, and both time out at 60 s (2026-10-22, load averages 3 to 24) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within 30 s alone |
 | [A completed read narrows its receiver](docs/PROGRAM-TYPING.md#a-completed-read-narrows-its-receiver) | closed: past a read `x.k` of an immutable binding or an owned local, the statements after it hold `x` without `null` and `undefined` until `x` is written; `read-narrows-receiver` verifies, negative cases cover optional reads, writes, aliases, handlers, branches, closures and shared expression joins; the Node counterexamples pass; pipeline validation of the four expression/frame regressions is blocked by the compiler child exiting with unexpected EOF (2026-10-22, [slice measurement](#census-read-narrowing)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past ``gate.fail(d, "a `const` needs an initializer")`` |
 | [A path of a receiver a completed read narrowed](docs/PROGRAM-TYPING.md#mapped-aliases) | closed: two slots an edge takes from one source slot are related by an alias link (`mapped-alias`), so a read link made through the plan's copy of a receiver a nullish guard narrowed reaches the receiver; an inspection (reads, `let`, allocations of operands: a method callee's evaluation) keeps every heap fact; `read-narrows-path` and `compiler-api-read-narrows-path` verify, `invalid-read-narrows-path-returning`, `-write`, `-alias-write`, `-call`, `-argument-call` and `-falsy` are refused (run under Node), a forged alias of two parameters is refused, accepted with the links check disabled (2026-10-22, [slice measurement](#census-read-narrows-path)) | `fragment-statements.mts#patternStmt`'s read `d.initializer` in `gate.span(d.initializer)` verifies |
 | [Calls through a field](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification) | closed: a call through a field reads the field's contract, checked at every write, and a declared field's is its annotation, which for an ordinary arrow states no effect; so `statements`' `findIndex` callback calling `gate.abrupt` is the unrestricted one, and `abrupt`, which reads nothing of the gate, is a module function called by its binding ([source rewrite](docs/SOURCE-REWRITES.md#a-function-called-through-a-field-whose-annotation-states-no-effect)); `find-index-module-function` verifies, `invalid-field-call-effect`, `invalid-readonly-field-call-effect`, `invalid-field-call-effect-alias` and `invalid-field-call-effect-cell` are refused (run under Node) (2026-10-22, [slice measurement](#census-field-calls)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `statements`' `list.findIndex((s) => gate.abrupt(s))` |
@@ -592,6 +593,25 @@ refusal. Of that, a quarter is the witness checks' comparisons, one of them
 repeated twelve times at the same store, and a quarter is the per-item
 check of `produceUsing`, which compares a union of 42 or 44 node arms with
 `Node`'s 130 about twenty times each.
+
+<a id="fragment-statements-search-meets"></a>
+**The search past 190 s on `fragment-statements.mts`.** On dca7c93's
+artifacts the slice of `protocolPattern` refuses at `assignedNames` after
+191 s of CPU in its search stage alone (2026-10-22). Sampled, 45% of it was
+instance image checks, which instantiated the rows of meets of nullary heads
+from their parts' templates at every read; 20% of each comparison
+substituted table rows under empty renamings; the response check repeated
+the code and graph checks the search had just made; and the statement
+entries' witness probes made 1921 comparisons of 46 pairs of types. With a
+meet's row read from its parts' cached rows, an empty substitution returning
+the type, one response check, and each probe decided once per store, the
+search takes 73 s, with the same refusal and every case's evidence
+unchanged. Of those 73 s, about half is the graph search's subtype
+comparisons (table growth, coverage of the greatest fixed point, the
+kernel's check of it, and image checks of candidate instances), a sixth is
+lowering, a seventh is the expression claims' search, and a sixth is
+checking the graphs' certificates, of which half is one instance's image
+table, checked again at each of 264 evidence nodes that cite it.
 
 <a id="corrected-members"></a>
 **Corrected members.** The [corrections](docs/COMPILER-API.md#corrections)
