@@ -418,8 +418,9 @@ def schemeBinders (site : String) (term : Json) : Except String (List String × 
 def referenceIndex (term : Json) : M Nat := do
   fieldsExactly term ["k", "reference", "args", "span"]
   let target ← field (← field term "reference") "target"
-  let ds := (← get).doc
-  match (List.range ds.size).filter fun i => ds[i]!.identity == target with
+  let s ← get
+  let ds := s.doc
+  match ((s.identities.get? target).getD []).filter fun i => ds[i]!.identity == target with
   | [i] => return i
   | [] => throw "reference has no declaration equation"
   | _ => throw "duplicate declaration identity"

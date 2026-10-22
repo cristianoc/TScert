@@ -20,6 +20,10 @@ def arr (j : Json) (name : String) : Except String (Array Json) := do (← field
 def str (j : Json) (name : String) : Except String String := do (← field j name).getStr?
 def bool (j : Json) (name : String) : Except String Bool := do (← field j name).getBool?
 
+/-- The definitions' indices by identity, in the document's order. -/
+def identityIndex (ds : Array Definition) : Std.HashMap Json (List Nat) :=
+  (List.range ds.size).foldr (fun i m => m.alter ds[i]!.identity fun is => some (i :: is.getD [])) {}
+
 def definitions (document : Json) : Except String (Array Definition) := do
   (← arr document "definitions").mapM fun j => do
     fieldsExactly j ["declaration", "parameters", "bases", "expression"]

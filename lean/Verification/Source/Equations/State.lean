@@ -71,6 +71,8 @@ structure State where
   /-- Execution policy; the equation document records only the types. -/
   subtypeBudget : PositiveCertificates.SearchBudget := {}
   doc : Array Definition
+  /-- `doc`'s indices by identity (`identityIndex doc`). -/
+  identities : Std.HashMap Json (List Nat) := {}
   heads : Array Draft := #[]
   keys : Std.HashMap String Nat := {}
   jobs : List Job := []
