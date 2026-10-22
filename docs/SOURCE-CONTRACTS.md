@@ -1685,7 +1685,10 @@ other signature or its receiver condition from the declared scheme.
      {⟦I\langle\vec X\rangle⟧_\Omega=\{k_1:⟦m_1⟧_{\omega_1};\ \ldots;\ k_n:⟦m_n⟧_{\omega_n}\}}\ \textsf{library-interface}
 ```
 
-a supertype of the declared interface. A member's signatures state the
+a supertype of the declared interface in its members and their
+signatures; the effects, and a `Set`'s and a `Map`'s marked iterators below,
+are host assumptions about the built-in prototypes, not consequences of
+that structure. A member's signatures state the
 entry's effect: the empty footprint for the readers, `has`, `get`, `keys`,
 `values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`,
 `toString` and `toISOString`; `{value: any, store: keep}` for the members
@@ -1696,7 +1699,10 @@ write only the receiver's internal slots, which hold no array store; none for
 nothing state the empty footprint on their construct signatures: they read the
 array through the host's iterator and allocate. $`⟦m⟧_\omega`$ drops
 `thisArg`, reads a `this` result as the receiver, and reads a declared
-iterator result as `Iterator<T>`, which it extends. A property is a readonly
+iterator result as `Iterator<T>`, which it extends, or, for `Set`'s and
+`Map`'s `keys`, `values`, `entries` and `[Symbol.iterator]`, as the native
+collection iterator, `Iterator<T>` marked as the built-in one
+([loops and spreads](#loops-and-spreads-over-iterables)). A property is a readonly
 view. A string's own `length` and indices are the calculus's `lenStr` and
 `elemStr`, never the prototype's; `s[i]` is `string | undefined`.
 
