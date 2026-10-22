@@ -19,7 +19,7 @@ import { childrenOf, nameOf } from "./syntax.mts";
 import { classInstance, computedAlias, computedForm, expandMapped, mapped, members, numericKey, oneTerm, optionalTerm, restPositions, restTerm, signature, signatures, substitute,
   typeTerm, validateAnnotation, type Mapped, type MappedMember, type TermScope } from "./type-term.mts";
 import { arrayPrototype, interfaceOverlay, mergeMessage, mergeRefusal, overlay, primitiveKinds, primitivePrototype,
-  primitivePrototypeName, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
+  primitivePrototypeName, collectionIteratorMark, nativeCollectionIterator, nativeCollectionIteratorDefinition, type OverlayEntry, splitSeparators, type OverlayLibrary, type PrimitiveKind } from "./array-prototype.mts";
 import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaration, stableDefinition, iterateIteratorName, iterateRegExpStringName, iterateMapName, iterateSetName, iterateStringName,
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
@@ -2293,6 +2293,14 @@ export function collectDeclarations(file: string, options: {
       }
       return index;
     };
+    // The native collection iterator a `Set`'s or a `Map`'s members return,
+    // its declaration listed with its first use (`array-prototype.mts`).
+    const collectionDefinitions: TypeDefinition[] = [];
+    const collectionIterator = (element: TypeTerm): TypeTerm => {
+      if (!collectionDefinitions.length) collectionDefinitions.push(nativeCollectionIteratorDefinition(
+        markOf(collectionIteratorMark), argument => libraryReference("Iterator", [argument])));
+      return nativeCollectionIterator(element);
+    };
     // Read once; the native match iterator's declaration joins the
     // definitions with them.
     let keysRead: RegExpKeys | undefined;
@@ -2463,7 +2471,7 @@ export function collectDeclarations(file: string, options: {
         listedIterations.add(listed);
         try {
           const intrinsic = iterationIntrinsic(listed, (name, args) => libraryReference(name, args),
-            element => { nativeMatches(); return nativeIterator(element); });
+            element => { nativeMatches(); return nativeIterator(element); }, collectionIterator);
           values.push({ binding: { local: intrinsic.name, imported: intrinsic.name,
             specifier: intrinsicModule, span },
             declaration: { module: intrinsicModule, name: intrinsic.name, span: [0, 0] },
@@ -3485,7 +3493,7 @@ export function collectDeclarations(file: string, options: {
         try {
           collect(start, seen, definitions, { complete: completeArguments, parameters: parametersOf, lookup,
             enumType: enumTypeAt, enumerated, memberName, identityOf, isBrand, libraryFile, hostType, symbol: symbolOf, literalKey: literalKeyOf, privateName: privateNameOf, partners, library, equation,
-            libraryInterface, computed: (node, span, read) => computedType(computedContext, node, span, read), family: familyOf,
+            libraryInterface, collectionIterator, computed: (node, span, read) => computedType(computedContext, node, span, read), family: familyOf,
             guardPromises,
             keys: keyTypeOf, modifiers: mappedModifiersOf, alias: aliasOf, awaited });
         } catch (error) {
@@ -3508,7 +3516,7 @@ export function collectDeclarations(file: string, options: {
     // read at `Array.prototype`'s contract as one the client writes is; the
     // declarations that contract names join the graph.
     if (!arrayProto.length &&
-        [values, definitions, applications, selections, primitiveProtos, regexpDefinitions].some(namesArray)) {
+        [values, definitions, applications, selections, primitiveProtos, regexpDefinitions, collectionDefinitions].some(namesArray)) {
       const at = values[0]?.binding.span ?? roots[0]?.root.binding.span ?? [0, 0];
       const from = valueStarts.length;
       try {
@@ -3518,7 +3526,7 @@ export function collectDeclarations(file: string, options: {
       }
       collectFrom(valueStarts.slice(from).map(node => ({ node, span: at })));
     }
-    definitions.push(...selections, ...primitiveProtos, ...regexpDefinitions, ...(stableListed ? [stableDefinition] : []));
+    definitions.push(...selections, ...primitiveProtos, ...regexpDefinitions, ...collectionDefinitions, ...(stableListed ? [stableDefinition] : []));
     // First, so its row follows the four fixed ones in every table.
     definitions.unshift(...arrayProto);
     // Trusted generic promise results have a stable non-thenable payload
@@ -4339,6 +4347,8 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
   equation: (node: TypeDeclaration) => TypeTerm | null;
   /** The standard library interface of this name, such as `Iterator`. */
   libraryInterface: (name: string) => TypeDeclaration;
+  /** The native collection iterator over an element type. */
+  collectionIterator: (element: TypeTerm) => TypeTerm;
   /** A computed type's term (`computed-types.mts`). */
   computed: NonNullable<TermScope["computed"]>;
   /** The type alias a reference names, if any. */
@@ -4523,6 +4533,10 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
       definitions.push({ declaration: identity, parameters, bases: [],
         expression: overlaidInterface(node, parts.filter(ts.isInterfaceDeclaration), overlaid, partScope,
           identityOf, symbol, (name, span) => {
+          if (name === "NativeIterator") return ([element]: TypeTerm[]): TypeTerm => {
+            if (!element) throw Error("a collection iterator states its element");
+            return context.collectionIterator(element);
+          };
           const target = context.libraryInterface(name);
           queue.push(target);
           return (args: TypeTerm[]): TypeTerm => ({ k: "reference", span,

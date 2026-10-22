@@ -2499,6 +2499,8 @@ export const cases: Case[] = [
   positive("readonly-collection-views", "a `Set<T>` is a `ReadonlySet<T>` and a `Map<K, V>` a `ReadonlyMap<K, V>`, both read through the overlay: passed directly, held in a defaulted parameter beside a fresh `Set` (the form of `type-term.mts#visitType`), spread and iterated by the protocol"),
   negative("invalid-readonly-set-has-effect", "a `ReadonlySet`'s `has` in a `findIndex` callback keeps its declared effect: a program's object with its own `has` meets the interface, so the element is `T | undefined` (run under Node)",
     /source direct obligation at \[414,441\): closure signature claim is outside the source annotation\nobligation: The required subtype relation was not established: undefined \| number ≤ number/),
+  negative("invalid-readonly-set-iterator-native", "a `ReadonlySet`'s iterator, typed `SetIterator` by TypeScript, stepped in a `findIndex` callback: a program's object gives any `Iterator`, no native collection iterator, which the host's iteration requires (run under Node)",
+    /source expression obligation at \[532,568\): evidence search failed: no derivation of its for-of-iterator claim/),
   positive("for-of-pattern-program-iterable", "a pattern binding a `for...of` over a program's iterable, each value destructured first in the closing region: an array's `entries()` (and `keys()`, `values()`), tuple patterns with a hole, an object pattern with a renamed field and a default, `break` closing once, a throwing default closing the iterator, per-iteration captures"),
   negative("invalid-for-of-pattern-program-iterable", "a position past a short yielded array is `undefined`, not the element type TypeScript gives it (run under Node)",
     /return-contract claim/),

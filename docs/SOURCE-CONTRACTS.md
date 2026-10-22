@@ -1704,7 +1704,7 @@ view. A string's own `length` and indices are the calculus's `lenStr` and
 `Map`, are read through the same mechanism at the restriction of the
 collection's own readers (`forEach` without `thisArg`, `has`, `get`, `size`,
 `keys`, `values`, `entries` and `[Symbol.iterator]`, each iterator result an
-`Iterator`), so that `Set<T>` meets `ReadonlySet<T>` and `Map<K, V>` meets
+`Iterator`, which the native collection iterator meets), so that `Set<T>` meets `ReadonlySet<T>` and `Map<K, V>` meets
 `ReadonlyMap<K, V>` by width and by the callback's parameter, as `Array`
 meets `ReadonlyArray` (`readonly-collection-views`). They state no
 `[Symbol.toStringTag]`, so a program's object may meet them: each member
@@ -2971,13 +2971,20 @@ With $`\mathit{Step}(E)=()\Rightarrow\{\mathsf{readonly}\ \mathit{value}:E\}\mid
 \mathtt{\%Iterate{:}string\%}:(\mathsf{string})\Rightarrow\mathit{Step}(\mathsf{string}) & \text{a string, by code point}\\
 \mathtt{\%Iterate{:}Set\%}:\forall T.\ (\mathsf{Set}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \\
 \mathtt{\%Iterate{:}Map\%}:\forall K\,V.\ (\mathsf{Map}\langle K,V\rangle)\Rightarrow\mathit{Step}([K,V]) & \text{a fresh entry per step}\\
-\mathtt{\%Iterate{:}Iterator\%}:\forall T.\ (\mathsf{Iterator}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \text{a SetIterator or MapIterator}
+\mathtt{\%Iterate{:}Iterator\%}:\forall T.\ (\mathsf{NativeCollectionIterator}\langle T\rangle)\Rightarrow\mathit{Step}(T) & \text{a SetIterator or MapIterator}
 \end{array}
 ```
 
 `Set` and `Map` are the [interface overlay](#library-types)'s, whose
-`keys`, `values` and `entries` give a `SetIterator` or `MapIterator` read as
-an `Iterator` of its argument. None of these iterators has a `return`, so a
+`keys`, `values`, `entries` and `[Symbol.iterator]` give a `SetIterator` or
+`MapIterator` read as the native collection iterator
+$`\mathsf{NativeCollectionIterator}\langle T\rangle`$: `Iterator<T>` with
+a key $`\langle\mathit{CollectionIterator}\rangle`$ at `undefined`, a
+synthetic symbol no source declaration, literal or class states, so no
+other value meets it. A value TypeScript types `SetIterator` or
+`MapIterator` from any other source, a `ReadonlySet`'s or `ReadonlyMap`'s
+iterator included, is no argument of `%Iterate:Iterator%`, and its loop is
+refused (`invalid-readonly-set-iterator-native`, run under Node). None of these iterators has a `return`, so a
 loop left early by `break`, `return` or a throw calls nothing. An iterable of
 any other kind with a `[Symbol.iterator]` (an `Iterable<T>`, a class or a
 record with one), or a union with one, is the program's, and runs the

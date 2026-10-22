@@ -157,8 +157,9 @@ const step: Signature = stepOf(binder);
 
 /** An iteration intrinsic beyond arrays, which a `for...of` steps where
  * TypeScript types its iterable as a string, a `Set`, a `Map`, or a host
- * collection iterator (`SetIterator`, `MapIterator`, which the overlay reads
- * as `Iterator`): each yields `{ value }` for what the host's iterator yields,
+ * collection iterator (`SetIterator`, `MapIterator`, which a `Set`'s or a
+ * `Map`'s overlay members return as the marked native collection iterator,
+ * `nativeCollection`, the parameter of `%Iterate:Iterator%`): each yields `{ value }` for what the host's iterator yields,
  * in turn, and then `null`, and none has a `return`.
  *
  * - A string's iterator yields its code points, each a string of one or two
@@ -187,7 +188,7 @@ const step: Signature = stepOf(binder);
  * `nativeMatches` the native match iterator of an element type.
  * Each is listed only for a file that iterates such a value. */
 export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" | "Iterator", args: TypeTerm[]) => TypeTerm,
-    nativeMatches: (element: TypeTerm) => TypeTerm):
+    nativeMatches: (element: TypeTerm) => TypeTerm, nativeCollection: (element: TypeTerm) => TypeTerm):
     { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
   const spread = name.startsWith(spreadPrefix);
   const kind = spread ? iteratePrefix + name.slice(spreadPrefix.length) : name;
@@ -199,7 +200,7 @@ export function iterationIntrinsic(name: string, library: (name: "Set" | "Map" |
     : kind === iterateSetName ? [t, library("Set", [binder]), binder]
     : kind === iterateMapName ? [[{ name: "K", bound: null, resolution: null }, { name: "V", bound: null, resolution: null }], library("Map", [key, value]),
       { k: "tuple", presence: "dense", readonly: false, required: [key, value], optional: [], rest: null, span }]
-    : kind === iterateIteratorName ? [t, library("Iterator", [binder]), binder]
+    : kind === iterateIteratorName ? [t, nativeCollection(binder), binder]
     : kind === iterateRegExpStringName ? [t, nativeMatches(binder), binder]
     : (() => { throw Error(`no iteration intrinsic ${name}`); })();
   // The step, or, for a spread, the fresh array of what the step yields until
