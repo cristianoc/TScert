@@ -1309,18 +1309,23 @@ that binding still holds the saved value:
 ```
 
 with $`s`$ the operand's slot and $`x`$ that immediate origin, when present.
-Computed reads `d[k]` and method reads/calls keep their own nullish guard
-and narrow nothing past the expression. Every node after the guard, to the
+Computed reads `d[k]` and method reads and calls keep their own nullish
+guard and narrow nothing past the expression, a stated limit of the
+lowering, not of the rule. Every node after the guard, to the
 end of the statement, continues at $`\Gamma[x\mapsto B^{-}]`$
 (`readNarrowing`, `executionAfterContext`, `compileExprThen`), so the
 statement's successors receive $`x`$ at $`B^{-}`$; a write of $`x`$
 rebinds its slot, which ends the narrowing. A read that completes on some
 paths only narrows only along them: `x?.k`, the right operand of `&&`, an
 arm of a conditional, a closure's body, a read whose throw a handler catches
-(`invalid-read-narrows-optional`, `-and`, `-branch`, `-closure`, `-catch`),
-and a read of a copy taken before $`x`$ was rebound narrows the copy
-(`-alias`, `-write`); each is run under Node, and each one's claims forged to
-narrow $`x`$ are refused at the edge in `pipeline/test.mts`. A binding held
+or a `finally` follows (`invalid-read-narrows-optional`, `-and`, `-branch`,
+`-closure`, `-catch`, `-finally`); a write of $`x`$ after the read, in the
+same expression, on a loop's back edge or in a branching operand, ends it
+(`-write`, `-expression-write`, `-loop`, `-join`); and a read of a copy
+taken before $`x`$ was rebound narrows the copy (`-alias`). Each is run
+under Node; the claims of each one ending in `return d;`, all but `-closure`
+and `-getter`, forged to narrow $`x`$ there, are refused at that statement's
+incoming edge in `pipeline/test.mts`. A binding held
 in a cell, which a closure may write, is not narrowed. A getter's write of
 the binding it is read from is excluded with accessors
 (`invalid-read-narrows-getter`).
@@ -1332,7 +1337,9 @@ graph does not establish is refused. Not proved: that the slots the false
 edge binds hold the tested value. The lowering binds the operand's own slot
 and its one accepted immediate origin (`readAliases`), a review obligation
 of the lowering. At a shared sequence continuation, an origin mentioning a
-local that the evaluated plan may rebind is invalidated (`executionRebound`).
+local that the evaluated plan may rebind is invalidated (`executionRebound`);
+no pipeline case reaches that invalidation with a plain read, whose plan
+saves its operand immediately before reading it.
 
 Every binary operator has one rule, `arith`, for arithmetic on numbers and on
 bigints, for string concatenation, relational comparison and equality alike ([its

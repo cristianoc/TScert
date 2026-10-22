@@ -263,7 +263,7 @@ export const cases: Case[] = [
     /no derivation of its return-contract claim/),
   negative("invalid-read-narrows-finally", "a finally write ends the receiver narrowing",
     /no derivation of its return-contract claim/),
-  negative("invalid-read-narrows-join", "a shared branching continuation keeps no origin naming a rebound local",
+  negative("invalid-read-narrows-join", "a write of the local in one branch of an operand, before a later branching operand reads a member: past the expression the local may be `undefined`",
     /no derivation of its return-contract claim/),
   negative("invalid-read-narrows-alias", "a read of a copy taken before the local was rebound narrows the copy, not the local",
     /no derivation of its return-contract claim/),

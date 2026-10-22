@@ -1,5 +1,5 @@
-// The first element saves d. The second and the remaining continuation
-// both branch; the second may rebind d before the plain member read.
+// The second element may rebind d, and the third branches to a member read:
+// past the expression d may be the undefined the second element wrote.
 // wrong([{}], true, true) returns undefined.
 
 type Declaration = { kind?: string; initializer?: string };
