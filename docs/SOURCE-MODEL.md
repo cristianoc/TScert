@@ -566,6 +566,49 @@ keys each at their own type; a spread of an open record meets no index. `Object.
 as a statement, a local's own object, from sources whose types rule out an
 own `__proto__`, which it would set through the prototype's setter.
 
+#### Literals a spread copies
+
+A copy replaces every key its source may own. A source of an open record
+type may own any key, at any type, so a field written before its spread
+is not the copy's: `{ name, ...s }` with $`s:\{\}`$ states no `name`
+(`invalid-object-spread-union-open`). A fresh literal owns exactly the
+keys it writes, and its claim states it with the own-key bound
+$`\mathsf{among}\ \vec k`$. Two forms carry that bound from the literal to
+a spread's source:
+
+```math
+\frac{f\ \text{a closure without a result annotation}\quad
+      e\in\mathrm{returned}(f)\quad e=\{k_1{:}e_1,\ldots,k_n{:}e_n\}\quad \Gamma\vdash e_i:T_i}
+     {\Gamma\vdash e:\mathsf{Ref}(k_1{:}T_1,\ldots,k_n{:}T_n;\ \varnothing;\ \mathsf{among}\ \{k_1,\ldots,k_n\})}\ \textsf{returned-literal}
+```
+
+where $`\mathrm{returned}(f)`$ is $`f`$'s expression body, or the operand of
+each `return` of its block body outside nested closures, an async
+closure's the payload each resolves its promise with, each read through
+the arms of `?:`, the right operands of `&&`, `||`, `??` and `,`, and the
+operands of a non-null assertion and of `satisfies`; and a constant without
+an annotation whose object a later spread or `Object.assign` copies has its
+initializer's literals, through the same positions, claimed with their
+bounds. A literal expected at a writable dictionary is allocated at the
+dictionary instead, since code holding it may add keys, which no own-key
+bound admits. The closure's result is the union of
+its returned claims, widened as TypeScript widens an inferred result, so a
+spread of its call meets each literal's bound. A source clause bounded by
+$`\mathsf{among}\ \vec k`$ gives nothing under a key outside $`\vec k`$, so the
+merge keeps a field written before it there (`FieldsOk`,
+[allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)). This is
+the bound TypeScript's inferred union of literals relies on, which states a
+key one literal lacks as optional at `undefined`:
+`p ? { rest: true as const } : {}` is
+`{ rest: true } | { rest?: undefined }`, and the bound is what puts a value
+of the second arm within it. A const assertion's type is not fresh: a field
+`k: e as const` keeps $`e`$'s literal type. The claims are proposals: Lean
+checks the bound at the allocation, and a written result, a returned name,
+a call or any other source keeps its declared type, open where it is open
+(`invalid-object-spread-annotated-result`,
+`invalid-object-spread-returned-dictionary`;
+`object-spread-exact-literals` verifies, each negative run under Node).
+
 #### A spread of an intersection
 
 A value of $`A_1 \mathbin{\&} \cdots \mathbin{\&} A_n`$ is of every operand,

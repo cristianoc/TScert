@@ -441,7 +441,9 @@ Three sources give a value of such a type:
 
 and the scheme an annotation or a declaration states. A closure without a
 result annotation is claimed at its body's type, widened as TypeScript
-widens an inferred result, which the closure's code is then checked at
+widens an inferred result, the object literals it returns with their exact
+keys ([literals a spread copies](SOURCE-MODEL.md#literals-a-spread-copies)),
+which the closure's code is then checked at
 ([generic closures](CALLABLES.md#overloads-polymorphism-and-binding)). In
 **module-scheme**, $`g`$ is a generic module function, certified at every
 assignment of its binders (`Parametricity.accept_reassign`), or an import,

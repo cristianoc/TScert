@@ -935,6 +935,25 @@ let fresh_result ~callable (body:expr) =
   | BlockBody stmts -> returns [] stmts
   | _ -> fresh_expr ~callable ~fresh:[] body
 
+(* The expressions a body returns: an expression body itself, else every
+   `return`'s operand in its statements, a nested closure's left out; an
+   async body's, the payload its return resolves its promise with. *)
+let returned (body:expr) =
+  let payload (e:expr) = match e.node with
+    | Call ({node=Id "%AsyncReturn%";_},None,[a],_,_) -> a
+    | _ -> e in
+  let rec stmts ss = List.concat_map (fun s -> match s.statement with
+    | Return e -> [payload e]
+    | If (_,a,b) -> stmts a @ stmts b
+    | While (_,b,u) -> stmts (b @ u)
+    | Block (_,b) | ForOf (_,_,_,_,b) -> stmts b
+    | Try (b,h,f) -> stmts (b @ (match h with Some (_,hs) -> hs | None -> []) @ Option.value f ~default:[])
+    | Closing (c,b) -> stmts (b @ c)
+    | Declare _ | Destructure _ | Effect _ | Throw _ | Break _ | Continue -> []) ss in
+  match body.node with
+  | BlockBody ss -> stmts ss
+  | _ -> [payload body]
+
 let arithmetic = function
   | "add" -> Add | "sub" -> Sub | "mul" -> Mul | "div" -> Div | "pow" -> Pow | "rem" -> Rem
   | "bitAnd" -> BitAnd | "bitOr" -> BitOr | "xor" -> Xor | "shl" -> Shl | "shr" -> Shr | "ushr" -> Ushr
