@@ -160,7 +160,11 @@ held in a slot. -/
   | .evaluate original prepared _ => do
     if let .var _ name := prepared then
       if let some A := (← executionType name) then return A
-    executionClaim fc original.span (exprType fc prepared)
+    let A ← executionClaim fc original.span (exprType fc prepared)
+    if let .not _ operand := prepared then
+      if let some D := LoweringAtoms.decidedNegation (SourceTypes.graph (← table)) A (← exprType fc operand) then
+        return D
+    return A
   | .methodRead .. | .invokeSaved .. => LoweringAtoms.methodPlanType fc scope Γ operation
   | .snapshotSpread .. | .snapshotObject .. => snapshotPlanType fc scope Γ operation
   | .referenceRead source reference =>
@@ -475,6 +479,13 @@ one for an increment), and the slot of the old value. -/
       let checked ← emitAt original.span (.var 0) (.effect ⟨next.label,some mapping⟩)
         (B::Γ) A "expression-claim" (scope := held ⟨"",some original.span⟩ :: scope)
       return ← LoweringAtoms.compileAtom recursive fc scope Γ prepared checked
+  if let .not _ operand := prepared then
+    -- A negation its operand decides keeps that answer past its claim's
+    -- check, as a saved value does (`decidedNegation`).
+    if let some D := LoweringAtoms.decidedNegation (SourceTypes.graph (← table)) A (← exprType fc operand) then
+      let checked ← emitAt original.span (.var 0) (.effect next)
+        (D::Γ) A "expression-claim" (scope := held ⟨"",some original.span⟩ :: scope)
+      return ← withPreparedAtom original (LoweringAtoms.compileAtom recursive fc scope Γ prepared checked)
   let mapping := (next.mapping.getD (List.range (Γ.length+1))).map
     (fun i => if i == 0 || copied == some (i-1) then 0 else i+1)
   -- An assertion function's call leaves its actual at the promise's type
