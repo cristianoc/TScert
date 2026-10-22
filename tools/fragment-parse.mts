@@ -1662,7 +1662,8 @@ function lowerFile(file: string, carriesContext: boolean,
   // form at the two TypeScript infers.
   const assignNodes: Node[] = [];
   const findAssign = (node: Node): void => {
-    if (callableAssign(node) && !node.typeArguments) assignNodes.push(node);
+    const assign = callableAssign(node);
+    if (assign && !assign.call.typeArguments) assignNodes.push(node);
     node.forEachChild(findAssign);
   };
   if (!carriesContext) findAssign(source);

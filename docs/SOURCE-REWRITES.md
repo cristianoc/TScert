@@ -79,32 +79,37 @@ string is refused on principle (`invalid-in-open`,
 - **Rewrite:** every answer is one shape, `Answered<T>`, `{ ok: true; value:
   T } | { ok: false; refused: string }`, produced and read by its `ok` tag.
 - **Pattern:** an `in` test that stands for a tag becomes a tag.
-- **Commit:** this entry's commit (`tools/declaration-graph.mts`,
+- **Commit:** a3755f0 (`tools/declaration-graph.mts`,
   `fragment-parse.mts`, `fragment-expressions.mts`, `fragment-classes.mts`).
-
-## Rewrites required, not made
 
 ### An index read whose range a check elsewhere establishes
 
-`Object.assign`'s callable form reads `const initial = node.arguments[1]`
-and tests `ts.isObjectLiteralExpression(initial)`
-(`tools/fragment-expressions.mts`); `callableAssign` (`fragment-support.mts`)
-reads `node.arguments[0]` and `[1]` after `node.arguments.length === 2`.
-TypeScript types an index read at the element type; at run time a read past
-the end gives `undefined`, so TScert reads it at `Expression | undefined`.
-A compiler-API guard's promise holds on its domain, the family's nodes
-([the domain obligation](HOST-FAMILIES.md#calls)), so the guard narrows
-nothing for an argument that may be `undefined`, and the read
-`initial.properties` after it is refused ("missing field properties"). The
-length test that makes the read in range is in another function, an
-implicit correlation. It blocks `fragment-expressions.mts#expr` and
-`#binary` ([measurement](../WORK.md#census-answered-tag)).
+`Object.assign`'s callable form read `const initial = node.arguments[1]` and
+tested `ts.isObjectLiteralExpression(initial)`
+(`tools/fragment-expressions.mts`), after `callableAssign`
+(`fragment-support.mts`) had tested `node.arguments.length === 2` and the
+two arguments. TypeScript types an index read at the element type; at run
+time a read past the end gives `undefined`, so TScert reads it at
+`Expression | undefined`. A compiler-API guard's promise holds on its
+domain, the family's nodes ([the domain obligation](HOST-FAMILIES.md#calls)),
+so the guard narrowed nothing for an argument that may be `undefined`, and
+the read `initial.properties` after it was refused ("missing field
+properties"). The length test that makes the read in range was in another
+function, an implicit correlation.
 
-- **Rewrite to make:** the check returns what it establishes:
-  `callableAssign` returns the arrow and the object literal it tested, or
-  null, and its callers read those.
+- **Rewrite:** the check returns what it establishes: `callableAssign`
+  returns the call, the arrow and the object literal it tested, or null,
+  testing each argument against `undefined` before its guard, and its
+  callers read those.
 - **Pattern:** a value whose presence another function checks becomes that
   function's result.
+- **Commit:** this entry's commit (`tools/fragment-support.mts`,
+  `fragment-parse.mts`, `fragment-expressions.mts`).
+
+## Rewrites required, not made
+
+A source pattern of TScert's own code that TScert refuses on principle is
+listed here, with the rewrite that removes it, until the rewrite is made.
 
 ## Changes for a tool's defect
 
