@@ -3072,8 +3072,9 @@ signature takes no required parameter (`next()`, or the rest-tuple union
 promise, under a receiver the iterator is within, returning a record with
 `done` and `value`; the hosts' `next` signatures take the same parameters at
 the same effect. Refused: a required parameter (the step's call passes none),
-hosts' signatures that differ in parameters or effect, a result with no
-`done` (IteratorStepValue throws on a non-object), a receiver the iterator is
+hosts' signatures that differ in parameters or effect, a result that is no
+object (IteratorStepValue throws on it; the step's `done` read has no rule on
+a primitive), a receiver the iterator is
 not (`this: S`), an optional `next` or an accessor (outside the fragment), and
 a `next` that is a field holding a function in a union, which no rule binds.
 A `next` with effects changes what the loop's body and what follows know, as
