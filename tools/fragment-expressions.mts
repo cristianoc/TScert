@@ -919,7 +919,8 @@ export function knownLocal(this: Gate, node: Expression): boolean {
  * before a named function expression's own name; none for a global. */
 export function resolve(this: Gate, id: Identifier): Node | undefined {
   const gate: Gate = this;
-  if (!gate.bindings) {
+  let table = gate.bindings;
+  if (table === null) {
     const bindings = new Map<Node, Map<string, Node>>();
     const visit = (n: Node): void => {
       if (ts.isTypeNode(n) || ts.isInterfaceDeclaration(n) || ts.isTypeAliasDeclaration(n)) return;
@@ -940,10 +941,11 @@ export function resolve(this: Gate, id: Identifier): Node | undefined {
       n.forEachChild(visit);
     };
     visit(gate.file);
+    table = bindings;
     gate.bindings = bindings;
   }
   for (let at: Node | undefined = id.parent; at; at = at.parent) {
-    const found = gate.bindings.get(at)?.get(id.text);
+    const found = table.get(at)?.get(id.text);
     if (found) return found;
   }
   return undefined;
