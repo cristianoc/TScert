@@ -759,17 +759,23 @@ export function collectDeclarations(file: string, options: {
       return enums.length && enums.length === nodes.length ? enums : null;
     };
     // An enum's members, in order, each at the value TypeScript computes,
-    // `undefined` where it computes none.
+    // `undefined` where it computes none. Each declaration's members are
+    // read from the checker once: a reference to a member reads all of them.
+    const enumMembers = new Map<ts.EnumDeclaration, readonly EnumMemberValue[]>();
     const enumMembersOf = (enums: readonly ts.EnumDeclaration[], what: string): EnumMemberValue[] =>
       enums.flatMap(e => {
         clean(e, what);
-        return e.members.map(m => {
+        const known = enumMembers.get(e);
+        if (known) return known;
+        const members = e.members.map(m => {
           if (!ts.isIdentifier(m.name) && !ts.isStringLiteral(m.name)) throw Error(`an enum member of ${what} needs a plain name`);
           const value = checker.getConstantValue(m);
           if (typeof value === "number" && !Number.isFinite(value))
             throw Error(`an enum member of ${what} that is NaN or infinite has no literal type`);
           return { name: m.name.text, value };
         });
+        enumMembers.set(e, members);
+        return members;
       });
     // Whether a host enum is read as a value: one the compiler-API contract
     // lists (`hostEnums`, T5), in its installation; or the tag enum a
@@ -880,11 +886,12 @@ export function collectDeclarations(file: string, options: {
       const primitive = familyDescription.tag.primitive;
       const values = [...new Set(constants.flatMap((c): TagValue[] => typeof c.value === primitive && c.value !== undefined ? [c.value] : []))]
         .sort(compareTags);
-      // The tag values a type node states, through aliases of the package.
-      const literals = (type: TypeNode, seen = new Set<Node>()): TagValue[] | null => {
-        if (ts.isParenthesizedTypeNode(type)) return literals(type.type, seen);
+      // The tag values a type node states, through aliases of the package,
+      // each alias followed once along the reading.
+      const literalsAlong = (type: TypeNode, seen: Set<Node>): TagValue[] | null => {
+        if (ts.isParenthesizedTypeNode(type)) return literalsAlong(type.type, seen);
         if (ts.isUnionTypeNode(type)) {
-          const parts = type.types.map(t => literals(t, seen));
+          const parts = type.types.map(t => literalsAlong(t, seen));
           return parts.every((p): p is TagValue[] => p !== null) ? [...new Set(parts.flat())].sort(compareTags) : null;
         }
         if (!ts.isTypeReferenceNode(type) || type.typeArguments?.length) return null;
@@ -901,9 +908,18 @@ export function collectDeclarations(file: string, options: {
         if (!only || target.length !== 1 || seen.has(only)) return null;
         if (ts.isTypeAliasDeclaration(only) && !only.typeParameters?.length && isHostFile(only.getSourceFile().fileName)) {
           seen.add(only);
-          return literals(only.type, seen);
+          return literalsAlong(only.type, seen);
         }
         return null;
+      };
+      // A type node's tag values, read once: the family's table and every
+      // reading of its tags ask for the same nodes' values many times.
+      const literalsRead = new Map<TypeNode, readonly TagValue[] | null>();
+      const literals = (type: TypeNode): readonly TagValue[] | null => {
+        if (literalsRead.has(type)) return literalsRead.get(type) ?? null;
+        const values = literalsAlong(type, new Set());
+        literalsRead.set(type, values);
+        return values;
       };
       const graph: FamilyGraph = {
         interfaces,
@@ -1126,18 +1142,29 @@ export function collectDeclarations(file: string, options: {
       return declarations.length === 1 && !!only && ts.isTypeAliasDeclaration(only) &&
         only.name.text === "Awaited" && libraryFile(only.getSourceFile());
     };
-    const associatedAlias = (node: TypeAliasDeclaration, seen = new Set<TypeAliasDeclaration>()): boolean => {
+    // Whether an alias reaches `Awaited` through the aliases its body names,
+    // each alias followed once along the walk.
+    const associatedAlong = (node: TypeAliasDeclaration, seen: Set<TypeAliasDeclaration>): boolean => {
       if (seen.has(node)) return false;
       seen.add(node);
       const visit = (part: Node): boolean => {
         if (ts.isTypeReferenceNode(part)) {
           if (awaited(part)) return true;
           const target = ts.isIdentifier(part.typeName) ? targetOf(checker, part.typeName)?.declarations[0]?.resolve() : undefined;
-          if (target && ts.isTypeAliasDeclaration(target) && associatedAlias(target, seen)) return true;
+          if (target && ts.isTypeAliasDeclaration(target) && associatedAlong(target, seen)) return true;
         }
         return part.forEachChild(visit) ?? false;
       };
       return visit(node.type);
+    };
+    // Each alias's answer, walked once: every reference to an alias asks.
+    const associated = new Map<TypeAliasDeclaration, boolean>();
+    const associatedAlias = (node: TypeAliasDeclaration): boolean => {
+      const known = associated.get(node);
+      if (known !== undefined) return known;
+      const result = associatedAlong(node, new Set());
+      associated.set(node, result);
+      return result;
     };
     // An interface declared several times is one interface with every
     // declaration's members, as TypeScript merges it. Its type parameters are
