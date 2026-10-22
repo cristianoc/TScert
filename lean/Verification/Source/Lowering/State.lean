@@ -165,10 +165,25 @@ private structure GraphFrame where
   constant, which the literal's body may read as its self entry. -/
   selfConstant : Option String := none
 
+/-- Inclusion for source contracts through the common subtype operation,
+retaining the execution outcome. -/
+@[nospecialize] def withinResult (T : EquationStore.State) (C A : List Tree) :
+    PositiveCertificates.ComparisonResult Unit :=
+  (CertificateProducer.comparisonUsing (SourceTypes.graph T) (StoreView.images T) C A).map fun _ => ()
+
+/-- Optional inference probes use only established inclusion. -/
+@[nospecialize] def within (T : EquationStore.State) (C A : List Tree) : Bool :=
+  (withinResult T C A).accepted
+
 /-- Equation growth, obligations and nested code are shared across graph frames. -/
 private structure Built extends GraphFrame where
   /-- The graph under construction: the claims' table, grown by annotations. -/
   types : EquationStore.State
+  /-- How many steps have changed `types`: `lower` is the one that does. -/
+  generation : Nat := 0
+  /-- `within`'s answers at `types`, each pair's computed once: `lower`
+  empties them, and a restored state restores them with `types`. -/
+  withinAnswers : Std.HashMap (List Tree × List Tree) Bool := {}
   flowTargets : List (Nat × Target) := []
   obligations : List (ExpressionClaims.Required Tree) := []
   /-- Labels the program mentions but no claim does, such as a pattern's
@@ -241,7 +256,21 @@ def withFreshGraph (action : Compiler α) : Compiler α :=
 
 @[nospecialize] def lower (m : SourceTypes.Lowering α) : Compiler α := ⟨fun s => do
   let (a,T) ← m.run s.types
-  return (a,{ s with types := T })⟩
+  return (a,{ s with types := T, generation := s.generation + 1, withinAnswers := {} })⟩
+
+/-- The store with its generation: `withinAt` reads `within`'s answers at
+it while no step has changed it since. -/
+@[nospecialize] def tableAt : Compiler (EquationStore.State × Nat) := readBuilt fun s => (s.types, s.generation)
+
+/-- `within T`, for the store `T` of generation `gen` (`tableAt`): read from
+the answers at the store while it is still that generation's. -/
+@[nospecialize] def withinAt (T : EquationStore.State) (gen : Nat) (C A : List Tree) : Compiler Bool := ⟨fun s =>
+  if s.generation != gen then .ok (within T C A, s) else
+  match s.withinAnswers[(C, A)]? with
+  | some b => .ok (b, s)
+  | none =>
+    let b := within T C A
+    .ok (b, { s with withinAnswers := s.withinAnswers.insert (C, A) b })⟩
 
 /-- The type of an early binding's uninitialized marker, `U` (SOURCE-MODEL.md,
 "Lexical bindings before initialization"): the object owning the marker's

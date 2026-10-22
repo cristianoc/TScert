@@ -841,12 +841,40 @@ def Equations.row (equations : Equations) (label : Label equations.signature) :
   | .meet parts => meetRowOf (parts.map fun q => (q, equations.baseRow q))
   | _ => equations.baseRow label
 
-/-- A label's row, read from the cache where it holds one. -/
+/-- The row of a label that is not a meet, read from the cache where it
+holds one. -/
+def Equations.baseRowCached (equations : Equations) (label : Label equations.signature) :
+    GraphRow (Label equations.signature) :=
+  match label.view with
+  | .meet _ => .clauses []
+  | _ => match equations.cached label with
+    | some r => r
+    | none => baseRowFrom equations.signature equations.body label
+
+/-- A label's row, read from the cache where it holds one; a meet's, where
+the cache holds none, from its parts' rows read from the cache. -/
 def Equations.rowCached (equations : Equations) (label : Label equations.signature) :
     GraphRow (Label equations.signature) :=
   match equations.cached label with
   | some r => r
-  | none => rowFrom equations.signature equations.body label
+  | none => match label.view with
+    | .meet parts => meetRowOf (parts.map fun q => (q, equations.baseRowCached q))
+    | _ => baseRowFrom equations.signature equations.body label
+
+theorem Equations.baseRowCached_eq (equations : Equations) (label : Label equations.signature) :
+    equations.baseRowCached label = baseRowFrom equations.signature equations.body label := by
+  unfold Equations.baseRowCached
+  split
+  · next hv => unfold baseRowFrom; rw [hv]
+  · next hv =>
+    split
+    · next r h =>
+      rw [equations.cached_row label r h]
+      unfold rowFrom
+      split
+      · next ps hm => exact absurd hm (hv ps)
+      · rfl
+    · rfl
 
 theorem Equations.row_eq_rowFrom (equations : Equations) (label : Label equations.signature) :
     equations.row label = rowFrom equations.signature equations.body label := by
@@ -862,7 +890,9 @@ theorem Equations.row_eq_rowFrom (equations : Equations) (label : Label equation
   unfold Equations.rowCached
   split
   · next r h => rw [E.cached_row l r h, E.row_eq_rowFrom]
-  · exact E.row_eq_rowFrom l
+  · rw [E.row_eq_rowFrom]
+    unfold rowFrom
+    cases l.view <;> simp only [Equations.baseRowCached_eq]
 
 def Equations.graph (equations : Equations) : NormalGraph (Label equations.signature) :=
   NormalGraph.ofRowMap equations.row equations.builtins equations.domain equations.literal

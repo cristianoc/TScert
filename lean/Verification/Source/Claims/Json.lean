@@ -211,12 +211,13 @@ def produceDocument (ast claims : Json) (fileKey : String) (fuel : Nat)
     if r.qualification.isNone then
       let (c, next) ← RequestJson.produceResponseUsing G I (HeapExpressionRules.Checker.ordinary G I) r.toRequest
         fuel [] known r.sourceMap (some labels) r.assertions r.cuts r.codeHints r.checker r.aliases answers
+        (searched := true)
       answers := next
       responses := responses.push c
     else
       let (c, _) ← RequestJson.produceResponseUsing (RequestJson.graph r.toRequest) (StoreView.images r.types)
         r.checker r.toRequest fuel [] known r.sourceMap (some labels) r.assertions r.cuts
-        r.codeHints r.checker r.aliases
+        r.codeHints r.checker r.aliases (searched := true)
       responses := responses.push c
   let es := proofLists.toList
   let cs := responses.toList
