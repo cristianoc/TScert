@@ -698,6 +698,40 @@ spread arguments are refused (`optional-method-call-object-refused`). On a `null
 chain is `r, undefined`: the literal is the receiver's whole value, and the
 body never runs.
 
+A chain compared with a literal, `x?.p ⊙ c` or `c ⊙ x?.p`, with $`\odot`$
+one of `===`, `!==`, `==`, `!=`, $`c`$ a literal, $`x`$ `this` or a name
+the file binds outside an ambient context (`inertRead`), and $`.p`$ one or
+more named reads, is the test of the receiver, then the comparison of the
+receiver's reads (`chainComparison`):
+
+```math
+x\,?.\,p\ \odot\ c\;\equiv\;
+\begin{cases}
+x\ \texttt{!=}\ \texttt{null}\ \ \texttt{\&\&}\ \ x.p\ \odot\ c & \text{where } \texttt{undefined}\odot c \text{ is false}\\
+x\ \texttt{==}\ \texttt{null}\ \ \texttt{||}\ \ x.p\ \odot\ c & \text{where } \texttt{undefined}\odot c \text{ is true}
+\end{cases}
+```
+
+`undefined === c` holds where $`c`$ is `undefined`, `undefined == c` where
+it is `null` or `undefined`, and `!==`, `!=` are their negations. Both
+sides have one value: where $`x`$ is nullish, the chain is `undefined` and
+the comparison is $`\texttt{undefined}\odot c`$, which is the value the
+right side's first operand decides; elsewhere both are $`x.p\odot c`$. The
+right side reads $`x`$ twice. A read of a binding the file declares, or of
+`this`, runs no code, and between the two reads only the nullish test runs,
+which runs none either, so they read one value; the literal's evaluation
+runs nothing. A global the file only declares may be an accessor of the
+global object, which answers each read anew, so its chain stays a value
+(`invalid-optional-chain-test-ambient`). The tests then name $`x`$ and its field,
+which refine as every test of a name and of a field of a name does
+([guards](SOURCE-CONTRACTS.md#guards)): where `b?.k === "d"` holds, `b` is
+present and at the arms whose `k` may be `"d"`; where it fails, nothing is
+known of `b`. A comparison with another operand (a name, which may itself be
+`undefined`), a receiver other than a name, or a link other than a named
+read is the chain's value compared, which refines nothing
+(`optional-chain-test`, `invalid-optional-chain-test-*`, each run under
+Node).
+
 `typeof e` as a value is the string naming the shape of $`e`$'s value, one tag
 test per answer in turn, the operand evaluated once (`typeofTerm`); a value no
 test holds of has call code, which `typeof` names `"function"`:

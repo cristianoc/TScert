@@ -66,6 +66,8 @@ design, not its progress.
 | [A member bound to a union of hosts](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: `o.k.bind(o)` at a union of hosts each holding `k` as a member splits the host's slot and binds each host's member (`unionVar`, then `bindMember`), the producer proposing the hosts' common signature with the union of their results; the iterator protocol so binds `next` and `return` over a union of iterables; `bind-union-host` verifies, the bypasses listed in [the iterator protocol](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) are refused (run under Node), a forged claim of one host's result refused in search and in checking (2026-10-22, [slice measurement](#census-union-host-bind)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past "bind requires a single arrow and a valid argument prefix" |
 | [The length of a union of arrays](docs/PROGRAM-TYPING.md#the-length-of-a-union-of-arrays) | closed: `length` of a union of array contracts is read by the same term derived at each member (`unionVar`), in a condition's term and in a statement; `compiler-api-node-list-length-test` and `array-union-length-test` verify, `invalid-array-record-length-cast` is refused (2026-10-22) | `if (xs.length !== ps.length)` with `ps = alias.typeParameters ?? []` verifies |
 | [Investigation of a field re-read under a negated disjunction](#negated-disjunction-reread) | open: an investigation, cause unknown | the cause of the refusal of `if (!(k.name === "a" \|\| k.name === "b"))` is established, with a reproducer and a concrete repair obligation |
+| [A chain compared with a literal](docs/SOURCE-ELABORATION.md#derived-source-forms) | closed: `x?.p ⊙ c` with `⊙` an equality and `c` a literal is the test of `x`, then `x.p ⊙ c`, `&&` or `\|\|` by what `undefined ⊙ c` gives; `optional-chain-test` verifies, `invalid-optional-chain-test-false`, `-undefined`, `-operand`, `-loose`, `-write`, `-ambient` and `-getter` are refused (run under Node) (2026-10-22, [slice measurement](#census-chain-comparison)) | `fragment-expressions.mts#expr` and `#binary` move past "missing field target" at `lambda`'s `b.target` |
+| [Investigation of a conditional expression over a tested optional field](#conditional-optional-field) | open: an investigation, cause unknown | the cause of the refusal of `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a defaulted parameter's flow](#defaulted-parameter-flow) | open: an investigation, cause unknown | the cause of `spread-defaulted-set-refused`'s edge refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
@@ -123,6 +125,27 @@ a named union, of a function or a closure, is held at the union's arms, so a
 failed `in` test drops the arms owning the key. The
 [slice measurement](#census-closure-arms) records the refusals of `expr` and
 `binary` in `fragment-expressions.mts`.
+
+<a id="conditional-optional-field"></a>
+**Investigation of a conditional expression over a tested optional field.**
+Lean's search refuses both functions at the conditional's incoming edge,
+"the edge from node 2 does not establish the claims at this point" (the
+first: the incoming claim `null | string` of `.path:0`, the next point
+requiring `unknown`; the second: the incoming claim `string`, the next
+point requiring `string | ""`):
+
+```typescript
+type Opt = { v?: string | null };
+export function defined(o: Opt): string | null {
+  return o.v !== undefined ? o.v : null;
+}
+export function loose(o: Opt): string {
+  return o.v != null ? o.v : "";
+}
+```
+
+The same tests as an `if` with two returns verify (`optional-chain-test`'s
+`defined` and `loose`).
 
 <a id="negated-disjunction-reread"></a>
 **Investigation of a field re-read under a negated disjunction.** Lean's
@@ -1093,6 +1116,14 @@ target" at `lambda`'s `b.target`, read in
 `b?.k === "destructure" ? [b.target, b.default_] : …` after a test of
 `b?.k`, an optional chain's tag. The slice `memberMayBeWritten` verifies on
 the branch.
+
+<a id="census-chain-comparison"></a>
+The slices `fragment-expressions.mts#expr` and `#binary` (2026-10-22): on
+e199d42 (main) both stop at "missing field target" at `lambda`'s
+`b.target`, read after `b?.k === "destructure"`; on the branch both move
+past it and stop at "a write of 'bindings', a key the object's type does
+not state", `gate.bindings = bindings` in the slice's binding lookup, a
+key-adding write to the gate.
 
 <a id="census-for-of-patterns"></a>
 Two slices of `type-term.mts`, `readTypeTerm` and `typeTerm`, which calls it,

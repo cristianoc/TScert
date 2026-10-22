@@ -1758,13 +1758,75 @@ export function binary(this: Gate, node: BinaryExpression): Expr {
         e: gate.expr(pair.operand.expression),
       };
   }
-  return {
-    k: "bin",
-    pos: gate.span(node),
-    op,
-    l: gate.expr(node.left),
-    r: gate.expr(node.right),
+  const l = gate.expr(node.left);
+  const r = gate.expr(node.right);
+  if (op === "===" || op === "!==" || op === "==" || op === "!=") {
+    const tested = chainComparison(gate, node, op, l, r);
+    if (tested) return tested;
+  }
+  return { k: "bin", pos: gate.span(node), op, l, r };
+}
+
+/** The receiver of an optional chain's `?.`, parentheses around it
+ * removed, where `at` is a chain of links ending at one. */
+function chainReceiver(at: Node): Node | null {
+  if (ts.isPropertyAccessExpression(at) || ts.isElementAccessExpression(at) || ts.isCallExpression(at))
+    return at.questionDotToken ? skipParentheses(at.expression) : chainReceiver(at.expression);
+  if (ts.isNonNullExpression(at)) return chainReceiver(at.expression);
+  return null;
+}
+
+/** Whether a read of `receiver` runs no code: `this`, or a name the file
+ * binds outside an ambient context (`resolve`). A global, which a `declare`
+ * only types, may be an accessor of the global object. */
+function inertRead(gate: Gate, receiver: Node): boolean {
+  if (receiver.kind === ts.SyntaxKind.ThisKeyword) return true;
+  if (!ts.isIdentifier(receiver)) return false;
+  const declaration = gate.resolve(receiver);
+  return declaration !== undefined && !(declaration.flags & ts.NodeFlags.Ambient);
+}
+
+/** `x?.p ⊙ c`, `⊙` an equality, `c` a literal and `.p` named reads (either
+ * operand order): the test of the receiver, then the comparison of the
+ * receiver's reads, `x != null && x.p ⊙ c` where `undefined ⊙ c` is false,
+ * `x == null || x.p ⊙ c` where it is true (SOURCE-ELABORATION.md, optional
+ * chains). `x` is a name whose read runs no code (`inertRead`), or `this`,
+ * read again where the chain reads its saved value: nothing runs between
+ * the two reads, so they give one value, and the literal's evaluation runs
+ * nothing. The nullish test is spelled at the chain, its `null` at the `?`
+ * of `?.`, the comparison at its operator; the reads keep their spans, the
+ * receiver read again the `?.` token's, where the chain's saved value was. */
+function chainComparison(gate: Gate, node: BinaryExpression, op: "===" | "!==" | "==" | "!=", l: Expr, r: Expr): Expr | null {
+  const chainLeft = l.k === "optional";
+  const chain = chainLeft ? l : r;
+  const other = chainLeft ? r : l;
+  if (chain.k !== "optional" || other.k !== "lit") return null;
+  const source = chainReceiver(skipParentheses(chainLeft ? node.left : node.right));
+  if (!source || !inertRead(gate, source)) return null;
+  const receiver = chain.receiver;
+  if (receiver.k !== "id" && receiver.k !== "this") return null;
+  const reread: Expr = receiver.k === "id" ? { k: "id", pos: chain.at, name: receiver.name } : { k: "this", pos: chain.at };
+  // The chain's links: named reads of its saved value, which the receiver
+  // read again replaces.
+  const reads = (e: Expr): Expr | null => {
+    if (e.k === "id" && e.name === CHAIN) return reread;
+    if (e.k !== "read") return null;
+    const inner = reads(e.e);
+    return inner ? { ...e, e: inner } : null;
   };
+  const body = reads(chain.body);
+  if (!body) return null;
+  const lit = other.lit.a;
+  const equal = op === "===" || op === "==";
+  // `undefined ⊙ c`: strict equality holds of `undefined` alone, loose
+  // equality of `null` too.
+  const undefinedEquals = op === "==" || op === "!=" ? lit === "null" || lit === "undefined" : lit === "undefined";
+  const absent = undefinedEquals === equal;
+  const test: Expr = { k: "bin", pos: chain.pos, op: absent ? "==" : "!=", l: receiver,
+    r: { k: "lit", pos: [chain.at[0], chain.at[0] + 1], lit: { a: "null" } } };
+  const comparison: Expr = { k: "bin", pos: gate.span(node.operatorToken), op,
+    l: chainLeft ? body : other, r: chainLeft ? other : body };
+  return { k: "bin", pos: gate.span(node), op: absent ? "||" : "&&", l: test, r: comparison };
 }
 
 export function lambda(this: Gate, 

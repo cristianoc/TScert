@@ -181,6 +181,37 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     [`keysRun({ inner: { list: [4] } })`, 14],
   ] as const)
     assert.equal(runExample("optional-chain-nesting", call), expected, `optional-chain-nesting: ${call}`);
+  // A chain compared with a literal: each result at the type the case
+  // verifies, a nullish receiver's included.
+  for (const [call, expected] of [
+    [`strict({ k: "d", t: 2 })`, 2],
+    [`strict(undefined)`, 0],
+    [`unequal({ k: "e", u: "" })`, 0],
+    [`literalFirst({ k: "e", u: "x" })`, "x"],
+    [`loose(null)`, ""],
+    [`defined({ v: null })`, null],
+    [`absent({ v: "y" })`, "y"],
+    [`value(undefined)`, false],
+    [`found([{ k: "f" }, { k: "d", t: 4 }])`, 4],
+    [`nested(undefined).k`, "f"],
+  ] as const)
+    assert.equal(runExample("optional-chain-test", call), expected, `optional-chain-test: ${call}`);
+  // Where a chain's test leaves its receiver possibly nullish, or a call
+  // rewrote it, or a getter answered the second read anew, the actual
+  // source returns what its contract excludes.
+  for (const [file, call] of [
+    ["invalid-optional-chain-test-false", "wrong(undefined)"],
+    ["invalid-optional-chain-test-undefined", "wrong(undefined)"],
+    ["invalid-optional-chain-test-operand", "wrong(undefined, undefined)"],
+    ["invalid-optional-chain-test-loose", "wrong(undefined)"],
+    ["invalid-optional-chain-test-write", `wrong({ k: "d", t: 1 }, undefined)`],
+  ])
+    assert.equal(runExample(file, call), undefined, `${file}: the source returns undefined despite its object contract`);
+  assert.equal(runExample("invalid-optional-chain-test-ambient",
+    `(() => { let n = 0; Object.defineProperty(globalThis, "current", { configurable: true, get: () => ++n === 1 ? { k: "d", t: 1 } : { k: "e", u: "" } }); try { return wrong(); } finally { delete globalThis.current; } })()`),
+    undefined, "invalid-optional-chain-test-ambient: a global accessor answers the second read with another arm");
+  assert.equal(runExample("invalid-optional-chain-test-getter", "wrong(new Flip())"), "e",
+    `invalid-optional-chain-test-getter: the second read answers "e" despite the "d" contract`);
   assert.equal(runExample("invalid-map-unstable-pop", "Object.keys(shrink([1, 2, 3])).length"), 2,
     "invalid-map-unstable-pop: the result has three positions, two present");
   assert.equal(runExample("map-unstable-pop-sparse", "Object.keys(shrink([1, 2, 3])).length"), 2,
