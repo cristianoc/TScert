@@ -3,8 +3,12 @@
 // every node of a corpus, the JSDoc nodes each holds included, holds every
 // property its kind's flattened shape states required and not admitting
 // `undefined`, inherited and generic components included, unless a
-// correction of the compiler API's family covers it. Methods, member types,
-// children's kinds and stability are not checked here: this is presence
+// correction of the compiler API's family covers it. And C4's stability over
+// the same walk: every property member of each node's shape, required or
+// optional, reads one value twice in a row and again after the entry point's
+// token functions have run over its file (absent stays absent); a member
+// no prototype getter backs is the own `parent` or one of a reviewed list.
+// Methods, member types and children's kinds are not checked here: this is
 // regression evidence over the corpus, not a completeness proof. The shapes are the
 // family table's (`tools/host-families.mts`) over the installed package's
 // declarations, resolved by name; the corpus is the repository's own sources
@@ -124,18 +128,48 @@ const corpus = [
 ];
 const isNode = (value: unknown): value is ts.Node =>
   typeof value === "object" && value !== null && "kind" in value && typeof value.kind === "number";
+// The property members no prototype getter of a node backs, reviewed:
+// `parent`, an own data field the constructor assigns; `fullSignature`,
+// which nothing in the package assigns, and the brands declared `any`, read
+// `undefined` throughout (COMPILER-API.md, "Stable members as readonly
+// views").
+const unbacked = new Set(["parent", "fullSignature"]);
+const brand = (f: FlatMember): boolean => f.members.every((m) =>
+  ts.isPropertySignatureDeclaration(m) && m.type?.kind === ts.SyntaxKind.AnyKeyword);
+const getter = (node: object, name: string): boolean => {
+  let p: unknown = Object.getPrototypeOf(node);
+  while (typeof p === "object" && p !== null) {
+    if (Object.getOwnPropertyDescriptor(p, name)?.get !== undefined) return true;
+    p = Object.getPrototypeOf(p);
+  }
+  return false;
+};
+const unstable = new Map<string, number>();
+const unbackedSeen = new Set<string>();
+let reads: number = 0;
 const seenKinds = new Set<TagValue>();
 const held = new Set<string>();
 const absent = new Map<string, number>();
 let nodes: number = 0;
 for (const path of corpus) {
-  const tree = openText(path, readFileSync(path, "utf8"));
+  const text = readFileSync(path, "utf8");
+  const tree = openText(path, text);
+  const observed: [ts.Node, string, unknown][] = [];
   const visit = (node: ts.Node): undefined => {
     nodes++;
     seenKinds.add(node.kind);
     const source = table.shapes.get(node.kind);
     const flat = !source ? [] : source.rule === "generic" ? source.declarations.flatMap(table.flatten) : table.flatten(source.declaration);
     for (const f of flat) if (Reflect.get(node, f.name) !== undefined) held.add(`${node.kind}.${f.name}`);
+    for (const f of flat) {
+      if (!f.members.every(ts.isPropertySignatureDeclaration) || !table.stable(f)) continue;
+      const first: unknown = Reflect.get(node, f.name);
+      reads++;
+      if (!Object.is(first, Reflect.get(node, f.name)))
+        unstable.set(`${graph.constantName(node.kind)}.${f.name}`, (unstable.get(`${graph.constantName(node.kind)}.${f.name}`) ?? 0) + 1);
+      observed.push([node, f.name, first]);
+      if (!getter(node, f.name) && !brand(f)) unbackedSeen.add(f.name);
+    }
     for (const f of required(node.kind))
       if (Reflect.get(node, f.name) === undefined) {
         const key = `${graph.constantName(node.kind)}: ${f.owner.name.text}.${f.name}`;
@@ -147,6 +181,18 @@ for (const path of corpus) {
     return node.forEachChild(visit);
   };
   visit(tree);
+  // The entry point's token functions over the file, at every 61st
+  // position: they build tokens and assign the file's omitted `tokenCache`,
+  // and leave every stable member as it was.
+  for (let at = 0; at < text.length; at += 61) {
+    ts.getTokenAtPosition(tree, at);
+    ts.findPrecedingToken(tree, at);
+  }
+  for (const [node, name, first] of observed)
+    if (!Object.is(first, Reflect.get(node, name))) {
+      const key = `${graph.constantName(node.kind)}.${name} after the token functions`;
+      unstable.set(key, (unstable.get(key) ?? 0) + 1);
+    }
 }
 closeParser();
 
@@ -173,4 +219,9 @@ console.log(`  kinds no node has, stating checked properties of its own (${uncov
 console.log(`  members of reached kinds no node holds (${unheld.length}): ${unheld.join(" ")}`);
 assert.deepEqual([...absent].map(([key, count]) => `${key} (${count} nodes)`), [],
   "a member a shape states required is absent at run time, and no correction covers it");
+assert.deepEqual([...unstable].map(([key, count]) => `${key} (${count} nodes)`), [],
+  "a stable member read two values");
+assert.deepEqual([...unbackedSeen].filter((name) => !unbacked.has(name)), [],
+  "a property member no prototype getter backs, outside the reviewed list");
+console.log(`C4: ${reads} reads of stable members, required and optional, each one value twice and after the token functions`);
 console.log("C3: every checked required property of a reached kind's shape is held by every node of that kind, or corrected (presence regression evidence)");

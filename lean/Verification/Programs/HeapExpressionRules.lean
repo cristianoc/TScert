@@ -1614,8 +1614,9 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
 /-! ### Stable links (HOST-FAMILIES.md, "Stable links")
 
 A read link through a member every clause of its receiver's type states a
-stable key holds through every step: the location's contract admits one
-value, which every heap a run reaches holds there. -/
+stable key holds through every step: the key reads one way for the object's
+life, a location whose contract admits one value, which every heap a run
+reaches holds there, or an absent key of an object without a prototype. -/
 
 /-- Every clause of `A` states `fld` a stable key. -/
 def stableField (G : NormalGraph ι) (A : Ty ι) (fld : PropKey) : Bool :=
@@ -1623,31 +1624,67 @@ def stableField (G : NormalGraph ι) (A : Ty ι) (fld : PropKey) : Bool :=
 
 theorem stableField_at {G : NormalGraph ι} {A : Ty ι} {fld : PropKey} {n W v}
     (hs : stableField G A fld = true) (hv : meaning G A n W v) :
-    ∃ (flds : List (PropKey × Nat)) (oid l : Nat) (ct : Ctr n) (value : Val),
-      v = .objAt flds .absent oid ∧ flds.lookup fld = some l ∧
-        lookup W l = some ct ∧ CtrStable ct value := by
+    ∃ (flds : List (PropKey × Nat)) (oid : Nat),
+      v = .objAt flds .absent oid ∧ StableAt W flds fld := by
   simp only [stableField, Bool.and_eq_true, List.all_eq_true] at hs
   obtain ⟨⟨hplain, -⟩, hall⟩ := hs
   obtain ⟨c, hc, hsem, -⟩ := (expand_sem G A hplain n W v).mp hv
   exact semWithArgs_stable hsem (List.contains_iff_mem.mp (hall c hc))
 
 /-- The read links a step keeps through its every effect: those through a
-member every clause of the receiver's type states stable. -/
+member every clause of the receiver's type states stable, optional links
+among them. -/
 def stableLinks (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : HeapLinks.Links :=
-  k.links.filter fun g => !g.alias && !g.distinct && !g.optional &&
+  k.links.filter fun g => !g.alias && !g.distinct &&
     match Γ[g.cell]? with
     | some A => stableField G A g.field
     | none => false
 
-/-- A step's output with the input's stable links, past the result slot,
-each once. -/
+/-- The cell facts a step keeps through its every effect: those of a read
+through a member every clause of the receiver's type states stable, whose
+reading the object keeps for its life. -/
+def stableCells (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Facts :=
+  k.cells.filter fun f =>
+    match Γ[f.slot]? with
+    | some A => stableField G A f.field
+    | none => false
+
+/-- A step's output with the input's stable links and stable cell facts,
+past the result slot, each once. -/
 def withStable (G : NormalGraph ι) (Γ : List (Ty ι)) (k out : Knowledge) : Knowledge :=
-  { out with links := out.links ++
+  { out with
+    cells := out.cells ++
+      (HeapFacts.shift (stableCells G Γ k)).filter fun f => !out.cells.contains f
+    links := out.links ++
       (HeapLinks.pull (stableLinks G Γ k) (fun i => [i+1])).filter fun g => !out.links.contains g }
 
-/-- What a kept link says of a heap. -/
+/-- What a kept link says of a heap: a read link's meaning in `HeapLinks.Holds`. -/
 private def LinkAt (ρ : Env) (h : Heap) (g : HeapLinks.Link) : Prop :=
-  ∃ flds c oid l, ρ g.cell = .objAt flds c oid ∧ flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value)
+  if g.optional then ∃ flds c oid, ρ g.cell = .objAt flds c oid ∧ ReadGave flds g.field h (ρ g.value)
+  else ∃ flds c oid l, ρ g.cell = .objAt flds c oid ∧ flds.lookup g.field = some l ∧ h[l]? = some (ρ g.value)
+
+/-- Either form of a read link is a read the object gave. -/
+private theorem LinkAt.read {ρ h g} (hg : LinkAt ρ h g) :
+    ∃ flds c oid, ρ g.cell = .objAt flds c oid ∧ ReadGave flds g.field h (ρ g.value) := by
+  unfold LinkAt at hg
+  split at hg
+  · exact hg
+  · obtain ⟨flds, c, oid, l, hcell, hl, hv⟩ := hg
+    exact ⟨flds, c, oid, hcell, ReadGave.present hl hv⟩
+
+private theorem LinkAt.of_read {ρ h g flds c oid} (hcell : ρ g.cell = .objAt flds c oid)
+    (hr : ReadGave flds g.field h (ρ g.value)) (hpresent : g.optional = false → (flds.lookup g.field).isSome) :
+    LinkAt ρ h g := by
+  unfold LinkAt
+  split
+  · exact ⟨flds, c, oid, hcell, hr⟩
+  · rename_i ho
+    have hs := hpresent (by simpa using ho)
+    cases hl : flds.lookup g.field with
+    | none => rw [hl] at hs; cases hs
+    | some l =>
+      have hv : h[l]? = some (ρ g.value) := by simpa [ReadGave, hl] using hr
+      exact ⟨flds, c, oid, l, hcell, hl, hv⟩
 
 private theorem stable_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {ρ n W h t}
     {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h) :
@@ -1664,55 +1701,98 @@ private theorem stable_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Know
     have rest := ih (fun x hx => hS x (List.mem_cons_of_mem _ hx)) hs
     have hg := hS g List.mem_cons_self
     simp only [stableLinks, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at hg
-    obtain ⟨hmem, ⟨⟨ha, hd⟩, ho⟩, hty⟩ := hg
-    have hlink := hk.2.2 g hmem
-    simp only [hd, ha, ho, Bool.false_eq_true, if_false] at hlink
-    obtain ⟨flds, c, oid, l, hcell, hl, hv⟩ := hlink
-    split at hty
-    · rename_i A hA
-      obtain ⟨flds', oid', l', ct, value, hcell', hl', hw, hc⟩ := stableField_at hty (he.2 g.cell A hA)
+    obtain ⟨hmem, ⟨ha, hd⟩, hty⟩ := hg
+    have hlink : LinkAt ρ h g := by
+      have := hk.2.2 g hmem
+      simp only [hd, ha, Bool.false_eq_true, if_false] at this
+      unfold LinkAt
+      exact this
+    obtain ⟨flds, c, oid, hcell, hr⟩ := hlink.read
+    have hpresent : g.optional = false → (flds.lookup g.field).isSome := by
+      intro ho
+      unfold LinkAt at hlink
+      simp only [ho, Bool.false_eq_true, if_false] at hlink
+      obtain ⟨flds', c', oid', l, hcell', hl, -⟩ := hlink
       rw [hcell] at hcell'
       cases hcell'
-      rw [hl] at hl'
-      cases hl'
-      cases n with
-      | zero => trivial
-      | succ n =>
-        have hval : h[l]? = some value := hh.stable_value (Nat.zero_lt_succ n) hw hc
-        rw [hv] at hval
-        cases hval
-        refine consequence (fun _ _ _ h => h) (fun h' u hq => ?_) (stable_frame hw hc hh rest)
-        obtain ⟨⟨hq, hall⟩, hl'⟩ := hq
-        refine ⟨hq, fun x hx => ?_⟩
-        rcases List.mem_cons.mp hx with rfl | hx
-        · exact ⟨flds, _, oid, l, hcell, hl, hl'⟩
-        · exact hall x hx
+      simp [hl]
+    split at hty
+    · rename_i A hA
+      obtain ⟨flds', oid', hcell', hst⟩ := stableField_at hty (he.2 g.cell A hA)
+      rw [hcell] at hcell'
+      cases hcell'
+      refine consequence (fun _ _ _ h => h) (fun h' u hq => ?_)
+        (ReadGave.stable_frame hst hh hr rest)
+      obtain ⟨⟨hq, hall⟩, hr'⟩ := hq
+      refine ⟨hq, fun x hx => ?_⟩
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact LinkAt.of_read hcell hr' hpresent
+      · exact hall x hx
+    · cases hty
+
+private theorem stable_cell_frames {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {ρ n W h t}
+    {T : Fam} {Q : Post} (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h) :
+    ∀ (S : Facts), (∀ f ∈ S, f ∈ stableCells G Γ k) →
+      SafePost (excOf G) T Q n W h t →
+      SafePost (excOf G) T (fun h' v => Q h' v ∧ HeapFacts.Holds S ρ h') n W h t := by
+  intro S
+  induction S with
+  | nil =>
+    intro _ hs
+    exact consequence (fun _ _ _ h => h) (fun _ _ hq => ⟨hq, fun _ hf => by cases hf⟩) hs
+  | cons f S ih =>
+    intro hS hs
+    have rest := ih (fun x hx => hS x (List.mem_cons_of_mem _ hx)) hs
+    have hf := hS f List.mem_cons_self
+    simp only [stableCells, List.mem_filter] at hf
+    obtain ⟨hmem, hty⟩ := hf
+    obtain ⟨flds, c, oid, u, hcell, hr, hatom⟩ := hk.1 f hmem
+    split at hty
+    · rename_i A hA
+      obtain ⟨flds', oid', hcell', hst⟩ := stableField_at hty (he.2 f.slot A hA)
+      rw [hcell] at hcell'
+      cases hcell'
+      refine consequence (fun _ _ _ h => h) (fun h' _ hq => ?_)
+        (ReadGave.stable_frame hst hh hr rest)
+      obtain ⟨⟨hq, hall⟩, hr'⟩ := hq
+      refine ⟨hq, fun x hx => ?_⟩
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact ⟨flds, _, oid, u, hcell, hr', hatom⟩
+      · exact hall x hx
     · cases hty
 
 /-- **Stable links survive every step.** Whatever a step's postcondition, its
-input's stable links hold of every heap it returns in. -/
+input's stable links and stable cell facts hold of every heap it returns in. -/
 theorem withStable_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k out : Knowledge} {ρ n W h t} {T : Fam}
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hh : HeapOk n W h)
     (hs : SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h t) :
     SafePost (excOf G) T (fun h' v => HeapKnowledge.Holds (withStable G Γ k out) (push v ρ) h') n W h t := by
   refine consequence (fun _ _ _ h => h) (fun h' v hq => ?_)
-    (stable_frames he hk hh (stableLinks G Γ k) (fun _ hg => hg) hs)
-  obtain ⟨hout, hall⟩ := hq
+    (stable_cell_frames he hk hh (stableCells G Γ k) (fun _ hf => hf)
+      (stable_frames he hk hh (stableLinks G Γ k) (fun _ hg => hg) hs))
+  obtain ⟨⟨hout, hall⟩, hcells⟩ := hq
   have hS : HeapLinks.Holds (stableLinks G Γ k) ρ h' := by
     intro g hg
     have hg' := hg
     simp only [stableLinks, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at hg'
-    obtain ⟨-, ⟨⟨ha, hd⟩, ho⟩, -⟩ := hg'
-    simp only [hd, ha, ho, Bool.false_eq_true, if_false]
-    exact hall g hg
+    obtain ⟨-, ⟨ha, hd⟩, -⟩ := hg'
+    simp only [hd, ha, Bool.false_eq_true, if_false]
+    have := hall g hg
+    unfold LinkAt at this
+    exact this
   have hpull := HeapLinks.pull_holds (pre := fun i => [i+1]) (τ := push v ρ) hS
     (fun i j hj => by simp at hj; subst hj; rfl)
-  refine ⟨hout.1, hout.2.1, fun g hg => ?_⟩
+  have hshift := HeapFacts.shift_holds (v := v) hcells
+  refine ⟨fun f hf => ?_, hout.2.1, fun g hg => ?_⟩
+  · rcases List.mem_append.mp hf with hf | hf
+    · exact hout.1 f hf
+    · exact hshift f (List.mem_filter.mp hf).1
   rcases List.mem_append.mp hg with hg | hg
   · exact hout.2.2 g hg
   · exact hpull g (List.mem_filter.mp hg).1
 
-/-- A checker whose every step also keeps its input's stable links. -/
+/-- A checker whose every step also keeps its input's stable links and
+stable cell facts. -/
 @[nospecialize] def Checker.keepingStable [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     (base : Checker G images) : Checker G images where
   run := fun j k e codes => (base.run j k e codes).map (withStable G j.context k)

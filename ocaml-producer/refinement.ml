@@ -181,12 +181,13 @@ let record_field ?(allow_optional=false) declarations t field =
     | _ -> false in
   has [] t
 (* Whether every record arm states the field a stable member (HOST-FAMILIES.md,
-   "Stable keys"): a required member its declaration document states stable. *)
+   "Stable keys"): a member, required or optional, its declaration document
+   states stable. *)
 let stable_member declarations t field =
   let rec has seen t = match (try Some (declared_head declarations seen t) with Json.Error _ -> None) with
     | Some (Atoms (_::_ as atoms)) -> List.for_all (function
         | Shape {fields;calls=[];elements=None;indexes=[]} ->
-          List.exists (fun (f:Semantic.field) -> f.name = Name field && f.stable && not f.optional) fields
+          List.exists (fun (f:Semantic.field) -> f.name = Name field && f.stable) fields
         | Named (id,args) when not (List.mem id seen) ->
           (try has (id::seen) (definition declarations id args) with Json.Error _ -> false)
         | _ -> false) atoms

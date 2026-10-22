@@ -3283,11 +3283,13 @@ control(async (): Promise<void> => {
   // whose `Node` reaches no node list), activated by the compiler API's
   // description naming the stand-in's installation and digest: the shape
   // omits the allocating `jsDoc`, so every form of its read is refused, and
-  // reads of other members verify.
+  // reads of other members verify. The stand-in declares no `tokenCache`, so
+  // the description omits `jsDoc` alone.
   const project = tsconfigOf(join(import.meta.dirname, "host-fixture-project"));
   const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
   useFamiliesForTests([{ ...compilerApiFamily, installation: { from: "pipeline/host-fixture-project",
-    digest: "9d2da7d1428fb185d589e2d72425e34dd96dacebafb443d2c8c37202424bb3da" } }]);
+    digest: "9d2da7d1428fb185d589e2d72425e34dd96dacebafb443d2c8c37202424bb3da" },
+    omitted: compilerApiFamily.omitted.filter(m => m.member === "jsDoc") }]);
   try {
     for (const [form, refusal] of [
       ["dot", /missing field jsDoc/], ["element", /missing field jsDoc/], ["paren-key", /missing field jsDoc/],
@@ -3915,7 +3917,7 @@ control(async (): Promise<void> => {
   const example = (file: string): string => join(import.meta.dirname, "examples", `${file}.ts`);
   useFamiliesForTests([{ ...compilerApiFamily, installation: { from: "pipeline/family-fixture-project",
     digest: "aaaa66cf18b7f7d980c0e7734ae6421159ac2eccbbaa8d28b76f03e4280701ff" },
-  table: [{ rule: "literal" }], corrections: [], allocating: [] }]);
+  table: [{ rule: "literal" }], corrections: [], omitted: [] }]);
   try {
     const kept = check(example("family-fixture-optional-method"), project);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
@@ -4126,20 +4128,20 @@ control(async (): Promise<void> => {
     for (const r of residuals) assert.ok(!(r.term.stable ?? []).includes("type"), `${r.name}: no stable tag over an excluded one`);
     const name = must(shapes.find(s => s.name === "Name"), "the Name shape");
     assert.ok((name.term.stable ?? []).includes("type"), "Name's own tag stays stable");
-    // An allocating member (HOST-FAMILIES.md, "The family contract"): the
+    // An omitted member (HOST-FAMILIES.md, "The family contract"): the
     // description listing `Unit.notes`, the one thing changed, omits it from
     // every shape, so its read is refused; without the entry it verifies.
     activate(strings);
     const plain = check(example("notes"), project);
     assert.equal(plain.status, "verified", JSON.stringify(plain));
-    activate({ ...strings, allocating: [{ owner: "Unit", member: "notes", text: "readonly notes: readonly string[];" }] });
+    activate({ ...strings, omitted: [{ owner: "Unit", member: "notes", text: "readonly notes: readonly string[];", why: "allocates" }] });
     const omitted = check(example("notes"), project);
     const notesAt = readFileSync(example("notes"), "utf8").lastIndexOf("u.notes");
     assert.ok(omitted.status !== "verified" && omitted.detail.includes(`at [${notesAt},`), JSON.stringify(omitted));
   } finally {
     useFamiliesForTests(null);
   }
-  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its declarations of the compiler API's view names read as declared; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs and where Node binds the import to such a copy while TypeScript reads the audited declarations (Node returns it); a guard Node binds to another family's function, of the same name and domain, no guard (Node returns the excluded tag); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an allocating member's read refused where the description lists it\n");
+  process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its declarations of the compiler API's view names read as declared; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs and where Node binds the import to such a copy while TypeScript reads the audited declarations (Node returns it); a guard Node binds to another family's function, of the same name and domain, no guard (Node returns the excluded tag); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an omitted member's read refused where the description lists it\n");
 });
 control(async (): Promise<void> => {
   // Each correction of the compiler API's family (COMPILER-API.md,
@@ -4731,10 +4733,10 @@ for (const variant of ["covered", "kept", "taken"] as const) mutationControl(asy
 
 control(async (): Promise<void> => {
   // Stable keys in the declaration document (HOST-FAMILIES.md, "Stable
-  // keys"): the decoder accepts them as required readonly members of a
-  // marked family shape alone. Each forged document is refused by the
-  // decoder; its neighbour, differing in the one thing the check reads, is
-  // decoded.
+  // keys"): the decoder accepts them as readonly members, required or
+  // optional, of a marked family shape alone. Each forged document is
+  // refused by the decoder; its neighbour, differing in the one thing the
+  // check reads, is decoded.
   const artifacts = run("compiler-api-path-witness");
   type Definition = TypeDefinition;
   type ObjectTerm = Extract<TypeTerm, { k: "object" }>;
@@ -4757,32 +4759,44 @@ control(async (): Promise<void> => {
   const decoder = /stable key/;
   const honest = searchWith("stable-honest", () => {});
   assert.doesNotMatch(honest, decoder, honest);
-  // An optional member stated stable; its neighbour states the member
-  // optional and not stable.
-  const optional = searchWith("forged-stable-optional", o => {
-    must(o.fields.find(f => f.name === "text"), "text").optional = true;
+  // A writable member stated stable, optional and required; the neighbour
+  // of each states the member readonly, which the optional one is decoded
+  // as too.
+  const writable = searchWith("forged-stable-writable", o => {
+    const text = must(o.fields.find(f => f.name === "text"), "text");
+    text.optional = true;
+    text.readonly = false;
   });
-  assert.match(optional, /the stable key "text" is no required readonly member of its shape/, optional);
+  assert.match(writable, /the stable key "text" is no readonly member of its shape/, writable);
+  const writableRequired = searchWith("forged-stable-writable-required", o => {
+    must(o.fields.find(f => f.name === "text"), "text").readonly = false;
+  });
+  assert.match(writableRequired, /the stable key "text" is no readonly member of its shape/, writableRequired);
   const optionalNeighbour = searchWith("stable-optional-neighbour", o => {
     must(o.fields.find(f => f.name === "text"), "text").optional = true;
-    o.stable = (o.stable ?? []).filter(k => k !== "text");
   });
   assert.doesNotMatch(optionalNeighbour, decoder, optionalNeighbour);
   // A key the shape does not state; its neighbour states the member.
   const absent = searchWith("forged-stable-absent", o => { o.stable = [...(o.stable ?? []), "noSuchMember"]; });
-  assert.match(absent, /the stable key "noSuchMember" is no required readonly member of its shape/, absent);
+  assert.match(absent, /the stable key "noSuchMember" is no readonly member of its shape/, absent);
   const absentNeighbour = searchWith("stable-absent-neighbour", o => {
     const text = must(o.fields.find(f => f.name === "text"), "text");
     o.fields.push({ ...text, name: "noSuchMember" });
     o.stable = [...(o.stable ?? []), "noSuchMember"];
   });
   assert.doesNotMatch(absentNeighbour, decoder, absentNeighbour);
-  // An unmarked shape stating stable keys; its neighbour states none.
+  // An unmarked shape stating stable keys, at a required member and at an
+  // optional one, as a program record would; its neighbour states none.
   const unmarked = searchWith("forged-stable-unmarked", o => { delete o.host; });
   assert.match(unmarked, /a stable key is stated of a host family's marked shape alone/, unmarked);
+  const unmarkedOptional = searchWith("forged-stable-unmarked-optional", o => {
+    delete o.host;
+    must(o.fields.find(f => f.name === "text"), "text").optional = true;
+  });
+  assert.match(unmarkedOptional, /a stable key is stated of a host family's marked shape alone/, unmarkedOptional);
   const unmarkedNeighbour = searchWith("stable-unmarked-neighbour", o => { delete o.host; delete o.stable; });
   assert.doesNotMatch(unmarkedNeighbour, decoder, unmarkedNeighbour);
-  process.stdout.write("stable keys: an optional, an absent and an unmarked stable key refused by the decoder, each beside its decoded neighbour\n");
+  process.stdout.write("stable keys: a writable (optional and required), an absent and an unmarked (required and optional) stable key refused by the decoder, each beside its decoded neighbour, an optional readonly one decoded\n");
 });
 
 control(async (): Promise<void> => {
@@ -4818,6 +4832,41 @@ control(async (): Promise<void> => {
   const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, unstable);
   assert.match(checked, /refusal at \[\d+,\d+\)|obligation at \[\d+,\d+\)/, checked);
   process.stdout.write("stable links: the document without the tested member's stable key refused in search and in checking, the honest one accepted\n");
+});
+
+control(async (): Promise<void> => {
+  // Stable optional members (HOST-FAMILIES.md, "Stable keys"): the read of
+  // an optional member past a call, absent or present, rests on the member's
+  // stable key alone. The positive case's document with `initializer` and
+  // `expression` dropped from the stable keys of the shapes stating them, the
+  // one thing the rule reads, is refused in search with the case's own
+  // claims and in checking with its own evidence; the honest document is
+  // accepted.
+  const artifacts = run("compiler-api-stable-optional");
+  const forged = (file: string, keep: (key: string) => boolean): string => {
+    const fragment: Ast = readFragmentFile(join(artifacts, "fragment.json"));
+    for (const d of must(fragment.declarations, "the declarations").definitions) {
+      const e = d.expression;
+      if (e?.k !== "object" || e.host === undefined || e.stable === undefined) continue;
+      const next = e.stable.filter(keep);
+      if (next.length) e.stable = next;
+      else delete e.stable;
+    }
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    return path;
+  };
+  const honest = forged("stable-optional-honest", () => true);
+  const accepted = tested(verifierCall(verifier, ["--check-source-claims", honest, join(artifacts, "claims.json"),
+    sourceKey(artifacts), join(artifacts, "evidence.json")]));
+  assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
+  const unstable = forged("forged-stable-optional", k => k !== "initializer" && k !== "expression");
+  const searched = produceWith(artifacts, join(artifacts, "claims.json"), "forged-stable-optional", unstable);
+  assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+  assert.match(searched.stdout + searched.stderr, /obligation at \[\d+,\d+\)/, searched.stdout + searched.stderr);
+  const checked = invoke(join(artifacts, "claims.json"), join(artifacts, "evidence.json"), artifacts, unstable);
+  assert.match(checked, /refusal at \[\d+,\d+\)|obligation at \[\d+,\d+\)/, checked);
+  process.stdout.write("stable optional members: the document without the optional members' stable keys refused in search and in checking, the honest one accepted\n");
 });
 
 mutationControl(async (): Promise<void> => {

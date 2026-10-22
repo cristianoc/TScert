@@ -164,33 +164,62 @@ def viewT (fs : Fields) : Fam := fun k W v =>
       flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → T j W' u
 
-/-- The required own keys whose locations admit one fixed value throughout
-all worlds and levels of their contracts. -/
-def stableKeysT (keys : List PropKey) : Fam := fun n W v =>
-  ∀ key ∈ keys, ∃ (flds : List (PropKey × Nat)) (oid l : Nat)
-    (c : Ctr n) (value : Val),
-    v = .objAt flds .absent oid ∧ flds.lookup key = some l ∧
-      lookup W l = some c ∧ CtrStable c value
+/-- A key of an object's map read one way for the object's life: owned at a
+location whose contract admits one fixed value throughout all worlds and
+levels, or not owned by an object without a prototype, which a read answers
+`undefined` from the value alone (`Step.readMissing`). An object's map of
+locations is part of its value, so which case holds never changes. -/
+def StableAt {n : Nat} (W : WorldT n) (flds : List (PropKey × Nat)) (key : PropKey) : Prop :=
+  match flds.lookup key with
+  | some l => ∃ (c : Ctr n) (value : Val), lookup W l = some c ∧ CtrStable c value
+  | none => flds.lookup CallArguments.protoField = none
 
-/-- A stated stable key supplies the location and stable contract needed by
-`HeapObservations.stable_frame`. The location exists even at level zero. -/
+/-- A present stable key supplies the location's stable contract needed by
+`HeapObservations.stable_frame`. -/
+theorem StableAt.present {n : Nat} {W : WorldT n} {flds : List (PropKey × Nat)} {key : PropKey}
+    {l : Nat} (h : StableAt W flds key) (hl : flds.lookup key = some l) :
+    ∃ (c : Ctr n) (value : Val), lookup W l = some c ∧ CtrStable c value := by
+  simpa [StableAt, hl] using h
+
+/-- An absent stable key's object has no prototype. -/
+theorem StableAt.absent {n : Nat} {W : WorldT n} {flds : List (PropKey × Nat)} {key : PropKey}
+    (h : StableAt W flds key) (hl : flds.lookup key = none) :
+    flds.lookup CallArguments.protoField = none := by
+  simpa [StableAt, hl] using h
+
+/-- The stable keys: each read one way for the object's life (`StableAt`), a
+required one owned, since it is also a view, an optional one owned or not. -/
+def stableKeysT (keys : List PropKey) : Fam := fun _ W v =>
+  ∀ key ∈ keys, ∃ (flds : List (PropKey × Nat)) (oid : Nat),
+    v = .objAt flds .absent oid ∧ StableAt W flds key
+
+/-- A stated stable key's object and its reading of the key. -/
 theorem stableKeysT_at {keys : List PropKey} {key : PropKey}
     {n : Nat} {W : WorldT n} {v : Val}
     (h : stableKeysT keys n W v) (hk : key ∈ keys) :
-    ∃ (flds : List (PropKey × Nat)) (oid l : Nat) (c : Ctr n) (value : Val),
-      v = .objAt flds .absent oid ∧ flds.lookup key = some l ∧
-        lookup W l = some c ∧ CtrStable c value := h key hk
+    ∃ (flds : List (PropKey × Nat)) (oid : Nat),
+      v = .objAt flds .absent oid ∧ StableAt W flds key := h key hk
 
 /-- Truncation restricts stable contracts; extension preserves them. -/
 theorem stableKeysT_adm (keys : List PropKey) : Adm (stableKeysT keys) := by
   constructor
   · intro n W v h key hk
-    obtain ⟨flds, oid, l, c, value, he, hf, hw, hs⟩ := h key hk
-    exact ⟨flds, oid, l, _, value, he, hf,
-      lookup_trunc (Nat.le_succ n) W l c hw, hs.restrict (Nat.le_succ n)⟩
+    obtain ⟨flds, oid, he, hs⟩ := h key hk
+    refine ⟨flds, oid, he, ?_⟩
+    unfold StableAt at hs ⊢
+    split at hs
+    · rename_i l _
+      obtain ⟨c, value, hw, hc⟩ := hs
+      exact ⟨_, value, lookup_trunc (Nat.le_succ n) W l c hw, hc.restrict (Nat.le_succ n)⟩
+    · exact hs
   · intro n W U hx v h key hk
-    obtain ⟨flds, oid, l, c, value, he, hf, hw, hs⟩ := h key hk
-    exact ⟨flds, oid, l, c, value, he, hf, WExt_lookup hx hw, hs⟩
+    obtain ⟨flds, oid, he, hs⟩ := h key hk
+    refine ⟨flds, oid, he, ?_⟩
+    unfold StableAt at hs ⊢
+    split at hs
+    · obtain ⟨c, value, hw, hc⟩ := hs
+      exact ⟨c, value, WExt_lookup hx hw, hc⟩
+    · exact hs
 
 /-- Forgetting stable keys weakens their semantic requirement. -/
 theorem stableKeysT_weaken {source target : List PropKey}

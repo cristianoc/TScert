@@ -171,6 +171,16 @@ export function familyOfFile(file: string): FamilyDescription | null {
   return checkedInventory(found.description).has(real) ? found.description : null;
 }
 
+/** `file`'s path inside the installation of the active description holding
+ * it, by its real path, `/`-separated; null for a file of no installation. */
+export function installationPath(file: string): string | null {
+  const real = orAbsent(realPath, file);
+  if (real === null) return null;
+  const found = installations().find(i => real.startsWith(i.root + sep));
+  if (!found || !checkedInventory(found.description).has(real)) return null;
+  return relative(found.root, real).split(sep).join("/");
+}
+
 /** Whether `file` is a declaration of a host package: a file of an active
  * description's installation, whose declarations have the description's
  * digest. A package elsewhere, whatever its manifest names, is no host. */

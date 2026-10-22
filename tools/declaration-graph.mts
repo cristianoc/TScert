@@ -24,8 +24,8 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
-import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
+import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
+import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -1579,6 +1579,11 @@ export function collectDeclarations(file: string, options: {
       if (!node) throw Error(`unresolved value ${what}`);
       const source = node.getSourceFile();
       const span: Span = [node.getStart(source), node.end];
+      // A node builder of the compiler API's package returns nodes outside
+      // the node invariant (COMPILER-API.md, R2).
+      const builder = compilerApiFile(source.fileName) ? installationPath(source.fileName) : null;
+      if (builder !== null && hostNodeBuilders.includes(builder))
+        throw Error(`${what} builds nodes outside the node invariant, which the compiler-API contract refuses (${builder})`);
       // An enum declared elsewhere is its object, read by `ambient-enum`
       // (SOURCE-CONTRACTS.md, "Enums"): its members, each at its value's
       // literal type, `number` where TypeScript computes none. A host enum is
@@ -4576,11 +4581,11 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
           type: hostBrands(type, true, context.isBrand,
             message => { throw Error(`${message} in ${identity.module}#${identity.name}.${f.name}`); }) };
       };
-      // A shape's stable members: its required property members the
-      // stable-member rule names, the tag among them (HOST-FAMILIES.md,
-      // "Stable keys").
+      // A shape's stable members: its property members, required or
+      // optional, the stable-member rule names, the tag among them
+      // (HOST-FAMILIES.md, "Stable keys").
       const shape = (fields: Field[], stable: readonly string[]): TypeTerm => {
-        const keys = fields.flatMap(f => typeof f.name === "string" && !f.optional && stable.includes(f.name) ? [f.name] : []);
+        const keys = fields.flatMap(f => typeof f.name === "string" && stable.includes(f.name) ? [f.name] : []);
         return { k: "object", fields, stringIndex: null, calls: [], span, host: marker, ...(keys.length ? { stable: keys } : {}) };
       };
       const reference = (target: TypeDeclaration, args: TypeTerm[]): TypeTerm => {
@@ -4713,13 +4718,14 @@ function collect(start: TypeDeclaration, seen: Set<string>, definitions: TypeDef
     // A host type's members are readonly views, whether or not they are
     // declared `readonly` (COMPILER-API.md, reading rule 1): a client write
     // to one is refused, and a test of one narrows as an invariant field's.
-    // A member whose read allocates is no member of the host type's shape
-    // (the active family description's `allocating`, declared as reviewed): every read of it, in any
-    // form, is a read of a member the type does not state, and no structural
-    // type requiring it admits a value of the host type.
+    // A member whose reads give no one value for a node's life is no member
+    // of the host type's shape (the active family description's `omitted`,
+    // declared as reviewed): every read of it, in any form, is a read of a
+    // member the type does not state, and no structural type requiring it
+    // admits a value of the host type.
     if (context.hostType(node) && expression.k === "object") {
       const omitted = ts.isInterfaceDeclaration(node)
-        ? (familyOfFile(node.getSourceFile().fileName)?.allocating ?? []).filter(m => m.owner === node.name.text).map(m => ({ name: m.member, text: m.text })) : [];
+        ? (familyOfFile(node.getSourceFile().fileName)?.omitted ?? []).filter(m => m.owner === node.name.text).map(m => ({ name: m.member, text: m.text })) : [];
       for (const entry of omitted) {
         const declared = parts.flatMap(part => ts.isInterfaceDeclaration(part) ? part.members : [])
           .filter(m => { const name = nameOf(m); return !!name && ts.isIdentifier(name) && name.text === entry.name; });

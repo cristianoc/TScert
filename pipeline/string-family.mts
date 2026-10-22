@@ -16,7 +16,7 @@ export const stringFamily: FamilyDescription = {
   tag: { field: "type", primitive: "string", constants: { enum: "UnitType" } },
   table: [{ rule: "literal" }],
   corrections: [],
-  allocating: [],
+  omitted: [],
   stable: { excluded: [] },
   guards: {
     entryPoint: "./ast",

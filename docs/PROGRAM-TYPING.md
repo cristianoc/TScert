@@ -3168,11 +3168,14 @@ It computes a guaranteed output, not an assumed postcondition:
 | Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a distinct link separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
-Every step keeps, past its result, the read links of its input through a
-member every clause of the receiver's type states a stable key
-([stable keys](POSITIVE-TYPES.md#records)), whatever the step: a call, a
-write, a closure's run. On normal return the location holds its one value
-in every heap a run reaches (`stable_frame`), so the link holds there:
+Every step keeps, past its result, the read links and cell facts of its
+input through a member every clause of the receiver's type states a stable
+key ([stable keys](POSITIVE-TYPES.md#records)), optional links among them,
+whatever the step: a call, a write, a closure's run. On normal return a
+present key's location holds its one value in every heap a run reaches
+(`stable_frame`), and an absent key of an object without a prototype reads
+`undefined` in every heap (`ReadGave.stable_frame`), so the link and the
+fact hold there:
 
 ```math
 \frac{x.f\mapsto y\in\Sigma\quad \forall c\in\mathrm{expand}(\Gamma(x)).\ f\in\sigma(c)\quad

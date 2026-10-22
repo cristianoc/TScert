@@ -57,21 +57,6 @@ theorem stable_frame {T Q} {l : Nat} {v : Val} : ∀ {n W h t} {c : Ctr n},
         ih (WExt_lookup hx (lookup_trunc (Nat.le_succ n) W l c hl))
           (hc.restrict (Nat.le_succ n)) hh' hs⟩
 
-/-- A semantic stable-key requirement frames the value read at that own key
-through a normally returning execution. The heap identifies the contract's
-fixed value at the positive starting level. -/
-theorem stable_key_frame {T Q} {keys : List PropKey} {key : PropKey}
-    {n : Nat} {W : WorldT n} {h : Heap} {object t : Tm}
-    (hn : 0 < n) (hk : key ∈ keys) (ho : stableKeysT keys n W object)
-    (hh : HeapOk n W h) (hs : SafePost Ξ T Q n W h t) :
-    ∃ (flds : List (PropKey × Nat)) (oid l : Nat) (value : Val),
-      object = .objAt flds .absent oid ∧ flds.lookup key = some l ∧
-      h[l]? = some value ∧
-      SafePost Ξ T (fun h' u => Q h' u ∧ h'[l]? = some value) n W h t := by
-  obtain ⟨flds, oid, l, c, value, he, hf, hw, hc⟩ := stableKeysT_at ho hk
-  exact ⟨flds, oid, l, value, he, hf, hh.stable_value hn hw hc,
-    stable_frame hw hc hh hs⟩
-
 /-- Overload combination compares two executions of the same term. The
 worlds may differ, but determinism makes the final heap and value the same.
 Both executions' postconditions survive in the first result world; the
