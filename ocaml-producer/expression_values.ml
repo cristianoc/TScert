@@ -61,7 +61,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
         (List.assoc_opt n (path_facts ()).Proposal_flow.classes)) expected;
       (* A named closure expected at a signature binding more parameters
          than it does is offered it, wherever it flows: an argument, an annotated binding, a return, a field. *)
-      (match expected with
+      (match Option.map (fun x -> try declared_head declarations [] x with Json.Error _ -> x) expected with
        | Some (Atoms [Shape {calls=[o];fields=[];indexes=[];elements=None}])
          when List.mem_assoc n (path_facts ()).Proposal_flow.closures && List.mem_assoc n env ->
          Option.iter (fun state -> state ()) (closure_offer n o)

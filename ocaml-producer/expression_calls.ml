@@ -161,7 +161,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
         | Id n ->
           explain_builtin_array arg.pos env n (Some param);
           explain_record_at_index arg.pos env n (Some param);
-          (match param, (try Some (resolve env n) with Json.Error _ -> None) with
+          (match param, (try Some (declared_head declarations [] (resolve env n)) with Json.Error _ -> None) with
            | Atoms [Shape {calls=[o];_}], Some (Atoms [Shape {calls=[own];fields=[];indexes=[];elements=None}])
                when List.length o.params > List.length own.params || (o.variadic <> None && own.variadic = None) ->
              Option.iter (S.explain arg.pos) (Module_contract.longer_refusal

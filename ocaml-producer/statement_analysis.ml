@@ -241,13 +241,25 @@ let transfer (expr:Analysis_state.expression_infer) =
          literal's own signature, with the footprint the round assumes of the
          closure (SOURCE-MODEL.md, "Recursive constants"). *)
       let init_env = match mutable_,init.node with
-        | false,Lambda (_,[],ps,defaults,false,result,_,_) when mentions n init ->
+        | false,Lambda (_,[],ps,defaults,false,result,guard,_) when mentions n init ->
           let self = match written,result with
             | Some t,_ -> t
             | None,Some r -> arrow (List.mapi (fun i (_,t) ->
                 if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps) r
             | None,None -> Proposal_diagnostics.unsupported
                 "a recursive closure needs its result annotated or the constant's type" in
+          (* The self entry holds the closure, at its whole claim: the
+             signatures it is offered where it flows, a read of the self
+             entry among them, beside its own. Each self read flows the
+             closure, so it is a named closure there. *)
+          named_closure n written init;
+          let self = match guard,(try declared_head declarations [] self with Json.Error _ -> self),
+                           List.assoc_opt init.pos offered with
+            | None,Atoms [Shape ({calls=[call];_} as shape)],Some extra ->
+              Atoms [Shape {shape with calls=call :: List.filter (fun s -> s <> call)
+                (List.sort_uniq compare (List.map (fun (s:Semantic.signature) ->
+                  {s with call_effect=call.call_effect}) extra))}]
+            | _ -> self in
           let footprint,on_throw = match Hashtbl.find_opt Source.self_effects init.pos with
             | Some assumed -> assumed
             | None -> Hashtbl.replace Source.self_effects init.pos (empty_footprint,true);

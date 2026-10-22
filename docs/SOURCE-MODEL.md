@@ -401,9 +401,16 @@ whole type, its effects and exceptional guarantee included, by induction on
 the step index (`funGraphSelf`,
 [program typing](PROGRAM-TYPING.md#judgments-and-constructor-views)): at
 budget $`n`$ every invocation runs at a lower index, where the induction
-hypothesis gives self its type. The producer types the body's reads at the
+hypothesis gives self its type. A read of the self entry is a flow of the
+closure like any read of the constant, so where it is expected at a
+signature binding more parameters, as `some`'s callback in `const binder =
+(t: Term): boolean => t.k === "union" && t.parts.some(binder)`, the closure
+is offered that signature ([offers](SOURCE-ELABORATION.md#source-closures-and-their-annotations))
+and its claim holds it; the read meets it as a conjunct of the claim
+(`recursive-constant-callback`). The producer types the body's reads at the
 constant's annotation or the literal's own signature, which its result
-annotation completes, with the footprint it proposes for the closure:
+annotation completes, beside the signatures it is offered, with the
+footprint it proposes for the closure:
 every such closure is assumed to change nothing, and rounds of inference
 raise the assumption to what the closure's claim then shows, as for
 [function declarations](SOURCE-ELABORATION.md#certifying-inferred-call-effects);

@@ -1522,15 +1522,57 @@ $`A_j\sqsubseteq_G D_j`$ and the closure at $`\bigwedge L`$ wherever it goes, th
 call offering it included. A closure is **offered** each signature binding
 more parameters than it does that is expected where it flows: passed where
 a callback is offered more parameters (`xs.reduce(acc, null)`), bound under
-such an annotation directly or through another binding, returned at such a
-result. It is claimed where it is created at that signature beside its own,
-and its code is checked at each (`CodeOffers`), the premise over $`L`$ above
-keeping each claimed parameter within its annotation:
+such an annotation directly, through an alias or through another binding,
+returned at such a result. It is claimed where it is created at that
+signature beside its own, and its code is checked at each (`CodeOffers`),
+the premise over $`L`$ above keeping each claimed parameter within its
+annotation:
 
 ```math
 \frac{\lambda(\vec x{:}\vec D).t\ \text{flows to a position expecting}\ (R;\vec A)\to B\quad |\vec x|<|\vec A|}
      {(R,\vec A,B)\in L}\ \textsf{offer}
 ```
+
+A [recursive constant](SOURCE-MODEL.md#recursive-constants)'s closure
+flows wherever its body reads its self entry, which holds the closure: a
+read of $`f`$ in $`t`$ where $`(R;\vec A)\to B`$ is expected puts that
+signature in $`L`$ by `offer`, and the code is checked at every row of
+$`L`$ with the self entry at the whole claim, so the read meets the
+signature as a conjunct:
+
+```math
+\frac{\mathsf{const}\ f=\lambda(\vec x{:}\vec D).t\qquad
+       \forall(R,\vec A,B)\in L.\;\Gamma,\ f{:}\textstyle\bigwedge L,\ \vec x{:}\vec A_{\le|\vec x|}\vdash_G t:B}
+     {\Gamma\vdash_G \lambda(\vec x{:}\vec D).t:\textstyle\bigwedge L}\ \textsf{offer-self}
+```
+
+The premise abbreviates `CodeOffers` with the self entry at $`\bigwedge L`$:
+each row's check covers its effect and exceptional guarantee, the
+parameter defaults' execution, the receiver, each claimed parameter within
+its annotation, and a variadic row's fixed parameters covering the
+closure's. This is `funGraphSelf` at a claim holding offered rows:
+`t.parts.some(binder)` in `binder`'s own body, a default reading the
+constant, a bound wrapper and a variadic row
+(`recursive-constant-callback`); a self read at a longer signature does not
+carry the closure's preservation onto its exceptional edge
+(`invalid-recursive-constant-exceptional`, run under Node). The producer
+proposes the offered rows for the self entry of a plain closure, without
+type parameters, a rest or a written promise; the self entry of any other
+is read at its own signature, so its self read at a longer signature meets
+none and is refused (`recursive-guard-callback-refused`, a gap). A self read where a
+signature with a parameter outside the closure's is expected is not
+offered and meets nothing, so it is refused, called at once or stored and
+called later with more arguments, both admitted by TypeScript, which
+compares a method's parameters both ways
+(`invalid-recursive-constant-self-wider`,
+`invalid-recursive-constant-escape-wider`, run under Node). A self read
+passed to `find` by a closure shrinking the array meets only `find`'s
+unrestricted callback, at `T | undefined`
+(`invalid-recursive-constant-callback-mutation`, run under Node). A `let`
+read by its own initializer's closure is a cell, refused as an early
+binding (`invalid-recursive-cell-callback`, run under Node), and a name the
+body binds again is that binding, a value known by its type
+(`invalid-recursive-constant-shadowed`, run under Node).
 
 An offered parameter may be narrower than the closure's,
 $`A_j\sqsubseteq_G D_j`$ strictly: a closure over a union passed to
