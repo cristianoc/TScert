@@ -513,8 +513,14 @@ if (platform() === "darwin") {
   const keyed = new Map([["claims-assembly.mts", true], ["in-process-execution.mts", true],
     ["stage-execution.mts", true], ["hidden.mts", true], ["new-module.mts", true], ["stages.mts", false],
     ["stage-store.mts", false]]);
-  const drivers = [...keyed.keys()].map((name) => {
-    const root = join(dir, "loaded-copy-" + name);
+  const scenarios = ["in-process", "process"].flatMap((kind) => [
+    ...[...keyed].map(([name, eligible]) => ({ kind, name, mode: eligible &&
+      !(kind === "process" && ["claims-assembly.mts", "in-process-execution.mts"].includes(name)) ? "keyed" : "policy", off: false })),
+    ...[false, true].flatMap((off) => (kind === "process" ? ["during", "timeout"] : ["during"])
+      .map((mode) => ({ kind, name: "hidden.mts", mode, off }))),
+  ]);
+  const drivers = scenarios.map(({ kind, name, mode, off }, index) => {
+    const root = join(dir, "loaded-copy-" + index);
     const copied = join(root, "pipeline");
     mkdirSync(copied, { recursive: true });
     symlinkSync(resolve(import.meta.dirname, "../tools"), join(root, "tools"));
@@ -526,12 +532,70 @@ if (platform() === "darwin") {
     const driver = join(copied, "test.mts");
     writeFileSync(driver, String.raw`
 import assert from "node:assert/strict";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { assemblyCall } from "./claims-assembly.mts";
-import { invokeInProcess } from "./stages.mts";
-const run = (): ReturnType<typeof invokeInProcess<string>> =>
-  invokeInProcess(assemblyCall('{"modules":[]}', []), { force: false, recorder: null });
+import { invokeInProcess, invokeProcess, Recorder } from "./stages.mts";
+import { auditForTests, verifierCall } from "./stage-execution.mts";
+const target = new URL(process.argv[2], import.meta.url);
+const kind = process.argv[5];
+const during = ["during", "timeout"].includes(process.argv[3]);
+const timeout = process.argv[3] === "timeout";
+const original = during ? readFileSync(target) : null;
+const program = new URL("stand-in.sh", import.meta.url).pathname;
+const input = new URL("input.json", import.meta.url).pathname;
+const marker = new URL("edited", import.meta.url).pathname;
+writeFileSync(input, '{"modules":[]}');
+// The marker lets a second invocation finish with exactly the same program
+// and inputs, exposing either a finished result or a timeout published by
+// the first invocation. Only the copied keyed module is edited.
+writeFileSync(program, '#!/bin/sh\n' + (during
+  ? 'if [ ! -f "' + marker + '" ]; then\n' +
+    'printf "\\n// edited during execution\\n" >> "' + target.pathname + '"\n' +
+    ': > "' + marker + '"\n' + (timeout ? '/bin/sleep 5\n' : '') + 'fi\n'
+  : '') + '/bin/cat "$2"\n');
+chmodSync(program, 0o755);
+auditForTests(program, ["/bin/cat", "/bin/sleep"]);
+const recorder = new Recorder(null);
+let edit = during;
+const run = (): ReturnType<typeof invokeInProcess<string>> => {
+  if (kind === "process") {
+    const result = invokeProcess(verifierCall(program, ["--lower-control-flow", input]),
+      { limitMs: timeout ? 500 : 10_000, force: false, recorder });
+    return { value: result.stdout, record: result.record };
+  }
+  const call = assemblyCall('{"modules":[]}', []);
+  return invokeInProcess({ ...call, run: () => {
+    if (edit) {
+      appendFileSync(target, "\n// edited during execution\n");
+      edit = false;
+    }
+    return call.run();
+  } }, { force: false, recorder });
+};
+if (during) {
+  const setting = process.env.TSCERT_STAGE_STORE;
+  const result = run();
+  assert.equal(result.record.execution, timeout ? "timed-out" : "executed");
+  assert.equal(result.record.key, null);
+  assert.equal(result.record.ineligible, "loaded node-side modules differ from disk");
+  assert.deepEqual(recorder.records, [result.record]);
+  assert.equal(result.record.forced, setting === "off");
+  assert.equal(result.record.exitStatus, kind === "process" && !timeout ? 0 : null);
+  if (!timeout) assert.equal(result.value, '{"modules":[]}');
+  // Restore the captured identity and enable the store so the same key
+  // would find either kind of publication, including from a store-off run.
+  writeFileSync(target, original);
+  process.env.TSCERT_STAGE_STORE = process.argv[4];
+  const later = run();
+  assert.equal(later.record.execution, "executed");
+  assert.notEqual(later.record.key, null);
+  assert.equal(later.record.ineligible, null);
+  assert.deepEqual(later.record.manifest, result.record.manifest);
+  assert.equal(later.value, '{"modules":[]}');
+  assert.equal(run().record.execution, "replayed");
+  process.exit(0);
+}
 if (process.argv[3] === "fresh-policy") {
   assert.equal(process.env.TSCERT_EDITED_POLICY, "loaded");
   const result = run();
@@ -557,12 +621,12 @@ if (process.argv[3] === "keyed") {
   assert.equal(result.record.key, first);
   appendFileSync(new URL(process.argv[2], import.meta.url),
     '\nprocess.env.TSCERT_EDITED_POLICY = "loaded";\n');
-  const fresh = spawnSync(process.execPath, [import.meta.filename, process.argv[2], "fresh-policy", first],
+  const fresh = spawnSync(process.execPath, [import.meta.filename, process.argv[2], "fresh-policy", first, kind],
     { encoding: "utf8" });
   assert.equal(fresh.status, 0, fresh.stderr);
 }
 `);
-    return { name, driver };
+    return { name, driver, kind, mode, off, store: join(root, "store") };
   });
   const program = script("runtime.sh", '/bin/cat "$2"');
   const input = file("runtime.json", "runtime"), preload = file("preload.mjs", "");
@@ -570,9 +634,9 @@ if (process.argv[3] === "keyed") {
   const options = [["--import", preload], ["--require", preload], ["--experimental-loader", preload], ["--experimental_loader", preload], ["-r", preload]];
   sections.push((async (): Promise<void> => {
     const children = await Promise.all([
-      ...drivers.map(({ name, driver }) => new Promise<{ status: number | null; stderr: string }>((done, fail) => {
-        const p = spawn(process.execPath, [driver, "./" + name, keyed.get(name) ? "keyed" : "policy"],
-          { env: { ...env, TSCERT_STAGE_STORE: join(dir, "loaded-copy-store-" + name) } });
+      ...drivers.map(({ name, driver, kind, mode, off, store }) => new Promise<{ status: number | null; stderr: string }>((done, fail) => {
+        const p = spawn(process.execPath, [driver, "./" + name, mode, store, kind],
+          { env: { ...env, TSCERT_STAGE_STORE: off ? "off" : store } });
         let stderr = "";
         p.stderr.setEncoding("utf8");
         p.stderr.on("data", (text: unknown) => { stderr += String(text); });

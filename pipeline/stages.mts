@@ -151,8 +151,9 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
   const directory = executionDirectory(call.stage);
   try {
     const bound = bindProcess(call);
-    const { input, ineligible } = bound;
-    const key = ineligible === null ? sha256(input) : null;
+    const { input } = bound;
+    let ineligible = bound.ineligible;
+    let key = ineligible === null ? sha256(input) : null;
     const record = (execution: Execution, exitStatus: number | null, replay: Replay | null): AttemptRecord => ({
       attempt, stage: call.stage, key, ineligible, manifest: bound.manifest, context: { program: bound.program, directory },
       forced, limitMs: options.limitMs, execution, exitStatus, elapsedMs: performance.now() - started,
@@ -187,9 +188,11 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     }
     const run = executeProcess(bound, directory, options.limitMs);
     const elapsedMs = performance.now() - started;
+    ineligible ??= codeFailure(processCode);
+    if (ineligible !== null) key = null;
     const done = record(run.ran, run.status, null);
     // The code that ran is the code the key names, or nothing is published.
-    const publishing = replaying && codeFailure(processCode) === null ? replaying : null;
+    const publishing = replaying && key !== null ? replaying : null;
     if (publishing && run.ran === "executed")
       publishing.store.publishFinished(call.stage, publishing.key, { input, exitStatus: run.status, stdout: run.stdoutBytes,
         stderr: run.stderrBytes, outputs: run.produced, measurement: { attempt, elapsedMs, limitMs: options.limitMs,
