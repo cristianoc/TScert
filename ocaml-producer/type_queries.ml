@@ -31,8 +31,7 @@ let plausible_shape_kinds a b = match a,b with
   | {elements=None;indexes=[];calls=_::_;fields},
     {elements=None;indexes=[];calls=_::_;fields=target} ->
     target=[] || fields<>[]
-  | {elements=Some _;fields=[];indexes=[];calls=[]},
-    {elements=Some _;fields=[];indexes=[];calls=[]} -> true
+  | {elements=Some _;calls=[];_}, {elements=Some _;calls=[];_} -> true
   | _ -> false
 (* A proposal heuristic for choosing an advertised arrow. It does not
    establish subtyping: Lean checks the selected call and its arguments. *)
@@ -49,9 +48,11 @@ let rec plausible_subtype_with excludes actual expected =
         List.mem host_mark a.fields || a.indexes <> [] || a.calls <> [] ||
         List.exists (fun (f:Semantic.field) -> f.write <> None && not f.optional && not f.host) a.fields ||
         (match a.elements with Some s -> not s.readonly | None -> false)
-      (* Equal members, or members by width and depth within one clause
-         kind. *)
+      (* A value with call signatures is never within a record without
+         any; members are equal, or within by width and depth inside one
+         clause kind. *)
       | Shape a,Shape b when plausible_elements excludes a.elements b.elements
+                             && (a.calls=[] || b.calls<>[])
                              && ((a.fields=b.fields && a.indexes=b.indexes)
                                  || (plausible_shape_kinds a b
                                      && plausible_fields excludes a.fields b.fields

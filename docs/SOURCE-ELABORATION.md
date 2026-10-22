@@ -1592,11 +1592,12 @@ an equal invariant field, a view by a required member within it, an optional
 member by a slot within it, excluding required readonly `length` views,
 a writable one by an equal writable slot, a
 method by a method within it, with contravariant receiver requirements
-and every target stable key stable in the source, within one clause kind:
-a record without call signatures within such a record, a callable value
-with fields within one with fields or within its signatures alone,
-signatures alone within signatures alone, an array within an array. Each
-writable target index
+and every target stable key stable in the source. A value with call
+signatures is never within a record without any, and width and depth apply
+within one clause kind: a record without call signatures within such a
+record, a callable value with fields within one with fields or within
+signatures alone, signatures alone within signatures alone, an array within
+an array. Each writable target index
 also preserves every overlapping source index contract and optional field
 or optional readonly view; the heuristic conservatively treats every string
 key as potentially numeric for this check. An interface extending
