@@ -1111,6 +1111,17 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-filter-guard-promise", "JSON.stringify(strings([null, 'a']))", '[null,"a"]'],
     ["invalid-closure-parameter-write", "String(textOf({ kind: 'name', text: 'a' }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }))", "undefined"],
     ["invalid-closure-parameter-cell", "String(textOf({ kind: 'name', text: 'a' }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }))", "undefined"],
+    // A path rooted at a `let` slot holds what its test saw until the root's
+    // next write; a write, a back edge, a `finally`, a closure's write, an
+    // alias's write or a call through a member that is not stable between
+    // the test and the read gives `undefined` where a string is returned.
+    ["slot-path", "const n = { kind: 'index', object: { kind: 'name', text: 'o' }, key: { kind: 'name', text: 'k' } }; const p = { kind: 'paren', inner: n }; JSON.stringify([namesKey(p, 'k'), namesKey(p, 'j'), keyText(p), retested(n, { kind: 'name', text: 'x' }), retested(n, n)])", '[true,false,"k","","k"]'],
+    ["invalid-slot-path-write", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }))", "undefined"],
+    ["invalid-slot-path-loop", "String(lastKey({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }, 2))", "undefined"],
+    ["invalid-slot-path-finally", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }, () => {}))", "undefined"],
+    ["invalid-slot-path-closure", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }))", "undefined"],
+    ["invalid-slot-path-alias", "String(keyText({ key: { kind: 'name', text: 'a' } }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }, 1))", "undefined"],
+    ["invalid-slot-path-call", "(() => { const b = { key: { kind: 'name', text: 'a' } }; return String(keyText(b, 1, () => { b.key = { kind: 'paren', inner: b.key }; })); })()", "undefined"],
     ["slot-object-growth", "JSON.stringify(grownSlot('x', false)()) + JSON.stringify(grownSlot('x', true)())", "{\"x\":1,\"count\":2}{\"x\":1,\"count\":2}"],
     ["invalid-evolving-use-contract", "build(6)", "many"],
     ["invalid-generic-callee-use-contract", "count(3).head", "many"],

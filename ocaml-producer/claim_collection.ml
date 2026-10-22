@@ -55,7 +55,9 @@ open S
       (* A read-result observation is claimed where every record arm names the key. *)
       let bindings = List.filter (fun (n,_) -> not (is_field n) ||
         (match List.assoc_opt (owner n) env with
-         | Some (Value t) ->
+         (* A slot's entries are its paths' alone, as an immutable
+            binding's: Lean links each to the slot until a write. *)
+         | Some (Value t | Local (_,t)) ->
            let field = field_of n in
            (* A path's first member is the root's field; its later members
               are read from what the entry states of its prefix, in Lean. *)

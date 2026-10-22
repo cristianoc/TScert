@@ -51,13 +51,16 @@ let refine_value env name refine = List.map (fun (n,b) ->
     | Storage (contract,current) -> holding contract (refine current)
     | Local (contract,current) -> Local (contract,refine current))
   else n,b) env
-(* After an assignment, the cell holds the value written. *)
-let assign env name t = List.map (fun (n,b) ->
-  if n=name then n,(match b with
+(* After an assignment, the cell holds the value written. A slot's member
+   paths were of the object it held before, so their entries go. *)
+let assign env name t = List.filter_map (fun (n,b) ->
+  if n=name then Some (n,(match b with
     | Storage (contract,_) -> holding contract t
     | Local (contract,_) -> Local (contract,t)
-    | Value _ -> b)
-  else n,b) env
+    | Value _ -> b))
+  else if is_field n && owner n = name && (match List.assoc_opt name env with
+      Some (Local _) -> true | _ -> false) then None
+  else Some (n,b)) env
 (* What a field of an immutable binding's object currently holds, where a
    guard found it: an entry named by the object's name and the field joined
    by a NUL, which no name contains, holding a primitive refinement or nullish slice of the contract. Lean
@@ -99,7 +102,7 @@ let is_path n = is_field n && (let i = String.index n '\000' in
   i + 1 < String.length n && n.[i+1] = '\001')
 let rec path_of env (e:Source.expr) = match e.Source.node with
   | Source.Read ({Source.node=Source.Id name;_},Name f) ->
-    (match List.assoc_opt name env with Some (Value _) -> Some (name,[f]) | _ -> None)
+    (match List.assoc_opt name env with Some (Value _ | Local _) -> Some (name,[f]) | _ -> None)
   | Source.Read (inner,Name f) -> Option.map (fun (r,fs) -> (r,fs @ [f])) (path_of env inner)
   | _ -> None
 let path_entry env e = Option.bind (path_of env e) (fun (r,fs) ->

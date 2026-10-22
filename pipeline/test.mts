@@ -4341,6 +4341,10 @@ mutationControl(async (): Promise<void> => {
   // Forged claims select named paths at source statements. The test-only
   // mutation executable searches their complete evidence and checks it with
   // every selected bypass necessary: coverage, links, or cell knowledge.
+  // A write of a `let` slot root rebinds the slot, so no link from it
+  // reaches an entry after the write (`afterRoot`) or a loop head the
+  // write's back edge enters (`backEdge`) (HOST-FAMILIES.md, "Paths rooted
+  // at a slot").
   const artifacts = run("path-witness-controls");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const honest = readClaims(artifacts);
@@ -4353,7 +4357,8 @@ mutationControl(async (): Promise<void> => {
   for (const [name, functionName, marker, failure] of [
     ["before", "before", "if (holder.value", "type coverage"],
     ["afterCall", "afterCall", "return 0;", "heap knowledge"],
-    ["afterRoot", "afterRoot", "return 0;", "type coverage"],
+    ["afterRoot", "afterRoot", "return 0;", "heap knowledge"],
+    ["backEdge", "backEdge", "while (n < limit)", "type coverage"],
     ["caught", "caught", "return /* caught */ 0;", "heap knowledge"],
     ["predecessor", "before", "return 0;", "type coverage"],
     ["read", "afterCallRead", "return holder.value;", "heap knowledge"],
@@ -4368,11 +4373,11 @@ mutationControl(async (): Promise<void> => {
       expression.type = type;
     }
     const input = writeClaims(artifacts, `forged-witness-${name}`, claims);
-    const obligation = `source incoming edge obligation at [${at.start},${source.indexOf(";", at.start) + 1})`;
+    const obligation = `source incoming edge obligation at [${at.start},${name === "backEdge" ? source.indexOf("}", at.start) + 1 : source.indexOf(";", at.start) + 1})`;
     refusedAt(artifacts, input, `forged-witness-${name}`, obligation);
     const checked = invoke(input, forgedEvidence(artifacts, input, `forged-witness-${name}`,
       name === "predecessor" ? "coverage" : name === "afterCall" || name === "read" ? "links" :
-        name === "afterRoot" ? "coverage,cells" : "coverage,links"), artifacts);
+        name === "afterRoot" ? "links" : "coverage,links"), artifacts);
     assert.ok(checked.includes(`${obligation}: evidence fails ${failure} from node `), checked);
   }
 

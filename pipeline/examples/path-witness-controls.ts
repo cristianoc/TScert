@@ -39,6 +39,17 @@ export function afterRoot(first: Holder, second: Holder): number {
   return 0;
 }
 
+export function backEdge(first: Holder, second: Holder, limit: number): number {
+  let holder = first;
+  if (holder.value.kind !== "text") return 0;
+  let n = 0;
+  while (n < limit) {
+    n = n + 1;
+    holder = second;
+  }
+  return n;
+}
+
 export function loop(holder: Holder, limit: number): number {
   if (holder.value.kind === "text") {
     let n = 0;
