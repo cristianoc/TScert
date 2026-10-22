@@ -144,6 +144,26 @@ positions").
 - **Commit:** this entry's commit (`tools/type-term.mts`,
   `declaration-graph.mts`).
 
+### A cache in an optional field of a shared object
+
+`Gate.resolve` (`tools/fragment-expressions.mts`) built the file's bindings
+on its first call and stored them with `gate.bindings = bindings`, the field
+declared `bindings?: Map<Node, Map<string, Node>>`. A value of type `Gate`
+may lack an optional key, so the write may add a key to the object, which
+the gate's other holders see; the calculus types a key-adding write only as
+the copy of a local's own fresh object
+([key-adding writes](PROGRAM-TYPING.md#key-adding-writes)), so the write is
+refused on principle (`optional-write-refused`).
+
+- **Rewrite:** the field is always owned, `bindings: Map<Node, Map<string,
+  Node>> | null = null`, and `resolve` reads it into a local, building and
+  storing the table where it is `null`.
+- **Pattern:** a field written after construction is declared with an
+  initializer and a type that holds its absent state (`T | null`), so a
+  write replaces its value and adds no key.
+- **Commit:** this entry's commit (`tools/fragment-parse.mts`,
+  `fragment-expressions.mts`).
+
 ## Rewrites required, not made
 
 A source pattern of TScert's own code that TScert refuses on principle is

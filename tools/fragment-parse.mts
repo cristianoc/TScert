@@ -856,7 +856,8 @@ export class Gate {
 
   knownLocal: typeof expressions.knownLocal = expressions.knownLocal;
 
-  bindings?: Map<Node, Map<string, Node>>;
+  /** Each scope's bindings by name (`resolve`), built on the first call. */
+  bindings: Map<Node, Map<string, Node>> | null = null;
   resolve: typeof expressions.resolve = expressions.resolve;
 
   confined: typeof expressions.confined = expressions.confined;

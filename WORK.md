@@ -52,6 +52,8 @@ design, not its progress.
 | [Calls through a field](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification) | closed: a call through a field reads the field's contract, checked at every write, and a declared field's is its annotation, which for an ordinary arrow states no effect; so `statements`' `findIndex` callback calling `gate.abrupt` is the unrestricted one, and `abrupt`, which reads nothing of the gate, is a module function called by its binding ([source rewrite](docs/SOURCE-REWRITES.md#a-function-called-through-a-field-whose-annotation-states-no-effect)); `find-index-module-function` verifies, `invalid-field-call-effect`, `invalid-readonly-field-call-effect`, `invalid-field-call-effect-alias` and `invalid-field-call-effect-cell` are refused (run under Node) (2026-10-22, [slice measurement](#census-field-calls)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `statements`' `list.findIndex((s) => gate.abrupt(s))` |
 | [Recursive constants' footprints](docs/SOURCE-MODEL.md#recursive-constants) | closed: a recursive constant's self entry is read at the footprint the producer proposes for the closure, assumed empty and raised by rounds of inference to what the closure's claim shows; a `let` read by its own initializer's closure is a cell, refused as an early binding whose initializer reads it; `find-recursive-constant` verifies, `invalid-find-recursive-constant-mutation`, `-field`, `-sparse` and `invalid-find-recursive-cell` are refused (run under Node), a writing closure forged at the empty footprint, its self entry with it, refused in search and in checking (2026-10-22, [slice measurement](#census-recursive-constants)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `readCannotThrow`'s `at.parameters.find(p => bindsName(p.name, id.text))` |
 | [A `??` operand's array literal](#census-coalesce-literal) | closed: where no type is expected, an array literal right of `??` whose elements fit the left's array element type is built at the left's type, as TypeScript types it; `coalesce-array-literal` verifies (2026-10-22, [slice measurement](#census-coalesce-literal)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past `signatures`' `(alternatives ?? [[]]).map(…)` |
+| [A cache in an optional field](docs/SOURCE-REWRITES.md#a-cache-in-an-optional-field-of-a-shared-object) | closed: `Gate.bindings` is owned from construction, `Map<…> \| null = null`, so `resolve`'s write replaces its value and adds no key ([source rewrite](docs/SOURCE-REWRITES.md#a-cache-in-an-optional-field-of-a-shared-object)) (2026-10-22, [slice measurement](#census-gate-bindings)) | `fragment-expressions.mts#expr` and `fragment-expressions.mts#binary` move past `gate.bindings = bindings` |
+| [A closure's parameter over a map of spread literals](#census-gate-bindings) | open: an investigation, cause unknown | `fragment-expressions.mts#expr` moves past `initializedBefore`'s `params.map((q): [PatternAst, Expr \| null] => …)` |
 | [Pushing at the receiver's element](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: a spread of a dense or readable array passes its elements at their type, and `undefined` only from a sparse one (`SpreadsInto`); a binder below and above one type, as a writable receiver's element places it, is that type, and an actual that is a literal, or a choice with a literal among its values, is built at it; `push-spread` and `push-receiver-element` verify, `invalid-push-spread-sparse`, `invalid-push-spread-wider` and `invalid-push-receiver-element` are refused (run under Node) (2026-10-22, [slice measurement](#census-push-element)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `gate.hoisted.push(...statements)` and `dispatch.push(fallback ?? { … })` |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
@@ -1230,6 +1232,20 @@ expression claim", `signatures`' `(alternatives ?? [[]])`, claimed at
 `ReadonlyArray<TypeTerm[]>`; after, both pass it and stop in search at "no
 derivation of its node-typing claim", `visitType`'s `binder.default` after
 `if (binder.default)`, `binder` at `SourceTypeParameter<TypeTerm> & { … }`.
+
+<a id="census-gate-bindings"></a>
+`fragment-expressions.mts#expr` and `#binary` on e35c726 (main) and on the
+branch owning `Gate.bindings` from construction
+([the rewrite](docs/SOURCE-REWRITES.md#a-cache-in-an-optional-field-of-a-shared-object))
+(2026-10-22): neither verifies on either. On main both stop at "a write of
+'bindings', a key the object's type does not state" (44892), `resolve`'s
+`gate.bindings = bindings`; on the branch both stop in search at "closure
+signature claim is outside the source annotation" (90215), the closure
+`(q): [PatternAst, Expr | null] => …` mapped over `params`, the array a
+closure returning `{ name, type, ...rest(p) }` or `{ name, type }` builds. A
+reduced program stops at the same refusal: the parameter is claimed at `{
+name, type } | {} | { rest: boolean }`, outside its source type `{ rest:
+true, name, type } | { name, type, rest?: undefined }`.
 
 <a id="census-ddcf13a"></a>
 The `tools/` census of ddcf13a (main, after the stage store, the replayed
