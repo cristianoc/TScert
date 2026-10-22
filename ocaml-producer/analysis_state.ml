@@ -252,15 +252,17 @@ module Access (S : sig val state : t end) = struct
     (!local).instances <- o.instances @ (!local).instances;
     (!local).instantiations <- o.instantiations @ (!local).instantiations;
     List.iter publish_contract o.contracts
+  (* A row owns its output. Its expressions carry the substitutions and
+     callee instances it chooses; its contracts and entries belong to the
+     same row. The function's own pass owns nested arrows and requests. *)
   let collect_overload_row_claims action =
-    let enclosing=output () in
-    Fun.protect ~finally:(fun () ->
-      (!local).entries <- enclosing.entries; (!local).expressions <- enclosing.expressions;
-      (!local).contracts <- enclosing.contracts) (fun () ->
-        (!local).entries <- []; (!local).expressions <- []; (!local).contracts <- [];
-        action ();
-        {row_contracts=List.rev (!local).contracts;row_entries=List.rev (!local).entries;
-          row_expressions=List.rev (!local).expressions})
+    let (),own = with_output (current_point ()) action in
+    let expressions = List.map (fun (x:expression) ->
+      match List.assoc_opt (x.point,x.pos) own.instances with
+      | Some instance -> {x with type_=instance}
+      | None -> x) (List.rev own.expressions) in
+    {row_contracts=List.rev own.contracts;row_entries=List.rev own.entries;
+      row_expressions=expressions}
   let forget_exact_local name = (!local).exact_locals <- List.filter ((<>) name) (!local).exact_locals
   let mark_fresh_constructor () = (!local).fresh_constructor <- true
   let clear_evolving_binding name = (!local).evolving <- List.remove_assoc name (!local).evolving

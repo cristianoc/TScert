@@ -160,14 +160,33 @@ let rec declared_head declarations seen = function
     if List.mem id seen then unsupported "unguarded callable alias cycle";
     declared_head declarations (id::seen) (definition declarations id args)
   | t -> t
-(* `plausible_subtype` up to the declarations at the two heads: a declared
-   alias and what it names are one type (the compiler API's `Statement`,
-   which TypeScript reads as `StatementBase`). A proposal heuristic; Lean
-   decides inclusion. *)
+(* `plausible_subtype` up to the declarations: each side is read as
+   written or with its declared atoms unfolded, through unions, to what they
+   name (the compiler API's `Statement`, which TypeScript reads as
+   `StatementBase`; `type T = A | F`, which holds `F` written inline). A
+   proposal heuristic; Lean decides inclusion. *)
 let plausible_subtype_declared declarations actual expected =
+  let unfold t =
+    (* Each declared atom contributes once to the union; the path retains
+       the named atom at a cycle. Equations are read only as needed. *)
+    let expanded = Hashtbl.create 32 in
+    let rec walk seen = function
+      | Atoms atoms -> combine (List.map (function
+          | Named (id,args) as a when not (List.mem id seen) ->
+            if Hashtbl.mem expanded (id,args) then Atoms [] else begin
+              Hashtbl.add expanded (id,args) ();
+              try walk (id::seen) (definition declarations id args) with Json.Error _ -> Atoms [a]
+            end
+          | a -> Atoms [a]) atoms)
+      | Union ts -> combine (List.map (walk seen) ts)
+      | t -> t in
+    walk [] t in
+  let unfolded_actual = lazy (unfold actual) in
+  let unfolded_expected = lazy (unfold expected) in
   plausible_subtype actual expected ||
-  let head t = try declared_head declarations [] t with Json.Error _ -> t in
-  plausible_subtype (head actual) (head expected)
+  plausible_subtype actual (Lazy.force unfolded_expected) ||
+  plausible_subtype (Lazy.force unfolded_actual) expected ||
+  plausible_subtype (Lazy.force unfolded_actual) (Lazy.force unfolded_expected)
 (* The first operand of an intersection a read succeeds on; where none has
    it, the principal operand's reason. *)
 let first_part read parts =

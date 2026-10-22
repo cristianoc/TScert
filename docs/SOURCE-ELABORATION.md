@@ -1532,6 +1532,13 @@ keeping each claimed parameter within its annotation:
      {(R,\vec A,B)\in L}\ \textsf{offer}
 ```
 
+An offered parameter may be narrower than the closure's,
+$`A_j\sqsubseteq_G D_j`$ strictly: a closure over a union passed to
+`forEach` of an array of one arm is checked at the element. Its code is
+checked from an entry at $`\vec A`$, where a test the narrower entry decides
+narrows each branch differently than at $`\vec D`$, so each signature's
+interior claims are its own (`closure-offer-narrower-element`).
+
 A guard closure, one whose result annotation writes a promise
 $`x_p\ \mathsf{is}\ T`$, is offered a promise signature stating that
 promise at the written type, and is claimed at it with the promise; the

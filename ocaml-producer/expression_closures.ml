@@ -172,11 +172,16 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
          capture later parameters; this is a proposal about its eventual body,
          not permission to invoke it during initialization. Lean independently
          schedules acyclic captures and rejects pending closure exposure. *)
-      let inner = List.fold_left (fun env (i,(n,t)) ->
+      (* The body's environment where each parameter receives the given
+         actual type, by default its annotation (with `undefined` where it
+         has a default). *)
+      let bind_params actuals = List.fold_left (fun env (i,(n,t)) ->
         let assigned = match body.node with
           | BlockBody ss -> List.exists (assigns n) ss
           | _ -> false in
-        let input=if List.mem_assoc i defaults then union t (Atoms [Undef]) else t in
+        let input=match List.nth_opt actuals i with
+          | Some a -> a
+          | None -> if List.mem_assoc i defaults then union t (Atoms [Undef]) else t in
         (* An assigned parameter is a cell where the flow graph holds it in
            one (a closure writes it, or reads it after a write), and a slot
            of the activation otherwise, as a function's parameter is. An
@@ -185,6 +190,7 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         extend env n (if not assigned then Value (arms declarations input)
           else if held_in_cell n body.pos then holding t input
           else Local (t,arms declarations input))) env (List.mapi (fun i p -> i,p) ps) in
+      let inner = bind_params [] in
       (* A closure literal without a result annotation expected at one
          signature taking at least its parameters has that signature's result
          as its contextual return type, as in TypeScript. *)
@@ -300,6 +306,8 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
       let offered_here = match List.assoc_opt e.pos offered, from_context with
         | None,[] -> None
         | extra,context -> Some (Option.value extra ~default:[] @ context) in
+      (* The parameters a signature passes the closure's own positions. *)
+      let leading (s:Semantic.signature) = List.filteri (fun i _ -> i < List.length ps) s.params in
       let own = match offered_here, own with
         | Some extra, Atoms [Shape ({calls=[call];_} as shape)] when quantified=[] && element=None ->
           (* An offered signature stating the closure's written promise keeps
@@ -309,8 +317,25 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
                 && s.call_effect.promise = stated.promise ->
               {s with call_effect=stated;result=promised}
             | _ -> {s with call_effect} in
-          Atoms [Shape {shape with calls=call :: List.filter (fun s -> s <> call)
-            (List.sort_uniq compare (List.map at_own extra))}]
+          let calls = call :: List.filter (fun s -> s <> call)
+            (List.sort_uniq compare (List.map at_own extra)) in
+          (* A signature a named closure's uses offer whose parameters are
+             narrower than the closure's own (an element of one arm of the
+             parameter's union) is checked from an entry at those
+             parameters, at which the body's interior claims may differ (a
+             test deciding a branch the narrower entry never takes): its
+             claims are stated per signature, as an implemented contract's
+             are. A literal is claimed at the one signature its context
+             offers (`Calls`), from the claims at its own. *)
+          if guard = None && not rest && List.mem_assoc e.pos offered
+             && List.exists (fun (s:Semantic.signature) -> leading s <> leading call) calls then
+            publish_arrow e.pos (List.map (fun (s:Semantic.signature) ->
+              collect_overload_row_claims (fun () ->
+                with_rigid_bounds closure_bounds (fun () ->
+                  if leading s = leading call then
+                    ignore (infer_closure_body ?expected:(if written <> None then written else contextual) inner)
+                  else ignore (infer_closure_body ~expected:s.result (bind_params (leading s)))))) calls);
+          Atoms [Shape {shape with calls}]
         | _ -> own in
       (* A guard closure offers its promise beside its own signature, at the
          same parameters, and its body is checked at each, returning its plain
@@ -323,10 +348,10 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
         | None,_ -> own
         | Some (promise_effect,promised),Atoms [Shape ({calls=call :: offered;_} as shape)]
           when quantified=[] && element=None ->
-          let row () = collect_overload_row_claims (fun () ->
-            ignore (infer_closure_body ~expected:result inner)) in
+          let row (s:Semantic.signature) = collect_overload_row_claims (fun () ->
+            ignore (infer_closure_body ~expected:result (if rest then inner else bind_params (leading s)))) in
           let calls = call :: {call with call_effect=promise_effect;result=promised} :: offered in
-          publish_arrow e.pos (List.map (fun _ -> row ()) calls);
+          publish_arrow e.pos (List.map row calls);
           Atoms [Shape {shape with calls}]
         | Some _,_ -> Proposal_diagnostics.unsupported "a guard closure with binders or a rest" in
       (* A contract advertising several signatures is implemented by this one
