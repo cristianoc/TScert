@@ -56,6 +56,7 @@ design, not its progress.
 | [Enum reverse keys](docs/SOURCE-CONTRACTS.md#enums) | closed: an enum's object states, at each numeric value TypeScript computes, its reverse key at `string` where TypeScript's emit builds it or its runtime object is checked (`emitted-enum`); `enum-reverse-keys`, `enum-reverse-value-import` and `compiler-api-enum-reverse` verify, a key at `number` or outside the values, a string member's value and an ambient or declaration file's enum are refused (run under Node), forged claims refused at the read (2026-10-21, [slice measurement](#census-enum-reverse-keys)) | — |
 | [Block-scoped type declarations](docs/SOURCE-CONTRACTS.md#block-scoped-type-declarations) | closed: a `type` or `interface` in a block runs nothing and names its block, each reference read at the declaration TypeScript binds, its equation lifted over the enclosing type parameters resolved there; `block-type-aliases` and `block-type-captures` verify, `invalid-block-type-scope` is refused (run under Node), a reference where a nearer binder hides a captured one, directly or through another block type, is refused, in a computed form, a mapped type and a default too (2026-10-21, [slice measurement](#census-block-types)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past the type alias statement refusal |
 | [A spread of an intersection beyond disjoint records](docs/SOURCE-MODEL.md#a-spread-of-an-intersection) | closed: a spread of an intersection copies the meet of one arm of each operand, a key two operands state held at the field within the other's, and each refusal names the spread's operand; `spread-intersection-meet` verifies ([slice measurement](#census-spread-intersection-meet)) | `fragment-expressions.mts`'s `{ ...part, computed: true }` with `part: ObjectPart & { name: PropertyKey }` is read at its operands' meet, and the refusal of a spread names its location |
+| [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
 | [Investigation of `memberOf`'s read past a spread guard](#member-of-spread-guard) | open: an investigation, cause unknown | the cause of the producer's "missing field name" at `memberOf`'s `p.name` is established, with a reproducer |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
@@ -919,6 +920,15 @@ an intersection of other than disjoint records is outside the fragment";
 on the branch both read `objectFields`' spread and stop in the producer at
 "missing field name" at `memberOf`'s `p.name`
 ([the investigation](#member-of-spread-guard)).
+
+<a id="callable-alias-meet"></a>
+**Investigation of an alias of function types met with a record.**
+`type Calls = (() => number) & ((n: number) => number)` met with
+`{ tag: string }` in a parameter's annotation is refused by Lean's reading
+of the declarations: "the intersection is empty". The same three operands
+written in the annotation verify (`spread-intersection-callable-grouping`).
+Which step of the declaration's normalization yields no clause is not
+established.
 
 <a id="member-of-spread-guard"></a>
 **Investigation of `memberOf`'s read past a spread guard.** In

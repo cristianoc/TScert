@@ -70,8 +70,6 @@ let field_meet fs =
 let meet_records records =
   if List.exists (fun (r:shape) -> r.elements <> None) records then
     meet_refused "with an array operand is outside the fragment";
-  if List.length (List.filter (fun (r:shape) -> r.calls <> []) records) > 1 then
-    meet_refused "of two callable operands is outside the fragment";
   if List.length (List.filter (fun (r:shape) -> r.indexes <> []) records) > 1 then
     meet_refused "of two operands with index signatures is outside the fragment";
   let rec callable_pairs = function
@@ -85,14 +83,15 @@ let meet_records records =
   Atoms [Shape {fields=List.map (fun name -> field_meet
       (List.filter (fun (f:Semantic.field) -> f.name = name) fields)) names;
     indexes=List.concat_map (fun (r:shape) -> r.indexes) records;
+    (* Both function and callable clause meets retain every signature. *)
     calls=List.concat_map (fun (r:shape) -> r.calls) records;elements=None}]
 
 (* Expand whole products before selecting fields. Nested intersections and
    declarations retain all constraints until that selection. *)
 let rec arm_products declarations seen t = match t with
   | Atoms [Named (id,args)] ->
-    if List.mem id seen then meet_refused "through a cyclic declaration is outside the fragment";
-    arm_products declarations (id::seen) (spread_definition declarations id args)
+    if List.mem (id,args) seen then meet_refused "through a cyclic declaration is outside the fragment";
+    arm_products declarations ((id,args)::seen) (spread_definition declarations id args)
   | Atoms atoms when List.length atoms <> 1 ->
     List.concat_map (fun a -> arm_products declarations seen (Atoms [a])) atoms
   | Atoms _ | Rigid _ -> [[t]]
@@ -145,8 +144,8 @@ let rec alternatives_of ~target ~bound declarations seen t =
           symbols=Option.map (fun (i:index_signature) -> i.value)
             (List.find_opt (fun (i:index_signature) -> i.keys=Symbols) indexes);numeric=None}]
       | Named (id,args) ->
-        if List.mem id seen then unsupported "unguarded spread cycle";
-        recur (id::seen) (spread_definition declarations id args)
+        if List.mem (id,args) seen then unsupported "unguarded spread cycle";
+        recur ((id,args)::seen) (spread_definition declarations id args)
       (* A string's own enumerable properties are its code units at its
          index keys, which no record states, and a `Function`'s whatever was
          assigned to it: the copy's type states none of their keys. *)

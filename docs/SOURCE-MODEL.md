@@ -568,9 +568,11 @@ distributes:
 
 For each product, the producer gathers every record operand before choosing
 fields. For a key $`k`$, let $`I_k`$ index the operands stating it, with read
-type $`T_i`$ and optionality $`o_i`$ ($`1`$ means optional). A candidate
-must itself supply the required presence. The proposal selects an existing
-field $`j\in I_k`$ satisfying
+type $`T_i`$ and optionality $`o_i`$ ($`1`$ means optional). If any operand
+states $`k`$ as a method, $`k`$ is a method of the arm, the copy does not
+state it, and no field is selected for it. Otherwise a candidate must itself
+supply the required presence. The proposal selects an existing field
+$`j\in I_k`$ satisfying
 
 ```math
 \forall i\in I_k,\ H(T_j,T_i)
@@ -588,8 +590,6 @@ without expanding their declarations. Lean decides inclusion.
 Thus `{ k: string | number } & { k: string | boolean } & { k: string }`
 selects the third field, independently of operand order. An optional field
 cannot supply a required key merely because its read type passes the test.
-A key any operand states as a method, which the object may hold on its
-prototype, is a method of the proposal and the copy does not state it.
 
 Products with incompatible primitive atoms, or both a primitive and a
 record, contribute no arm, as Lean's clause meet drops them. Emptiness is
@@ -609,15 +609,19 @@ refuses a copy's field that no field of the source gives
 (`spread-intersection-meet` and its forged-claim control in
 `pipeline/test.mts`).
 
-Refused at the spread's operand: a key with no candidate recognized by
+Refused at the spread's operand: a data key with no candidate recognized by
 $`H`$ at the required presence (`{ k: "a" } & { k: "b" }`,
-`{ k: string } & { k?: "a" }`); two operands with index signatures; two
-callable operands; a callable met with a record with readonly or optional
-fields, methods or an index; an intersection operand that is an array, a
+`{ k: string } & { k?: "a" }`); two operands with index signatures; a
+callable met with a record with readonly or optional fields, methods or an
+index; an intersection operand that is an array, a
 type parameter, a cyclic declaration, or another unsupported shape; and a
 source with no surviving alternative. A callable is met with a record only where the
 record's fields are required writable data fields, whether the intersection
-is written in an annotation or reached through a declaration.
+is written in an annotation or reached through a declaration. Every callable
+operand in a product contributes all its signatures to one overloaded
+callable, so grouping them through an alias preserves support. Lean's
+`sourceMeetLists` uses `PositiveNormalization.meet`, whose function/function,
+callable/function and callable/callable clauses retain both signature lists.
 
 Within an intersection product, `Top` (`unknown`) is the identity; a source
 consisting only of `Top` has no supported copy. `Exact` records are supported
