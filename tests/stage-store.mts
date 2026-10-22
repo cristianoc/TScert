@@ -1,7 +1,9 @@
 // The stage store's tests (DESIGN.md, "The stage store"): dependency
 // invalidation, concurrent publication by two processes, an interrupted
-// writer, a timeout/success race, writable artifact isolation and a longer
-// limit executing past a recorded timeout. The stages are shell-script
+// writer, a timeout/success race, writable artifact isolation, a longer
+// limit executing past a recorded timeout and a retry of timeouts executing
+// it again at the same limit, and an edit of the replay policy, which no key
+// covers, replaying its entries. The stages are shell-script
 // stand-ins declared audited for the test, so no build is needed; the
 // pipeline's own stages replay in `pipeline/test.mts`.
 import assert from "node:assert/strict";
@@ -11,8 +13,9 @@ import { platform } from "node:os";
 import { join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Store, StoreError, pausePublicationForTests } from "../pipeline/stage-store.mts";
-import { auditForTests, canonical, captureCodeIdentity, invokeInProcess, invokeProcess, linkedLibraries, sha256, textCodec, readInvocationLog, Recorder, verifierCall, type Invoked, type ProcessCall }
-  from "../pipeline/stages.mts";
+import { invokeProcess, readInvocationLog, Recorder, type Invoked } from "../pipeline/stages.mts";
+import { auditForTests, canonical, linkedLibraries, sha256, verifierCall, type ProcessCall }
+  from "../pipeline/stage-execution.mts";
 
 const dir = runDirectory("tscert-stage-store-");
 
@@ -236,11 +239,22 @@ if (eligible) {
   assert.equal(reused.record.replay?.stored.attempt, timed.record.attempt);
   assert.equal(reused.record.replay?.stored.limitMs, 300);
   assert.equal(invoke(lower(program, input), 200).record.execution, "timeout-replayed", "a smaller limit");
+  // Retrying timeouts executes the stage again at the same limit.
+  process.env["TSCERT_RETRY_TIMEOUTS"] = "1";
+  const retried = invoke(lower(program, input), 300);
+  assert.equal(retried.record.execution, "timed-out", "a retried timeout executes");
+  assert.notEqual(retried.record.attempt, timed.record.attempt);
+  delete process.env["TSCERT_RETRY_TIMEOUTS"];
+  assert.equal(invoke(lower(program, input), 300).record.execution, "timeout-replayed", "unretried, it is reused");
   const longer = invoke(lower(program, input), 5_000);
   assert.equal(longer.record.execution, "executed", "a longer limit executes past the observation");
   assert.equal(longer.stdout, "slow");
   assert.equal(invoke(lower(program, input), 300).record.execution, "replayed", "the finished result first");
-  process.stdout.write("timeouts: reused at their limit or below, executed past at a longer one\n");
+  process.env["TSCERT_RETRY_TIMEOUTS"] = "1";
+  assert.equal(invoke(lower(program, input), 300).record.execution, "replayed", "retrying, a finished result replays");
+  delete process.env["TSCERT_RETRY_TIMEOUTS"];
+  process.stdout.write("timeouts: reused at their limit or below, executed past at a longer one, executed again when " +
+    "retried; finished results replay\n");
 }
 
 if (eligible) {
@@ -385,22 +399,6 @@ for (const order of [["timeout", "finished"], ["finished", "timeout"]]) sections
   assert.ok(interrupted.elapsedMs >= 1000);
   assert.equal(interrupted.execution, "interrupted");
 }
-{
-  freshStore("loaded-code");
-  const module = file("loaded.mts", "export const value: string = 'old';");
-  const implementation = captureCodeIdentity([module]);
-  const call = { stage: "assemble", implementation, inputs: [], codec: textCodec, run: (): string => "old" };
-  const invokeLoaded = (): ReturnType<typeof invokeInProcess<string>> =>
-    invokeInProcess({ ...call, stage: "assemble" }, { force: false, recorder: null });
-  invokeLoaded();
-  writeFileSync(module, "export const value: string = 'new';");
-  const stale = invokeLoaded();
-  assert.equal(stale.value, "old");
-  assert.equal(stale.record.key, null);
-  assert.match(stale.record.ineligible ?? "", /loaded implementation/);
-  assert.equal(stale.record.execution, "executed");
-}
-
 if (eligible) sections.push((async (): Promise<void> => {
   const store = new Store(join(dir, "interrupted-invocation"));
   const program = script("pause.sh", '/bin/cat "$2"', ["/bin/cat", "/bin/sleep"]);
@@ -507,34 +505,128 @@ if (platform() === "darwin") {
   process.stdout.write("linked libraries: a library replaced or relinked changes the identity; a universal file's architectures must agree\n");
 }
 {
-  // Each identity control owns the modules it edits.
-  const drivers = ["claims-assembly.mts", "stages.mts"].map((name) => {
-    const root = join(dir, "loaded-copy-" + name);
+  // Each identity control owns the modules it edits. An edit of a keyed
+  // module (the stage's own, an execution adapter, a module nothing imports
+  // by name) or a new module makes the stage execute without a key; an edit
+  // of the replay policy or the store, which no key covers, replays the
+  // entry at the same key.
+  const keyed = new Map([["claims-assembly.mts", true], ["in-process-execution.mts", true],
+    ["stage-execution.mts", true], ["hidden.mts", true], ["new-module.mts", true], ["stages.mts", false],
+    ["stage-store.mts", false]]);
+  const scenarios = ["in-process", "process"].flatMap((kind) => [
+    ...[...keyed].map(([name, eligible]) => ({ kind, name, mode: eligible &&
+      !(kind === "process" && ["claims-assembly.mts", "in-process-execution.mts"].includes(name)) ? "keyed" : "policy", off: false })),
+    ...[false, true].flatMap((off) => (kind === "process" ? ["during", "timeout"] : ["during"])
+      .map((mode) => ({ kind, name: "hidden.mts", mode, off }))),
+  ]);
+  const drivers = scenarios.map(({ kind, name, mode, off }, index) => {
+    const root = join(dir, "loaded-copy-" + index);
     const copied = join(root, "pipeline");
     mkdirSync(copied, { recursive: true });
     symlinkSync(resolve(import.meta.dirname, "../tools"), join(root, "tools"));
-    for (const module of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts"])
+    for (const module of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts",
+      "stage-execution.mts", "in-process-execution.mts"])
       copyFileSync(resolve(import.meta.dirname, "../pipeline", module), join(copied, module));
+    // A module loaded only by a name the code computes.
+    writeFileSync(join(copied, "hidden.mts"), 'const n = 1 / "/"; await import(name); const s = "//";\n');
     const driver = join(copied, "test.mts");
     writeFileSync(driver, String.raw`
 import assert from "node:assert/strict";
-import { appendFileSync } from "node:fs";
-import { assembleClaims, assemblyImplementation } from "./claims-assembly.mts";
-import { invokeInProcess, textCodec } from "./stages.mts";
-const run = (): ReturnType<typeof invokeInProcess<string>> => invokeInProcess({
-  stage: "assemble", implementation: assemblyImplementation, inputs: [], codec: textCodec,
-  run: (): string => assembleClaims('{"modules":[]}', [])
-}, { force: false, recorder: null });
-assert.notEqual(run().record.key, null);
+import { appendFileSync, chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { assemblyCall } from "./claims-assembly.mts";
+import { invokeInProcess, invokeProcess, Recorder } from "./stages.mts";
+import { auditForTests, verifierCall } from "./stage-execution.mts";
+const target = new URL(process.argv[2], import.meta.url);
+const kind = process.argv[5];
+const during = ["during", "timeout"].includes(process.argv[3]);
+const timeout = process.argv[3] === "timeout";
+const original = during ? readFileSync(target) : null;
+const program = new URL("stand-in.sh", import.meta.url).pathname;
+const input = new URL("input.json", import.meta.url).pathname;
+const marker = new URL("edited", import.meta.url).pathname;
+writeFileSync(input, '{"modules":[]}');
+// The marker lets a second invocation finish with exactly the same program
+// and inputs, exposing either a finished result or a timeout published by
+// the first invocation. Only the copied keyed module is edited.
+writeFileSync(program, '#!/bin/sh\n' + (during
+  ? 'if [ ! -f "' + marker + '" ]; then\n' +
+    'printf "\\n// edited during execution\\n" >> "' + target.pathname + '"\n' +
+    ': > "' + marker + '"\n' + (timeout ? '/bin/sleep 5\n' : '') + 'fi\n'
+  : '') + '/bin/cat "$2"\n');
+chmodSync(program, 0o755);
+auditForTests(program, ["/bin/cat", "/bin/sleep"]);
+const recorder = new Recorder(null);
+let edit = during;
+const run = (): ReturnType<typeof invokeInProcess<string>> => {
+  if (kind === "process") {
+    const result = invokeProcess(verifierCall(program, ["--lower-control-flow", input]),
+      { limitMs: timeout ? 500 : 10_000, force: false, recorder });
+    return { value: result.stdout, record: result.record };
+  }
+  const call = assemblyCall('{"modules":[]}', []);
+  return invokeInProcess({ ...call, run: () => {
+    if (edit) {
+      appendFileSync(target, "\n// edited during execution\n");
+      edit = false;
+    }
+    return call.run();
+  } }, { force: false, recorder });
+};
+if (during) {
+  const setting = process.env.TSCERT_STAGE_STORE;
+  const result = run();
+  assert.equal(result.record.execution, timeout ? "timed-out" : "executed");
+  assert.equal(result.record.key, null);
+  assert.equal(result.record.ineligible, "loaded node-side modules differ from disk");
+  assert.deepEqual(recorder.records, [result.record]);
+  assert.equal(result.record.forced, setting === "off");
+  assert.equal(result.record.exitStatus, kind === "process" && !timeout ? 0 : null);
+  if (!timeout) assert.equal(result.value, '{"modules":[]}');
+  // Restore the captured identity and enable the store so the same key
+  // would find either kind of publication, including from a store-off run.
+  writeFileSync(target, original);
+  process.env.TSCERT_STAGE_STORE = process.argv[4];
+  const later = run();
+  assert.equal(later.record.execution, "executed");
+  assert.notEqual(later.record.key, null);
+  assert.equal(later.record.ineligible, null);
+  assert.deepEqual(later.record.manifest, result.record.manifest);
+  assert.equal(later.value, '{"modules":[]}');
+  assert.equal(run().record.execution, "replayed");
+  process.exit(0);
+}
+if (process.argv[3] === "fresh-policy") {
+  assert.equal(process.env.TSCERT_EDITED_POLICY, "loaded");
+  const result = run();
+  assert.equal(result.value, '{"modules":[]}');
+  assert.equal(result.record.execution, "replayed");
+  assert.equal(result.record.key, process.argv[4]);
+  process.exit(0);
+}
+const firstResult = run();
+assert.equal(firstResult.record.execution, "executed");
+const first = firstResult.record.key;
+assert.notEqual(first, null);
 assert.equal(run().record.execution, "replayed");
 appendFileSync(new URL(process.argv[2], import.meta.url), "\n// edited during worker lifetime\n");
 const result = run();
 assert.equal(result.value, '{"modules":[]}');
-assert.equal(result.record.execution, "executed");
-assert.equal(result.record.key, null);
-assert.match(result.record.ineligible ?? "", /loaded .*modules differ from disk/);
+if (process.argv[3] === "keyed") {
+  assert.equal(result.record.execution, "executed");
+  assert.equal(result.record.key, null);
+  assert.match(result.record.ineligible ?? "", /loaded .*modules differ from disk/);
+} else {
+  assert.equal(result.record.execution, "replayed");
+  assert.equal(result.record.key, first);
+  appendFileSync(new URL(process.argv[2], import.meta.url),
+    '\nprocess.env.TSCERT_EDITED_POLICY = "loaded";\n');
+  const fresh = spawnSync(process.execPath, [import.meta.filename, process.argv[2], "fresh-policy", first, kind],
+    { encoding: "utf8" });
+  assert.equal(fresh.status, 0, fresh.stderr);
+}
 `);
-    return { name, driver };
+    return { name, driver, kind, mode, off, store: join(root, "store") };
   });
   const program = script("runtime.sh", '/bin/cat "$2"');
   const input = file("runtime.json", "runtime"), preload = file("preload.mjs", "");
@@ -542,8 +634,9 @@ assert.match(result.record.ineligible ?? "", /loaded .*modules differ from disk/
   const options = [["--import", preload], ["--require", preload], ["--experimental-loader", preload], ["--experimental_loader", preload], ["-r", preload]];
   sections.push((async (): Promise<void> => {
     const children = await Promise.all([
-      ...drivers.map(({ name, driver }) => new Promise<{ status: number | null; stderr: string }>((done, fail) => {
-        const p = spawn(process.execPath, [driver, "./" + name], { env });
+      ...drivers.map(({ name, driver, kind, mode, off, store }) => new Promise<{ status: number | null; stderr: string }>((done, fail) => {
+        const p = spawn(process.execPath, [driver, "./" + name, mode, store, kind],
+          { env: { ...env, TSCERT_STAGE_STORE: off ? "off" : store } });
         let stderr = "";
         p.stderr.setEncoding("utf8");
         p.stderr.on("data", (text: unknown) => { stderr += String(text); });
@@ -563,7 +656,7 @@ assert.match(result.record.ineligible ?? "", /loaded .*modules differ from disk/
     const child = await childRun(["--runtime-child", program, input], { ...env, NODE_OPTIONS: `--import="${preload}"` });
     assert.equal(child.status, 0, child.stderr);
     assert.match(child.stdout, /Node import, require or loader/);
-    process.stdout.write("loaded code and Node preload options: changed or unidentified dependencies execute without a key\n");
+    process.stdout.write("loaded code and Node preload options: changed or unidentified dependencies execute without a key; a changed replay policy replays\n");
   })());
 }
 {

@@ -15,7 +15,7 @@ import { runDirectory } from "../pipeline/run-directory.mts";
 import { abandonCompiler, compilerProcess, openCompiler } from "../tools/compiler-channel.mts";
 import { present } from "../tools/files.mts";
 import { runStep } from "../pipeline/verify-source.mts";
-import { verifierCall } from "../pipeline/stages.mts";
+import { verifierCall } from "../pipeline/stage-execution.mts";
 
 const dir = runDirectory("tscert-tool-failures-");
 const config = join(dir, "tsconfig.json");

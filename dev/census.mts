@@ -18,7 +18,8 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { close as closeParser, openText } from "../tools/fragment-parse.mts";
 import { syntax as ts } from "../tools/syntax.mts";
 import { checkApart, invocationLog, stepTimeoutMs } from "../pipeline/verify-source.mts";
-import { readInvocationLog, storeSetting, type AttemptRecord, type Cpu, type StageName } from "../pipeline/stages.mts";
+import { readInvocationLog, storeSetting, type AttemptRecord, type Cpu } from "../pipeline/stages.mts";
+import type { StageName } from "../pipeline/stage-execution.mts";
 import { runRoot } from "../pipeline/run-directory.mts";
 
 const repository = resolve(import.meta.dirname, "..");

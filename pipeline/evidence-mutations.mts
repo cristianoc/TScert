@@ -5,7 +5,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { present } from "../tools/files.mts";
 import { spawnSync } from "node:child_process";
-import { auditMutationVerifier, tested, verifierCall } from "./stages.mts";
+import { tested } from "./stages.mts";
+import { auditMutationVerifier, verifierCall } from "./stage-execution.mts";
 import { sourceKey } from "./verify-source.mts";
 import { runDirectory } from "./run-directory.mts";
 

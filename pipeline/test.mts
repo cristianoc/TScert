@@ -13,8 +13,9 @@ import { createHash } from "node:crypto";
 import { availableParallelism } from "node:os";
 import { pathToFileURL } from "node:url";
 import { fork, spawn, spawnSync } from "node:child_process";
-import { controlOperations, tested, producerCall, ran as ranStage, readInvocationLog, verifierCall, type AttemptRecord,
-  type Invoked } from "./stages.mts";
+import { controlOperations, tested, ran as ranStage, readInvocationLog, type AttemptRecord, type Invoked }
+  from "./stages.mts";
+import { producerCall, verifierCall } from "./stage-execution.mts";
 import { check, invocationLog, producerExecutable, readClaimsFile, readFragmentFile, readOutcome, sourceKey, verifier,
   type Outcome } from "./verify-source.mts";
 import { runDirectory, runRoot } from "./run-directory.mts";

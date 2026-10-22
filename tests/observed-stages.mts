@@ -13,34 +13,134 @@
 // check of test-all.sh.
 import assert from "node:assert/strict";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
-import { Recorder, captureCodeIdentity, invokeInProcess, textCodec, codeIdentity, sha256, type Canonical } from "../pipeline/stages.mts";
+import { Recorder, invokeInProcess } from "../pipeline/stages.mts";
+import { canonical, directoryIdentity, inProcessCode, inProcessOnly, processCode, sha256, unkeyed, type Canonical }
+  from "../pipeline/stage-execution.mts";
+import { textCodec } from "../pipeline/in-process-execution.mts";
 import { Store } from "../pipeline/stage-store.mts";
-import { launcherForTests, openCompiler, useInstallationForTests } from "../tools/compiler-channel.mts";
+import { compilerImplementation, launcherForTests, openCompiler, releaseCompiler, useInstallationForTests } from "../tools/compiler-channel.mts";
+import { syntax as ts } from "../tools/syntax.mts";
 import { nodeResolve, processRetirement, observed, observationsHold, type Observation } from "../tools/files.mts";
 
 const here = import.meta.dirname;
 const repository = resolve(here, "..");
 
-// --- the stages' code reads the file system only through tools/files.mts
+// --- the keyed code: every file of the node side but the named exclusions,
+// so any edit or new file of it changes the key; the stages' code reads the
+// file system only through tools/files.mts, by the compiler's own parse
 if (process.argv[2] === "--reads") {
-  const closure = codeIdentity([join(repository, "pipeline", "parse-stage.mts")]);
-  const modules = Array.isArray(closure) ? closure.map((entry) => Array.isArray(entry) ? String(entry[0]) : "") : [];
-  assert.ok(modules.includes("tools/files.mts") && modules.includes("tools/fragment-parse.mts"), modules.join(", "));
-  const reading = /from "node:(fs|fs\/promises|module|child_process|worker_threads|vm)"|import\.meta\.resolve\(/;
-  for (const module of modules) {
-    // The store's own modules read its entries, never a stage's inputs.
-    if (["tools/files.mts", "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/run-directory.mts"].includes(module))
-      continue;
-    const text = readFileSync(join(repository, module), "utf8").replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");
-    assert.doesNotMatch(text, reading, `${module} reads the file system other than through tools/files.mts`);
+  for (const name of [...unkeyed, ...inProcessOnly])
+    assert.ok(statSync(join(repository, name)).isFile(), `the exclusion ${name} names no file`);
+  const listed = (code: typeof processCode): string[] => {
+    assert.ok("identity" in code, "unidentified" in code ? code.unidentified : "");
+    const entries = code.identity;
+    return Array.isArray(entries) ? entries.map((e) => Array.isArray(e) ? String(e[0]) : "") : [];
+  };
+  const processFiles = listed(processCode), inProcessFiles = listed(inProcessCode);
+  assert.ok(processFiles.includes("pipeline/stage-execution.mts") && inProcessFiles.includes("tools/fragment-parse.mts"));
+  for (const name of unkeyed) assert.ok(!processFiles.includes(name) && !inProcessFiles.includes(name), name);
+  assert.ok(processFiles.every((f) => f.startsWith("pipeline/") && !inProcessOnly.includes(f)), processFiles.join(", "));
+  // Earlier keys followed imports by a scan of each module's text, which
+  // the reviews' inputs below defeated. Under directory identity a module
+  // holding any of them is keyed like any other: an edit of it, or a new
+  // one, changes the identity; an edit of an excluded file does not.
+  const scratch = runDirectory("loads-");
+  mkdirSync(join(scratch, "pipeline"));
+  const loads = ['const n = 1 / "/"; await import(name); const s = "//";', String.raw`eval(code);`,
+    String.raw`import { runInNewContext } from "node:vm";`, 'const n = 1 / (await import(name)).n / 2;',
+    'const s = `${/}/.test("}") ? import(name) : 0}`;', 'import { readFileSync } from /* c */ "node:fs";',
+    'const m = (0, eval)("1"); const f = new Function("return 1");'];
+  const identity = (): string => {
+    const now = directoryIdentity(["pipeline"], ["pipeline/stages.mts"], scratch);
+    assert.ok("identity" in now);
+    return canonical(now.identity);
+  };
+  writeFileSync(join(scratch, "pipeline", "stages.mts"), "export const policy = 1;\n");
+  for (const [i, text] of loads.entries()) {
+    const before = identity();
+    writeFileSync(join(scratch, "pipeline", `hidden-${i}.mts`), text + "\n");
+    const added = identity();
+    assert.notEqual(added, before, `a new module holding ${text}`);
+    writeFileSync(join(scratch, "pipeline", `hidden-${i}.mts`), text + "\n// edited\n");
+    assert.notEqual(identity(), added, `an edit of a module holding ${text}`);
   }
-  process.stdout.write("observed stages: the stages' code reads the file system only through tools/files.mts\n");
+  const keyed = identity();
+  writeFileSync(join(scratch, "pipeline", "stages.mts"), "export const policy = 2;\n");
+  assert.equal(identity(), keyed, "an edit of an excluded file");
+
+  // The import guard, over the compiler's parse: a declaration or an
+  // `import(…)` whose specifier names Node's file system, modules,
+  // processes, workers or vm, or an `import(…)` of anything but a string.
+  const node = ["fs", "fs/promises", "module", "child_process", "worker_threads", "vm"];
+  const reads = (file: ts.SourceFile): string[] => {
+    const found: string[] = [];
+    const visit = (n: ts.Node): void => {
+      const specifier = ts.isImportDeclaration(n) || ts.isExportDeclaration(n) ? n.moduleSpecifier
+        : ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword ? n.arguments[0] ?? n : undefined;
+      if (specifier !== undefined) {
+        if (!ts.isStringLiteral(specifier)) found.push("a computed import");
+        else if (node.includes(specifier.text.replace(/^node:/, ""))) found.push(specifier.text);
+      }
+      n.forEachChild(visit);
+    };
+    visit(file);
+    return found;
+  };
+  const parsed = (directory: string, files: readonly string[], use: (file: string, source: ts.SourceFile) => void): void => {
+    const api = openCompiler({ cwd: directory });
+    let thrown: { error: unknown } | null = null;
+    try {
+      const config = join(directory, "tsconfig.json");
+      const project = api.updateSnapshot({ openProjects: [config] }).getProject(config);
+      assert.ok(project, `TypeScript did not load ${config}`);
+      for (const file of files) {
+        const source = project.program.getSourceFile(file);
+        assert.ok(source, `TypeScript did not parse ${file}`);
+        use(file, source);
+      }
+    } catch (error) {
+      thrown = { error };
+      throw error;
+    } finally {
+      releaseCompiler(api, thrown);
+    }
+  };
+  const guard = join(scratch, "guard");
+  mkdirSync(guard);
+  writeFileSync(join(guard, "tsconfig.json"), JSON.stringify({ compilerOptions: { module: "preserve", target: "es2022",
+    noEmit: true, allowImportingTsExtensions: true }, include: ["*.mts"] }));
+  const controls: [string, boolean][] = [];
+  for (const specifier of node) for (const quote of ['"', "'"]) {
+    const literal = quote + "node:" + specifier + quote;
+    controls.push([`import x from ${literal};`, true], [`import ${literal};`, true],
+      [`const m = await import(${literal});`, true], [`export { x } from /* c */ ${literal};`, true]);
+  }
+  controls.push([String.raw`import { readFileSync } from "node:fs";`, true],
+    ["const name = 'node:fs'; const m = await import(name);", true],
+    ['import { join } from /* c */ "node:path";', false], ['// import "node:fs";', false],
+    ['const text = \'import "node:fs";\';', false]);
+  const names = controls.map(([text], i) => {
+    writeFileSync(join(guard, `c${i}.mts`), `${text}\nexport {};\n`);
+    return join(guard, `c${i}.mts`);
+  });
+  parsed(guard, names, (file, source) => {
+    const [text, refused] = controls[names.indexOf(file)];
+    assert.equal(reads(source).length > 0, refused, text);
+  });
+  // The execution adapters read the code they identify and a process
+  // stage's inputs, never an observed stage's.
+  const adapters = ["tools/files.mts", "pipeline/stage-execution.mts", "pipeline/run-directory.mts"];
+  const checked = inProcessFiles.filter((f) => !adapters.includes(f)).map((f) => join(repository, f));
+  parsed(join(repository, "tools"), checked, (file, source) => {
+    assert.deepEqual(reads(source), [], `${file} reads the file system other than through tools/files.mts`);
+  });
+  process.stdout.write("observed stages: the keyed code is every node-side file but the named exclusions; " +
+    "the stages' code reads the file system only through tools/files.mts\n");
   process.exit(0);
 }
-
 // A run of one observed stage in this process, printed as its attempt.
 if (process.argv[2] === "--run") {
   const [stage, source, project, families, installation] = process.argv.slice(3);
@@ -53,8 +153,7 @@ if (process.argv[2] === "--run") {
   if (installation !== "-") useInstallationForTests(installation);
   const recorder = new Recorder(null);
   if (stage === "resolution" || stage === "mutation") {
-    invokeInProcess({ stage: "parse", implementation: captureCodeIdentity([]),
-      inputs: [{ role: "control", bytes: stage + source + families }], observed: true, codec: textCodec,
+    invokeInProcess({ stage: "parse", inputs: [{ role: "control", bytes: stage + source + families }], observed: { compiler: compilerImplementation }, codec: textCodec,
       run: (): string => {
         if (stage === "resolution") return nodeResolve(families, source) ?? "unresolved";
         const path = join(installation, "node_modules", "typescript", "package.json");
@@ -85,10 +184,9 @@ if (process.argv[2] === "--retarget") {
   const specifier = inward ? "#guard" : "exported";
   const reason = inward ? /non-relative target/ : /symbolic link/;
   const target = join(directory, inward ? "node_modules/redirected/target.js" : "node_modules/exported/target.js");
-  const implementation = captureCodeIdentity([]);
   const invoke = (name: string, run: () => string): ReturnType<typeof invokeInProcess<string>> =>
-    invokeInProcess({ stage: "parse", implementation, inputs: [{ role: "control", bytes: name }],
-      observed: true, codec: textCodec, run }, { force: false, recorder: null });
+    invokeInProcess({ stage: "parse", inputs: [{ role: "control", bytes: name }],
+      observed: { compiler: compilerImplementation }, codec: textCodec, run }, { force: false, recorder: null });
   const stable = (): string => "independent replay";
   assert.equal(invoke("stable", stable).record.execution, "executed");
   let observations: readonly Observation[] = [];
@@ -122,11 +220,10 @@ if (process.argv[2] === "--retarget") {
 if (process.argv[2] === "--retarget-scope") {
   const directory = process.argv[3], specifier = process.argv[4];
   const link = join(directory, "link"), parent = join(link, "main.js");
-  const implementation = captureCodeIdentity([]);
   let observations: readonly Observation[] = [];
   const invoke = (): ReturnType<typeof invokeInProcess<string>> =>
-    invokeInProcess({ stage: "parse", implementation,
-      inputs: [{ role: "control", bytes: parent + specifier }], observed: true, codec: textCodec,
+    invokeInProcess({ stage: "parse",
+      inputs: [{ role: "control", bytes: parent + specifier }], observed: { compiler: compilerImplementation }, codec: textCodec,
       run: (): string => {
         const made = observed(() => nodeResolve(specifier, parent) ?? "unresolved");
         observations = made.observations;
