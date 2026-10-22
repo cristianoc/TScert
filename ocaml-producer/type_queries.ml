@@ -21,6 +21,19 @@ let plausible_elements excludes a b = match a,b with
     presence && (q.readonly || not p.readonly) &&
       p.required=q.required && p.optional_elements=q.optional_elements && p.rest=q.rest
   | _ -> false
+(* Clause kinds from Claims: non-callable records lower to refs or dict;
+   signatures alone to arrs; signatures with fields to callable. CoversWith
+   compares callable to callable or arrs, and arrs to arrs. Record width
+   applies within refs/dict (the index check below restricts their pairs).
+   Arrays lower through their store and are compared only with arrays. *)
+let plausible_shape_kinds a b = match a,b with
+  | {elements=None;calls=[];_}, {elements=None;calls=[];_} -> true
+  | {elements=None;indexes=[];calls=_::_;fields},
+    {elements=None;indexes=[];calls=_::_;fields=target} ->
+    target=[] || fields<>[]
+  | {elements=Some _;fields=[];indexes=[];calls=[]},
+    {elements=Some _;fields=[];indexes=[];calls=[]} -> true
+  | _ -> false
 (* A proposal heuristic for choosing an advertised arrow. It does not
    establish subtyping: Lean checks the selected call and its arguments. *)
 let rec plausible_subtype_with excludes actual expected =
@@ -36,10 +49,14 @@ let rec plausible_subtype_with excludes actual expected =
         List.mem host_mark a.fields || a.indexes <> [] || a.calls <> [] ||
         List.exists (fun (f:Semantic.field) -> f.write <> None && not f.optional && not f.host) a.fields ||
         (match a.elements with Some s -> not s.readonly | None -> false)
-      | Shape a,Shape b when plausible_fields excludes a.fields b.fields
-                             && (a.indexes=b.indexes || b.indexes=[])
-                             && plausible_index_writes excludes a b.indexes
-                             && plausible_elements excludes a.elements b.elements ->
+      (* Equal members, or members by width and depth within one clause
+         kind. *)
+      | Shape a,Shape b when plausible_elements excludes a.elements b.elements
+                             && ((a.fields=b.fields && a.indexes=b.indexes)
+                                 || (plausible_shape_kinds a b
+                                     && plausible_fields excludes a.fields b.fields
+                                     && (a.indexes=b.indexes || b.indexes=[])
+                                     && plausible_index_writes excludes a b.indexes)) ->
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           Semantic.effect_covers p.call_effect q.call_effect &&
           ({p with call_effect=q.call_effect}=q ||
