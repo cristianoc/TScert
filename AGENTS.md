@@ -38,15 +38,15 @@ answers to their reads, on macOS, where the compiler runs confined by
   (`tools/compiler-channel.mts`); `tests/observed-stages.mts --reads`, a fast
   check, refuses a module of the stages' code that imports a file-system,
   module or process API itself.
-- A key covers the code that decides the stage's result: its execution
-  adapter (`pipeline/stage-execution.mts` for a process stage,
-  `pipeline/in-process-execution.mts` for an in-process one), the stage's
-  own modules, which build its call, and the executable or runtime it runs
-  on, each by its module closure or content. The replay policy
-  (`pipeline/stages.mts`), the store (`pipeline/stage-store.mts`), the
-  orchestration and the diagnostics are outside every key, so editing them
-  replays every entry; the same fast check requires no keyed closure to hold
-  them ([keys](docs/DESIGN.md#the-stage-store)).
+- A key covers the node side's code by directory: a process stage every
+  `.mts` file directly in `pipeline/`, an in-process stage those of
+  `pipeline/` and `tools/`, each by content, but the files named in
+  `unkeyed` (`pipeline/stage-execution.mts`, listed with their reasons in
+  [keys](docs/DESIGN.md#the-stage-store)): the replay policy, the store, the
+  orchestration, the controls and the diagnostics. Editing an unkeyed file
+  replays every entry; editing or adding any other file there misses every
+  entry it keys. A new file that only orchestrates or presents goes on that
+  list, with its reason, in the same commit.
 
 - `TSCERT_STAGE_STORE=<dir>` selects the store, by default
   `$XDG_CACHE_HOME/tscert/stages` (`~/.cache/tscert/stages`), shared by every

@@ -1,19 +1,14 @@
 // The execution adapter of in-process stages (DESIGN.md, "The stage store",
-// keys): the code that decides an in-process stage's result from its inputs,
-// and so the code every in-process stage's key covers beside the stage's own
-// modules. It describes an invocation (the stage, its implementation, the
-// runtime, its inputs' digests and, for an observed stage, its compiler and
-// the system's build), runs it, under observation for an observed stage,
+// keys). It describes an invocation (the stage, the node side's keyed code,
+// the runtime, its inputs' digests and, for an observed stage, its compiler
+// and the system's build), runs it, under observation for an observed stage,
 // completes an observed stage's key with its observations, and stores and
 // reads its value as text. The replay policy (`stages.mts`) chooses between
 // running an invocation here and returning an entry whose stored description
 // is its own.
 import { observed, type Observation } from "../tools/files.mts";
-import { canonical, captureCodeIdentity, nodeIdentity, osBuild, sha256, type Canonical, type LoadedCode, type StageName }
+import { canonical, codeFailure, inProcessCode, nodeIdentity, osBuild, sha256, type Canonical, type StageName }
   from "./stage-execution.mts";
-
-/** The in-process adapter's code: this module's closure. */
-export const inProcessAdapter: LoadedCode | { unidentified: string } = captureCodeIdentity([import.meta.filename]);
 
 /** A compiler's identity as an observed stage states it: its installation's
  * files and confinement, and whether it differs from disk now; or why its
@@ -27,9 +22,6 @@ export type CompilerIdentity =
  * entry stores. Each stage's call is built by the stage's own module. */
 export type InProcessCall<T> = {
   stage: StageName;
-  /** The modules implementing the stage, whose sources identify it; or why
-   * its dependencies are not identified. */
-  implementation: LoadedCode | { unidentified: string };
   inputs: readonly { role: string; bytes: string | Buffer }[];
   run: () => T;
   /** The value as stored, and back: for a stage that replays. */
@@ -48,29 +40,23 @@ export type BoundInProcess = {
   identityFailure: () => string | null;
 };
 
-/** Bind an in-process call: its description names the stage, this
- * adapter's code, the runtime, the stage's implementation, its inputs'
- * digests and, for an observed stage, its compiler and the system's build. */
+/** Bind an in-process call: its description names the stage, the node
+ * side's keyed code (`inProcessCode`), the runtime, its inputs' digests and, for an observed stage, its compiler and the system's build. */
 export function bindInProcess<T>(call: InProcessCall<T>): BoundInProcess {
   const runtime = nodeIdentity();
   const compiler = call.observed ? call.observed.compiler() : null;
   const manifest: { readonly [key: string]: Canonical } = {
     stage: call.stage,
-    adapter: "identity" in inProcessAdapter ? inProcessAdapter.identity : null,
+    code: "identity" in inProcessCode ? inProcessCode.identity : null,
     runtime: "identity" in runtime ? runtime.identity : null,
-    implementation: "identity" in call.implementation ? call.implementation.identity : null,
     inputs: call.inputs.map((i) => [i.role, sha256(i.bytes)]),
     ...(compiler ? { compiler: "identity" in compiler ? compiler.identity : null, system: osBuild() } : {}),
   };
-  const identityFailure = (): string | null => "unidentified" in inProcessAdapter ? inProcessAdapter.unidentified
-    : inProcessAdapter.changed() ? "loaded adapter modules differ from disk"
-    : "identity" in call.implementation && call.implementation.changed() ? "loaded implementation modules differ from disk"
-    : "unidentified" in call.implementation ? call.implementation.unidentified
-    : "unidentified" in runtime ? runtime.unidentified
+  const identityFailure = (): string | null => codeFailure(inProcessCode) ?? ("unidentified" in runtime ? runtime.unidentified
     : compiler && "unobserved" in compiler ? compiler.unobserved
     : compiler && compiler.changed() ? "the loaded compiler differs from disk"
     : compiler && osBuild() === null ? "the system's build is not identified"
-    : null;
+    : null);
   return { manifest, input: canonical(manifest), identityFailure };
 }
 

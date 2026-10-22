@@ -7,13 +7,7 @@ import { clientErrors, type SeenDiagnostic } from "../tools/declaration-graph.mt
 import { messageOf, passToolFailure } from "../tools/thrown.mts";
 import { activeFamilies } from "../tools/family-activation.mts";
 import { compilerImplementation } from "../tools/compiler-channel.mts";
-import { captureCodeIdentity, type LoadedCode } from "./stage-execution.mts";
 import type { InProcessCall } from "./in-process-execution.mts";
-
-/** The modules implementing both stages, as this process loaded them, with
- * the compiler package, which each stage's key identifies by its files. */
-export const observedImplementation: LoadedCode | { unidentified: string } =
-  captureCodeIdentity([import.meta.filename], ["typescript"]);
 
 /** The parse stage of the snapshot `file` of the source `bytes`, read in the
  * project `tsconfigPath` (or its own) with imports resolved as `resolution`'s,
@@ -22,7 +16,6 @@ export function parseCall(bytes: Buffer, file: string, tsconfigPath: string | un
     InProcessCall<Parsed> {
   return {
     stage: "parse",
-    implementation: observedImplementation,
     inputs: [{ role: "source", bytes }, { role: "file", bytes: file }, { role: "resolution", bytes: resolution },
       { role: "project", bytes: tsconfigPath ?? "" }, { role: "families", bytes: JSON.stringify(activeFamilies()) }],
     run: () => parseStage(file, tsconfigPath, resolution),
@@ -36,7 +29,6 @@ export function parseCall(bytes: Buffer, file: string, tsconfigPath: string | un
 export function diagnosticsCall(file: string, tsconfigPath: string | undefined): InProcessCall<SeenDiagnostic[]> {
   return {
     stage: "diagnostics",
-    implementation: observedImplementation,
     inputs: [{ role: "file", bytes: file }, { role: "project", bytes: tsconfigPath ?? "" }],
     run: () => diagnosticsStage(file, tsconfigPath),
     codec: diagnosticsCodec,

@@ -17,7 +17,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
 import { isOperation, observationsHold, type Observation } from "../tools/files.mts";
-import { bindProcess, deliver, executeProcess, executionDirectory, isStageName, readOrAbsent, resourcePolicy, sha256, stageNames, text,
+import { bindProcess, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, readOrAbsent, resourcePolicy, sha256, stageNames, text,
   type Canonical, type ProcessCall, type StageName } from "./stage-execution.mts";
 import { bindInProcess, observedInput, runInProcess, type InProcessCall } from "./in-process-execution.mts";
 
@@ -188,12 +188,14 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     const run = executeProcess(bound, directory, options.limitMs);
     const elapsedMs = performance.now() - started;
     const done = record(run.ran, run.status, null);
-    if (replaying && run.ran === "executed")
-      replaying.store.publishFinished(call.stage, replaying.key, { input, exitStatus: run.status, stdout: run.stdoutBytes,
+    // The code that ran is the code the key names, or nothing is published.
+    const publishing = replaying && codeFailure(processCode) === null ? replaying : null;
+    if (publishing && run.ran === "executed")
+      publishing.store.publishFinished(call.stage, publishing.key, { input, exitStatus: run.status, stdout: run.stdoutBytes,
         stderr: run.stderrBytes, outputs: run.produced, measurement: { attempt, elapsedMs, limitMs: options.limitMs,
           cpu: done.cpu } });
-    if (replaying && run.ran === "timed-out")
-      replaying.store.publishTimeout(call.stage, replaying.key, { input, attempt, elapsedMs, limitMs: options.limitMs,
+    if (publishing && run.ran === "timed-out")
+      publishing.store.publishTimeout(call.stage, publishing.key, { input, attempt, elapsedMs, limitMs: options.limitMs,
         policy: resourcePolicy });
     options.recorder?.finish(done);
     return { status: run.status, signal: run.signal, error: run.error, stdoutBytes: run.stdoutBytes,

@@ -1,17 +1,16 @@
-// The execution adapter of process stages (DESIGN.md, "The stage store",
-// keys): the code that decides a process stage's result from its inputs, and
-// so the code every process stage's key covers. It describes an invocation
+// The execution adapter of process stages and the node side's code identity
+// (DESIGN.md, "The stage store", keys). It describes an invocation
 // (the stage, its argument vector, environment, exit protocol, input digests
 // and output roles, with the identities of its executable and of the Node
 // runtime), runs it in a fresh directory holding its inputs under their role
 // names, classifies its exit, and delivers its outputs to the caller's paths.
-// It identifies code by content: a module closure, an executable with its
-// linked libraries, the runtime. The replay policy and the store
+// It identifies code by content: the node side's keyed files, an executable
+// with its linked libraries, the runtime. The replay policy and the store
 // (`stages.mts`, `stage-store.mts`) choose between running an invocation
 // here and returning an entry whose stored description is its own.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, openSync, readFileSync, readSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { arch, platform } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { runDirectory } from "./run-directory.mts";
@@ -47,326 +46,77 @@ export const sha256 = (bytes: string | Buffer): string => createHash("sha256").u
 /** A file's digest, memoized within the process by its status (device,
  * inode, size, modification and change times): a file rewritten in place
  * changes its change time. */
-const digests = new Map<string, { signature: string; digest: string; dependencies: Dependencies | null }>();
-function known(path: string): { signature: string; digest: string; dependencies: Dependencies | null } {
+const digests = new Map<string, { signature: string; digest: string }>();
+function known(path: string): { signature: string; digest: string } {
   const s = statSync(path, { bigint: true });
   const signature = `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
   const held = digests.get(path);
   if (held?.signature === signature) return held;
-  const fresh = { signature, digest: sha256(readFileSync(path)), dependencies: null };
+  const fresh = { signature, digest: sha256(readFileSync(path)) };
   digests.set(path, fresh);
   return fresh;
 }
 const fileDigest = (path: string): string => known(path).digest;
 
-/** What a module's text loads: the files of its relative specifiers and the
- * packages of its bare ones; or the first load the scan does not account
- * for. */
-type Dependencies = { modules: string[]; packages: string[] } | { unaccounted: string };
-
-/** A token of a module's code: a name, a number, a string literal's value, a template
- * literal's or a regular expression literal's text, or another character. */
-type Token = { kind: "name" | "number" | "string" | "template" | "regex" | "other"; text: string };
-
-/** Names after which a `/` begins a regular expression literal. */
-const beforeExpression: ReadonlySet<string> = new Set(["return", "typeof", "instanceof", "in", "of", "new", "delete",
-  "void", "throw", "case", "do", "else", "yield", "await", "default", "extends"]);
-
-/** Tokens with comments omitted. Slash classification uses the preceding
- * token; grammar-dependent contexts and identifier escapes are refused. */
-function tokenize(text: string): Token[] | string {
-  const out: Token[] = [];
-  // The templates whose placeholder is open, by the brace depth inside it.
-  const placeholders: number[] = [];
-  let depth = 0;
-  const template = (start: number): number | string => {
-    // From `start`, inside a template: its text up to its end or a placeholder.
-    let i = start, piece = "";
-    for (;;) {
-      if (i >= text.length) return "a template that ends the text";
-      const c = text[i];
-      if (c === "\\") { piece += text.slice(i, i + 2); i += 2; continue; }
-      if (c === "`") { out.push({ kind: "template", text: piece }); return i + 1; }
-      if (c === "$" && text[i + 1] === "{") {
-        out.push({ kind: "template", text: piece });
-        out.push({ kind: "other", text: "{" });
-        placeholders.push(depth);
-        depth++;
-        return i + 2;
-      }
-      piece += c;
-      i++;
-    }
-  };
-  let i = text.startsWith("#!") ? text.search(/[\n\r\u2028\u2029]/) : 0;
-  if (i < 0) return out;
-  while (i < text.length) {
-    const c = text[i];
-    if (/\s/.test(c)) { i++; continue; }
-    if (c === "/" && text[i + 1] === "/") {
-      const end = text.slice(i).search(/[\n\r\u2028\u2029]/) + i;
-      i = end < i ? text.length : end;
-      continue;
-    }
-    if (c === "/" && text[i + 1] === "*") {
-      const end = text.indexOf("*/", i + 2);
-      if (end < 0) return "a comment that ends the text";
-      i = end + 2;
-      continue;
-    }
-    if (c === "'" || c === '"') {
-      let j = i + 1, value = "";
-      for (; j < text.length && text[j] !== c; j++) {
-        if (/[\n\r\u2028\u2029]/.test(text[j])) return "a string literal that ends a line";
-        if (text[j] === "\\") { value += text.slice(j, j + 2); j++; continue; }
-        value += text[j];
-      }
-      if (j >= text.length) return "a string literal that ends the text";
-      out.push({ kind: "string", text: value });
-      i = j + 1;
-      continue;
-    }
-    if (c === "`") {
-      const next = template(i + 1);
-      if (typeof next === "string") return next;
-      i = next;
-      continue;
-    }
-    if (c === "/") {
-      const last = out.at(-1);
-      if (last?.kind === "other" && [")", "}", "++", "--", ">"].includes(last.text))
-        return `a slash in a grammar-dependent context at offset ${i}`;
-      const previous = out.at(-2);
-      let beforeBang = out.length - 1;
-      while (out[beforeBang]?.text === "!") beforeBang--;
-      const operand = out[beforeBang];
-      if (last?.text === "!" && operand !== undefined &&
-        (operand.kind !== "other" || [")", "}", "]"].includes(operand.text)))
-        return "a slash after a possible non-null assertion";
-      if (last?.kind === "name" && previous?.kind === "name" && ["break", "continue"].includes(previous.text))
-        return "a slash after a statement label";
-      const property = previous?.text === ".";
-      if (last?.kind === "name" && !property && ["of", "yield", "break", "continue", "debugger"].includes(last.text))
-        return "a slash after a contextual or statement keyword";
-      const regex = last === undefined || (last.kind === "other" && last.text !== "]") ||
-        (last.kind === "name" && !property && beforeExpression.has(last.text));
-      if (regex) {
-        let j = i + 1, inClass = false;
-        for (; j < text.length; j++) {
-          const d = text[j];
-          if (/[\n\r\u2028\u2029]/.test(d)) return "a regular expression literal that ends a line";
-          if (d === "\\") { j++; continue; }
-          if (d === "[") inClass = true;
-          else if (d === "]") inClass = false;
-          else if (d === "/" && !inClass) break;
-        }
-        if (j >= text.length) return "a regular expression literal that ends the text";
-        const pattern = text.slice(i, j + 1);
-        if (placeholders.length && /[{}]/.test(pattern))
-          return "braces inside an ambiguous regular expression in a template placeholder";
-        out.push({ kind: "regex", text: pattern });
-        i = j + 1;
-        while (i < text.length && /[A-Za-z]/.test(text[i])) {
-          if (!"dgimsuvy".includes(text[i])) return "ambiguous regular expression flags";
-          i++;
-        }
-        continue;
-      }
-    }
-    if (c === "\\") return "an escape outside a literal";
-    const name = /^[$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*/u.exec(text.slice(i));
-    if (name) {
-      out.push({ kind: "name", text: name[0] });
-      i += name[0].length;
-      continue;
-    }
-    const number = /^(?:0[xX][\da-fA-F_]+n?|0[bB][01_]+n?|0[oO][0-7_]+n?|(?:[0-9][\d_]*(?:\.[\d_]*)?|\.[\d_]+)(?:[eE][+-]?[\d_]+)?n?)/.exec(text.slice(i));
-    if (number) {
-      out.push({ kind: "number", text: number[0] });
-      i += number[0].length;
-      continue;
-    }
-    if (c === "=" && text[i + 1] === ">") {
-      out.push({ kind: "other", text: "=>" });
-      i += 2;
-      continue;
-    }
-    if ((c === "+" || c === "-") && text[i + 1] === c) {
-      out.push({ kind: "other", text: c + c });
-      i += 2;
-      continue;
-    }
-    if (c === "{") depth++;
-    if (c === "}") {
-      depth--;
-      if (placeholders.at(-1) === depth) {
-        placeholders.pop();
-        const next = template(i + 1);
-        if (typeof next === "string") return next;
-        i = next;
-        continue;
-      }
-    }
-    out.push({ kind: "other", text: c });
-    i++;
-  }
-  if (placeholders.length) return "a placeholder that ends the text";
-  return out;
-}
-
-/** Names that load or evaluate code by a target the scan does not read. */
-const loaders: ReadonlySet<string> = new Set(["require", "createRequire", "registerHooks", "eval", "Function"]);
-/** Node's modules that load or evaluate code. */
-const loaderModules: ReadonlySet<string> = new Set(["node:vm", "node:module", "node:worker_threads"]);
-/** The modules where a loader is reviewed: each name or module accounted
- * for, with its reason. */
-const reviewed: ReadonlyMap<string, { reason: string; loaders: readonly string[] }> = new Map([
-  ["tools/files.mts", { reason: "its loads are the loader's observations (DESIGN.md, observed stages)",
-    loaders: ["node:module", "createRequire", "registerHooks", "import.meta.resolve"] }],
-]);
 const repository = resolve(here, "..");
-const repositoryPath = (f: string): string => f.startsWith(repository + "/") ? f.slice(repository.length + 1) : f;
 
-/** Literal module specifiers and loader checks shared by identity discovery
- * and the observed-read guard. Escaped specifiers are refused, so returned
- * strings are their decoded values. */
-export function moduleSpecifiers(text: string, accounted: readonly string[] = []):
-    { specifiers: string[] } | { unaccounted: string } {
-  const tokens = tokenize(text);
-  if (typeof tokens === "string") return { unaccounted: tokens };
-  // A supposed regex may be division around executable code. Inspect its
-  // raw text as well: load-related words make that ambiguity ineligible,
-  // even where the words would only be part of a real regex pattern.
-  for (const t of tokens) {
-    if (t.kind === "regex" &&
-      t.text.match(/[A-Za-z_$][\w$]*/g)?.some((word) => word === "import" || word === "from" || loaders.has(word)))
-      return { unaccounted: "load syntax inside an ambiguous regular expression" };
-  }
-  const specifiers: string[] = [];
-  for (const [i, t] of tokens.entries()) {
-    const next = tokens[i + 1], after = tokens[i + 2];
-    if (t.kind === "name" && loaders.has(t.text) && !accounted.includes(t.text))
-      return { unaccounted: `names ${t.text}, whose load is not read` };
-    if (t.kind !== "name" || next === undefined) continue;
-    if (t.text === "import" && tokens.slice(i + 1, i + 5).map((t) => t.text).join("") === ".meta.resolve" &&
-      !accounted.includes("import.meta.resolve")) return { unaccounted: "uses import.meta.resolve" };
-    if ((t.text === "from" || t.text === "import") && next.kind === "string") specifiers.push(next.text);
-    if (t.text === "import" && next.text === "(") {
-      if (after?.kind !== "string" || tokens[i + 3]?.text !== ")")
-        return { unaccounted: "imports a computed specifier" };
-      specifiers.push(after.text);
-    }
-  }
-  for (const specifier of specifiers) {
-    if (specifier.includes("\\")) return { unaccounted: "an escaped module specifier" };
-    const builtin = specifier.startsWith("node:") ? specifier : `node:${specifier}`;
-    if (loaderModules.has(builtin) && !accounted.includes(builtin))
-      return { unaccounted: `imports ${specifier}, whose loads are not read` };
-  }
-  return { specifiers };
-}
+/** The files of the node side no key covers (DESIGN.md, "The stage store",
+ * keys): each chooses among entries whose stored manifest is the
+ * invocation's own, publishes or records attempts, orchestrates stages over
+ * inputs their manifests bind, or presents outcomes. */
+export const unkeyed: readonly string[] = [
+  "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/verify-source.mts", "pipeline/run-cases.mts",
+  "pipeline/cases.mts", "pipeline/test.mts", "pipeline/default-parameters.mts", "pipeline/evidence-mutations.mts",
+  "pipeline/generic-rest.mts", "pipeline/overload-claims.mts", "pipeline/rest-pack-instance.mts",
+  "pipeline/run-example.mts", "pipeline/fixture-links.mts", "tools/diagnostic.mts", "tools/diagnostic-view.mts",
+  "tools/claim-text.mts", "tools/unchecked.mts", "tools/shadow-contracts.mts", "tools/strip-types.mts",
+];
+/** The in-process stages' own modules, which no process stage executes. */
+export const inProcessOnly: readonly string[] = [
+  "pipeline/parse-stage.mts", "pipeline/claims-assembly.mts", "pipeline/in-process-execution.mts",
+];
 
-/** The dependencies of `file`, read from its text and kept with its digest
- * where the text read is the one digested. Every quoted relative path in the
- * text naming a module file, comments included, is followed. In its code
- * (`tokenize`), the specifier of `import … from`, `export … from`,
- * `import "…"` and `import("…")` is a relative one that must name a file, a
- * Node built-in (`node:…`), which the runtime's identity covers, or a bare
- * package's; an `import(` of anything but a string literal, a name of
- * `loaders` or an import of a module of `loaderModules` leaves the dependencies
- * unaccounted, except one `reviewed` lists for the module, as does a text
- * that does not tokenize. */
-function dependencies(file: string): Dependencies {
-  const held = known(file);
-  if (held.dependencies) return held.dependencies;
-  const bytes = readFileSync(file);
-  const text = bytes.toString("utf8");
-  const at = repositoryPath(file);
-  const scanned = ((): Dependencies => {
-    const modules = new Set<string>(), packages = new Set<string>();
-    for (const m of text.matchAll(/(["'])(\.\.?\/[^"'\s]+\.(?:mts|ts|mjs|js|cts|cjs|json))\1/g)) {
-      const target = resolve(dirname(file), m[2]);
-      // A quoted relative path naming no file is no load; one a load reads
-      // is checked below.
-      if (isFile(target)) modules.add(target);
-    }
-    const found = moduleSpecifiers(text, reviewed.get(at)?.loaders);
-    if ("unaccounted" in found) return { unaccounted: `${at}: ${found.unaccounted}` };
-    const { specifiers } = found;
-    for (const specifier of specifiers) {
-      if (specifier.startsWith("node:")) continue;
-      if (specifier.startsWith("./") || specifier.startsWith("../")) {
-        if (!modules.has(resolve(dirname(file), specifier)))
-          return { unaccounted: `${at} loads ${specifier}, which names no module file` };
-        continue;
-      }
-      if (specifier === "" || specifier.startsWith("/") || /^[a-z]+:/i.test(specifier))
-        return { unaccounted: `${at} loads ${JSON.stringify(specifier)}, which names no package` };
-      const segments = specifier.split("/");
-      packages.add(specifier.startsWith("@") ? segments.slice(0, 2).join("/") : segments[0]);
-    }
-    return { modules: [...modules], packages: [...packages] };
-  })();
-  if (sha256(bytes) === held.digest) held.dependencies = scanned;
-  return scanned;
-}
-const isFile = (path: string): boolean => {
-  try {
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-};
-
-/** The repository modules `files` load, themselves first, transitively, and
- * the packages they load: the code an identity covers; or the first load not
- * accounted for. */
-function moduleClosure(files: readonly string[]): { modules: string[]; packages: string[] } | { unaccounted: string } {
-  const seen: string[] = [], packages = new Set<string>();
-  for (let work = [...files], next = work.shift(); next !== undefined; next = work.shift()) {
-    if (seen.includes(next)) continue;
-    seen.push(next);
-    const found = dependencies(next);
-    if ("unaccounted" in found) return found;
-    work.push(...found.modules);
-    for (const p of found.packages) packages.add(p);
-  }
-  return { modules: seen, packages: [...packages].sort() };
-}
-/** The digests of modules' sources, transitively, by their repository
- * paths; or why they do not identify the code: a load not accounted for, or
- * a package outside `packages`, those the caller's key identifies. */
-export function codeIdentity(files: readonly string[], packages: readonly string[] = []):
+/** The digests, by sorted repository path, of the `.mts` files directly in
+ * `directories` of `root` but `excluded`; or why they are not read. */
+export function directoryIdentity(directories: readonly string[], excluded: readonly string[], root: string = repository):
     { identity: Canonical } | { unidentified: string } {
-  const closure = moduleClosure(files);
-  if ("unaccounted" in closure) return { unidentified: closure.unaccounted };
-  const outside = closure.packages.filter((p) => !packages.includes(p));
-  if (outside.length) return { unidentified: `the code loads ${outside.join(", ")}, which its key does not identify` };
-  return { identity: [...closure.modules].sort().map((f) => [repositoryPath(f), fileDigest(f)]) };
+  try {
+    const files = directories.flatMap((d) => readdirSync(join(root, d), { withFileTypes: true })
+      .filter((e) => e.name.endsWith(".mts")).map((e) => {
+        const path = `${d}/${e.name}`;
+        if (!e.isFile()) throw Error(`${path} is no file`);
+        return path;
+      }))
+      .filter((path) => !excluded.includes(path)).sort();
+    return { identity: files.map((path) => [path, fileDigest(join(root, path))]) };
+  } catch (error) {
+    return { unidentified: `the node side's code is not read: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
-/** A module closure captured during module evaluation, and whether it
- * differs from disk now. Callers retain this identity with the
- * implementation they loaded. */
+/** A code identity captured when the process loads its modules, and whether
+ * the file set or any content differs from disk now. */
 export type LoadedCode = { identity: Canonical; changed: () => boolean };
-/** The identity of `files`' closure, as `codeIdentity` gives it, captured. */
-export function captureCodeIdentity(files: readonly string[], packages: readonly string[] = []):
-    LoadedCode | { unidentified: string } {
-  const captured = codeIdentity(files, packages);
+function captureIdentity(directories: readonly string[], excluded: readonly string[]): LoadedCode | { unidentified: string } {
+  const captured = directoryIdentity(directories, excluded);
   if ("unidentified" in captured) return captured;
   const encoded = canonical(captured.identity);
   return { identity: captured.identity, changed: (): boolean => {
-    try {
-      const now = codeIdentity(files, packages);
-      return !("identity" in now) || canonical(now.identity) !== encoded;
-    } catch {
-      return true;
-    }
+    const now = directoryIdentity(directories, excluded);
+    return !("identity" in now) || canonical(now.identity) !== encoded;
   } };
 }
 
-/** The process adapter's code: this module's closure. */
-export const processAdapter: LoadedCode | { unidentified: string } = captureCodeIdentity([import.meta.filename]);
+/** A process stage's code: the `.mts` files directly in `pipeline/` but the
+ * unkeyed ones and the in-process stages' own. */
+export const processCode: LoadedCode | { unidentified: string } =
+  captureIdentity(["pipeline"], [...unkeyed, ...inProcessOnly]);
+/** An in-process stage's code: the `.mts` files directly in `pipeline/` and
+ * `tools/` but the unkeyed ones. */
+export const inProcessCode: LoadedCode | { unidentified: string } = captureIdentity(["pipeline", "tools"], unkeyed);
+/** Why a captured code identity gives no key now, or null. */
+export const codeFailure = (code: LoadedCode | { unidentified: string }): string | null =>
+  "unidentified" in code ? code.unidentified : code.changed() ? "loaded node-side modules differ from disk" : null;
 
 /** The operating system's build, which identifies the files of its sealed
  * system volume on macOS; null elsewhere. */
@@ -610,7 +360,7 @@ function diskNodeIdentity(): { identity: Canonical } | { unidentified: string } 
   if (Object.keys(process.env).some((name) => name.startsWith("DYLD_")))
     return { unidentified: "Node DYLD_ environment variables have unidentified code dependencies" };
   const options = [...process.execArgv, process.env["NODE_OPTIONS"] ?? ""].join(" ");
-  if (new RegExp("(?:^|[\\s\"'])(?:--(?:import|require|loader|experimental[-_]loader)(?:[=\\s\"']|$)|-r)").test(options))
+  if (/(?:^|[\s"'])(?:--(?:import|require|loader|experimental[-_]loader)(?:[=\s"']|$)|-r)/.test(options))
     return { unidentified: "Node import, require or loader options have unidentified code dependencies" };
   const real = realpathSync(process.execPath);
   const linked = linkedLibraries(real);
@@ -776,7 +526,7 @@ export function bindProcess(call: ProcessCall): BoundProcess {
   const runtime = nodeIdentity();
   const manifest: Canonical = {
     stage: call.stage,
-    adapter: "identity" in processAdapter ? processAdapter.identity : null,
+    code: "identity" in processCode ? processCode.identity : null,
     runtime: "identity" in runtime ? runtime.identity : null,
     implementation: "identity" in implementation ? implementation.identity : null,
     argv,
@@ -786,10 +536,9 @@ export function bindProcess(call: ProcessCall): BoundProcess {
     inputs,
     outputs: outputs.map((o) => o.role),
   };
-  const ineligible = "unidentified" in processAdapter ? processAdapter.unidentified
-    : processAdapter.changed() ? "loaded adapter modules differ from disk"
-    : "unidentified" in implementation ? implementation.unidentified
-    : "unidentified" in runtime ? runtime.unidentified : null;
+  const ineligible = codeFailure(processCode)
+    ?? ("unidentified" in implementation ? implementation.unidentified
+      : "unidentified" in runtime ? runtime.unidentified : null);
   return { program, argv, environment: call.environment, protocol: call.protocol, inputFiles, outputs, manifest,
     input: canonical(manifest), ineligible };
 }

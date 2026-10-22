@@ -13,10 +13,9 @@ import { platform } from "node:os";
 import { join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Store, StoreError, pausePublicationForTests } from "../pipeline/stage-store.mts";
-import { invokeInProcess, invokeProcess, readInvocationLog, Recorder, type Invoked } from "../pipeline/stages.mts";
-import { auditForTests, canonical, captureCodeIdentity, linkedLibraries, sha256, verifierCall, type ProcessCall }
+import { invokeProcess, readInvocationLog, Recorder, type Invoked } from "../pipeline/stages.mts";
+import { auditForTests, canonical, linkedLibraries, sha256, verifierCall, type ProcessCall }
   from "../pipeline/stage-execution.mts";
-import { textCodec } from "../pipeline/in-process-execution.mts";
 
 const dir = runDirectory("tscert-stage-store-");
 
@@ -400,22 +399,6 @@ for (const order of [["timeout", "finished"], ["finished", "timeout"]]) sections
   assert.ok(interrupted.elapsedMs >= 1000);
   assert.equal(interrupted.execution, "interrupted");
 }
-{
-  freshStore("loaded-code");
-  const module = file("loaded.mts", "export const value: string = 'old';");
-  const implementation = captureCodeIdentity([module]);
-  const call = { stage: "assemble", implementation, inputs: [], codec: textCodec, run: (): string => "old" };
-  const invokeLoaded = (): ReturnType<typeof invokeInProcess<string>> =>
-    invokeInProcess({ ...call, stage: "assemble" }, { force: false, recorder: null });
-  invokeLoaded();
-  writeFileSync(module, "export const value: string = 'new';");
-  const stale = invokeLoaded();
-  assert.equal(stale.value, "old");
-  assert.equal(stale.record.key, null);
-  assert.match(stale.record.ineligible ?? "", /loaded implementation/);
-  assert.equal(stale.record.execution, "executed");
-}
-
 if (eligible) sections.push((async (): Promise<void> => {
   const store = new Store(join(dir, "interrupted-invocation"));
   const program = script("pause.sh", '/bin/cat "$2"', ["/bin/cat", "/bin/sleep"]);
@@ -522,12 +505,14 @@ if (platform() === "darwin") {
   process.stdout.write("linked libraries: a library replaced or relinked changes the identity; a universal file's architectures must agree\n");
 }
 {
-  // Each identity control owns the modules it edits. An edit of the stage's
-  // module or of an execution adapter makes the stage execute without a
-  // key; an edit of the replay policy, which no key covers, replays the
+  // Each identity control owns the modules it edits. An edit of a keyed
+  // module (the stage's own, an execution adapter, a module nothing imports
+  // by name) or a new module makes the stage execute without a key; an edit
+  // of the replay policy or the store, which no key covers, replays the
   // entry at the same key.
   const keyed = new Map([["claims-assembly.mts", true], ["in-process-execution.mts", true],
-    ["stage-execution.mts", true], ["stages.mts", false]]);
+    ["stage-execution.mts", true], ["hidden.mts", true], ["new-module.mts", true], ["stages.mts", false],
+    ["stage-store.mts", false]]);
   const drivers = [...keyed.keys()].map((name) => {
     const root = join(dir, "loaded-copy-" + name);
     const copied = join(root, "pipeline");
@@ -536,6 +521,8 @@ if (platform() === "darwin") {
     for (const module of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts",
       "stage-execution.mts", "in-process-execution.mts"])
       copyFileSync(resolve(import.meta.dirname, "../pipeline", module), join(copied, module));
+    // A module loaded only by a name the code computes.
+    writeFileSync(join(copied, "hidden.mts"), 'const n = 1 / "/"; await import(name); const s = "//";\n');
     const driver = join(copied, "test.mts");
     writeFileSync(driver, String.raw`
 import assert from "node:assert/strict";
