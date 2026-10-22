@@ -317,8 +317,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
         | Atoms [Shape f],Atoms [Shape b] when f.fields=[] && f.elements=None && b.calls=[] && b.elements=None ->
           Atoms [Shape {b with calls=f.calls}]
         | _ -> Proposal_diagnostics.unsupported "function field construction requires a callable and a record contract")
-    | Bind (callee,receiver,args) ->
-      let callee=declared_head declarations [] (expr env callee) in ignore (expr env receiver);
+    | Bind (callee_expr,receiver,args) ->
+      let callee=declared_head declarations [] (expr env callee_expr) in ignore (expr env receiver);
       (* A target of several signatures, `next(...[value]: [] | [TNext])`, is
          bound at the first that takes the prefix: the bound function's claim
          is one signature, which Lean selects among the target's. *)
@@ -345,6 +345,33 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
         | Atoms [Shape ({calls=_::_::_ as calls;_} as shape)] when List.exists fits calls ->
           Atoms [Shape {shape with calls=[List.find fits calls]}]
         | t -> t in
+      (* A member bound to its own host, `o.k.bind(o)`, where `o` is a union
+         of hosts: Lean splits the host's slot and binds each arm's member to
+         it (`unionVar`, then `bindMember`). Each arm's signature is chosen as
+         for one host; the arms' must take the same parameters at the same
+         effect, and the bound function returns the union of their results. *)
+      let member_form = match callee_expr.node,receiver.node,args with
+        | Read ({node=Id x;_},_),Id y,[] -> x = y
+        | _ -> false in
+      let callee = match callee with
+        | Atoms (_::_::_ as arms) when member_form ->
+          let chosen = List.map (function
+            | Shape {calls;_} -> List.find_opt fits calls
+            | _ -> None) arms in
+          (match chosen with
+           | Some (first:Semantic.signature) :: rest
+             when List.for_all (function
+               | Some (s:Semantic.signature) -> s.params = first.params && s.variadic = first.variadic
+                   && s.call_effect = first.call_effect
+               | None -> false) rest ->
+             let result = List.fold_left (fun r -> function
+               | Some (s:Semantic.signature) -> union r s.result | None -> r) (Atoms []) chosen in
+             (match first.variadic with
+              | Some element -> variadic_arrow ~call_effect:first.call_effect first.params element result
+              | None -> arrow ~call_effect:first.call_effect first.params result)
+           | _ -> Proposal_diagnostics.unsupported
+               "a method bound to a union of hosts needs each host's member at one signature: the same parameters and effect")
+        | t -> t in
       (match callee with Atoms [Shape {calls=[signature];_}]
           when signature.quantified=[] && (signature.variadic<>None
             || List.length args<=List.length signature.params) ->
@@ -359,12 +386,12 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
               | None -> Proposal_diagnostics.unsupported "bind argument prefix exceeds arity") in
         let rest = prefix signature.params args in
         (match signature.variadic with
-         | Some element -> variadic_arrow ~call_effect:signature.call_effect rest element signature.result
+         | Some element -> variadic_arrow ~call_effect:(bound_effect signature.call_effect) rest element signature.result
          | None ->
            let promises = List.concat_map (fun (promise,result) -> match arrow ~call_effect:promise rest result with
              | Atoms [Shape {calls;_}] -> calls
              | _ -> []) (kept signature) in
-           (match arrow ~call_effect:signature.call_effect rest signature.result with
+           (match arrow ~call_effect:(bound_effect signature.call_effect) rest signature.result with
             | Atoms [Shape shape] when promises <> [] -> Atoms [Shape {shape with calls=shape.calls @ promises}]
             | t -> t))
       | _ -> Proposal_diagnostics.unsupported "bind requires a single arrow and a valid argument prefix")

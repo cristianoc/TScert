@@ -3037,6 +3037,10 @@ C_i=\mathsf{const}\ m=i.\mathit{return};\ \mathsf{if}\ (\mathsf{typeof}\ m\ne\te
 \end{array}
 ```
 
+The protocol lowering writes `.bind` in the fragment to save a method with
+its receiver. Source-written `.bind` is admitted by the parser only on a
+known local function.
+
 GetIterator reads `next` once, and each step calls it on the iterator: the
 bound function is that call ([`bindMember`](PROGRAM-TYPING.md#judgments-and-constructor-views)). A
 `return` the iterator's type declares a required method is read bound the
@@ -3055,6 +3059,26 @@ may own any `return`. An array's `values`, `keys` and `entries` give the
 the iterator is its own, and a program's iterable by this rule, its `return`
 read `undefined` and the close calling nothing, by the
 [host assumption](DESIGN.md#trust-surface) that its chain holds none.
+
+GetIterator on an iterable of a union type gives a union of iterators, and
+the protocol binds the `next` (and a required `return`) of whichever iterator
+it is: a [member bound to a union of hosts](PROGRAM-TYPING.md#judgments-and-constructor-views),
+each host's member taken at the signature it binds alone. Each step's result
+is then the union of the hosts' results, `IteratorResult<T_j, TReturn_j>`
+each, and `r.value` past the test of `r.done` the union of the not-done arms'
+`T_j`. The `next` the protocol admits, per host, is a method member whose
+signature takes no required parameter (`next()`, or the rest-tuple union
+`next(...[value]: [] | [TNext])`, whose first signature is `next()`), with no
+promise, under a receiver the iterator is within, returning a record with
+`done` and `value`; the hosts' `next` signatures take the same parameters at
+the same effect. Refused: a required parameter (the step's call passes none),
+hosts' signatures that differ in parameters or effect, a result that is no
+object (IteratorStepValue throws on it; the step's `done` read has no rule on
+a primitive), a receiver the iterator is
+not (`this: S`), an optional `next` or an accessor (outside the fragment), and
+a `next` that is a field holding a function in a union, which no rule binds.
+A `next` with effects changes what the loop's body and what follows know, as
+any call of its footprint does.
 
 The library's declarations are read by the rules of
 [library types](#library-types): `Iterable<T>` is the record of its one

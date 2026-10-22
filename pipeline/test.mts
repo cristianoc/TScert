@@ -1306,6 +1306,170 @@ control(async (): Promise<void> => {
   process.stdout.write("evolving use contract: a forged contract refused at the write\n");
 });
 
+control(async (): Promise<void> => {
+  // The protocol's `next` bound to a union of hosts returns the union of
+  // the hosts' results. A claim of one host's result alone, `Countdown`'s,
+  // whose done value is `undefined`, is refused for the union whose other
+  // host returns a string, as search and as evidence.
+  const artifacts = run("bind-union-host");
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  type Claim = SourceClaims["functions"][number]["expressions"][number];
+  const boundNext = (name: string): Claim => {
+    const s = source.indexOf("for (", source.indexOf(`export function ${name}(`));
+    const q = source.indexOf(")", s);
+    const fn = must(claims.functions.find((f) => f.name === name), name);
+    return must(fn.expressions.find((e) => e.pos[0] === s && e.pos[1] === q + 1), `${name}'s bound next`);
+  };
+  const union = boundNext("total");
+  union.type = structuredClone(boundNext("countdown").type);
+  const forged = writeClaims(artifacts, "forged-union-host-next", claims);
+  const searched = produceWith(artifacts, forged, "forged-union-host-next");
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, detail);
+  // Refused where the member is read and bound, the run from the header's
+  // `(` to its `)`.
+  const read = source.indexOf("(", union.pos[0]);
+  assert.ok(detail.includes(`source expression obligation at [${read},${union.pos[1]})`), detail);
+  assert.match(invoke(forged, join(artifacts, "evidence.json"), artifacts), /claim|evidence/);
+  process.stdout.write("bound next of a union of hosts: one host's result claimed alone refused\n");
+});
+
+
+control(async (): Promise<void> => {
+  // Source arrows carry ordinary effects. Inject unequal member effects
+  // into the fragment to exercise the producer's signature comparison.
+  const artifacts = run("bind-union-host");
+  const ast = readFragmentFile(join(artifacts, "fragment.json"));
+  const host = must(ast.declarations.definitions.find(d => d.declaration.name === "Countdown"), "Countdown");
+  assert.ok(host.expression?.k === "object");
+  const next = must(host.expression.fields.find(f => f.name === "next"), "Countdown.next");
+  assert.ok(next.type.k === "function");
+  assert.deepEqual(next.type.effect, ordinaryEffect);
+  next.type.effect = emptyEffect;
+  const fragment = join(artifacts, "unequal-bound-member-effects.json");
+  writeFileSync(fragment, JSON.stringify(ast));
+  const lowered = tested(verifierCall(verifier, ["--lower-control-flow", fragment]));
+  assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
+  const flow = join(artifacts, "unequal-bound-member-effects-flow.json");
+  writeFileSync(flow, lowered.stdout);
+  const proposal = tested(producerCall(producerExecutable, [fragment, flow]));
+  assert.equal(proposal.status, 2, proposal.stdout + proposal.stderr);
+  assert.match(proposal.stdout + proposal.stderr,
+    /a method bound to a union of hosts needs each host's member at one signature: the same parameters and effect/);
+  process.stdout.write("unequal bound member effects: refused by the producer's union signature comparison\n");
+});
+
+for (const [file, name] of [["for-of-iterable-parameter", "first"], ["bind-union-host", "total"]]) control(async (): Promise<void> => {
+  // Only the bound function's claimed effect changes. Its hosts' members
+  // permit writes, so a claim preserving all locations needs refusal.
+  const artifacts = run(file);
+  const claims = readClaims(artifacts);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("for (", source.indexOf(`export function ${name}(`));
+  const end = source.indexOf(")", start) + 1;
+  const fn = must(claims.functions.find(f => f.name === name), name);
+  const bound = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === end), `${name}'s bound next`);
+  assert.ok(Array.isArray(bound.type) && bound.type.length === 1);
+  const label = bound.type[0];
+  assert.ok(typeof label === "number");
+  const row = structuredClone(must(claims.types[label], "the bound function's row"));
+  const arrows = row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
+  assert.equal(arrows.length, 1);
+  const arrow = must(arrows[0], "the bound signature");
+  assert.deepEqual(arrow.effect, ordinaryEffect);
+  arrow.effect = emptyEffect;
+  const preserving = claims.types.push(row) - 1;
+  // Mention both rows in the honest union so evidence and the forged claim
+  // use the same graph labels. The ordinary arm admits the actual effect.
+  bound.type.push(preserving);
+  const honest = writeClaims(artifacts, `bound-${name}-effect-baseline`, claims);
+  const baseline = produceWith(artifacts, honest, `bound-${name}-effect-baseline`);
+  assert.equal(baseline.status, 0, baseline.stdout + baseline.stderr);
+  bound.type = [preserving];
+  const forged = writeClaims(artifacts, `forged-bound-${name}-effect`, claims);
+  const searched = produceWith(artifacts, forged, `forged-bound-${name}-effect`);
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, detail);
+  const read = source.indexOf("(", start);
+  assert.ok(detail.includes(`source expression obligation at [${read},${end})`), detail);
+  const checked = invoke(forged, join(artifacts, `bound-${name}-effect-baseline-evidence.json`), artifacts);
+  assert.ok(checked.includes(`source evidence refusal at [${read},${end})`), checked);
+  process.stdout.write(`bound next effect of ${name}: excess preservation refused in search and checking at the binding\n`);
+});
+
+for (const name of ["countdown", "total"]) control(async (): Promise<void> => {
+  // Dropping a receiver-store effect widens its restricted footprint:
+  // the bound receiver can be any location in the caller's heap.
+  const artifacts = run("bind-union-host");
+  const ast = readFragmentFile(join(artifacts, "fragment.json"));
+  for (const hostName of ["Countdown", "Repeat"]) {
+    const host = must(ast.declarations.definitions.find(d => d.declaration.name === hostName), hostName);
+    assert.ok(host.expression?.k === "object");
+    const next = must(host.expression.fields.find(f => f.name === "next"), `${hostName}.next`);
+    assert.ok(next.type.k === "function");
+    next.type.effect = { ...emptyEffect, receiverStore: true };
+  }
+  // Keep this control at the binding. Class construction and other
+  // functions retain annotations for the source's ordinary member effects.
+  ast.functions = ast.functions.filter(f => f.name === name);
+  ast.init = [];
+  const fragment = join(artifacts, `receiver-store-${name}.json`);
+  writeFileSync(fragment, JSON.stringify(ast));
+  const lowered = tested(verifierCall(verifier, ["--lower-control-flow", fragment]));
+  assert.equal(lowered.status, 0, lowered.stdout + lowered.stderr);
+  const flow = join(artifacts, `receiver-store-${name}-flow.json`);
+  writeFileSync(flow, lowered.stdout);
+  const proposal = tested(producerCall(producerExecutable, [fragment, flow]));
+  assert.equal(proposal.status, 0, proposal.stdout + proposal.stderr);
+  const proposed = join(artifacts, `receiver-store-${name}-claims.json`);
+  writeFileSync(proposed, proposal.stdout);
+  const claims = readClaimsFile(proposed);
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const start = source.indexOf("for (", source.indexOf(`export function ${name}(`));
+  const end = source.indexOf(")", start) + 1;
+  const fn = must(claims.functions.find(f => f.name === name), name);
+  const bound = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === end), `${name}'s bound next`);
+  assert.ok(Array.isArray(bound.type) && bound.type.length === 1);
+  const label = bound.type[0];
+  assert.ok(typeof label === "number");
+  const row = structuredClone(must(claims.types[label], "the bound function's row"));
+  const arrows = row.flatMap(clause => typeof clause === "object" && "arrs" in clause ? clause.arrs.arrows : []);
+  assert.equal(arrows.length, 1);
+  const arrow = must(arrows[0], "the bound signature");
+  assert.deepEqual(arrow.effect, ordinaryEffect);
+  // The member read is separately claimed as a callable. Widen that
+  // intermediate claim so this control tests the bound function's effect.
+  const readStart = source.indexOf("(", start);
+  const member = must(fn.expressions.find(e => e.pos[0] === readStart && e.pos[1] === end), "the member read");
+  assert.ok(Array.isArray(member.type));
+  for (const label of member.type) {
+    assert.ok(typeof label === "number");
+    for (const clause of must(claims.types[label], "the member callable's row")) {
+      if (typeof clause === "object" && "arrs" in clause)
+        for (const arrow of clause.arrs.arrows) arrow.effect = ordinaryEffect;
+    }
+  }
+  arrow.effect = emptyEffect;
+  const preserving = claims.types.push(row) - 1;
+  // Mention both rows in the honest union so evidence and the forged claim
+  // use the same graph labels. The ordinary arm admits the actual effect.
+  bound.type.push(preserving);
+  const honest = writeClaims(artifacts, `receiver-store-${name}-effect-baseline`, claims);
+  const baseline = produceWith(artifacts, honest, `receiver-store-${name}-effect-baseline`, fragment);
+  assert.equal(baseline.status, 0, baseline.stdout + baseline.stderr);
+  bound.type = [preserving];
+  const forged = writeClaims(artifacts, `forged-receiver-store-${name}-effect`, claims);
+  const searched = produceWith(artifacts, forged, `forged-receiver-store-${name}-effect`, fragment);
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, detail);
+  const read = source.indexOf("(", start);
+  assert.ok(detail.includes(`source expression obligation at [${read},${end})`), detail);
+  const checked = invoke(forged, join(artifacts, `receiver-store-${name}-effect-baseline-evidence.json`), artifacts, fragment);
+  assert.ok(checked.includes(`source evidence refusal at [${read},${end})`), checked);
+  process.stdout.write(`bound receiver-store effect of ${name}: excess preservation refused in search and checking at the binding\n`);
+});
+
 
 control(async (): Promise<void> => {
   // A deferred closure body owns execution points separate from creation.

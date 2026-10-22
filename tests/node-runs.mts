@@ -49,9 +49,34 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     // `map`'s result holds a hole where its callback shrank the array; a
     // spread passes it to `push` as `undefined`.
     ["invalid-push-spread-sparse", "wrong([1, 2])"],
+    // The protocol's `next` of a union's host: called with no actual, on
+    // the iterator as receiver, its effect (and a getter's) on a tested field.
+    ["invalid-bind-union-host-arity", "first(new From())"],
+    ["invalid-for-of-next-arity", "first(new From())"],
+    ["invalid-bind-union-host-this", "first(new Borrowed())"],
+    ["invalid-bind-union-host-effect", "(() => { const b = new Box(1); return kept(new Drain(b), b); })()"],
+    ["invalid-bind-union-host-getter", "(() => { const b = new Box(1); return kept(new Lazy(b), b); })()"],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // A union's host whose `next` yields a string where its overload says a
+  // number; a done step's value, the host's return value, read as a number.
+  assert.equal(runExample("invalid-bind-union-host-overload", "first(new Mixed())"), "s",
+    "invalid-bind-union-host-overload: the loop's value is a string despite the number contract");
+  assert.equal(runExample("invalid-bind-union-host-return", "peek(new Repeat(0))"), "finished",
+    "invalid-bind-union-host-return: a done step's value is the host's return value");
+  // A step's result that is no object, and an absent `next`: the protocol throws.
+  for (const file of ["invalid-bind-union-host-primitive", "invalid-bind-union-host-tag-set"])
+    assert.throws(() => runExample(file, "first(new Source(1))"), /not an object/,
+      `${file}: GetIterator throws on a numeric iterator`);
+  assert.throws(() => runExample("invalid-bind-union-host-nullable", "first(new Source(undefined))"), /not an object/,
+    "invalid-bind-union-host-nullable: GetIterator throws on an undefined iterator");
+  assert.throws(() => runExample("invalid-bind-union-host-missing-member", "first(new Source(new Missing()))"), /not a function/,
+    "invalid-bind-union-host-missing-member: the step calls an absent next");
+  assert.throws(() => runExample("invalid-bind-union-host-non-object", "first(new Bare())"), /not an object/,
+    "invalid-bind-union-host-non-object: IteratorStepValue throws on a number");
+  assert.throws(() => runExample("invalid-bind-union-host-optional", "first(new Maybe())"), /not a function/,
+    "invalid-bind-union-host-optional: the step calls an absent next");
   assert.equal(await runExample("invalid-block-type-awaited", `test("text")`), "text",
     "invalid-block-type-awaited: y holds a string despite the local alias's number contract");
   // `outer.v` is the enclosing `T`, here a string: the result is the number

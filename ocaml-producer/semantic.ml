@@ -32,6 +32,10 @@ let ordinary_effect = footprint_effect top_footprint
 let empty_effect = footprint_effect empty_footprint
 let promise_effect promise = {(footprint_effect top_footprint) with promise=Some promise}
 
+(* A bound function's effect (Lean's `Effect.drop`): the receiver it saved is
+   not the receiver of a call of it, so an exception of the receiver's store
+   is an exception of every location. *)
+let bound_effect e = if e.receiver_store then {e with footprint=top_footprint; receiver_store=false} else e
 (* Whether a signature's result is the call's: one without a promise. *)
 let plain_effect e = e.promise = None
 (* A smaller footprint and the same promise, a fresh result where the other

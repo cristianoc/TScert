@@ -780,10 +780,12 @@ came from a different context. No execution budget is inspected. -/
       let schemes := match Γ[i]? with
         | some O => ProgramTyping.memberSchemes G O k
         | none => []
-      return (A :: schemes ++ pool).findSearch? fun F => do
+      let direct : SearchM ι (ProgramCertificates.Evidence ι) := (A :: schemes ++ pool).findSearch? fun F => do
         let (ps, rs, vs) ← memberProofsUsing G images (← Γ[i]?) k F
         (SearchM.lift (checkTreeResult G images (leaf F (.bindMember ps rs vs)))).bind fun _ =>
           coerce G images aliases (leaf F (.bindMember ps rs vs)) A
+      -- A union of hosts: each label's member bound to it (`unionVar`).
+      return direct.orElse fun _ => splitReceiver (.var i)
     | .letE a b =>
       let exactTypes := suggestions.reverse.filterMap fun j =>
         if j.context == Γ && j.term == a then some j.type else none

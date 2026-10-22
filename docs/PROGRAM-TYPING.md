@@ -615,10 +615,35 @@ where $`v`$ is in each of $`m.\mathsf{this}`$ (`memberOf_at`,
 step later, on the object $`v`$'s prototype holds (`Step.readProto`,
 `member_read_safe`), as the member's meaning says. The bound descriptor, which has
 no fields and allocates nothing, forwards any call to it with receiver $`v`$
-(`callsT_bound`, `restsT_bound`). The source form `o.m.bind(o)`, `o` one
-immutable name and `m` a method member of its type, is this term: `bind`
-of what `o.m` holds to `o` itself, a bound function whatever receiver it is
-later called with (`closureExpr`); the iterator protocol reads `next` so.
+(`callsT_bound`, `restsT_bound`). The protocol lowering writes this term as
+`o.m.bind(o)` in the fragment, with `o` one immutable name and `m` a method
+member of its type (`closureExpr`). The iterator protocol uses it for
+`next` and a required `return`. Source-written `.bind` is admitted by the
+parser only on a known local function; this fragment form describes the
+protocol's generated binding.
+
+A host of a union type binds the member of whichever host it is. With
+$`l_1,\ldots,l_n`$ ($`n\ge2`$) the labels of $`O`$ (`members`), each one object
+clause holding $`k`$ as a member, the same term has a type when it has that
+type at each label, by `unionVar` on the host's slot and `bindMember` at
+$`\mathrm{member}_G([l_j],k)`$ in each case. The rule is derived from those
+two rules of the typing relation, which its soundness theorem covers; the
+certificate is a `unionVar` node over one `bindMember` node per label:
+
+```math
+\frac{\Gamma(i)=O\quad\mathrm{members}_G(O)=l_1,\ldots,l_n
+      \quad\forall j.\ \Gamma[i\mapsto[l_j]]\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):\mathsf{arrs}(L;S)}
+     {\Gamma\vdash_G\mathsf{let}\ f=i.k\ \mathsf{in}\ \mathsf{bound}(f,i,[]):\mathsf{arrs}(L;S)}\ \textsf{bind-union-host}
+```
+
+So each claimed signature is covered by every host's member and its result
+contains every host's result. The lowering writes the term where every label
+of the host holds $`k`$ as a member (`unionMemberHosts`), and the search splits
+the host's slot where the member of its one clause is not found. The producer
+proposes one signature: for each host, the signature it binds for that host
+alone; the hosts' must have the same parameters and effect, and the result is
+the union of their results. A union with a host holding $`k`$ as a field, or
+not at all, is not this term, and binding a union of callables has no rule.
 
 A variadic target with an element rest (`bindRestE`, `restsT_bound`) gives
 its first fixed positions to the prefix and, past them, its element $`E`$; the
