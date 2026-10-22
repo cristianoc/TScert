@@ -568,6 +568,10 @@ This transport leaves successful evidence JSON and the proof protocol unchanged.
 def withDiagnostic (message : String) (fields : List (String × Json)) : String :=
   message ++ "\nobligation-diagnostic: " ++ (Json.mkObj fields).compress
 
+/-- A message carrying a diagnostic (`withDiagnostic`). -/
+def hasDiagnostic (message : String) : Bool :=
+  (message.splitOn "\nobligation-diagnostic: ").length > 1
+
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 

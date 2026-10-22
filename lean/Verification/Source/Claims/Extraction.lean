@@ -276,7 +276,7 @@ def extractPlans (ast claims : Json) (fileKey : String)
     -- located refusal at the function, as the direct checker's do.
     let plan ← if tps.isEmpty then finish d module c f
       else tryCatch (finish d module c f) fun e =>
-        throw (if (e.splitOn "obligation-diagnostic: ").length > 1 then e
+        throw (if RequestJson.hasDiagnostic e then e
           else sourceRefusal d.types f.namePos .genericValidation e)
     let .graph _ _ r := plan
     return (r.types, plans ++ [plan])

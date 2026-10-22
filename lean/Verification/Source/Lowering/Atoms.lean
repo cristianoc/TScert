@@ -585,6 +585,12 @@ Mappings discard only the temporaries introduced by this expression. -/
         let store ← emitAt e.span (.readAt SourceTypes.storeField (.var 0)) (.bind length) (B::Γ) S
           (scope := held ⟨"",some a.span⟩ :: scope)
         return ← compileAtom recursive fc scope Γ a (← behind store)
+      -- Of a union of arrays, the same term derived at each member
+      -- (`arrayLengthAt`).
+      let plan ← arrayLengthAt G (B::Γ) 0
+      let node ← emitPlanned e.span plan (.bind drop) (B::Γ) A
+        (scope := held ⟨"",some a.span⟩ :: scope)
+      return ← compileAtom recursive fc scope Γ a (← behind node)
     let node ← emitAt e.span (dispatchTerm arms fld 0 object) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
     compileAtom recursive fc scope Γ a (← behind node)

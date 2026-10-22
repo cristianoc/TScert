@@ -1140,6 +1140,17 @@ body, a condition's operands) alike, is the length of its store:
      {\Gamma\vdash_G⟦a.\mathit{length}⟧=\mathsf{lenOf}\;(a.\mathtt{[]}):N}\ \textsf{len}
 ```
 
+<a id="the-length-of-a-union-of-arrays"></a>
+Of a union of array contracts, the value held in a slot $`x`$, the same term
+is derived at each member of $`x`$'s type, each one array contract
+(`unionVar`); a member that is no array contract refuses the read:
+
+```math
+\frac{\Gamma(x)=A\quad
+      \forall a\in\mathit{members}_G(A).\ \ \Gamma[x\mapsto a]\vdash_G\mathsf{lenOf}\;(x.\mathtt{[]}):N}
+     {\Gamma\vdash_G⟦x.\mathit{length}⟧=\mathsf{lenOf}\;(x.\mathtt{[]}):N}
+```
+
 A write is typed only at an index no
 greater than the required length, so it lands in bounds or appends and never
 leaves a hole:
