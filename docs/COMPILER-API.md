@@ -149,6 +149,14 @@ list` is true for a three-element list (a prototype getter) while `list[5]`
   `isUnionType()` is `(this.flags & TypeFlags.Union) !== 0`; `getTypes()`
   returns `undefined` unless the type is a union, an intersection or a
   template literal type.
+- **Node builders.** The factory (`./unstable/ast/factory`), the clones
+  (`getSynthesizedDeepClone`, `getSynthesizedDeepClones`) and the visitors
+  (`visitNode`, `visitNodes`, `visitEachChild`) return `NodeObject`s the
+  package builds, whose root's `parent` is `undefined`
+  (`factory.generated.js:13`, `clone.js:56-78`) where every shape but a
+  source file's requires it; so does the root `decodeNode` builds for the
+  sync API's `typeToTypeNode` and `signatureToSignatureDeclaration`
+  (`node.js:284`), which no view lists.
 - **Retained callbacks.** `new API({ fs })` registers the client's
   `readFile`, `fileExists` and other `fs` functions with the channel
   (`client.js:38`); the server calls them back synchronously during later
@@ -1075,7 +1083,7 @@ Behaviours excluded because soundness needs it:
 |     | Restriction                                                                       | Behaviour it excludes                                                                                                                                                            |
 | --- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | R1  | No client write to a member of a host type                                        | Mutating compiler objects: `list.transformFlags = 1`, `sourceFile.tokenCache = …`, `list.length = 0`, writes through any writable declared member or structural alias            |
-| R2  | No client value meets a host type; host values come only from the package         | Passing a forged node, type or symbol to the API (an object literal, a spread or `Object.assign` copy of a node, a class implementing `ts.Node`); the node factory               |
+| R2  | No client value meets a host type; host values come only from the package, and no value of its node builders (`hostNodeBuilders`: the factory, the clones, the visitors) is read | Passing a forged node, type or symbol to the API (an object literal, a spread or `Object.assign` copy of a node, a class implementing `ts.Node`); a node the factory, a clone or a visitor builds, whose root lacks `parent` (`invalid-compiler-api-node-factory`, `invalid-compiler-api-node-clone`, run under Node) |
 | R3  | A host guard narrows to what its implementation accepts                           | Relying on `isTypeAliasDeclaration`, `isImportDeclaration`, `isAnyImportSyntax` excluding JavaScript kinds; relying on `isExpression` matching the declarations' category       |
 | R4  | A host enum type at a package position is `number`                                | Exhaustive reasoning over flag values (`switch (node.flags)` with a case per member and no default)                                                                              |
 | R5  | Bitwise operators take `number` operands only, but `^`, which also takes two bigint operands, and `~`, which also takes one | `obj & 1` (runs `valueOf`), `1n & x`                                                                                                                  |

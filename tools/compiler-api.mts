@@ -103,6 +103,18 @@ export const compilerApiFamily: FamilyDescription = {
   guards: compilerApiGuards,
 };
 
+/** The package's node builders (COMPILER-API.md, R2): the declaration
+ * files, by their path in the installation, of the functions the admitted
+ * entry point exports that return nodes they build, outside the node
+ * invariant: the factory's `NodeObject` starts with no `parent`
+ * (`factory.generated.js:13`), and a clone's or a visitor's root keeps none
+ * (`clone.js:56-78`, `visitor.generated.js`). No value they declare is read. */
+export const hostNodeBuilders: readonly string[] = [
+  "dist/ast/factory.generated.d.ts",
+  "dist/ast/clone.d.ts",
+  "dist/ast/visitor.generated.d.ts",
+];
+
 /** The interfaces of the host package that are host types by themselves
  * (reading rule 1): `Node`, every node shape reaching it through `extends`,
  * `NodeArray`, and the sync API's `Type`, its sub-interfaces reaching it.

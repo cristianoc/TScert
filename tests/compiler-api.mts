@@ -497,6 +497,18 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
     assert.equal(initializerOf(declaration, () => { delete declaration.initializer; }), undefined,
       `${name}: the call removes the optional member`);
   }
+  // The node builders (R2): a factory node and a clone's root lack the
+  // `parent` their shapes require.
+  const made = await load("invalid-compiler-api-node-factory", "made");
+  assert.equal(made(), undefined, "invalid-compiler-api-node-factory: a factory node has no parent");
+  const cloneParent = await load("invalid-compiler-api-node-clone", "cloneParent");
+  const declarationSource = "const x = 1;\n";
+  const declarationFile = join(dir, "declaration.ts");
+  writeFileSync(declarationFile, declarationSource);
+  const [variable] = openText(declarationFile, declarationSource).statements;
+  const member = (o: unknown, key: string | number): unknown => typeof o === "object" && o !== null ? Reflect.get(o, key) : undefined;
+  const first: unknown = member(member(member(variable, "declarationList"), "declarations"), 0);
+  assert.ok(first !== undefined && cloneParent(first) === undefined, "invalid-compiler-api-node-clone: a clone's root has no parent");
   // The omitted `tokenCache`: absent at the test, a `Map` after the call.
   const cached = await load("invalid-compiler-api-token-cache", "cached");
   const tokenSource = "export const answer = 42;\n";
@@ -505,7 +517,7 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.equal(cached(openText(tokenFile, tokenSource), tokenSource.indexOf("=")), 2,
     "invalid-compiler-api-token-cache: absent at the test, present after getTokenAtPosition");
   closeParser();
-  console.log("stable links: a record's member, a mixed path's first member, a chain's middle member, a let root, a record's and a look-alike's optional member replaced or removed by the call, each read returns undefined under Node; tokenCache absent, then present");
+  console.log("stable links: a record's member, a mixed path's first member, a chain's middle member, a let root, a record's and a look-alike's optional member replaced or removed by the call, each read returns undefined under Node; tokenCache absent, then present; a factory node's and a clone's parent undefined");
 }
 
 // The guards' fixtures under Node (HOST-FAMILIES.md, "Guard recognition"):

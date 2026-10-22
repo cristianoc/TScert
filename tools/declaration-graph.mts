@@ -24,8 +24,8 @@ import { intrinsics, intrinsicModule, resolutionIntrinsics, resolvableDeclaratio
   iterationIntrinsic, hasPropertyName, elementAtName, nonThenable, restFromIntrinsic, spreadName, enumIntrinsic, enumMembersTerm,
   literalTerm, assertionFailureName, type EnumMemberValue, type EnumReverse } from "./intrinsics.mts";
 import { compareTags, familyTable, type FamilyArm, type FamilyDescription, type FamilyGraph, type FamilyTable, type FlatMember, type GuardEntry, type TagValue } from "./host-families.mts";
-import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
-import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
+import { compilerApiFamily, brandedTypes, hostBrands, hostEnums, hostNodeBuilders, hostNodeList, hostTypeRoots, hostViews, readsAsOptionalUnknown } from "./compiler-api.mts";
+import { activeFamilies, familyOfFile, familyOfGuard, guardOfExport, importedExport, installationPath, isHostFile, selectionGuard, tagEnumMatches, hostEnumObject } from "./family-activation.mts";
 import { errorInstance, globalEntry, globalOrigins, globalsOverlay, type GlobalEntry, type Stated } from "./library-globals.mts";
 import { moduleEntries, reviewedText, type ModuleEntry } from "./library-modules.mts";
 import { literalParts, regexpShape } from "./regexp-shape.mts";
@@ -1579,6 +1579,11 @@ export function collectDeclarations(file: string, options: {
       if (!node) throw Error(`unresolved value ${what}`);
       const source = node.getSourceFile();
       const span: Span = [node.getStart(source), node.end];
+      // A node builder of the compiler API's package returns nodes outside
+      // the node invariant (COMPILER-API.md, R2).
+      const builder = compilerApiFile(source.fileName) ? installationPath(source.fileName) : null;
+      if (builder !== null && hostNodeBuilders.includes(builder))
+        throw Error(`${what} builds nodes outside the node invariant, which the compiler-API contract refuses (${builder})`);
       // An enum declared elsewhere is its object, read by `ambient-enum`
       // (SOURCE-CONTRACTS.md, "Enums"): its members, each at its value's
       // literal type, `number` where TypeScript computes none. A host enum is
