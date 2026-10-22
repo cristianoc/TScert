@@ -314,16 +314,20 @@ export function optionalTerm(type: TypeTerm, span: Span): TypeTerm {
   return { k: "union", parts: [type, { k: "atom", name: "undefined", span }], span };
 }
 
+/** A rest parameter's reading as a signature (`restPositions`): its
+ * positions, or the element of any number of further arguments. */
+export type RestPositions = { k: "positions"; positions: TypeTerm[] } | { k: "element"; element: TypeTerm };
+
 /** The rest parameter's contract as positions of the signature: a tuple of
  * required positions is a fixed number of further arguments, an array, mutable
  * or readonly, any number of them. Anything else has no reading as a
- * signature. */
-export function restPositions(type: TypeTerm): { positions: TypeTerm[] } | { element: TypeTerm } | null {
+ * signature. `k` decides the arm. */
+export function restPositions(type: TypeTerm): RestPositions | null {
   // The array a call collects is fresh: it is an array of its element, and
   // viewing it as `readonly` gives up only writes.
-  if (type.k === "array") return { element: type.element };
+  if (type.k === "array") return { k: "element", element: type.element };
   if (type.k === "tuple" && !type.optional.length && type.rest === null)
-    return { positions: type.required };
+    return { k: "positions", positions: type.required };
   return null;
 }
 
@@ -774,7 +778,7 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
       if (type.k === "union") {
         alternatives = type.parts.map(part => {
           const contract = restPositions(restTerm(scope, part));
-          if (!contract || !("positions" in contract)) return scope.fail(p, restRefusal(part));
+          if (!contract || contract.k !== "positions") return scope.fail(p, restRefusal(part));
           return contract.positions;
         });
         continue;
@@ -792,7 +796,7 @@ export function signatures(scope: TermScope, parameters: readonly ts.ParameterDe
       // rest is any number of them: the signature says what each one is.
       const contract = restPositions(type);
       if (!contract) scope.fail(p, restRefusal(type));
-      if ("positions" in contract) params.push(...contract.positions);
+      if (contract.k === "positions") params.push(...contract.positions);
       else rest = contract.element;
     } else {
       if (!optional(p) && firstOptional >= 0 && index > firstOptional)

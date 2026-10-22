@@ -2977,7 +2977,7 @@ export function collectDeclarations(file: string, options: {
         const positions = index === parameters.length - 1
           ? restPositions(restTerm(valueScope(declaration, text), term)) : null;
         if (!positions) return refuse("a signature with a rest that is not an array or a tuple of required positions");
-        if ("positions" in positions) params.push(...positions.positions);
+        if (positions.k === "positions") params.push(...positions.positions);
         else rest = positions.element;
       }
       const returned = checker.getReturnTypeOfSignature(signature);
