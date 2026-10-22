@@ -9,6 +9,7 @@ module type Inputs = sig
   include Analysis_capabilities.Instance_publication
   include Analysis_capabilities.Claim_operations
   include Analysis_capabilities.Closure_scope
+  include Analysis_capabilities.Exact_allocations
   val tails : Source.expr -> Json.t list
 end
 module Make (S : Inputs) = struct
@@ -210,6 +211,12 @@ let infer (expr:Analysis_state.expression_infer) execute_bindings (infer_body:An
             let env=match prologue with None -> env | Some plan -> execute_bindings env plan in
             entry env body.pos;
             expr ?expected env body) in
+      (* Without a result annotation, an object literal the body returns is
+         claimed with its exact keys: the inferred result states the keys
+         the literal lacks, as TypeScript's inferred union of literals does
+         with an optional `undefined` key (SOURCE-MODEL.md, "Object
+         literals"). A proposal: Lean checks the bound at the allocation. *)
+      if written = None then List.iter mark_exact (Source.returned body);
       let body_type = with_rigid_bounds closure_bounds (fun () ->
         infer_closure_body ?expected:(if written <> None then written else contextual) inner) in
       (* Without a result annotation the result is the body's, widened as

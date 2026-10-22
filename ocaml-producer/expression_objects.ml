@@ -46,8 +46,9 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | Some (pos,_) -> List.mem_assoc pos offered | None -> false)
           | _ -> false in
         (* A literal's type widens in a mutable field, as TypeScript's fresh
-           literal types do; a name's or a read's declared type does not. *)
-        let fresh = match e.node with Id _ | Read _ -> false | _ -> true in
+           literal types do; a name's or a read's declared type does not,
+           nor does a const assertion's, whose type is not fresh. *)
+        let fresh = match e.node with Id _ | Read _ | Cast ("const",None,_) -> false | _ -> true in
         let t=if widened || name = Name proto_key || (expected = None && not fresh) then inferred
           else Option.value expected ~default:(widen inferred) in
         {name;optional=false;read=t;write=Some t;host=false;receivers=[];stable=false}) fs in
@@ -61,13 +62,14 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
          for one is allocated at the dictionary itself, each field at its
          index's type. *)
       (match contract with
-       | _ when List.mem_assoc (Name proto_key) fs || List.mem e.pos (path_facts ()).Proposal_flow.exact_allocs -> Atoms [Exact fields]
+       | _ when List.mem_assoc (Name proto_key) fs -> Atoms [Exact fields]
        | Some {indexes=(_::_ as indexes);fields=contract_fields;_}
          when List.exists (fun (i:Semantic.index_signature) -> i.writable <> None) indexes ->
          (* The contract's optional fields it leaves out, which it lacks. *)
          let absent = List.filter (fun (f:Semantic.field) -> f.optional && not f.host &&
            not (List.mem_assoc f.name fs)) contract_fields in
          Atoms [Shape {fields=fields @ absent;indexes;calls=[];elements=None}]
+       | _ when List.mem e.pos (path_facts ()).Proposal_flow.exact_allocs -> Atoms [Exact fields]
        | Some {indexes=_::_;_} -> Atoms [Exact fields]
        | Some {fields=contract_fields;_}
          when List.exists (fun (f:Semantic.field) -> f.optional) contract_fields -> Atoms [Exact fields]
@@ -107,7 +109,10 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
              | [t] -> Some t
              | _ -> None) in
         let inferred = expr ?expected env e in
-        let t = if name = proto_key then inferred else Option.value expected ~default:(widen inferred) in
+        let t = match e.node with
+          | _ when name = proto_key -> inferred
+          | Cast ("const",None,_) when expected = None -> inferred
+          | _ -> Option.value expected ~default:(widen inferred) in
         ({name=Name name;optional=false;read=t;write=Some t;host=false;receivers=[];stable=false} : Semantic.field) in
       let group fs = {empty_alternative with afields=fs} in
       let merge alts b = List.concat_map (fun a -> List.map (merge_alternative a) b) alts in

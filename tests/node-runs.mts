@@ -124,6 +124,19 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   // the number the block's `Box` admitted.
   assert.equal(runExample("invalid-block-type-scope", "typeof leak(1).v"), "number",
     "invalid-block-type-scope: the result's `v` is a number despite its string contract");
+  // A spread copies a key the earlier field holds: from an object a written
+  // result `{}` states no bound of, a literal arm, an open arm, a filled
+  // dictionary, a later spread's literal and a getter's value.
+  for (const [file, call, value] of [
+    ["invalid-object-spread-annotated-result", "label()", 1],
+    ["invalid-object-spread-optional-key", "label(true)", 1],
+    ["invalid-object-spread-union-open", "label({ name: 1 }, false)", 1],
+    ["invalid-object-spread-returned-dictionary", "label()", 1],
+    ["invalid-object-spread-two-sources", "count(true)", "s"],
+    ["invalid-object-spread-getter", "label()", 1],
+    ["invalid-object-spread-exact-alias", "label()", 1],
+  ] as const)
+    assert.equal(runExample(file, call), value, `${file}: the copy holds the spread's key`);
   // At `B := { name: "a"; size: number }`, a value meeting the binder: the
   // copy's `name` is "x", which the binder excludes.
   assert.equal(runExample("invalid-spread-binder-result", `relabel({ name: "a", size: 1 }).name`), "x",

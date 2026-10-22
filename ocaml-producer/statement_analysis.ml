@@ -14,6 +14,7 @@ module type Inputs = sig
   include Analysis_capabilities.Named_closures
   include Analysis_capabilities.Claim_operations
   include Analysis_capabilities.Statement_operations
+  include Analysis_capabilities.Exact_allocations
   include Analysis_capabilities.Node_scope
   include Analysis_capabilities.Expression_publication
   val register_following : Json.t -> Source.stmt list -> unit
@@ -73,6 +74,14 @@ let transfer (expr:Analysis_state.expression_infer) =
     | Try (b,h,f) -> grows_later n keys (b @ (match h with Some (_,h) -> h | None -> [])
         @ Option.value f ~default:[])
     | _ -> false) ss in
+  (* Whether [n]'s object is a spread's operand, or a source `Object.assign`
+     copies, in a form among [ss]. *)
+  let spread_later n ss =
+    let rec copied (e:expr) = (match e.node with
+      | Build parts -> List.exists (function (None,{node=Id m;_}) -> m = n | _ -> false) parts
+      | ObjectAssign (_,sources) -> List.exists (fun (x:expr) -> x.node = Id n) sources
+      | _ -> false) || List.exists copied (Source.children e) in
+    List.exists copied (List.concat_map Source.statement_children ss) in
   (* The first use of an unannotated constant's fresh array, in the
      statements after its declaration: where it is the whole value expected
      at a type (an annotated constant's initializer, a returned value, an
@@ -201,6 +210,10 @@ let transfer (expr:Analysis_state.expression_infer) =
              (following_statements s.span) ->
          mark_exact_allocations [init.pos];
          mark_exact_local n
+       (* A constant whose object a later form copies is claimed with its
+          literals' exact keys: the bound says which keys the copy does not
+          replace (SOURCE-MODEL.md, "Object literals"). *)
+       | false,None,_ when spread_later n (following_statements s.span) -> mark_exact init
        (* A constant's object literal used whole where a type with an
           optional field it leaves out is expected is claimed with its exact
           keys, as a literal written there would be: the bound is what says

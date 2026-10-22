@@ -54,7 +54,8 @@ design, not its progress.
 | [Recursive constants' footprints](docs/SOURCE-MODEL.md#recursive-constants) | closed: a recursive constant's self entry is read at the footprint the producer proposes for the closure, assumed empty and raised by rounds of inference to what the closure's claim shows; a `let` read by its own initializer's closure is a cell, refused as an early binding whose initializer reads it; `find-recursive-constant` verifies, `invalid-find-recursive-constant-mutation`, `-field`, `-sparse` and `invalid-find-recursive-cell` are refused (run under Node), a writing closure forged at the empty footprint, its self entry with it, refused in search and in checking (2026-10-22, [slice measurement](#census-recursive-constants)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `readCannotThrow`'s `at.parameters.find(p => bindsName(p.name, id.text))` |
 | [A `??` operand's array literal](#census-coalesce-literal) | closed: where no type is expected, an array literal right of `??` whose elements fit the left's array element type is built at the left's type, as TypeScript types it; `coalesce-array-literal` verifies (2026-10-22, [slice measurement](#census-coalesce-literal)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past `signatures`' `(alternatives ?? [[]]).map(…)` |
 | [A cache in an optional field](docs/SOURCE-REWRITES.md#a-cache-in-an-optional-field-of-a-shared-object) | closed: `Gate.bindings` is owned from construction, `Map<…> \| null = null`, so `resolve`'s write replaces its value and adds no key ([source rewrite](docs/SOURCE-REWRITES.md#a-cache-in-an-optional-field-of-a-shared-object)) (2026-10-22, [slice measurement](#census-gate-bindings)) | `fragment-expressions.mts#expr` and `fragment-expressions.mts#binary` move past `gate.bindings = bindings` |
-| [A closure's parameter over a map of spread literals](#census-gate-bindings) | open: an investigation, cause unknown | `fragment-expressions.mts#expr` moves past `initializedBefore`'s `params.map((q): [PatternAst, Expr \| null] => …)` |
+| [Literals a spread copies](docs/SOURCE-MODEL.md#literals-a-spread-copies) | closed: an object literal a closure without a result annotation returns, and a constant's literal a later spread copies, are claimed with their exact keys, so the copy keeps the keys written before it; a field `k: e as const` keeps `e`'s literal type; `object-spread-exact-literals` verifies, `invalid-object-spread-annotated-result`, `-optional-key`, `-union-open`, `-returned-dictionary`, `-two-sources` and `-getter` are refused (run under Node) (2026-10-22, [slice measurement](#census-spread-literals)) | `fragment-expressions.mts#expr` moves past `initializedBefore`'s `params.map((q): [PatternAst, Expr \| null] => …)` |
+| [Investigation of a field written before a spread of a literal arm](#field-before-literal-arm) | open: an investigation, cause unknown | the cause of `object-spread-field-before-literal`'s refusal is established, with a reproducer and a concrete repair obligation |
 | [Pushing at the receiver's element](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: a spread of a dense or readable array passes its elements at their type, and `undefined` only from a sparse one (`SpreadsInto`); a binder below and above one type, as a writable receiver's element places it, is that type, and an actual that is a literal, or a choice with a literal among its values, is built at it; `push-spread` and `push-receiver-element` verify, `invalid-push-spread-sparse`, `invalid-push-spread-wider` and `invalid-push-receiver-element` are refused (run under Node) (2026-10-22, [slice measurement](#census-push-element)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `gate.hoisted.push(...statements)` and `dispatch.push(fallback ?? { … })` |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
@@ -1260,6 +1261,24 @@ whose callback calls `gate.local` and `gate.span`. On the branch both pass
 it and stop in search after 58 s each at "no derivation of its node-typing
 claim", `operand.getStart` in `collect`'s
 `` `${operand.getStart(gate.file)}` ``.
+
+<a id="census-spread-literals"></a>
+`fragment-expressions.mts#expr` and `#binary` on 784c8b8 (main) and on the
+branch claiming [literals a spread copies](docs/SOURCE-MODEL.md#literals-a-spread-copies)
+with their exact keys (2026-10-22): neither verifies on either. On main both
+stop in search at "closure signature claim is outside the source
+annotation" (90215). On the branch both pass it and stop in search at
+"closure expression claim" (47868), `!ts.isTaggedTemplateExpression(outer)`
+in `confined`'s `allowed` closure; at the 60 s limit, with load averages near
+27, both searches timed out, and at 240 s each finished in about 40 s.
+
+<a id="field-before-literal-arm"></a>
+`object-spread-field-before-literal`: `{ name: "x", ...(dots ? { name: 1 } :
+{}) }` is claimed at `{ name: number } | { name: string }`, and the search
+finds no derivation, reporting the claim available for the literal as
+`{ name: "x" }`. The same literal with the field after the spread verifies
+(`object-spread-exact-literals`'s `later`). Observed on 784c8b8 and on the
+branch alike (2026-10-22).
 
 <a id="census-ddcf13a"></a>
 The `tools/` census of ddcf13a (main, after the stage store, the replayed
