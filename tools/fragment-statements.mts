@@ -84,10 +84,12 @@ export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, ini
   const statements: Stmt[] = [];
   if (named.length) {
     const e = site.entry();
-    statements.push({ k: "let", pos: [e, e + 1], bindings: named.map(({ cell }) => {
+    const cells: BindingAst[] = [];
+    for (const { cell } of named) {
       const at = site.span();
-      return { early: false, name: cell, namePos: at, annot: null, init: { k: "lit", pos: at, lit: { a: "undefined" } } };
-    }) });
+      cells.push({ early: false, name: cell, namePos: at, annot: null, init: { k: "lit", pos: at, lit: { a: "undefined" } } });
+    }
+    statements.push({ k: "let", pos: [e, e + 1], bindings: cells });
   }
   const start = gate.protocolStart(gate.expr(init), site, tag, init);
   const e0 = site.entry();
@@ -120,8 +122,10 @@ export function protocolPattern(this: Gate, pattern: ts.ArrayBindingPattern, ini
   } else inner.push(...this.closeStatements(start.iteratorAt, tag, site, method));
   statements.push({ k: "block", pos: gate.span(node), label, body: inner });
   gate.hoisted.push(...statements);
-  const bindings: BindingAst[] = named.map(({ cell, name }) => ({ early: false, name: gate.local(name),
-    namePos: gate.span(name), annot: null, init: { k: "id", pos: gate.span(name), name: cell } }));
+  const bindings: BindingAst[] = [];
+  for (const { cell, name } of named)
+    bindings.push({ early: false, name: gate.local(name), namePos: gate.span(name), annot: null,
+      init: { k: "id", pos: gate.span(name), name: cell } });
   if (restName && restName.name && ts.isIdentifier(restName.name))
     bindings.push({ early: false, name: gate.local(restName.name), namePos: gate.span(restName.name), annot: null,
       init: { k: "id", pos: gate.span(restName.name), name: restCell } });

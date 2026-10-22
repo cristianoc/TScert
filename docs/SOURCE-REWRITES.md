@@ -164,6 +164,28 @@ refused on principle (`optional-write-refused`).
 - **Commit:** this entry's commit (`tools/fragment-parse.mts`,
   `fragment-expressions.mts`).
 
+### A `map` callback calling a method of a structurally typed object
+
+`protocolPattern` (`tools/fragment-statements.mts`) built its bindings as
+`const bindings: BindingAst[] = named.map(({ cell, name }) => ({ …, name:
+gate.local(name), namePos: gate.span(name), … }))`, and its `let` cells by a
+`map` callback calling `site.span()`. A method reached through a value of a
+class's or an object type is read at its signature, which states no effect:
+any value of the type may hold a method that changes any storage. So each
+callback is unrestricted, `map` takes its signature with holes
+([natives](FOOTPRINTS.md#natives)), and its result is no `BindingAst[]`
+(`invalid-map-method-call-effect`, run under Node: a `Names` whose `local`
+pops the mapped array leaves a hole). The array mapped here is local and
+reaches no such method, which only separating storage an unknown call cannot
+reach would show ([deferred precision](FOOTPRINTS.md#deferred-extra-precision)).
+
+- **Rewrite:** each array is built by a `for...of` loop pushing onto a fresh
+  `BindingAst[]`, calling the methods in the same order; `push` keeps the
+  array dense whatever the calls do (`map-method-loop-push`).
+- **Pattern:** an array whose elements need calls of unbounded effect is
+  collected by a loop pushing them, rather than by a `map` callback.
+- **Commit:** this entry's commit (`tools/fragment-statements.mts`).
+
 ## Rewrites required, not made
 
 A source pattern of TScert's own code that TScert refuses on principle is
