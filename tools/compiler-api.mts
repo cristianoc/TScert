@@ -108,11 +108,14 @@ export const compilerApiFamily: FamilyDescription = {
  * entry point exports that return nodes they build, outside the node
  * invariant: the factory's `NodeObject` starts with no `parent`
  * (`factory.generated.js:13`), and a clone's or a visitor's root keeps none
- * (`clone.js:56-78`, `visitor.generated.js`). No value they declare is read. */
+ * (`clone.js:56-78`, `visitor.generated.js`). The handwritten JSDoc
+ * parameter/property visitors (`visitor.js`) call factory updates whose
+ * replacement roots likewise lack `parent`. No value they declare is read. */
 export const hostNodeBuilders: readonly string[] = [
   "dist/ast/factory.generated.d.ts",
   "dist/ast/clone.d.ts",
   "dist/ast/visitor.generated.d.ts",
+  "dist/ast/visitor.d.ts",
 ];
 
 /** The interfaces of the host package that are host types by themselves

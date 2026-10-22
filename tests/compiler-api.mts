@@ -497,7 +497,7 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
     assert.equal(initializerOf(declaration, () => { delete declaration.initializer; }), undefined,
       `${name}: the call removes the optional member`);
   }
-  // The node builders (R2): a factory node and a clone's root lack the
+  // The node builders (R2): factory, clone and handwritten visitor roots lack the
   // `parent` their shapes require.
   const made = await load("invalid-compiler-api-node-factory", "made");
   assert.equal(made(), undefined, "invalid-compiler-api-node-factory: a factory node has no parent");
@@ -509,6 +509,37 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const member = (o: unknown, key: string | number): unknown => typeof o === "object" && o !== null ? Reflect.get(o, key) : undefined;
   const first: unknown = member(member(member(variable, "declarationList"), "declarations"), 0);
   assert.ok(first !== undefined && cloneParent(first) === undefined, "invalid-compiler-api-node-clone: a clone's root has no parent");
+  copyFileSync(resolve(import.meta.dirname, "../pipeline/examples/compiler-api-node-jsdoc-visitor-reexport.ts"),
+    join(dir, "compiler-api-node-jsdoc-visitor-reexport.ts"));
+  for (const [suffix, tagName, kindName] of [
+    ["", "param", "JSDocParameterTag"],
+    ["-namespace", "property", "JSDocPropertyTag"],
+    ["-reexport", "param", "JSDocParameterTag"],
+  ]) {
+    const name = `invalid-compiler-api-node-jsdoc-visitor${suffix}`;
+    const visitorParent = await load(name, "visitorParent");
+    const source = tagName === "property"
+      ? "/** @typedef {Object} Options\n * @property {number} x\n */\nexport {};\n"
+      : "/** @param x */\nfunction f(x: number): void {}\n";
+    const file = join(dir, `${name}-input.ts`);
+    writeFileSync(file, source);
+    const tree = openText(file, source);
+    type AstNode = Parameters<Parameters<typeof tree.forEachChild>[0]>[0];
+    let tag: AstNode | undefined;
+    const visit = (node: AstNode): undefined => {
+      if (node.kind === member(kinds, kindName ?? "")) tag = node;
+      const docs: unknown = Reflect.get(node, "jsDoc");
+      if (Array.isArray(docs)) for (const doc of docs.filter((d): d is AstNode => typeof d === "object" && d !== null && "kind" in d)) visit(doc);
+      return node.forEachChild(visit);
+    };
+    tree.forEachChild(visit);
+    assert.equal(member(tag, "kind"), member(kinds, kindName ?? ""), `${name}: a parsed ${tagName} tag`);
+    assert.ok(member(tag, "parent") !== undefined, `${name}: the parsed tag has a parent`);
+    const replacement = member(first, "name");
+    assert.equal(member(replacement, "kind"), identifier, `${name}: a parsed replacement identifier`);
+    assert.notEqual(replacement, member(tag, "name"), `${name}: the visitor changes the name`);
+    assert.equal(visitorParent(tag, replacement), undefined, `${name}: the replacement root has no parent`);
+  }
   // The omitted `tokenCache`: absent at the test, a `Map` after the call.
   const cached = await load("invalid-compiler-api-token-cache", "cached");
   const tokenSource = "export const answer = 42;\n";
@@ -517,7 +548,7 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.equal(cached(openText(tokenFile, tokenSource), tokenSource.indexOf("=")), 2,
     "invalid-compiler-api-token-cache: absent at the test, present after getTokenAtPosition");
   closeParser();
-  console.log("stable links: a record's member, a mixed path's first member, a chain's middle member, a let root, a record's and a look-alike's optional member replaced or removed by the call, each read returns undefined under Node; tokenCache absent, then present; a factory node's and a clone's parent undefined");
+  console.log("stable links: a record's member, a mixed path's first member, a chain's middle member, a let root, a record's and a look-alike's optional member replaced or removed by the call, each read returns undefined under Node; tokenCache absent, then present; factory, clone and handwritten JSDoc visitor roots' parents undefined");
 }
 
 // The guards' fixtures under Node (HOST-FAMILIES.md, "Guard recognition"):

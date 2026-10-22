@@ -151,9 +151,12 @@ list` is true for a three-element list (a prototype getter) while `list[5]`
   template literal type.
 - **Node builders.** The factory (`./unstable/ast/factory`), the clones
   (`getSynthesizedDeepClone`, `getSynthesizedDeepClones`) and the visitors
-  (`visitNode`, `visitNodes`, `visitEachChild`) return `NodeObject`s the
+  (`visitNode`, `visitNodes`, `visitEachChild`, and the handwritten
+  `visitEachChildOfJSDocParameterTag` and `visitEachChildOfJSDocPropertyTag`
+  in `dist/ast/visitor.d.ts`) return `NodeObject`s the
   package builds, whose root's `parent` is `undefined`
-  (`factory.generated.js:13`, `clone.js:56-78`) where every shape but a
+  (`factory.generated.js:13`, `clone.js:56-78`, `visitor.js`, whose JSDoc
+  visitors call factory updates) where every shape but a
   source file's requires it; so does the root `decodeNode` builds for the
   sync API's `typeToTypeNode` and `signatureToSignatureDeclaration`
   (`node.js:284`), which no view lists.
@@ -1083,7 +1086,7 @@ Behaviours excluded because soundness needs it:
 |     | Restriction                                                                       | Behaviour it excludes                                                                                                                                                            |
 | --- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | R1  | No client write to a member of a host type                                        | Mutating compiler objects: `list.transformFlags = 1`, `sourceFile.tokenCache = …`, `list.length = 0`, writes through any writable declared member or structural alias            |
-| R2  | No client value meets a host type; host values come only from the package, and no value of its node builders (`hostNodeBuilders`: the factory, the clones, the visitors) is read | Passing a forged node, type or symbol to the API (an object literal, a spread or `Object.assign` copy of a node, a class implementing `ts.Node`); a node the factory, a clone or a visitor builds, whose root lacks `parent` (`invalid-compiler-api-node-factory`, `invalid-compiler-api-node-clone`, run under Node) |
+| R2  | No client value meets a host type; host values come only from the package, and no value of its node builders (`hostNodeBuilders`: the factory, the clones, the visitors) is read | Passing a forged node, type or symbol to the API (an object literal, a spread or `Object.assign` copy of a node, a class implementing `ts.Node`); a node the factory, a clone or a visitor builds, whose root lacks `parent` (`invalid-compiler-api-node-factory`, `invalid-compiler-api-node-clone`, `invalid-compiler-api-node-jsdoc-visitor`, `invalid-compiler-api-node-jsdoc-visitor-namespace`, `invalid-compiler-api-node-jsdoc-visitor-reexport`, run under Node; the handwritten visitors are refused through subpath imports, AST namespace imports and program re-exports) |
 | R3  | A host guard narrows to what its implementation accepts                           | Relying on `isTypeAliasDeclaration`, `isImportDeclaration`, `isAnyImportSyntax` excluding JavaScript kinds; relying on `isExpression` matching the declarations' category       |
 | R4  | A host enum type at a package position is `number`                                | Exhaustive reasoning over flag values (`switch (node.flags)` with a case per member and no default)                                                                              |
 | R5  | Bitwise operators take `number` operands only, but `^`, which also takes two bigint operands, and `~`, which also takes one | `obj & 1` (runs `valueOf`), `1n & x`                                                                                                                  |
