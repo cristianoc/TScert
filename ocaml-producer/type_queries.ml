@@ -160,14 +160,21 @@ let rec declared_head declarations seen = function
     if List.mem id seen then unsupported "unguarded callable alias cycle";
     declared_head declarations (id::seen) (definition declarations id args)
   | t -> t
-(* `plausible_subtype` up to the declarations at the two heads: a declared
-   alias and what it names are one type (the compiler API's `Statement`,
-   which TypeScript reads as `StatementBase`). A proposal heuristic; Lean
-   decides inclusion. *)
+(* `plausible_subtype` up to the declarations: each side is read as
+   written or with its declared atoms unfolded, through unions, to what they
+   name (the compiler API's `Statement`, which TypeScript reads as
+   `StatementBase`; `type T = A | F`, which holds `F` written inline). A
+   proposal heuristic; Lean decides inclusion. *)
 let plausible_subtype_declared declarations actual expected =
-  plausible_subtype actual expected ||
-  let head t = try declared_head declarations [] t with Json.Error _ -> t in
-  plausible_subtype (head actual) (head expected)
+  let rec unfold seen = function
+    | Atoms atoms -> combine (List.map (function
+        | Named (id,args) as a when not (List.mem id seen) ->
+          (try unfold (id::seen) (definition declarations id args) with Json.Error _ -> Atoms [a])
+        | a -> Atoms [a]) atoms)
+    | Union ts -> combine (List.map (unfold seen) ts)
+    | t -> t in
+  List.exists (fun a -> List.exists (plausible_subtype a) [expected; unfold [] expected])
+    [actual; unfold [] actual]
 (* The first operand of an intersection a read succeeds on; where none has
    it, the principal operand's reason. *)
 let first_part read parts =

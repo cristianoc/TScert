@@ -252,15 +252,25 @@ module Access (S : sig val state : t end) = struct
     (!local).instances <- o.instances @ (!local).instances;
     (!local).instantiations <- o.instantiations @ (!local).instantiations;
     List.iter publish_contract o.contracts
+  (* A row's claims are its own, the instances of the calls it types
+     included: a callee's expression is claimed at the instance the row
+     chose, as a function's are (`Analysis_pass`), and the row's instances
+     do not replace the function's own. *)
   let collect_overload_row_claims action =
     let enclosing=output () in
     Fun.protect ~finally:(fun () ->
       (!local).entries <- enclosing.entries; (!local).expressions <- enclosing.expressions;
-      (!local).contracts <- enclosing.contracts) (fun () ->
+      (!local).contracts <- enclosing.contracts; (!local).instances <- enclosing.instances) (fun () ->
         (!local).entries <- []; (!local).expressions <- []; (!local).contracts <- [];
         action ();
+        let added = List.length (!local).instances - List.length enclosing.instances in
+        let own = List.filteri (fun i _ -> i < added) (!local).instances in
+        let expressions = List.map (fun (x:expression) ->
+          match List.assoc_opt (x.point,x.pos) own with
+          | Some instance -> {x with type_=instance}
+          | None -> x) (List.rev (!local).expressions) in
         {row_contracts=List.rev (!local).contracts;row_entries=List.rev (!local).entries;
-          row_expressions=List.rev (!local).expressions})
+          row_expressions=expressions})
   let forget_exact_local name = (!local).exact_locals <- List.filter ((<>) name) (!local).exact_locals
   let mark_fresh_constructor () = (!local).fresh_constructor <- true
   let clear_evolving_binding name = (!local).evolving <- List.remove_assoc name (!local).evolving

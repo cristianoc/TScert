@@ -53,7 +53,7 @@ open S
        && (match offered.variadic with
            | None -> List.length offered.params > arity
            | Some _ -> List.length offered.params >= arity)
-       && List.for_all2 plausible_subtype
+       && List.for_all2 (plausible_subtype_declared declarations)
             (List.filteri (fun i _ -> i < arity) offered.params) own
     then Some (fun () -> publish_request pos offered) else None
 
@@ -72,14 +72,14 @@ open S
           | None -> false) methods in
         let arity = List.length params in
         let longer = s.variadic=None && s.rest_pack=None && List.length s.params > arity
-          && List.for_all2 plausible_subtype (List.filteri (fun i _ -> i < arity) s.params) params in
+          && List.for_all2 (plausible_subtype_declared declarations) (List.filteri (fun i _ -> i < arity) s.params) params in
         (* A variadic signature with an element rest: Lean checks the code
            at its fixed parameters, then each further position it binds at
            the element or `undefined`. *)
         let variadic = s.variadic=None && (match s.rest_pack with
             | Some (Pack {required=[];optional_elements=[];rest=Some _;_}) -> true | _ -> false)
           && List.length s.params <= arity
-          && List.for_all2 plausible_subtype s.params (List.filteri (fun i _ -> i < List.length s.params) params) in
+          && List.for_all2 (plausible_subtype_declared declarations) s.params (List.filteri (fun i _ -> i < List.length s.params) params) in
         if variadic then publish_request pos s
         else if widened <> [] || longer then
           publish_request pos {call_effect=s.call_effect;quantified=[];receiver=top;params=if longer then s.params else params;

@@ -82,7 +82,8 @@ design, not its progress.
 | [Investigation of a defaulted parameter's flow](#defaulted-parameter-flow) | closed: `Set<T>` did not meet `ReadonlySet<T>`, the one read through the overlay, the other as declared; `ReadonlySet` and `ReadonlyMap` are read through the overlay at the readers' restriction ([library types](docs/SOURCE-CONTRACTS.md#prototype-contracts)); `readonly-collection-views` verifies, `invalid-readonly-set-has-effect` is refused (run under Node) (2026-10-22, [slice measurement](#census-intersection-path-test)) | the cause of `spread-defaulted-set-refused`'s edge refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a path test over an intersection](#intersection-path-test) | closed: the producer stated no refinement of a path whose root's type is an intersection it keeps unresolved, a generic application among its operands, so the entry held the path's witness at the top type; a root's operand stating the member gives it (`record_field`); `path-test-intersection-application` verifies, `invalid-path-test-intersection-alias`, `-call` and `-application` are refused (run under Node) (2026-10-22, [slice measurement](#census-intersection-path-test)) | the cause of the refusal at `visitType`'s `if (binder.default) scoped(binder.default)` is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a member two intersection operands state](#meet-member-disagreement) | open: an investigation, cause unknown | the cause of `path-test-intersection-disagree`'s refusal is established, with a reproducer and a concrete repair obligation |
-| [Investigation of a closure passed to a narrower array's `forEach`](#closure-narrower-foreach) | open: an investigation, cause unknown | the cause of the refusal of `calls.forEach(go)` with `go` a closure over a wider parameter is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a closure passed to a narrower array's `forEach`](#closure-narrower-foreach) | closed: the producer proposed no offer of the callback's signature, comparing the closure's parameter with the element by declared spelling, and, once offered, stated the body's claims once for every signature; it compares them up to the declarations and states a named closure's claims per signature where an offered one's parameters differ; `closure-offer-narrower-element` verifies, `invalid-closure-offer-narrower-parameter`, `-mutation`, `-rebound`, `-this` and `-sparse` are refused (run under Node) (2026-10-22, [slice measurement](#census-closure-narrower-element)) | the cause of the refusal of `calls.forEach(go)` with `go` a closure over a wider parameter is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a recursive constant passed as a callback in its own body](#recursive-constant-callback) | open: an investigation, cause unknown | the cause of the refusal of `t.parts.some(binder)` inside `binder`'s own body is established, with a reproducer and a concrete repair obligation |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
@@ -241,8 +242,24 @@ export function each(calls: F[]): void {
 }
 ```
 
-The same closure over a `T[]` verifies, and so does `calls.forEach(visit)`
-with the module function (observed 2026-10-22).
+The callback's signature at the element, `(part: F, index: number, array:
+readonly F[]) => void`, is one the closure is offered
+([offers](docs/SOURCE-ELABORATION.md#source-closures-and-their-annotations)):
+its parameter takes `F`, within `T`. The producer proposes that offer where
+the element is within the parameter up to the declarations, an alias of a
+union holding the element's arm included, and states the body's claims at
+each signature whose parameters differ from the closure's own, since a test
+the narrower entry decides changes them (`v === null ? "" : v.k` with `v:
+F`), each row typing its generic calls at its own instances.
+
+<a id="recursive-constant-callback"></a>
+**Investigation of a recursive constant passed as a callback in its own
+body.** `type-term.mts#validateAnnotation`'s `const binder = (t: TypeTerm):
+boolean => t.k === "binder" || (t.k === "union" && t.parts.some(binder))` is
+refused: "a function value where a signature binding more parameters is
+expected", `binder` read in its own body at its self entry, a value known by
+its type, where `some` offers its callback more parameters (observed
+2026-10-22).
 
 <a id="assigned-parameters-with-defaults"></a>
 **Investigation of assigned parameters with defaults.** The producer refuses
@@ -853,8 +870,8 @@ first three items 2026-10-19):
   iterator's `next` bound to a union of hosts ([record](#census-block-types)),
   and stop in the producer at "missing field positions", `signatures`' test
   `"positions" in contract` ([record](#census-union-host-bind)), then at a
-  closure passed to `forEach` of an array of a narrower element
-  ([record](#census-intersection-path-test)); the slices of
+  recursive constant passed as a callback in its own body
+  ([record](#census-closure-narrower-element)); the slices of
   `fragment-statements.mts` past `protocolPattern`'s call of `gate.fail`
   read a closure's assigned parameter after a host guard, a
   [slot](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)
@@ -1273,6 +1290,16 @@ branch both pass it and stop in search at "no derivation of its node-typing
 claim", `patternStmt`'s `gate.fail(d.initializer, UNCLOSABLE)`, the
 optional member `d.initializer` read at `Expression | undefined` past the
 calls after its test.
+
+<a id="census-closure-narrower-element"></a>
+The same two slices on 0e48e9f (main) and on the branch offering a named
+closure the signature of a callback over a narrower element (2026-10-22):
+neither verifies on either. On main both stop in search at "no derivation
+of its node-typing claim", `visitType`'s `term.calls.forEach(go)`; on the
+branch both pass it and stop in search at "a function value where a
+signature binding more parameters is expected", `validateAnnotation`'s
+`t.parts.some(binder)` inside `binder`'s own body
+([investigation](#recursive-constant-callback)).
 
 <a id="census-coalesce-literal"></a>
 `type-term.mts#readTypeTerm` and `#typeTerm` on the branch before and after
