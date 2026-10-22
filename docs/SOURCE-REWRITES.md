@@ -65,25 +65,26 @@ as `unknown` the same way.
 - **Commits:** 2288e06, c76d588 (`tools/computed-types.mts`,
   `pipeline/verify-source.mts`).
 
-### A gate method that reads nothing of the gate
+### A function called through a field whose annotation states no effect
 
-`statements` found the first statement that always jumps with
-`list.findIndex((s) => gate.abrupt(s))`, `Gate.abrupt` a field annotated
-`typeof statements.abrupt`, and `abrupt` recursed through `gate.abrupt`.
-The field's contract is its annotation, an ordinary arrow, which states no
-effect ([calls through a location](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)):
-a `Gate` whose `abrupt` shrinks the list through another reference is a
-value of the type, so the callback is `findIndex`'s unrestricted one and
-its element `Statement | undefined`. The code relied on the field holding
-the module function, which no annotation states.
+A method of the gate held as a field (`Gate.abrupt: typeof
+statements.abrupt`) and called in a `findIndex` callback, `list.findIndex((s)
+=> gate.abrupt(s))`, is read at the field's contract, its annotation, an
+ordinary arrow, which states no effect
+([calls through a location](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)).
+A `Gate` whose `abrupt` shrinks the list through another reference is a
+value of the type, so the callback is `findIndex`'s unrestricted one, its
+element `Statement | undefined`. Only the module function the field is
+initialised with keeps the list, and no annotation states that the field
+holds it.
 
-- **Rewrite:** `abrupt(s: Statement): boolean` is a module function
-  recursing through its own binding, called as `abrupt(s)`; `Gate` holds no
-  `abrupt` field. Its effect is certified from its body.
+- **Rewrite:** a function that reads nothing of the gate is a module
+  function recursing through its own binding, `abrupt(s: Statement):
+  boolean`, called as `abrupt(s)`; `Gate` holds no field for it. Its effect
+  is certified from its body.
 - **Pattern:** a function that needs nothing of the object it is reached
-  through is called by its binding, whose certified signature a call reads;
-  a call through a field reads the field's contract.
-- **Commit:** the one adding this entry (`tools/fragment-statements.mts`,
+  through is called by its binding, whose certified signature a call reads.
+- **Commit:** ec3d161 (`tools/fragment-statements.mts`,
   `tools/fragment-parse.mts`).
 
 ## Rewrites required, not made

@@ -796,7 +796,8 @@ any initialiser, through any reference, or held by a record built
 elsewhere. The callee is read at the location's contract, checked at every
 write: the lowering of its declaration, with the effect that declaration
 states, or, for a fresh literal's field no contextual type fixes, the
-inferred type of its initialiser, a certified signature included. An
+storage contract inferred from its initialiser, which keeps a certified
+signature's effect and widens a literal's type. An
 ordinary arrow annotation states no effect, `typeof f` of a function
 declaration included, which names `f`'s declared signature. With
 $`\epsilon`$ the contract's effect,
@@ -809,7 +810,8 @@ $`\epsilon`$ the contract's effect,
 
 `readonly` grants no more: it is a view, and a record holding any function of
 the field's type has the class's type. A `findIndex` callback calling a
-function held by a field is therefore the unrestricted one, its element
+function held by a field whose contract is an ordinary arrow is therefore
+the unrestricted one, its element
 `T | undefined` (`invalid-field-call-effect`,
 `invalid-readonly-field-call-effect`, run under Node); a write of a
 function that does not keep storage into a literal's field or a cell whose
