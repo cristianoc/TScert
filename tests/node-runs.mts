@@ -102,7 +102,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   // before its actual, which replaces the receiver's cell or binding.
   assert.equal(runExample("union-method-head",
     `(() => { const a = { tag: "a", name(n) { return "a" + n; } }, b = { tag: "b", name(n) { return "b" + n; } }; return [first({ o: a }, b), local(a, b)].join(); })()`),
-    "a1,b2", "union-method-head: the call's receiver is the object read before the actual");
+    "a1,a2", "union-method-head: the call's receiver is the object read before the actual");
   // `find` visits the hole a `length` write leaves, handing the callback
   // `undefined`, which the recursive constant returns as its number.
   assert.equal(runExample("invalid-find-recursive-constant-sparse", "wrong()"), 1,

@@ -27,6 +27,5 @@ export function first(c: Cell, other: A | B): string {
 
 export function local(o: A | B, other: A | B): string {
   let r = o;
-  const n = (r = other).name(0).length;
-  return r.name(n);
+  return r.name((r = other).name(0).length);
 }
