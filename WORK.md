@@ -79,6 +79,8 @@ design, not its progress.
 | [A chain compared with a literal](docs/SOURCE-ELABORATION.md#derived-source-forms) | closed: `x?.p ⊙ c` with `⊙` an equality and `c` a literal is the test of `x`, then `x.p ⊙ c`, `&&` or `\|\|` by what `undefined ⊙ c` gives; `optional-chain-test` verifies, `invalid-optional-chain-test-false`, `-undefined`, `-operand`, `-loose`, `-write`, `-ambient` and `-getter` are refused (run under Node) (2026-10-22, [slice measurement](#census-chain-comparison)) | `fragment-expressions.mts#expr` and `#binary` move past "missing field target" at `lambda`'s `b.target` |
 | [Investigation of a conditional expression over a tested optional field](#conditional-optional-field) | closed: the arm's read of `o` rebinds its slot to the claim there, a view of the field, which the join's claim of `o` at its declared type does not cover (2026-10-22) | the cause of the refusal of `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` is established, with a reproducer and a concrete repair obligation |
 | [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
+| [Investigation of a path test over an intersection](#intersection-path-test) | closed: the producer stated no refinement of a path whose root's type is an intersection it keeps unresolved, a generic application among its operands, so the entry held the path's witness at the top type; a root's operand stating the member gives it (`record_field`); `path-test-intersection-application` verifies, `invalid-path-test-intersection-alias`, `-call` and `-application` are refused (run under Node) (2026-10-22, [slice measurement](#census-intersection-path-test)) | the cause of the refusal at `visitType`'s `if (binder.default) scoped(binder.default)` is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a member two intersection operands state](#meet-member-disagreement) | open: an investigation, cause unknown | the cause of `path-test-intersection-disagree`'s refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a defaulted parameter's flow](#defaulted-parameter-flow) | open: an investigation, cause unknown | the cause of `spread-defaulted-set-refused`'s edge refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
@@ -207,6 +209,27 @@ export function merged(more: readonly string[], bound: ReadonlySet<string> = new
 
 The investigation concerns the producer's row for the union of the declared
 type and the default's after `DefaultValue`.
+
+<a id="intersection-path-test"></a>
+**Investigation of a path test over an intersection.**
+`if (binder.default) use(binder.default)` with `binder: Param<Term> &
+{ default: Term | null }` was refused at the second read: the entry of the
+branch held the witness of `binder.default` at the top type, since the
+producer stated no current-content assertion of `binder` there. Its
+`record_field`, which decides whether a root's type states the member,
+answered no for an intersection it keeps unresolved (an operand a generic
+application). Lean's row for the same type is the meet, which holds the
+field, and the witness edge checks the assertion as for any root.
+
+<a id="meet-member-disagreement"></a>
+**Investigation of a member two intersection operands state.** With
+`binder: Param<string> & { bound: "a" | "b" | null }`,
+`if (binder.bound) return binder.bound;` at `"a" | "b" | "none"` is refused
+(`path-test-intersection-disagree`): the producer reads the member at the
+first operand's `string | null`. Proposing it at `"a" | "b" | null` instead,
+the operands' meet, the search found no derivation of the condition's read
+at that type, though Lean's row states `bound` at both (observed
+2026-10-22).
 
 <a id="assigned-parameters-with-defaults"></a>
 **Investigation of assigned parameters with defaults.** The producer refuses
@@ -1214,6 +1237,15 @@ the producer at "bind requires a single arrow and a valid argument prefix",
 `Set<string>`, whose iterator is a union of two; on the branch both stop in
 the producer at "missing field positions", `signatures`' `"positions" in
 contract`.
+
+<a id="census-intersection-path-test"></a>
+The same two slices on d99275a (main) and on the branch reading a path test
+over an intersection (2026-10-22): neither verifies on either. On main both
+stop in search at "no derivation of its node-typing claim", `visitType`'s
+`binder.default` read after `if (binder.default)`. On the branch both pass
+it and stop in search at "no derivation of its node-typing claim",
+`visitType`'s call `visitType(part, visit, inner)`, `inner` a `Set<string>`
+passed as a `ReadonlySet<string>` ([investigation](#defaulted-parameter-flow)).
 
 <a id="census-recursive-constants"></a>
 The same two slices on a8f729d (main) and on the branch proposing a
