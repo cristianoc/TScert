@@ -725,7 +725,8 @@ part of the certified request. Search runs in the producer's graph `G` and
 image check `I`, which the caller builds once and shares between the
 requests whose stores give the same graph and image check, under the search
 checker `searchChecker`; the response is checked under the request's own
-`checker`, as acceptance checks it. -/
+`checker`, as acceptance checks it. `searched` states that `G`, `I` and
+`searchChecker` are the request's own graph, image check and checker. -/
 @[nospecialize] def produceResponseUsing (G : NormalGraph ι) (I : PositiveCertificates.InstanceImageCheck G)
     (searchChecker : HeapExpressionRules.Checker G I) (r : Request σ ι) (fuel : Nat)
     (suggestions : List (ProgramCertificates.Sequent ι) := [])
@@ -736,7 +737,8 @@ checker `searchChecker`; the response is checked under the request's own
     (codeHints : List CodeHints := [])
     (checker : HeapExpressionRules.Checker (graph r) (StoreView.images r.types) :=
       HeapExpressionRules.Checker.ordinary (graph r) (StoreView.images r.types))
-    (aliases : List (ι × ι) := []) (answers : CertificateProducer.Answered ι := {}) :
+    (aliases : List (ι × ι) := []) (answers : CertificateProducer.Answered ι := {})
+    (searched : Bool := false) :
     Except String (Response ι × CertificateProducer.Answered ι) := do
   let labels := searchLabels.getD (StoreView.labels r.types)
   -- Each code against the table of those before it, as `codeTable` checks.
@@ -763,6 +765,14 @@ checker `searchChecker`; the response is checked under the request's own
   let (C, final) ← produceGraphUsing G I r fuel labels suggestions known sourceMap requirements cuts table
     searchChecker aliases (answers := answers)
   let response := Response.mk C certificates
+  -- Where the search checked under the request's own checker (`searched`)
+  -- and admitted every code, `verifyResult` repeats those checks: its code
+  -- table is the loop's, each code checked against the codes before it, and
+  -- its graph check is the one the graph's search accepted. Only its
+  -- request and response checks remain.
+  if searched && table.length == r.codes.length && validRequest r && validResponse r response &&
+      (r.codes.zip response.codes).all (fun (q, C) => C.map signature == q.claims) then
+    return (response, final)
   let checked := verifyResult r response checker
   if checked.accepted then return (response, final)
   throw (match checked.exhaustion with
