@@ -4482,7 +4482,44 @@ mutationControl(async (): Promise<void> => {
     const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
     assert.ok(checked.includes(`source incoming edge obligation at [${start},${start + 1}): evidence fails heap knowledge`), checked);
   }
-  process.stdout.write("path witnesses: exact forged evidence refused at incoming edges; wrong receiver/field isolate links, false predecessor isolates type coverage\n");
+  // An alias link holds by an edge's mapping alone where the edge takes its
+  // two slots from one source slot (`mapped-alias`, HeapLinks.check). In
+  // `receiver`, a node's two slots of one type that its honest knowledge
+  // relates by no alias are taken from different source slots, since the
+  // producer states every mapped alias: an alias claimed between them is
+  // refused by heap knowledge, and accepted with the links check bypassed.
+  {
+    const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
+    assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
+    const unit: unknown = evidence.main.functions[honest.functions.findIndex(f => f.name === "receiver")];
+    assert.ok(object(unit) && Array.isArray(unit.certificate));
+    const certificate = unit.certificate as WitnessNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
+    const aliased = (node: WitnessNode, i: number, j: number): boolean =>
+      node.knowledge.links.some(l => l.alias && !l.distinct && ((l.cell === i && l.value === j) || (l.cell === j && l.value === i)));
+    // A slot copy's output is its knowledge past the result, so the forged
+    // link's image there is the link one slot on, for slots other than the
+    // copied one.
+    const copied = (node: WitnessNode): number | null => {
+      const term = node.expression.node.claim.term;
+      return object(term) && object(term.var) && typeof term.var.i === "number" ? term.var.i : null;
+    };
+    const pairs = certificate.slice(1).flatMap(node => {
+      const slot = copied(node);
+      const context = node.expression.node.claim.context.map(t => JSON.stringify(t));
+      return slot === null ? [] : context.flatMap((t, i) => context.flatMap((u, j) =>
+        i < j && t === u && i !== slot && j !== slot && !aliased(node, i, j) ? [{ node, i, j }] : []));
+    });
+    const { node, i, j } = must(pairs[0], "receiver: two unaliased slots of one type");
+    const forged: Link = { cell: i, value: j, alias: true, distinct: false, field: "value", other: "value", optional: false };
+    node.knowledge.links.push(forged);
+    node.output.links.push({ ...forged, cell: i + 1, value: j + 1 });
+    const path = join(artifacts, "forged-mapped-alias-evidence.json");
+    writeFileSync(path, JSON.stringify(evidence));
+    checkMutation(artifacts, join(artifacts, "claims.json"), path, "links");
+    const checked = invoke(join(artifacts, "claims.json"), path, artifacts);
+    assert.ok(checked.includes("evidence fails heap knowledge"), checked);
+  }
+  process.stdout.write("path witnesses: exact forged evidence refused at incoming edges; wrong receiver/field isolate links, false predecessor isolates type coverage, an alias of slots from two sources isolates links\n");
 });
 
 mutationControl(async (): Promise<void> => {

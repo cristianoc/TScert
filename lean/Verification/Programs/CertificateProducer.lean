@@ -1752,13 +1752,16 @@ Every edge is still checked by the independent consumer. -/
 
 /-- Recover a located failed edge from the completed candidate. This includes
 heap entailment; it is not limited to ordinary subtype proof construction. -/
-@[nospecialize] private def failedEdge (G : NormalGraph ι) (P : Program)
+@[nospecialize] private def failedEdge [DecidableEq ι] (G : NormalGraph ι) (P : Program)
     (C : ControlFlow.Certificate ι) : Option (Failure ι) := Id.run do
   for (node,l) in P.zipIdx do
     let some c := C[l]? | return some .claimCount
     for (target,index) in (successors node.continuation).zipIdx do
       let facts := edgeKnowledge G ((claim c.expression).type :: (claim c.expression).context) c.output node.continuation index
       let some destination := C[target.label]? | return some .claimCount
+      -- An edge out of a context no environment meets establishes its
+      -- target's knowledge too (`vacuous-edge`).
+      if ControlFlow.unsatisfiable G (edgeContextOf G c node.continuation index) then continue
       if !HeapKnowledge.check facts destination.knowledge target.mapping then
         return some (.edge l target.label index)
   return none

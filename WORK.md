@@ -24,6 +24,7 @@ design, not its progress.
 | [A guard's promise on a field](#guard-promise-field) | open | `str(o.name); o.name.length` verifies: an assertion or a guard on a field narrows the field's current content |
 | [A guard's answer held in a constant](#guard-answer-constant) | open | `const ok = isRecord(v); if (ok) return v;` verifies |
 | [Generic equality in a condition](#generic-equality-condition) | open: an investigation, cause unknown | `if (left !== right) return 1;` with `left, right: T` verifies, as `return left !== right` does, and the Boolean-return lowering applies to every function's return |
+| [A negated first read of an element](#negated-first-read) | open: an investigation, cause unknown | `const d = list[0]; if (!d.initializer) return -1;` over a program record verifies |
 | [A literal guard over `JsonValue \| undefined`](#literal-guard-json-read) | open: an investigation, cause unknown | `guard-literal-json-read-refused` verifies |
 | [Guard overloads beyond `filter`'s](#guard-overloads) | open | `shadow-contracts.mts`'s `print`, which reads its array at `string[]` after `every` answers `true` at a guard, and `filter-guard-value-refused` verify |
 | [`filter`'s guard overload](docs/SOURCE-CONTRACTS.md#prototype-contracts) | closed: `filter` is stated at TypeScript's guard overload (`native-guard-filter`) and a guard closure is claimed at the longer promise signature it is passed at (`offer-promise`); `filter-guard-callback` and `compiler-api-filter-guard` verify, `invalid-filter-guard-promise` is refused (run under Node), forged promise rows refused in search and in checking (2026-10-21, [slice measurement](#census-filter-guard)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past "closure signature claim is outside the source annotation" |
@@ -47,6 +48,7 @@ design, not its progress.
 | [The search past 60 s on `fragment-statements.mts`](#fragment-statements-search) | closed: `protocolPattern`'s and `patternStmt`'s searches take 13 s each in their census and alone, where they took 88 s; both then stop at `statements`' `list.findIndex((s) => gate.abrupt(s))` (2026-10-22, [slice measurement](#census-index-from-length)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within the census's 60 s limit |
 | [The search past 100 s on `fragment-statements.mts`](#fragment-statements-search-rows) | closed: `protocolPattern`'s search on 526bf6e's artifacts takes 27 s of CPU alone, where it took 103 s, with the same refusal (2026-10-22, load averages 3 to 36) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within 30 s alone |
 | [A completed read narrows its receiver](docs/PROGRAM-TYPING.md#a-completed-read-narrows-its-receiver) | closed: past a read `x.k` of an immutable binding or an owned local, the statements after it hold `x` without `null` and `undefined` until `x` is written; `read-narrows-receiver` verifies, negative cases cover optional reads, writes, aliases, handlers, branches, closures and shared expression joins; the Node counterexamples pass; pipeline validation of the four expression/frame regressions is blocked by the compiler child exiting with unexpected EOF (2026-10-22, [slice measurement](#census-read-narrowing)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past ``gate.fail(d, "a `const` needs an initializer")`` |
+| [A path of a receiver a completed read narrowed](docs/PROGRAM-TYPING.md#mapped-aliases) | closed: two slots an edge takes from one source slot are related by an alias link (`mapped-alias`), so a read link made through the plan's copy of a receiver a nullish guard narrowed reaches the receiver; an inspection (reads, `let`, allocations of operands: a method callee's evaluation) keeps every heap fact; `read-narrows-path` and `compiler-api-read-narrows-path` verify, `invalid-read-narrows-path-returning`, `-write`, `-alias-write`, `-call`, `-argument-call` and `-falsy` are refused (run under Node), a forged alias of two parameters is refused, accepted with the links check disabled (2026-10-22, [slice measurement](#census-read-narrows-path)) | `fragment-statements.mts#patternStmt`'s read `d.initializer` in `gate.span(d.initializer)` verifies |
 | [Calls through a field](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification) | closed: a call through a field reads the field's contract, checked at every write, and a declared field's is its annotation, which for an ordinary arrow states no effect; so `statements`' `findIndex` callback calling `gate.abrupt` is the unrestricted one, and `abrupt`, which reads nothing of the gate, is a module function called by its binding ([source rewrite](docs/SOURCE-REWRITES.md#a-function-called-through-a-field-whose-annotation-states-no-effect)); `find-index-module-function` verifies, `invalid-field-call-effect`, `invalid-readonly-field-call-effect`, `invalid-field-call-effect-alias` and `invalid-field-call-effect-cell` are refused (run under Node) (2026-10-22, [slice measurement](#census-field-calls)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `statements`' `list.findIndex((s) => gate.abrupt(s))` |
 | [Pushing at the receiver's element](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: a spread of a dense or readable array passes its elements at their type, and `undefined` only from a sparse one (`SpreadsInto`); a binder below and above one type, as a writable receiver's element places it, is that type, and an actual that is a literal, or a choice with a literal among its values, is built at it; `push-spread` and `push-receiver-element` verify, `invalid-push-spread-sparse`, `invalid-push-spread-wider` and `invalid-push-receiver-element` are refused (run under Node) (2026-10-22, [slice measurement](#census-push-element)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `gate.hoisted.push(...statements)` and `dispatch.push(fallback ?? { … })` |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
@@ -314,6 +316,18 @@ lowering, which turns a return into a condition, is scoped to type guards
 and assertion functions until this holds: applied to every return, it
 refuses `loose-equality` and `generic-unknown-arguments`, which keep their
 outcomes.
+
+<a id="negated-first-read"></a>
+**A negated first read of an element**, an investigation: with `type
+Declaration = { readonly kind?: string; readonly initializer?: string }`,
+`const d = list[0]; if (!d.initializer) return -1; return 0;` is refused
+before search at the read `d.initializer` ("read receiver must name a cell
+contract", `Plans.readCell`), on f91d657 and on the branch of
+[mapped aliases](#census-read-narrows-path) (2026-10-22). The same function
+with `if (d.initializer) return 1;`, or with `d` read before the test
+(`read-narrows-path`'s `returned`), verifies, and so does the negated test
+over a compiler node (`ts.VariableDeclarationList`'s first declaration).
+Which receiver type the negation's lowering hands the read is unknown.
 
 <a id="literal-guard-json-read"></a>
 **A literal guard over `JsonValue | undefined`**, an investigation:
@@ -1001,6 +1015,21 @@ obligation", ``gate.fail(d, "a `const` needs an initializer")`` in
 each at "source expression obligation", the read `d.initializer` in
 `gate.span(d.initializer)`, which `if (!d.initializer) gate.fail(…)`
 precedes.
+
+<a id="census-read-narrows-path"></a>
+The same two slices on f91d657 (main) and on the branch relating slots an
+edge maps from one source and keeping heap facts through inspections
+(2026-10-22): neither verifies on either. On both, both stop first in
+search after 5 s each at "closure signature claim is outside the source
+annotation", the callback `p => bindsName(p.name, id.text)` of
+`readCannotThrow`'s `at.parameters.find`. A copy of the `patternStmt`
+slice with that callback written as a loop (`TSCERT_STEP_LIMIT=600`) passes
+the read `d.initializer` in `gate.span(d.initializer)` on the branch, and
+stops in search after 44 s at "source expression obligation",
+`gate.fail(d.initializer, UNCLOSABLE)`: the read link through the optional
+member `initializer` ends at the calls `gate.iterations.get(…)` and
+`d.name.elements.some(…)` before it, since an optional member is no stable
+key ([stable keys](docs/HOST-FAMILIES.md#stable-keys)).
 
 <a id="census-closure-arms"></a>
 Two slices of `fragment-expressions.mts`, `expr` and `binary`, which calls
