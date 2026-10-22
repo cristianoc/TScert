@@ -1555,7 +1555,11 @@ closure's. This is `funGraphSelf` at a claim holding offered rows:
 constant, a bound wrapper and a variadic row
 (`recursive-constant-callback`); a self read at a longer signature does not
 carry the closure's preservation onto its exceptional edge
-(`invalid-recursive-constant-exceptional`, run under Node). A self read where a
+(`invalid-recursive-constant-exceptional`, run under Node). The producer
+proposes the offered rows for the self entry of a plain closure, without
+type parameters, a rest or a written promise; the self entry of any other
+is read at its own signature, so its self read at a longer signature meets
+none and is refused (`recursive-guard-callback-refused`, a gap). A self read where a
 signature with a parameter outside the closure's is expected is not
 offered and meets nothing, so it is refused, called at once or stored and
 called later with more arguments, both admitted by TypeScript, which
