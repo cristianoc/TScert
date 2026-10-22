@@ -785,6 +785,39 @@ An imported implementation needs checked evidence
 assumption: its TypeScript declaration supplies neither proof nor an implicit
 effect. Built-in contracts remain separately audited assumptions.
 
+**Calls through a location.** A call consumes the contract established for
+the callee value; a stronger effect needs a certificate, and storage keeps
+its checked lifetime contract. A module function declaration no code
+reassigns is read at the signature certified from its body
+([function declarations](SOURCE-ELABORATION.md#certifying-inferred-call-effects)),
+as a certified import is. A field or element read, `e.f(…)` or `e[k](…)`,
+gives the value the location holds when the call runs: one written after
+any initialiser, through any reference, or held by a record built
+elsewhere. The callee is read at the location's contract, checked at every
+write: the lowering of its declaration, with the effect that declaration
+states, or, for a fresh literal's field no contextual type fixes, the
+inferred type of its initialiser, a certified signature included. An
+ordinary arrow annotation states no effect, `typeof f` of a function
+declaration included, which names `f`'s declared signature. With
+$`\epsilon`$ the contract's effect,
+
+```math
+\frac{\Gamma\vdash e:\{f:\mathcal F_\epsilon(R,\mathcal A,B),\ \ldots\}\qquad
+      \Gamma\vdash e:R\qquad\Gamma\vdash\vec v:\mathcal A}
+     {\Gamma\vdash e.f(\vec v):B\;!\;\epsilon}\ \textsf{field-call}
+```
+
+`readonly` grants no more: it is a view, and a record holding any function of
+the field's type has the class's type. A `findIndex` callback calling a
+function held by a field is therefore the unrestricted one, its element
+`T | undefined` (`invalid-field-call-effect`,
+`invalid-readonly-field-call-effect`, run under Node); a write of a
+function that does not keep storage into a literal's field or a cell whose
+inferred contract does is refused (`invalid-field-call-effect-alias`,
+`invalid-field-call-effect-cell`, run under Node); a callback calling a
+module function, directly or through a fresh literal's field, verifies at
+`T` (`find-index-module-function`).
+
 The first guarantee preserves existing heap contents on normal return and
 allows fresh allocation. A call that throws supplies no heap postcondition.
 Consequently, a body checker cannot carry this guarantee through a caught

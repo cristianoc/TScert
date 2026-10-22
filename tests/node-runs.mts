@@ -6,6 +6,15 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
 {
   for (const [file, call] of [
     ["invalid-native-find-mutation", "wrong([1, 2], { value: 0 })"],
+    // The function a field holds when the call runs, a `(n: number) =>
+    // boolean`, shrinks the list and is handed `undefined` on the next visit:
+    // written into a `Test`'s field, or held by a record that is a `Test`.
+    ["invalid-field-call-effect",
+      "(() => { const xs = [1, 2], seen = [], t = new Test(); t.check = (n) => { seen.push(n); xs.pop(); return false; }; first(t, xs); return seen.length === 2 ? seen[1] : 0; })()"],
+    ["invalid-field-call-effect-alias", "wrong([1, 2], { value: 0 })"],
+    ["invalid-field-call-effect-cell", "wrong([1, 2], { value: 0 })"],
+    ["invalid-readonly-field-call-effect",
+      "(() => { const xs = [1, 2], seen = []; first({ check: (n) => { seen.push(n); xs.pop(); return false; } }, xs); return seen.length === 2 ? seen[1] : 0; })()"],
     ["invalid-native-map-mutation", "wrong([1, 2], { value: 0 })"],
     ["invalid-map-primitive-method-mutation", `wrong(["a", "b"])`],
     ["invalid-native-join-coercion", "wrong({ value: 0 })"],

@@ -65,6 +65,27 @@ as `unknown` the same way.
 - **Commits:** 2288e06, c76d588 (`tools/computed-types.mts`,
   `pipeline/verify-source.mts`).
 
+### A gate method that reads nothing of the gate
+
+`statements` found the first statement that always jumps with
+`list.findIndex((s) => gate.abrupt(s))`, `Gate.abrupt` a field annotated
+`typeof statements.abrupt`, and `abrupt` recursed through `gate.abrupt`.
+The field's contract is its annotation, an ordinary arrow, which states no
+effect ([calls through a location](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)):
+a `Gate` whose `abrupt` shrinks the list through another reference is a
+value of the type, so the callback is `findIndex`'s unrestricted one and
+its element `Statement | undefined`. The code relied on the field holding
+the module function, which no annotation states.
+
+- **Rewrite:** `abrupt(s: Statement): boolean` is a module function
+  recursing through its own binding, called as `abrupt(s)`; `Gate` holds no
+  `abrupt` field. Its effect is certified from its body.
+- **Pattern:** a function that needs nothing of the object it is reached
+  through is called by its binding, whose certified signature a call reads;
+  a call through a field reads the field's contract.
+- **Commit:** the one adding this entry (`tools/fragment-statements.mts`,
+  `tools/fragment-parse.mts`).
+
 ## Rewrites required, not made
 
 ### A key tested with `in` on an open record

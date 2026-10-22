@@ -1,7 +1,10 @@
 /* Part of the trusted front end (fragment-parse.mts): Patterns and statements: destructuring, iteration protocols, loops, `switch`, `try` and declarations.
- * Each function is a method of the gate: `Gate` holds it as a field, so a call
- * reads `this.name(...)`; its body names the gate `gate`, typed, which lets a
- * call that never returns (`gate.fail`) narrow what follows. */
+ * Each exported function is a method of the gate: `Gate` holds it as a field,
+ * so a call reads `this.name(...)`; its body names the gate `gate`, typed,
+ * which lets a call that never returns (`gate.fail`) narrow what follows. A
+ * function that reads nothing of the gate is a module function, called by
+ * its binding: a call through a field reads the field's annotation, which
+ * states no effect (SOURCE-MODEL.md, calls through a location). */
 import * as ts from "typescript/unstable/ast";
 import type { Expression, FunctionDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { BindingAst, Expr, FunctionAst, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
@@ -538,7 +541,7 @@ export function block(this: Gate, node: Statement): Stmt[] {
  * binding, forever uninitialized. */
 export function statements(this: Gate, list: readonly Statement[]): Stmt[] {
   const gate: Gate = this;
-  const end = list.findIndex((s) => gate.abrupt(s));
+  const end = list.findIndex((s) => abrupt(s));
   const live = end < 0 ? list : list.slice(0, end + 1);
   const lexical = new Set<string>();
   const hoisted = (n: Node): Node | undefined => {
@@ -1122,15 +1125,14 @@ export function tryStmt(this: Gate, node: ts.TryStatement): Stmt {
 
 /** Whether a statement never completes normally: a jump, or a list or both
  * arms of an `if` that reach one. A loop may complete. */
-export function abrupt(this: Gate, s: Statement): boolean {
-  const gate: Gate = this;
+function abrupt(s: Statement): boolean {
   return ts.isReturnStatement(s) || ts.isBreakStatement(s) || ts.isContinueStatement(s) ||
     ts.isThrowStatement(s) ||
-    (ts.isBlock(s) && s.statements.some((t) => gate.abrupt(t))) ||
-    (ts.isIfStatement(s) && !!s.elseStatement && gate.abrupt(s.thenStatement) && gate.abrupt(s.elseStatement)) ||
+    (ts.isBlock(s) && s.statements.some((t) => abrupt(t))) ||
+    (ts.isIfStatement(s) && !!s.elseStatement && abrupt(s.thenStatement) && abrupt(s.elseStatement)) ||
     // A `try` completes through its body or handler, then its `finally`.
-    (ts.isTryStatement(s) && ((!!s.finallyBlock && gate.abrupt(s.finallyBlock)) ||
-      (gate.abrupt(s.tryBlock) && (!s.catchClause || gate.abrupt(s.catchClause.block)))));
+    (ts.isTryStatement(s) && ((!!s.finallyBlock && abrupt(s.finallyBlock)) ||
+      (abrupt(s.tryBlock) && (!s.catchClause || abrupt(s.catchClause.block)))));
 }
 
 export function stmt(this: Gate, node: Statement): Stmt {
