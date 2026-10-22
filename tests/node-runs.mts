@@ -71,6 +71,15 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-read-narrows-and", "wrong([], false)"],
     ["invalid-read-narrows-closure", "wrong([])"],
     ["invalid-read-narrows-getter", "wrong()"],
+    // A path of a receiver a completed read narrowed: a `fail` that
+    // returns, a write of the root, a write of the member through another
+    // reference, a call that writes it, before the read or as an earlier
+    // actual, each leave `undefined` where a string is returned.
+    ["invalid-read-narrows-path-returning", "wrong([{}])"],
+    ["invalid-read-narrows-path-write", "wrong([{ initializer: 'a' }], {})"],
+    ["invalid-read-narrows-path-alias-write", "wrong([{ initializer: 'a' }])"],
+    ["invalid-read-narrows-path-call", "(() => { const l = [{ initializer: 'a' }]; return wrong(l, () => { l[0].initializer = undefined; }); })()"],
+    ["invalid-read-narrows-path-argument-call", "(() => { const l = [{ initializer: 'a' }]; return wrong(l, () => { l[0].initializer = undefined; return 1; }); })()"],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
@@ -1187,6 +1196,9 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-generic-function-type-bound", "typeof unbounded()", "number"],
     ["invalid-generic-closure-field", "typeof wrong()", "number"],
     ["invalid-generic-constructor-type", "typeof wrong()", "string"],
+    ["read-narrows-path", "JSON.stringify([initializerWidth([{ initializer: 'ab' }]), measured(new Measure(), [{ initializer: 'abc' }]), guarded([{}]), returned([{ kind: 'k', initializer: 'a' }])])", "[2,3,0,2]"],
+    // The false edge of a truthiness test keeps `""`.
+    ["invalid-read-narrows-path-falsy", "JSON.stringify(wrong([{ initializer: '' }]))", '""'],
   ] as const)
     assert.equal(runExample(file, expression), expected, file);
   // Imported unique symbols as Node's modules give them: a re-export is the

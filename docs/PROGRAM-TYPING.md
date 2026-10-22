@@ -1876,6 +1876,24 @@ checker checks every actual edge, including backedges and handler edges;
 handler edges carry empty heap knowledge. A top-typed administrative slot
 with no asserted link imposes only its ordinary type obligation.
 
+<a id="mapped-aliases"></a>
+Two target slots an edge takes from one source slot hold one value, so an
+alias link between them needs no source link:
+
+```math
+\frac{m_x=m_y}{(\Gamma;\Sigma)\xrightarrow{m}(\Delta;\ x\equiv y)}\ \textsf{mapped-alias}
+```
+
+`HeapLinks.check` accepts it, and `HeapLinks.check_sound` proves it, since
+the target environment is $`\rho\circ m`$. The producer states it for every
+pair of a source slot's targets (`HeapKnowledge.project`). A nullish guard
+of a completed read maps the receiver's slot and the slot the plan saved it
+in to the tested value (`nullishGuard`); the alias between them carries a
+read link made through either to the other, and so to a statement entry's
+witness rooted at the receiver (`read-narrows-path`,
+`compiler-api-read-narrows-path`). A forged alias between two slots taken
+from different sources is refused (`path-witness-controls`).
+
 ### Throwing
 
 `throw a` has every type: it never produces a value, and a throw is an
@@ -3140,7 +3158,7 @@ It computes a guaranteed output, not an assumed postcondition:
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pure value or variable copy          | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
 | Pure test or conditional             | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure (a length `lenOf` of a slot among them: an array's store is read by a field read of its own, then counted); no new result-to-cell link is invented.                                                                       |
-| Read (`reading`)                     | Field and element reads over values (`readAt`, `elemAt`, `readTerm`): check ordinary evidence and scope, and preserve every fact and link, shifted past the result slot. A read changes no location, and a heap meeting an admissible world holds values, so a read's result is a value. |
+| Inspection (`reading`)               | Reads, tests, arithmetic, `let`, allocations whose initializers are operands and merges (`inspectTerm`), a method callee's read and bound-function allocation among them: check ordinary evidence and scope, and preserve every fact and link, shifted past the result slot. An inspection changes no location and runs no code; it only appends locations (`inspect_step`), and every fact holds of an extended heap (`knowledge_extend`, `inspect_frame`). |
 | Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; through a key a record may lack, optional links. No prior current-content fact is needed. Its result has the supplied type. |
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
 | Sliced read (`slicedRead`)           | A read of a location one of whose facts answers a tag $`\tau`$ with $`q`$ (a nullish exclusion answers its test `false`, a tag atom is its answer): ordinary read evidence at the location's contract $`C`$, whose refinement by that answer is within the requested type (`ObservedSub`, as a branch edge checks a refinement). As an ordinary typed read otherwise. |

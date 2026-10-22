@@ -60,8 +60,10 @@ def apartKey (f : Link) : Option (Nat × Nat × PropKey × PropKey) :=
   if f.distinct then some (f.cell, f.value, f.field, f.other) else none
 
 /-- Each target link must be a source link under the mapping. A distinct link
-is symmetric, so either orientation of the source justifies it. The source
-links are hashed once, so the check is linear in the two lists. -/
+is symmetric, so either orientation of the source justifies it. An alias link
+between two target slots the mapping takes from one source slot holds by the
+mapping alone (`mapped-alias`). The source links are hashed once, so the
+check is linear in the two lists. -/
 def check (a b : Links) (m : PointClaims.Mapping) : Bool :=
   let same : Std.HashSet Link := Std.HashSet.ofList a
   let apart : Std.HashSet (Nat × Nat × PropKey × PropKey) := Std.HashSet.ofList (a.filterMap apartKey)
@@ -69,7 +71,8 @@ def check (a b : Links) (m : PointClaims.Mapping) : Bool :=
     let c := PointClaims.slot m g.cell
     let v := PointClaims.slot m g.value
     same.contains ⟨c, v, g.alias, g.field, g.distinct, g.other, g.optional⟩ ||
-      (g.distinct && apart.contains (v, c, g.other, g.field))
+      (g.distinct && apart.contains (v, c, g.other, g.field)) ||
+      (g.alias && !g.distinct && c == v)
 
 theorem check_sound {a b m ρ h} (hc : check a b m = true) (hh : Holds a ρ h) :
     Holds b (PointClaims.mapEnv m ρ) h := by
@@ -77,7 +80,7 @@ theorem check_sound {a b m ρ h} (hc : check a b m = true) (hh : Holds a ρ h) :
   have hcg := List.all_eq_true.mp hc g hg
   simp only [Std.HashSet.contains_ofList, Bool.or_eq_true, Bool.and_eq_true,
     List.contains_iff_mem] at hcg
-  rcases hcg with hf | ⟨hgd, hk⟩
+  rcases hcg with (hf | ⟨hgd, hk⟩) | ⟨⟨hga, hgd⟩, hcv⟩
   · simpa [PointClaims.mapEnv] using hh _ hf
   · obtain ⟨f, hf, hsel⟩ := List.mem_filterMap.mp hk
     simp only [apartKey] at hsel
@@ -91,6 +94,10 @@ theorem check_sound {a b m ρ h} (hc : check a b m = true) (hh : Holds a ρ h) :
       intro flds c oid l flds' c' oid' l' e1 e2 e3 e4 heq
       exact hf flds' c' oid' l' flds c oid l e3 e4 e1 e2 heq.symm
     · contradiction
+  · simp only [Bool.not_eq_true'] at hgd
+    simp only [hgd, hga, Bool.false_eq_true, ite_false, ite_true, PointClaims.mapEnv]
+    simp only [beq_iff_eq] at hcv
+    rw [hcv]
 
 /-- The links without repetitions, each at its first occurrence. -/
 def dedup (ls : Links) : Links :=

@@ -117,7 +117,9 @@ theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
         | succ i => rfl
 
 /-- Project facts along an executable slot map. All runtime aliases selected by
-that map are retained; facts about unselected slots are forgotten. -/
+that map are retained, and target slots the map takes from one source slot
+are related by alias links (`mapped-alias`); facts about unselected slots
+are forgotten. -/
 def projectFacts (facts : Facts) (m : PointClaims.Mapping) (count : Nat) : Facts :=
   (List.range count).flatMap fun i =>
     (facts.filter fun f => f.slot == PointClaims.slot m i).map fun f => { f with slot := i }
@@ -126,8 +128,14 @@ def project (k : Knowledge) (m : PointClaims.Mapping) (count : Nat) : Knowledge 
   -- The target slots each source slot is mapped to, in increasing order.
   let preimages : Std.HashMap Nat (List Nat) := (List.range count).foldr
     (fun j acc => acc.alter (PointClaims.slot m j) fun js => some (j :: js.getD [])) ∅
+  -- Every pair of a group, since `HeapLinks.aliases` reads direct links.
+  let pairs : List Nat → HeapLinks.Links := fun js =>
+    js.zipIdx.flatMap fun (j, n) => (js.drop (n+1)).map fun r => { cell := j, value := r, alias := true }
+  let shared : HeapLinks.Links := preimages.fold (fun acc _ js => match js with
+    | _ :: _ :: _ => pairs js ++ acc
+    | _ => acc) []
   ⟨projectFacts k.cells m count,projectFacts k.values m count,
-    HeapLinks.pull k.links (fun i => preimages.getD i [])⟩
+    HeapLinks.pull k.links (fun i => preimages.getD i []) ++ shared⟩
 
 /-- Every live property-read link transfers the observed result predicate,
 including observations admitting undefined. -/

@@ -15,8 +15,9 @@ be changed by an untrusted producer. -/
 inductive StepEvidence (ι : Type) where
   | ordinary (proof : ProgramCertificates.Evidence ι)
   | pure (proof : ProgramCertificates.Evidence ι)
-  /-- Field and element reads over values (`readTerm`): the ordinary
-  derivation, and every fact of the heap kept. -/
+  /-- Inspections (`Purity.inspectTerm`: reads, tests, arithmetic and
+  allocations of evaluated operands): the ordinary derivation, and every
+  fact of the heap kept, since an inspection only extends the heap. -/
   | reading (proof : ProgramCertificates.Evidence ι)
   | created (proof : ProgramCertificates.Evidence ι)
   | typedRead (slot : Nat) (proof : ProgramCertificates.Evidence ι)
@@ -994,30 +995,88 @@ theorem read_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
       have hv := (meaning_value (he.2 (i-d) Γ[i-d] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
       exact read_value hv
 
-/-- **Reads keep the heap.** A read of fields and elements changes no
-location, so any predicate of the heap it starts from holds where it ends. -/
-theorem read_frame {T Q} : ∀ {n W h t}, Safe Ξ T n W h t → readTerm t = true →
-    WorldAdm W → HeapOk n W h → (∀ v, Q h v) → SafePost Ξ T Q n W h t := by
+theorem operand_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
+    (ho : Purity.operandTerm t = true) (hc : checkScope (Γ.length + d) t = true)
+    (he : EnvOk G Γ ρ n W) : Purity.operandTerm (instantiate d ρ t) = true := by
+  cases t
+  case var i =>
+    simp only [instantiate]
+    split
+    · rfl
+    · have hi : i - d < Γ.length := by simp [checkScope] at hc; omega
+      have hv := (meaning_value (he.2 (i-d) Γ[i-d] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
+      cases h : ρ (i-d) <;> simp_all [Purity.operandTerm, isVal]
+  case objAt fs code oid => cases code <;> simp [instantiate, Purity.operandTerm, isVal]
+  all_goals simp_all [Purity.operandTerm, isVal, instantiate]
+
+theorem init_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
+    (hp : Purity.initTerm t = true) (hc : checkScope (Γ.length + d) t = true)
+    (he : EnvOk G Γ ρ n W) : Purity.initTerm (instantiate d ρ t) = true := by
+  by_cases hs : ∃ b, t = .spread b
+  · obtain ⟨b, rfl⟩ := hs
+    simp only [instantiate, Purity.initTerm, checkScope] at hp hc ⊢
+    exact read_instantiate hp hc he
+  · have ho : Purity.operandTerm t = true := by cases t <;> simp_all [Purity.initTerm]
+    have h' := operand_instantiate ho hc he
+    revert h'
+    generalize instantiate d ρ t = u
+    intro hu
+    cases u <;> simp_all [Purity.initTerm, Purity.operandTerm, isVal]
+
+/-- Substituting the environment's values for the free slots keeps an
+inspection: a slot becomes the value it holds. -/
+theorem inspect_instantiate {G : NormalGraph ι} {Γ t ρ n W} {d : Nat}
+    (hp : Purity.inspectTerm t = true) (hc : checkScope (Γ.length + d) t = true)
+    (he : EnvOk G Γ ρ n W) : Purity.inspectTerm (instantiate d ρ t) = true := by
+  induction t using Tm.induct generalizing d
+  case var i =>
+    simp only [instantiate]
+    split
+    · rfl
+    · have hi : i - d < Γ.length := by simp [checkScope] at hc; omega
+      exact Purity.inspect_value
+        (meaning_value (he.2 (i-d) Γ[i-d] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
+  all_goals
+    simp only [Purity.inspectTerm, instantiate, instantiateArgs_eq_map, List.all_eq_true,
+      List.mem_map, Bool.and_eq_true, checkScope, checkScopes_iff] at hp hc ⊢
+  all_goals first
+    | (rintro _ ⟨x, hx, rfl⟩; exact operand_instantiate (hp x hx) (hc.2 x hx) he)
+    | (rintro _ ⟨x, hx, rfl⟩; exact operand_instantiate (hp x hx) (hc x hx) he)
+    | (rintro _ ⟨x, hx, rfl⟩; exact init_instantiate (hp x hx) (hc x hx) he)
+    | (simp [isVal] at hp ⊢; done)
+    | (simp_all [Nat.add_assoc]; done)
+
+/-- **Inspections keep the heap.** A read changes no location and an
+allocation appends fresh ones, so the heap an inspection ends with extends the
+one it starts from, and a predicate of every extension holds where it ends. -/
+theorem inspect_frame {T Q} : ∀ {n W h t}, Safe Ξ T n W h t → Purity.inspectTerm t = true →
+    WorldAdm W → HeapOk n W h → (∀ h' v, h.IsPrefix h' → Q h' v) → SafePost Ξ T Q n W h t := by
   intro n; induction n with
   | zero => intros; trivial
   | succ n ih =>
     intro W h t hs hp hw hh hq
     rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh',hs⟩
-    · exact Or.inl (Or.inl ⟨hv,ht,hq t⟩)
+    · exact Or.inl (Or.inl ⟨hv,ht,hq h t (List.prefix_refl h)⟩)
     · exact Or.inl (Or.inr hr)
-    · obtain ⟨rfl, hp'⟩ := read_step step hp (heap_values hw hh)
-      exact Or.inr ⟨U,h',t',hx,hu,step,hh',ih hs hp' hu hh' hq⟩
+    · obtain ⟨hpre, hp'⟩ := Purity.inspect_step step hp (heap_values hw hh)
+      exact Or.inr ⟨U,h',t',hx,hu,step,hh',ih hs hp' hu hh' (fun h'' v he => hq h'' v (hpre.trans he))⟩
+
+/-- Every heap fact survives an extension of the heap. -/
+theorem knowledge_extend {k : Knowledge} {ρ h h'} (hk : HeapKnowledge.Holds k ρ h)
+    (hpre : h.IsPrefix h') : HeapKnowledge.Holds k ρ h' := by
+  obtain ⟨vs, rfl⟩ := hpre
+  exact HeapKnowledge.alloc_frames vs hk
 
 theorem reading_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k t A ρ n W h}
-    (ht : HasTyUsing G images Γ t A) (hp : readTerm t = true)
+    (ht : HasTyUsing G images Γ t A) (hp : Purity.inspectTerm t = true)
     (hc : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) (push v ρ) h')
       n W h (instantiate 0 ρ t) :=
-  read_frame (ht.sound n W h ρ he hw hh) (read_instantiate (d := 0) hp (by simpa using hc) he) hw hh
-    (fun _ => HeapKnowledge.shift_holds hk)
+  inspect_frame (ht.sound n W h ρ he hw hh) (inspect_instantiate (d := 0) hp (by simpa using hc) he) hw hh
+    (fun _ _ hpre => knowledge_extend (HeapKnowledge.shift_holds hk) hpre)
 
 /-- Creating graph code allocates a fresh bag without running its code or
 invalidating knowledge about existing cells: its captures are slots, already
@@ -1146,7 +1205,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
       pureTerm j.term = true)) (pureOutput G j.context k j.term) codes tree
   | .reading e =>
     checkedOutput G images e (decide (claim e = j ∧ checkScope j.context.length j.term = true ∧
-      readTerm j.term = true)) (HeapKnowledge.shift k) codes tree
+      Purity.inspectTerm j.term = true)) (HeapKnowledge.shift k) codes tree
   | .created e =>
     (CheckResult.ofBool (decide (claim e = j ∧ checkScope j.context.length j.term = true))).bind fun _ =>
     (treeChecked G images e codes tree).bind fun _ =>
@@ -1237,7 +1296,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     then some (pureOutput G j.context k j.term) else none
   | .reading e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧
-        checkTreeUsing G images e codes = true ∧ readTerm j.term = true
+        checkTreeUsing G images e codes = true ∧ Purity.inspectTerm j.term = true
     then some (HeapKnowledge.shift k) else none
   | .created e =>
     if claim e = j ∧ checkScope j.context.length j.term = true ∧ checkTreeUsing G images e codes = true then
