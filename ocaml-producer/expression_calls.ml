@@ -72,19 +72,6 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
           Atoms [Shape {shape with calls=List.filter (fun (s:Semantic.signature) ->
             Semantic.plain_effect s.call_effect) calls}]
         | t -> t in
-      (* A method called on a union of hosts each holding it: Lean binds each
-         host's member to it before the actuals run (`memberHead`), as for
-         `o.m.bind(o)`, so the head is claimed as that bound function, one
-         signature at any receiver ([Semantic.bound_union]). Arms with no
-         common signature keep their own. *)
-      let callee = match e.node, target.node, callee with
-        | Invoke _, Read _, Atoms (_::_::_ as arms) ->
-          let fits (s:Semantic.signature) = Semantic.plain_effect s.call_effect && s.quantified=[]
-            && s.rest_pack=None && (s.variadic<>None || List.length args<=List.length s.params) in
-          (match Semantic.bound_union fits arms with
-           | Some t -> restate_expression target.pos t; t
-           | None -> callee)
-        | _ -> callee in
       (* The receiver the call passes: the `.call` operand, the object a
          method is read from, or `undefined`. A scheme infers from it too. *)
       let receiver_type = match receiver, target.node with
@@ -96,6 +83,30 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
            | Some t -> (match Semantic.without_nullish t with Atoms [] -> t | p -> p)
            | None -> Atoms [Undef])
         | None, _ -> Atoms [Undef] in
+      (* A method called on a union of hosts each holding it: Lean binds each
+         host's member to it before the actuals run (`memberHead`), as for
+         `o.m.bind(o)`, so the head is claimed as that bound function, one
+         signature at any receiver ([Semantic.bound_union]). Arms with no
+         common signature keep their own. Overloaded arms keep every row: an
+         arity-compatible first row need not accept the actuals. *)
+      let union_member_hosts key =
+        match flat_atoms declarations receiver_type with
+        | Some (_::_::_ as hosts) -> List.for_all (function
+            | Shape {fields;_} -> List.exists (fun (f:Semantic.field) ->
+                f.name=key && f.host) fields
+            | _ -> false) hosts
+        | _ -> false in
+      let callee = match e.node, target.node, callee with
+        | Invoke _, Read (_,key), Atoms (_::_::_ as arms)
+            when union_member_hosts key && List.for_all (function
+              | Shape {calls=[_];_} -> true
+              | _ -> false) arms ->
+          let fits (s:Semantic.signature) = Semantic.plain_effect s.call_effect && s.quantified=[]
+            && s.rest_pack=None && (s.variadic<>None || List.length args<=List.length s.params) in
+          (match Semantic.bound_union fits arms with
+           | Some t -> restate_expression target.pos t; t
+           | None -> callee)
+        | _ -> callee in
       (* A closure passed where a callback is offered more parameters than it
          binds — a fixed signature taking more, or a variadic one whose fixed
          parameters cover them — is claimed at the offered signature: calls
