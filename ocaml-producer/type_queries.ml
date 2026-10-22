@@ -68,8 +68,9 @@ let rec plausible_subtype_with excludes actual expected =
    (POSITIVE-TYPES.md, "Records"): each expected member is met by the
    actual's member of its key, which the actual may hold beside others. An
    invariant field by an equal invariant field; a view by a required member
-   within it; an optional member by a slot within it, a writable one by an
-   equal writable slot; a method by a method within it, with contravariant receiver requirements;
+   within it; an optional member by a slot within it, excluding required
+   readonly length views as Lean's optionalSources does, a writable one by
+   an equal writable slot; a method by a method within it, with contravariant receiver requirements;
    every stable target key must be stable in the source. Writable target
    indexes additionally preserve source index and optional-field contracts
    through plausible_index_writes, including optional readonly views. *)
@@ -83,7 +84,8 @@ and plausible_fields excludes actual expected =
       | false,Some _ -> not p.optional && p.read=q.read && p.write=q.write
       | false,None -> not p.optional && plausible_subtype_with excludes p.read q.read
       | true,Some _ -> p.write<>None && p.read=q.read && p.write=q.write
-      | true,None -> plausible_subtype_with excludes p.read q.read)) actual) expected
+      | true,None -> (p.optional || p.write<>None || p.name<>Name "length") &&
+        plausible_subtype_with excludes p.read q.read)) actual) expected
 and plausible_index_writes excludes actual expected =
   let overlaps a b = match a,b with
     | Symbols,Symbols -> true

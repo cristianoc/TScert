@@ -1589,7 +1589,8 @@ arm by arm, and a record by width and depth as the
 [record rule](POSITIVE-TYPES.md#clause-coverage) reads it, each member of
 the parameter met by the element's member of its key, an invariant field by
 an equal invariant field, a view by a required member within it, an optional
-member by a slot within it, a writable one by an equal writable slot, a
+member by a slot within it, excluding required readonly `length` views,
+a writable one by an equal writable slot, a
 method by a method within it, with contravariant receiver requirements
 and every target stable key stable in the source. Each writable target index
 also preserves every overlapping source index contract and optional field
