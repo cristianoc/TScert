@@ -502,9 +502,9 @@ when it is evaluated
 instance's methods are its prototype's and are not copied, nor is an
 `Error`'s non-enumerable `message`. A value of a binder bounded by a record
 (`B extends {…}`) is copied at its bound, the meet row it is read as being
-below the bound's clauses, and a value of an intersection of records at the
-one record they describe; the copy is a record of those fields, no value of
-the binder, since a binder narrower than its bound may fix a field the
+below the bound's clauses, and a value of an intersection at the meet of
+its operands ([a spread of an intersection](#a-spread-of-an-intersection));
+the copy is a record of those fields, no value of the binder, since a binder narrower than its bound may fix a field the
 literal replaces: at `B := { name: "a"; size: number }`, `{ ...b, name: "x" }`
 meets the bound and not `B` (`invalid-spread-binder-result`, executed under
 Node by `node-runs.mts`). The model's copy takes string keys
@@ -552,6 +552,89 @@ writable dictionary at what the parts give there, the string and the symbol
 keys each at their own type; a spread of an open record meets no index. `Object.assign` is the same copy, onto a fresh literal or,
 as a statement, a local's own object, from sources whose types rule out an
 own `__proto__`, which it would set through the prototype's setter.
+
+#### A spread of an intersection
+
+A value of $`A_1 \mathbin{\&} \cdots \mathbin{\&} A_n`$ is of every operand,
+so it is of $`a_1 \sqcap \cdots \sqcap a_n`$ for some arm $`a_i`$ of each
+$`A_i`$, and its copy is the copy of that meet. The arms of a type are its
+union's members, a declaration's through its equation, and an
+intersection's the meets of one arm of each operand, so a union operand
+distributes:
+
+```math
+\mathrm{arms}(A \mathbin{\&} B)=\{\,a\sqcap b \mid a\in\mathrm{arms}(A),\ b\in\mathrm{arms}(B),\ a\sqcap b\neq\varnothing\,\}
+```
+
+Each meet $`a\sqcap b`$ has one of three outcomes: empty ($`\varnothing`$),
+a record or primitive the copy reads, or refused. An empty meet contributes
+no arm; a refused meet refuses the whole spread, whatever the other meets
+of the union are; and the spread is refused where no arm remains.
+
+For each product, the producer gathers every record operand before choosing
+fields. For a key $`k`$, let $`I_k`$ index the operands stating it, with read
+type $`T_i`$ and optionality $`o_i`$ ($`1`$ means optional). If any operand
+states $`k`$ as a method, $`k`$ is a method of the arm, the copy does not
+state it, and no field is selected for it. Otherwise a candidate must itself
+supply the required presence. The proposal selects an existing field
+$`j\in I_k`$ satisfying
+
+```math
+\forall i\in I_k,\ H(T_j,T_i)
+\qquad\text{and}\qquad
+\bigl(\forall i\in I_k,\ o_i=1\bigr)\ \lor\ o_j=0.
+```
+
+Its proposed field is $`k{:}T_j`$, optional exactly when every $`o_i=1`$.
+Here $`H`$ is the producer's `plausible_subtype`
+([`type_queries.ml`](../ocaml-producer/type_queries.ml)), a proposal
+heuristic for inclusion: equality, literals within their primitive, members
+of unions, and shapes with equal fields; it compares named types as written,
+without expanding their declarations. Lean decides inclusion.
+
+Thus `{ k: string | number } & { k: string | boolean } & { k: string }`
+selects the third field, independently of operand order. An optional field
+cannot supply a required key merely because its read type passes the test.
+
+Products with incompatible primitive atoms, or both a primitive and a
+record, contribute no arm, as Lean's clause meet drops them. Emptiness is
+decided over the enclosing union: an empty intersection arm contributes
+nothing, and the whole spread source is refused only when no alternatives
+remain. A product with an unsupported field selection is refused even when
+another product succeeds: `({ k: "a" } | { k: "b" }) & { k: "a" }` has such
+a product. The heuristic does not decide that contradictory field
+constraints make a record empty.
+
+The copy of each surviving arm states its own enumerable string-keyed
+fields, optional ones optional. The copy's type is the producer's proposal.
+Lean checks the merge against the clauses it normalizes the operand's claim
+to, where several fields of a key are constraints on its value
+([allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)), and
+refuses a copy's field that no field of the source gives
+(`spread-intersection-meet` and its forged-claim control in
+`pipeline/test.mts`).
+
+Refused at the spread's operand: a data key with no candidate recognized by
+$`H`$ at the required presence (`{ k: "a" } & { k: "b" }`,
+`{ k: string } & { k?: "a" }`); two operands with index signatures; a
+callable met with a record with readonly or optional fields, methods or an
+index; an intersection operand that is an array, a
+type parameter, a cyclic declaration, or another unsupported shape; and a
+source with no surviving alternative. A callable is met with a record only where the
+record's fields are required writable data fields, whether the intersection
+is written in an annotation or reached through a declaration. Every callable
+operand in a product contributes all its signatures to one overloaded
+callable, so the producer's proposal is the same whether they are written
+flat or grouped through an alias; Lean's clause meet keeps both signature
+lists of two callables. Lean reads an alias of function types met with a
+record as an empty intersection (`spread-intersection-callable-alias`), so
+the verifier refuses that grouping.
+
+Within an intersection product, `Top` (`unknown`) is the identity; a source
+consisting only of `Top` has no supported copy. `Exact` records are supported
+as standalone spread sources, but an `Exact` operand inside an intersection
+is outside this product algorithm, including when the other operand is
+`Top`. Exact own-key bounds require a separate meet operation.
 
 ### Arrays
 

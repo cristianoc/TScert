@@ -23,6 +23,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-for-in-entry-call", "wrong({ a: 1 }, (v) => { delete v.a; })"],
     ["invalid-for-in-entry-field", "wrong({ inner: { a: 1, b: 2 } }, {})"],
     ["invalid-for-in-entry-rebound", "wrong({ a: 1, b: 2 }, {})"],
+    // A readonly field of a callable may be a non-enumerable property, which
+    // a copy lacks; an arm with no value supplies no field to the copy.
+    ["spread-intersection-callable-named", `copied(Object.defineProperty(() => 1, "tag", { value: "t" })).tag`],
+    ["spread-intersection-callable-direct", `copied(Object.defineProperty(() => 1, "tag", { value: "t" })).tag`],
+    ["invalid-spread-intersection-empty-arm-result", "copied({ b: 1 }).a"],
     // A function's `length` is not enumerable: its copy lacks it.
     ["invalid-spread-function-length", "arity((a, b) => a + b)"],
     // The closure calls its callable parameter with a number, which a
@@ -61,6 +66,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   // copy's `name` is "x", which the binder excludes.
   assert.equal(runExample("invalid-spread-binder-result", `relabel({ name: "a", size: 1 }).name`), "x",
     "invalid-spread-binder-result: the copy returned as B holds a name outside B");
+  // A value of `Counter & { next: () => number; tag: string }` whose `next`
+  // is its prototype's: the copy has none.
+  assert.equal(runExample("invalid-spread-intersection-method",
+    `typeof copied(Object.assign(new Counter(), { tag: "t" })).next`), "undefined",
+    "invalid-spread-intersection-method: the copy returned with a `next` function has none");
   // The pattern steps a string by code point: the first is the whole emoji.
   assert.equal(runExample("invalid-for-of-pattern-string", `firsts(["\\u{1F600}b"])`), "\u{1F600}",
     "invalid-for-of-pattern-string: the pattern binds a code point, not the first code unit");
