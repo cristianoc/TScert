@@ -613,6 +613,28 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(unary(callback.firstName), "the fixture exports firstName");
   const sum = first(join(dir, "sum.ts"), "x + 1;\n", Number(syntaxKind.ExpressionStatement));
   assert.equal(callback.firstName(sum), undefined, "firstName returns the text of a binary expression");
+  // A loop binding's guard (HOST-FAMILIES.md, "A call on an immutable name"):
+  // past a nested loop's `continue`, in a `finally`, past a guard excluding
+  // another arm, after a write of the binding and past a call replacing a
+  // record's node, the element read is a spread, whose `name` is undefined.
+  const spreadLiteral = first(join(dir, "spread.ts"), "({ ...a });\n", Number(syntaxKind.ObjectLiteralExpression));
+  const named = first(join(dir, "named.ts"), "({ b: 1 });\n", Number(syntaxKind.ObjectLiteralExpression));
+  const spreadMember = first(join(dir, "spread-member.ts"), "({ ...a });\n", Number(syntaxKind.SpreadAssignment));
+  const propertyMember = first(join(dir, "property-member.ts"), "({ b: 1 });\n", Number(syntaxKind.PropertyAssignment));
+  const holdsUndefined = (v: unknown): boolean => Array.isArray(v) && v.length === 1 && v[0] === undefined;
+  for (const slug of ["nested-continue", "finally", "partial"]) {
+    const loop = await fixture(`invalid-compiler-api-guard-loop-${slug}`);
+    assert.ok(unary(loop.names), `${slug}: the fixture exports names`);
+    assert.ok(holdsUndefined(loop.names(spreadLiteral)), `${slug}: names reads name of a spread`);
+  }
+  const written = await fixture("invalid-compiler-api-guard-loop-let");
+  assert.ok(binary(written.names), "the fixture exports names");
+  assert.ok(holdsUndefined(written.names(named, spreadMember)), "the written binding's name is undefined");
+  const record = await fixture("invalid-compiler-api-guard-loop-record");
+  assert.ok(binary(record.names), "the fixture exports names");
+  const entry = { node: propertyMember };
+  assert.ok(holdsUndefined(record.names([entry], () => { entry.node = spreadMember; })),
+    "the replaced node's name is undefined");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards returning a test under && and || answer true of an identifier");
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards returning a test under && and || answer true of an identifier; a loop binding read past a nested continue, in a finally, past another arm's guard, after its write or past a call replacing a record's node is a spread");
 }

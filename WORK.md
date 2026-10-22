@@ -59,7 +59,7 @@ design, not its progress.
 | [Block-scoped type declarations](docs/SOURCE-CONTRACTS.md#block-scoped-type-declarations) | closed: a `type` or `interface` in a block runs nothing and names its block, each reference read at the declaration TypeScript binds, its equation lifted over the enclosing type parameters resolved there; `block-type-aliases` and `block-type-captures` verify, `invalid-block-type-scope` is refused (run under Node), a reference where a nearer binder hides a captured one, directly or through another block type, is refused, in a computed form, a mapped type and a default too (2026-10-21, [slice measurement](#census-block-types)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past the type alias statement refusal |
 | [A spread of an intersection beyond disjoint records](docs/SOURCE-MODEL.md#a-spread-of-an-intersection) | closed: a spread of an intersection copies the meet of one arm of each operand, a key two operands state held at the field within the other's, and each refusal names the spread's operand; `spread-intersection-meet` verifies ([slice measurement](#census-spread-intersection-meet)) | `fragment-expressions.mts`'s `{ ...part, computed: true }` with `part: ObjectPart & { name: PropertyKey }` is read at its operands' meet, and the refusal of a spread names its location |
 | [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
-| [Investigation of `memberOf`'s read past a spread guard](#member-of-spread-guard) | open: an investigation, cause unknown | the cause of the producer's "missing field name" at `memberOf`'s `p.name` is established, with a reproducer |
+| [Investigation of `memberOf`'s read past a spread guard](#member-of-spread-guard) | closed: a guard's call on a `for...of` binding was an ordinary call, `readCannotThrow` not recognizing the binding; the walk stops at every binding it passes (2026-10-22, [slice measurement](#census-member-of-spread-guard)) | the cause of the producer's "missing field name" at `memberOf`'s `p.name` is established, with a reproducer |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
@@ -959,9 +959,27 @@ established.
 `fragment-expressions.mts#memberOf`, the loop over an object literal's
 `properties` handles `ts.isSpreadAssignment(p)` in an `if` whose body ends
 in `continue`, then reads `p.name`. Every arm of `ObjectLiteralElementLike`
-but `SpreadAssignment` states `name`; the producer refuses the read with
-"missing field name". Whether the guard's false edge, the `continue`, or
-the loop's element binding loses the narrowing is not established.
+but `SpreadAssignment` states `name`. Cause: the guard's call was an
+ordinary call of its signature, which narrows nothing, not the tag test of
+`p` (`host-guard`). The front end writes a guard's call on a name as that
+test where the name's read cannot throw (`readCannotThrow`), and that
+function's scope walk recognized parameters and block declarations alone,
+so a `for...of` binding fell through to `false`. Reduced:
+`for (const p of ps) { if (ts.isSpreadAssignment(p)) continue; p.name }`
+is refused, the same body over `const p = ps[i]` verifies. Repair: the walk
+stops at every binding it passes, a loop's binding initialized in the
+loop's body (and a `for` loop's test and update), a `catch` clause's in its
+block, a parameter after its own declaration
+([the rule](docs/HOST-FAMILIES.md#calls); `compiler-api-guard-loop-binding`
+and the five `invalid-compiler-api-guard-loop-*` negatives, run under
+Node).
+
+<a id="census-member-of-spread-guard"></a>
+The slices `fragment-expressions.mts#expr` and `#binary` (2026-10-22): on
+a790a88 both stop at "missing field name" at `memberOf`'s `p.name`; on the
+branch both move past it and stop at "missing field text" at
+`memberMayBeWritten`'s `target.argumentExpression.text`, a guard on a
+member path of a `let` the function assigns.
 
 <a id="census-for-of-patterns"></a>
 Two slices of `type-term.mts`, `readTypeTerm` and `typeTerm`, which calls it,
