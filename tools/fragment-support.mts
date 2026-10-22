@@ -348,13 +348,20 @@ export function typeParameterMentioned(node: FunctionDeclaration, parameter: Typ
 }
 
 /** `Object.assign(arrow, literal)`: the callable form, a function with
- * properties. */
-export function callableAssign(node: Node): node is ts.CallExpression {
-  return ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
-    ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "Object" &&
-    node.expression.name.text === "assign" && node.arguments.length === 2 &&
-    ts.isArrowFunction(node.arguments[0]) && ts.isObjectLiteralExpression(node.arguments[1]);
+ * properties. Its call, arrow and object literal, or null. */
+export function callableAssign(node: Node): CallableAssign | null {
+  if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression) ||
+      !ts.isIdentifier(node.expression.expression) || node.expression.expression.text !== "Object" ||
+      node.expression.name.text !== "assign" || node.arguments.length !== 2)
+    return null;
+  const fn = node.arguments[0];
+  const initial = node.arguments[1];
+  return fn !== undefined && ts.isArrowFunction(fn) && initial !== undefined && ts.isObjectLiteralExpression(initial)
+    ? { call: node, fn, initial } : null;
 }
+
+/** The nodes of `Object.assign(arrow, literal)` (`callableAssign`). */
+export type CallableAssign = { call: ts.CallExpression; fn: ts.ArrowFunction; initial: ts.ObjectLiteralExpression };
 
 /** The key of `k in o`, its parentheses dropped. */
 export function inKey(node: ts.BinaryExpression): Expression {

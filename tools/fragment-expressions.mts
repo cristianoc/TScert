@@ -486,7 +486,8 @@ export function expr(this: Gate, node: Expression): Expr {
         gate.fail(node, "an optional call of Object.assign is outside the fragment");
       // The callable form: an arrow and an object literal, at the two type
       // arguments written, or else at the two TypeScript infers.
-      const callable = callableAssign(node) && (!node.typeArguments || node.typeArguments.length === 2);
+      const assign = callableAssign(node);
+      const callable = assign && (!node.typeArguments || node.typeArguments.length === 2) ? assign : null;
       if (!callable) {
         // Copies onto a target: the target, then each source, copied as
         // it is evaluated. A spread among the arguments names sources
@@ -501,10 +502,8 @@ export function expr(this: Gate, node: Expression): Expr {
           sources: sources.map((a) => gate.expr(a)),
         };
       }
-      const initial = node.arguments[1];
+      const { fn, initial } = callable;
       const typeArguments = node.typeArguments;
-      if (!ts.isObjectLiteralExpression(initial))
-        gate.fail(node, "Object.assign's callable form needs an object literal");
       const inferred = typeArguments ? null : gate.assignTypes.get(gate.span(node).join(":"));
       if (inferred && !inferred.ok) gate.fail(node, inferred.refused);
       const [functionType, bagType] = inferred?.ok ? [inferred.value.functionType, inferred.value.bagType]
@@ -535,7 +534,7 @@ export function expr(this: Gate, node: Expression): Expr {
       return {
         k: "withValue",
         pos: gate.span(node),
-        fn: gate.expr(node.arguments[0]),
+        fn: gate.expr(fn),
         initial: gate.expr(initial),
         functionType,
         bagType,
