@@ -1128,10 +1128,12 @@ leaves a hole:
 
 Writes at a greater index, or at one no contract names, and reads by a
 non-literal index into a tuple, have no rule; a program appends with `push`.
-A read `xs[k]` of an array or a tuple at a key TypeScript types as `number`,
-no literal, is the host's read of the property the number names, a call of
-the intrinsic $`\%\mathsf{ElementAt}\%`$ (`intrinsics.mts`), which the parser
-writes where TypeScript's types of the object and the key are these:
+A read `xs[k]` of an array, a tuple or a compiler-API node list
+([node lists](COMPILER-API.md#node-lists-in-the-model)) at a key TypeScript
+types as `number`, no literal, is the host's read of the property the number
+names, a call of the intrinsic $`\%\mathsf{ElementAt}\%`$ (`intrinsics.mts`),
+which the parser writes where TypeScript's types of the object, each part of
+a union alike, and the key are these:
 
 ```math
 \mathit{xs}[k]\;\equiv\;\%\mathsf{ElementAt}\%(\mathit{xs},\ k)
@@ -1146,6 +1148,30 @@ numeric key, which `Array<T>`'s `[n: number]: T` says holds a `T`, else
 writes nothing and states heap preservation
 ([effects](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)). `elemAny` would read the store
 alone, which answers `undefined` where the array owns such a key.
+
+<a id="reads-at-an-index-from-the-length"></a>
+**Reads at an index computed from the length.** A key the program computes
+from the array's length, `xs[xs.length - 1]` or `xs[n - 1]` with
+`n = xs.length` read earlier, is a key TypeScript types as `number`, so the
+read is $`\%\mathsf{ElementAt}\%`$'s and its value is in
+$`T\mid\mathtt{undefined}`$, as JavaScript gives it: `undefined` for an
+empty array, at a hole, and wherever the array has shrunk between the
+length's read and the element's, by a `pop`, through another name for it
+or in a callback. The rule reads no relation between the key and the
+length, and none is needed for the element type with `undefined`; the
+program handles `undefined` (`last?.f`, `?? d`, a test). Every other read
+has the rule of its own form: a literal key a contract's position (`elem`,
+`elemOpt`), and an object that is no array, tuple or node list, a record
+with a `length` among them, its own property read. Reading the last element
+at `T` alone, after a test establishing `xs.length > 0`, has no rule: the
+types state no length. The cases `array-last-element` and
+`compiler-api-node-list-index` verify; `invalid-array-last-element` (an
+empty array), `invalid-array-last-sparse`, `invalid-array-last-after-pop`,
+`invalid-array-last-alias`, `invalid-array-last-callback`,
+`invalid-length-record-last`, `invalid-length-union-last`,
+`invalid-program-node-array-last`, `invalid-array-past-end` (`length`),
+`invalid-array-before-last` (`length - 2`) and
+`invalid-compiler-api-node-list-last` are refused, each run under Node.
 
 #### A literal with spreads
 

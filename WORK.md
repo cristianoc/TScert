@@ -42,6 +42,9 @@ design, not its progress.
 | [Instance candidate growth](lean/Verification/Tests/InstanceGrowthControls.lean) | closed: a shared 64-patch budget covers fixed and variadic targets before combinations are constructed; controls with 24 ambiguous targets produce at most 66 candidates (2026-10-20) | — |
 | [A family's installation](docs/HOST-FAMILIES.md#activation) | closed: each description names its package, installation and digest; the front end activates every active description's installation by that data, the compiler API's among them, refusing another digest, version or an installation Node does not find; the string-tagged stand-in activated by its description alone beside the compiler API's (2026-10-20) | — |
 | [Paths at an entry beyond one member](docs/HOST-FAMILIES.md#entries) | closed: an entry's witness of a path reads from its prefix's, one checked link per segment; `compiler-api-entry-path` verifies, the forged chains are refused, each accepted with its check disabled (2026-10-20) | — |
+| [Reads at an index computed from the length](docs/PROGRAM-TYPING.md#reads-at-an-index-from-the-length) | closed: a node list read at a `number` key is `%ElementAt%`'s, at its element type or `undefined`; `array-last-element` and `compiler-api-node-list-index` verify, the eleven bypasses listed there are refused, each run under Node (2026-10-22) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past "a numeric array key needs a proved array-index singleton" |
+| [A family guard's test in a guard's Boolean return](docs/SOURCE-ELABORATION.md#derived-source-forms) | closed: a family guard's call is a Boolean by its form; `compiler-api-guard-and-return` verifies, `invalid-compiler-api-guard-and-promise` and `invalid-compiler-api-guard-or-promise` are refused, each run under Node (2026-10-22) | `readCannotThrow`'s `(d): d is ts.FunctionDeclaration => ts.isFunctionDeclaration(d) && d.name?.text === id.text` verifies |
+| [The search past 60 s on `fragment-statements.mts`](#fragment-statements-search) | closed: `protocolPattern`'s and `patternStmt`'s searches take 13 s each in their census and alone, where they took 88 s; both then stop at `statements`' `list.findIndex((s) => gate.abrupt(s))` (2026-10-22, [slice measurement](#census-index-from-length)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within the census's 60 s limit |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
 | [A guard's false edge over a tag-set arm](docs/PROGRAM-TYPING.md#a-membership-test) | closed: the false slice drops arms the guard's set covers and reads a partly covered arm with a stable tag at the rest of its set; `compiler-api-guard-false-sets` verifies, its forged claims are refused, each accepted with coverage disabled (2026-10-20) | — |
@@ -387,6 +390,23 @@ member, about 74 of the family's arms in this slice, and each comparison of
 a union of 57 to 63 arms with one arm fails in about 70 ms. In
 `bindingScope`'s own slice the pool holds 41 such arms and each comparison
 takes about 7 ms: 2.5 s in all.
+
+<a id="fragment-statements-search"></a>
+**The search past 60 s on `fragment-statements.mts`.** The slice of
+`protocolPattern` spends its search in lowering the functions it holds, not
+in proof search. Sampled on eb3a427 (90 s alone, 2026-10-22), 78% of the
+lowering is in the statement entries' witness checks (`ownWitness`): 421
+subtype comparisons, twelve of them the same failing comparison of a union
+of 44 node arms with one of 43, each 1.2 to 2.8 s. Two thirds of the
+samples are in instantiating rows: the extraction's store answered every
+read of a label's clauses by instantiating its head's template four
+times, once for each row form it tested, and never kept a named type's row
+between reads. With rows kept, 22% of the samples were each type
+reference's linear search of the declaration document, comparing JSON
+identities. With a named type's row instantiated once per graph, a row's
+form read from its template, and the declarations indexed by identity,
+the slice's search takes 13 s alone, with the same refusal, and its
+comparisons 7 s; the twelve repeated comparisons take 0.55 s each.
 
 <a id="generic-instance-union-arms"></a>
 **A generic method's instance at a union of arms**, an investigation:
@@ -838,6 +858,20 @@ CPU), each stops at "a numeric array key needs a proved array-index
 singleton", the read `node.elements[node.elements.length - 1]` in
 `pattern`, which both reach, a refusal the lowering reports without a
 location.
+
+<a id="census-index-from-length"></a>
+The same two slices on eb3a427 (main) and on the branch keeping a named
+type's row per graph, reading node lists at a `number` key by
+`%ElementAt%` and reading a family guard's call as a Boolean by its form
+(2026-10-22, `TSCERT_STEP_LIMIT=600`): neither verifies on either. On main
+both stop in search at "a numeric array key needs a proved array-index
+singleton", 88 s each. On the branch both stop in search after 13 s each
+at "closure signature claim is outside the source annotation", the
+callback `(s) => gate.abrupt(s)` of `statements`' `list.findIndex`, whose
+parameter is claimed at `Statement | undefined`. In a reduced program the
+same callback calling the module function `abrupt` directly verifies, and
+calling it as `gate.abrupt`, a class field holding the function, is
+refused alike.
 
 <a id="census-closure-arms"></a>
 Two slices of `fragment-expressions.mts`, `expr` and `binary`, which calls

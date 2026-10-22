@@ -19,6 +19,19 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     // The closure calls its callable parameter with a number, which a
     // function of strings reads `length` of.
     ["invalid-closure-contextual-callable", "narrow.run((s) => s.length)"],
+    // A read at an index computed from a length is past the end, or before
+    // the start, of an empty, shrunk or sparse array, and of a record that
+    // owns no such key.
+    ["invalid-array-last-element", "last([])"],
+    ["invalid-array-last-sparse", `last(["a", , ])`],
+    ["invalid-array-last-after-pop", `stale(["a"])`],
+    ["invalid-array-last-alias", `(() => { const a = ["a"]; return aliased(a, a); })()`],
+    ["invalid-array-last-callback", `(() => { const a = ["a"]; return called(a, () => { a.pop(); }); })()`],
+    ["invalid-length-record-last", "last({ length: 1 })"],
+    ["invalid-length-union-last", "last({ length: 1 })"],
+    ["invalid-program-node-array-last", "last({ length: 1 })"],
+    ["invalid-array-past-end", `pastTheEnd(["a"])`],
+    ["invalid-array-before-last", `beforeLast(["a"])`],
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);

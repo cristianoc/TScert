@@ -53,6 +53,15 @@ const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
  * read by its own description alone. */
 const compilerApiFile = (file: string): boolean => familyOfFile(file)?.marker === compilerApiFamily.marker;
 
+/** Whether TypeScript's type is the compiler API's `NodeArray<T>`, which the
+ * model reads as a dense readonly array of its elements (COMPILER-API.md,
+ * "Node lists in the model"): iterated, spread and indexed as that array. */
+const nodeListType = (type: Type): boolean => {
+  const symbol = type.getSymbol();
+  return symbol?.name === hostNodeList && !!symbol.declarations.length &&
+    symbol.declarations.every(d => compilerApiFile(d.resolve()?.getSourceFile().fileName ?? ""));
+};
+
 /** A refusal located at a root of the client: an import declaration or one of
  * its own type declarations. One made of a caught error carries it as its
  * `cause`, so a tool failure stays one (`toolFailureOf`), located. */
@@ -511,7 +520,7 @@ export function collectDeclarations(file: string, options: {
   libraryValues?: readonly Span[];
   libraryValue?: (span: Span) => void;
   /** The client's element reads `e[k]`: each whose object TypeScript types
-   * as arrays and tuples only and whose key as `number`, no literal, is
+   * as arrays, tuples and node lists only and whose key as `number`, no literal, is
    * reported to `hostElement`, and the intrinsics, among them
    * `%ElementAt%`, which reads it, join the values. */
   elementReads?: readonly Span[];
@@ -2375,9 +2384,7 @@ export function collectDeclarations(file: string, options: {
       // `Symbol.iterator`, indexing and `Array.from` agree (T4, run by C4),
       // so it is iterated as that array is, a host assumption about the
       // package's values.
-      if (symbol?.name === hostNodeList && !!symbol.declarations.length &&
-          symbol.declarations.every(d => compilerApiFile(d.resolve()?.getSourceFile().fileName ?? "")))
-        return "array";
+      if (nodeListType(part)) return "array";
       if (part.flags & TypeFlags.Object) {
         const method = checker.getPropertiesOfType(part).find(p => p.name.startsWith("__@iterator@"));
         if (method) {
@@ -2545,7 +2552,7 @@ export function collectDeclarations(file: string, options: {
       const key = checker.getTypeAtLocation(read.argumentExpression);
       const objects = object && isUnionType(object) ? object.getTypes() : object ? [object] : [];
       const keys = key && isUnionType(key) ? key.getTypes() : key ? [key] : [];
-      if (objects.length && objects.every(t => checker.isArrayType(t) || checker.isTupleType(t)) &&
+      if (objects.length && objects.every(t => checker.isArrayType(t) || checker.isTupleType(t) || nodeListType(t)) &&
           keys.length && keys.every(t => !!(t.flags & TypeFlags.Number))) {
         listIntrinsics(span, [elementAtName]);
         options.hostElement?.(span);

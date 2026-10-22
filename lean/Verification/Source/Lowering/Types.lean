@@ -250,8 +250,16 @@ program mentions. -/
   recordHints [label]
   return .num b
 
-@[nospecialize] def arrayKeyTerm (K : Ty Tree) : Compiler Tm := do
-  let k ← arrayIndex (SourceTypes.graph (← table)) K
+/-- The one array index a key at `span` denotes, or a refusal located there. -/
+@[nospecialize] def locatedIndex (span : Span) (K : Ty Tree) : Compiler Nat := do
+  let T ← table
+  match arrayIndex (SourceTypes.graph T) K with
+  | .ok k => pure k
+  | .error reason => throw (locatedRefusal T span .expressionClaim reason)
+
+/-- The index term of a key at `span`, or a refusal located there. -/
+@[nospecialize] def arrayKeyTerm (span : Span) (K : Ty Tree) : Compiler Tm := do
+  let k ← locatedIndex span K
   let b := bitsOfNat k
   let label ← lower (SourceTypes.use (.numLit b))
   recordHints [label]
@@ -429,7 +437,7 @@ singleton; NaN, which no equality test finds, is not one. -/
   | [.str] => pure .dynamic
   | [.num] | [.symbol] => if dict then pure .dynamic else
     if string && decide (Answers G K .isNum true) then return .element else do
-      let _ ← arrayIndex G K
+      let _ ← locatedIndex key.span K
       pure .element
   | .numLit b :: cs =>
     if record && cs.all (fun c => match c with
@@ -437,13 +445,13 @@ singleton; NaN, which no equality test finds, is not one. -/
       spelled (numberToString b)
     else
       if string && decide (Answers G K .isNum true) then return .element
-      let _ ← arrayIndex G K
+      let _ ← locatedIndex key.span K
       pure .element
   | _ =>
     -- A string's index properties are its code units: any number names one
     -- or none (`elemStr`); an array's needs one proved index.
     if string && decide (Answers G K .isNum true) then return .element
-    let _ ← arrayIndex G K
+    let _ ← locatedIndex key.span K
     pure .element
 
 /-! ### Reserved writes

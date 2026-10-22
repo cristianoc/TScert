@@ -122,7 +122,7 @@ where `split` holds one. -/
           ("explicit type arguments on an element call are outside the fragment: an element that " ++
             "is a generic closure is claimed at a quantified callable, which the claim format does not encode"))
       let K ← exprType fc key
-      let index ← arrayKeyTerm K
+      let index ← arrayKeyTerm key.span K
       pure (some (o, some key, fun obj => .elemAt (.readAt SourceTypes.storeField obj) index))
     | .invoke .. => throw "a method call's target must name a field or an element"
     | _ => pure none
@@ -895,7 +895,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     let node ← if decide (Answers G B .isStr true) then
         emitAt e.span (Tm.elemAt (.var 1) (.var 0)) (.bind drop) (K::B::Γ) A (scope := temporaries)
       else do
-        let index ← arrayKeyTerm K
+        let index ← arrayKeyTerm key.span K
         let .num b := index | throw "internal extraction error: an array key is a number"
         -- Planned where the receiver's contract names its store; otherwise
         -- the choice is open, and the node is searched.
@@ -914,7 +914,7 @@ Mappings discard only the temporaries introduced by this expression. -/
     -- write, so every alias sees the contract kept.
     let B ← exprType fc receiver
     let K ← exprType fc key
-    let index ← arrayKeyTerm K
+    let index ← arrayKeyTerm key.span K
     let C ← exprType fc rhs
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+3))⟩
