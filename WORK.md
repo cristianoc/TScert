@@ -68,7 +68,7 @@ design, not its progress.
 | [A member bound to a union of hosts](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: `o.k.bind(o)` at a union of hosts each holding `k` as a member splits the host's slot and binds each host's member (`unionVar`, then `bindMember`), the producer proposing the hosts' common signature with the union of their results; the iterator protocol so binds `next` and `return` over a union of iterables; `bind-union-host` verifies, the bypasses listed in [the iterator protocol](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) are refused (run under Node), a forged claim of one host's result refused in search and in checking (2026-10-22, [slice measurement](#census-union-host-bind)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past "bind requires a single arrow and a valid argument prefix" |
 | [The length of a union of arrays](docs/PROGRAM-TYPING.md#the-length-of-a-union-of-arrays) | closed: `length` of a union of array contracts is read by the same term derived at each member (`unionVar`), in a condition's term and in a statement; `compiler-api-node-list-length-test` and `array-union-length-test` verify, `invalid-array-record-length-cast` is refused (2026-10-22) | `if (xs.length !== ps.length)` with `ps = alias.typeParameters ?? []` verifies |
 | [Investigation of a field re-read under a negated disjunction](#negated-disjunction-reread) | closed: a negation's dispatch stated its operand's typing as an obligation of the context alone, which no fact a failed test leaves reaches; it states none, and a negation its operand decides keeps that answer ([the rule](docs/SOURCE-ELABORATION.md#a-negation-of-tests)); `negated-disjunction-test` verifies, `invalid-negated-disjunction-else`, `-arm`, `-write`, `-operand`, `-getter` and `invalid-negated-conjunction` are refused (run under Node), forged claims refused in search and in checking (2026-10-22, [slice measurement](#census-negated-disjunction)) | the cause of the refusal of `if (!(k.name === "a" \|\| k.name === "b"))` is established, with a reproducer and a concrete repair obligation |
-| [Investigation of a tested field read as a receiver](#tested-field-member) | open: an investigation, cause unknown | the cause of the refusal of `if (k.name === "a" && k.name.length === 1)` is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a tested field read as a receiver](#tested-field-member) | closed: verifies on 04e9642, after f1d0301's aliases across a mapped edge merged beside 01f7018, whose branch refused it; f1d0301's role is not established | the cause of the refusal of `if (k.name === "a" && k.name.length === 1)` is established, with a reproducer and a concrete repair obligation |
 | [A chain compared with a literal](docs/SOURCE-ELABORATION.md#derived-source-forms) | closed: `x?.p ⊙ c` with `⊙` an equality and `c` a literal is the test of `x`, then `x.p ⊙ c`, `&&` or `\|\|` by what `undefined ⊙ c` gives; `optional-chain-test` verifies, `invalid-optional-chain-test-false`, `-undefined`, `-operand`, `-loose`, `-write`, `-ambient` and `-getter` are refused (run under Node) (2026-10-22, [slice measurement](#census-chain-comparison)) | `fragment-expressions.mts#expr` and `#binary` move past "missing field target" at `lambda`'s `b.target` |
 | [Investigation of a conditional expression over a tested optional field](#conditional-optional-field) | closed: the arm's read of `o` rebinds its slot to the claim there, a view of the field, which the join's claim of `o` at its declared type does not cover (2026-10-22) | the cause of the refusal of `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` is established, with a reproducer and a concrete repair obligation |
 | [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
@@ -177,12 +177,11 @@ The [status row](#status) states the established cause;
 states the dispatch and typing rule.
 
 <a id="tested-field-member"></a>
-**Investigation of a tested field read as a receiver.** Lean's search
-refuses the second `k.name` of
+**A tested field read as a receiver.**
 `if (k.name === "a" && k.name.length === 1) return k.name;` with
-`k: { name: "a" | "b" | "c" | "d" }`: "No rule derives this readAt at
-`"a"` from k" (`tested-field-member-refused`), the read on which `.length`
-is then read.
+`k: { name: "a" | "b" | "c" | "d" }` verifies on 04e9642
+(`tested-field-member`), after f1d0301 and 01f7018 merged; 01f7018's branch,
+which lacked f1d0301, refused it at the second `k.name`.
 
 <a id="defaulted-parameter-flow"></a>
 **Investigation of a defaulted parameter's flow.** A parameter declared a
