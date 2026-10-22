@@ -403,7 +403,20 @@ the step index (`funGraphSelf`,
 budget $`n`$ every invocation runs at a lower index, where the induction
 hypothesis gives self its type. The producer types the body's reads at the
 constant's annotation or the literal's own signature, which its result
-annotation completes; the checker derives each from the claimed type. Every
+annotation completes, with the footprint it proposes for the closure:
+every such closure is assumed to change nothing, and rounds of inference
+raise the assumption to what the closure's claim then shows, as for
+[function declarations](SOURCE-ELABORATION.md#certifying-inferred-call-effects);
+the checker derives each from the claimed type. A `find` callback calling
+a recursive constant whose body changes nothing is therefore within the
+empty footprint, its element `T` (`find-recursive-constant`); one whose
+body shrinks the array is the unrestricted callback
+(`invalid-find-recursive-constant-mutation`, run under Node), and a
+closure whose body writes, claimed at the empty footprint, its self entry
+with it, is refused in search and in checking (a control over
+`recursive-constants`). A `let` read by its own initializer's closure is a
+cell, which a later assignment may rebind, never a self entry
+(`invalid-find-recursive-cell`, run under Node). Every
 other read of a binding in its own initializer is refused at its location
 (`recursive-const-before-initialization-refused`), and module initialization
 order is checked as before (`Sites`).
