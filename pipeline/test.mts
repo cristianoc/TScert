@@ -924,6 +924,33 @@ control(async (): Promise<void> => {
   process.stdout.write("forged disjunction: an object read claimed at one arm where another object's test holds refused\n");
 });
 control(async (): Promise<void> => {
+  // A spread of an intersection: Lean checks the copy against the clauses
+  // it normalizes the operand's claim to, not against the producer's
+  // reading. The copy of `{ k: string; t: number } & { k: "a" }` claimed at
+  // `{ k: "b"; t: number }`, within the function's result, is refused at the
+  // merge, in search and in checking.
+  const good = run("spread-intersection-meet");
+  const source = readFileSync(sourceKey(good), "utf8");
+  const claims = readClaims(good);
+  const fn = must(claims.functions.find(f => f.name === "widened"), "widened function");
+  const other = must(claims.functions.find(f => f.name === "other"), "other function");
+  const start = source.indexOf("{ ...x }", source.indexOf("function widened"));
+  const copy = must(fn.expressions.find(e => e.pos[0] === start && e.pos[1] === start + "{ ...x }".length),
+    "copy claim");
+  copy.type = other.result;
+  const forged = writeClaims(good, "spread-meet-forged", claims);
+  for (const mode of ["--produce-source-claims", "--check-source-claims"]) {
+    const result = tested(verifierCall(verifier, [mode, join(good, "fragment.json"), forged,
+      sourceKey(good), join(good, mode === "--produce-source-claims"
+        ? "spread-meet-forged-evidence.json" : "evidence.json"),
+      ...(mode === "--produce-source-claims" ? ["12"] : [])]));
+    assert.ifError(result.error);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout + result.stderr, new RegExp(`\\[${start},${start + "{ ...x }".length}\\)`));
+  }
+  process.stdout.write("spread of an intersection: a copy claimed at a field no operand's field gives refused at the merge, in search and in checking\n");
+});
+control(async (): Promise<void> => {
   // An array literal's spread is copied before a later element that runs
   // code, as JavaScript reads it there; a spread operand claimed at other
   // than an array is refused where the elements are produced and checked.

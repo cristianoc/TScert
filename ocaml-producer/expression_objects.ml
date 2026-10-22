@@ -118,7 +118,7 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
             | None -> [group fields]
             | Some alts -> if fields = [] then alts else merge alts [group fields] in
           mark_exact e;
-          Some (merge alts (source_alternatives ~bound:S.rigid_bound declarations [] (expr env e))),[]) (None,[]) parts in
+          Some (merge alts (source_alternatives ~bound:S.rigid_bound ~site:e.pos declarations [] (expr env e))),[]) (None,[]) parts in
       let alts = match alts with
         | None -> [group fields]
         | Some alts -> if fields = [] then alts else merge alts [group fields] in
@@ -162,8 +162,8 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (_body:Analys
       let merge alts b = List.concat_map (fun a -> List.map (merge_alternative a) b) alts in
       let alts = List.fold_left (fun alts (s:expr) ->
         mark_exact s;
-        merge alts (source_alternatives ~bound:S.rigid_bound declarations [] (expr env s)))
-        (source_alternatives ~target:true ~bound:S.rigid_bound declarations [] (expr env target)) sources in
+        merge alts (source_alternatives ~bound:S.rigid_bound ~site:s.pos declarations [] (expr env s)))
+        (source_alternatives ~target:true ~bound:S.rigid_bound ~site:target.pos declarations [] (expr env target)) sources in
       combine (List.map alternative_type alts)
     | ArrayLiteral (es,spreads) ->
       (* One array arm of the expected type is the literal's contract: an

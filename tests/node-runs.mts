@@ -49,6 +49,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   // copy's `name` is "x", which the binder excludes.
   assert.equal(runExample("invalid-spread-binder-result", `relabel({ name: "a", size: 1 }).name`), "x",
     "invalid-spread-binder-result: the copy returned as B holds a name outside B");
+  // A value of `Counter & { next: () => number; tag: string }` whose `next`
+  // is its prototype's: the copy has none.
+  assert.equal(runExample("invalid-spread-intersection-method",
+    `typeof copied(Object.assign(new Counter(), { tag: "t" })).next`), "undefined",
+    "invalid-spread-intersection-method: the copy returned with a `next` function has none");
   // The pattern steps a string by code point: the first is the whole emoji.
   assert.equal(runExample("invalid-for-of-pattern-string", `firsts(["\\u{1F600}b"])`), "\u{1F600}",
     "invalid-for-of-pattern-string: the pattern binds a code point, not the first code unit");

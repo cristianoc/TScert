@@ -502,9 +502,9 @@ when it is evaluated
 instance's methods are its prototype's and are not copied, nor is an
 `Error`'s non-enumerable `message`. A value of a binder bounded by a record
 (`B extends {…}`) is copied at its bound, the meet row it is read as being
-below the bound's clauses, and a value of an intersection of records at the
-one record they describe; the copy is a record of those fields, no value of
-the binder, since a binder narrower than its bound may fix a field the
+below the bound's clauses, and a value of an intersection at the meet of
+its operands ([a spread of an intersection](#a-spread-of-an-intersection));
+the copy is a record of those fields, no value of the binder, since a binder narrower than its bound may fix a field the
 literal replaces: at `B := { name: "a"; size: number }`, `{ ...b, name: "x" }`
 meets the bound and not `B` (`invalid-spread-binder-result`, executed under
 Node by `node-runs.mts`). The model's copy takes string keys
@@ -552,6 +552,52 @@ writable dictionary at what the parts give there, the string and the symbol
 keys each at their own type; a spread of an open record meets no index. `Object.assign` is the same copy, onto a fresh literal or,
 as a statement, a local's own object, from sources whose types rule out an
 own `__proto__`, which it would set through the prototype's setter.
+
+#### A spread of an intersection
+
+A value of $`A_1 \mathbin{\&} \cdots \mathbin{\&} A_n`$ is of every operand,
+so it is of $`a_1 \sqcap \cdots \sqcap a_n`$ for some arm $`a_i`$ of each
+$`A_i`$, and its copy is the copy of that meet. The arms of a type are its
+union's members, a declaration's through its equation, and an
+intersection's the meets of one arm of each operand, so a union operand
+distributes:
+
+```math
+\mathrm{arms}(A \mathbin{\&} B)=\{\,a\sqcap b \mid a\in\mathrm{arms}(A),\ b\in\mathrm{arms}(B),\ a\sqcap b\ \text{defined}\,\}
+```
+
+Two records meet as one record of every key either states. A key both
+state, $`k{:}T`$ in one and $`k{:}U`$ in the other, each optional or not,
+is held at the field within the other, required where either is:
+
+```math
+(k{:}T)\sqcap(k{:}U)=k{:}T\qquad\text{where } T\subseteq U\text{, and }k{:}T\text{ is required unless both are optional}
+```
+
+and symmetrically. An optional field is absent or of its type, so a value
+holding $`k`$ under both fields holds it within the narrower. A key either
+operand states as a method, which the object may hold on its prototype, is
+a method of the meet, which the copy does not state. A primitive and a
+record meet in no value, two primitives in their common values.
+
+The copy of each arm is the copy of a record above: it states the meet's
+own enumerable string-keyed fields, optional ones optional. The copy's type
+is the producer's proposal. Lean checks the merge against the clauses it
+normalizes the operand's claim to, where the two fields of a key are two
+constraints on its value
+([allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)), and
+refuses a copy's field that no field of the source gives
+(`spread-intersection-meet` and its forged-claim control in
+`pipeline/test.mts`).
+
+Refused at the spread's operand: a key both operands state where neither
+field is within the other at the presence the meet requires, whose meet no
+one field states (`{ k: "a" } & { k: "b" }`, `{ k: string } & { k?: "a" }`);
+two operands with index signatures; two callable operands, or a callable
+and a record with readonly or optional fields, methods or an index, which
+no clause states; an operand that is an array, a type parameter, or other
+than a record, a primitive or a union of them; and an intersection with no
+arm.
 
 ### Arrays
 

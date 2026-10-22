@@ -605,10 +605,14 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   const spread = await fixture("invalid-compiler-api-node-spread");
   assert.ok(unary(spread.copiedKind), "the fixture exports copiedKind");
   assert.equal(spread.copiedKind(anyNode), undefined, "a spread's copy has no kind");
+  const met = await fixture("invalid-compiler-api-node-intersection-spread");
+  assert.ok(unary(met.copiedKind), "the fixture exports copiedKind");
+  const identifier = first(join(dir, "identifier.ts"), "x;\n", Number(syntaxKind.Identifier));
+  assert.equal(met.copiedKind(identifier), undefined, "a spread's copy of an identifier, a node with a text, has no kind");
   const callback = await fixture("invalid-compiler-api-node-callback-result");
   assert.ok(unary(callback.firstName), "the fixture exports firstName");
   const sum = first(join(dir, "sum.ts"), "x + 1;\n", Number(syntaxKind.ExpressionStatement));
   assert.equal(callback.firstName(sum), undefined, "firstName returns the text of a binary expression");
   closeParser();
-  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards returning a test under && and || answer true of an identifier");
+  console.log("guards: aliasKind returns 345 on a @typedef, a guard's argument is evaluated once, a write to SyntaxKind turns isIdentifier false, isIdentifier answers true of a program object, asTypeNode returns a node of kind 234, a subpath mapped to other code and a mismatched re-export read text of no identifier; a boxed node's pos, a spread copy's kind, also of a node met with a record, a callback's asserted identifier's text and an empty pattern's last element are undefined; guards returning a test under && and || answer true of an identifier");
 }

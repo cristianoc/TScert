@@ -104,7 +104,7 @@ open S
         let drop=List.map (fun field -> Name field) drop in
         let alternatives=List.map (fun (a:alternative) ->
           {a with afields=List.filter (fun (f:Semantic.field) -> not (List.mem f.name drop)) a.afields})
-          (source_alternatives ~bound:S.rigid_bound declarations [] (get values receiver)) in
+          (source_alternatives ~bound:S.rigid_bound ~site:source declarations [] (get values receiver)) in
         let t=combine (List.map (fun a -> alternative_type
           (merge_alternative empty_alternative a)) alternatives) in
         publish source t None; run env (put values value t) next
