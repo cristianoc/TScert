@@ -21,6 +21,18 @@ let plausible_elements excludes a b = match a,b with
     presence && (q.readonly || not p.readonly) &&
       p.required=q.required && p.optional_elements=q.optional_elements && p.rest=q.rest
   | _ -> false
+(* Clause kinds from Claims: non-callable records lower to refs or dict;
+   signatures alone to arrs; signatures with fields to callable. CoversWith
+   compares callable to callable or arrs, and arrs to arrs. Record width
+   applies within refs/dict (the index check below restricts their pairs).
+   Arrays lower through their store and are compared only with arrays. *)
+let plausible_shape_kinds a b = match a,b with
+  | {elements=None;calls=[];_}, {elements=None;calls=[];_} -> true
+  | {elements=None;indexes=[];calls=_::_;fields},
+    {elements=None;indexes=[];calls=_::_;fields=target} ->
+    target=[] || fields<>[]
+  | {elements=Some _;calls=[];_}, {elements=Some _;calls=[];_} -> true
+  | _ -> false
 (* A proposal heuristic for choosing an advertised arrow. It does not
    establish subtyping: Lean checks the selected call and its arguments. *)
 let rec plausible_subtype_with excludes actual expected =
@@ -36,7 +48,16 @@ let rec plausible_subtype_with excludes actual expected =
         List.mem host_mark a.fields || a.indexes <> [] || a.calls <> [] ||
         List.exists (fun (f:Semantic.field) -> f.write <> None && not f.optional && not f.host) a.fields ||
         (match a.elements with Some s -> not s.readonly | None -> false)
-      | Shape a,Shape b when a.fields=b.fields && a.indexes=b.indexes && plausible_elements excludes a.elements b.elements ->
+      (* A value with call signatures is never within a record without
+         any; members are equal, or within by width and depth inside one
+         clause kind. *)
+      | Shape a,Shape b when plausible_elements excludes a.elements b.elements
+                             && (a.calls=[] || b.calls<>[])
+                             && ((a.fields=b.fields && a.indexes=b.indexes)
+                                 || (plausible_shape_kinds a b
+                                     && plausible_fields excludes a.fields b.fields
+                                     && (a.indexes=b.indexes || b.indexes=[])
+                                     && plausible_index_writes excludes a b.indexes)) ->
         List.for_all (fun (q:Semantic.signature) -> List.exists (fun (p:Semantic.signature) ->
           Semantic.effect_covers p.call_effect q.call_effect &&
           ({p with call_effect=q.call_effect}=q ||
@@ -61,6 +82,46 @@ let rec plausible_subtype_with excludes actual expected =
   (* A value of an intersection is a value of each operand. *)
   | Meet (t,ts),_ -> List.exists (fun part -> plausible_subtype_with excludes part expected) (t::ts)
   | Rigid _,_ | _,(Rigid _ | Meet _) -> false
+(* Record width and depth, as Lean's record rule reads them
+   (POSITIVE-TYPES.md, "Records"): each expected member is met by the
+   actual's member of its key, which the actual may hold beside others. An
+   invariant field by an equal invariant field; a view by a required member
+   within it; an optional member by a slot within it, excluding required
+   readonly length views as Lean's optionalSources does, a writable one by
+   an equal writable slot; a method by a method within it, with contravariant receiver requirements;
+   every stable target key must be stable in the source. Writable target
+   indexes additionally preserve source index and optional-field contracts
+   through plausible_index_writes, including optional readonly views. *)
+and plausible_fields excludes actual expected =
+  actual=expected || List.for_all (fun (q:Semantic.field) ->
+    List.exists (fun (p:Semantic.field) -> p=q || (p.name=q.name && p.host=q.host &&
+      (not q.stable || p.stable) &&
+      List.for_all (fun receiver -> List.exists (fun target ->
+        plausible_subtype_with excludes target receiver) q.receivers) p.receivers &&
+      match q.optional,q.write with
+      | false,Some _ -> not p.optional && p.read=q.read && p.write=q.write
+      | false,None -> not p.optional && plausible_subtype_with excludes p.read q.read
+      | true,Some _ -> p.write<>None && p.read=q.read && p.write=q.write
+      | true,None -> (p.optional || p.write<>None || p.name<>Name "length") &&
+        plausible_subtype_with excludes p.read q.read)) actual) expected
+and plausible_index_writes excludes actual expected =
+  let overlaps a b = match a,b with
+    | Symbols,Symbols -> true
+    | Symbols,_ | _,Symbols -> false
+    | _ -> true in
+  (* Conservatively let a numeric index reach every string key: a failure
+     to recognize a numeric spelling must not drop its field obligation. *)
+  let may keys name = match keys,name with
+    | (Strings | Numeric),Name _ | Symbols,Key _ -> true
+    | _ -> false in
+  List.for_all (fun (q:Semantic.index_signature) -> match q.writable with
+    | None -> true
+    | Some write ->
+      List.for_all (fun (p:Semantic.index_signature) ->
+        not (overlaps q.keys p.keys) || plausible_subtype_with excludes write p.value) actual.indexes &&
+      List.for_all (fun (p:Semantic.field) ->
+        not p.optional || not (may q.keys p.name) ||
+        plausible_subtype_with excludes write p.read) actual.fields) expected
 let plausible_subtype = plausible_subtype_with excludes_undefined
 let literal_type = function
   | LNull -> Atoms [Nul] | LUndefined -> Atoms [Undef]

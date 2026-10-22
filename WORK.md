@@ -84,7 +84,8 @@ design, not its progress.
 | [Investigation of a member two intersection operands state](#meet-member-disagreement) | open: an investigation, cause unknown | the cause of `path-test-intersection-disagree`'s refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a closure passed to a narrower array's `forEach`](#closure-narrower-foreach) | closed: the producer proposed no offer of the callback's signature, comparing the closure's parameter with the element by declared spelling, and, once offered, stated the body's claims once for every signature; it compares them up to the declarations and states a named closure's claims per signature where an offered one's parameters differ; `closure-offer-narrower-element` verifies, `invalid-closure-offer-narrower-parameter`, `-mutation`, `-rebound`, `-this` and `-sparse` are refused (run under Node) (2026-10-22, [slice measurement](#census-closure-narrower-element)) | the cause of the refusal of `calls.forEach(go)` with `go` a closure over a wider parameter is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a recursive constant passed as a callback in its own body](#recursive-constant-callback) | closed: the producer bound the self entry at the closure's own signature and registered the closure after its body, so no self read was offered the callback's longer signature, which Lean's self rule, checking every row with self at the whole claim, already admits; a self read is a flow of the closure (`offer-self`), and an alias naming a signature is read through its declaration; `recursive-constant-callback` verifies, `invalid-recursive-constant-self-wider`, `-escape-wider`, `-callback-mutation`, `-exceptional`, `-shadowed` and `invalid-recursive-cell-callback` are refused (run under Node) (2026-10-22, [slice measurement](#census-recursive-constant-callback)) | the cause of the refusal of `t.parts.some(binder)` inside `binder`'s own body is established, with a reproducer and a concrete repair obligation |
-| [Investigation of a closure over a compiler-API node passed at a narrower node list](#closure-host-element) | open: an investigation | the cause of the refusal of `e.elements.forEach(targets)`, `targets` over `Node` and the elements `Expression`s, is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a closure over a compiler-API node passed at a narrower node list](#closure-host-element) | closed: the producer proposed no offer of `forEach`'s signature, relating two records only when their members were equal, where `Expression`'s residual arm is within `Node`'s by width and depth; it proposes record comparisons by width and depth with contravariant method receivers and preserved stable keys; Lean decides inclusion ([offers](docs/SOURCE-ELABORATION.md#closure-offers)); `compiler-api-closure-offer-node-list` and `closure-offer-extends` verify, `invalid-closure-offer-extends-narrower`, `-method`, `-receiver`, `-mutation` and `invalid-compiler-api-closure-offer-lookalike` are refused (run under Node) (2026-10-22, [slice measurement](#census-closure-host-element)) | the cause of the refusal of `e.elements.forEach(targets)`, `targets` over `Node` and the elements `Expression`s, is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a guard disjunction's right operand](#guard-disjunction-right) | open: an investigation, cause unknown | the cause of the refusal at the right operand of `ts.isShorthandPropertyAssignment(p) && !p.objectAssignmentInitializer \|\| ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name)` is established, with a reproducer and a concrete repair obligation |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
@@ -266,12 +267,36 @@ parameters is expected. The self entry holds the closure at its whole claim
 <a id="closure-host-element"></a>
 **Investigation of a closure over a compiler-API node passed at a narrower
 node list.** `const one = (e: Node): void => …; root.elements.forEach(one)`,
-`root` an `ArrayLiteralExpression` and `one` not recursive, is refused in
-search at "no derivation of its node-typing claim": `one` is claimed at its
-own signature alone. The producer offers it no `forEach` row, its test of
-the element `Expression` within the parameter `Node` failing; that test
-relates two object types only when their fields are equal, and `Expression`
-is an interface extending `Node` (observed 2026-10-22).
+`root` an `ArrayLiteralExpression`, is refused in search at "no derivation
+of its node-typing claim" unless the producer offers `one` `forEach`'s
+signature at the element. Lean derives `Expression ⊑ Node`: a function over
+`Expression` passing its parameter to one over `Node` verifies. `Expression`
+and `Node` are family types, each its selected arms and a residual; the
+arms are shared, and `Expression`'s residual holds the optional brand
+`_expressionBrand` beside the members of `Node`'s and differs from it at
+`kind` and at `parent`, which `Node`'s residual states optional (observed
+2026-10-22). The producer's plausibility test
+relates records by width and depth, preserving contravariant method
+receiver requirements and stable keys, a proposal heuristic modelled on
+Lean's relation ([offers](docs/SOURCE-ELABORATION.md#closure-offers)); Lean
+decides inclusion.
+
+<a id="guard-disjunction-right"></a>
+**Investigation of a guard disjunction's right operand.**
+`fragment-statements.mts#inert`'s `e.properties.every((p) => …)` is refused
+in search at "the edge from node 56 does not establish the claims at this
+point", at its right operand. Reduced (compiler-API project):
+
+```typescript
+export function plain(p: ts.ObjectLiteralElementLike): boolean {
+  return ts.isShorthandPropertyAssignment(p) && !p.objectAssignmentInitializer ||
+    ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name);
+}
+```
+
+is refused at the right operand of `||`; its right operand alone,
+`ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name)`,
+verifies (observed 2026-10-22).
 
 <a id="assigned-parameters-with-defaults"></a>
 **Investigation of assigned parameters with defaults.** The producer refuses
@@ -1321,6 +1346,19 @@ binding more parameters is expected", `assignedNames`'
 the same call at "no derivation of its node-typing claim", `targets` a
 closure over `Node` at a list of `Expression`s
 ([investigation](#closure-host-element)) (11 s for both, stages replayed).
+
+<a id="census-closure-host-element"></a>
+`fragment-statements.mts#protocolPattern` and `#patternStmt` on 85dced2
+(main) and on the branch relating records by width and depth in the
+producer's offers, at `TSCERT_STEP_LIMIT=600` (2026-10-22, load averages 4
+to 7): neither verifies on either. On main both stop in search at "no
+derivation of its node-typing claim", `assignedNames`'
+`e.elements.forEach(targets)` (search 188 s each, both slices at once); on
+the branch both pass it and stop in search at "the edge from node 56 does
+not establish the claims at this point", `inert`'s
+`ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name)`
+([investigation](#guard-disjunction-right)) (search 320 s each, both
+slices at once).
 
 <a id="census-coalesce-literal"></a>
 `type-term.mts#readTypeTerm` and `#typeTerm` on the branch before and after
