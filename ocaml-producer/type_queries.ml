@@ -68,10 +68,14 @@ let rec plausible_subtype_with excludes actual expected =
    actual's member of its key, which the actual may hold beside others. An
    invariant field by an equal invariant field; a view by a required member
    within it; an optional member by a slot within it, a writable one by an
-   equal writable slot; a method by a method within it. *)
+   equal writable slot; a method by a method within it, with contravariant receiver requirements;
+   every stable target key must be stable in the source. *)
 and plausible_fields excludes actual expected =
   actual=expected || List.for_all (fun (q:Semantic.field) ->
     List.exists (fun (p:Semantic.field) -> p=q || (p.name=q.name && p.host=q.host &&
+      (not q.stable || p.stable) &&
+      List.for_all (fun receiver -> List.exists (fun target ->
+        plausible_subtype_with excludes target receiver) q.receivers) p.receivers &&
       match q.optional,q.write with
       | false,Some _ -> not p.optional && p.read=q.read && p.write=q.write
       | false,None -> not p.optional && plausible_subtype_with excludes p.read q.read

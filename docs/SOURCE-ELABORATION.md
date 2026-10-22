@@ -1581,21 +1581,27 @@ checked from an entry at $`\vec A`$, where a test the narrower entry decides
 narrows each branch differently than at $`\vec D`$, so each signature's
 interior claims are its own (`closure-offer-narrower-element`).
 
-The producer proposes an offer where each offered parameter is within the
-closure's by the relation Lean checks, read up to the declarations: a union
+<a id="closure-offers"></a>
+The producer proposes an offer where each offered parameter is plausibly
+within the closure's, by a proposal heuristic modelled on Lean's relation
+and read up to the declarations: a union
 arm by arm, and a record by width and depth as the
 [record rule](POSITIVE-TYPES.md#clause-coverage) reads it, each member of
 the parameter met by the element's member of its key, an invariant field by
 an equal invariant field, a view by a required member within it, an optional
 member by a slot within it, a writable one by an equal writable slot, a
-method by a method within it. So an interface extending another is within
-it (`closure-offer-extends`), and a compiler-API `Expression`, whose
+method by a method within it, with contravariant receiver requirements
+and every target stable key stable in the source. An interface extending
+another is within its base where its overriding members are within the
+base's (`closure-offer-extends`), and a compiler-API `Expression`, whose
 residual arm holds a brand beside the members of `Node`'s, is within `Node`
 (`compiler-api-closure-offer-node-list`). Lean
-checks each offered row. An element whose method takes a narrower
+decides inclusion and checks each offered row. An element whose method
+requires a stronger receiver or takes a narrower
 parameter, a look-alike of a family shape and a function over a narrower
 parameter widened through a method signature are refused
-(`invalid-closure-offer-extends-method`,
+(`invalid-closure-offer-extends-receiver`,
+`invalid-closure-offer-extends-method`,
 `invalid-compiler-api-closure-offer-lookalike`,
 `invalid-closure-offer-extends-narrower`), and a closure shrinking the
 array meets `map`'s signature with holes

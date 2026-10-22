@@ -601,6 +601,8 @@ export const cases: Case[] = [
     /source expression obligation at \[526,533\): evidence search failed: no derivation of its binding-annotation claim/),
   negative("invalid-closure-offer-extends-method", "an interface extending another with a method over a narrower parameter, which TypeScript admits: a closure over the base calling it is offered no signature at the extending element (run under Node: the method returns the string it is passed)",
     /source expression obligation at \[615,627\): evidence search failed: no derivation of its node-typing claim/),
+  negative("invalid-closure-offer-extends-receiver", "an element method requiring a stronger explicit receiver: a closure over the base is offered no signature at the element (run under Node: the method reads its receiver's absent size)",
+    /source expression obligation at \[524,536\): evidence search failed: no derivation of its node-typing claim/),
   negative("invalid-closure-offer-extends-mutation", "a closure over a base interface shrinking the mapped array of an interface extending it: offered `map`'s signature with holes, the result has a hole (run under Node)",
     /source expression obligation at \[411,424\): evidence search failed: no derivation of its return-contract claim/),
   negative("invalid-closure-offer-narrower-sparse","a closure wider than the element mapped over an array admitting `undefined`, which may hold holes: the result keeps them (run under Node)",

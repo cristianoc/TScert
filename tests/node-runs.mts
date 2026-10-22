@@ -39,6 +39,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     // array of an extending interface it is mapped over.
     ["invalid-closure-offer-extends-narrower", `wrong([{ label: "a" }], { of: (b) => b.size })[0]`],
     ["invalid-closure-offer-extends-method", `typeof wrong([{ step: (by) => by }])[0] === "string" ? undefined : 0`],
+    ["invalid-closure-offer-extends-receiver", `wrong([{ label: "a", step() { return this.size; } }])[0]`],
     ["invalid-closure-offer-extends-mutation", `1 in wrong([{ label: "a", size: 1 }, { label: "b", size: 2 }]) ? 0 : undefined`],
     // A value of `Names`' type whose `local` pops the mapped array: `map`
     // skips the index it removed, a hole in the `string[]`.

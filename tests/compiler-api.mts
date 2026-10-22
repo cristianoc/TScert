@@ -413,7 +413,28 @@ console.log(`C1: ${hostEnums.length} host enums, ${members} members, each the ru
   assert.ok(isNamespace(module) && typeof module.wrong === "function", "the fixture exports wrong");
   const syntaxKind: unknown = Reflect.get(ast, "SyntaxKind");
   assert.ok(isNamespace(syntaxKind), "the package exports SyntaxKind");
-  const out: unknown = module.wrong([{ kind: syntaxKind.Identifier }]);
+  const source = "export const value = 1;\n";
+  const file = join(dir, "source.ts");
+  writeFileSync(file, source);
+  const tree = openText(file, source);
+  const out: unknown = module.wrong([{
+    kind: syntaxKind.Identifier,
+    flags: tree.flags,
+    parent: tree,
+    pos: 0,
+    end: source.length,
+    forEachChild<T>(_visitor: (node: Parameters<Parameters<typeof tree.forEachChild>[0]>[0]) => T): T | undefined { return undefined; },
+    getSourceFile(): typeof tree { return tree; },
+    getStart(): number { return 0; },
+    getFullStart(): number { return 0; },
+    getEnd(): number { return source.length; },
+    getWidth(): number { return source.length; },
+    getFullWidth(): number { return source.length; },
+    getLeadingTriviaWidth(): number { return 0; },
+    getFullText(): string { return source; },
+    getText(): string { return source; },
+  }]);
+  closeParser();
   assert.ok(Array.isArray(out) && out.length === 1 && out[0] === undefined,
     "the look-alike's absent text is pushed into the string[]");
   console.log("look-alike: a program record read as an identifier pushes undefined under Node");
