@@ -125,8 +125,24 @@ function, an implicit correlation.
   callers read those.
 - **Pattern:** a value whose presence another function checks becomes that
   function's result.
-- **Commit:** this entry's commit (`tools/fragment-support.mts`,
+- **Commit:** 87afc37 (`tools/fragment-support.mts`,
   `fragment-parse.mts`, `fragment-expressions.mts`).
+
+### A rest parameter's reading tested with `in`
+
+`restPositions` (`tools/type-term.mts`) read a rest parameter's type as
+`{ positions: TypeTerm[] } | { element: TypeTerm }`, and `signatures` and
+the declaration graph's signatures told the arms apart with
+`"positions" in contract`. After the test the `element` arm stays
+possible, since an open record may own `positions` at any type, so reading
+`contract.positions` was refused on principle ("missing field
+positions").
+
+- **Rewrite:** each arm carries `k`, `{ k: "positions"; positions }` or
+  `{ k: "element"; element }` (`RestPositions`), produced and read by `k`.
+- **Pattern:** an `in` test that stands for a tag becomes a tag.
+- **Commit:** this entry's commit (`tools/type-term.mts`,
+  `declaration-graph.mts`).
 
 ## Rewrites required, not made
 

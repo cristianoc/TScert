@@ -61,6 +61,7 @@ design, not its progress.
 | [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
 | [Investigation of `memberOf`'s read past a spread guard](#member-of-spread-guard) | open: an investigation, cause unknown | the cause of the producer's "missing field name" at `memberOf`'s `p.name` is established, with a reproducer |
 | [A member bound to a union of hosts](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: `o.k.bind(o)` at a union of hosts each holding `k` as a member splits the host's slot and binds each host's member (`unionVar`, then `bindMember`), the producer proposing the hosts' common signature with the union of their results; the iterator protocol so binds `next` and `return` over a union of iterables; `bind-union-host` verifies, the bypasses listed in [the iterator protocol](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) are refused (run under Node), a forged claim of one host's result refused in search and in checking (2026-10-22, [slice measurement](#census-union-host-bind)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past "bind requires a single arrow and a valid argument prefix" |
+| [Investigation of a length comparison over a node list or `[]`](#node-list-length-test) | open: an investigation, cause unknown | the cause of the refusal of `if (xs.length !== ps.length)` with `ps = alias.typeParameters ?? []` is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a defaulted parameter's flow](#defaulted-parameter-flow) | open: an investigation, cause unknown | the cause of `spread-defaulted-set-refused`'s edge refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
@@ -118,6 +119,26 @@ a named union, of a function or a closure, is held at the union's arms, so a
 failed `in` test drops the arms owning the key. The
 [slice measurement](#census-closure-arms) records the refusals of `expr` and
 `binary` in `fragment-expressions.mts`.
+
+<a id="node-list-length-test"></a>
+**Investigation of a length comparison over a node list or `[]`.** Lean's
+search refuses this function with "read of a field 'length' the contract
+does not name", a refusal with no location:
+
+```typescript
+export function count(alias: ts.TypeAliasDeclaration, arguments_: readonly number[]): boolean {
+  const parameters = alias.typeParameters ?? [];
+  if (arguments_.length !== parameters.length) return true;
+  return false;
+}
+```
+
+The same comparison verifies returned as a value
+(`return arguments_.length !== parameters.length`) or held in a constant
+tested after, and verifies as a branch test with both operands
+`readonly` arrays of the program. `type-term.mts#readTypeTerm` holds it,
+in the associated-result alias's check
+`arguments_.length !== parameters.length || parameters.some(…)`.
 
 <a id="defaulted-parameter-flow"></a>
 **Investigation of a defaulted parameter's flow.** A parameter declared a
@@ -965,6 +986,19 @@ an intersection of other than disjoint records is outside the fragment";
 on the branch both read `objectFields`' spread and stop in the producer at
 "missing field name" at `memberOf`'s `p.name`
 ([the investigation](#member-of-spread-guard)).
+
+<a id="census-rest-positions"></a>
+Two slices of `type-term.mts`, `readTypeTerm` and `typeTerm`, which calls
+it, on afbaa8b (main) and on the branch tagging a rest parameter's reading
+by `k` ([the rewrite](docs/SOURCE-REWRITES.md#a-rest-parameters-reading-tested-with-in))
+(2026-10-22): neither verifies on either. On main both stop in the
+producer at "missing field positions" (`signatures`); on the branch both
+stop in Lean's search at "read of a field 'length' the contract does not
+name", with no location, the alias check's length comparison
+([the investigation](#node-list-length-test)). With that comparison
+removed from the slice, the search stops at a closure of `mapped`,
+`keys.some(k => !(k.k === "atom" && (k.name === …)))`: "No rule derives
+this readAt" at `k.name`.
 
 <a id="callable-alias-meet"></a>
 **Investigation of an alias of function types met with a record.**
