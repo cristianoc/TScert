@@ -20,16 +20,6 @@ position in the rest's one tuple contract. -/
   | [.pack T []] => ProgramTyping.positionTy T i
   | _ => none
 
-/-- Inclusion for source contracts through the common subtype operation,
-retaining the execution outcome. -/
-@[nospecialize] def withinResult (T : EquationStore.State) (C A : List Tree) :
-    PositiveCertificates.ComparisonResult Unit :=
-  (CertificateProducer.comparisonUsing (SourceTypes.graph T) (StoreView.images T) C A).map fun _ => ()
-
-/-- Optional inference probes use only established inclusion. -/
-@[nospecialize] def within (T : EquationStore.State) (C A : List Tree) : Bool :=
-  (withinResult T C A).accepted
-
 @[nospecialize] def sameMeaning (T : EquationStore.State) (A B : List Tree) : Bool :=
   within T A B && within T B A
 
@@ -100,45 +90,58 @@ type for none (HOST-FAMILIES.md, "Entries"). -/
 
 /-- A path's own refinement at a statement entry: its asserted type, where
 neither the declared read contract nor, for one member, the supported field
-predicates establish it. -/
-@[nospecialize] def ownWitness (T : EquationStore.State) (fc : SourceClaims.Function Tree)
-    (pos : Nat) (root : String) (path : List PropKey) : Option (Ty Tree) := do
-  let A ← ((fc.entryCurrent.lookup pos).getD []).lookup root >>= (·.lookup path)
+predicates establish it. Inclusions are decided by `wi`: `within T`, read
+from its answers (`withinAt`). -/
+@[nospecialize] def ownWitnessWith [Monad m] (T : EquationStore.State) (wi : List Tree → List Tree → m Bool)
+    (fc : SourceClaims.Function Tree) (pos : Nat) (root : String) (path : List PropKey) :
+    m (Option (Ty Tree)) := do
+  let some A := ((fc.entryCurrent.lookup pos).getD []).lookup root >>= (·.lookup path) | return none
   let G := SourceTypes.graph T
   match path with
-  | [] => none
+  | [] => return none
   | [field] =>
-    if (HeapKnowledge.atoms G A).isSome then none else do
-      let raw ← ((fc.envs.lookup pos).getD []).lookup root
-      let R ← (SourceClaims.resolve T raw).toOption
-      let cs := PositiveRules.expand G R
-      let C ← declaredFieldRead T R field
-      if within T C A || (HeapExpressionRules.fieldOperand cs field &&
-          [Tag.isUndef, .isNul, .isNullish].any
-            (fun tag => within T (BranchRefinement.tagSlice G C tag false) A)) then none
-      else some A
-  | _ => do
-    let field ← path.getLast?
-    let C ← pathType T fc pos root path.dropLast >>= (declaredFieldRead T · field)
-    if within T C A then none else some A
+    if (HeapKnowledge.atoms G A).isSome then return none
+    let some raw := ((fc.envs.lookup pos).getD []).lookup root | return none
+    let some R := (SourceClaims.resolve T raw).toOption | return none
+    let cs := PositiveRules.expand G R
+    let some C := declaredFieldRead T R field | return none
+    if ← wi C A then return none
+    if HeapExpressionRules.fieldOperand cs field then
+      for tag in [Tag.isUndef, .isNul, .isNullish] do
+        if ← wi (BranchRefinement.tagSlice G C tag false) A then return none
+    return some A
+  | _ =>
+    let some field := path.getLast? | return none
+    let some C := pathType T fc pos root path.dropLast >>= (declaredFieldRead T · field) | return none
+    if ← wi C A then return none
+    return some A
 
 /-- The type a statement entry's witness of `root.path` holds: its own
 refinement, and, for a proper prefix of a path that has one, the prefix's
 asserted type or declared read, so that each segment's read link has its
 receiver (HOST-FAMILIES.md, "Entries"). Existing field predicates and
 declared contracts retain their own entry checks. -/
-@[nospecialize] def witnessClaim (T : EquationStore.State) (fc : SourceClaims.Function Tree)
-    (pos : Nat) (root : String) (path : List PropKey) : Option (Ty Tree) :=
-  match ownWitness T fc pos root path with
-  | some A => some A
-  | none =>
-    let asserted := (((fc.entryCurrent.lookup pos).getD []).lookup root).getD []
-    if !path.isEmpty && asserted.any (fun (q, _) => path.length < q.length && q.take path.length == path &&
-        (ownWitness T fc pos root q).isSome) then pathType T fc pos root path
-    else none
+@[nospecialize] def witnessClaimWith [Monad m] (T : EquationStore.State) (wi : List Tree → List Tree → m Bool)
+    (fc : SourceClaims.Function Tree) (pos : Nat) (root : String) (path : List PropKey) :
+    m (Option (Ty Tree)) := do
+  if let some A ← ownWitnessWith T wi fc pos root path then return some A
+  if path.isEmpty then return none
+  let asserted := (((fc.entryCurrent.lookup pos).getD []).lookup root).getD []
+  let prefixed ← asserted.anyM fun (q, _) => do
+    if path.length < q.length && q.take path.length == path then
+      return (← ownWitnessWith T wi fc pos root q).isSome
+    else return false
+  return if prefixed then pathType T fc pos root path else none
 
-@[nospecialize] private def envCore (T : EquationStore.State) (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
-    Except String (List (Ty Tree)) := do
+/-- `witnessClaimWith` at the current store, reading `within`'s answers there. -/
+@[nospecialize] def witnessClaimHere (fc : SourceClaims.Function Tree) (pos : Nat) (root : String)
+    (path : List PropKey) : Compiler (Option (Ty Tree)) := do
+  let (T, gen) ← tableAt
+  witnessClaimWith T (withinAt T gen) fc pos root path
+
+@[nospecialize] private def envCore (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
+    Compiler (List (Ty Tree)) := do
+  let T ← table
   let vars ← match fc.envs.lookup pos with
     | some vars => pure vars
     | none => throw s!"missing statement environment at {pos}"
@@ -148,22 +151,22 @@ declared contracts retain their own entry checks. -/
     -- describes the contents, and is an observation, not this slot's type.
     let name := b.source.name
     if let some (root, path) := b.witness then
-      if let some A := witnessClaim T fc pos root path then
+      if let some A ← witnessClaimHere fc pos root path then
         return A
     if let some A := b.fixed then return A
     let some t := vars.lookup name | throw s!"missing claimed binding '{name}' at {pos}"
-    let A ← (SourceClaims.resolve T t).mapError fun msg =>
+    let A ← ((SourceClaims.resolve T t).mapError fun msg =>
       if msg == "type claim unavailable from producer" then
         s!"unavailable claimed binding '{name}' at {pos}"
-      else msg
+      else msg : Except String (Ty Tree))
     match b.storage with
     | .value | .slot _ => return A
     | .cell _ reference | .early _ reference => return reference
 
 @[nospecialize] def env (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) :
     Compiler (List (Ty Tree)) := do
-  (envCore (← table) fc pos scope).mapError fun msg =>
-    s!"source environment obligation at {pos}: {msg}"
+  try envCore fc pos scope
+  catch msg => throw s!"source environment obligation at {pos}: {msg}"
 
 /-- A pattern reads fields, never a method: a method is a member of its object,
 called with it as receiver (`MethodMembers`); read off it, it is no function

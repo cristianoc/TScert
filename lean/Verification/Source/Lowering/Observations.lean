@@ -184,25 +184,26 @@ depends on the value alone, where no primitive predicate states `A`: a
 assertion every edge into the point must establish; choosing it proves
 nothing. -/
 @[nospecialize] def answerAtoms (C A : Ty Tree) : Compiler (Option (List HeapFacts.Atom)) := do
-  let T ← table
+  let (T, gen) ← tableAt
   let G := SourceTypes.graph T
   let tags := [Tag.isArray, .isFun, .typeofObject, .isRef, .truthy, .isNum, .isStr, .isBool, .isBigint, .isSymbol]
   -- First the answers whose slice of `C` is within `A`, the one keeping
   -- most of `C` first, the weakest
   -- assertion; then `Array.isArray`'s refinement, which also admits the
   -- built-ins' array, so that it is chosen only where no slice is.
-  let answers := tags.flatMap fun tag => [true, false].filterMap fun q =>
+  let answers ← (tags.flatMap fun tag => [true, false].map (tag, ·)).filterMapM fun (tag, q) => do
     let S := BranchRefinement.tagSlice G C tag q
     -- An answer no value of `C` gives describes no value the field holds.
-    if !S.isEmpty && S != C && within T S A then
-      some (S.length, tag, q)
-    else none
+    if !S.isEmpty && S != C then
+      if ← withinAt T gen S A then return some (S.length, tag, q)
+    return none
   if let some (_, tag, q) := answers.foldl (fun best x => match best with
       | some b => if x.1 > b.1 then some x else best
       | none => some x) none then
     return some [.tag tag q]
   let R ← tagRefine C .isArray true
-  if (R != C && within T R A) || BranchRefinement.arraySlice G C A then return some [.tag .isArray true]
+  let refined ← if R != C then withinAt T gen R A else pure false
+  if refined || BranchRefinement.arraySlice G C A then return some [.tag .isArray true]
   return none
 
 /-- The atoms a claim that a field holds `A` asserts, where the field's
@@ -211,12 +212,12 @@ test's answer, where no nullish exclusion of `C` is within `A`; else the
 nullish exclusions `A` implies. -/
 @[nospecialize] def fieldAtoms (C : Option (Ty Tree)) (A : Ty Tree) :
     Compiler (Option (List HeapFacts.Atom)) := do
-  let T ← table
+  let (T, gen) ← tableAt
   let G := SourceTypes.graph T
   if let some atoms := HeapKnowledge.atoms G A then return some atoms
   let answer ← match C with
     | some C =>
-      if [Tag.isUndef, .isNul, .isNullish].any (fun tag => within T (BranchRefinement.tagSlice G C tag false) A)
+      if ← [Tag.isUndef, .isNul, .isNullish].anyM (fun tag => withinAt T gen (BranchRefinement.tagSlice G C tag false) A)
       then pure none else answerAtoms C A
     | none => pure none
   return answer.orElse fun _ => HeapExpressionRules.nullishAtoms G A
@@ -225,18 +226,20 @@ nullish exclusions `A` implies. -/
 root binding through the path's one field, or from the witness of the path's
 prefix through its last field. Every incoming edge checks each link together
 with the witness's context type. -/
-@[nospecialize] def witnessLinks (T : EquationStore.State) (Γ : List (Ty Tree))
-    (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) : HeapLinks.Links :=
-  scope.zipIdx.filterMap fun (b,j) => do
-    let (root, path) ← b.witness
-    let field ← path.getLast?
-    let _ ← witnessClaim T fc pos root path
-    let i ← valueSlot scope root
-    let r ← if path.length == 1 then some i else do
-      let _ ← witnessClaim T fc pos root path.dropLast
-      scope.findIdx? (·.witness == some (root, path.dropLast))
-    return ⟨r,j,false,field,false,valueField,
-      !(HeapExpressionRules.fieldOperand (PositiveRules.expand (SourceTypes.graph T) (Γ[r]?.getD [])) field)⟩
+@[nospecialize] def witnessLinks (Γ : List (Ty Tree))
+    (fc : SourceClaims.Function Tree) (pos : Nat) (scope : List (ScopeBinding Tree)) : Compiler HeapLinks.Links := do
+  let G := SourceTypes.graph (← table)
+  scope.zipIdx.filterMapM fun (b,j) => do
+    let some (root, path) := b.witness | return none
+    let some field := path.getLast? | return none
+    let some _ ← witnessClaimHere fc pos root path | return none
+    let some i := valueSlot scope root | return none
+    let some r ← (if path.length == 1 then pure (some i) else do
+        let some _ ← witnessClaimHere fc pos root path.dropLast | return none
+        return scope.findIdx? (·.witness == some (root, path.dropLast)) : Compiler (Option Nat))
+      | return none
+    return some ⟨r,j,false,field,false,valueField,
+      !(HeapExpressionRules.fieldOperand (PositiveRules.expand G (Γ[r]?.getD [])) field)⟩
 
 /-- Mutable entry types are assertions about contents, not reference types.
 Supported primitive assertions are checked on every incoming edge. Other claims
@@ -278,7 +281,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
       -- One assertion per named field of the record this binding holds.
       -- A field claim outside the primitive predicate vocabulary is not
       -- dropped: the storage contract must imply it, as above.
-      let T ← table
+      let (T, gen) ← tableAt
       let reference ← match b.storage with
         | .value | .slot _ =>
           let some candidate := vars.lookup b.source.name
@@ -303,10 +306,14 @@ must follow from the stable storage contract; no claim is silently dropped. -/
             -- observation cannot be attached to the holder's own value field.
             persistentObservation b.source (pos,pos+1) reference fld A
           | .value | .slot _ =>
-            if (witnessClaim T fc pos b.source.name [fld]).isSome &&
-                scope.any (fun w => w.witness == some (b.source.name, [fld])) then
+            let held := (← witnessClaimWith T (withinAt T gen) fc pos b.source.name [fld]).isSome &&
+                scope.any (fun w => w.witness == some (b.source.name, [fld]))
+            let implied ← if held then pure false else match invariant fld with
+              | some C => withinAt T gen C A
+              | none => pure false
+            if held then
               pure ()
-            else if (invariant fld).any (within T · A) then
+            else if implied then
               persistentObservation b.source (pos,pos+1) reference fld A
             else match ← fieldAtoms (invariant fld) A with
             | some atoms => facts := facts ++ [⟨i,atoms,fld⟩]
