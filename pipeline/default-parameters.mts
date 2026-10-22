@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tested, producerCall, verifierCall } from "./stages.mts";
+import { tested } from "./stages.mts";
+import { producerCall, verifierCall } from "./stage-execution.mts";
 import { runInNewContext } from "node:vm";
 import type { Ast } from "../tools/fragment.mts";
 import type { SourceClaims } from "../tools/source-claims.mts";

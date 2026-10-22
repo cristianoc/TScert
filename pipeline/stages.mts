@@ -1,33 +1,27 @@
 // The common invocation mechanism of the pipeline's stages (DESIGN.md, "The
-// stage store"). Every stage of `verify-source.mts` and every control of the
-// suites runs through `invokeProcess` or `invokeInProcess`: an invocation
-// binds its input files by content into a fresh execution directory, runs
-// with a fixed argument vector and environment, and records its attempt
-// (its input description, timing, limit, outcome and, where its
-// dependencies are identified, its complete stage key). A replay-eligible
-// invocation of a replayed stage is looked up in the store
-// (`stage-store.mts`) by its key, and its finished result or timeout is
-// published there.
+// stage store"): its replay policy, outside every key. Every stage of
+// `verify-source.mts` and every control of the suites runs through
+// `invokeProcess` or `invokeInProcess`: an invocation is bound by its
+// execution adapter (`stage-execution.mts` for a process stage,
+// `in-process-execution.mts` for an in-process one), whose description
+// keys it, and its attempt is recorded (its input description, timing,
+// limit, outcome and, where its dependencies are identified, its complete
+// stage key). This module decides whether a replay-eligible invocation of a
+// replayed stage returns an entry the store (`stage-store.mts`) holds at its
+// key, reuses a timeout observed there, or executes through its adapter, and
+// publishes what an execution produced.
 //   node pipeline/stages.mts clean    removes entries and timeout observations
-import { spawnSync } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, closeSync, openSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { arch, homedir, platform } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
-import { runDirectory } from "./run-directory.mts";
+import { randomUUID } from "node:crypto";
+import { appendFileSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
-import { isOperation, observationsHold, observed, type Observation } from "../tools/files.mts";
-import { compilerImplementation } from "../tools/compiler-channel.mts";
+import { isOperation, observationsHold, type Observation } from "../tools/files.mts";
+import { bindProcess, deliver, executeProcess, executionDirectory, isStageName, readOrAbsent, resourcePolicy, sha256, stageNames, text,
+  type Canonical, type ProcessCall, type StageName } from "./stage-execution.mts";
+import { bindInProcess, observedInput, runInProcess, type InProcessCall } from "./in-process-execution.mts";
 
 export type { Cpu, Measurement } from "./stage-store.mts";
-
-const here = import.meta.dirname;
-
-/** The stages of the pipeline's entry point (DESIGN.md, "The stage store"). */
-export type StageName = "parse" | "lower" | "propose" | "assemble" | "search" | "check" | "explain" | "diagnostics";
-const stageNames: readonly StageName[] = ["parse", "lower", "propose", "assemble", "search", "check", "explain",
-  "diagnostics"];
-export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
 /** The stages that replay: every stage. A replayed check is the verifier's
  * result for exactly its key's inputs: the verifier's check mode reads the
@@ -37,11 +31,6 @@ export const isStageName = (value: unknown): value is StageName => stageNames.so
  * by the file system's answers to their reads (DESIGN.md, "Observed
  * stages"). */
 const replayedStages: ReadonlySet<StageName> = new Set<StageName>(stageNames);
-
-/** The repository's builds of the two audited programs, at their build
- * locations: the Lean verifier and the OCaml producer. */
-export const verifierBuild: string = resolve(here, "../lean/.lake/build/bin/verifier");
-export const producerBuild: string = resolve(here, "../ocaml-producer/_build/default/producer.exe");
 
 /** How an attempt ended: a finished result it computed (`executed`), one it
  * replayed, a timeout observation it reused, its own limit expiring, an
@@ -115,370 +104,15 @@ export function currentStore(): Store | null {
   const setting = storeSetting();
   return setting.off ? null : new Store(setting.directory);
 }
-
-/** A JSON value with object keys sorted, arrays in their order: the
- * canonical encoding keys are digests of. */
-export type Canonical = null | boolean | number | string | readonly Canonical[] | { readonly [key: string]: Canonical };
-const isCanonicalList = (value: Canonical): value is readonly Canonical[] => Array.isArray(value);
-export function canonical(value: Canonical): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (isCanonicalList(value)) return `[${value.map(canonical).join(",")}]`;
-  const record: { readonly [key: string]: Canonical } = value;
-  return `{${Object.keys(record).sort().map((k) => `${JSON.stringify(k)}:${canonical(record[k])}`).join(",")}}`;
-}
-export const sha256 = (bytes: string | Buffer): string => createHash("sha256").update(bytes).digest("hex");
-
-// ---------------------------------------------------------------------------
-// Implementation identity
-
-/** A file's digest, memoized within the process by its status (device,
- * inode, size, modification and change times): a file rewritten in place
- * changes its change time. */
-const digests = new Map<string, { signature: string; digest: string; imports: string[] | null }>();
-function known(path: string): { signature: string; digest: string; imports: string[] | null } {
-  const s = statSync(path, { bigint: true });
-  const signature = `${s.dev}:${s.ino}:${s.size}:${s.mtimeNs}:${s.ctimeNs}`;
-  const held = digests.get(path);
-  if (held?.signature === signature) return held;
-  const fresh = { signature, digest: sha256(readFileSync(path)), imports: null };
-  digests.set(path, fresh);
-  return fresh;
-}
-const fileDigest = (path: string): string => known(path).digest;
-
-/** The modules `file` imports by a relative specifier, read from its text,
- * kept with its digest where the text read is the one digested. */
-function relativeImports(file: string): string[] {
-  const held = known(file);
-  if (held.imports) return held.imports;
-  const bytes = readFileSync(file);
-  const imports = [...bytes.toString("utf8").matchAll(/(?:from|import)\s+"(\.\.?\/[^"]+\.m?ts)"/g)]
-    .map((m) => resolve(dirname(file), m[1]));
-  if (sha256(bytes) === held.digest) held.imports = imports;
-  return imports;
-}
-
-/** The repository modules `file` imports by a relative specifier, itself
- * first, transitively: the code an adapter's digest covers. */
-function moduleClosure(file: string): string[] {
-  const seen: string[] = [];
-  for (let work = [file], next = work.shift(); next !== undefined; next = work.shift()) {
-    if (seen.includes(next)) continue;
-    seen.push(next);
-    work.push(...relativeImports(next));
-  }
-  return seen;
-}
-/** The digests of modules' sources, transitively, by their repository paths. */
-export function codeIdentity(files: readonly string[]): Canonical {
-  const repository = resolve(here, "..");
-  const all = [...new Set(files.flatMap(moduleClosure))].sort();
-  return all.map((f) => [f.startsWith(repository + "/") ? f.slice(repository.length + 1) : f, fileDigest(f)]);
-}
-
-/** A module closure captured during module evaluation. Callers retain this
- * identity with the implementation they loaded. */
-export type LoadedCode = { identity: Canonical; changed: () => boolean };
-export function captureCodeIdentity(files: readonly string[]): LoadedCode {
-  const identity = codeIdentity(files);
-  const encoded = canonical(identity);
-  return { identity, changed: (): boolean => {
-    try {
-      return canonical(codeIdentity(files)) !== encoded;
-    } catch {
-      return true;
-    }
-  } };
-}
-const adapter = captureCodeIdentity([import.meta.filename]);
-
-/** The operating system's build, which identifies the files of its sealed
- * system volume on macOS; null elsewhere. */
-let systemBuild: string | null | undefined;
-function osBuild(): string | null {
-  if (systemBuild !== undefined) return systemBuild;
-  systemBuild = null;
-  if (platform() === "darwin") {
-    const plist = readFileSync("/System/Library/CoreServices/SystemVersion.plist", "utf8");
-    const at = /<key>ProductBuildVersion<\/key>\s*<string>([^<]+)<\/string>/.exec(plist);
-    systemBuild = at?.[1] ?? null;
-  }
-  return systemBuild;
-}
-/** The directories of macOS's sealed system volume. */
-const systemPrefixes = ["/usr/lib/", "/System/", "/bin/", "/usr/bin/"];
-const onSystemVolume = (path: string): boolean => systemPrefixes.some((s) => path.startsWith(s));
-
-/** The dynamic libraries an executable links, transitively: each outside
- * the system volume by its digest, each on it by the system's build; or why
- * they are not identified. A file's libraries are the names its Mach-O load
- * commands state (`loadCommands`). */
-export function linkedLibraries(executable: string): Canonical | string {
-  const build = osBuild();
-  if (platform() !== "darwin" || build === null) return "dynamic libraries are identified on macOS only";
-  const identified: Canonical[] = [];
-  const seen = new Set<string>();
-  // Each file to read: the executable as named, then each library by its
-  // real path; each with its digest.
-  for (let work = [{ path: executable, digest: fileDigest(realpathSync(executable)) }], item = work.shift();
-      item !== undefined; item = work.shift()) {
-    const next = item.path;
-    const commands = loadCommands(next, item.digest);
-    if (typeof commands === "string") return `${next}: ${commands}`;
-    // A name relative to the loader or its run paths is resolved as dyld
-    // resolves it: `@loader_path` by the loading file's directory,
-    // `@executable_path` by the executable's, `@rpath` by the first run
-    // path of the loader or the executable naming an existing file.
-    const paths: string[] = [];
-    for (const p of commands.libraries) {
-      const resolved = p.startsWith("@") ? resolveLoaderName(p, next, executable, commands.runPaths) : p;
-      if (resolved === null) return `a library dyld's rules do not resolve here: ${p} (from ${next})`;
-      paths.push(resolved);
-    }
-    for (const p of paths) {
-      if (seen.has(p)) continue;
-      seen.add(p);
-      if (onSystemVolume(p)) identified.push([p, `system ${build}`]);
-      else {
-        const real = realpathSync(p);
-        const digest = fileDigest(real);
-        identified.push([p, digest]);
-        work.push({ path: real, digest });
-      }
-    }
-  }
-  return identified;
-}
-
-/** The load commands of a Mach-O file that name libraries (its own install
- * name and every library it loads: required, weak, re-exported, lazy,
- * upward) and its run paths, in their order; or why the file is no Mach-O
- * file read here: one holding a command that names a library or changes
- * dyld's search otherwise (`LC_LAZY_LOAD_DYLIB_INFO`,
- * `LC_DYLD_ENVIRONMENT`), or a universal file whose architectures (those
- * its table counts, and an arm64 one described right after a 32-bit table)
- * differ in their libraries or run paths. Memoized by the file's digest
- * (`digest`), where the bytes read are the ones it names. */
-type LoadCommands = { libraries: readonly string[]; runPaths: readonly string[] };
-const loadCommandsOf = new Map<string, LoadCommands | string>();
-const dylibCommands: ReadonlySet<number> = new Set([0xc, 0xd, 0x80000018, 0x8000001f, 0x20, 0x80000023]);
-const runPathCommand = 0x8000001c;
-const unreadCommands: ReadonlyMap<number, string> = new Map([[0x27, "LC_DYLD_ENVIRONMENT"], [0x3a, "LC_LAZY_LOAD_DYLIB_INFO"]]);
-function loadCommands(file: string, digest: string): LoadCommands | string {
-  const held = loadCommandsOf.get(digest);
-  if (held !== undefined) return held;
-  let found: LoadCommands | string;
-  const descriptor = openSync(file, "r");
-  try {
-    const bytes = (offset: number, length: number): Buffer => {
-      const buffer = Buffer.alloc(length);
-      const read = readSync(descriptor, buffer, 0, length, offset);
-      if (read !== length) throw Error(`the file ends at ${offset + read} before ${offset + length}`);
-      return buffer;
-    };
-    // One architecture's image at `base`: a 32- or 64-bit little-endian header.
-    const image = (base: number): LoadCommands => {
-      const libraries: string[] = [], runPaths: string[] = [];
-      const header = bytes(base, 28);
-      const magic = header.readUInt32LE(0);
-      if (magic !== 0xfeedface && magic !== 0xfeedfacf) throw Error(`no little-endian Mach-O header at ${base}`);
-      const count = header.readUInt32LE(16), size = header.readUInt32LE(20);
-      const commands = bytes(base + (magic === 0xfeedfacf ? 32 : 28), size);
-      const name = (start: number, end: number): string => {
-        const offset = commands.readUInt32LE(start + 8);
-        if (offset < 12 || start + offset >= end) throw Error("a load command's name lies outside it");
-        const nul = commands.indexOf(0, start + offset);
-        return commands.toString("utf8", start + offset, nul < 0 || nul > end ? end : nul);
-      };
-      for (let i = 0, start = 0; i < count; i++) {
-        if (start + 8 > size) throw Error("the load commands end early");
-        const command = commands.readUInt32LE(start), length = commands.readUInt32LE(start + 4);
-        if (length < 8 || start + length > size) throw Error("a load command's size is out of range");
-        const unread = unreadCommands.get(command);
-        if (unread !== undefined) throw Error(`it holds ${unread}`);
-        if (dylibCommands.has(command)) libraries.push(name(start, start + length));
-        if (command === runPathCommand) runPaths.push(name(start, start + length));
-        start += length;
-      }
-      return { libraries, runPaths };
-    };
-    const magic = bytes(0, 4).readUInt32BE(0);
-    if (magic === 0xcafebabe || magic === 0xcafebabf) {
-      // A universal file: big-endian architecture entries, 32- or 64-bit offsets.
-      const wide = magic === 0xcafebabf, width = wide ? 32 : 20;
-      const count = bytes(4, 4).readUInt32BE(0);
-      // dyld also loads an arm64 slice a 32-bit table describes right after
-      // its last entry, outside its count.
-      const entries = bytes(8, (count + (wide ? 0 : 1)) * width);
-      const hidden = !wide && entries.readUInt32BE(count * width) === 0x0100000c ? 1 : 0;
-      const slices = Array.from({ length: count + hidden }, (_, i) =>
-        image(wide ? Number(entries.readBigUInt64BE(i * width + 8)) : entries.readUInt32BE(i * width + 8)));
-      // dyld loads one architecture; the others must agree with it.
-      const first = slices[0];
-      if (first === undefined) throw Error("a universal file without architectures");
-      const named = (c: LoadCommands): string => JSON.stringify([c.libraries, c.runPaths]);
-      if (slices.some((c) => named(c) !== named(first))) throw Error("its architectures differ in their libraries or run paths");
-      found = first;
-    } else found = image(0);
-  } catch (error) {
-    found = `its load commands are not read: ${error instanceof Error ? error.message : String(error)}`;
-  } finally {
-    closeSync(descriptor);
-  }
-  if (fileDigest(file) === digest) loadCommandsOf.set(digest, found);
-  return found;
-}
-
-/** A library name relative to its loader, resolved, or null. */
-function resolveLoaderName(name: string, loader: string, executable: string, loaderRunPaths: readonly string[]):
-    string | null {
-  const expand = (path: string): string => path.replace(/^@loader_path/, dirname(loader))
-    .replace(/^@executable_path/, dirname(executable));
-  const exists = (path: string): boolean => {
-    try {
-      statSync(path);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  if (name.startsWith("@loader_path/") || name.startsWith("@executable_path/")) {
-    const path = resolve(expand(name));
-    return exists(path) ? path : null;
-  }
-  if (!name.startsWith("@rpath/")) return null;
-  const rest = name.slice("@rpath/".length);
-  let executableRunPaths: readonly string[] = [];
-  if (loader !== executable) {
-    const commands = loadCommands(executable, fileDigest(executable));
-    if (typeof commands === "string") return null;
-    executableRunPaths = commands.runPaths;
-  }
-  for (const base of [...loaderRunPaths, ...executableRunPaths]) {
-    const path = resolve(expand(base), rest);
-    if (exists(path)) return path;
-  }
-  return null;
-}
-
-/** The mutation verifiers this process runs, by real path: builds of the
- * verifier with test-only mutations (`evidence-mutations.mts`), audited as
- * the verifier is. */
-const mutationBuilds = new Set<string>();
-/** Treat `executable`, a mutation verifier built from the repository's
- * verifier build, as an audited program: its I/O is the verifier's, and the
- * variable `TSCERT_TEST_MUTATIONS`, which its invocation's environment fixes. */
-export function auditMutationVerifier(executable: string): void {
-  mutationBuilds.add(realpathSync(executable));
-}
-
-/** The programs whose I/O is audited, beside the repository's builds: a
- * test's stand-ins, each with the files it reads or runs. */
-const auditedForTests = new Map<string, readonly string[]>();
-/** Treat `program` as audited, its only dependencies itself, its
- * interpreter and `dependencies`: for the store's tests, whose stand-in
- * stages are shell scripts. */
-export function auditForTests(program: string, dependencies: readonly string[]): void {
-  auditedForTests.set(realpathSync(program), dependencies);
-}
-
-/** The identity of an audited program's executable: its digest, its linked
- * libraries and the platform it runs on; or why it has none. Only the
- * repository's builds of the verifier and the producer are audited: their
- * I/O is the files their arguments name, standard output and standard error;
- * they start no process, do not read their working directory's path, and
- * read no environment variable the invocation does not fix (the Lean
- * runtime's and OCaml's are unset). Any other program (a test's stand-in,
- * a stand-in for an injected failure) has dependencies that are not
- * identified. A mutation verifier (`auditMutationVerifier`) is audited as
- * the verifier is, beside the one variable that selects its mutations. */
-function executableIdentity(program: string, environment: Readonly<Record<string, string>>):
-    { identity: Canonical } | { unidentified: string } {
-  if (Object.keys(environment).some((name) => name.startsWith("DYLD_")))
-    return { unidentified: "child DYLD_ environment variables have unidentified code dependencies" };
-  let real: string;
-  try {
-    real = realpathSync(program);
-  } catch {
-    return { unidentified: `${program} does not resolve` };
-  }
-  const builds = mutationBuilds.has(real) || [verifierBuild, producerBuild].some((b) => {
-    try {
-      return realpathSync(b) === real;
-    } catch {
-      return false;
-    }
-  });
-  const declared = auditedForTests.get(real);
-  if (!builds && declared === undefined)
-    return { unidentified: `${basename(program)} is not the repository's build of an audited program` };
-  const files: Canonical[] = [];
-  if (declared !== undefined) {
-    // A script: itself, its interpreter and what it declares.
-    const interpreter = /^#!(\S+)/.exec(readFileSync(real, "utf8"))?.[1];
-    for (const dependency of [...(interpreter ? [interpreter] : []), ...declared]) {
-      if (onSystemVolume(dependency) && osBuild() !== null) files.push([dependency, `system ${osBuild()}`]);
-      else files.push([dependency, fileDigest(realpathSync(dependency))]);
-    }
-    return { identity: { executable: fileDigest(real), files, platform: platform(), arch: arch() } };
-  }
-  const linked = linkedLibraries(real);
-  if (typeof linked === "string") return { unidentified: linked };
-  return { identity: { executable: fileDigest(real), libraries: linked, platform: platform(), arch: arch() } };
-}
-
-/** The Node runtime the adapters run on: its executable and linked
- * libraries by content, its options (`execArgv`, `NODE_OPTIONS`); or why it
- * is not identified. */
-function diskNodeIdentity(): { identity: Canonical } | { unidentified: string } {
-  if (Object.keys(process.env).some((name) => name.startsWith("DYLD_")))
-    return { unidentified: "Node DYLD_ environment variables have unidentified code dependencies" };
-  const options = [...process.execArgv, process.env["NODE_OPTIONS"] ?? ""].join(" ");
-  if (/(?:^|[\s"'])(?:--(?:import|require|loader|experimental[-_]loader)(?:[=\s"']|$)|-r)/.test(options))
-    return { unidentified: "Node import, require or loader options have unidentified code dependencies" };
-  const real = realpathSync(process.execPath);
-  const linked = linkedLibraries(real);
-  if (typeof linked === "string") return { unidentified: `Node: ${linked}` };
-  return { identity: { executable: fileDigest(real), libraries: linked, options: [...process.execArgv],
-    nodeOptions: process.env["NODE_OPTIONS"] ?? null, platform: platform(), arch: arch() } };
-}
-
-/** The runtime identity captured with the adapter's loaded code. */
-const loadedRuntime = diskNodeIdentity();
-function nodeIdentity(): { identity: Canonical } | { unidentified: string } {
-  if ("unidentified" in loadedRuntime) return loadedRuntime;
-  try {
-    if (canonical(diskNodeIdentity()) === canonical(loadedRuntime)) return loadedRuntime;
-  } catch {
-    // A missing or unreadable runtime dependency cannot authorize replay.
-  }
-  return { unidentified: "loaded Node runtime differs from disk" };
+/** Whether recorded timeouts are retried: `TSCERT_RETRY_TIMEOUTS=1` executes a
+ * stage whose key holds a timeout observation and no finished result, at the
+ * current limit, and replays finished results as before. */
+export function retryingTimeouts(): boolean {
+  return process.env["TSCERT_RETRY_TIMEOUTS"] === "1";
 }
 
 // ---------------------------------------------------------------------------
 // Process stages
-
-/** One argument of a process stage: literal text, an input file bound by
- * content under the name of its role, or an output file the stage writes
- * under the name of its role and the caller receives at `path`. */
-export type Argument = { text: string } | { input: string; path: string } | { output: string; path: string };
-
-/** A stage's exit protocol: success is status 0; a refusal is `status` with
- * a record whose first line starts with `prefix` and whose last line is
- * `end of refusal`. Anything else is an operational failure. */
-export type Protocol = { refusal: { status: number; prefix: string } | null };
-
-/** The line that ends a refusal record. */
-export const refusalEnd = "end of refusal";
-
-export type ProcessCall = {
-  stage: StageName;
-  program: string;
-  arguments: readonly Argument[];
-  /** The child's whole environment. */
-  environment: Readonly<Record<string, string>>;
-  protocol: Protocol;
-};
 
 /** A process stage's result, its output bytes and their text, and its
  * attempt's record. */
@@ -500,91 +134,28 @@ export type InvokeOptions = {
   recorder: Recorder | null;
 };
 
-/** The largest output a stage may print. */
-const maxBuffer = 16 * 1024 * 1024;
-/** What, beside the limit, decides whether a process stage times out. */
-const resourcePolicy = canonical({ maxBuffer, killSignal: "SIGTERM", spawn: "spawnSync" });
-const text = (bytes: Buffer): string => new TextDecoder("utf-8").decode(bytes);
-
-/** Whether a stage's exit is a finished result under its protocol. */
-export function finishedExit(protocol: Protocol, status: number | null, stdout: string, stderr: string): boolean {
-  if (status === 0) return true;
-  const detail = stderr.trim() || stdout.trim();
-  const lines = detail.split("\n");
-  return protocol.refusal !== null && status === protocol.refusal.status &&
-    detail.startsWith(protocol.refusal.prefix) && lines.at(-1) === refusalEnd;
-}
-
-/** Run a process stage: its inputs copied by content into a fresh execution
- * directory under their roles' names, the program run there with relative
- * arguments and the call's environment, its outputs copied to the caller's
- * paths. A replay-eligible invocation of a replayed stage, not forced,
- * replays a finished result stored at its key, or reports a timeout
- * observed there at a limit no smaller than its own; executed, its finished
- * result or its timeout is published. */
+/** Run a process stage through its adapter (`bindProcess`,
+ * `executeProcess`). A replay-eligible invocation of a replayed stage, not
+ * forced, replays a finished result stored at its key, or reports a timeout
+ * observed there at a limit no smaller than its own unless timeouts are
+ * retried (`retryingTimeouts`); executed, its finished result or its
+ * timeout is published. */
 export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoked {
   if (!Number.isSafeInteger(options.limitMs) || options.limitMs <= 0)
     throw Error("a process stage limit must be a positive integer number of milliseconds");
-  // The program as the caller's working directory names it.
-  const program = resolve(call.program);
   const attempt = randomUUID();
   const started = performance.now();
   const startedAt = Date.now();
   const store = currentStore();
   const forced = options.force || store === null;
-  const directory = runDirectory(`stage-${call.stage}-`);
+  const directory = executionDirectory(call.stage);
   try {
-    const argv: string[] = [];
-    const inputs: Canonical[] = [];
-    const inputFiles: [string, Buffer][] = [];
-    const outputs: { role: string; path: string }[] = [];
-    const roles = new Set<string>();
-    const inputRoles = new Map<string, string>();
-    for (const a of call.arguments) if ("input" in a) inputRoles.set(resolve(a.path), a.input);
-    for (const a of call.arguments) {
-      if ("text" in a) {
-        argv.push(a.text);
-        continue;
-      }
-      const role = "input" in a ? a.input : a.output;
-      if (roles.has(role) || role !== basename(role)) throw Error(`stage ${call.stage}: role ${role} is not one file name`);
-      roles.add(role);
-      if ("output" in a) {
-        // An output at an input's path names that input, as the caller's
-        // arguments do: the program sees the alias, and a refusal leaves the
-        // caller's input intact.
-        const alias = inputRoles.get(resolve(a.path));
-        argv.push(alias ?? role);
-        if (alias === undefined) outputs.push({ role, path: a.path });
-        continue;
-      }
-      argv.push(role);
-      const bytes = readOrAbsent(a.path);
-      if (bytes !== null) inputFiles.push([role, bytes]);
-      inputs.push([role, bytes === null ? null : sha256(bytes)]);
-    }
-    const implementation = executableIdentity(program, call.environment);
-    const runtime = nodeIdentity();
-    const manifest: Canonical = {
-      stage: call.stage,
-      adapter: adapter.identity,
-      runtime: "identity" in runtime ? runtime.identity : null,
-      implementation: "identity" in implementation ? implementation.identity : null,
-      argv,
-      environment: call.environment,
-      protocol: call.protocol.refusal === null ? null
-        : { status: call.protocol.refusal.status, prefix: call.protocol.refusal.prefix },
-      inputs,
-      outputs: outputs.map((o) => o.role),
-    };
-    const input = canonical(manifest);
-    const ineligible = adapter.changed() ? "loaded adapter modules differ from disk"
-      : "unidentified" in implementation ? implementation.unidentified
-      : "unidentified" in runtime ? runtime.unidentified : null;
+    const bound = bindProcess(call);
+    const { input, ineligible } = bound;
     const key = ineligible === null ? sha256(input) : null;
     const record = (execution: Execution, exitStatus: number | null, replay: Replay | null): AttemptRecord => ({
-      attempt, stage: call.stage, key, ineligible, manifest, context: { program, directory }, forced,
-      limitMs: options.limitMs, execution, exitStatus, elapsedMs: performance.now() - started,
+      attempt, stage: call.stage, key, ineligible, manifest: bound.manifest, context: { program: bound.program, directory },
+      forced, limitMs: options.limitMs, execution, exitStatus, elapsedMs: performance.now() - started,
       cpu: replay ? replay.stored.cpu : { unavailable: "the child process's CPU time is not measured" }, replay,
     });
     options.recorder?.start(record("interrupted", null, null), startedAt);
@@ -593,11 +164,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
       const found = replaying.store.finished(call.stage, replaying.key, input);
       if (found) {
         const materializing = performance.now();
-        const produced = new Map(found.result.outputs);
-        for (const o of outputs) {
-          const bytes = produced.get(o.role);
-          if (bytes !== undefined) writeFileSync(o.path, bytes);
-        }
+        deliver(bound, found.result.outputs);
         const done = record("replayed", found.result.exitStatus, { lookupMs: found.lookupMs,
           validationMs: found.validationMs, materializationMs: performance.now() - materializing,
           stored: found.result.measurement });
@@ -606,7 +173,8 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
           stderrBytes: found.result.stderr, stdout: text(found.result.stdout), stderr: text(found.result.stderr),
           record: done };
       }
-      const observed = replaying.store.timeout(call.stage, replaying.key, input, options.limitMs, resourcePolicy);
+      const observed = retryingTimeouts() ? null
+        : replaying.store.timeout(call.stage, replaying.key, input, options.limitMs, resourcePolicy);
       if (observed) {
         const { observation } = observed;
         const done = record("timeout-replayed", null, { lookupMs: observed.lookupMs, validationMs: 0,
@@ -617,91 +185,22 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
           stdout: "", stderr: "", record: done };
       }
     }
-    // The inputs are bound into the execution directory by the bytes the key
-    // digests, when the stage executes.
-    for (const [role, bytes] of inputFiles) writeFileSync(join(directory, role), bytes);
-    const p = spawnSync(program, argv, {
-      cwd: directory,
-      env: { ...call.environment },
-      timeout: options.limitMs,
-      maxBuffer,
-    });
+    const run = executeProcess(bound, directory, options.limitMs);
     const elapsedMs = performance.now() - started;
-    const stdoutBytes = p.stdout ? Buffer.from(p.stdout) : Buffer.alloc(0);
-    const stderrBytes = p.stderr ? Buffer.from(p.stderr) : Buffer.alloc(0);
-    const stdout = text(stdoutBytes), stderr = text(stderrBytes);
-    // A timeout is the expiry of this attempt's own enforced limit.
-    const timedOut = (p.error && "code" in p.error && p.error.code === "ETIMEDOUT") ?? false;
-    const finished = !p.error && !p.signal && p.status !== null && finishedExit(call.protocol, p.status, stdout, stderr);
-    const execution: Execution = timedOut ? "timed-out" : finished ? "executed" : "failed";
-    const produced: [string, Buffer][] = [];
-    for (const o of outputs) {
-      const bytes = readOrAbsent(join(directory, o.role));
-      if (bytes === null) continue;
-      produced.push([o.role, bytes]);
-      writeFileSync(o.path, bytes);
-    }
-    const done = record(execution, p.status, null);
-    if (replaying && execution === "executed")
-      replaying.store.publishFinished(call.stage, replaying.key, { input, exitStatus: p.status, stdout: stdoutBytes,
-        stderr: stderrBytes, outputs: produced, measurement: { attempt, elapsedMs, limitMs: options.limitMs,
+    const done = record(run.ran, run.status, null);
+    if (replaying && run.ran === "executed")
+      replaying.store.publishFinished(call.stage, replaying.key, { input, exitStatus: run.status, stdout: run.stdoutBytes,
+        stderr: run.stderrBytes, outputs: run.produced, measurement: { attempt, elapsedMs, limitMs: options.limitMs,
           cpu: done.cpu } });
-    if (replaying && execution === "timed-out")
+    if (replaying && run.ran === "timed-out")
       replaying.store.publishTimeout(call.stage, replaying.key, { input, attempt, elapsedMs, limitMs: options.limitMs,
         policy: resourcePolicy });
     options.recorder?.finish(done);
-    return { status: p.status, signal: p.signal, error: p.error, stdoutBytes, stderrBytes, stdout, stderr, record: done };
+    return { status: run.status, signal: run.signal, error: run.error, stdoutBytes: run.stdoutBytes,
+      stderrBytes: run.stderrBytes, stdout: run.stdout, stderr: run.stderr, record: done };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-}
-
-/** A file's bytes, or null where its path names nothing. */
-function readOrAbsent(path: string): Buffer | null {
-  try {
-    return readFileSync(path);
-  } catch (error) {
-    if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")) return null;
-    throw error;
-  }
-}
-
-/** The verifier's refusal and the producer's. */
-const verifierProtocol: Protocol = { refusal: { status: 1, prefix: "reject: " } };
-const producerProtocol: Protocol = { refusal: { status: 2, prefix: "unsupported: " } };
-
-/** A verifier invocation, its command line read by its modes:
- * `[--subtype-rounds n] --lower-control-flow <fragment>`,
- * `… --produce-source-claims <fragment> <claims> <file-key> <evidence-out> <depth>`,
- * `… --check-source-claims <fragment> <claims> <file-key> <evidence>`. */
-export function verifierCall(program: string, args: readonly string[],
-    environment: Readonly<Record<string, string>> = {}): ProcessCall {
-  const budget = args[0] === "--subtype-rounds" ? args.slice(0, 2).map((t) => ({ text: t })) : [];
-  const [mode, ...rest] = args.slice(budget.length);
-  const call = (stage: StageName, list: Argument[]): ProcessCall =>
-    ({ stage, program, arguments: [...budget, { text: mode }, ...list], environment, protocol: verifierProtocol });
-  if (mode === "--lower-control-flow" && rest.length === 1)
-    return call("lower", [{ input: "fragment.json", path: rest[0] }]);
-  if (mode === "--produce-source-claims" && rest.length === 5)
-    return call("search", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      { text: rest[2] }, { output: "evidence.json", path: rest[3] }, { text: rest[4] }]);
-  if (mode === "--check-source-claims" && rest.length === 4)
-    return call("check", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      { text: rest[2] }, { input: "evidence.json", path: rest[3] }]);
-  throw Error(`not a verifier stage: ${args.join(" ")}`);
-}
-
-/** A producer invocation: `<fragment> <flow> [<qualified reads>]` proposes,
- * `--explain <fragment> <flow>` explains. */
-export function producerCall(program: string, args: readonly string[]): ProcessCall {
-  const documents = (list: readonly string[]): Argument[] =>
-    list.map((path, i) => ({ input: ["fragment.json", "flow.json", "qualified.json"][i], path }));
-  if (args[0] === "--explain" && args.length === 3)
-    return { stage: "explain", program, arguments: [{ text: "--explain" }, ...documents(args.slice(1))],
-      environment: {}, protocol: { refusal: null } };
-  if (args.length === 2 || args.length === 3)
-    return { stage: "propose", program, arguments: documents(args), environment: {}, protocol: producerProtocol };
-  throw Error(`not a producer stage: ${args.join(" ")}`);
 }
 
 /** Whether an attempt ran its stage: executed, timed out or failed, not
@@ -732,27 +231,7 @@ export function tested(call: ProcessCall, limitMs: number = 30_000): Invoked {
 // ---------------------------------------------------------------------------
 // In-process stages
 
-/** A stage computed in this process: its known inputs by role, and its run.
- * A replayed stage's value is text, the result its entry stores. */
-export type InProcessCall<T> = {
-  stage: StageName;
-  /** The modules implementing the stage, whose sources identify it; or why
-   * its dependencies are not identified. */
-  implementation: LoadedCode | { unidentified: string };
-  inputs: readonly { role: string; bytes: string | Buffer }[];
-  run: () => T;
-  /** The value as stored, and back: for a stage that replays. */
-  codec?: { encode: (value: T) => Buffer; decode: (bytes: Buffer) => T };
-  /** An observed stage (DESIGN.md, "Observed stages"): the file system's
-   * answers to its reads are part of its key. */
-  observed?: true;
-};
-
-/** An observed stage's manifest with its observations: the canonical text
- * a key is the digest of. */
-const observedInput = (manifest: { readonly [key: string]: Canonical }, observations: readonly Observation[]): string =>
-  canonical({ ...manifest, observations: observations.map(([operation, path, answer]) => [operation, path, answer]) });
-/** The observations of a stored observed entry whose manifest is exactly
+/** The observations of a stored observed entry whose description is exactly
  * `manifest` with them, read field by field; null for any other entry. */
 function storedObservations(input: string, manifest: { readonly [key: string]: Canonical }): Observation[] | null {
   let parsed: unknown;
@@ -773,13 +252,12 @@ function storedObservations(input: string, manifest: { readonly [key: string]: C
   return observedInput(manifest, observations) === input ? observations : null;
 }
 
-/** Run an in-process stage, recording its attempt: an exception it throws is
- * an operational failure, recorded and thrown on. A replay-eligible
- * invocation of a replayed stage with a codec replays and publishes as a
- * process stage does. An observed stage runs with its observations recorded,
- * replays a referenced entry whose observations hold now, and is published
- * where they are complete; where Node's caches disagree with the file system
- * it fails. */
+/** Run an in-process stage through its adapter (`bindInProcess`,
+ * `runInProcess`), recording its attempt: an exception it throws is an
+ * operational failure, recorded and thrown on. A replay-eligible invocation
+ * of a replayed stage with a codec replays and publishes as a process stage
+ * does. An observed stage replays a referenced entry whose observations hold
+ * now, and is published where they are complete. */
 export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boolean; recorder: Recorder | null }):
     { value: T; record: AttemptRecord } {
   const attempt = randomUUID();
@@ -788,25 +266,7 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
   const cpu = process.cpuUsage();
   const store = currentStore();
   const forced = options.force || store === null;
-  const runtime = nodeIdentity();
-  const compiler = call.observed ? compilerImplementation() : null;
-  const manifest: { readonly [key: string]: Canonical } = {
-    stage: call.stage,
-    adapter: adapter.identity,
-    runtime: "identity" in runtime ? runtime.identity : null,
-    implementation: "identity" in call.implementation ? call.implementation.identity : null,
-    inputs: call.inputs.map((i) => [i.role, sha256(i.bytes)]),
-    ...(compiler ? { compiler: "identity" in compiler ? compiler.identity : null, system: osBuild() } : {}),
-  };
-  const input = canonical(manifest);
-  const identityFailure = (): string | null => adapter.changed() ? "loaded adapter modules differ from disk"
-    : "identity" in call.implementation && call.implementation.changed() ? "loaded implementation modules differ from disk"
-    : "unidentified" in call.implementation ? call.implementation.unidentified
-    : "unidentified" in runtime ? runtime.unidentified
-    : compiler && "unobserved" in compiler ? compiler.unobserved
-    : compiler && compiler.changed() ? "the loaded compiler differs from disk"
-    : compiler && osBuild() === null ? "the system's build is not identified"
-    : null;
+  const { manifest, input, identityFailure } = bindInProcess(call);
   let ineligible = identityFailure();
   // An observed stage's manifest here is its pre-key's; its key is known
   // once its observations are.
@@ -848,23 +308,17 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
       return { value, record: done };
     }
   }
-  let value: T;
-  let observations: Observation[] = [];
+  let ran: ReturnType<typeof runInProcess<T>>;
   try {
-    if (call.observed) {
-      const made = observed(call.run);
-      if (made.inconsistent !== null)
-        throw Error(`the process's caches may disagree with the file system (${made.inconsistent}); a fresh process is needed`);
-      value = made.value;
-      observations = made.observations;
-      if (made.incomplete !== null) {
-        ineligible ??= made.incomplete;
-        key = null;
-      }
-    } else value = call.run();
+    ran = runInProcess(call);
   } catch (error) {
     options.recorder?.finish(record("failed", null));
     throw error;
+  }
+  const { value, observations, incomplete } = ran;
+  if (incomplete !== null) {
+    ineligible ??= incomplete;
+    key = null;
   }
   ineligible ??= identityFailure();
   if (ineligible !== null) key = null;
@@ -884,12 +338,6 @@ export function invokeInProcess<T>(call: InProcessCall<T>, options: { force: boo
   options.recorder?.finish(done);
   return { value, record: done };
 }
-
-/** A text value stored as its UTF-8 bytes. */
-export const textCodec: { encode: (value: string) => Buffer; decode: (bytes: Buffer) => string } = {
-  encode: (value: string): Buffer => Buffer.from(value, "utf8"),
-  decode: (bytes: Buffer): string => bytes.toString("utf8"),
-};
 
 // ---------------------------------------------------------------------------
 // Records read back

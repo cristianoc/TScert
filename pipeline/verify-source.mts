@@ -6,9 +6,8 @@ import { basename, resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 // ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.
 import { close as closeParser } from "../tools/fragment-parse.mts";
-import { diagnosticsCodec, diagnosticsStage, observedImplementation, parseStage, parsedCodec, type Parsed } from "./parse-stage.mts";
+import { diagnosticsCall, parseCall, type Parsed } from "./parse-stage.mts";
 import { processInconsistency, processRetirement } from "../tools/files.mts";
-import { activeFamilies } from "../tools/family-activation.mts";
 import { tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
@@ -20,10 +19,9 @@ import type { SourceClaims } from "../tools/source-claims.mts";
 import { decodeFlowDocument } from "../tools/source-flow.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
-import { assembleClaims, assemblyImplementation } from "./claims-assembly.mts";
-import { currentStore, invokeInProcess, invokeProcess, producerBuild, producerCall, Recorder, refusalEnd, textCodec,
-  verifierBuild, verifierCall,
-  type ProcessCall } from "./stages.mts";
+import { assemblyCall } from "./claims-assembly.mts";
+import { currentStore, invokeInProcess, invokeProcess, Recorder } from "./stages.mts";
+import { producerBuild, producerCall, refusalEnd, verifierBuild, verifierCall, type ProcessCall } from "./stage-execution.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
 export const invocationLog = "invocations.jsonl";
@@ -124,7 +122,7 @@ export function runStep(call: ProcessCall, recorder: Recorder | null = null): Ra
   // smaller than this one, not proof that this one would time out.
   if (p.record.execution === "timeout-replayed")
     throw Error(`timeout: ${step} did not finish within ${(p.record.replay?.stored.limitMs ?? stepTimeoutMs) / 1000} s ` +
-      `(an earlier attempt, ${p.record.replay?.stored.attempt ?? "unknown"}; a longer TSCERT_STEP_LIMIT runs it again)`);
+      `(an earlier attempt, ${p.record.replay?.stored.attempt ?? "unknown"}; a longer TSCERT_STEP_LIMIT or TSCERT_RETRY_TIMEOUTS=1 runs it again)`);
   // A step killed by a signal (the verifier aborting on a stack overflow)
   // or that did not start is a failure of the tool, no verdict, reported
   // with the first line it wrote.
@@ -260,14 +258,7 @@ function refusedByTypeScript(detail: string, read: () => SeenDiagnostic[]): stri
 /** The TypeScript diagnostics stage: the errors TypeScript reports for
  * `file` in its project, an observed stage. */
 export function typeScriptErrors(recorder: Recorder, file: string, tsconfigPath?: string): SeenDiagnostic[] {
-  return invokeInProcess({
-    stage: "diagnostics",
-    implementation: observedImplementation,
-    inputs: [{ role: "file", bytes: file }, { role: "project", bytes: tsconfigPath ?? "" }],
-    run: () => diagnosticsStage(file, tsconfigPath),
-    codec: diagnosticsCodec,
-    observed: true,
-  }, { force: false, recorder }).value;
+  return invokeInProcess(diagnosticsCall(file, tsconfigPath), { force: false, recorder }).value;
 }
 /** A field of a parsed document, `undefined` where it has none. */
 const field = (value: unknown, key: string): unknown => fieldOf(value, key);
@@ -433,15 +424,7 @@ export function parseSource(source: string, tsconfigPath: string | undefined, ar
   // declarations reached.
   const resolution = tsconfigPath ? resolve(source) : snapshot;
   // The parse stage, an observed stage.
-  const parsed = invokeInProcess({
-    stage: "parse",
-    implementation: observedImplementation,
-    inputs: [{ role: "source", bytes }, { role: "file", bytes: snapshot }, { role: "resolution", bytes: resolution },
-      { role: "project", bytes: tsconfigPath ?? "" }, { role: "families", bytes: JSON.stringify(activeFamilies()) }],
-    run: () => parseStage(snapshot, tsconfigPath, resolution),
-    codec: parsedCodec,
-    observed: true,
-  }, { force: false, recorder }).value;
+  const parsed = invokeInProcess(parseCall(bytes, snapshot, tsconfigPath, resolution), { force: false, recorder }).value;
   // The TypeScript errors the parser's gate read are kept beside its log,
   // accepted or not: they are where a refusal over one of them points.
   writeFileSync(join(artifacts, "typescript-diagnostics.json"), JSON.stringify(parsed.seen, null, 1) + "\n");
@@ -535,13 +518,7 @@ export function check(source: string, tsconfigPath?: string, typescriptErrors: b
         const text = moduleClaims.get(m)?.text;
         return text === undefined ? [] : [text];
       });
-      const assembled = invokeInProcess({
-        stage: "assemble",
-        implementation: assemblyImplementation,
-        codec: textCodec,
-        inputs: [{ role: "proposal", bytes: proposed.out }, ...used.map((text, i) => ({ role: `module-${i}`, bytes: text }))],
-        run: () => assembleClaims(proposed.out, used),
-      }, { force: false, recorder }).value;
+      const assembled = invokeInProcess(assemblyCall(proposed.out, used), { force: false, recorder }).value;
       writeFileSync(claims, assembled);
       phase = "search";
       produced = runStep(verifierCall(verifier, [

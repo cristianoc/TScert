@@ -38,6 +38,15 @@ answers to their reads, on macOS, where the compiler runs confined by
   (`tools/compiler-channel.mts`); `tests/observed-stages.mts --reads`, a fast
   check, refuses a module of the stages' code that imports a file-system,
   module or process API itself.
+- A key covers the code that decides the stage's result: its execution
+  adapter (`pipeline/stage-execution.mts` for a process stage,
+  `pipeline/in-process-execution.mts` for an in-process one), the stage's
+  own modules, which build its call, and the executable or runtime it runs
+  on, each by its module closure or content. The replay policy
+  (`pipeline/stages.mts`), the store (`pipeline/stage-store.mts`), the
+  orchestration and the diagnostics are outside every key, so editing them
+  replays every entry; the same fast check requires no keyed closure to hold
+  them ([keys](docs/DESIGN.md#the-stage-store)).
 
 - `TSCERT_STAGE_STORE=<dir>` selects the store, by default
   `$XDG_CACHE_HOME/tscert/stages` (`~/.cache/tscert/stages`), shared by every
@@ -45,14 +54,15 @@ answers to their reads, on macOS, where the compiler runs confined by
   so `TSCERT_STAGE_STORE=off make test` executes every operation of every
   control. `make clean-store` removes finished entries, timeout observations and abandoned
   publication directories on this host; it retains stable source snapshots.
-- A branch uses the default store. Keys include the executables' and the
-  adapters' digests, so a branch's changed verifier, producer or adapter
+- A branch uses the default store. Keys include the executables' digests and
+  the keyed code, so a branch's changed verifier, producer, adapter or stage
   never replays another build's entries; an agent testing the store itself
   names a store under `$TMPDIR`.
 - Each process stage is killed after 60 s; `TSCERT_STEP_LIMIT=<seconds>`
   sets another limit. A timeout is recorded with its limit: a run at that
   limit or a smaller one reports it again, a longer limit executes the
-  stage.
+  stage, and `TSCERT_RETRY_TIMEOUTS=1` executes it again at the same limit
+  (finished results still replay).
 - A run's directory holds `invocations.jsonl`, each stage invocation's
   attempt: its stage key, limit, outcome (executed, replayed, timed out,
   failed) and elapsed time.

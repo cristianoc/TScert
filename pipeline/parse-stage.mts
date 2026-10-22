@@ -5,10 +5,44 @@
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { clientErrors, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { messageOf, passToolFailure } from "../tools/thrown.mts";
-import { captureCodeIdentity, type LoadedCode } from "./stages.mts";
+import { activeFamilies } from "../tools/family-activation.mts";
+import { compilerImplementation } from "../tools/compiler-channel.mts";
+import { captureCodeIdentity, type LoadedCode } from "./stage-execution.mts";
+import type { InProcessCall } from "./in-process-execution.mts";
 
-/** The modules implementing both stages, as this process loaded them. */
-export const observedImplementation: LoadedCode = captureCodeIdentity([import.meta.filename]);
+/** The modules implementing both stages, as this process loaded them, with
+ * the compiler package, which each stage's key identifies by its files. */
+export const observedImplementation: LoadedCode | { unidentified: string } =
+  captureCodeIdentity([import.meta.filename], ["typescript"]);
+
+/** The parse stage of the snapshot `file` of the source `bytes`, read in the
+ * project `tsconfigPath` (or its own) with imports resolved as `resolution`'s,
+ * under the active family descriptions: an observed stage. */
+export function parseCall(bytes: Buffer, file: string, tsconfigPath: string | undefined, resolution: string):
+    InProcessCall<Parsed> {
+  return {
+    stage: "parse",
+    implementation: observedImplementation,
+    inputs: [{ role: "source", bytes }, { role: "file", bytes: file }, { role: "resolution", bytes: resolution },
+      { role: "project", bytes: tsconfigPath ?? "" }, { role: "families", bytes: JSON.stringify(activeFamilies()) }],
+    run: () => parseStage(file, tsconfigPath, resolution),
+    codec: parsedCodec,
+    observed: { compiler: compilerImplementation },
+  };
+}
+
+/** The TypeScript diagnostics stage: the errors TypeScript reports for
+ * `file` in its project, an observed stage. */
+export function diagnosticsCall(file: string, tsconfigPath: string | undefined): InProcessCall<SeenDiagnostic[]> {
+  return {
+    stage: "diagnostics",
+    implementation: observedImplementation,
+    inputs: [{ role: "file", bytes: file }, { role: "project", bytes: tsconfigPath ?? "" }],
+    run: () => diagnosticsStage(file, tsconfigPath),
+    codec: diagnosticsCodec,
+    observed: { compiler: compilerImplementation },
+  };
+}
 
 /** A parse's value: its Fragment as text, or its refusal, and the TypeScript
  * errors its gate read. */
@@ -17,7 +51,7 @@ export type Parsed = { code: number; out: string; detail: string; seen: SeenDiag
 /** The parser run on `file`, read in the project `tsconfigPath` (or its own)
  * with imports resolved as `resolution`'s, by a compiler opened for it and
  * released after it. */
-export function parseStage(file: string, tsconfigPath: string | undefined, resolution: string): Parsed {
+function parseStage(file: string, tsconfigPath: string | undefined, resolution: string): Parsed {
   const seen: SeenDiagnostic[] = [];
   closeParser();
   try {
@@ -35,7 +69,7 @@ export function parseStage(file: string, tsconfigPath: string | undefined, resol
 
 /** The errors TypeScript reports for `file` in its project; none where its
  * project does not load. */
-export function diagnosticsStage(file: string, tsconfigPath: string | undefined): SeenDiagnostic[] {
+function diagnosticsStage(file: string, tsconfigPath: string | undefined): SeenDiagnostic[] {
   try {
     return clientErrors(file, tsconfigPath);
   } catch (error) {
