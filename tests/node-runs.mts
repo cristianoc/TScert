@@ -1119,6 +1119,7 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-slot-path-write", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }))", "undefined"],
     ["invalid-slot-path-loop", "String(lastKey({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }, 2))", "undefined"],
     ["invalid-slot-path-finally", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }, () => {}))", "undefined"],
+    ["invalid-slot-path-pattern", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }))", "undefined"],
     ["invalid-slot-path-closure", "String(keyText({ kind: 'index', key: { kind: 'name', text: 'a' } }, { kind: 'index', key: { kind: 'paren', inner: { kind: 'name', text: 'b' } } }))", "undefined"],
     ["invalid-slot-path-alias", "String(keyText({ key: { kind: 'name', text: 'a' } }, { kind: 'paren', inner: { kind: 'name', text: 'b' } }, 1))", "undefined"],
     ["invalid-slot-path-call", "(() => { const b = { key: { kind: 'name', text: 'a' } }; return String(keyText(b, 1, () => { b.key = { kind: 'paren', inner: b.key }; })); })()", "undefined"],

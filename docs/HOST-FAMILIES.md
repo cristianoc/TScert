@@ -704,9 +704,11 @@ So a path's refinement holds from its test until the root's next write on
 every path into the read: a write between them, one on a loop's back edge
 into a loop head that states the refinement, and one in a `try` block whose
 `finally` reads the path each leave an incoming edge without the link, which
-[witness-edge](PROGRAM-TYPING.md#witness-edges) refuses. Within one
-expression no write of $`x`$ occurs: a write nested in an expression makes
-$`x`$ a cell. A slot is environment, so a call keeps the root, and a link
+[witness-edge](PROGRAM-TYPING.md#witness-edges) refuses. A write of $`x`$
+is its statement's own (a write nested in an expression makes $`x`$ a
+cell): the assignment or update an expression statement is, or a target of
+a destructuring assignment, whose later targets and defaults run after the
+write and read $`x`$ from the rebound slot. A slot is environment, so a call keeps the root, and a link
 through it survives the call where it is a [stable link](#stable-links); a
 `let` written by a closure is a cell, whose read is a plain read link that a
 call ends. The rule adds no trust: the links are the checker's, and the slot
@@ -715,7 +717,8 @@ lowering is the one the slot's own tests rely on.
 Controls: `slot-path` and `compiler-api-slot-path` (within one condition
 after a loop's writes, across statements, a retest after a write, past a
 call through stable members); the negatives `invalid-slot-path-write`,
-`-loop`, `-finally`, `-closure`, `-alias` (a member an alias replaces) and
+`-loop`, `-finally`, `-pattern` (a destructuring's default after its write
+of the root), `-closure`, `-alias` (a member an alias replaces) and
 `-call` (a call through a program record's member), each run under Node; and
 in `pipeline/test.mts` the forged entries `afterRoot` and `backEdge` of
 `path-witness-controls`, refused by the links the write ends.

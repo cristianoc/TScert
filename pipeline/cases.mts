@@ -1536,6 +1536,8 @@ export const cases: Case[] = [
     /^unsupported: missing field text at \[673,688\)/), status: "unsupported", phase: "proposal" },
   { ...negative("invalid-slot-path-finally", "a slot root written in a `try` block: its `finally` is entered from the write, so the test before the `try` does not hold there (run under Node)",
     /^unsupported: missing field text at \[704,719\)/), status: "unsupported", phase: "proposal" },
+  { ...negative("invalid-slot-path-pattern", "a destructuring assignment writes a slot root, then a later target's default reads the path: it reads the written value, which the test did not see (run under Node)",
+    /^unsupported: missing field text at \[665,680\)/), status: "unsupported", phase: "proposal" },
   { ...negative("invalid-slot-path-closure", "a `let` root a closure writes is a cell: the call between the test and the read replaces it (run under Node)",
     /^unsupported: missing field text at \[615,630\)/), status: "unsupported", phase: "proposal" },
   { ...negative("invalid-slot-path-alias", "a slot root's object whose program-record member an alias replaces between the test and the read: the write ends the read link (run under Node)",
