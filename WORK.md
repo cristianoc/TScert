@@ -67,9 +67,11 @@ design, not its progress.
 | [Paths rooted at a slot](docs/HOST-FAMILIES.md#paths-rooted-at-a-slot) | closed: a member path may start at a `let` or assigned parameter held in a slot, its read links and entry witnesses ending at the root's next write; `slot-path` and `compiler-api-slot-path` verify, `invalid-slot-path-write`, `-loop`, `-finally`, `-pattern`, `-closure`, `-alias` and `-call` are refused (run under Node), forged entries after a write and at a loop head its back edge enters refused in search and in checking, each accepted with its check disabled (2026-10-22, [slice measurement](#census-slot-paths)) | `fragment-expressions.mts#expr` and `#binary` move past "missing field text" at `memberMayBeWritten`'s `target.argumentExpression.text` |
 | [A member bound to a union of hosts](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: `o.k.bind(o)` at a union of hosts each holding `k` as a member splits the host's slot and binds each host's member (`unionVar`, then `bindMember`), the producer proposing the hosts' common signature with the union of their results; the iterator protocol so binds `next` and `return` over a union of iterables; `bind-union-host` verifies, the bypasses listed in [the iterator protocol](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) are refused (run under Node), a forged claim of one host's result refused in search and in checking (2026-10-22, [slice measurement](#census-union-host-bind)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past "bind requires a single arrow and a valid argument prefix" |
 | [The length of a union of arrays](docs/PROGRAM-TYPING.md#the-length-of-a-union-of-arrays) | closed: `length` of a union of array contracts is read by the same term derived at each member (`unionVar`), in a condition's term and in a statement; `compiler-api-node-list-length-test` and `array-union-length-test` verify, `invalid-array-record-length-cast` is refused (2026-10-22) | `if (xs.length !== ps.length)` with `ps = alias.typeParameters ?? []` verifies |
-| [Investigation of a field re-read under a negated disjunction](#negated-disjunction-reread) | open: an investigation, cause unknown | the cause of the refusal of `if (!(k.name === "a" \|\| k.name === "b"))` is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a field re-read under a negated disjunction](#negated-disjunction-reread) | closed: a negation's dispatch stated its operand's typing as an obligation of the context alone, which no fact a failed test leaves reaches; it states none, and a negation its operand decides keeps that answer ([the rule](docs/SOURCE-ELABORATION.md#a-negation-of-tests)); `negated-disjunction-test` verifies, `invalid-negated-disjunction-else`, `-arm`, `-write`, `-operand`, `-getter` and `invalid-negated-conjunction` are refused (run under Node), forged claims refused in search and in checking (2026-10-22, [slice measurement](#census-negated-disjunction)) | the cause of the refusal of `if (!(k.name === "a" \|\| k.name === "b"))` is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a tested field read as a receiver](#tested-field-member) | open: an investigation, cause unknown | the cause of the refusal of `if (k.name === "a" && k.name.length === 1)` is established, with a reproducer and a concrete repair obligation |
 | [A chain compared with a literal](docs/SOURCE-ELABORATION.md#derived-source-forms) | closed: `x?.p ⊙ c` with `⊙` an equality and `c` a literal is the test of `x`, then `x.p ⊙ c`, `&&` or `\|\|` by what `undefined ⊙ c` gives; `optional-chain-test` verifies, `invalid-optional-chain-test-false`, `-undefined`, `-operand`, `-loose`, `-write`, `-ambient` and `-getter` are refused (run under Node) (2026-10-22, [slice measurement](#census-chain-comparison)) | `fragment-expressions.mts#expr` and `#binary` move past "missing field target" at `lambda`'s `b.target` |
-| [Investigation of a conditional expression over a tested optional field](#conditional-optional-field) | open: an investigation, cause unknown | the cause of the refusal of `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` is established, with a reproducer and a concrete repair obligation |
+| [Investigation of a conditional expression over a tested optional field](#conditional-optional-field) | closed: the arm's read of `o` rebinds its slot to the claim there, a view of the field, which the join's claim of `o` at its declared type does not cover (2026-10-22) | the cause of the refusal of `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` is established, with a reproducer and a concrete repair obligation |
+| [A conditional's join past an arm's read](#conditional-optional-field) | open | `o.v != null ? o.v : ""` and `o.v !== undefined ? o.v : null` with `o: { v?: string \| null }` verify |
 | [Investigation of a defaulted parameter's flow](#defaulted-parameter-flow) | open: an investigation, cause unknown | the cause of `spread-defaulted-set-refused`'s edge refusal is established, with a reproducer and a concrete repair obligation |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
@@ -130,11 +132,9 @@ failed `in` test drops the arms owning the key. The
 
 <a id="conditional-optional-field"></a>
 **Investigation of a conditional expression over a tested optional field.**
-Lean's search refuses both functions at the conditional's incoming edge,
-"the edge from node 2 does not establish the claims at this point" (the
-first: the incoming claim `null | string` of `.path:0`, the next point
-requiring `unknown`; the second: the incoming claim `string`, the next
-point requiring `string | ""`):
+Lean's search refuses both functions at the edge from the arm that reads
+`o.v` into the point after the conditional, "the edge from node 2 does not
+establish the claims at this point":
 
 ```typescript
 type Opt = { v?: string | null };
@@ -146,12 +146,23 @@ export function loose(o: Opt): string {
 }
 ```
 
-The same tests as an `if` with two returns verify (`optional-chain-test`'s
-`defined` and `loose`).
+Cause (observed in `loose`'s claims and its refused edge): the producer
+claims the arm's read of `o` at a view of the field, `{ v: null | string }`,
+which states what a read of `v` gives and no contract of the record, and
+the arm's entry holds `o` at that claim (`executionArmContext`). The point
+after the conditional claims `o` at its declared `Opt`, which the view is
+not within; every other slot of the edge is within its claim (the
+diagnostic names another slot). The same test with two returns has no
+point after the read, and `let r = ""; if (o.v != null) r = o.v; return r;`
+verifies, its join claiming `o` at the union of `Opt` and the view; without
+a read of `o` in the arm, `o.v != null ? 1 : 2` verifies. Repair
+obligation: the point after a conditional holds each slot at what every arm
+leaves it, as a statement's join does, or an arm's entry holds a slot at
+its type met with the read's claim.
 
 <a id="negated-disjunction-reread"></a>
 **Investigation of a field re-read under a negated disjunction.** Lean's
-search refuses this function at the second `k.name`: "No rule derives this
+search refused this function at the second `k.name`: "No rule derives this
 readAt at `"b" | "c" | "d"` from k":
 
 ```typescript
@@ -161,12 +172,17 @@ export function f(k: { name: "a" | "b" | "c" | "d" }): boolean {
 }
 ```
 
-The same disjunction verifies as a branch test without `!`, and returned as a
-value with or without it. In the refused check's context a path witness
-(`.path:0`) holds `"b" | "c" | "d"`, the field's content past the first test,
-while the term reads `k`'s field at its declared type. `type-term.mts`'s
-`expandMapped` holds the form, in `keys.some(k => !(k.k === "atom" &&
-(k.name === … || k.name === … || …)) && …)`.
+The [status row](#status) states the established cause;
+[a negation of tests](docs/SOURCE-ELABORATION.md#a-negation-of-tests)
+states the dispatch and typing rule.
+
+<a id="tested-field-member"></a>
+**Investigation of a tested field read as a receiver.** Lean's search
+refuses the second `k.name` of
+`if (k.name === "a" && k.name.length === 1) return k.name;` with
+`k: { name: "a" | "b" | "c" | "d" }`: "No rule derives this readAt at
+`"a"` from k" (`tested-field-member-refused`), the read on which `.length`
+is then read.
 
 <a id="defaulted-parameter-flow"></a>
 **Investigation of a defaulted parameter's flow.** A parameter declared a
@@ -1099,6 +1115,17 @@ closure of `expandMapped` (`mapped`), "closure expression claim at
 [26388,26394): evidence search failed", the second `k.name` of
 `!(k.k === "atom" && (k.name === "string" || k.name === "number" || …))`
 ([the investigation](#negated-disjunction-reread)).
+
+<a id="census-negated-disjunction"></a>
+The same two slices on f91d657 (main) and on the branch dispatching a
+negation of tests with no obligation of its operand apart from the
+evaluation's nodes ([the rule](docs/SOURCE-ELABORATION.md#a-negation-of-tests))
+(2026-10-22): neither verifies on either. On main both stop at the closure
+of `expandMapped`, "closure expression claim" at the second `k.name` of `!(k.k === "atom" && (k.name === "string" || …))`; on the branch
+both move past it and stop at `signatures`'s
+`(alternatives ?? [[]]).map(…)`, "closure expression claim": the saved value
+of the `??` claimed at `Array<…>`, the obligation requiring
+`ReadonlyArray<…>`.
 
 <a id="callable-alias-meet"></a>
 **Investigation of an alias of function types met with a record.**

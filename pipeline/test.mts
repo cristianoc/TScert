@@ -4391,6 +4391,45 @@ control(async (): Promise<void> => {
   process.stdout.write("read narrowing: a receiver claimed narrowed past no completed read is refused at the edge, in 10 negatives\n");
 });
 
+control(async (): Promise<void> => {
+  // A negated `||` of tests states no obligation of its operand apart from
+  // the evaluation's nodes, and a negation its operand decides keeps that
+  // answer: claims forged past what those nodes establish are refused, in
+  // search and in checking against the genuine evidence. The second test's
+  // read claimed without the value the first test's failure leaves it; the
+  // negation claimed `true` or a nonempty wrong-kind type in a condition
+  // and as the left operand of `&&`.
+  const artifacts = run("negated-disjunction-test");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const spanOf = (text: string, from: string): [number, number] => {
+    const start = source.indexOf(text, source.indexOf(from));
+    assert.ok(start >= 0, text);
+    return [start, start + text.length];
+  };
+  const forge = (name: string, fnName: string, span: [number, number], row: Row): void => {
+    const claims = readClaims(artifacts);
+    const fn = must(claims.functions.find(f => f.name === fnName), `${fnName}'s claims`);
+    const claim = must(fn.expressions.find(e => e.pos[0] === span[0] && e.pos[1] === span[1]),
+      `${fnName}: the claim at [${span[0]},${span[1]})`);
+    claim.type = [rowOf(claims, row[0])];
+    const forged = writeClaims(artifacts, name, claims);
+    const searched = produceWith(artifacts, forged, name);
+    assert.equal(searched.status, 1, searched.stdout + searched.stderr);
+    invoke(forged, join(artifacts, "evidence.json"), artifacts);
+  };
+  const negation = '!(k.name === "a" || k.name === "b")';
+  forge("forged-negated-disjunction-read", "rest", spanOf("k.name", 'k.name === "b"'), [{ strIn: { values: ["c", "d"] } }]);
+  forge("forged-negated-disjunction-condition", "rest", spanOf(negation, "export function rest"),
+    [{ boolLit: { value: true } }]);
+  forge("forged-negated-disjunction-operand", "operand", spanOf(negation, "export function operand"),
+    [{ boolLit: { value: true } }]);
+  forge("forged-negated-disjunction-number", "rest", spanOf(negation, "export function rest"),
+    [{ numLit: { bits: "0" } }]);
+  forge("forged-negated-disjunction-string", "operand", spanOf(negation, "export function operand"),
+    [{ strLit: { value: "x" } }]);
+  process.stdout.write("negated disjunction: a re-read claimed past the first test's answer, and a negation claimed true or at a nonempty wrong-kind type, refused in search and in checking\n");
+});
+
 mutationControl(async (): Promise<void> => {
   // Constant returns isolate the entry obligation from subsequent read typing.
   // Forged claims select named paths at source statements. The test-only

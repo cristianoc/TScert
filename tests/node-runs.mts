@@ -221,7 +221,42 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     undefined, "invalid-optional-chain-test-ambient: a global accessor answers the second read with another arm");
   assert.equal(runExample("invalid-optional-chain-test-getter", "wrong(new Flip())"), "e",
     `invalid-optional-chain-test-getter: the second read answers "e" despite the "d" contract`);
-  assert.equal(runExample("invalid-map-unstable-pop", "Object.keys(shrink([1, 2, 3])).length"), 2,
+  // A negated `||` or `&&` of tests: where its answer leaves a tested field
+  // otherwise, a call or a test's operand wrote it, or a getter answered the
+  // read anew, the source returns a name its contract excludes.
+  for (const [file, call] of [
+    ["invalid-negated-disjunction-else", `wrong({ name: "a" })`],
+    ["invalid-negated-disjunction-arm", `wrong({ name: "a" })`],
+    ["invalid-negated-conjunction", `wrong({ name: "a" }, 2)`],
+    ["invalid-negated-disjunction-write", `wrong({ name: "c" })`],
+    ["invalid-negated-disjunction-operand", `wrong({ name: "c" })`],
+    ["invalid-negated-disjunction-getter", "wrong(new Flip())"],
+  ])
+    assert.equal(runExample(file, call), "a", `${file}: the source returns "a" despite its contract`);
+  assert.equal(runExample("invalid-negated-disjunction-saved", `wrong({ name: "b" }, 1)`), 2,
+    "invalid-negated-disjunction-saved: the saved test permits a return of 2 despite the contract 1");
+  for (const [call, expected] of [
+    [`rest({ name: "c" })`, "c"],
+    [`rest({ name: "a" })`, "x"],
+    [`tested({ name: "b" })`, "b"],
+    [`conjunction({ name: "c" })`, "c"],
+    [`conjunction({ name: "a" })`, "x"],
+    [`other({ name: "b" }, 1)`, "b"],
+    [`exact({ name: "b" }, 1)`, 1],
+    [`exact({ name: "b" }, 2)`, 1],
+    [`exact({ name: "a" }, 2)`, 1],
+    [`doubled({ name: "b" })`, "b"],
+    [`nested({ name: "d" })`, "d"],
+    [`nested({ name: "c" })`, "x"],
+    [`chosen({ name: "d" })`, "d"],
+    [`chosenOther({ name: "b" }, 1)`, "b"],
+    [`chosenOther({ name: "b" }, 2)`, "x"],
+    [`operand({ name: "c" }, true)`, true],
+    [`unusual([{ k: "literal", name: "bigint" }])`, true],
+    [`unusual([{ k: "atom", name: "string" }])`, false],
+  ] as const)
+    assert.equal(runExample("negated-disjunction-test", call), expected, `negated-disjunction-test: ${call}`);
+  assert.equal(runExample("invalid-map-unstable-pop","Object.keys(shrink([1, 2, 3])).length"), 2,
     "invalid-map-unstable-pop: the result has three positions, two present");
   assert.equal(runExample("map-unstable-pop-sparse", "Object.keys(shrink([1, 2, 3])).length"), 2,
     "map-unstable-pop-sparse: the result has three positions, two present");

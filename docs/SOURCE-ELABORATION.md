@@ -932,6 +932,38 @@ type, a closure in the right operand included
 (`guard-negated-short-circuit`); the outcome `!g(v) && b` false promises
 nothing (`invalid-guard-negated-and`).
 
+<a id="a-negation-of-tests"></a>
+A negation of tests, `!(a || b)` or `!(a && b)`, is evaluated as a value:
+its operand's dispatch, then the negation of the value each arm leaves.
+A condition then dispatches on the predicate each arm leaves, its arms
+exchanged. The negation's claim is checked where the evaluation computes
+it, and each read the dispatch makes again by the dispatch's own node, with
+the knowledge its incoming edge carries: where `k.name === "a"` failed, the
+fact that `k.name` holds the rest of its literals types the next read of
+`k.name`, which the declared field does not. A negation whose operand's type
+answers its truthiness one way, $`q`$, proposes the part of its claim $`A`$
+answering the other way as the node's type (`decidedNegation`):
+
+```math
+\Gamma\vdash a:B,\qquad \text{every clause of }B\text{ answers }q,\qquad T_{\neg q}(A)\neq\emptyset
+\qquad\Longrightarrow\qquad
+\text{proposed type }T_{\neg q}(A).
+```
+
+The node `if a then false else true` must derive this proposed type under
+the existing typing rules; the following effect node checks the claim
+$`A`$ separately.
+
+In the arm of `!(a || b)` where `a` held, the negation is `false` and
+decides the condition there, and no dispatch reaches the true branch from
+that arm (`negated-disjunction-test`, each function run under Node). Where
+the negation fails, one of the tests held, and where a call, the test's own
+operand or a getter may have written the field, its read is not narrowed
+(`invalid-negated-disjunction-else`, `-arm`, `-write`, `-operand`, `-getter`
+and `invalid-negated-conjunction`, run under Node; forged claims of a
+re-read and of the negation refused in search and in checking,
+`pipeline/test.mts`).
+
 A slice of the labels cannot refine `unknown`, which no label
 decomposes. An arm's entry therefore takes, for each binding its operand
 reads, the producer's claim at that read as a candidate, which the incoming

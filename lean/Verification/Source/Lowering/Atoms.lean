@@ -97,6 +97,18 @@ type admits neither, or nothing else. -/
   let some (_, F) := nullishSplit (SourceTypes.graph (← table)) T | return []
   return (n :: rest).map (·, F)
 
+/-- **A negation of a decided operand.** `!a` where `a`'s type `B` answers
+truthiness one way, `q`: the part of the negation's claim `A` holding
+`!q`'s truthiness. None where `B` admits both answers or that part is
+empty. -/
+def decidedNegation (G : PositiveGraphs.NormalGraph Tree) (A B : Ty Tree) : Option (Ty Tree) :=
+  let part := fun (q : Bool) =>
+    let S := BranchRefinement.tagSlice G A .truthy (!q)
+    if S.isEmpty then none else some S
+  if decide (Answers G B .truthy true) then part true
+  else if decide (Answers G B .truthy false) then part false
+  else none
+
 /-- `Γ` past a member read: its receiver's slots narrowed (`readNarrowing`). -/
 def narrowed (Γ : List (Ty Tree)) (narrowing : List (Nat × Ty Tree)) : List (Ty Tree) :=
   narrowing.foldl (fun Γ (i, F) => Γ.set i F) Γ
@@ -641,10 +653,13 @@ Mappings discard only the temporaries introduced by this expression. -/
     finish (← operand (← behind node))
   | .not _ a =>
     let B ← exprType fc a
+    let G := SourceTypes.graph (← table)
+    -- An operand whose truthiness its type decides gives one answer.
+    let A := (decidedNegation G A B).getD A
     let drop := ⟨next.label, some ((next.mapping.getD (List.range (Γ.length+1))).map
       (fun i => if i == 0 then 0 else i+1))⟩
     -- A value that is not a Boolean is negated by its truthiness.
-    let tested := if BranchRefinement.onlyBoolean (SourceTypes.graph (← table)) B then Tm.var 0
+    let tested := if BranchRefinement.onlyBoolean G B then Tm.var 0
       else .test .truthy (.var 0)
     let node ← emitAt e.span (.ite tested .fls .tru) (.bind drop) (B::Γ) A
       (scope := held ⟨"",some a.span⟩ :: scope)
@@ -1120,9 +1135,16 @@ The call atom retains source metadata for spread and primitive dispatch checks. 
     withSavedInvocation original receiver.name (compileAtom recursive fc scope Γ call next)
   | _ => throw "internal execution plan: expected a method operation"
 
-/-- Compile compound conditions as short-circuit edges. The full source
-expression still has an independent claimed typing obligation; the runtime
-traverses its operands once instead of evaluating it and then replaying it. -/
+/-- Compile compound conditions as short-circuit edges. `cond` is the
+predicate (`executionPredicate`) of a plan the callers (`compileCondition`,
+a correlated `choose`) have just evaluated as graph nodes, each source
+operand typed at its claim there, and the dispatch reads again operands that
+nothing between has written. `&&` and `||` state their whole expression's
+claimed typing as an obligation. A negation dispatches on its operand with
+the arms exchanged and states none: its claim is checked where the
+evaluation computes it, and its operand's reads by the dispatch's own nodes,
+with the knowledge their edges carry, such as the field a failed test left
+(`HeapKnowledge.observeTag`), which a context alone does not state. -/
 @[nospecialize] partial def compileConditionAtom (recursive : RecursiveLowering) (fc : SourceClaims.Function Tree) (scope : List (ScopeBinding Tree))
     (Γ : List (Ty Tree)) (cond : Fragment.Expr) (yes no : Target) : Compiler Target := do
   -- A family guard's test dispatches on its own Boolean: the edges' yields
@@ -1233,9 +1255,7 @@ traverses its operands once instead of evaluating it and then replaying it. -/
     let H := conditionContext G scope Γ left andOp arrays (singletonOf singles) original
     let rhs ← compileConditionAtom recursive fc scope H right yes no
     compileConditionAtom recursive fc scope Γ left (if andOp then rhs else yes) (if andOp then no else rhs)
-  | .not _ e =>
-    let _ ← LoweringExpression.closureExpr recursive fc scope Γ cond
-    compileConditionAtom recursive fc scope Γ e no yes
+  | .not _ e => compileConditionAtom recursive fc scope Γ e no yes
   | .read p f (.var _ name) =>
     -- The truthiness of a field of an immutable binding's object, where some
     -- arm of it leaves the field optional or unnamed, so that no fact about
