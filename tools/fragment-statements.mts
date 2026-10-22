@@ -673,7 +673,8 @@ export function markEarly(this: Gate, live: readonly Statement[]): void {
       if (d && n !== d.name && at < d.end) {
         let literal: Node | undefined = d.initializer;
         while (literal && ts.isParenthesizedExpression(literal)) literal = literal.expression;
-        const self = !!literal && (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal)) &&
+        const self = !!(d.parent.flags & ts.NodeFlags.Const) && !!literal &&
+          (ts.isArrowFunction(literal) || ts.isFunctionExpression(literal)) &&
           n.getStart(gate.file) >= literal.getStart(gate.file) && n.end <= literal.end;
         if (!self) gate.earlyDecls.add(d);
       }

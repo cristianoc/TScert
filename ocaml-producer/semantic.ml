@@ -147,6 +147,14 @@ let retain_call_effects declared inferred = match declared,inferred with
     Atoms [Shape {expected with calls=List.map retain expected.calls}]
   | _ -> declared
 
+(* A callable's type with the footprint proposed for its call signatures, on
+   a throw too where `on_throw`. *)
+let with_footprint ?(on_throw=false) footprint t = match t with
+  | Atoms [Shape ({calls;_} as shape)] when footprint <> top_footprint ->
+    Atoms [Shape {shape with calls=List.map (fun (s:signature) ->
+      {s with call_effect={s.call_effect with footprint;on_throw}}) calls}]
+  | _ -> t
+
 let record fields = Atoms [Shape {fields;indexes=[];calls=[];elements=None}]
 (* Whether a type mentions a type parameter. *)
 let rec mentions_rigid = function

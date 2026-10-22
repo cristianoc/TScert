@@ -53,14 +53,6 @@ let infer_function ?(offers=[]) state flows declarations arities module_function
   let (claim,_),_ = settled offered 4 assumed in
   claim
 
-(* A declaration's signature with the footprint proposed for it, on a throw
-   too where `on_throw`. *)
-let with_footprint ?(on_throw=false) footprint t = match t with
-  | Atoms [Shape ({calls;_} as shape)] when footprint <> top_footprint ->
-    Atoms [Shape {shape with calls=List.map (fun (s:signature) ->
-      {s with call_effect={s.call_effect with footprint;on_throw}}) calls}]
-  | _ -> t
-
 (* A call of a signature the call applies: no quantified one, whose call is
    an elimination of a scheme, and no packed rest. *)
 let applicable (s:signature) = s.quantified = [] && s.rest_pack = None
@@ -109,8 +101,33 @@ let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
   (* A footprint on a throw is proposed at the greatest fixpoint: every
      candidate is assumed to bound its throws, and a round withdraws the
      assumption from each whose body then does not. *)
+  (* A recursive constant's closure reads its self entry at the footprint the
+     round assumes of it, at first the empty one, bounding its throws
+     (`Statement_analysis`); a round raises the assumption to what the
+     closure's claim then proposes, and withdraws the bound on a throw where
+     the claim does not state it. *)
+  Hashtbl.reset Source.self_effects;
+  let raise_selves (proposal : Proposal_types.t) =
+    let claims = Option.to_list proposal.init @ proposal.functions in
+    let claimed pos = List.concat_map (fun (c:function_claim) ->
+      List.filter_map (fun (x:expression) -> if x.pos = pos then Some x.type_ else None) c.expressions) claims in
+    let effect_of pos = match claimed pos with
+      | [] -> top_footprint,false
+      | types -> List.fold_left (fun (f,t) ty -> match ty with
+        | Atoms [Shape {calls=(_ :: _ as calls);_}] ->
+          List.fold_left (fun f (s:signature) -> join_footprint f s.call_effect.footprint) f calls,
+          t && List.for_all (fun (s:signature) -> s.call_effect.on_throw) calls
+        | _ -> top_footprint,false) (empty_footprint,true) types in
+    List.fold_left (fun changed (pos,(f,t)) ->
+      let f',t' = effect_of pos in
+      let raised = join_footprint f f' in
+      let kept = t && t' && raised <> top_footprint in
+      if raised = f && kept = t then changed
+      else (Hashtbl.replace Source.self_effects pos (raised,kept); true))
+      false (List.of_seq (Hashtbl.to_seq Source.self_effects)) in
   let rec rounds assumed thrown =
     let proposal : Proposal_types.t = infer_assuming ~thrown ~state flows program assumed in
+    let selves_raised = raise_selves proposal in
     let footprints = List.map (fun c -> c,declaration_footprint program.Source.declarations program.Source.values names c) proposal.functions in
     let raised = List.filter_map (fun ((c:function_claim),(f,_)) ->
       match List.assoc_opt c.source.name assumed with
@@ -118,7 +135,7 @@ let rec infer ?(state = Proposal_diagnostics.create ()) flows program =
       | None -> None) footprints in
     let kept = List.filter (fun name -> List.exists (fun ((c:function_claim),(f,t)) ->
       c.source.name = name && t && f <> top_footprint) footprints) thrown in
-    if raised = assumed && kept = thrown then
+    if raised = assumed && kept = thrown && not selves_raised then
       {proposal with functions=List.map (fun ((c:function_claim),(f,_)) ->
         let footprint = match List.assoc_opt c.source.name assumed with
           | Some a -> join_footprint a f | None -> top_footprint in

@@ -3264,10 +3264,15 @@ control(async (): Promise<void> => {
     const searched = produceWith(artifacts, input, `forged-self-${label}`);
     assert.equal(searched.status, 1, searched.stdout + searched.stderr);
     const checked = invoke(input, join(artifacts, "evidence.json"), artifacts);
-    for (const detail of [searched.stdout + searched.stderr, checked]) {
+    // Search refuses within the function. Checking the honest evidence
+    // refuses there or in a later unit: with the forged row in use, the
+    // honest certificate of a later unit claiming a footprint no longer
+    // establishes it (an unused forged row changes nothing), and footprint
+    // refusals are reported before node refusals.
+    const body = source.indexOf(`function ${name}(`);
+    for (const [detail, within] of [[searched.stdout + searched.stderr, true], [checked, false]] as const) {
       const at = must(/(?:obligation|refusal) at \[(\d+),(\d+)\)/.exec(detail), detail);
-      const body = source.indexOf(`function ${name}(`);
-      assert.ok(Number(at[1]) >= body && Number(at[2]) <= source.indexOf("\n}\n", body) + 2, detail);
+      assert.ok(Number(at[1]) >= body && (!within || Number(at[2]) <= source.indexOf("\n}\n", body) + 2), detail);
     }
   }
   process.stdout.write("forged recursive closures: a self type at a result and at a footprint the body does not establish refused in search and in checking\n");

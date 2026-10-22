@@ -723,6 +723,12 @@ let rec assigns name s = match s.statement with
    initialization"), by name and initializer: each is a cell its declaration
    writes. *)
 let early_bindings : (string * Json.t, unit) Hashtbl.t = Hashtbl.create 16
+(* The footprint a recursive constant's closure is assumed to change at most,
+   and whether on a throw too, where its body reads its self entry
+   (SOURCE-MODEL.md, "Recursive constants"), by the literal's position. A
+   round of inference assumes it of every such closure it meets, and raises it
+   to what the closure's claim then proposes (`Proposal.infer`). *)
+let self_effects : (Json.t, footprint * bool) Hashtbl.t = Hashtbl.create 16
 let join_change a b = match a,b with
   | Any,_ | _,Any -> Any | Grow,_ | _,Grow -> Grow | Keep,Keep -> Keep
 let join_footprint a b =

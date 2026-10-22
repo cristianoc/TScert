@@ -18,6 +18,15 @@ module type Inputs = sig
   include Analysis_capabilities.Expression_publication
   val register_following : Json.t -> Source.stmt list -> unit
 end
+(* An early binding's type: its annotation, or a function literal's
+   parameter and result annotations, a defaulted parameter optional. The
+   contract Lean checks the initializer and every mention against. *)
+let early_contract name written (init:Source.expr) = match written,init.node with
+  | Some t,_ -> t
+  | None,Lambda (_,[],ps,defaults,false,Some r,_,_) -> arrow (List.mapi (fun i (_,t) ->
+      if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps) r
+  | _ -> Proposal_diagnostics.unsupported
+      ("the binding " ^ name ^ " may be read before its initialization, which needs its type stated: an annotation, or a function literal's parameter and result annotations")
 module Make (S : Inputs) = struct
 open S
 let transfer (expr:Analysis_state.expression_infer) =
@@ -216,7 +225,8 @@ let transfer (expr:Analysis_state.expression_infer) =
        | _ -> ());
       (* A constant's function literal reading the constant: its body reads
          the closure's self entry, at the constant's annotation or the
-         literal's own signature (SOURCE-MODEL.md, "Recursive constants"). *)
+         literal's own signature, with the footprint the round assumes of the
+         closure (SOURCE-MODEL.md, "Recursive constants"). *)
       let init_env = match mutable_,init.node with
         | false,Lambda (_,[],ps,defaults,false,result,_,_) when mentions n init ->
           let self = match written,result with
@@ -225,7 +235,16 @@ let transfer (expr:Analysis_state.expression_infer) =
                 if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps) r
             | None,None -> Proposal_diagnostics.unsupported
                 "a recursive closure needs its result annotated or the constant's type" in
-          extend env n (Value self)
+          let footprint,on_throw = match Hashtbl.find_opt Source.self_effects init.pos with
+            | Some assumed -> assumed
+            | None -> Hashtbl.replace Source.self_effects init.pos (empty_footprint,true);
+              empty_footprint,true in
+          extend env n (Value (with_footprint ~on_throw footprint self))
+        (* An early `let`'s initializer reading the binding: a closure's
+           read runs after the declaration writes the cell, through the
+           cell, which any later assignment may rebind. *)
+        | true,_ when Hashtbl.mem Source.early_bindings (n,init.pos) && mentions n init ->
+          extend env n (cell (early_contract n written init))
         | _ -> env in
       let initial = expr ?expected:(if committed <> None then committed else written) init_env init in
       if not mutable_ then named_closure n written init;
@@ -337,19 +356,11 @@ let transfer (expr:Analysis_state.expression_infer) =
 let statements (expr:Analysis_state.expression_infer) execute_bindings owner_span env ss =
   let transfer_statement = transfer expr in
   let after e env = effects env e in
-  (* An early binding's type: its annotation, or a function literal's
-     parameter and result annotations, a defaulted parameter optional. The
-     contract Lean checks the initializer and every mention against. *)
   let early env (s:Source.stmt) name = match s.statement with
     | Declare (_,bindings) ->
       (match List.find_opt (fun (n,_,_) -> n = name) bindings with
        | Some (_,written,(init:Source.expr)) ->
-         let contract = match written,init.node with
-           | Some t,_ -> t
-           | None,Lambda (_,[],ps,defaults,false,Some r,_,_) -> arrow (List.mapi (fun i (_,t) ->
-               if List.mem_assoc i defaults then union t (Atoms [Undef]) else t) ps) r
-           | _ -> Proposal_diagnostics.unsupported
-               ("the binding " ^ name ^ " may be read before its initialization, which needs its type stated: an annotation, or a function literal's parameter and result annotations") in
+         let contract = early_contract name written init in
          publish_contract { pos = init.pos; name; type_ = contract };
          extend env name (cell contract)
        | None -> Json.fail "an early binding names no binding of its statement")

@@ -426,8 +426,23 @@ let infer (expr:Analysis_state.expression_infer) _execute_bindings (body:Analysi
     (* The left operand's values other than null and undefined, a type
        parameter's the meet of it with its bound's, `T ⊓ number` for
        `T extends number | null`, where the bound states them. *)
-    | Coalesce (a,b) -> let left=expr env a in let right=expr ?expected env b in
+    | Coalesce (a,b) -> let left=expr env a in
       let present = narrow_rigid (S.rigid_bounds ()) without_nullish left in
+      (* Where no type is expected, TypeScript types the right operand at
+         the left's type: an array literal there, each of whose elements
+         fits the left's element type, is built at it, as `xs ?? [[]]`; a
+         fresh array, an inner one too, may take any element contract.
+         Lean checks each element against it. *)
+      let rec fits (e:expr) t = match e.node,t with
+        | ArrayLiteral (es,[]),Atoms [Shape {elements=Some {required=[];optional_elements=[];rest=Some element;_};
+                                            fields=[];calls=[];indexes=[]}] ->
+          List.for_all (fun e -> fits e element) es
+        | _ -> (match quietly (fun () -> expr env e) with
+          | Some u -> plausible_subtype_declared declarations u t
+          | None -> false) in
+      let right = match expected,b.node with
+        | None,ArrayLiteral _ when fits b present -> expr ~expected:present env b
+        | _ -> expr ?expected env b in
       if expected <> None && rigid_arm present then
         S.explain site ("`??` on a value of a type parameter whose bound states no values other than null \
           and undefined: those are the meet `T & {}`, which no clause row states");

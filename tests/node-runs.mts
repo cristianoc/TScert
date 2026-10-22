@@ -12,6 +12,11 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-field-call-effect",
       "(() => { const xs = [1, 2], seen = [], t = new Test(); t.check = (n) => { seen.push(n); xs.pop(); return false; }; first(t, xs); return seen.length === 2 ? seen[1] : 0; })()"],
     ["invalid-field-call-effect-alias", "wrong([1, 2], { value: 0 })"],
+    // A recursive constant, a record's field or a cell reached by the
+    // callback shrinks the list, and the next visit hands it `undefined`.
+    ["invalid-find-recursive-constant-mutation", "wrong([1, 2], { value: 0 })"],
+    ["invalid-find-recursive-constant-field", "wrong([1, 2], { value: 0 })"],
+    ["invalid-find-recursive-cell", "wrong([1, 2], { value: 0 })"],
     ["invalid-field-call-effect-cell", "wrong([1, 2], { value: 0 })"],
     ["invalid-readonly-field-call-effect",
       "(() => { const xs = [1, 2], seen = []; first({ check: (n) => { seen.push(n); xs.pop(); return false; } }, xs); return seen.length === 2 ? seen[1] : 0; })()"],
@@ -83,6 +88,10 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
   ])
     assert.equal(runExample(file, call), undefined,
       `${file}: the actual source returns undefined despite its number or string contract`);
+  // `find` visits the hole a `length` write leaves, handing the callback
+  // `undefined`, which the recursive constant returns as its number.
+  assert.equal(runExample("invalid-find-recursive-constant-sparse", "wrong()"), 1,
+    "invalid-find-recursive-constant-sparse: the hole's visit finds a result that is no number");
   // A union's host whose `next` yields a string where its overload says a
   // number; a done step's value, the host's return value, read as a number.
   assert.equal(runExample("invalid-bind-union-host-overload", "first(new Mixed())"), "s",
