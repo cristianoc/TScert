@@ -988,8 +988,6 @@ export class Gate {
 
   tryStmt: typeof statements.tryStmt = statements.tryStmt;
 
-  abrupt: typeof statements.abrupt = statements.abrupt;
-
   stmt: typeof statements.stmt = statements.stmt;
 
   declarations: typeof statements.declarations = statements.declarations;

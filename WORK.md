@@ -45,6 +45,7 @@ design, not its progress.
 | [Reads at an index computed from the length](docs/PROGRAM-TYPING.md#reads-at-an-index-from-the-length) | closed: a node list read at a `number` key is `%ElementAt%`'s, at its element type or `undefined`; `array-last-element` and `compiler-api-node-list-index` verify, the eleven bypasses listed there are refused, each run under Node (2026-10-22) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past "a numeric array key needs a proved array-index singleton" |
 | [A family guard's test in a guard's Boolean return](docs/SOURCE-ELABORATION.md#derived-source-forms) | closed: a family guard's call is a Boolean by its form; `compiler-api-guard-and-return` verifies, `invalid-compiler-api-guard-and-promise` and `invalid-compiler-api-guard-or-promise` are refused, each run under Node (2026-10-22) | `readCannotThrow`'s `(d): d is ts.FunctionDeclaration => ts.isFunctionDeclaration(d) && d.name?.text === id.text` verifies |
 | [The search past 60 s on `fragment-statements.mts`](#fragment-statements-search) | closed: `protocolPattern`'s and `patternStmt`'s searches take 13 s each in their census and alone, where they took 88 s; both then stop at `statements`' `list.findIndex((s) => gate.abrupt(s))` (2026-10-22, [slice measurement](#census-index-from-length)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` finish their search within the census's 60 s limit |
+| [Calls through a field](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification) | closed: a call through a field reads the field's contract, checked at every write, and a declared field's is its annotation, which for an ordinary arrow states no effect; so `statements`' `findIndex` callback calling `gate.abrupt` is the unrestricted one, and `abrupt`, which reads nothing of the gate, is a module function called by its binding ([source rewrite](docs/SOURCE-REWRITES.md#a-function-called-through-a-field-whose-annotation-states-no-effect)); `find-index-module-function` verifies, `invalid-field-call-effect`, `invalid-readonly-field-call-effect`, `invalid-field-call-effect-alias` and `invalid-field-call-effect-cell` are refused (run under Node) (2026-10-22, [slice measurement](#census-field-calls)) | `fragment-statements.mts#protocolPattern` and `fragment-statements.mts#patternStmt` move past `statements`' `list.findIndex((s) => gate.abrupt(s))` |
 | [The search past 60 s on `shadowingLocals`](#shadowing-locals-search) | closed: the slice verifies, its search in 40 s and its check in 9 s (2026-10-20, load averages 3 to 7) | `fragment-support.mts#shadowingLocals` finishes within the census's 60 s limit |
 | [Stable family members](docs/HOST-FAMILIES.md#stable-members) | closed: stable keys in the clause language, emitted by the description's rule, decoded on marked shapes, kept through every step by the stable-link rule; the controls pass, each refused one accepted with its check disabled (2026-10-20) | — |
 | [A guard's false edge over a tag-set arm](docs/PROGRAM-TYPING.md#a-membership-test) | closed: the false slice drops arms the guard's set covers and reads a partly covered arm with a stable tag at the rest of its set; `compiler-api-guard-false-sets` verifies, its forged claims are refused, each accepted with coverage disabled (2026-10-20) | — |
@@ -873,6 +874,16 @@ parameter is claimed at `Statement | undefined`. In a reduced program the
 same callback calling the module function `abrupt` directly verifies, and
 calling it as `gate.abrupt`, a class field holding the function, is
 refused alike.
+
+<a id="census-field-calls"></a>
+The same two slices on 1e74ca1 (main) and on the branch calling `abrupt` by
+its binding (2026-10-22): neither verifies on either. On main both stop in
+search after 26 s each at "closure signature claim is outside the source
+annotation", the callback `(s) => gate.abrupt(s)` of `statements`'
+`list.findIndex`. On the branch both pass it and stop in search after 41 s
+each at "closure expression claim", `gate.hoisted.push(...statements)` in
+`protocolPattern`, whose spread argument is claimed at a literal array's
+type where `push` requires `Stmt`'s row.
 
 <a id="census-closure-arms"></a>
 Two slices of `fragment-expressions.mts`, `expr` and `binary`, which calls

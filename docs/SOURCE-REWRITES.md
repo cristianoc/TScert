@@ -65,6 +65,28 @@ as `unknown` the same way.
 - **Commits:** 2288e06, c76d588 (`tools/computed-types.mts`,
   `pipeline/verify-source.mts`).
 
+### A function called through a field whose annotation states no effect
+
+A method of the gate held as a field (`Gate.abrupt: typeof
+statements.abrupt`) and called in a `findIndex` callback, `list.findIndex((s)
+=> gate.abrupt(s))`, is read at the field's contract, its annotation, an
+ordinary arrow, which states no effect
+([calls through a location](SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification)).
+A `Gate` whose `abrupt` shrinks the list through another reference is a
+value of the type, so the callback is `findIndex`'s unrestricted one, its
+element `Statement | undefined`. Only the module function the field is
+initialised with keeps the list, and no annotation states that the field
+holds it.
+
+- **Rewrite:** a function that reads nothing of the gate is a module
+  function recursing through its own binding, `abrupt(s: Statement):
+  boolean`, called as `abrupt(s)`; `Gate` holds no field for it. Its effect
+  is certified from its body.
+- **Pattern:** a function that needs nothing of the object it is reached
+  through is called by its binding, whose certified signature a call reads.
+- **Commit:** ec3d161 (`tools/fragment-statements.mts`,
+  `tools/fragment-parse.mts`).
+
 ### A key tested with `in` on an open record
 
 The gate's answers for a node (`staticType`, `contextualParam`,
