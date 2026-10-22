@@ -76,7 +76,9 @@ const beforeExpression: ReadonlySet<string> = new Set(["return", "typeof", "inst
  * tokenized: a string or regular expression literal that ends a line, or a
  * comment, template or placeholder that ends the text. A `/` begins a
  * regular expression where an expression may begin (after an operator, an
- * opening bracket, a comma or one of `beforeExpression`). */
+ * opening bracket, a comma or one of `beforeExpression`). A regex containing
+ * braces inside a template placeholder, a slash after `)` or `}`, and
+ * apparent regex flags outside the language leave the text unidentified. */
 function tokenize(text: string): Token[] | string {
   const out: Token[] = [];
   // The templates whose placeholder is open, by the brace depth inside it.
@@ -92,6 +94,7 @@ function tokenize(text: string): Token[] | string {
       if (c === "`") { out.push({ kind: "template", text: piece }); return i + 1; }
       if (c === "$" && text[i + 1] === "{") {
         out.push({ kind: "template", text: piece });
+        out.push({ kind: "other", text: "{" });
         placeholders.push(depth);
         depth++;
         return i + 2;
@@ -100,7 +103,8 @@ function tokenize(text: string): Token[] | string {
       i++;
     }
   };
-  let i = 0;
+  let i = text.startsWith("#!") ? text.indexOf("\n") : 0;
+  if (i < 0) return out;
   while (i < text.length) {
     const c = text[i];
     if (/\s/.test(c)) { i++; continue; }
@@ -135,6 +139,8 @@ function tokenize(text: string): Token[] | string {
     }
     if (c === "/") {
       const last = out.at(-1);
+      if (last?.kind === "other" && (last.text === ")" || last.text === "}"))
+        return "a slash after a closing parenthesis or brace";
       const regex = last === undefined || (last.kind === "other" && !")]}".includes(last.text)) ||
         (last.kind === "name" && beforeExpression.has(last.text));
       if (regex) {
@@ -148,9 +154,15 @@ function tokenize(text: string): Token[] | string {
           else if (d === "/" && !inClass) break;
         }
         if (j >= text.length) return "a regular expression literal that ends the text";
-        out.push({ kind: "regex", text: text.slice(i, j + 1) });
+        const pattern = text.slice(i, j + 1);
+        if (placeholders.length && /[{}]/.test(pattern))
+          return "braces inside an ambiguous regular expression in a template placeholder";
+        out.push({ kind: "regex", text: pattern });
         i = j + 1;
-        while (i < text.length && /[A-Za-z]/.test(text[i])) i++;
+        while (i < text.length && /[A-Za-z]/.test(text[i])) {
+          if (!"dgimsuvy".includes(text[i])) return "ambiguous regular expression flags";
+          i++;
+        }
         continue;
       }
     }
@@ -224,6 +236,14 @@ function dependencies(file: string): Dependencies {
     }
     const tokens = tokenize(text);
     if (typeof tokens === "string") return { unaccounted: `${at} is not read: ${tokens}` };
+    // A supposed regex may be division around executable code. Inspect its
+    // raw text as well: load-related words make that ambiguity ineligible,
+    // even where the words would only be part of a real regex pattern.
+    for (const t of tokens) {
+      if (t.kind === "regex" &&
+        t.text.match(/[A-Za-z_$][\w$]*/g)?.some((word) => word === "import" || word === "from" || loaders.has(word)))
+        return { unaccounted: `${at} has load syntax inside an ambiguous regular expression` };
+    }
     const specifiers: string[] = [];
     for (const [i, t] of tokens.entries()) {
       const next = tokens[i + 1], after = tokens[i + 2];
@@ -556,7 +576,7 @@ function diskNodeIdentity(): { identity: Canonical } | { unidentified: string } 
   if (Object.keys(process.env).some((name) => name.startsWith("DYLD_")))
     return { unidentified: "Node DYLD_ environment variables have unidentified code dependencies" };
   const options = [...process.execArgv, process.env["NODE_OPTIONS"] ?? ""].join(" ");
-  if (/(?:^|[\s"'])(?:--(?:import|require|loader|experimental[-_]loader)(?:[=\s"']|$)|-r)/.test(options))
+  if (new RegExp("(?:^|[\\s\"'])(?:--(?:import|require|loader|experimental[-_]loader)(?:[=\\s\"']|$)|-r)").test(options))
     return { unidentified: "Node import, require or loader options have unidentified code dependencies" };
   const real = realpathSync(process.execPath);
   const linked = linkedLibraries(real);

@@ -48,6 +48,15 @@ if (process.argv[2] === "--reads") {
   // comment or a string, and a relative path it follows, do not.
   const scratch = runDirectory("loads-");
   const loads: [string, boolean][] = [
+    ['const n = 1 / (await import(name)).n / 2;', false],
+    ['const s = `${/}/.test("}") ? import(name) : 0}`;', false],
+    ['const s = `${/[}]/.test("}") ? import(name) : 0}`;', false],
+    ['const s = `${1 / (await import(name)).n / 2}`;', false],
+    ['const n = 1 / require(name).n / 2;', false],
+    ['const n = 1 / 2 /import(name);', false],
+    ['if (true) /"/.test("x"); await import(name);', false],
+    ['const s = `${(() => { if (true) /}/.test("}"); return import(name); })()}`;', false],
+    ['const r = /import(name)/;', false],
     ['const m = await import(name);', false], ['const m = require("x");', false], ['(0, eval)("1");', false],
     ['new Function("return 1");', false], ['import vm from "node:vm";', false], ['import ts from "left-pad";', false],
     ['import x from "/abs/x.mts";', false], ['import x from "./missing.mts";', false], ['const s = "unterminated\n";', false],
@@ -64,13 +73,20 @@ if (process.argv[2] === "--reads") {
     assert.ok(!processAdapter.includes(module), `the process adapter's closure holds ${module}`);
   const modules = closureOf("pipeline/parse-stage.mts", ["typescript"]);
   assert.ok(modules.includes("tools/files.mts") && modules.includes("tools/fragment-parse.mts"), modules.join(", "));
-  const reading = /from "node:(fs|fs\/promises|module|child_process|worker_threads|vm)"|import\.meta\.resolve\(/;
+  const reading = /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?)["'](?:node:)?(?:fs(?:\/promises)?|module|child_process|worker_threads|vm)["']|import\s*\.\s*meta\s*\.\s*resolve\s*\(/;
+  for (const specifier of ["fs", "fs/promises", "module", "child_process", "worker_threads", "vm"]) {
+    for (const prefix of ["", "node:"]) for (const quote of ['"', "'"]) {
+      const literal = quote + prefix + specifier + quote;
+      for (const source of [`import x from ${literal};`, `import ${literal};`, `await import(${literal});`])
+        assert.match(source, reading, source);
+    }
+  }
   for (const module of modules) {
     // The execution adapters read the code they identify and a process
     // stage's inputs, never an observed stage's.
     if (["tools/files.mts", "pipeline/stage-execution.mts", "pipeline/run-directory.mts"].includes(module))
       continue;
-    const text = readFileSync(join(repository, module), "utf8").replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, "");
+    const text = readFileSync(join(repository, module), "utf8");
     assert.doesNotMatch(text, reading, `${module} reads the file system other than through tools/files.mts`);
   }
   process.stdout.write("observed stages: the keyed closures are identified and hold no policy, store or orchestration module; " +

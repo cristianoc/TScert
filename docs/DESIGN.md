@@ -285,8 +285,9 @@ follows every single- or double-quoted relative path (`./` or `../`) ending
 in `.mts`, `.ts`, `.mjs`, `.js`, `.cts`, `.cjs` or `.json` that names an
 existing file, anywhere in a module's text, comments included; this permits
 over-inclusion. It reads the loading forms from the module's code, its
-tokens with comments left out: supported loading syntax has a string literal
-after `from` or `import`, or as the only argument of `import(`. Each
+tokens with comments and an initial hashbang left out: supported loading
+syntax has a string literal after `from` or `import`, or as the only
+argument of `import(`. Each
 specifier must name a followed relative file, a `node:` built-in covered by
 the runtime identity, or a bare package identified by the stage's key
 (`typescript` for an observed stage). An unresolved relative import,
@@ -296,7 +297,12 @@ anything but a string literal, the names `require`, `createRequire`,
 `registerHooks`, `eval` and `Function` anywhere in the code, an import of
 `node:vm`, `node:module` or `node:worker_threads`, and a text the tokenizer
 does not read (a string or regular expression literal that ends a line, a
-comment or template that ends the text).
+comment or template that ends the text). Since a `/` may begin a regular
+expression or divide, the scan also makes replay ineligible for a slash
+after a closing parenthesis or brace, braces in a regular expression inside
+a template placeholder, flags outside `dgimsuvy`, and the words `import`,
+`from` or a loader name inside a regular expression, which division could
+enclose as code.
 
 A reviewed list exempts named loaders in named modules, each with its
 reason: `tools/files.mts`, whose loads are the loader's observations.

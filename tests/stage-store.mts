@@ -540,11 +540,22 @@ if (platform() === "darwin") {
     writeFileSync(driver, String.raw`
 import assert from "node:assert/strict";
 import { appendFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { assemblyCall } from "./claims-assembly.mts";
 import { invokeInProcess } from "./stages.mts";
 const run = (): ReturnType<typeof invokeInProcess<string>> =>
   invokeInProcess(assemblyCall('{"modules":[]}', []), { force: false, recorder: null });
-const first = run().record.key;
+if (process.argv[3] === "fresh-policy") {
+  assert.equal(process.env.TSCERT_EDITED_POLICY, "loaded");
+  const result = run();
+  assert.equal(result.value, '{"modules":[]}');
+  assert.equal(result.record.execution, "replayed");
+  assert.equal(result.record.key, process.argv[4]);
+  process.exit(0);
+}
+const firstResult = run();
+assert.equal(firstResult.record.execution, "executed");
+const first = firstResult.record.key;
 assert.notEqual(first, null);
 assert.equal(run().record.execution, "replayed");
 appendFileSync(new URL(process.argv[2], import.meta.url), "\n// edited during worker lifetime\n");
@@ -557,6 +568,11 @@ if (process.argv[3] === "keyed") {
 } else {
   assert.equal(result.record.execution, "replayed");
   assert.equal(result.record.key, first);
+  appendFileSync(new URL(process.argv[2], import.meta.url),
+    '\nprocess.env.TSCERT_EDITED_POLICY = "loaded";\n');
+  const fresh = spawnSync(process.execPath, [import.meta.filename, process.argv[2], "fresh-policy", first],
+    { encoding: "utf8" });
+  assert.equal(fresh.status, 0, fresh.stderr);
 }
 `);
     return { name, driver };
@@ -568,7 +584,8 @@ if (process.argv[3] === "keyed") {
   sections.push((async (): Promise<void> => {
     const children = await Promise.all([
       ...drivers.map(({ name, driver }) => new Promise<{ status: number | null; stderr: string }>((done, fail) => {
-        const p = spawn(process.execPath, [driver, "./" + name, keyed.get(name) ? "keyed" : "policy"], { env });
+        const p = spawn(process.execPath, [driver, "./" + name, keyed.get(name) ? "keyed" : "policy"],
+          { env: { ...env, TSCERT_STAGE_STORE: join(dir, "loaded-copy-store-" + name) } });
         let stderr = "";
         p.stderr.setEncoding("utf8");
         p.stderr.on("data", (text: unknown) => { stderr += String(text); });
