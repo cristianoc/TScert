@@ -102,11 +102,14 @@ def memberPath : Fragment.Expr → Option (String × List PropKey)
     return (root, fields ++ [field])
   | _ => none
 
-/-- Only immutable source roots identify the same receiver across reads. -/
+/-- A path's witness: its root a slot holding the value itself
+(`valueSlot`), which identifies one receiver across reads until a write
+rebinds it; a link from the root's slot, which every incoming edge checks,
+ends at that write. -/
 @[nospecialize] def pathWitness (scope : List (ScopeBinding ι)) (e : Fragment.Expr) : Option Nat := do
   let path ← memberPath e
   if path.2.isEmpty then none else do
-    let (_, .value) ← resolve scope path.1 | none
+    let _ ← valueSlot scope path.1
     scope.findIdx? (·.witness == some path)
 
 /-- Read paths in an execution plan, including both arms and their tests. -/

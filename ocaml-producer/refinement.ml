@@ -202,7 +202,7 @@ let stable_path declarations env n =
   match String.split_on_char '\001' (field_of n) with
   | "" :: fields ->
     (match List.assoc_opt (owner n) env with
-     | Some (Value root) ->
+     | Some (Value root | Local (_,root)) ->
        let rec walk t prefix = function
          | [] -> true
          | f :: rest ->

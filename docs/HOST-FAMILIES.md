@@ -564,7 +564,9 @@ the trusted base; the table and its review are.
 A test refines the slot holding the value it tests, and the narrowing rules
 ([guards](SOURCE-CONTRACTS.md#guards)) refine every slot known to hold that
 value. A **path** $`p = x.f_1\cdots f_n`$, $`n\ge 0`$, is a root binding
-$`x`$ and member reads. Each evaluation of a path reads it anew:
+$`x`$ held in the activation's environment and member reads: an immutable
+binding, or a `let` or assigned parameter held in a slot
+([paths rooted at a slot](#paths-rooted-at-a-slot)). Each evaluation of a path reads it anew:
 `ts.isIdentifier(m.name) && m.name.text` reads `m.name` twice, into two
 slots. Path refinement is the knowledge that a later read of a path gives
 the value an earlier read gave, so that it sees the earlier read's
@@ -681,6 +683,46 @@ field, an unjustified predecessor and a chain past a call, each refused,
 with the honest document accepted. An assertion of a path of two members or
 more where the entry holds no witness of it is the premise of nothing.
 
+#### Paths rooted at a slot
+
+A `let` or an assigned parameter $`x`$ with $`\mathrm{slot}(x)`$
+([slot or cell](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants))
+is a variable of its activation's environment, which a write rebinds and no
+other step reaches. A path may start at it as at an immutable binding: its
+reads record read links from the slot, its tests refine the reads' slots,
+and statement entries hold its witnesses, each checked on every incoming
+edge. A write $`x = e`$ rebinds the slot to the written value $`v`$; the
+edge out of the write maps $`x`$ to $`v`$, so a link whose receiver is the
+slot's previous value names no slot of the target frame:
+
+```math
+\frac{\mathrm{slot}(x)\quad \Gamma;\Pi;\Sigma\vdash_G v\leftarrow e : V\dashv\Pi';\Sigma'}
+     {\Gamma;\Pi;\Sigma\vdash_G x = e\ \dashv\ \Gamma[x\mapsto V];\Pi';\ \Sigma'\setminus\{x.f\mapsto y\}}\ \textsf{slot-path-write}
+```
+
+So a path's refinement holds from its test until the root's next write on
+every path into the read: a write between them, one on a loop's back edge
+into a loop head that states the refinement, and one in a `try` block whose
+`finally` reads the path each leave an incoming edge without the link, which
+[witness-edge](PROGRAM-TYPING.md#witness-edges) refuses. A write of $`x`$
+is its statement's own (a write nested in an expression makes $`x`$ a
+cell): the assignment or update an expression statement is, or a target of
+a destructuring assignment, whose later targets and defaults run after the
+write and read $`x`$ from the rebound slot. A slot is environment, so a call keeps the root, and a link
+through it survives the call where it is a [stable link](#stable-links); a
+`let` written by a closure is a cell, whose read is a plain read link that a
+call ends. The rule adds no trust: the links are the checker's, and the slot
+lowering is the one the slot's own tests rely on.
+
+Controls: `slot-path` and `compiler-api-slot-path` (within one condition
+after a loop's writes, across statements, a retest after a write, past a
+call through stable members); the negatives `invalid-slot-path-write`,
+`-loop`, `-finally`, `-pattern` (a destructuring's default after its write
+of the root), `-closure`, `-alias` (a member an alias replaces) and
+`-call` (a call through a program record's member), each run under Node; and
+in `pipeline/test.mts` the forged entries `afterRoot` and `backEdge` of
+`path-witness-controls`, refused by the links the write ends.
+
 #### Stable keys
 
 A record clause states a set $`\sigma`$ of **stable keys**, each one of its
@@ -777,9 +819,10 @@ checker passes through (`Checker.keepingStable`). The rule is
 [stable-link](PROGRAM-TYPING.md#checked-expression-postconditions).
 
 So $`v_0=\rho(y)`$, the value the link observed, and the location holds it
-in every later heap. The root $`x`$ is a slot, which no step rebinds; a
-`let` root is a cell, read into a slot by a plain read link, which a call or
-a write of the cell ends.
+in every later heap. The root $`x`$ is a slot, which no step but a write of
+$`x`$ rebinds ([paths rooted at a slot](#paths-rooted-at-a-slot)); a `let`
+root held in a cell is read into a slot by a plain read link, which a call
+or a write of the cell ends.
 
 What the frame property covers is the model's execution. A call into
 external code that receives the node, a callback of `forEachChild` or a

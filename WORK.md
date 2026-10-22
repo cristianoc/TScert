@@ -60,6 +60,7 @@ design, not its progress.
 | [A spread of an intersection beyond disjoint records](docs/SOURCE-MODEL.md#a-spread-of-an-intersection) | closed: a spread of an intersection copies the meet of one arm of each operand, a key two operands state held at the field within the other's, and each refusal names the spread's operand; `spread-intersection-meet` verifies ([slice measurement](#census-spread-intersection-meet)) | `fragment-expressions.mts`'s `{ ...part, computed: true }` with `part: ObjectPart & { name: PropertyKey }` is read at its operands' meet, and the refusal of a spread names its location |
 | [Investigation of an alias of function types met with a record](#callable-alias-meet) | open: an investigation, cause unknown | `spread-intersection-callable-alias` verifies |
 | [Investigation of `memberOf`'s read past a spread guard](#member-of-spread-guard) | closed: a guard's call on a `for...of` binding was an ordinary call, `readCannotThrow` not recognizing the binding; the walk stops at every binding it passes (2026-10-22, [slice measurement](#census-member-of-spread-guard)) | the cause of the producer's "missing field name" at `memberOf`'s `p.name` is established, with a reproducer |
+| [Paths rooted at a slot](docs/HOST-FAMILIES.md#paths-rooted-at-a-slot) | closed: a member path may start at a `let` or assigned parameter held in a slot, its read links and entry witnesses ending at the root's next write; `slot-path` and `compiler-api-slot-path` verify, `invalid-slot-path-write`, `-loop`, `-finally`, `-pattern`, `-closure`, `-alias` and `-call` are refused (run under Node), forged entries after a write and at a loop head its back edge enters refused in search and in checking, each accepted with its check disabled (2026-10-22, [slice measurement](#census-slot-paths)) | `fragment-expressions.mts#expr` and `#binary` move past "missing field text" at `memberMayBeWritten`'s `target.argumentExpression.text` |
 | [A member bound to a union of hosts](docs/PROGRAM-TYPING.md#judgments-and-constructor-views) | closed: `o.k.bind(o)` at a union of hosts each holding `k` as a member splits the host's slot and binds each host's member (`unionVar`, then `bindMember`), the producer proposing the hosts' common signature with the union of their results; the iterator protocol so binds `next` and `return` over a union of iterables; `bind-union-host` verifies, the bypasses listed in [the iterator protocol](docs/SOURCE-CONTRACTS.md#the-iterator-protocol) are refused (run under Node), a forged claim of one host's result refused in search and in checking (2026-10-22, [slice measurement](#census-union-host-bind)) | `type-term.mts#readTypeTerm` and `type-term.mts#typeTerm` move past "bind requires a single arrow and a valid argument prefix" |
 | [Investigation of a length comparison over a node list or `[]`](#node-list-length-test) | open: an investigation, cause unknown | the cause of the refusal of `if (xs.length !== ps.length)` with `ps = alias.typeParameters ?? []` is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a defaulted parameter's flow](#defaulted-parameter-flow) | open: an investigation, cause unknown | the cause of `spread-defaulted-set-refused`'s edge refusal is established, with a reproducer and a concrete repair obligation |
@@ -1035,6 +1036,16 @@ a790a88 both stop at "missing field name" at `memberOf`'s `p.name`; on the
 branch both move past it and stop at "missing field text" at
 `memberMayBeWritten`'s `target.argumentExpression.text`, a guard on a
 member path of a `let` the function assigns.
+
+<a id="census-slot-paths"></a>
+The slices `fragment-expressions.mts#expr` and `#binary` (2026-10-22): on
+036caea (main) both stop at "missing field text" at `memberMayBeWritten`'s
+`target.argumentExpression.text`, a path whose root `target` is a `let` held
+in a slot; on the branch both move past it and stop at "missing field
+target" at `lambda`'s `b.target`, read in
+`b?.k === "destructure" ? [b.target, b.default_] : …` after a test of
+`b?.k`, an optional chain's tag. The slice `memberMayBeWritten` verifies on
+the branch.
 
 <a id="census-for-of-patterns"></a>
 Two slices of `type-term.mts`, `readTypeTerm` and `typeTerm`, which calls it,

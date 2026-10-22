@@ -231,7 +231,7 @@ with the witness's context type. -/
     let (root, path) ← b.witness
     let field ← path.getLast?
     let _ ← witnessClaim T fc pos root path
-    let (i, .value) ← resolve scope root | none
+    let i ← valueSlot scope root
     let r ← if path.length == 1 then some i else do
       let _ ← witnessClaim T fc pos root path.dropLast
       scope.findIdx? (·.witness == some (root, path.dropLast))
@@ -304,7 +304,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
             persistentObservation b.source (pos,pos+1) reference fld A
           | .value | .slot _ =>
             if (witnessClaim T fc pos b.source.name [fld]).isSome &&
-                scope.any (fun w => w.witness == some (b.source.name, [fld]) && (match b.storage with | .value => true | _ => false)) then
+                scope.any (fun w => w.witness == some (b.source.name, [fld])) then
               pure ()
             else if (invariant fld).any (within T · A) then
               persistentObservation b.source (pos,pos+1) reference fld A
