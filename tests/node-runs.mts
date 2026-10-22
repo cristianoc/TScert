@@ -224,6 +224,8 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     ["invalid-negated-disjunction-getter", "wrong(new Flip())"],
   ])
     assert.equal(runExample(file, call), "a", `${file}: the source returns "a" despite its contract`);
+  assert.equal(runExample("invalid-negated-disjunction-saved", `wrong({ name: "b" }, 1)`), 2,
+    "invalid-negated-disjunction-saved: the saved test permits a return of 2 despite the contract 1");
   for (const [call, expected] of [
     [`rest({ name: "c" })`, "c"],
     [`rest({ name: "a" })`, "x"],
@@ -231,6 +233,9 @@ import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-e
     [`conjunction({ name: "c" })`, "c"],
     [`conjunction({ name: "a" })`, "x"],
     [`other({ name: "b" }, 1)`, "b"],
+    [`exact({ name: "b" }, 1)`, 1],
+    [`exact({ name: "b" }, 2)`, 1],
+    [`exact({ name: "a" }, 2)`, 1],
     [`doubled({ name: "b" })`, "b"],
     [`nested({ name: "d" })`, "d"],
     [`nested({ name: "c" })`, "x"],

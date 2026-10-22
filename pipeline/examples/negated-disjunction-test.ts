@@ -26,6 +26,11 @@ export function other(k: Name, n: number): "b" | "x" {
   return "x";
 }
 
+export function exact(k: { name: "a" | "b" }, n: number): 1 {
+  if (!(k.name !== "b" || n !== 1)) return n;
+  return 1;
+}
+
 export function doubled(k: Name): "a" | "b" | "x" {
   if (!!(k.name === "a" || k.name === "b")) return k.name;
   return "x";

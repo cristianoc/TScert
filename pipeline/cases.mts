@@ -2171,6 +2171,8 @@ export const cases: Case[] = [
     /The available claim for k\.name is "a" \| "b" \| "c" \| "d"\. This return requires "b" \| "c" \| "d" \| "x"/),
   negative("invalid-negated-disjunction-write", "a call between the test and the read writes the tested field (run under Node)",
     /The available claim for k\.name is "a" \| "b" \| "c" \| "d"\. This return requires "c" \| "d" \| "x"/),
+  negative("invalid-negated-disjunction-saved", "a saved negation precedes a write to the tested parameter (run under Node)",
+    /The available claim for n is 2\. This return requires 1/),
   negative("invalid-negated-disjunction-operand", "the test's second operand writes the field the first one tested (run under Node)",
     /source incoming edge obligation at \[277,291\): evidence search failed/),
   { file: "invalid-negated-disjunction-getter", area: "a getter answers the read after the tests anew (run under Node): a class accessor is outside the fragment",

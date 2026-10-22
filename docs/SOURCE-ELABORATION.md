@@ -941,15 +941,20 @@ it, and each read the dispatch makes again by the dispatch's own node, with
 the knowledge its incoming edge carries: where `k.name === "a"` failed, the
 fact that `k.name` holds the rest of its literals types the next read of
 `k.name`, which the declared field does not. A negation whose operand's type
-answers its truthiness one way, $`q`$, takes the part of its claim $`A`$
-answering the other way, also checked against $`A`$ (`decidedNegation`):
+answers its truthiness one way, $`q`$, proposes the part of its claim $`A`$
+answering the other way as the node's type (`decidedNegation`):
 
 ```math
-\frac{\Gamma\vdash a:B\qquad T_{\neg q}(B)=\emptyset\qquad T_{\neg q}(A)\neq\emptyset}
-     {\Gamma\vdash\ !a:T_{\neg q}(A)}
+\Gamma\vdash a:B,\qquad \text{every clause of }B\text{ answers }q,\qquad T_{\neg q}(A)\neq\emptyset
+\qquad\Longrightarrow\qquad
+\text{proposed type }T_{\neg q}(A).
 ```
 
-so in the arm of `!(a || b)` where `a` held, the negation is `false` and
+The node `if a then false else true` must derive this proposed type under
+the existing typing rules; the following effect node checks the claim
+$`A`$ separately.
+
+In the arm of `!(a || b)` where `a` held, the negation is `false` and
 decides the condition there, and no dispatch reaches the true branch from
 that arm (`negated-disjunction-test`, each function run under Node). Where
 the negation fails, one of the tests held, and where a call, the test's own

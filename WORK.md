@@ -170,21 +170,9 @@ export function f(k: { name: "a" | "b" | "c" | "d" }): boolean {
 }
 ```
 
-Cause: the refused judgment, $`\Gamma\vdash k.\mathsf{name}:\texttt{"b"}\mid\texttt{"c"}\mid\texttt{"d"}`$
-with $`\Gamma`$ holding `k` at its declared record, does not hold; the claim
-holds by the fact the first test's false edge records through the read's
-link, that `k.name` holds `"b" | "c" | "d"`. The condition's dispatch on a
-negation stated its operand's typing as an obligation of the context alone
-(`compileConditionAtom`'s `closureExpr`), which no such fact reaches, while
-the dispatch itself types the same read as a node with that fact; without
-`!` the dispatch states no such obligation. Repair: a negation's dispatch
-states none ([a negation of tests](docs/SOURCE-ELABORATION.md#a-negation-of-tests)).
-The same family held a second refusal, `!(k.name !== "b" || n !== 1)` with
-the true branch reading `n` at `1`: in the arm where the first test held,
-the negation's value was typed at its claim, `boolean`, so the condition
-was not decided there, and the dispatch's edge into the true branch, which
-no execution takes, held `n` at `number`. Repair: a negation its operand
-decides keeps that answer (`decidedNegation`).
+The [status row](#status) states the established cause;
+[a negation of tests](docs/SOURCE-ELABORATION.md#a-negation-of-tests)
+states the dispatch and typing rule.
 
 <a id="tested-field-member"></a>
 **Investigation of a tested field read as a receiver.** Lean's search

@@ -4397,7 +4397,8 @@ control(async (): Promise<void> => {
   // answer: claims forged past what those nodes establish are refused, in
   // search and in checking against the genuine evidence. The second test's
   // read claimed without the value the first test's failure leaves it; the
-  // negation claimed `true` in a condition and as the left operand of `&&`.
+  // negation claimed `true` or a nonempty wrong-kind type in a condition
+  // and as the left operand of `&&`.
   const artifacts = run("negated-disjunction-test");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const spanOf = (text: string, from: string): [number, number] => {
@@ -4422,7 +4423,11 @@ control(async (): Promise<void> => {
     [{ boolLit: { value: true } }]);
   forge("forged-negated-disjunction-operand", "operand", spanOf(negation, "export function operand"),
     [{ boolLit: { value: true } }]);
-  process.stdout.write("negated disjunction: a re-read claimed past the first test's answer, and a negation claimed true, refused in search and in checking\n");
+  forge("forged-negated-disjunction-number", "rest", spanOf(negation, "export function rest"),
+    [{ numLit: { bits: "0" } }]);
+  forge("forged-negated-disjunction-string", "operand", spanOf(negation, "export function operand"),
+    [{ strLit: { value: "x" } }]);
+  process.stdout.write("negated disjunction: a re-read claimed past the first test's answer, and a negation claimed true or at a nonempty wrong-kind type, refused in search and in checking\n");
 });
 
 mutationControl(async (): Promise<void> => {
