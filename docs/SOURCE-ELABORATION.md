@@ -902,8 +902,7 @@ base gives:
 ```
 
 where $`\vec a_B`$ is what `super` passes, none or the one message, and
-$`\textit{base}`$ is the base's construction, as for any derived class
-(above), absent where $`B`$ is `Error`; its own keys are copied and its links
+$`\textit{base}`$ is the base's construction, as for any [derived class](#derived-classes), absent where $`B`$ is `Error`; its own keys are copied and its links
 replaced by $`D`$'s. $`\mathsf{\%ErrorMessage\%}`$ binds a string argument as
 it is and an omitted or `undefined` one to `""`, which JavaScript's instance
 reads from `Error.prototype.message`. The argument is bound at `string |
@@ -2241,7 +2240,7 @@ Each entry of the block creates its bindings anew, so a closure created in
 one iteration keeps that iteration's. Refused at their location, as
 explicit restrictions, each the behaviour of reading a binding of an
 environment the model does not represent before its initialization: an
-early binding (below) declared by a pattern; one in a `switch`'s case block
+early binding (defined in this section) declared by a pattern; one in a `switch`'s case block
 (one environment for every clause, entered after the discriminant, whose
 clauses may skip a declaration); a class declaration's binding; a
 generator's body; a parameter default that mentions its own parameter or a
