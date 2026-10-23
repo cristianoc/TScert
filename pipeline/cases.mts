@@ -890,6 +890,8 @@ export const cases: Case[] = [
   { ...negative("invalid-path-witness-closure", "a closure assigning the root invalidates the path's read link (run under Node)", /missing field text/), status: "unsupported", phase: "proposal" },
   { ...positive("compiler-api-kind-narrowing", "the compiler API's nodes as a host family: `Node` is the union of the shapes the run names and a residual, so a kind test against a constant reads the named shape's members on its true edge, the JavaScript typedef's base shape included; an identifier and a token are nodes"),
     project: "pipeline/compiler-api-project" },
+  { ...positive("compiler-api-guard-after-kind-tests", "a guard after failed `kind` tests: the tests leave a fact of `kind`, the guard's read of `kind` answered by it keeps a present link, since `Node` states `kind`, and the guard's true edge narrows the node through it (`written-applications.mts#literal`)"),
+    project: "pipeline/compiler-api-project" },
   { ...negative("invalid-compiler-api-residual-parent", "a unit naming `Identifier` leaves `SourceFile` to its residual, whose `parent` is optional: `n.parent` is no `Node` (run under Node)",
     /source expression obligation at \[[0-9]+,[0-9]+\): evidence search failed: no derivation of its return-contract claim/),
     project: "pipeline/compiler-api-project" },

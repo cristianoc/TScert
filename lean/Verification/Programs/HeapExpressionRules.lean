@@ -220,9 +220,11 @@ def readFrame (k : Knowledge) (i : Nat) (fld : PropKey) (optional : Bool := fals
 
 /-- Reading uses a current-cell fact; its result is also an immutable value fact.
 This latter fact is what permits a subsequent result-contract check to retain
-precision even when the producer supplied a wider expression type. -/
-def readOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : List Atom) : Knowledge :=
-  withResult (readFrame k i fld true) R
+precision even when the producer supplied a wider expression type. The read
+link is optional, a read of the field or the `undefined` of an absent one,
+unless the receiver's type states the field (`presentRead_sound`). -/
+def readOutput (k : Knowledge) (i : Nat) (fld : PropKey) (R : List Atom) (optional : Bool := true) : Knowledge :=
+  withResult (readFrame k i fld optional) R
 
 theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
     (hm : Fact.mk i R fld ∈ k.cells) (hc : includes G A R = true)
@@ -305,6 +307,42 @@ theorem fieldOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     obtain ⟨⟨g, El⟩, hmem, rfl⟩ := hb
     exact ofBag hmem hc.1.1.1
   | _ => simp [clauseField, clauseBagOperand] at hb
+
+/-- A read a cell fact answers, of a field the receiver's type states: the
+object has the field's location, so the read link is present, as a typed
+read's is. -/
+theorem presentRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld R Ref A ρ n W h}
+    (hm : Fact.mk i R fld ∈ k.cells) (hc : includes G A R = true)
+    (hi : Γ[i]? = some Ref) (hr : fieldOperand (expand G Ref) fld = true)
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G A)
+      (fun h' v => HeapKnowledge.Holds (readOutput k i fld R false) (push v ρ) h') n W h
+      (.readAt fld (ρ i)) := by
+  cases n with
+  | zero => trivial
+  | succ n =>
+    obtain ⟨_,flds',_,_,l,_,hl',hfd,_,_⟩ := fieldOperand_sound hr (he.2 i Ref hi)
+    obtain ⟨flds,c,oid,v,hl,hrd,a,ha,hav⟩ := hk.1 _ hm
+    have hflds : flds = flds' := by
+      have := hl.symm.trans hl'
+      simp only [Tm.objAt.injEq] at this
+      exact this.1
+    subst hflds
+    have hlv : h[l]? = some v := by simpa [ReadGave, hfd] using hrd
+    rw [hl]
+    apply consequence _ _ (hrd.observed (Atom.isValue hav) hw hh)
+    · intro j U u hu; subst u; exact includes_sound hc ⟨a,ha,hav⟩ j U
+    · intro h' u hp
+      rw [hp.1]
+      have hout := result_holds (HeapKnowledge.shift_holds (v := u) hk) ⟨a,ha,by simpa [hp.2] using hav⟩
+      refine ⟨hout.1,hout.2.1,?_⟩
+      intro link hm
+      rcases List.mem_append.mp hm with hm | hm
+      · obtain ⟨j,hj,rfl⟩ := List.mem_map.mp hm
+        have he := HeapLinks.aliases_eq hk.2.2 hj
+        exact ⟨flds,c,oid,l,he.trans hl,hfd,by simpa [push,hp.2] using hlv⟩
+      · exact hout.2.2 link hm
 
 theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ k i fld Ref A ρ n W h}
     (ht : HasTyUsing G images Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
@@ -1224,7 +1262,7 @@ frame. Subtype comparisons retain unfinished work through the step validation. -
     CheckResult.fromOption (match readSlot j.term with
       | some (fld, i') =>
         if i' = i ∧ i < j.context.length ∧ Fact.mk i R fld ∈ k.cells ∧ includes G j.type R = true
-        then some (readOutput k i fld R) else none
+        then some (readOutput k i fld R (!(j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld))) else none
       | none => none)
   | .slicedRead tag q i e p =>
     match readSlot j.term with
@@ -1319,7 +1357,7 @@ theorem checkStepUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Instan
     | some (fld, i') =>
       if i' = i ∧ i < j.context.length ∧
           Fact.mk i R fld ∈ k.cells ∧ includes G j.type R = true
-      then some (readOutput k i fld R) else none
+      then some (readOutput k i fld R (!(j.context[i]?).any (fun Ref => fieldOperand (expand G Ref) fld))) else none
     | none => none
   | .slicedRead tag q i e p =>
     match readSlot j.term with
@@ -1476,7 +1514,12 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         have term := readSlot_eq hslot
         cases hc
         rw [term]
-        simpa [instantiate] using read_sound hm hi he hk hw hh
+        cases hr : j.context[i']? with
+        | some Ref =>
+          by_cases hfo : fieldOperand (expand G Ref) fld = true
+          · simpa [instantiate, hr, hfo] using presentRead_sound hm hi hr hfo he hk hw hh
+          · simpa [instantiate, hr, hfo] using read_sound hm hi he hk hw hh
+        | none => simpa [instantiate, hr] using read_sound hm hi he hk hw hh
       · contradiction
     · contradiction
   | slicedRead tag q i e p =>
