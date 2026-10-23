@@ -794,9 +794,11 @@ derivation names a premise at or after its own position, so a document has
 no cycle. A document may state an entry twice or not use it: the bundle it
 denotes is the same. The decoder builds each table in order, each entry
 from the entries it names, so an entry named twice is one value of the
-decoded bundle (`EvidenceWire.decode`); the table it builds satisfies the
-equations above (`EvidenceWire.proofs_unfold`), which have one solution
-(`EvidenceWire.unfold_unique`). Search writes each type, context, link,
+decoded bundle (`EvidenceWire.decode`). Given the types and contexts it
+built, the derivations table satisfies the equation of $`\mathit{proof}`$
+above (`EvidenceWire.proofs_unfold`), which has one solution
+(`EvidenceWire.unfold_unique`); the other tables and the nodes are read by
+direct lookups, trusted code. Search writes each type, context, link,
 knowledge and derivation once (`EvidenceWire.encode`), an untrusted
 choice.
 

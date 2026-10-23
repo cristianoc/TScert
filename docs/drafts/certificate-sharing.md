@@ -224,18 +224,20 @@ derivation's premises are earlier entries of its table; a reference is a
 position in the table its field's kind gives. The decoder reads the shape
 strictly, then builds each table in order, each entry from the entries it
 names: a reference past its table, or a premise at or after its
-derivation, is refused, so kind, bounds and acyclicity are checked. The
-built table satisfies the unfolding equations (`proofs_unfold`), which have
-one solution (`unfold_unique`): resolution preserves the unfolded
-structure. An entry named twice is one value of the decoded bundle.
+derivation, is refused, so kind, bounds and acyclicity are checked. Given
+the types and contexts it built, the derivations table satisfies the
+unfolding equations (`proofs_unfold`), which have one solution
+(`unfold_unique`): resolution of derivations preserves the unfolded
+structure. Types, contexts, knowledge and nodes are resolved by direct
+lookups, audited trusted code. An entry named twice is one value of the decoded bundle.
 
 **Cited — checking.** The checker reads the decoded bundle, the bundle the
 references unfold to, through the existing checks: reference-aware checking
 is the existing checking of that bundle, its transport under reassignment
 the existing one, and every inspector, promises and footprints included,
 reads the same rules and premises. `checkJson_safe` keeps its premise and
-its safety conclusions; `DocumentSafe` names the decoder
-(`EvidenceWire.decode`) where it named `decodeStrict`. A derivation named
+its safety conclusions; `DocumentSafe` names the decoder,
+`EvidenceWire.decode`. A derivation named
 twice is checked at each use: storage sharing is no checking cache. The
 `Answered` subtype-search cache is unchanged.
 
@@ -245,13 +247,16 @@ positions), link, heap knowledge (by its facts and its links' positions)
 and derivation node (by its claim, rule and premises' positions), comparing
 keys in full on a hash collision. A sequent is written inside its
 derivation node, its context and type by reference: in the measured
-certificates distinct sequents and distinct derivation nodes are one to one
-(`moduleFunction`, 3,823 and 3,822). Contexts are exact: their table holds
+certificates distinct sequents and distinct derivation nodes nearly
+coincide (`moduleFunction`, 3,823 and 3,822). Contexts are exact: their table holds
 0.08 MB of `moduleFunction`'s 5.8 MB, so context deltas are not taken.
-Edges, handlers, promise facts and read summaries are written in full.
+Edges, handlers, promise facts and read summaries are written in full: of
+`moduleFunction`'s 5.8 MB, edges hold 1.25 MB, yields 0.33 MB, read
+summaries 0.10 MB and handlers 0.01 MB; the value facts inside knowledge
+entries hold 1.4 MB.
 
-**Trust.** The reference decoder is trusted code; its resolution is proved
-to unfold. The shape of the tables is read by `decodeStrict`, whose
+**Trust.** The reference decoder is trusted code; its resolution of
+derivations is proved to unfold, its lookups of the other tables audited. The shape of the tables is read by `decodeStrict`, whose
 `fromJson`/`sameJson` round trip stays as trusted as before. Interning and
 hashing are untrusted; collision resistance is not assumed.
 

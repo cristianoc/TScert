@@ -118,13 +118,13 @@ variable {ι β α : Type}
 
 /-- Entry `k` of the entries a reference may name (for a derivation's
 premises, the ones before it), or the refusal naming the reference. -/
-def entry (kind : String) (table : Array β) (k : Nat) : Except String β :=
+@[nospecialize] def entry (kind : String) (table : Array β) (k : Nat) : Except String β :=
   match table[k]? with
   | some b => .ok b
   | none => .error s!"a reference to {kind} {k}, not among the {kind} entries it may name"
 
 /-- The entries a list of references names. -/
-def entries (kind : String) (table : Array β) : List Nat → Except String (List β)
+@[nospecialize] def entries (kind : String) (table : Array β) : List Nat → Except String (List β)
   | [] => .ok []
   | k :: ks => match entry kind table k, entries kind table ks with
     | .ok b, .ok bs => .ok (b :: bs)
@@ -132,7 +132,7 @@ def entries (kind : String) (table : Array β) : List Nat → Except String (Lis
     | .ok _, .error m => .error m
 
 /-- Each entry built in order, from the ones before it. -/
-def build (f : Array β → α → Except String β) : List α → Array β → Except String (Array β)
+@[nospecialize] def build (f : Array β → α → Except String β) : List α → Array β → Except String (Array β)
   | [], acc => .ok acc
   | e :: es, acc => match f acc e with
     | .ok b => build f es (acc.push b)
@@ -145,7 +145,7 @@ structure Tables (ι : Type) where
   knowledge : Array HeapKnowledge.Knowledge
   proofs : Array (Evidence ι)
 
-def sequent (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (s : SequentRef) :
+@[nospecialize] def sequent (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (s : SequentRef) :
     Except String (Sequent ι) :=
   match entry "context" contexts s.context, entry "type" types s.type with
   | .ok Γ, .ok A => .ok ⟨Γ, s.term, A⟩
@@ -153,17 +153,17 @@ def sequent (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (s : Seque
   | .ok _, .error m => .error m
 
 /-- A derivation node, its premises among the nodes `earlier`. -/
-def proof (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (earlier : Array (Evidence ι))
+@[nospecialize] def proof (types : Array (Ty ι)) (contexts : Array (List (Ty ι))) (earlier : Array (Evidence ι))
     (e : ProofEntry ι) : Except String (Evidence ι) :=
   match sequent types contexts e.claim, entries "proof" earlier e.premises with
   | .ok j, .ok premises => .ok (.node j e.rule premises)
   | .error m, _ => .error m
   | .ok _, .error m => .error m
 
-def knowledge (links : Array HeapLinks.Link) (e : KnowledgeEntry) : Except String HeapKnowledge.Knowledge := do
+@[nospecialize] def knowledge (links : Array HeapLinks.Link) (e : KnowledgeEntry) : Except String HeapKnowledge.Knowledge := do
   return ⟨e.cells, e.values, ← entries "link" links e.links⟩
 
-def tables (d : Document ι) : Except String (Tables ι) := do
+@[nospecialize] def tables (d : Document ι) : Except String (Tables ι) := do
   let types := d.types.toArray
   let contexts ← build (fun _ c => entries "type" types c) d.contexts #[]
   let links := d.links.toArray
@@ -171,7 +171,7 @@ def tables (d : Document ι) : Except String (Tables ι) := do
   let proofs ← build (proof types contexts) d.proofs #[]
   return ⟨types, contexts, knowledge, proofs⟩
 
-def step (t : Tables ι) : StepRef ι → Except String (HeapExpressionRules.StepEvidence ι)
+@[nospecialize] def step (t : Tables ι) : StepRef ι → Except String (HeapExpressionRules.StepEvidence ι)
   | .ordinary p => return .ordinary (← entry "proof" t.proofs p)
   | .pure p => return .pure (← entry "proof" t.proofs p)
   | .reading p => return .reading (← entry "proof" t.proofs p)
@@ -184,14 +184,14 @@ def step (t : Tables ι) : StepRef ι → Except String (HeapExpressionRules.Ste
   | .allocated p => return .allocated (← entry "proof" t.proofs p)
   | .written receiver value contents p => return .written receiver value contents (← entry "proof" t.proofs p)
 
-def ordinary (t : Tables ι) : OrdinaryRef → Except String (OrdinaryEvidence ι)
+@[nospecialize] def ordinary (t : Tables ι) : OrdinaryRef → Except String (OrdinaryEvidence ι)
   | .effect => return .effect
   | .proof p => return .proof (← entry "proof" t.proofs p)
 
 /-- A node, in its one spelling (`NodeEvidence.wellFormed`). Every field is
 given positionally, so a field added to `NodeEvidence` is a field this
 reads. -/
-def node (t : Tables ι) (n : NodeRef ι) : Except String (NodeEvidence ι) := do
+@[nospecialize] def node (t : Tables ι) (n : NodeRef ι) : Except String (NodeEvidence ι) := do
   let c : NodeEvidence ι := ⟨← n.ordinary.mapM (ordinary t), ← n.sequent.mapM (sequent t.types t.contexts),
     n.edges, ← entry "knowledge" t.knowledge n.knowledge, ← n.effect.mapM (step t),
     ← entry "knowledge" t.knowledge n.output, n.handler, n.implies, n.yields, n.arguments, n.promise⟩
@@ -199,17 +199,17 @@ def node (t : Tables ι) (n : NodeRef ι) : Except String (NodeEvidence ι) := d
     throw "a node states its sequent once, by its ordinary derivation, its step's proof or itself, and has an ordinary derivation without step evidence"
   return c
 
-def response (t : Tables ι) (r : ResponseRef ι) : Except String (Response ι) := do
+@[nospecialize] def response (t : Tables ι) (r : ResponseRef ι) : Except String (Response ι) := do
   return ⟨← r.certificate.mapM (node t), ← r.codes.mapM (·.mapM (node t)), r.readSummaries⟩
 
 /-- The bundle a document states. -/
-def Document.resolve (d : Document ι) : Except String (Bundle ι) := do
+@[nospecialize] def Document.resolve (d : Document ι) : Except String (Bundle ι) := do
   let t ← tables d
   return ⟨← d.functions.mapM (response t), ← d.obligations.mapM (entries "proof" t.proofs)⟩
 
 /-- **The evidence decoder.** The document's exact shape (`decodeStrict`),
 then its references resolved. -/
-def decode [ToJson ι] [FromJson ι] (j : Json) : Except String (Bundle ι) := do
+@[nospecialize] def decode [ToJson ι] [FromJson ι] (j : Json) : Except String (Bundle ι) := do
   let d : Document ι ← decodeStrict j
   d.resolve
 
@@ -351,7 +351,7 @@ structure Interned (κ α : Type) [BEq κ] [Hashable κ] where
   entries : Array α := #[]
 
 /-- The position of `key`'s entry, added as `value` where it is new. -/
-def Interned.add [BEq κ] [Hashable κ] (t : Interned κ α) (key : κ) (value : α) : Nat × Interned κ α :=
+@[nospecialize] def Interned.add [BEq κ] [Hashable κ] (t : Interned κ α) (key : κ) (value : α) : Nat × Interned κ α :=
   match t.positions[key]? with
   | some k => (k, t)
   | none => (t.entries.size, ⟨t.positions.insert key t.entries.size, t.entries.push value⟩)
@@ -367,38 +367,38 @@ structure Interner (ι : Type) [BEq ι] [Hashable ι] where
 
 abbrev InternM (ι : Type) [BEq ι] [Hashable ι] := StateM (Interner ι)
 
-def internType (A : Ty ι) : InternM ι Nat := modifyGet fun s =>
+@[nospecialize] def internType (A : Ty ι) : InternM ι Nat := modifyGet fun s =>
   let (k, t) := s.types.add A A
   (k, { s with types := t })
 
-def internContext (Γ : List (Ty ι)) : InternM ι Nat := do
+@[nospecialize] def internContext (Γ : List (Ty ι)) : InternM ι Nat := do
   let ks ← Γ.mapM internType
   modifyGet fun s =>
     let (k, t) := s.contexts.add ks ks
     (k, { s with contexts := t })
 
-def internLink (l : HeapLinks.Link) : InternM ι Nat := modifyGet fun s =>
+@[nospecialize] def internLink (l : HeapLinks.Link) : InternM ι Nat := modifyGet fun s =>
   let (k, t) := s.links.add l l
   (k, { s with links := t })
 
-def internKnowledge (k : HeapKnowledge.Knowledge) : InternM ι Nat := do
+@[nospecialize] def internKnowledge (k : HeapKnowledge.Knowledge) : InternM ι Nat := do
   let ls ← k.links.mapM internLink
   let key := ((toJson k.cells).compress, (toJson k.values).compress, ls)
   modifyGet fun s =>
     let (i, t) := s.knowledge.add key ⟨k.cells, k.values, ls⟩
     (i, { s with knowledge := t })
 
-def internSequent (j : Sequent ι) : InternM ι SequentRef := do
+@[nospecialize] def internSequent (j : Sequent ι) : InternM ι SequentRef := do
   return ⟨← internContext j.context, j.term, ← internType j.type⟩
 
-partial def internProof : Evidence ι → InternM ι Nat
+@[nospecialize] partial def internProof : Evidence ι → InternM ι Nat
   | .node j rule premises => do
     let e : ProofEntry ι := ⟨← internSequent j, rule, ← premises.mapM internProof⟩
     modifyGet fun s =>
       let (k, t) := s.proofs.add (toJson e).compress e
       (k, { s with proofs := t })
 
-def internStep : HeapExpressionRules.StepEvidence ι → InternM ι (StepRef ι)
+@[nospecialize] def internStep : HeapExpressionRules.StepEvidence ι → InternM ι (StepRef ι)
   | .ordinary p => return .ordinary (← internProof p)
   | .pure p => return .pure (← internProof p)
   | .reading p => return .reading (← internProof p)
@@ -411,20 +411,20 @@ def internStep : HeapExpressionRules.StepEvidence ι → InternM ι (StepRef ι)
   | .allocated p => return .allocated (← internProof p)
   | .written receiver value contents p => return .written receiver value contents (← internProof p)
 
-def internOrdinary : OrdinaryEvidence ι → InternM ι OrdinaryRef
+@[nospecialize] def internOrdinary : OrdinaryEvidence ι → InternM ι OrdinaryRef
   | .effect => return .effect
   | .proof p => return .proof (← internProof p)
 
-def internNode (n : NodeEvidence ι) : InternM ι (NodeRef ι) := do
+@[nospecialize] def internNode (n : NodeEvidence ι) : InternM ι (NodeRef ι) := do
   return ⟨← n.ordinary.mapM internOrdinary, ← n.sequent.mapM internSequent, n.edges,
     ← internKnowledge n.knowledge, ← n.effect.mapM internStep, ← internKnowledge n.output, n.handler,
     n.implies, n.yields, n.arguments, n.promise⟩
 
-def internResponse (r : Response ι) : InternM ι (ResponseRef ι) := do
+@[nospecialize] def internResponse (r : Response ι) : InternM ι (ResponseRef ι) := do
   return ⟨← r.certificate.mapM internNode, ← r.codes.mapM (·.mapM internNode), r.readSummaries⟩
 
 /-- The document a bundle is written as. -/
-def encode (b : Bundle ι) : Json :=
+@[nospecialize] def encode (b : Bundle ι) : Json :=
   let run : InternM ι (List (ResponseRef ι) × List (List Nat)) := do
     return (← b.functions.mapM internResponse, ← b.obligations.mapM (·.mapM internProof))
   let ((functions, obligations), s) := run.run {}

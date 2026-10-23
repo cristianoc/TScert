@@ -4602,6 +4602,7 @@ control(async (): Promise<void> => {
       const [n, k] = separate(b);
       const claim = JSON.stringify(must(proofs(b)[k], "its derivation").claim);
       const other = proofs(b).findIndex((p) => JSON.stringify(p.claim) !== claim);
+      assert.ok(other >= 0, "a derivation at another sequent");
       jsonObject(jsonObject(n.ordinary).proof).tree = other;
     }],
     ["other-premise", (b) => {
@@ -4626,7 +4627,7 @@ control(async (): Promise<void> => {
   for (const [name, change] of differing) {
     const checked = check(name, change);
     assert.equal(checked.status, 1, `${name}: ${checked.stdout}${checked.stderr}`);
-    assert.match(checked.stdout + checked.stderr, /^reject: /m, name);
+    assert.match(checked.stdout + checked.stderr, /^reject: source (evidence|incoming edge obligation|expression obligation)/m, name);
     assert.doesNotMatch(checked.stdout + checked.stderr, /entries it may name|Verification\.EvidenceWire\.Document\./, name);
   }
   const accepted: [string, (b: JsonObject) => void][] = [
