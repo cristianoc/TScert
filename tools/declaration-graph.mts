@@ -5,7 +5,7 @@
  * declaration reached into a source equation, or refuses a form the fragment
  * cannot state; a refusal never drops a declaration. */
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, TypePredicateKind, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
+import { DiagnosticCategory, ElementFlags, SignatureKind, SymbolFlags, TypeFlags, TypePredicateKind, isTupleType, isTypeReference, isUnionType, type Checker, type Program, type Project, type Symbol as CompilerSymbol, type Type } from "typescript/unstable/sync";
 import * as ts from "typescript/unstable/ast";
 import type { ClassDeclaration, ExportDeclaration, FunctionDeclaration, Identifier, ImportDeclaration, InterfaceDeclaration, Node, SourceFile, TypeAliasDeclaration, TypeNode } from "typescript/unstable/ast";
 // declaration-types.mts declares the declaration document this module writes, which the Fragment carries and Lean's EquationLowering reads.
@@ -42,6 +42,8 @@ import { messageOf, passToolFailure, toolFailureOf } from "./thrown.mts";
 import { orAbsent, readText, realPath, remembered, type Remembered } from "./files.mts";
 // compiler-channel.mts opens and releases the compiler, every request's failure a tool failure.
 import { openFrontEndCompiler, releaseCompiler } from "./compiler-channel.mts";
+// declaration-session.mts retains a named project's compiler between collections.
+import { inDeclarationSession, noteAutomaticCollection } from "./declaration-session.mts";
 
 type TypeDeclaration = TypeAliasDeclaration | InterfaceDeclaration | ClassDeclaration;
 const isTypeDeclaration = (node: Node): node is TypeDeclaration =>
@@ -141,11 +143,41 @@ export function tsconfigOf(path: string): string {
 }
 
 /** Open `file` in its configured TypeScript project, which must be strict:
- * `tsconfigPath` when given, otherwise the project that owns the file. The
- * compiler reads the files on disk; only a probe program (`type-probe.mts`)
- * reads some of them with text of its own, in a snapshot of its own. */
+ * `tsconfigPath` when given, read in a declaration session
+ * (`declaration-session.mts`), otherwise the project that owns the file, in
+ * a compiler of its own. The compiler reads the files on disk; only a probe
+ * program (`type-probe.mts`) reads some of them with text of its own, in a
+ * snapshot of its own. */
 function withProject<T>(file: string, tsconfigPath: string | undefined,
   use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
+  if (tsconfigPath === undefined) return withOwnProject(file, use);
+  // A named project is opened alone: opening the file as well would load
+  // the project the compiler finds for it besides the named one.
+  return inDeclarationSession(file, tsconfigPath, (project, probe) => useProject(file, project, () => {}, use, probe));
+}
+
+/** `use` over `project` as loaded for `file`: a strict configured project
+ * holding the file whose own program has no error, `check`ed further. */
+function useProject<T>(file: string, project: Project | undefined, check: (project: Project) => void,
+  use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T,
+  probe: ProbeProgram): T {
+  if (!project?.configFileName || !project.compilerOptions.strict)
+    throw new DeclarationError([0, 0], `TypeScript did not load a strict tsconfig for ${file}`);
+  check(project);
+  const client = project.program.getSourceFile(file);
+  if (!client) throw new DeclarationError([0, 0], `TypeScript did not load ${file}`);
+  // The project itself must load: a type package it names, such as
+  // `types: ["node"]`, that is not installed leaves its globals undeclared.
+  const broken = project.program.getProgramDiagnostics().find(d => d.category === DiagnosticCategory.Error);
+  if (broken) throw new DeclarationError([0, 0], `TypeScript reports an error in the project: ${broken.text}`);
+  return use(project.checker, client, dirname(project.configFileName), project.program, probe);
+}
+
+/** `withProject` for the project the compiler finds for `file`, in a
+ * compiler opened for it and released after it. */
+function withOwnProject<T>(file: string,
+  use: (checker: Checker, client: SourceFile, root: string, program: Program, probe: ProbeProgram) => T): T {
+  noteAutomaticCollection();
   const overlay = new Map<string, string>();
   const api = openFrontEndCompiler(dirname(file), overlay);
   // The files the last probe replaced, read from disk again by the next. The
@@ -173,23 +205,10 @@ function withProject<T>(file: string, tsconfigPath: string | undefined,
   };
   let thrown: { error: unknown } | null = null;
   try {
-    // A named project is opened alone: opening the file as well would load
-    // the project the compiler finds for it besides the named one.
-    opened = tsconfigPath === undefined;
-    const snapshot = api.updateSnapshot(tsconfigPath ? { openProjects: [tsconfigPath] } : { openFiles: [file] });
-    const project = tsconfigPath
-      ? snapshot.getProject(tsconfigPath)
-      : snapshot.getDefaultProjectForFile(file);
-    if (!project?.configFileName || !project.compilerOptions.strict)
-      throw new DeclarationError([0, 0], `TypeScript did not load a strict tsconfig for ${file}`);
-    const client = project.program.getSourceFile(file);
-    if (!client) throw new DeclarationError([0, 0], `TypeScript did not load ${file}`);
-    // The project itself must load: a type package it names, such as
-    // `types: ["node"]`, that is not installed leaves its globals undeclared.
-    const broken = project.program.getProgramDiagnostics().find(d => d.category === DiagnosticCategory.Error);
-    if (broken) throw new DeclarationError([0, 0], `TypeScript reports an error in the project: ${broken.text}`);
-    config = project.configFileName;
-    return use(project.checker, client, dirname(project.configFileName), project.program, probe);
+    const snapshot = api.updateSnapshot({ openFiles: [file] });
+    return useProject(file, snapshot.getDefaultProjectForFile(file), (project) => {
+      config = project.configFileName;
+    }, use, probe);
   } catch (error) {
     thrown = { error };
     throw error;

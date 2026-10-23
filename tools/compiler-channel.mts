@@ -87,7 +87,17 @@ function guard(client: PrivateClient): void {
   guarded.add(prototype);
 }
 
-/** A compiler process opened through the API, its requests guarded. */
+/** The documents each compiler holds open, with how many times each was
+ * opened: every snapshot request of an API goes through `openCompiler`'s
+ * wrapper, which counts the files it opens and closes. */
+const documents = new WeakMap<API, Map<string, number>>();
+/** The documents `api` holds open. */
+export const openDocuments = (api: API): string[] => [...(documents.get(api)?.keys() ?? [])];
+type SnapshotParams = NonNullable<Parameters<API["updateSnapshot"]>[0]>;
+const documentKey = (document: unknown): string => typeof document === "string" ? document : String(JSON.stringify(document));
+
+/** A compiler process opened through the API, its requests guarded and the
+ * documents it holds open counted. */
 export function openCompiler(options: ConstructorParameters<typeof API>[0]): API {
   let api: API;
   try {
@@ -97,6 +107,19 @@ export function openCompiler(options: ConstructorParameters<typeof API>[0]): API
   }
   const client = privateClient(api);
   guard(client);
+  const open = new Map<string, number>();
+  documents.set(api, open);
+  const request = api.updateSnapshot.bind(api);
+  Object.assign(api, { updateSnapshot: (params?: SnapshotParams) => {
+    const snapshot = request(params);
+    for (const document of params?.openFiles ?? []) open.set(documentKey(document), (open.get(documentKey(document)) ?? 0) + 1);
+    for (const document of params?.closeFiles ?? []) {
+      const key = documentKey(document), count = (open.get(key) ?? 0) - 1;
+      if (count > 0) open.set(key, count);
+      else open.delete(key);
+    }
+    return snapshot;
+  } });
   compilerStarted(client.channel.child.pid);
   return api;
 }
@@ -181,12 +204,20 @@ function current(from: string): Current {
       changed: (): boolean => JSON.stringify(identify(locate(from))) !== JSON.stringify(identified) } };
 }
 let using: Current = current(import.meta.dirname);
+/** How many times the installation in use was chosen: a compiler opened
+ * under one choice is not another's. */
+let choices: number = 0;
 /** The compiler's implementation, as this process loaded it. */
 export const compilerImplementation = (): CompilerImplementation => using.implementation;
+/** The compiler's identity as a retained session compares it
+ * (`declaration-session.mts`): the installation's choice and identity. */
+export const compilerChoice = (): string =>
+  JSON.stringify([choices, "identity" in using.implementation ? using.implementation.identity : using.implementation.unobserved]);
 /** Tests only: the compiler installed in the `node_modules` of `directory`
  * from now on, or the front end's own for null. */
 export function useInstallationForTests(directory: string | null): void {
   using = current(directory ?? import.meta.dirname);
+  choices++;
 }
 
 /** The launcher of the confined compiler, made once per installation. */
@@ -248,15 +279,24 @@ function abandon(api: API): void {
  * without a further request. A failure closing it abandons it and is
  * reported, as a tool failure, with what was in flight as context. */
 export function releaseCompiler(api: API, thrown: { error: unknown } | null): void {
-  observeEnd(api);
   const failure = thrown && toolFailureOf(thrown.error);
   if (failure && !failure.readable) {
+    observeEnd(api);
     abandon(api);
     return;
   }
+  // The process's end is announced as the API closes its channel, after the
+  // requests releasing its snapshots, so their work is observed.
+  const client = privateClient(api);
+  const closeChannel = client.close;
+  Object.assign(client, { close: function (this: unknown): void {
+    observeEnd(api);
+    closeChannel.call(this);
+  } });
   try {
     api.close();
   } catch (error) {
+    observeEnd(api);
     abandon(api);
     const context = thrown ? `, closing the compiler after: ${messageOf(thrown.error).split("\n")[0] ?? ""}` :
       ", closing the compiler";

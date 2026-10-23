@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { close as closeParser } from "../tools/fragment-parse.mts";
 import { diagnosticsCall, parseCall, type Parsed } from "./parse-stage.mts";
 import { processInconsistency, processRetirement } from "../tools/files.mts";
+import { retainDeclarationSessions } from "../tools/declaration-session.mts";
 import { tsconfigOf, type SeenDiagnostic } from "../tools/declaration-graph.mts";
 import { readDiagnostic } from "../tools/diagnostic.mts";
 import { presentObligation } from "../tools/diagnostic-view.mts";
@@ -698,27 +699,35 @@ export function checkApart(source: string, project?: string, typescriptErrors: b
 }
 // A worker of `checkApart`'s pool: one check per message, answered with its outcome.
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && process.argv[2] === "--serve") {
+  // A worker keeps one declaration session between its checks (STAGE-STORE.md,
+  // "Retained declaration sessions"), released when it ends.
+  retainDeclarationSessions(true);
+  const end: (code: number) => never = (code) => {
+    retainDeclarationSessions(false);
+    closeParser();
+    process.exit(code);
+  };
   process.on("message", (message: unknown) => {
     let outcome: Outcome;
     try {
       outcome = checkRequest(readRequest(message));
     } catch (error) {
       process.stderr.write(messageOf(error) + "\n");
-      process.exit(1);
+      end(1);
     }
     // A process whose caches may disagree with the file system answers
     // this check and exits: a fresh worker takes the next (STAGE-STORE.md,
     // "Observed stages").
     const retire = processInconsistency() !== null || processRetirement() !== null;
-    if (retire) process.send?.(retiringMessage);
+    if (retire) {
+      process.send?.(retiringMessage);
+      retainDeclarationSessions(false);
+    }
     process.send?.(outcome, () => {
-      if (retire) process.exit(0);
+      if (retire) end(0);
     });
   });
-  process.on("disconnect", () => {
-    closeParser();
-    process.exit(0);
-  });
+  process.on("disconnect", () => end(0));
 } else if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   const all = process.argv.slice(2);
   const budgetAt = all.indexOf("--subtype-rounds");
@@ -732,6 +741,8 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
   } else {
     // The printed outcome names the run's directory, kept for inspection.
     keepRunDirectories();
+    // The check's collections share a declaration session, released at its end.
+    retainDeclarationSessions(true);
     try {
       const result = check(args[0], args[2] ? tsconfigOf(args[2]) : undefined, typescriptErrors, subtypeRounds);
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");
@@ -739,6 +750,8 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename && proc
     } catch (error) {
       process.stderr.write(messageOf(error) + "\n");
       process.exitCode = 1;
+    } finally {
+      retainDeclarationSessions(false);
     }
   }
 }

@@ -262,11 +262,14 @@ import no file system, module or process API.
   with the reason recorded and no entry published. The modules the
   front end loads at start-up are these.
 
-*State follows the observations.* Each parse and each diagnostics stage opens
-its compilers fresh and releases them, so no compiler outlives the stage:
-the compiler's state is a function of the requests the front end makes,
-which its code and inputs determine, and of the observed answers. The
-process's own caches of file-system-derived values (installation roots and
+*State follows the observations.* Each parse opens its parser fresh and
+releases it at its end. A declaration compiler is opened for its collection
+and released after it, or is a worker's
+[retained declaration session](#retained-declaration-sessions), whose ledger
+of every answer its compiler was given is part of the observations of each
+stage that uses it. The compilers' state is a function of the requests the
+front end makes, which its code and inputs determine, and of answers the
+stage's observations include. The process's own caches of file-system-derived values (installation roots and
 inventories, activated guard tables, declaration origins) keep the
 observations a value was computed from, and whether they were complete;
 its first use in a stage makes them again, computing the value again where
@@ -294,6 +297,143 @@ withdrawal recomputes the eligible reads and transitive claims assembly.
 A replayed search refusal drives the same withdrawal decision as a fresh
 refusal. The orchestration and diagnostic presentation run under their
 current implementation; a stored raw refusal is not a stored final Outcome.
+
+## Retained declaration sessions
+
+A worker of the pipeline's pool (`verify-source.mts --serve`, which the
+census and the cases use) and the command line's one check retain one
+*declaration session*: the compiler of a named project, kept between
+collections of declarations
+([`tools/declaration-session.mts`](../tools/declaration-session.mts)). The
+parser is no session: each parse opens its own. A collection of an
+automatically selected project opens a compiler of its own, releases it
+after the collection, and releases the retained session.
+
+*Compatibility.* A collection naming the project `p` with the resolution
+file `f` uses the retained session when all of these hold:
+
+1. the session's project is `p`, as a normalized absolute path, and its
+   compiler's working directory is `dirname(f)`;
+2. the session's compiler installation (`compilerChoice`) and the serialized
+   active family descriptions are the collection's; the node-side code and
+   the runtime are the process's, whose lifetime bounds the session's;
+3. its ledger holds (below), the process's Node caches are consistent and
+   not marked for retirement, and its base state is clean.
+
+Otherwise the retained session is released, and a new one opened at
+`dirname(f)`, with `p` opened by its first snapshot. Slices whose snapshot
+directories differ share a session where their resolution files lie in one
+directory; a collection of an import in another directory replaces it.
+Releasing the worker, retiring it, ending the command or turning retention
+off releases the session. A worker killed at its check's limit takes its
+compilers with it: a compiler process ends when its channel to the worker
+closes.
+
+*Base state and restoration.* Between collections a session holds exactly
+the project `p` open, no document open and an empty overlay. A collection
+reacquires `p` in a snapshot of its own and checks what a fresh compiler's
+collection checks: a strict configured project holding `f`, whose own
+program reports no error. Its probes replace project files through the
+overlay. After its result or its refusal, the collection restores the base
+state: the overlay cleared, the compiler notified of every path a probe
+replaced, the collection's snapshots released, and the new snapshot checked
+to hold only `p`, with no overlay entry and no open document. The front end
+counts a compiler's open documents at its snapshot requests, the only
+requests that open or close one (`openDocuments`,
+`tools/compiler-channel.mts`); a session's own requests name no file to
+open, which its request function refuses. A tool failure releases the
+session. A restoration that fails, or a state other than the
+base one, releases it and makes every record being made incomplete, so the
+attempt that used it publishes nothing.
+
+*The ledger.* A session's ledger is a record kept over the session's
+lifetime (`withLedger`, `tools/files.mts`): every answer its compiler and its
+collections were given, a later query's, a diagnostics list's, a probe's and
+a restoration's included, each with its Node-origin bit, and why it is
+incomplete or inconsistent, if it is. Before a retained session serves a
+collection, every answer is made again outside the records being made
+(`validateLedger`): an answer that differs releases the session. Every Node
+answer is made again, after one differs as well, against the process's first
+answers; one that differs makes the process inconsistent, and the worker
+retires. An incomplete or inconsistent ledger is never retained. The
+validated ledger, its metadata included, is noted in every record being made
+(`importLedger`), and every record begun while the ledger is kept, a nested
+stage's or a process cache's computation, holds it from its start; so an
+attempt's observations, and a cached value's, hold every answer the
+compiler's state was computed from. The collection's new answers accumulate
+in the ledger and in those records. At the end of each parse and diagnostics
+stage, before publication, the ledger of every session the stage's
+collections used is made again (`inDeclarationAttempt`), a session released
+during the stage and a nested stage's included: one that does not hold makes
+the attempt publish nothing, and releases its session if it is retained. These
+checks keep the store's assumption that the file system is stable while a
+stage reads it; they take no atomic snapshot of it.
+
+*Keys.* The parse's pre-key binds the source's bytes, the snapshot path,
+whose directory is the parser's working directory, the resolution file,
+whose directory is the declaration compiler's, the named project or none,
+and the active families; the diagnostics' pre-key binds the file, the
+project and the families. A probe's overlay derives from these inputs and
+the declarations read. The session's generation and the order of requests
+are no inputs. An entry's key binds the ledger's answers with the stage's
+own, so a session that read more gives an entry more observations: an
+invalidation that may be wider than a fresh compiler's.
+
+*Fidelity.* Conjectured: for fixed inputs and unchanged answers, a parse in
+a reused session is the parse in fresh compilers, its Fragment or refusal
+and its ordered diagnostics byte for byte. It rests on the compiler's caches
+being correct across snapshots whose answers hold and on the exact
+restoration of the base state, a trusted obligation of the front end
+([trust surface](DESIGN.md#trust-surface)) and no Lean result. The controls
+of `tests/session-reuse.mts`, run by `make test` through the production
+adapters with replay disabled, compare each reused parse with the fresh one
+at the same paths:
+
+- forward, reverse and A–B–A orders, successes and refusals, distinct
+  snapshot directories sharing one resolution project, one compiler opened
+  and the parser opened by every parse; TypeScript's diagnostics between
+  parses reuse the session and leave its base state, two ordered errors of
+  a module among them;
+- another project, resolution directory, family configuration, or an
+  automatically selected project replaces the session; a snapshot path
+  given other bytes, and project selection, are other inputs;
+- a dependency first read by a later collection's query (a declaration
+  file's real path, which the Fragment names) and one a later compiler
+  request reads first (a configuration it parses) each enter the ledger and
+  the stored entry; changing either replaces the session, the replacement's
+  parse is the fresh one, and the entry no longer replays, while an
+  unchanged entry replays opening no compiler; a probe's collection makes
+  observations the session had not, each in its entry;
+- any other changed answer of the ledger replaces the session and refuses
+  the stored entry: a declaration, the configuration, an absent target
+  created, a directory's entries, a link, a removed file;
+- a probe-heavy collection (computed forms evaluated at applications) and
+  shadowing locals among the compared parses;
+- a record begun during a reused collection holds the ledger; a change, at
+  an attempt's end, to what only a session the attempt used and released
+  read, by itself or in a nested stage that ended before, publishes nothing;
+- an incomplete read, a failed restoration, an overlay, a second project, a
+  document of the project or outside it left open, and a request to open a
+  document, publish nothing and release the session; an incomplete
+  Node read also marks the process for retirement and refuses its further
+  observed execution; a changed Node answer of the ledger makes the process
+  inconsistent; a worker killed while it holds a session takes its
+  compilers with it;
+- the attempts' readings of each compiler that ended sum to its lifetime's
+  time within its idle time (at most 20 ms or a tenth); an observed attempt
+  around a parse and a non-observed attempt using a session counts, with
+  them, what the process and the compilers used (within 30 ms or a tenth),
+  and the non-observed attempt's record what was read around it (within
+  15 ms or a tenth); a reading not taken makes the attempt's CPU time
+  unavailable.
+
+*Measured.* Two cold censuses of `tools/` on one machine (2026-10-23, each
+in a fresh store, 300 s step limit, 12 workers), of 49ff119 with a
+compiler per collection and of 5ce25e3 with retained sessions: over the 404
+slices whose source both share, parse CPU 1,385 s and 857 s, the CPU of all
+executed stages 3,321 s and 2,862 s; the 404 outcomes equal, and of their
+parses 329 byte-identical and 75 differing only in the source offsets of
+declarations in front-end files whose text the two commits differ in.
 
 ## Locations
 
@@ -386,7 +526,10 @@ integrity of its stored results. A replayed parse further trusts that its
 observations are complete: the sandbox profile and the compiler API's five
 queries for the compiler, the resolution algorithm's reads for Node's
 resolver, and the process's first-answer consistency for its caches
-([observed stages](#observed-stages)). The store is private to the user and
+([observed stages](#observed-stages)); a parse executed in a retained
+session further trusts the session's obligations
+([retained declaration sessions](#retained-declaration-sessions)). The store
+is private to the user and
 shared among that user's cooperating processes. Digests detect accidental
 corruption; they do not authenticate results supplied by an untrusted
 writer.
@@ -490,13 +633,23 @@ unavailable, with its reason.
   and decides timeouts, so it is part of the execution adapter: a process
   stage's key covers its identity.
 - An in-process stage records the pipeline process's own CPU time over the
-  attempt (`process.cpuUsage`) plus that of each compiler process the attempt
-  started (`tools/compiler-processes.mts`), read just before the compiler is
-  released or abandoned by `stage-runner --cpu <pid>`: `proc_pid_rusage` on
-  macOS, to the microsecond, with the compiler's lifetime maximum physical
-  footprint as its peak memory, and `/proc/<pid>/stat` and `VmHWM` on Linux,
-  to the clock tick. The pipeline process's own peak memory is not
-  attributed to a stage.
+  attempt (`process.cpuUsage`) and adds, for each compiler
+  process running during it (`tools/compiler-processes.mts`, which names a
+  process by a generation a reused process id does not repeat), the
+  difference of two readings by `stage-runner --cpu <pid>`: at the start of
+  each interval in which the attempt is the innermost one running, or zero
+  for a process started during it, and at that interval's end, or just
+  before the process's channel closes, after the requests releasing its
+  snapshots. A retained compiler's time is therefore divided among the
+  attempts that use it, its idle time counted by none, and its validation
+  and restoration by the attempt they belong to. A nested attempt's time,
+  the pipeline process's and the compilers', is its own and not its
+  enclosing attempt's. The reading is
+  `proc_pid_rusage` on macOS, to the microsecond, with the compiler's
+  lifetime maximum physical footprint as its peak memory, and
+  `/proc/<pid>/stat` and `VmHWM` on Linux, to the clock tick; an attempt with
+  a reading not taken records its CPU time as unavailable. The pipeline
+  process's own peak memory is not attributed to a stage.
 
 Timing, CPU and memory are outside semantic keys and result equality.
 Census records retain these measurements for each attempt, including module

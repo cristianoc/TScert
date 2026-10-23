@@ -1,9 +1,12 @@
 // The observed stages of the entry point (STAGE-STORE.md, "Observed stages"): the
-// parse and TypeScript's diagnostics, each run in this process with fresh
-// compilers, their values stored as text and decoded field by field.
+// parse and TypeScript's diagnostics, each run in this process with a fresh
+// parser and declaration compilers fresh or retained (STAGE-STORE.md,
+// "Retained declaration sessions"), their values stored as text and decoded
+// field by field.
 // ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.
 import { close as closeParser, parseFile } from "../tools/fragment-parse.mts";
 import { clientErrors, type SeenDiagnostic } from "../tools/declaration-graph.mts";
+import { inDeclarationAttempt } from "../tools/declaration-session.mts";
 import { messageOf, passToolFailure } from "../tools/thrown.mts";
 import { activeFamilies } from "../tools/family-activation.mts";
 import { compilerImplementation } from "../tools/compiler-channel.mts";
@@ -18,19 +21,21 @@ export function parseCall(bytes: Buffer, file: string, tsconfigPath: string | un
     stage: "parse",
     inputs: [{ role: "source", bytes }, { role: "file", bytes: file }, { role: "resolution", bytes: resolution },
       { role: "project", bytes: tsconfigPath ?? "" }, { role: "families", bytes: JSON.stringify(activeFamilies()) }],
-    run: () => parseStage(file, tsconfigPath, resolution),
+    run: () => inDeclarationAttempt(() => parseStage(file, tsconfigPath, resolution)),
     codec: parsedCodec,
     observed: { compiler: compilerImplementation },
   };
 }
 
 /** The TypeScript diagnostics stage: the errors TypeScript reports for
- * `file` in its project, an observed stage. */
+ * `file` in its project, an observed stage. The active family descriptions
+ * are an input: a retained session is compatible with them alone. */
 export function diagnosticsCall(file: string, tsconfigPath: string | undefined): InProcessCall<SeenDiagnostic[]> {
   return {
     stage: "diagnostics",
-    inputs: [{ role: "file", bytes: file }, { role: "project", bytes: tsconfigPath ?? "" }],
-    run: () => diagnosticsStage(file, tsconfigPath),
+    inputs: [{ role: "file", bytes: file }, { role: "project", bytes: tsconfigPath ?? "" },
+      { role: "families", bytes: JSON.stringify(activeFamilies()) }],
+    run: () => inDeclarationAttempt(() => diagnosticsStage(file, tsconfigPath)),
     codec: diagnosticsCodec,
     observed: { compiler: compilerImplementation },
   };

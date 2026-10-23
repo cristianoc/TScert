@@ -79,6 +79,9 @@ const beside = (module: string, args: readonly string[]): Promise<{ status: numb
 // stages in fresh processes, the parse's with real compilers, beside the
 // rest of this suite; their result is reported at its end.
 const observedStages = serving ? null : beside("tests/observed-stages.mts", []);
+// The retained declaration sessions' controls (tests/session-reuse.mts), in
+// one process of their own beside the rest: the sessions are its own.
+const sessionReuse = serving ? null : beside("tests/session-reuse.mts", []);
 // The mutation verifier, built once from the current build beside the
 // controls, and given to every control process.
 const mutationBuild = serving ? null : beside("pipeline/evidence-mutations.mts", ["--build"]);
@@ -5212,6 +5215,9 @@ if (serving) {
   const observed = await must(observedStages, "the observed stages' run");
   assert.equal(observed.status, 0, observed.stdout + observed.stderr);
   process.stdout.write(observed.stdout);
+  const sessions = await must(sessionReuse, "the declaration sessions' run");
+  assert.equal(sessions.status, 0, sessions.stdout + sessions.stderr);
+  process.stdout.write(sessions.stdout);
   process.stdout.write(`controls: ${controls.length} in ${((performance.now() - started) / 1000).toFixed(1)} s on ${width} ` +
     `lanes (${processes} processes); their operations ${tally.executed} executed (${(tally.elapsedMs / 1000).toFixed(1)} s ` +
     `in all), ${tally.replayed} replayed\n`);
