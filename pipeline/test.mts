@@ -4372,6 +4372,41 @@ control(async (): Promise<void> => {
   process.stdout.write("node headers: a referenced proof written out accepted; a sequent stated twice, a reference without a step proof, a node without step or derivation refused by the decoder, a derivation at another sequent by the check\n");
 });
 control(async (): Promise<void> => {
+  // The evidence decoder reads the parsed JSON value (REQUEST-PROTOCOL.md,
+  // "Wire text"): spellings the JSON parser reads as the same value are the
+  // same document, whatever their key order, whitespace or escapes, and a
+  // repeated key holds its last value; a natural number is an integer
+  // literal, its exponent form included, and a fraction is refused.
+  const artifacts = run("aliases");
+  const text = readFileSync(join(artifacts, "evidence.json"), "utf8");
+  const slot = '"slot":0', field = '"field":"value"';
+  const at = text.indexOf(slot), named = text.indexOf(field);
+  assert.ok(at >= 0 && named >= 0, "a slot 0 and a field named value in the honest document");
+  const replaced = (i: number, old: string, by: string): string => text.slice(0, i) + by + text.slice(i + old.length);
+  const reversed = (value: unknown): unknown => Array.isArray(value) ? value.map(reversed)
+    : typeof value === "object" && value !== null
+      ? Object.fromEntries(Object.entries(value).reverse().map(([k, v]) => [k, reversed(v)])) : value;
+  const parsed: unknown = JSON.parse(text);
+  const variants: [string, string, boolean][] = [
+    ["exponent", replaced(at, slot, '"slot":0e0'), true],
+    ["negative-zero", replaced(at, slot, '"slot":-0'), true],
+    ["fraction", replaced(at, slot, '"slot":0.0'), false],
+    ["repeated-honest-last", replaced(at, slot, '"slot":7,"slot":0'), true],
+    ["repeated-honest-first", replaced(at, slot, '"slot":0,"slot":7'), false],
+    ["indented", must(JSON.stringify(parsed, null, 1), "the document's text"), true],
+    ["reordered", must(JSON.stringify(reversed(parsed)), "the document's text"), true],
+    ["escaped-key", replaced(named, field, '"fi\\u0065ld":"value"'), true],
+  ];
+  for (const [name, variant, accepted] of variants) {
+    const path = join(artifacts, `spelled-${name}-evidence.json`);
+    writeFileSync(path, variant);
+    const checked = tested(verifierCall(verifier, ["--check-source-claims", join(artifacts, "fragment.json"),
+      join(artifacts, "claims.json"), sourceKey(artifacts), path]));
+    assert.equal(checked.status, accepted ? 0 : 1, `${name}: ${checked.stdout}${checked.stderr}`);
+  }
+  process.stdout.write("evidence spellings: key order, whitespace, key escapes, an exponent and a negative zero read as the parsed value, a repeated key as its last value; a fractional natural number refused\n");
+});
+control(async (): Promise<void> => {
   // A step's exit other than its complete refusal record (the verifier's
   // exit 1, a first line `reject: …` and a last line `end of refusal`; the
   // producer's exit 2 and `unsupported: …`) is a tool failure, no verdict:

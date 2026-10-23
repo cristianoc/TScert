@@ -71,6 +71,11 @@ producer (`Json.parse`), and the TypeScript tools (`wireText` for the bytes,
 writing it: the parser's gate a source string holding a lone surrogate
 ([source fragment](SOURCE-FRAGMENT.md#refused-on-principle)).
 
+Decoders read the value Lean's JSON parser makes of the text: key order,
+whitespace and escapes are no part of a document, a key written twice holds
+its last value, and a natural number is an integer literal, in exponent form
+too (`0e0`, `-0`), never a fraction (`0.0`).
+
 Decoding is strict: it decodes, re-encodes and compares, so every field is
 required, an unknown field is refused, recursively, and a field whose absence
 is its one spelling of "none" (stated below where it applies) is refused when
