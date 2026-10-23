@@ -86,7 +86,8 @@ design, not its progress.
 | [Investigation of a closure passed to a narrower array's `forEach`](#closure-narrower-foreach) | closed: the producer proposed no offer of the callback's signature, comparing the closure's parameter with the element by declared spelling, and, once offered, stated the body's claims once for every signature; it compares them up to the declarations and states a named closure's claims per signature where an offered one's parameters differ; `closure-offer-narrower-element` verifies, `invalid-closure-offer-narrower-parameter`, `-mutation`, `-rebound`, `-this` and `-sparse` are refused (run under Node) (2026-10-22, [slice measurement](#census-closure-narrower-element)) | the cause of the refusal of `calls.forEach(go)` with `go` a closure over a wider parameter is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a recursive constant passed as a callback in its own body](#recursive-constant-callback) | closed: the producer bound the self entry at the closure's own signature and registered the closure after its body, so no self read was offered the callback's longer signature, which Lean's self rule, checking every row with self at the whole claim, already admits; a self read is a flow of the closure (`offer-self`), and an alias naming a signature is read through its declaration; `recursive-constant-callback` verifies, `invalid-recursive-constant-self-wider`, `-escape-wider`, `-callback-mutation`, `-exceptional`, `-shadowed` and `invalid-recursive-cell-callback` are refused (run under Node) (2026-10-22, [slice measurement](#census-recursive-constant-callback)) | the cause of the refusal of `t.parts.some(binder)` inside `binder`'s own body is established, with a reproducer and a concrete repair obligation |
 | [Investigation of a closure over a compiler-API node passed at a narrower node list](#closure-host-element) | closed: the producer proposed no offer of `forEach`'s signature, relating two records only when their members were equal, where `Expression`'s residual arm is within `Node`'s by width and depth; it proposes record comparisons by width and depth with contravariant method receivers and preserved stable keys; Lean decides inclusion ([offers](docs/SOURCE-ELABORATION.md#closure-offers)); `compiler-api-closure-offer-node-list` and `closure-offer-extends` verify, `invalid-closure-offer-extends-narrower`, `-method`, `-receiver`, `-mutation` and `invalid-compiler-api-closure-offer-lookalike` are refused (run under Node) (2026-10-22, [slice measurement](#census-closure-host-element)) | the cause of the refusal of `e.elements.forEach(targets)`, `targets` over `Node` and the elements `Expression`s, is established, with a reproducer and a concrete repair obligation |
-| [Investigation of a guard disjunction's right operand](#guard-disjunction-right) | open: an investigation, cause unknown | the cause of the refusal at the right operand of `ts.isShorthandPropertyAssignment(p) && !p.objectAssignmentInitializer \|\| ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name)` is established, with a reproducer and a concrete repair obligation |
+| [A guard disjunction's right operand](#guard-disjunction-right) | closed: an edge refines every slot an alias link relates to a yield's target to the yield's type, and the search proposed only narrowing yields, so a saved read of the node from the left operand took the right guard's slice; the search proposes each slot the test speaks of at its own slice, unchanged ones included, and retries bounded selections; `compiler-api-guard-disjunction` and `guard-disjunction-competing-slices` verify, `invalid-guard-disjunction-left-true`, `-nested` and `-write` are refused (run under Node) (2026-10-23, [slice measurement](#census-guard-disjunction)) | `fragment-statements.mts#protocolPattern` and `#patternStmt` move past `inert`'s right operand |
+| [Condition outcomes in evaluation order](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants) | closed: the producer refined a condition's outcomes syntactically after its effects, so a left operand's field fact came back past a call in the right operand, which Lean rightly refused at `validateAnnotation`'s `fail(…)`; the condition's execution plan is interpreted in order, saved results carried through negation and forwarding; `condition-effect-order`, `condition-negated-result` and `condition-ternary-truth` verify, `invalid-condition-stale-call`, `-stale-read`, `-stale-branch`, `-stale-disjunction`, `-negated-stale-call` and `-partial-tag` are refused (run under Node) (2026-10-23, [slice measurement](#census-guard-disjunction)) | `type-term.mts#readTypeTerm` and `#typeTerm` move past `validateAnnotation`'s `fail(part.span, …)` |
 | [Investigation of assigned parameters with defaults](#assigned-parameters-with-defaults) | open: an investigation, cause unknown | the cause of the producer's "assignment to immutable binding" refusal is established for both function declarations and closures, with a reproducer for each and a concrete repair obligation |
 | [Corrected members](#corrected-members) | closed: each of the ten corrected members, read required on a8caafd, verified a function returning it at its declared type, which returns `undefined` under Node; each is refused (2026-10-19) | — |
 | [Effects of dispatched calls](#effects-of-dispatched-calls) | open | a method call on a union with a primitive's shape is dispatched and `split-non-empty` verifies |
@@ -283,21 +284,26 @@ Lean's relation ([offers](docs/SOURCE-ELABORATION.md#closure-offers)); Lean
 decides inclusion.
 
 <a id="guard-disjunction-right"></a>
-**Investigation of a guard disjunction's right operand.**
-`fragment-statements.mts#inert`'s `e.properties.every((p) => …)` is refused
-in search at "the edge from node 56 does not establish the claims at this
-point", at its right operand. Reduced (compiler-API project):
+**A guard disjunction's right operand.**
+`fragment-statements.mts#inert`'s right operand of
 
 ```typescript
-export function plain(p: ts.ObjectLiteralElementLike): boolean {
-  return ts.isShorthandPropertyAssignment(p) && !p.objectAssignmentInitializer ||
-    ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name);
-}
+ts.isShorthandPropertyAssignment(p) && !p.objectAssignmentInitializer ||
+  ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name)
 ```
 
-is refused at the right operand of `||`; its right operand alone,
-`ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name)`,
-verifies (observed 2026-10-22).
+is lowered once per path through the left operand. On the path where the
+left guard answered `true` and the member test `false`, the saved read of
+`p` for `p.objectAssignmentInitializer` holds `ShorthandPropertyAssignment`
+while `p` holds its six arms, and an alias link relates the two slots. An
+edge refines every slot so related to a yield's type
+([member yields](docs/PROGRAM-TYPING.md)); the right guard's yields on `p`
+gave the saved read `PropertyAssignment` on the true edge and the five other
+arms on the false edge, neither within its claim, though the value meets
+both its claim and the yield. The search proposes, where an edge fails, each
+slot the test speaks of at its own slice, unchanged ones included, in
+bounded selections and orderings: the true edge is then vacuous and the
+false edge keeps the saved read's arm. The checker is unchanged.
 
 <a id="assigned-parameters-with-defaults"></a>
 **Investigation of assigned parameters with defaults.** The producer refuses
@@ -917,16 +923,21 @@ first three items 2026-10-19):
   iterator's `next` bound to a union of hosts ([record](#census-block-types)),
   and stop in the producer at "missing field positions", `signatures`' test
   `"positions" in contract` ([record](#census-union-host-bind)), read a
-  recursive constant passed as a callback in its own body, and stop at the
-  incoming edge of `validateAnnotation`'s `fail(part.span, …)`
-  ([record](#census-recursive-constant-callback)); the slices of
+  recursive constant passed as a callback in its own body, past
+  `validateAnnotation`'s `fail(part.span, …)` a condition's outcomes in
+  evaluation order, and stop in search at `emptyObject`'s
+  `.map(name => ({ k: "atom", name, span }))`, "no derivation of its
+  return-contract claim" ([record](#census-guard-disjunction)); the slices of
   `fragment-statements.mts` past `protocolPattern`'s call of `gate.fail`
   read a closure's assigned parameter after a host guard, a
   [slot](docs/SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)
   of the closure's activation, read `ts.SyntaxKind[s.kind]`, a numeric
   enum's reverse lookup, at `string`, and stop in `readCannotThrow` at the
   closure `d => d.modifiers?.some(…)`, whose signature claim is outside the
-  source annotation ([record](#census-enum-reverse-keys));
+  source annotation ([record](#census-enum-reverse-keys)), and, past
+  `inert`'s guard disjunction, stop in search at `protocolPattern`'s
+  binding of `node.elements.filter(…).map((el) => …)`, "no derivation of its
+  binding-annotation claim" ([record](#census-guard-disjunction));
 - a callback's parameter written without a type is read at its contextual
   type, records, indexes and aliases without parameters included; no slice
   stops there;
@@ -1379,6 +1390,24 @@ not establish the claims at this point", `inert`'s
 `ts.isPropertyAssignment(p) && !ts.isComputedPropertyName(p.name)`
 ([investigation](#guard-disjunction-right)) (search 320 s each, both
 slices at once).
+
+<a id="census-guard-disjunction"></a>
+`type-term.mts#readTypeTerm` and `#typeTerm` and
+`fragment-statements.mts#protocolPattern` and `#patternStmt` on 53e96e3
+(main) and on the branch proposing each tested slot's own slice and a
+condition's outcomes in evaluation order, at `TSCERT_STEP_LIMIT=600`
+(2026-10-23): none verifies on either. On main the `type-term.mts` slices
+stop in search at "the edge from node 41 does not establish the claims at
+this point", `validateAnnotation`'s `fail(part.span, …)` (search 14 s
+each), and the `fragment-statements.mts` slices at "the edge from node 56
+does not establish the claims at this point", `inert`'s right operand
+(search 229 s each, both slices at once); on the branch the `type-term.mts`
+slices pass it and stop in search at "no derivation of its return-contract
+claim", `emptyObject`'s `.map(name => ({ k: "atom", name, span }))` (search
+6 s each), and the `fragment-statements.mts` slices pass it and stop in
+search at "no derivation of its binding-annotation claim", `protocolPattern`'s
+binding of `node.elements.filter((el) => !el.dotDotDotToken).map((el) => …)`
+(search 258 s, the second slice replayed).
 
 <a id="census-coalesce-literal"></a>
 `type-term.mts#readTypeTerm` and `#typeTerm` on the branch before and after
