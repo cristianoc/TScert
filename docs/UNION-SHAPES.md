@@ -477,7 +477,9 @@ requests many times: for an expression it tries the claimed type and then
 every type of the unit's pool, coercing each to the target; for a receiver,
 an array or an index it tries first the type the part synthesizes (a
 variable's slot type, a field's type read from a record), then the pool
-(`synthesizedFirst`). The producer
+(`synthesizedFirst`). Within a rule it establishes the parts (receiver,
+callee, arguments) before comparing the rule's result with the claimed type,
+so a wrong guess fails at its parts. The producer
 answers a request asked again from its first answer: a table from source and
 target to `subtypeSearch`'s whole result, an exhaustion included
 (`CertificateProducer.Answered`), threaded through every search of a

@@ -408,7 +408,6 @@ only to searches in that context, so a stored answer is `subtypeSearch`'s
 for the same arguments. A search step returns its result and the answers it
 grew; a failed step keeps the answers its attempts found. -/
 
-deriving instance Hashable for PropKey
 deriving instance Hashable for Tag
 
 /-- Answered subtype requests, each `subtypeSearch`'s whole result, an
@@ -770,17 +769,16 @@ came from a different context. No execution budget is inspected. -/
         candidates.findSearch? fun c => match c with
         | .inl p => do
           if args.length > p.arguments.length || !p.effect.plain then none else do
-          let sub ← subtypeUsing G images p.result A
           let ef ← recur Γ f F
           let eas ← (args.zip p.arguments).mapM fun (a,D) => recur Γ a D
           let eus ← (p.arguments.drop args.length).mapM fun D => recur Γ .undef D
+          let sub ← subtypeUsing G images p.result A
           pure (coerceBy sub (.node ⟨Γ,t,p.result⟩ (.construct p.effect) (ef :: eas ++ eus)) A)
         -- A variadic construct signature: the fixed actuals at its
         -- parameters, then the further parts as a variadic call's.
         | .inr ⟨(), (Ps, P), B, effect⟩ => do
           let k := Ps.length
           if args.length < k || (flags.take k).any id || !effect.plain then none else do
-          let sub ← subtypeUsing G images B A
           let ef ← recur Γ f F
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
           let parts := args.drop k
@@ -794,6 +792,7 @@ came from a different context. No execution budget is inspected. -/
             else do
               let [.pack T []] := expand G P | none
               parts.zipIdx.mapM fun (a, i) => do recur Γ a (← positionTy T i)
+          let sub ← subtypeUsing G images B A
           let e := ProgramCertificates.Evidence.node ⟨Γ,t,B⟩ (.constructRest k partFlags P) (ef :: eas ++ eps)
           (checkTreeS G images e).map fun _ => coerceBy sub e A
     -- `.bind`'s forwarding descriptor: a leaf whose checker reads the saved
@@ -847,11 +846,11 @@ came from a different context. No execution budget is inspected. -/
           let omitted := Ps.drop k
           let parts := args.drop k
           if !omitted.isEmpty && !parts.isEmpty then none else do
-          let sub ← subtypeUsing G images B A
           let ef ← recur Γ f F
           let er ← recur Γ recv Rt
           let eas ← (args.zip Ps).mapM fun (a,D) => recur Γ a D
           let eus ← omitted.mapM fun D => recur Γ .undef D
+          let sub ← subtypeUsing G images B A
           let flags := parts.map fun a => match a with | .spread _ => true | _ => false
           -- A rest that is a packed binder takes one spread of the store of
           -- one of its values, after the fixed actuals.
@@ -885,11 +884,11 @@ came from a different context. No execution budget is inspected. -/
           -- remaining contract admits `undefined`, the value bound there.
           if args.length > p.arguments.length then none else do
             let omitted := p.arguments.drop args.length
-            let sub ← subtypeUsing G images p.result A
             let ef ← recur Γ f F
             let er ← recur Γ recv p.receiver
             let eas ← (args.zip p.arguments).mapM fun (a,D) => recur Γ a D
             let eus ← omitted.mapM fun D => recur Γ .undef D
+            let sub ← subtypeUsing G images p.result A
             pure (coerceBy sub (.node ⟨Γ,t,p.result⟩ (r p.effect) (ef :: er :: eas ++ eus)) A)
       -- A callee or, for a method dispatched on its object, the receiver.
       return (direct own <|> variadic own <|> variadic pool <|> direct pool).firstOr
@@ -927,9 +926,9 @@ came from a different context. No execution budget is inspected. -/
             (A :: pool).findSearch? fun U => do
               if expand G U != [.undef] then none else do
               let B := E ++ U
-              let sub ← subtypeUsing G images B A
               let ea ← recur Γ a R
               let ek ← recur Γ key K
+              let sub ← subtypeUsing G images B A
               pure (coerceBy sub (.node ⟨Γ,t,B⟩ (.indexDict Kx KK E U) [ea, ek]) A)
     | .readAt f a =>
       let direct := (synthesizedFirst G Γ a pool).findSearch? fun R => do
@@ -960,8 +959,8 @@ came from a different context. No execution budget is inspected. -/
               pool.findSome? fun U =>
                 if expand G U == [.undef] then some (B ++ U, Rule.readDict K B U) else none
           | _ => none )
-        let sub ← subtypeUsing G images B A
         let ea ← recur Γ a R
+        let sub ← subtypeUsing G images B A
         pure (coerceBy sub (.node ⟨Γ,t,B⟩ r [ea]) A)
       -- A read of a slot holding a union, each member's view of the key
       -- within `A`: one checked summary of the request's table.

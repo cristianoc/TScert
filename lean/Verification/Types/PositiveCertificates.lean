@@ -1106,13 +1106,35 @@ Dependency and arrow discovery read the same components as `MeetOpaque`. -/
 @[nospecialize] def schemeComponents [DecidableEq ι] (G : NormalGraph ι) (X : List ι) : List ι :=
   (X ++ (X.filter G.meetRow).flatMap (meetParts G)).filter (fun i => (G.schemes i).isSome) |>.eraseDups
 
+/-- A bucket of a clause for search's lookups: its constructor and the keys
+or the literal it names. Any function of the clause serves; lookups compare
+by equality within the bucket. Search only. -/
+@[nospecialize] def clauseBucket (c : Clause α) : UInt64 :=
+  mixHash (hash c.ctorIdx) (match c with
+    | .refs a _ _ _ _ _ _ | .dict a _ _ _ _ _ _ _ _ | .callable a _ _ _ => hash (a.map (·.1))
+    | .numLit b => hash b
+    | .strLit v => hash v
+    | .boolLit b => hash b
+    | .symbolLit i => hash i
+    | _ => 0)
+
+/-- A type's clauses by bucket, for search's membership tests. -/
+abbrev ClauseIndex (ι : Type) := Std.HashMap UInt64 (List (Clause (List ι)))
+
+@[nospecialize] def ClauseIndex.of (cs : List (Clause (List ι))) : ClauseIndex ι :=
+  cs.foldl (fun m c => m.insert (clauseBucket c) (c :: m.getD (clauseBucket c) [])) {}
+
+@[nospecialize] def ClauseIndex.has [DecidableEq ι] (m : ClauseIndex ι) (c : Clause (List ι)) : Bool :=
+  (m.getD (clauseBucket c) []).contains c
+
 /-- The pairs a row's coverage compares: its clauses' against the target's,
 and a scheme's signatures against a target scheme's binding the same rows. -/
 @[nospecialize] def demandPairs [DecidableEq ι] (G : NormalGraph ι) (known : Known ι) (X Y : List ι)
     (select : Bool := false) : List (List ι × List ι) :=
   -- A clause the target holds itself is covered as it is (`Same`): it
   -- demands no pair.
-  (clausesOf G X).flatMap (fun a => if a ∈ clausesOf G Y then [] else
+  let own := ClauseIndex.of (clausesOf G Y)
+  (clausesOf G X).flatMap (fun a => if own.has a then [] else
     (if select then ClauseSelection.candidates G a Y else clausesOf G Y).flatMap (clausePairs G known X a)) ++
   (schemeComponents G X).flatMap fun i => (schemeComponents G Y).flatMap fun j => match G.schemes i, G.schemes j with
     | some s, some s' => if s.binders = s'.binders then
@@ -1264,8 +1286,9 @@ searched for its rows. The check decides (`compareUsing`). -/
     PositiveRules.SameKind G p.1 p.2 &&
     decide (OpaqueFamily G images.sub R known
       (ArrowsCheckedWith G R es) [] p.1 p.2) &&
+    let own := ClauseIndex.of (clausesOf G p.2)
     (sourceClauses G p.1 ++ PositiveRules.meetSources G p.1 p.2).all fun a =>
-      decide (a ∈ clausesOf G p.2) ||
+      own.has a ||
       (if images.budget.select then ClauseSelection.candidates G a p.2 else clausesOf G p.2).any
         (fun b => checkClauseWith G images.sub R known es p.1 a b) ||
       -- A tag set is covered between several target clauses, element by

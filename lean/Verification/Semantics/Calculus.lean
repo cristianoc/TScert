@@ -35,7 +35,7 @@ key, never reaches one. A symbol key is the identity of a symbol value. -/
 inductive PropKey where
   | str (name : String)
   | sym (id : Nat)
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Hashable
 
 /-- Field names written in the model are string keys. -/
 instance : Coe String PropKey := ⟨PropKey.str⟩
