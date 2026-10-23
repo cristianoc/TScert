@@ -5,20 +5,168 @@ Libraries hand programs objects of a **tagged family**: one field, the
 TypeScript compiler API's nodes (`kind`), ESTree and Babel nodes (`type`) and
 DOM nodes (`nodeType`). The library also exports **guard functions** whose
 code is a test of the tag (`ts.isIdentifier`, `t.isIdentifier`).
-TScert already narrows program-declared discriminated unions by a literal
-field ([union shapes](UNION-SHAPES.md), R3). A host family is the external
-case: the declared type of a family member (`Node`, `Expression`) does not
-spell the union of its shapes, and the guards are library code.
+TScert narrows program-declared discriminated unions by a literal field
+([union shapes](UNION-SHAPES.md), R3). A host family is the external case:
+the declared type of a family member (`Node`, `Expression`) does not spell
+the union of its shapes, and the guards are library code.
 
 This document specifies one mechanism for every such family, parameterized
 by a reviewed **family description**. Each part has one implementation,
-which reads the description; no part names a family. The
-[compiler API](COMPILER-API.md) is the first instance. The pipeline
-implements [tag sets](#tag-sets), with their Lean proofs,
-[the family contract](#the-family-contract) in the front end, whose readings
-the checker reads by its ordinary rules, and
+which reads the description; no part names a family. It states the
+description and its activation, then the parts ([tag sets](#tag-sets),
+[the family contract](#the-family-contract), [host objects](#host-objects),
 [guard recognition](#guard-recognition) and
-[stable members](#stable-members), with their Lean proofs.
+[stable members](#stable-members)), how family identity follows program
+code, the [trust rows](#trust-rows) a family adds, and the instances. The
+[compiler API](COMPILER-API.md) is the first instance.
+
+## The family description
+
+A family description is data in the trusted host contracts
+(`tools/host-families.mts`, each instance contributed by the contract file of
+its package), of one declared type that one interpreter reads, and reviewed
+as those contracts are: every entry carries the declaration text it was
+reviewed against, and a check compares each with the installed declaration.
+It states:
+
+- **package:** the host package's identity, the name and version its
+  manifest states;
+- **installation:** the audited installation, the package of that name as
+  Node's package resolution finds it from a directory of the repository,
+  and the digest of its declarations, the SHA-256 of its version and its
+  inventory: every `.d.ts`, `.d.mts` and `.d.cts` file under its real
+  directory, reached without following a symbolic link, outside a nested
+  `node_modules` (the binding check C0 of the
+  [compiler API](COMPILER-API.md#binding-the-contract-to-the-implementation),
+  of every family). The family's declarations are exactly that inventory,
+  by real path: a dependency's declaration and one reached through a link
+  are read by the ordinary rules, and a declaration of an arbitrary
+  extension (`.d.<ext>.ts`) refuses the installation. The guard table pins
+  its executable closure;
+- **root:** the root declaration and its form, `inheritance` or `union`;
+- **tag:** the tag field $`\tau`$, its primitive, and the source of its
+  constants: an enum declaration, which the binding check compares with its
+  runtime object, or the string literals the shapes state;
+- **table:** an ordered list of selection rules the interpreter applies to
+  each tag value, the first that selects a declaration giving $`I_t`$, the
+  declaration whose members the tag value's shape reads
+  ([the family contract](#the-family-contract)):
+  - `literal`: the declaration whose tag is the literal $`t`$, excluding
+    declarations that extend another candidate with the same tag;
+  - `generic`: the meet of the named generic declarations whose tag
+    parameter's bound admits $`t`$, instantiated at $`t`$;
+  - `base`: a named declaration;
+- **corrections:** the audited members the declarations state required and
+  the runtime leaves absent, each read as optional, with its text;
+- **omitted members:** the members whose reads give no one value for a
+  node's life, each with its text and why: a read that allocates, or a
+  member the package assigns on a node it built earlier; each is omitted
+  from every shape, so no ordinary read or read link reaches one;
+- **marker:** the value $`m_F`$ of `[[host]]`, the reserved key every host
+  object owns ([the host classification](#the-host-classification));
+- **stable members:** every property member of a shape, required or
+  optional, the tag and the corrected members included, but the listed
+  exclusions, with the regression check that reads each twice on a corpus;
+- **guards:** the [guard table](#the-guard-table), each entry an export's
+  identity and reviewed text, its kind, domain and exact tag set.
+
+## Activation
+
+The mechanism is explicit, and nothing activates it by spelling:
+
+- **The family:** a reviewed description in the trusted contracts turns a
+  family on, for the installation it names (`reviewedFamilies` in
+  `tools/family-activation.mts`). Without one, the package's declarations
+  are read by the ordinary rules. Several descriptions are active together,
+  each owning its marker and its installation; a declaration is read by the
+  description whose installation holds its file, and a run's
+  [selection](#the-runs-selection) is one per family.
+- **The installation:** Node's package resolution
+  (`module.findPackageJSON`) finds the description's package from the
+  description's directory; its manifest states the description's name and
+  version, and its declarations have the description's digest, checked once
+  per process before any of its declarations is read. Its guard table is
+  activated over that installation by the checks
+  [below](#activating-a-guard-table).
+- **A package's own contract:** the compiler API's tables by name (its
+  named views, branded strings, enums read as values, node list and type
+  roots, [COMPILER-API.md](COMPILER-API.md#reading-rules)) apply to its own
+  installation alone; another family's declarations of those names are read
+  as they declare them, under the host reading rules every installation
+  shares.
+- **The tag enum as a value:** a program reads the description's tag enum
+  as a value by the `emitted-enum` rule, where the runtime object the
+  activated entry point exports under its name matches its declaration, the
+  condition `enumObjectMatches` of [enums](SOURCE-CONTRACTS.md#enums) (C1
+  for every family), and where the program's import of it, resolved by Node
+  from the importing module and through a program module's re-export as a
+  guard's is ([calls](#calls)), binds that very object. Any other enum of a
+  family's installation is read as a value only where its package's contract
+  lists it, as the compiler API's `hostEnums`, with the same binding
+  requirement against the object its contract checks.
+- **Membership:** a value is a family member only through the marker, which
+  the host supplies for the objects its entry points give as family members
+  (F1); no allocation of the program owns `[[host]]`.
+- **Guards:** a call is a guard call only when its callee resolves to a
+  checked export binding of the identified package.
+
+So:
+
+- A **look-alike** a program declares (`interface Node { kind: number }`, an
+  object literal with a `kind`) has no marker. Its types are ordinary
+  records, narrowed by the ordinary rules; a test of its `kind` drops the arms
+  of a union the program wrote, as R3 does.
+- A **forged claim** stating a program value at a family shape has no
+  derivation, since the marker view admits no program object; a forged
+  stable view is refused by the decoder; a forged guard call is an ordinary
+  call, since recognition is by resolution.
+- An **unidentified installation**, whose manifest or declarations' digest
+  differs from its description's, or which Node does not find, refuses every
+  run reading a declaration of the description's installation, until the
+  description is reviewed again (`tests/compiler-api.mts`, and the
+  stand-in's controls in `pipeline/test.mts`). A guard table that does not
+  match its installation leaves the family without guards, each read
+  without predicate.
+
+### Activating a guard table
+
+Before a family's [guard table](#the-guard-table) is used, the front end
+checks it against the package as Node loads it, once per process, reading the
+package's modules with a compiler of its own:
+
+1. **Conditions.** The table's resolution conditions are the ones Node
+   enables in the running process, read through a resolve hook, and no flag
+   preserves symlinks.
+2. **Entry point.** The entry point, by the package's name, resolves through
+   Node's own resolver to the recorded module.
+3. **The closure on disk.** Before loading the entry point, the front end
+   reads and parses its complete executable closure from disk. Every static
+   import and export-from, attributes included, resolves from its importing
+   module through Node's resolver; an error, a query or a fragment refuses
+   the table. The module set, the SHA-256 file digests and the binding edges
+   (importing module, local name, target module, exported name, attributes
+   and import/export form) equal the table's reviewed closure.
+4. **Loading forms.** Dynamic imports, `require`/`createRequire`,
+   `import.meta`, `await` and `eval`/`Function` capabilities are outside the
+   recorded loading forms and refuse the table. The file digests bind other
+   indirect execution to the reviewed code. A refusal at checks 1–4 leaves
+   every module of the closure unevaluated.
+5. **The loaded functions.** Over the unchanged installation, Node then
+   loads the entry point in the front end's own process: each entry's export
+   is a function whose text is the entry's, the very function the recorded
+   module exports, which declares it with that text and assigns it nowhere.
+6. **Their dependencies.** The function's dependency closure, each free name
+   a function of its module or a named import without attributes that Node
+   resolves from the importing module to a module of the package and that
+   the loaded module exports, has exactly the entry's helpers and binding
+   edges, each helper of exactly its reviewed text, as loaded where it is
+   exported.
+
+A mismatch at any check, or a load Node refuses, leaves the family without
+guards, each read without predicate. File digests alone do not pin
+resolution, since a manifest or a re-export can select other code among
+files already hashed. The checks establish consistency between the reviewed
+table and the installation the front end itself runs, under F3.
 
 ## The parts
 
@@ -156,7 +304,7 @@ model's reserved key `[[host]]` at the string literal $`m_F`$, the tag at
 the literal $`t`$, and the members of the declaration $`I_t`$ the
 description's table selects, with the description's corrections applied.
 The model's host objects own `[[host]]`, and no allocation of the program
-does ([host classification](COMPILER-API.md#the-host-classification)), so no
+does ([host classification](#the-host-classification)), so no
 program object meets the marker.
 
 A family type $`A`$, a declared type of the family whose tag is no set of
@@ -284,6 +432,226 @@ its importer's reading. It is no premise of any checker proof, no conjunct of
 `WorldAdm`, and no subtyping between the units' residuals; `checkJson_safe`
 keeps its statement.
 
+### Host objects
+
+A host package's objects reach the program only from the package. The
+model classifies them, so that no step exposes their own keys and no program
+object passes for one. The compiler API's nodes and node lists are the
+examples; its trust rows ([T1–T8](COMPILER-API.md#trust)) are the
+assumptions the statements below are relative to.
+
+#### Restricted values
+
+A **restricted value** is a host value: an object the package creates whose
+prototype chain carries the prototype of a package class (a node, a type, a
+symbol, a checker, an `API`), or a node list. Neither is callable. The
+package's classes, as constructors, are admitted only as the callee of `new`
+and as the receiver of a direct call of a static member; its exported
+functions are ordinary function objects (T4) of their declared function
+types. The model reads a host object as a record whose stated members are
+readonly views
+([stable members as readonly views](COMPILER-API.md#stable-members-as-readonly-views)),
+and a node list as a dense readonly array of its elements
+([node lists](COMPILER-API.md#node-lists)),
+each interpreted by the existing record and array semantics. The runtime
+objects are not those: a node's stable members are getters on its
+prototype, a node list's indices are getters, and the own enumerable keys
+of both are the class's data fields (`parent`, `view`, `index`,
+`_byteIndex`; for a list `parent`, `view`, `sourceFile`, `_cursorIndex`,
+…). Under Node, `{ ...node }` has `parent` and no `kind`
+(`tests/compiler-api.mts`). The reading is faithful for the operations T4
+states, and the operations whose model would not hold of a restricted value
+are stuck on one and carry an obligation excluding it.
+
+#### The host classification
+
+Every object of the model carries a classification, **host** or
+**ordinary**, in its field map, which maps each own key to a location and is
+fixed with the object as its call code is: a host object owns the model's
+reserved key `[[host]]`, which no source key spells. The classification is
+fixed when the object is allocated, or, for an object of the external heap,
+when it first enters the world, and never changed. World extension (`Adm.mono`) and
+truncation to a lower step index (`Adm.down`) keep every value, so they keep
+every classification. Exactly the package's instances and its node lists
+are host; no step of the calculus allocates one, and a host entry's result
+reveals the classification of the object it gives and changes none. The
+model value of a host object keeps own fields and inherited lookup
+separate, as the calculus's prototype-chain lookup does: it owns its stated
+members, holding their values, and the runtime object's undeclared own
+data fields (`parent`, `view`, `_cursorIndex`, …), whose contents the model
+leaves unknown; its prototype field leads to model prototype objects owning
+the keys its runtime chain provides beyond its own (a node list's `at`,
+`pos`, `forEachNode`, then `Array.prototype`'s). A node list's own keys are
+its store of the $`v_i`$, `length` and those data fields, none of them a key
+its prototypes provide (T4).
+
+The families of the types a host value can be held at admit host objects:
+readonly views (`viewT`), optional members (`optT`), methods, readonly
+arrays and tuples, `unknown`. The families that grant a capability over an
+object's own keys admit ordinary objects only, and so does every family of
+a callable or a primitive:
+
+- a record with an invariant field (`refsT` of a non-empty field list), and
+  a writable array or tuple, whose store is an invariant field;
+- a record whose own-key bound does not admit `[[host]]` (`ownKeysT`, a
+  bound listing keys without it or excluding it), and a dictionary
+  (`dictViewT`, `dictCellT`);
+- a call or construct signature, whose objects carry code.
+
+The steps that copy, write or expose the values of an object's own keys
+(an object's merge, which a spread, an object pattern's rest and
+`Object.assign` lower to; `Object.assign`'s copy onto its target; and the
+parameter of `Object.values`, `Object.entries` and
+`Object.getOwnPropertyDescriptor`, stated at the non-host values) are
+stuck on a host object. So the
+safety of an accepted program gives every operand of these steps ordinary:
+capability preservation is type soundness over the classified families,
+proved with it, relative to the host entry contracts (T1, T3, T6) and to code
+outside the certified units (T8).
+
+#### Excluding host values
+
+The checker's rule for each stuck step requires
+$`\mathrm{excludesHost}(A)`$ of the operand's claimed type $`A`$, a
+predicate on its clauses whose soundness, $`v\in⟦A⟧`$ giving $`v`$
+ordinary, is proved clause by clause from the families above. A clause
+excludes host values when it is a primitive or a singleton of one, a call or
+construct signature, a record with an invariant field, a record with an
+own-key bound that does not admit `[[host]]`, a dictionary, or a writable
+array or tuple. A union excludes host values when every arm does, and an
+intersection when one conjunct does. A type parameter excludes them when
+its certified bound does, since an admissible instance's values lie in the
+bound's meaning; an occurrence of the parameter inside its own bound counts
+as not excluding, so a recursive bound is decided in one pass,
+conservatively. A type reference is decided by its definition, a reference
+met again on the same path counting as not excluding. `unknown`, `object`,
+a readonly array or tuple, and a record of readonly or optional fields
+alone exclude nothing, and nor does a union with such an arm.
+
+Records are open: a record type constrains the fields it names, and a value
+of it may own others. So no operation traversing every own key is admitted,
+with one exception: `JSON.stringify` takes `JsonValue`
+(`library-globals.mts`), whose only object arm is a string-indexed
+dictionary of `JsonValue`. The lemma: in a world satisfied by the heap, the
+string-key traversal of a `JsonValue` within step index $`k`$ reaches no host
+object. It is proved for every family whose members are non-objects or
+dictionaries of string keys at the family itself
+(`JsonTraversal.reach_noHost`), and a type is such a family when each of its
+clauses is a primitive one or a dictionary indexed by every string key at the
+type (`shaped_of_clauses`); `JsonValue`'s declared arms are, by the reviewed
+declaration in `library-globals.mts`. The statement is safety within the
+index, not termination: a cyclic heap is traversed as deep as the index
+allows. Each object it reaches meets the dictionary arm, whose objects are
+ordinary and have no model prototype ($`\mathrm{dictViewT}`$); each value
+under a string key meets $`\mathrm{dictViewT}`$'s index contract, a
+`JsonValue` at every lower index, so the argument descends by induction on
+the index, the heap's satisfaction of the world giving each location's
+value its contract. `toJSON` is a string key, so it holds a `JsonValue`,
+never a callable. Symbol-keyed fields, which the dictionary does not
+constrain and which may hold a host object, are ignored by serialisation.
+
+#### Operations and their obligations
+
+Each source form the fragment admits and each entry of the reviewed library
+overlays (`library-globals.mts`, `array-prototype.mts`) has one
+classification: **transparent**, its model holding of a restricted value as
+of any value of its operand's type (a callback the operation calls keeps its
+own callable contract and effect); **obligated**, a step stuck on a host
+object, or a library parameter stated at the non-host values, whose rule
+requires $`\mathrm{excludesHost}`$ of its operands; or
+refused, a form the fragment does not admit. A library entry's model is its
+reviewed contract (a result type and an effect), so an entry whose contract
+holds of every value of its parameter types, host objects among them, is
+transparent although the runtime answer depends on own keys: `Object.keys`
+of a node is a fresh array of strings, which is all its contract states.
+The obligated forms are those whose model result states the operand's
+members as own keys, and those that hand the values of a host object's own
+fields to the program: those fields hold the package's mutable internal
+heap (a list's `_cursorIndex`, which an indexed read changes; its
+`sourceFile`, whose `nodes` cache grows as nodes materialise), which the
+model does not describe, and an `unknown` result does not stop its later
+refinement and reflection. An unclassified form or entry is refused.
+
+| Operation                                                                                                                      | Model                                                                                  | Classification                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| a member read in every form (`o.m`, `o?.m`, `o["m"]`, a pattern's key); a call of a stated method                              | the member's value                                                                     | transparent                                                                     |
+| `===`, `!==`, `typeof`, `Array.isArray`, `"k" in o`, `%HasProperty%`, `instanceof` a class of the file                          | identity, type tag, the store, the model value's keys                                  | transparent; `in` narrows nothing                                               |
+| `for…of`, `[...x]`, `f(...x)`, `const [a, ...r] = x`, `[a, ...r] = x`                                                          | the store's elements                                                                   | transparent (a node list's table)                                               |
+| `f.apply(t, x)`, `f.call(t, …)`, `f.bind(t, …)` of a client function                                                          | `x`'s `length` and indices                                                             | transparent                                                                     |
+| `new Set(x)`; `new Map(x)` with `x` an array of pairs                                                                          | the store's elements; a pair's `0` and `1`                                             | transparent; a node list is no array of pairs                                   |
+| `Promise.all(x)`                                                                                                               | elements at `Promise` types                                                            | transparent: realm promises by the [await assumption](SOURCE-CONTRACTS.md#async-functions-and-await), never host objects |
+| `String(x)`, a template, `+` with a string, `join`, `toString`                                                                 | the complete [conversion contract](SOURCE-CONTRACTS.md#prototype-contracts)            | transparent where the operand meets the complete contract: a node list owns no `toString`, `join` or `Symbol.toPrimitive`, its prototypes provide none but `Array.prototype`'s, and its elements, nodes, meet the contract nowhere, so only an empty list can |
+| every member of the array overlay on a readonly receiver, `at` included                                                        | its contract                                                                           | transparent: a node list inherits each but `at`, whose override gives `undefined` where `Array.prototype.at` gives an element, within the contract `T \| undefined` |
+| `Object.keys`, `for…in` (`%ForIn%`)                                                                                            | a fresh array of strings; strings                                                      | transparent                                                                     |
+| `Object.values`, `Object.entries` at `{}`, `Object.getOwnPropertyDescriptor`                                                   | the values of the operand's own fields                                                 | obligated: $`\mathrm{excludesHost}`$ of the operand                             |
+| `Object.values` and `Object.entries` at a dictionary, `%Iterate:ForIn%`                                                        | the dictionary's values                                                                | transparent; the parameter excludes host values                                 |
+| `JSON.stringify(x)`                                                                                                            | a string                                                                               | `x` at `JsonValue`                                                              |
+| a `console` method                                                                                                             | nothing observed                                                                       | every argument's type a primitive or a union of primitives                      |
+| an object spread, an object pattern's rest                                                                                     | a fresh record of the operand's members                                                | obligated: $`\mathrm{excludesHost}`$ of the operand                             |
+| `Object.assign(t, s…)`                                                                                                         | `t` with each `s`'s members                                                            | obligated: $`\mathrm{excludesHost}`$ of `t` and of each `s`                     |
+| a member write                                                                                                                 | the receiver's invariant field written                                                 | the write rule's invariant field, which excludes host values (R1)               |
+| `structuredClone`, `Array.from`, `concat`, `flat`, `Object.hasOwn`, `hasOwnProperty`, `delete`, freezing, prototype reflection | —                                                                                      | refused: not in the fragment                                                    |
+| `sort`, `reverse`, `push`, `pop`, `shift`, `unshift`                                                                           | the receiver's store written                                                           | a writable receiver, which excludes host values                                 |
+| an `Array.prototype` member called with another receiver (`Array.prototype.sort.call(l)`)                                      | —                                                                                      | refused: no library value but `Boolean` is admitted as a value                  |
+
+**First-class library values.** The obligated library calls are members of
+`Object`: `Object.assign`, a call form of the parser recognized by its
+binding, and `Object.values`, `Object.entries` and
+`Object.getOwnPropertyDescriptor`, entries without `value`. `Object` is
+admitted as no value, so no alias (`const values = Object.values`),
+extraction (`const { assign } = Object`) or argument
+(`consume(Object.entries)`) reaches one. A library global is read as a value
+only where its entry says so (`value`: `Boolean` alone), and only a
+transparent entry may.
+
+#### Lean
+
+The host classification is the reserved key `[[host]]` (`hostKey`) of an
+object's field map, beside the model's `[[proto]]`, `[]` and `[[code]]`. No
+source key spells it, since the model spells a JavaScript string key apart
+from its own keys (`escapeKey`), so neither a written key, a computed one
+nor `in` reaches it; no certified allocation makes one, since the literal
+rules exclude the key (`HasTyWith.alloc`, `allocDict`), a merge copies no
+model key (`copiedKey`, `mergeParts_host`) and a computed key is never one
+(`Unreserved`). The families listed above admit it or not as stated
+(`refsT` of a non-empty field list, `dictViewT`, `dictCellT`, an own-key
+bound without the key, `NoHost`), the merge step, which `Object.assign`
+lowers to, is stuck on it (`ownAll`, `ownData`) and its rule requires
+`hostFree` of every operand clause (`MergeOk`, `hostFree_sound`). The
+family of non-host values is the type term `nonHost`, which only the library
+overlay states, lowered to the primitives, the callables and the record
+clause whose own-key bound excludes `[[host]]`; a source record clause meets
+that bound when it names an invariant field or an index (`CoversBounds`,
+`refs_noHost`, `dict_noHost`), and the stated parameter of the
+obligated `Object` members is the family of **non-host values**: the
+primitives, the callables and the ordinary-classified objects. The
+checker's admission rule for an argument at that parameter is
+$`\mathrm{excludesHost}`$ of the argument's claimed type, and the lemma
+proved for it is semantic inclusion: $`\mathrm{excludesHost}(A)`$ gives
+$`⟦A⟧\subseteq`$ the non-host values. The family is no structural type
+(an empty object type would admit host objects), and subtyping into it is
+this rule alone. A type parameter is included only through its certified
+bound; an unconstrained parameter and a recursive occurrence in its own
+bound supply nothing; a union needs every arm and an intersection one
+conjunct. The
+checker's rules for those steps and parameters require
+$`\mathrm{excludesHost}`$ of the operands' claimed types, proved sound
+against the families. An operation without a certified rule fails
+its plan's certification, so no recognizer's completeness is assumed. The
+headline theorem is `SourceClaimJson.checkJson_safe`, its premise
+exactly `checkJson ast claims fileKey evidence budget = .ok ()`; its
+conclusion, over the classified semantics, gives every certified function
+and closure, at every admissible instantiation of its type parameters,
+safety, so no stuck step, so no host object at an obligated operand,
+including the steps a native entry runs on its behalf (a callback's). Certified
+operations use the array and record rules, and their agreement with the
+runtime objects is T4.
+
+The policy refuses some ordinary programs: a spread or an object rest of a
+readonly record that holds no host value, `Object.assign`, `Object.values`
+or `Object.entries` of one, `console.log` of an object, `structuredClone` of any value. Each refusal is
+a coverage loss, recorded as such.
+
 ### Guard recognition
 
 A guard of a family is read from an audited table of what its code does,
@@ -337,34 +705,10 @@ is in $`K_g`$, reads nothing of its argument but the tag, runs no other
 code, throws nothing, and returns the same answer whatever it receives
 beyond its one parameter (further arguments, a receiver).
 
-Before the table is activated, the front end checks each entry against
-the package as Node loads it, once per process, reading the package's
-modules with a compiler of its own. The table's conditions must be the ones
-Node enables in the running process, read through a resolve hook, and no
-flag may preserve symlinks. The entry point, by the package's name,
-resolves through Node's own resolver to the recorded module. Before loading
-it, the front end reads and parses its complete executable closure from disk.
-Every static import and export-from, including its attributes, resolves from
-its importing module through Node's resolver; errors, queries and fragments
-refuse the table. The module set, SHA-256 file digests and binding edges
-(importing module, local name, target module, exported name, attributes and
-import/export form) equal the table's reviewed closure. Dynamic imports,
-require/createRequire, import.meta, await and eval/Function capabilities are
-outside the recorded loading forms and refused. The file digests bind other
-indirect execution to the reviewed code. A closure mismatch leaves every
-module unevaluated by activation. Over the unchanged installation, Node then
-loads the entry in the front end's own process: each entry's export is a
-function whose text is the entry's, the very function the recorded module
-exports, which declares it with that text and assigns it nowhere. The
-function's dependency closure, each free name a function of its module or
-a named import without attributes that Node resolves from the importing
-module to a module of the package and that the loaded module exports, has
-exactly the entry's helpers and binding edges, each helper of exactly its
-reviewed text, as loaded where it is exported. A mismatch, or a load Node
-refuses, like a digest
-mismatch, leaves the family without guards, each read without predicate. File digests alone do not pin
-resolution, since a manifest or a re-export can select other code among
-files already hashed.
+[Activation](#activating-a-guard-table) checks each entry against the
+package as Node loads it before the table is used; a mismatch leaves the
+family without guards. An entry's statement rests on F3 and F5 of the
+[trust rows](#trust-rows).
 
 The table is **generated and reviewed**, not computed by the front end at
 run time. A generator reads each export's function with the front end's
@@ -542,22 +886,6 @@ reads it as any import's declared type; what it rests on is the table.
 The run's [selection](#the-runs-selection) includes $`K_g`$ for every
 listed node guard its candidate modules call or use as a value, so the
 shapes a guard tests are arms of the union it narrows.
-
-#### Trust
-
-The table keeps, for each entry, the statement above (exact $`K_g`$, the
-tag the only member read, no other effect, independence of further
-arguments and of the receiver), under F2 and F4 of the family, F3 of the
-binding, and F5: the enum objects and the module bindings in the table's
-recorded dependency closure are never written, by the program or by
-external code
-(the package builds its enums as ordinary mutable objects and freezes
-nothing). A source write to them is refused by the existing rules: a write
-through a record or dictionary view of an enum object, `Object.assign` onto
-it, and a write of a namespace member or an import binding, each pinned by
-a control. It removes the import assumption of every family guard's
-declared predicate. The front end's generator and analysis are no part of
-the trusted base; the table and its review are.
 
 ### Stable members
 
@@ -936,7 +1264,7 @@ naming of a package type:
   returns it with its marker, the same object. A new object holding it
   (`{ node }`) is an ordinary object whose field holds the host value. A
   spread of it (`{ ...node }`) is refused by the host-operation boundary
-  ([operations](COMPILER-API.md#operations-and-their-obligations)), which
+  ([operations](#operations-and-their-obligations)), which
   admits no copy of a host object's own keys.
 - **Callbacks:** a callback's argument has a marker only where the audited
   contract of the function passing it states a family type; a callback's
@@ -970,115 +1298,6 @@ exists (`tests/compiler-api.mts`):
   the node on a re-exported guard's `false` edge and where a guard's wrapper
   answers `true`, each claimed at the identifier shape.
 
-## The family description
-
-A family description is data in the trusted host contracts
-(`tools/host-families.mts`, each instance contributed by the contract file of
-its package), of one declared type that one interpreter reads, and reviewed
-as those contracts are: every entry carries the declaration text it was
-reviewed against, and a check compares each with the installed declaration.
-It states:
-
-- **package:** the host package's identity, the name and version its
-  manifest states;
-- **installation:** the audited installation, the package of that name as
-  Node's package resolution finds it from a directory of the repository,
-  and the digest of its declarations, the SHA-256 of its version and its
-  inventory: every `.d.ts`, `.d.mts` and `.d.cts` file under its real
-  directory, reached without following a symbolic link, outside a nested
-  `node_modules` (the binding check C0 of the
-  [compiler API](COMPILER-API.md#binding-the-contract-to-the-implementation),
-  of every family). The family's declarations are exactly that inventory,
-  by real path: a dependency's declaration and one reached through a link
-  are read by the ordinary rules, and a declaration of an arbitrary
-  extension (`.d.<ext>.ts`) refuses the installation. The guard table pins
-  its executable closure;
-- **root:** the root declaration and its form, `inheritance` or `union`;
-- **tag:** the tag field $`\tau`$, its primitive, and the source of its
-  constants: an enum declaration, which the binding check compares with its
-  runtime object, or the string literals the shapes state;
-- **table:** an ordered list of selection rules the interpreter applies to
-  each tag value, the first that selects a declaration giving $`I_t`$:
-  - `literal`: the declaration whose tag is the literal $`t`$, excluding
-    declarations that extend another candidate with the same tag;
-  - `generic`: the meet of the named generic declarations whose tag
-    parameter's bound admits $`t`$, instantiated at $`t`$;
-  - `base`: a named declaration;
-- **corrections:** the audited members the declarations state required and
-  the runtime leaves absent, each read as optional, with its text;
-- **omitted members:** the members whose reads give no one value for a
-  node's life, each with its text and why: a read that allocates, or a
-  member the package assigns on a node it built earlier; each is omitted
-  from every shape, so no ordinary read or read link reaches one;
-- **marker:** the value $`m_F`$ of `[[host]]`;
-- **stable members:** every property member of a shape, required or
-  optional, the tag and the corrected members included, but the listed
-  exclusions, with the regression check that reads each twice on a corpus;
-- **guards:** the [guard table](#the-guard-table), each entry an export's
-  identity and reviewed text, its kind, domain and exact tag set.
-
-## Activation
-
-The mechanism is explicit, and nothing activates it by spelling:
-
-- **The family:** a reviewed description in the trusted contracts turns a
-  family on, for the installation it names (`reviewedFamilies` in
-  `tools/family-activation.mts`). Without one, the package's declarations
-  are read by the ordinary rules. Several descriptions are active together,
-  each owning its marker and its installation; a declaration is read by the
-  description whose installation holds its file, and a run's
-  [selection](#the-runs-selection) is one per family.
-- **The installation:** Node's package resolution
-  (`module.findPackageJSON`) finds the description's package from the
-  description's directory; its manifest states the description's name and
-  version, and its declarations have the description's digest, checked once
-  per process before any of its declarations is read. Its guard table is
-  [activated](#the-guard-table) over that installation, with the table's own
-  checks.
-- **A package's own contract:** the compiler API's tables by name (its
-  named views, branded strings, enums read as values, node list and type
-  roots, [COMPILER-API.md](COMPILER-API.md#reading-rules)) apply to its own
-  installation alone; another family's declarations of those names are read
-  as they declare them, under the host reading rules every installation
-  shares.
-- **The tag enum as a value:** a program reads the description's tag enum
-  as a value, each member at its literal type and each numeric value's
-  reverse key at `string` ([enums](SOURCE-CONTRACTS.md#enums),
-  `emitted-enum`), where its declaration's members are those of the runtime
-  object the activated entry point exports under its name: each member an
-  own data property holding its declared value, at each numeric value's key
-  an own data property holding the name of a member with that value, and no
-  other own key (`enumObjectMatches`, C1 for every family), and where the
-  program's import of it, resolved by Node
-  from the importing module and through a program module's re-export as a
-  guard's is ([calls](#calls)), binds that very object. Any other enum of a family's installation is read as a
-  value only where its package's contract lists it, as the compiler API's
-  `hostEnums`, with the same resolved binding identity requirement against
-  the object its contract checks.
-- **Membership:** a value is a family member only through the marker, which
-  the host supplies for the objects its entry points give as family members
-  (F1); no allocation of the program owns `[[host]]`.
-- **Guards:** a call is a guard call only when its callee resolves to a
-  checked export binding of the identified package.
-
-So:
-
-- A **look-alike** a program declares (`interface Node { kind: number }`, an
-  object literal with a `kind`) has no marker. Its types are ordinary
-  records, narrowed by the ordinary rules; a test of its `kind` drops the arms
-  of a union the program wrote, as R3 does.
-- A **forged claim** stating a program value at a family shape has no
-  derivation, since the marker view admits no program object; a forged
-  stable view is refused by the decoder; a forged guard call is an ordinary
-  call, since recognition is by resolution.
-- An **unidentified installation**, whose manifest or declarations' digest
-  differs from its description's, or which Node does not find, refuses every
-  run reading a declaration of the description's installation, until the
-  description is reviewed again (`tests/compiler-api.mts`, and the
-  stand-in's controls in `pipeline/test.mts`). A guard table that does not
-  match its installation leaves the family without guards, each read
-  without predicate.
-
 ## Trust rows
 
 Each family adds these obligations to the host model it is part of. They
@@ -1096,31 +1315,41 @@ bind them to the reviewed files.
   value holding $`m_F`$ under `[[host]]` meets $`S_t`$ for its tag $`t`$ at
   every later step, and each of its stable members, required or optional,
   is owned at a location with a stable contract or, absent, absent from an
-  object without a prototype. This is the model's side: what F2 says of the runtime, F1′ says
-  of the world the run is checked in, and with F1 it makes the marker and the
-  shape table correspond in both directions, which the agreement of two
-  units' residuals needs.
+  object without a prototype. This is the model's side: what F2 says of the
+  runtime, F1′ says of the world the run is checked in, and with F1 it makes
+  the marker and the shape table correspond in both directions, which the
+  agreement of two units' residuals needs. It is an external-model
+  obligation, not a conjunct of `WorldAdm`.
 - **F2 (runtime stability).** Each stable member, the tag among them,
   returns the same value on every read, and nothing the package or its
   clients do after creation changes it; an optional one is present with one
   value or absent, reading `undefined`, for the object's life.
-- **F3 (guard identity).** Each guard table entry's statement holds of the
-  function Node runs for its export identity, resolved as the entry
-  records, under the audited digest. Activation reads that resolution from
-  the verifying process's Node; F3 assumes the program runs under the same
-  Node configuration (its conditions), through ES module resolution, over
-  the unchanged installation, with no hook or loader altering resolution.
-  The installation is trusted code: the front end executes it to parse the
+- **F3 (guard identity).** Each guard table entry's statement (the exact tag
+  set $`K_g`$, the tag the only member read, no other effect, and an answer
+  independent of further arguments and of the receiver) holds of the
+  function Node runs for its export identity, resolved as the entry records,
+  under the audited digest. Activation reads that resolution from the
+  verifying process's Node; F3 assumes the program runs under the same Node
+  configuration (its conditions), through ES module resolution, over the
+  unchanged installation, with no hook or loader altering resolution. The
+  installation is trusted code: the front end executes it to parse the
   program before activation runs. Activation establishes that the reviewed
   table describes that installation as Node loads it, a consistency check
   under these assumptions; it is no defence against an installation
   modified before the front end starts, or a process whose loaded modules
-  differ from their files.
-- **F5 (unwritten constants).** The enum objects and the module bindings in
-  the guard table's recorded dependency closure are never written after the
-  package loads, by the program or by external code.
+  differ from their files. No guard's declared predicate is trusted: a
+  listed guard narrows by its entry and every other narrows nothing. The
+  generator and the front end's analysis are no part of the trusted base;
+  the table and its review are.
 - **F4 (transparent tag reads).** A read of the tag runs no code and throws
   nothing.
+- **F5 (unwritten constants).** The enum objects and the module bindings in
+  the guard table's recorded dependency closure are never written after the
+  package loads, by the program or by external code (the package builds its
+  enums as ordinary mutable objects and freezes nothing). A source write to
+  them is refused by the existing rules: a write through a record or
+  dictionary view of an enum object, `Object.assign` onto it, and a write of
+  a namespace member or an import binding, each pinned by a control.
 
 ## Instances
 
@@ -1155,7 +1384,7 @@ The description of `typescript` 7.0.2's syntax trees
   recognition contract; `isLeftHandSideExpression` and `isUnaryExpression`,
   which read `expression`, get no entry.
 
-Its rows are T1 (F1 and F2), T1′ (F1′), T2 (F3) and T4, which includes F4
+Its rows are T1 (F1 and F2), T1′ (F1′), T2 (F3 and F5) and T4, which includes F4
 ([the compiler API's trust](COMPILER-API.md#trust)).
 
 ### A string-tagged stand-in
@@ -1182,9 +1411,9 @@ is refused, under one excluding `Literal.type` no residual standing for
 omitted a read of it is refused (`pipeline/string-family-fixture-project/`,
 where Node and TypeScript resolve the stand-in's specifier alike).
 
-### A second instance: a readonly Babel interface
+### A conjectured instance: a readonly Babel interface
 
-A sketch, not implemented. Babel's nodes are plain objects that transforms
+A conjectured instance, which no description implements. Babel's nodes are plain objects that transforms
 write; a family's shapes admit readonly members alone, so mutable Babel code
 needs a separate model design. What the mechanism covers is code that only
 reads trees `@babel/parser` returns, a linter's for instance, under a
@@ -1207,207 +1436,3 @@ restricted client interface:
   return opts == null || shallowEqual(node, opts);`. The guard syntax would
   gain the null test and the `opts` parameter, a call passing it refused: an
   extension of the one syntax, which every family then reads.
-
-## Implementation plan
-
-The parts land in this order, each a commit of its own with its controls,
-the compiler API the first instance throughout.
-
-1. **Tag sets** in Lean's type language, the producer and the wire, with
-   normalization at every place a union is formed, the set coverage rule,
-   selection, slicing and computed keys. Controls and acceptance:
-   - positive: mixed unions of literals, sets and other clauses; a program
-     alias of a literal union; a computed key at a set; a meet of two sets
-     and of a set with its primitive; both edges of an equality and of a
-     truthiness test; slices to one element and to none; signed zero
-     (`0 | -0` against `0`) and a NaN in a set; a source set covered by
-     several target clauses;
-   - negative: a slice read at an element it excludes; a set covered by a
-     target missing one element; malformed encodings (unsorted, duplicated,
-     fewer than two elements), refused by the decoder;
-   - every existing case keeps its outcome, each change inspected and
-     accounted for in the record; literal-heavy cases measured before and
-     after; `checkJson_safe`'s statement and `WorldAdm` unchanged.
-2. **The family contract**: the description type and its interpreter, the
-   compiler API's description, the shape table, residuals and the marker in
-   the declaration graph; the trust rows F1 and F1′. Controls: the residual
-   (`parent` of a source file), separate units, the JavaScript typedef, a
-   look-alike interface, a forged claim stating a node at an arm its kind
-   excludes, and the controls of [identity](#identity-through-program-code).
-3. **Guard recognition**: the guard table in the family description (each
-   entry its export identity and reviewed text, node or tag guard, domain
-   and exact $`K_g`$, pinned to the audited digest); its generator under
-   the recognition contract and the fast check comparing its output with
-   the table; recognition by resolution; `host-guard` and the tag guard's
-   writing with the domain obligation; `guard-value` and `tag-guard-value`;
-   every unlisted guard of the family without predicate; $`K_g`$ in the
-   run's selection; a second instance (below). Controls, each pipeline
-   negative run under Node; a forged control rejects a false entailment,
-   not an over-approximation, and bypasses the producer in search and in
-   checking, at the forged claim:
-   - `invalid-compiler-api-js-alias`: `isTypeAliasDeclaration(n) ? n.kind :
-     undefined` at `SyntaxKind.TypeAliasDeclaration | undefined`, verified at
-     the declared predicate, refused; under Node, on a `@typedef`, 345;
-   - the argument evaluated once, through the pipeline: `isIdentifier(next())`
-     with `next` counting its calls, the count after the guard asserted 1,
-     verified and run under Node, so a parser duplicating the argument
-     fails the case;
-   - the domain: a guard called on an `unknown`, on `null` claimed through
-     a union, and on a program object, each refused at the argument; forged
-     claims weakening the obligation (the cast's operand claimed at the
-     family type where its derivation gives `unknown`, the cast's claim
-     restated without the marker), refused in search and in checking;
-   - F5's boundary: a write to `ts.SyntaxKind` through a
-     `Record<string, unknown>` view and through `{ Identifier: number }`,
-     `Object.assign(ts.SyntaxKind, …)`, and a reassignment of
-     `ts.isIdentifier` through the namespace and of an imported
-     `isIdentifier`, each refused at the write;
-   - the comma in a test position: `(x satisfies T, x.kind === 1) ? x.a : …`
-     verified, and its left operand's effects kept (a counter run under
-     Node);
-   - resolution: an entry whose recorded module or mapping differs from the
-     installation's (a stand-in manifest) leaves the guards without
-     predicate;
-   - `compiler-api-guard-false-branch` from gap to positive; a tag guard on
-     both edges (`isAssignmentOperator(op)`);
-   - guards as values: `filter(ts.isImportDeclaration)` and `some(n =>
-     ts.isIdentifier(n))` within a callback's effect-free footprint
-     (positive); a guard value receiving an index, the array and another
-     receiver through `filter` and `call`, its answer unchanged (positive,
-     run under Node); a tag guard value at a union of literals;
-   - recognition by resolution: a re-exported guard narrows; a local
-     function named `isIdentifier`, a guard re-bound to a `let`, and a
-     wrapper of a guard are ordinary calls, the wrapper read at its own
-     signature; a spread argument and an extra argument, refused;
-   - an unlisted guard: `isUnaryExpression(n) && n.operand`, refused (no
-     predicate);
-   - forged claims of false entailments: on a guard's `false` edge the
-     argument claimed at one kind that an input reaching that edge
-     contradicts (refused); a guard value's promise claimed at shapes that
-     exclude an actual `true` answer (refused);
-   - the table: the generator's output equals the reviewed table; the
-     functions outside the contract are exactly the unlisted exports;
-     every entry run under Node on an object of each tag answers
-     exactly $`K_g`$ (regression evidence).
-
-   The census record lists the exports the generator leaves out and why
-   (range tests outside a family helper, reads beyond the tag), next to the
-   expected movements. A second family shows the mechanism general: a stand-in package of
-   string-tagged nodes (`type: "A" | "B" | …`), one guard through a checked
-   helper, and one guard outside the contract whose answer depends on an
-   option argument, which gets no entry and narrows nothing. Guards outside
-   the contract stay explicit coverage gaps.
-
-   Measured: a long guard chain (`isExpression`, 46 kinds) through
-   `verify-source.mts`, and the `tools/` census before and after. Expected
-   in the census, to be recorded in WORK.md as it turns out, with the
-   motivating fixtures and their next blockers: the 21 slices of
-   `fragment-statements.mts` refused with "missing field elements" read a
-   `BindingName` after `if (ts.isIdentifier(node)) return …`, a guard's
-   `false` edge on a binding, and are expected past that refusal. The
-   "missing field text" (18) and "missing field name" (6) groups read a
-   member path after a guard of it (`ts.isIdentifier(m.name) &&
-   m.name.text`), and are expected to wait on
-   [stable members](#stable-members). `interfacesOf`, a guard closure
-   passed to `filter`, is expected to stay refused, for `filter<S>`'s
-   overload, which no review states. The uses of `isTypeAliasDeclaration`
-   and `isImportDeclaration` that read `name` or `moduleSpecifier` after
-   the guard are expected to be refused, since `JSTypeAliasDeclaration` and
-   `JSImportDeclaration` hold neither; each is a coverage loss its source
-   repairs with a test of the kind.
-4. **Stable members**, in two parts. The rules each part adds to the
-   calculus land in their owners with it: `read-linked` and `stable-link`
-   in [program typing](PROGRAM-TYPING.md#checked-expression-postconditions),
-   witnesses in [current-content assertions](SOURCE-CLAIMS.md#current-content-assertions),
-   stable keys in [records](POSITIVE-TYPES.md#records).
-
-   a. **Linked reads**, with no assumption: Lean's `read-linked` step and
-      its soundness; the Fragment's `tagMember` of any operand, the decoder
-      accepting one and the lowering testing the slot it is evaluated into;
-      witnesses at entries; the producer's read links, linked reads,
-      membership tests of any argument and witness assertions. Controls,
-      each pipeline negative run under Node:
-      - positive: `ts.isIdentifier(m.name) && m.name.text`; the same split
-        by a statement, `if (!ts.isIdentifier(m.name)) return ""; return
-        m.name.text;` (a witness); a path of two members,
-        `ts.isPropertyAccessExpression(n.expression) &&
-        n.expression.name.text`; two tests of one path under `||`;
-        `holder.parent ? f(holder.parent) : holder`, an optional link; a
-        kind test of a path, `m.name.kind === ts.SyntaxKind.Identifier &&
-        m.name.text`; a readonly program record,
-        `h.name.kind === 1 ? h.name.text : ""`; a `let` root read before its
-        next write; the argument evaluated once, `isIdentifier(next().name)`
-        with `next` counting its calls, the count asserted 1;
-      - refused, each returning a value outside its claimed type under
-        Node: a program record's path past a call that replaces the
-        member, past a write of it through an alias, and past a write of a
-        `let` root; a host path past a write of its `let` root from a
-        closure the program calls between the test and the read; a mixed
-        path (`w.node.name`, `w` a program record) past a call replacing
-        `w.node`;
-      - the boundary: an object whose getter answers differently on two
-        reads, run under Node beside the caller contract that excludes it;
-      - forged, bypassing the producer, refused in search and in checking,
-        each beside an accepted neighbour that differs in one thing: a
-        witness at an entry before the test (neighbour: after it); a
-        witness past the root's write (neighbour: before it); a witness
-        typed correctly but linked from another receiver, and one linked
-        through another field (neighbour: the program's own mapping); a
-        witness at a join whose one predecessor holds no link to it
-        (neighbour: both predecessors linked), and at a loop entry whose
-        backedge does not establish it; a linked read claimed past a call
-        on a program record's member (neighbour: the same read with no
-        call between).
-   b. **Stable keys**: the clause part, its meaning, subtyping, meets and
-      joins; the declaration graph's emission by the description's rule,
-      the interpreter's refusal of an unauthorized stable member and the
-      decoder's restriction to required views of marked terms; the frame
-      property of stable contracts and `stable-link`. Controls:
-      - positive: a host path's test read past an unrelated call
-        (`if (ts.isBigIntLiteral(node.operand)) return f(node),
-        node.operand.text`), past a write of a program record, and past an
-        external call that receives the node; a node still passed where
-        `{ readonly flags: number }` is expected;
-      - refused: the same path through a `Type`'s member past a call; a
-        claim of two arms of which
-        one states the member stable, past a call; the refinement read in
-        the `catch` of a `try` whose block tested it; each part-a negative
-        with a call between the test and the read, kept refused;
-      - malformed declarations, each refused, each beside the accepted
-        description or document it alters in one thing: a marked term
-        stating a stable key at an optional member and at a key it does not
-        state (Lean's decoder); an unmarked term stating one (Lean's
-        decoder); a description whose stable-member rule names an excluded
-        member (the front end's interpreter);
-      - optional members (the owner's decision of 2026-10-22): positive,
-        `compiler-api-stable-optional` (`patternStmt`'s test, calls and
-        read, a member tested absent, a corrected member); refused, a
-        program record's and a look-alike's optional member past a call
-        (run under Node), the omitted `tokenCache` at its read (run under
-        Node), a node passed where a writable field of its member's name is
-        expected; the case's document without the optional members' stable
-        keys refused in search and in checking; the decoder refusing a
-        writable stable member and an unmarked one, an optional readonly one
-        decoded;
-      - forged: a claim reading a program record's member past a call at
-        the refined type, refused in search and in checking (neighbour: a
-        host member's, accepted); a subtyping into a target stating a
-        stable key its source does not (neighbour: the source stating it).
-
-   Expected in the `tools/` census, recorded in WORK.md as it turns out: of
-   the 26 slices refused at a member path read after a test of it ("missing
-   field text" and "missing field name", and `bindingScope`'s repeated read
-   of `holder.parent`), 17 read the path with no call between the test and
-   the read and are expected past that refusal with part a; the 8 slices
-   reaching `expr`'s case of a negated bigint, where `gate.span(node)` runs
-   between `ts.isBigIntLiteral(node.operand)` and `node.operand.text`, with
-   part b; `fragment-statements.mts#pattern` reads a name, `key`, after a
-   call of `gate.fail` on the guard's `false` edge, and stays. Each slice
-   stops at its first refusal, so the next blockers are unknown.
-
-Out of order: guards before the family contract read `ts.isIdentifier(n) &&
-n.text` with `n: Node` as a test of `kind` on `Node`'s declared record and
-lose the narrowing the promise gives today (`compiler-api-kind-narrowing`);
-the family contract before tag sets gives residual tags of hundreds of
-literals; stable members before guards meet the guard's call, of an
-unchecked effect, between the read and its test.
