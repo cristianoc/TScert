@@ -1459,6 +1459,53 @@ where
           | none => [])
     | none => pure []
 
+/-- What a node's test yields about each slot it speaks of, at that slot's
+own slice, a slice the test leaves unchanged included: the tested slot, and
+each object a current read link says its value was read from. An edge
+spreads each yield over the slots the alias links relate to its target, the
+narrowest last (`nodeYields.fewestLast`), so a slot whose own type the test
+leaves narrower than another's slice keeps it. Untrusted: the checker
+decides. -/
+@[nospecialize] def sliceYields [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
+    (images : InstanceImageCheck G) (pool : List (Ty ι)) (Γ : List (Ty ι)) (e : Evidence ι)
+    (k : HeapKnowledge.Knowledge) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) :=
+  match PromiseCalls.promiseOf G e with
+  | some _ => pure []
+  | none =>
+    match (claim e).term with
+    | .ite (.test tag (.var i)) .tru .fls => do
+      return (← tagged i tag true) ++ (← membership [tag] i [false])
+    | .ite (.test tag (.var i)) .fls .tru => tagged i tag false
+    | t => match PromiseCalls.memberParts t with
+      | some (ts, i) => if PromiseCalls.isMemberOn ts i t then membership ts i [true, false] else pure []
+      | none => pure []
+where
+  /-- The read links whose value is slot `i`'s. -/
+  reads (i : Nat) : List HeapLinks.Link :=
+    k.links.filter fun g => !g.distinct && !g.alias && !g.optional && g.value == i
+  /-- A conditional yield at `j` of `sliced`, by a subtype choice of it. -/
+  sliceAt (j : Nat) (sliced : Ty ι) : StateM (Answered ι) (Option (PromiseCalls.Yield ι)) := do
+    match Γ[j]? with
+    | none => pure none
+    | some _ => do
+      let r ← (subtypeUsing G images sliced sliced).toState
+      pure (r.value.map fun p => { conditional := true, target := j, type := sliced, evidence := some p })
+  tagged (i : Nat) (tag : Tag) (q : Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) := do
+    let slot ← sliceAt i (BranchRefinement.tagSlice G (Γ[i]?.getD []) tag q)
+    let fields ← (reads i).filterMapM fun g =>
+      sliceAt g.cell (BranchRefinement.fieldSlice G (Γ[g.cell]?.getD []) g.field tag q)
+    pure (slot.toList ++ fields)
+  membership (ts : List Tag) (i : Nat) (answers : List Bool) : StateM (Answered ι) (List (PromiseCalls.Yield ι)) := do
+    let yieldAt := fun (j : Nat) (q : Bool) (sliced : Ty ι) =>
+      match Γ[j]? with
+      | some _ =>
+        some ({ conditional := q, onFalse := !q, target := j, type := sliced, evidence := some {} } : PromiseCalls.Yield ι)
+      | none => none
+    let slots := answers.filterMap fun q => yieldAt i q (PromiseCalls.memberSlotSlice G (Γ[i]?.getD []) ts q)
+    let fields := answers.flatMap fun q => (reads i).filterMap fun g =>
+      yieldAt g.cell q (PromiseCalls.memberFieldSlice G (Γ[g.cell]?.getD []) g.field ts q pool.flatten.eraseDups)
+    pure (slots ++ fields)
+
 /-- An edge's implications in the target's slots: each the source states, at
 every pair of target slots the mapping reads it from. -/
 def projectImplications (xs : List (PromiseCalls.Implication ι)) (m : PointClaims.Mapping) (width : Nat) :
@@ -1575,10 +1622,14 @@ promise's evidence. -/
     | some stop => .exhaustedExpression l stop
     | none => .expression l)
   let found ← stateIn (nodeYields G images pool c.context implies e out k)
-  -- Yields that leave a target's claim unmet are not taken.
-  tryCatch (produceNodeAt G images pool l node claims k c e effect out implies arguments goal found) fun err =>
-    if found.isEmpty then throw err
-    else produceNodeAt G images pool l node claims k c e effect out implies arguments goal []
+  -- Yields that leave a target's claim unmet are not taken: those found,
+  -- then with every slot the test speaks of at its own slice, then none.
+  let attempt := produceNodeAt G images pool l node claims k c e effect out implies arguments goal
+  let fallback := fun (err : Failure ι) => if found.isEmpty then throw err else attempt []
+  tryCatch (attempt found) fun err => do
+    let sliced ← stateIn (sliceYields G images pool c.context e k)
+    if sliced.isEmpty then fallback err
+    else tryCatch (attempt (nodeYields.fewestLast (found ++ sliced))) fun _ => fallback err
 
 /-- The implications a source node carries on its edge of `cont` numbered
 `index`, and the context, refined by its yields, they are checked in. -/

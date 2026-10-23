@@ -36,7 +36,7 @@ type 'output callbacks = {
   execute_bindings: environment -> Execution.binding_plan -> environment;
   expression: environment -> Source.expr -> ty;
   expression_effects: Source.expr -> environment -> environment;
-  branch: environment -> Source.expr -> bool -> environment;
+  condition: environment -> Source.expr -> environment * environment;
   return_expression: environment -> Source.expr -> ty;
   returned: ty -> unit;
   entry: environment -> Json.t -> unit;
@@ -187,8 +187,8 @@ let statements callbacks flow_graph register_following owner_span env0 ss =
           let cond=match s.statement with If (c,_,_) | While (c,_,_) -> c
             | _ -> Json.fail "a branch flow operation names another statement" in
           ignore (callbacks.expression env cond);
-          let after=callbacks.expression_effects cond env in
-          [next yes (callbacks.branch after cond true);next no (callbacks.branch after cond false)]
+          let held,failed=callbacks.condition env cond in
+          [next yes held;next no failed]
         | Flow.Return span ->
 
           callbacks.returned (infer_return span); []
