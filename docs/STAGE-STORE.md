@@ -427,6 +427,14 @@ at the same paths:
   15 ms or a tenth); a reading not taken makes the attempt's CPU time
   unavailable.
 
+*Measured.* Two cold censuses of `tools/` on one machine (2026-10-23, each
+in a fresh store, 300 s step limit, 12 workers), of 49ff119 with a
+compiler per collection and of 5ce25e3 with retained sessions: over the 404
+slices whose source both share, parse CPU 1,385 s and 857 s, the CPU of all
+executed stages 3,321 s and 2,862 s; the 404 outcomes equal, and of their
+parses 329 byte-identical and 75 differing only in the source offsets of
+declarations in front-end files whose text the two commits differ in.
+
 ## Locations
 
 Stages use stable file identities and execution locations
