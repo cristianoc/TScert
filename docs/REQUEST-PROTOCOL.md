@@ -353,8 +353,21 @@ codes before it; the program is then checked seeing them all.
 
 A node's evidence (`NodeEvidence`) has the fields:
 
-- `expression`: the derivation tree of its expression, each node
-  `{"node": {"claim": {context, term, type}, "rule": r, "premises": [...]}}`;
+- `ordinary`: the ordinary typing derivation of its expression, whose root
+  is the node's sequent: `{"proof": {"tree": d}}`, a derivation tree `d`,
+  each node `{"node": {"claim": {context, term, type}, "rule": r, "premises": [...]}}`;
+  `"effect"`, the proof its step evidence carries; or `null`, none, where
+  the step evidence establishes the step alone, which a node without step
+  evidence never is;
+- `sequent`: `{context, term, type}`, the node's sequent where `ordinary` is
+  `null` and the step evidence carries no proof, and `null` otherwise, where
+  the sequent is the root of `ordinary`'s derivation or of the step's proof.
+  The steps carrying a proof at the node's sequent are `ordinary`, `pure`,
+  `reading`, `created`, `typedRead`, `allocated` and `written`
+  ([step evidence](#step-evidence)); a `slicedRead`'s proof is at the
+  location's contract. A node spelling its sequent otherwise is refused,
+  and every consumer reads a node as the one with its derivation written
+  out (`ControlFlow.checkGraphResult_explicit`);
 - `edges`: one subtype-evidence list per outgoing edge, one entry per
   destination slot;
 - `knowledge`, `effect`, `output`: the [heap facts](#heap-facts) at entry,

@@ -132,6 +132,20 @@ function must<T>(value: T | null | undefined, message: string): T {
   assert.ok(value !== null && value !== undefined, message);
   return value;
 }
+/** A node's sequent and derivations as the evidence wire spells them
+ * (REQUEST-PROTOCOL.md, "Evidence"). */
+type WireSequent = { term: unknown; context: unknown[] };
+type WireDerivation = { node: { claim: WireSequent } };
+type WireNode = { ordinary: "effect" | { proof: { tree: WireDerivation } } | null; sequent: WireSequent | null;
+  effect: { [step: string]: { proof?: WireDerivation } } | null };
+/** A node's sequent: its ordinary derivation's root, the sequent it states,
+ * or its step's proof's root. */
+function nodeSequent(node: WireNode): WireSequent {
+  if (node.ordinary !== null && node.ordinary !== "effect") return node.ordinary.proof.tree.node.claim;
+  if (node.sequent !== null) return node.sequent;
+  const step = Object.values(must(node.effect, "a node without a derivation has step evidence"))[0];
+  return must(step?.proof, "a node without a stated sequent has a step proof").node.claim;
+}
 /** Check `claims` against `evidence` with the verifier's acceptance entry, and
  * require a refusal; its words, for the caller to match. */
 const invoke = (claims: string, evidence: string, artifacts: string,
@@ -4308,6 +4322,56 @@ control(async (): Promise<void> => {
   process.stdout.write("wire strings: lone surrogates and invalid UTF-8 refused by the producer, Lean and TypeScript\n");
 });
 control(async (): Promise<void> => {
+  // A node states its sequent once (REQUEST-PROTOCOL.md, "Evidence"): by its
+  // ordinary derivation, by the proof its step carries, or by itself. Every
+  // consumer reads a node as the one with its derivation written out, so the
+  // written-out spelling of a referenced proof is accepted beside the honest
+  // document; a reference no step supplies, a second statement of the
+  // sequent, a node without step evidence or derivation, and a derivation
+  // whose root is not the step proof's sequent are refused.
+  const artifacts = run("aliases");
+  type Evidence = { main: { functions: { certificate: WireNode[] }[] } };
+  const honest = (): Evidence =>
+    JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8")) as Evidence; // asserted: the case's verifier-produced evidence; Lean decodes every forged document independently
+  const nodes = (e: Evidence): WireNode[] => e.main.functions.flatMap((f) => f.certificate);
+  const proofOf = (n: WireNode): WireDerivation | undefined =>
+    Object.values(must(n.effect, "the producer gives every node step evidence"))[0]?.proof;
+  const referencing = (n: WireNode): boolean => n.ordinary === "effect";
+  const proofFree = (n: WireNode): boolean => n.ordinary !== "effect" && proofOf(n) === undefined;
+  assert.ok(nodes(honest()).some(referencing), "a node referencing its step's proof");
+  assert.ok(nodes(honest()).some(proofFree), "a node whose step carries no proof");
+  const forge = (name: string, pick: (n: WireNode) => boolean, change: (n: WireNode) => void): string => {
+    const e = honest();
+    change(must(nodes(e).find(pick), `${name}: its node`));
+    const path = join(artifacts, `forged-node-${name}-evidence.json`);
+    writeFileSync(path, JSON.stringify(e));
+    return path;
+  };
+  const check = (evidence: string): Invoked => tested(verifierCall(verifier, ["--check-source-claims",
+    join(artifacts, "fragment.json"), join(artifacts, "claims.json"), sourceKey(artifacts), evidence]));
+  const written = check(forge("written-out", referencing, (n) => {
+    n.ordinary = { proof: { tree: must(proofOf(n), "the referenced proof") } };
+  }));
+  assert.equal(written.status, 0, written.stdout + written.stderr);
+  const spelling = /a node states its sequent once/;
+  for (const [name, pick, change] of [
+    ["twice", referencing, (n: WireNode) => { n.sequent = nodeSequent(n); }],
+    ["stated-beside-proof", referencing, (n: WireNode) => { n.sequent = nodeSequent(n); n.ordinary = null; }],
+    ["no-step-proof", proofFree, (n: WireNode) => { n.ordinary = "effect"; }],
+    ["no-step-no-derivation", referencing, (n: WireNode) => { n.effect = null; n.ordinary = null; }],
+  ] as const) assert.match(invoke(join(artifacts, "claims.json"), forge(name, pick, change), artifacts), spelling, name);
+  // A derivation whose root differs from the sequent the step's proof is at:
+  // a well-spelled node the step check refuses.
+  const disagreeing = check(forge("other-root", referencing, (n) => {
+    const tree: WireDerivation = structuredClone(must(proofOf(n), "the referenced proof"));
+    tree.node.claim.context = [...tree.node.claim.context, tree.node.claim.context[0] ?? []];
+    n.ordinary = { proof: { tree } };
+  }));
+  assert.equal(disagreeing.status, 1, disagreeing.stdout + disagreeing.stderr);
+  assert.doesNotMatch(disagreeing.stdout + disagreeing.stderr, spelling);
+  process.stdout.write("node headers: a referenced proof written out accepted; a sequent stated twice, a reference without a step proof, a node without step or derivation refused by the decoder, a derivation at another sequent by the check\n");
+});
+control(async (): Promise<void> => {
   // A step's exit other than its complete refusal record (the verifier's
   // exit 1, a first line `reject: …` and a last line `end of refusal`; the
   // producer's exit 2 and `unsupported: …`) is a tool failure, no verdict:
@@ -4488,8 +4552,7 @@ mutationControl(async (): Promise<void> => {
   // Only the incoming read-link obligation can reject this evidence.
   type Link = { cell: number; value: number; alias: boolean; distinct: boolean;
     field: string; other: string; optional: boolean };
-  type WitnessNode = { expression: { node: { claim: { term: unknown; context: number[][] } } };
-    knowledge: { links: Link[] }; output: { links: Link[] } };
+  type WitnessNode = WireNode & { knowledge: { links: Link[] }; output: { links: Link[] } };
   for (const name of ["receiver", "field"]) {
     const evidence: unknown = JSON.parse(readFileSync(join(artifacts, "evidence.json"), "utf8"));
     assert.ok(object(evidence) && object(evidence.main) && Array.isArray(evidence.main.functions));
@@ -4505,9 +4568,9 @@ mutationControl(async (): Promise<void> => {
     const certificate = unit.certificate as WitnessNode[]; // asserted: honest verifier-produced evidence; Lean independently decodes the complete forged document
     const node = must(certificate.find(c => {
       const links = c.knowledge.links.filter(l => !l.alias && !l.distinct);
-      return JSON.stringify(c.expression.node.claim.term) === JSON.stringify({ var: { i: 0 } }) &&
+      return JSON.stringify(nodeSequent(c).term) === JSON.stringify({ var: { i: 0 } }) &&
         links.length === 2 && links.every(l => l.cell > 0 && l.value > 0) &&
-        JSON.stringify(c.expression.node.claim.context[links[0].value]) === JSON.stringify(c.expression.node.claim.context[links[1].value]);
+        JSON.stringify(nodeSequent(c).context[links[0].value]) === JSON.stringify(nodeSequent(c).context[links[1].value]);
     }), `${name}: two refined witnesses at a non-cut return`);
     const [first, second] = node.knowledge.links.filter(l => !l.alias && !l.distinct);
     if (name === "receiver") {
@@ -4546,12 +4609,12 @@ mutationControl(async (): Promise<void> => {
     // link's image there is the link one slot on, for slots other than the
     // copied one.
     const copied = (node: WitnessNode): number | null => {
-      const term = node.expression.node.claim.term;
+      const term = nodeSequent(node).term;
       return object(term) && object(term.var) && typeof term.var.i === "number" ? term.var.i : null;
     };
     const pairs = certificate.slice(1).flatMap(node => {
       const slot = copied(node);
-      const context = node.expression.node.claim.context.map(t => JSON.stringify(t));
+      const context = nodeSequent(node).context.map(t => JSON.stringify(t));
       return slot === null ? [] : context.flatMap((t, i) => context.flatMap((u, j) =>
         i < j && t === u && i !== slot && j !== slot && !aliased(node, i, j) ? [{ node, i, j }] : []));
     });
@@ -4609,8 +4672,7 @@ mutationControl(async (): Promise<void> => {
   // witness (`receiver`), or through the prefix's other field (`field`).
   type Link = { cell: number; value: number; alias: boolean; distinct: boolean;
     field: string; other: string; optional: boolean };
-  type WitnessNode = { expression: { node: { claim: { term: unknown; context: number[][] } } };
-    knowledge: { links: Link[] }; output: { links: Link[] } };
+  type WitnessNode = WireNode & { knowledge: { links: Link[] }; output: { links: Link[] } };
   const object = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
   for (const name of ["receiver", "field"]) {
@@ -4633,9 +4695,9 @@ mutationControl(async (): Promise<void> => {
     };
     const node = must(certificate.find(c => {
       const links = segments(c);
-      return JSON.stringify(c.expression.node.claim.term) === JSON.stringify({ var: { i: 0 } }) &&
+      return JSON.stringify(nodeSequent(c).term) === JSON.stringify({ var: { i: 0 } }) &&
         links.length === 2 && links.every(l => l.cell > 0 && l.value > 0) &&
-        JSON.stringify(c.expression.node.claim.context[links[0].value]) === JSON.stringify(c.expression.node.claim.context[links[1].value]);
+        JSON.stringify(nodeSequent(c).context[links[0].value]) === JSON.stringify(nodeSequent(c).context[links[1].value]);
     }), `${name}: two refined chains at a non-cut return`);
     const [first, other] = segments(node);
     if (name === "receiver") {

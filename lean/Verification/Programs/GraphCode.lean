@@ -1027,4 +1027,25 @@ theorem checkCodes_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
     ProgramCertificates.CodesSound G (admits table) :=
   extendTable_sound (fun c hc => by simp [admits] at hc) h
 
+/-! ### A node's referenced derivation
+
+The footprint inspection of calls, throws and fresh results reads a node
+referencing its step's proof, or stating only its sequent, as the node with
+that derivation written out (`NodeEvidence.explicit`), as the graph check
+does (`ControlFlow.checkGraphResult_explicit`). -/
+
+section
+variable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (c : NodeEvidence ι)
+
+theorem nodeChecked_explicit (Φ : Footprints.Closed) (facts : List (List Nat)) (ret exc : Bool)
+    (l : Nat) (node : Node) :
+    nodeChecked G images Φ facts ret exc l node c.explicit = nodeChecked G images Φ facts ret exc l node c := rfl
+
+theorem callFresh_explicit (t : Tm) : callFresh G images c.explicit t = callFresh G images c t := rfl
+
+theorem throwsWithin_explicit (Φ : Footprints.Closed) (F : List Nat) (t : Tm) :
+    throwsWithin G images Φ F c.explicit t = throwsWithin G images Φ F c t := rfl
+
+end
+
 end Verification.GraphCode

@@ -1255,7 +1255,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     (suggestions : List (Sequent ι)) (known : List (Evidence ι))
     (codes : CodeEntry ι → Bool := fun _ => false) (aliases : List (ι × ι) := [])
     (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images) :
-    SearchM ι (Evidence ι × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := do
+    SearchM ι (Option (Evidence ι) × HeapExpressionRules.StepEvidence ι × HeapKnowledge.Knowledge) := do
   -- A node's derivation is first sought among its own types: its claim and
   -- its context's, which are its operands' claims. The pool is consulted
   -- only where those leave a choice open.
@@ -1342,7 +1342,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
     if let some out := checked.value then
       -- Effect evidence validates this header itself; an ordinary derivation
       -- is not required for the precise read/value alternatives.
-      return (ordinary.value.getD (.node j .var []),effect,out)
+      return (ordinary.value,effect,out)
   SearchM.lift ⟨none, incomplete⟩
 
 /-- All predecessor edges come from executable continuations. -/
@@ -1537,7 +1537,7 @@ for it: its edges, its handler and, at a return under a promise goal, the
 promise's evidence. -/
 @[nospecialize] private def produceNodeAt [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (pool : List (Ty ι)) (l : Nat) (node : Node) (claims : List (PointClaim ι))
-    (k : HeapKnowledge.Knowledge) (c : PointClaim ι) (e : Evidence ι) (effect : HeapExpressionRules.StepEvidence ι)
+    (k : HeapKnowledge.Knowledge) (c : PointClaim ι) (derivation : Option (Evidence ι)) (effect : HeapExpressionRules.StepEvidence ι)
     (out : HeapKnowledge.Knowledge) (implies : List (PromiseCalls.Implication ι)) (arguments : List Nat)
     (goal : ControlFlow.Goal ι) (ys : List (PromiseCalls.Yield ι)) : ProduceM ι (NodeEvidence ι) := do
   let unconditional := PromiseCalls.yieldFacts ys false
@@ -1602,7 +1602,16 @@ promise's evidence. -/
     | .ret, .guards T _ => if BranchRefinement.impossible G c.type (.boolean true) then pure none else within conditional T
     | .ret, .asserts T _ => within unconditional T
     | _, _ => pure none
-  let evidence : NodeEvidence ι := {expression := e, edges := ps, knowledge := k, effect := some effect, output := out, handler := hd}
+  -- Every step with a proof was built from the ordinary derivation
+  -- (`expressionEffectUsing`), so the step's proof is that derivation: the
+  -- node references it rather than repeating it.
+  let (ordinary, sequent) : Option (ControlFlow.OrdinaryEvidence ι) × Option (Sequent ι) :=
+    match derivation, effect.proof? with
+    | some _, some _ => (some .effect, none)
+    | some e, none => (some (.proof e), none)
+    | none, some _ => (none, none)
+    | none, none => (none, some ⟨c.context, node.expression, c.type⟩)
+  let evidence : NodeEvidence ι := {ordinary, sequent, edges := ps, knowledge := k, effect := some effect, output := out, handler := hd}
   return { evidence with implies := implies, yields := ys, arguments := arguments, promise := promise }
 
 
@@ -1617,13 +1626,14 @@ promise's evidence. -/
   let some c := claims[l]? | throw .claimCount
   let searched ← searchIn (expressionEffectUsing G images pool fuel ⟨c.context,node.expression,c.type⟩ k suggestions
     known codes aliases checker)
-  let some (e,effect,out) := searched.value | throw (match searched.exhaustion with
+  let some (derivation,effect,out) := searched.value | throw (match searched.exhaustion with
     | some stop => .exhaustedExpression l stop
     | none => .expression l)
+  let e := derivation.getD (.node ⟨c.context,node.expression,c.type⟩ .var [])
   let found ← stateIn (nodeYields G images pool c.context implies e out k)
   -- Every candidate is checked against the node's edge obligations. Retry
   -- only a bounded number; label counts do not order semantic precision.
-  let attempt := produceNodeAt G images pool l node claims k c e effect out implies arguments goal
+  let attempt := produceNodeAt G images pool l node claims k c derivation effect out implies arguments goal
   tryCatch (attempt found) fun err => do
     let sliced ← stateIn (sliceYields G images pool c.context e k)
     let same := fun (a b : PromiseCalls.Yield ι) =>
