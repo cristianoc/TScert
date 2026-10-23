@@ -1805,6 +1805,59 @@ member is read after the actuals, where JavaScript reads it before them; the
 lowering is used only where no actual runs code (each a name or a literal),
 so no step can tell the orders apart.
 
+### Read summaries
+
+A read summary $`(C, f, B)`$ states, of a receiver type $`C`$, a key $`f`$
+and a result $`B`$, that every member of $`C`$ states $`f`$ as a readonly
+view whose type is within $`B`$. It is a judgment about types alone. With
+$`c_a`$ the one clause $`[a]`$ represents and $`\mathrm{views}(c_a)`$ its
+named views (`namedMembers`):
+
+```math
+\mathrm{Summary}_G(C,f,B)\iff
+\forall a\in\mathrm{members}(C).\;\exists A.\;
+(f,A)\in\mathrm{views}(c_a)\ \land\
+(f\ne\mathtt{length}\lor\mathrm{lengthExcluded}(A))\ \land\ A\le B.
+```
+
+The checker (`checkReadSummary`) enumerates $`\mathrm{members}(C)`$ itself
+and reads one arm per member, in that order: the view's type $`A`$ and the
+choices comparing it to $`B`$, none where $`A`$ is $`B`$. A missing or extra
+arm, a key the member states as no view, a `length` view at a type not
+shown to exclude some number (`lengthExcluded`, as `readView` requires), and
+a comparison the ordinary checker refuses each refuse the summary. The comparison is the ordinary one (`PositiveCertificates.checkUsing`),
+whatever body checks the use. A summary gives the read rule
+
+```math
+\frac{\mathrm{Summary}_G(C,f,B)\qquad \Gamma(x)=C}
+     {\Gamma\vdash_G \mathsf{readAt}\;f\;x:B}
+```
+
+for every context $`\Gamma`$ holding $`C`$ at $`x`$. It is derived, so it
+adds no case to the soundness induction: **proved**, `readSummary_sound`
+([ProgramCertificates.lean](../lean/Verification/Programs/ProgramCertificates.lean))
+builds the derivation `unionVar` on $`x`$, then per member `var`, `readView`
+and `sub`, under any body rule admitting the ordinary comparisons
+(`lexicalBodyCheck_ordinary` for a qualified body). A summary's check reads
+the graph through its rows and the image check through its comparison, so
+it is the same check at every reassignment of the parameter rows
+(**proved**, `Parametricity.checkReadSummary_reassign`,
+`summariesSound_reassign`): a generic body's summaries hold at every
+instantiation its acceptance covers.
+
+The rule types a read whose receiver is a slot, `readAt f (var x)`, by data
+properties alone: it names no location, no heap fact and no cached value, and
+an effect step using it keeps its own checks (`typedRead`'s operand tests and
+frame among them). Reads through a receiver coercion, an ordinary field, a
+callable's bag, an optional or index key, the prototype, and `length` read
+through `lenView`, keep their own rules.
+
+A request's evidence holds its summaries in one table, `readSummaries`, each
+entry checked once against the request's graph and image check; a
+derivation node `readSummary k` uses entry $`k`$ and checks only its own
+judgment: the term `readAt f (var x)`, the entry's key and result, and the
+context's type at $`x`$ the entry's receiver ([request protocol](REQUEST-PROTOCOL.md#read-summaries)).
+
 ### Binding and soundness
 
 [Bindings.lean](../lean/Verification/Semantics/Bindings.lean) defines de Bruijn scope and simultaneous closing substitution, and proves

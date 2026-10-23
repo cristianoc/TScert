@@ -222,8 +222,8 @@ theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
 
 private theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
-    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool}
-    {e : CallEffects.Effect} (hl : LocalUsing G images j (.app e) ps codes)
+    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    {e : CallEffects.Effect} (hl : LocalUsing G images j (.app e) ps codes (sums := sums))
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -299,8 +299,8 @@ invocation does: the constructor and the actuals are values, each omitted
 position an explicit `undefined` premise. -/
 private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
-    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool}
-    {e : CallEffects.Effect} (hl : LocalUsing G images j (.construct e) ps codes)
+    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    {e : CallEffects.Effect} (hl : LocalUsing G images j (.construct e) ps codes (sums := sums))
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -506,9 +506,9 @@ theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) 
 signature: the signature's postcondition holds of the call. -/
 private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
-    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool}
+    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     {e : CallEffects.Effect} {k u : Nat} {flags : List Bool} {P : Ty ι}
-    (hl : LocalUsing G images j (.callRest e k u flags P) ps codes)
+    (hl : LocalUsing G images j (.callRest e k u flags P) ps codes (sums := sums))
     (hnos : flags.all (· == false) = true)
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
@@ -639,9 +639,9 @@ its selected signature: the spreads are read in the heap the call starts in,
 and the signature's postcondition holds of the call. -/
 private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
-    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool}
+    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     {e : CallEffects.Effect} {k u : Nat} {flags : List Bool} {P : Ty ι}
-    (hl : LocalUsing G images j (.callRest e k u flags P) ps codes)
+    (hl : LocalUsing G images j (.callRest e k u flags P) ps codes (sums := sums))
     (hsp : flags.any id = true)
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hsc : ∀ p ∈ ps, checkScope p.context.length p.term = true)
@@ -809,9 +809,9 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
 from the heap it starts in. -/
 theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
-    {codes : CodeEntry ι → Bool} (ht : checkTreeUsing G images e codes = true)
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
     (hp : selectedOperands e = true) {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
-    (hcodes : CodesSound G codes)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) h)
@@ -827,7 +827,7 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
       refine SafePostExc.post (call_local_sound ht.1 ?_ ?_ he hw hh)
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
@@ -838,7 +838,7 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
       have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
         intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
       have inScope : ∀ p ∈ ps.map claim, checkScope p.context.length p.term = true := by
         intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
@@ -863,7 +863,7 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
       refine SafePostExc.post (construct_local_sound ht.1 ?_ ?_ he hw hh)
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
@@ -877,7 +877,7 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
           simp only [selectedEffect] at hsel
           simp only [selectedOperands] at hp
           obtain ⟨hctx,hterm,hsub⟩ := ht.1
-          have ih := selected_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hsel hcodes
+          have ih := selected_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hsel hcodes hsums
             (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh
           rw [hterm] at ih
           exact consequence (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv)
@@ -886,8 +886,8 @@ termination_by sizeOf e
 
 theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {Φ : Footprints.Closed} (e : Evidence ι)
-    {codes : CodeEntry ι → Bool} (ht : checkTreeUsing G images e codes = true)
-    (hp : selectedCallWithin Φ e = true) (hcodes : CodesSound G codes)
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
+    (hp : selectedCallWithin Φ e = true) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G (claim e).type) (fun h' _ => Φ.Holds h h')
@@ -898,7 +898,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
   · rename_i eff hsel
     simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq] at hp
     obtain ⟨hle, hr⟩ := hp
-    apply HeapObservations.weaken (fun h' v hq => ?_) (selected_sound e ht hops hsel hcodes he hw hh)
+    apply HeapObservations.weaken (fun h' v hq => ?_) (selected_sound e ht hops hsel hcodes hsums he hw hh)
     rcases hr with hr | hr
     · exact (CallEffects.Effect.within_holds hq.1 hr).mono hle
     · rw [hr]; exact CallEffects.Effect.within_top hq.1
@@ -1366,10 +1366,10 @@ def selectedThrows : Evidence ι → Bool
 return and on a throw, at its receiver, from the heap it starts in. -/
 theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
-    {codes : CodeEntry ι → Bool} (ht : checkTreeUsing G images e codes = true)
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
     (hp : selectedOperands e = true) (hthrows : selectedThrows e = true)
     {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
-    (hcodes : CodesSound G codes)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePostExc (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) h)
@@ -1385,7 +1385,7 @@ theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
       apply call_local_sound ht.1 _ _ he hw hh
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
@@ -1396,7 +1396,7 @@ theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
       apply construct_local_sound ht.1 _ _ he hw hh
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes
+        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
@@ -1411,7 +1411,7 @@ theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
           simp only [selectedOperands] at hp
           simp only [selectedThrows] at hthrows
           obtain ⟨hctx,hterm,hsub⟩ := ht.1
-          have ih := selected_sound_exc child (ht.2 ⟨child,by simp⟩ (by simp)) hp hthrows hsel hcodes
+          have ih := selected_sound_exc child (ht.2 ⟨child,by simp⟩ (by simp)) hp hthrows hsel hcodes hsums
             (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh
           rw [hterm] at ih
           exact SafePostExc.consequence_below' (fun _ _ _ _ h => h)

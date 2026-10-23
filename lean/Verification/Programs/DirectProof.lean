@@ -93,10 +93,21 @@ def renderAt (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
       let pe ← renderAt G images pool depth (Γ.set i F) e
       pure (.node ⟨Γ,j.term,j.type⟩ (.ifBoolVar T F) [pt,pe])
     | .unionVar i, _, children =>
+      let some C := Γ[i]? | failure
+      -- A read of the split slot, each member's view of the key within the
+      -- result: one checked summary of the request's table, where one holds.
+      let summarized : Option Nat ← match j.term with
+        | .readAt f (.var i') =>
+          if i' != i || (ProgramTyping.members G C).length ≤ 1 then pure none else do
+          let (found, answers) := summaryUsing G images C f j.type (← get).answers
+          modify fun c => { c with answers }
+          pure found.value
+        | _ => pure none
+      if let some k := summarized then
+        return .node ⟨Γ,j.term,j.type⟩ (.readSummary k) []
       -- One child per label the slot holds in the actual context: the
       -- planned label's child. An enclosing split may have left the slot
       -- fewer labels than the recipe planned for (a variable tested twice).
-      let some C := Γ[i]? | failure
       let some P := j.context[i]? | failure
       let C := ProgramTyping.members G C
       let P := ProgramTyping.members G P

@@ -164,8 +164,9 @@ theorem graphCodesChecked_reassign (A : List ι) (codes : CodeEntry ι → Bool)
   rfl
 
 theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) :
-    LocalUsing (reassign G η) (images.reassign η) j r ps codes = LocalUsing G images j r ps codes := by
+    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
+    LocalUsing (reassign G η) (images.reassign η) j r ps codes (sums := sums) =
+      LocalUsing G images j r ps codes (sums := sums) := by
   unfold LocalUsing MemberProofsUsing
   simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign, graphCodesChecked_reassign,
     allocBuiltinsUsing_reassign]
@@ -175,9 +176,9 @@ theorem Local_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
 semantic assignment changes. Its soundness is supplied at that assignment. -/
 theorem LocalWith_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool)
-    (subtype : Ty ι → Ty ι → SubtypeChoices ι → Bool) :
-    LocalUsing (reassign G η) (images.reassign η) j r ps codes subtype =
-      LocalUsing G images j r ps codes subtype := by
+    (subtype : Ty ι → Ty ι → SubtypeChoices ι → Bool) (sums : List (ReadSummary ι)) :
+    LocalUsing (reassign G η) (images.reassign η) j r ps codes subtype sums =
+      LocalUsing G images j r ps codes subtype sums := by
   unfold LocalUsing MemberProofsUsing
   simp (config := { iota := false }) only [check_fun_reassign, CallProofs_reassign, RestProofs_reassign,
     graphCodesChecked_reassign, allocBuiltinsUsing_reassign]
@@ -185,9 +186,9 @@ theorem LocalWith_reassign (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι
 
 theorem checkTreeWith_reassign
     (subtype : Ty ι → Ty ι → SubtypeChoices ι → Bool)
-    (e : ProgramCertificates.Evidence ι) (codes : CodeEntry ι → Bool) :
-    checkTreeWith (reassign G η) (images.reassign η) subtype e codes =
-      checkTreeWith G images subtype e codes := by
+    (e : ProgramCertificates.Evidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    checkTreeWith (reassign G η) (images.reassign η) subtype e codes sums =
+      checkTreeWith G images subtype e codes sums := by
   match e with
   | .node j r ps =>
     rw [checkTreeWith, checkTreeWith]
@@ -195,7 +196,7 @@ theorem checkTreeWith_reassign
     congr 1
     congr 1
     funext x
-    exact checkTreeWith_reassign subtype x.val codes
+    exact checkTreeWith_reassign subtype x.val codes sums
 termination_by sizeOf e
 decreasing_by
   have := List.sizeOf_lt_of_mem x.property
@@ -203,8 +204,8 @@ decreasing_by
   omega
 
 theorem checkTree_reassign (e : ProgramCertificates.Evidence ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) :
-    checkTreeUsing (reassign G η) (images.reassign η) e codes = checkTreeUsing G images e codes := by
+    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
+    checkTreeUsing (reassign G η) (images.reassign η) e codes sums = checkTreeUsing G images e codes sums := by
   match e with
   | .node j r ps =>
     rw [checkTreeUsing_eq, checkTreeUsing_eq]
@@ -212,16 +213,30 @@ theorem checkTree_reassign (e : ProgramCertificates.Evidence ι)
     congr 1
     congr 1
     funext x
-    exact checkTree_reassign x.val codes
+    exact checkTree_reassign x.val codes sums
 termination_by sizeOf e
 decreasing_by
   have := List.sizeOf_lt_of_mem x.property
   simp only [ProgramCertificates.Evidence.node.sizeOf_spec]
   omega
 
+/-- A read summary's check reads the graph through its rows and the image
+check through its comparison only: it is the same check at every
+reassignment (`readSummary_reassign`). -/
+theorem checkReadSummary_reassign (s : ReadSummary ι) :
+    checkReadSummary (reassign G η) (images.reassign η) s = checkReadSummary G images s := by
+  simp only [checkReadSummary_eq, check_reassign]
+  rfl
+
+/-- **Summaries transport.** A table checked at the graph is sound at every
+reassignment of its parameter rows, with the reassigned image check. -/
+theorem summariesSound_reassign {sums : List (ReadSummary ι)} (h : SummariesSound G images sums) :
+    SummariesSound (reassign G η) (images.reassign η) sums := fun s hs =>
+  (checkReadSummary_reassign G η images s).trans (h s hs)
+
 theorem checkStep_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) :
-    checkStepUsing (reassign G η) (images.reassign η) j k e codes = checkStepUsing G images j k e codes := by
+    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
+    checkStepUsing (reassign G η) (images.reassign η) j k e codes sums = checkStepUsing G images j k e codes sums := by
   cases e <;> simp only [checkStepUsing_eq, checkTree_reassign, checkObservedSub_reassign, check_reassign] <;> rfl
 
 theorem carries_reassign (Γ : List (List ι)) (facts : HeapKnowledge.Knowledge) (xs : List (PromiseCalls.Implication ι))
@@ -280,8 +295,8 @@ theorem yieldFollows_reassign (Γ : List (List ι)) (xs : List (PromiseCalls.Imp
 theorem promiseOf_reassign (e : ProgramCertificates.Evidence ι) :
     PromiseCalls.promiseOf (reassign G η) e = PromiseCalls.promiseOf G e := rfl
 
-theorem checkYields_reassign (c : NodeEvidence ι) (codes : CodeEntry ι → Bool) :
-    checkYields (reassign G η) (images.reassign η) c codes = checkYields G images c codes := by
+theorem checkYields_reassign (c : NodeEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    checkYields (reassign G η) (images.reassign η) c codes sums = checkYields G images c codes sums := by
   unfold checkYields
   rw [promiseOf_reassign, yieldFollows_reassign]
   simp only [checkTree_reassign]
@@ -315,19 +330,21 @@ theorem withStable_reassign :
     HeapExpressionRules.withStable (reassign G η) = HeapExpressionRules.withStable G := rfl
 
 theorem checkStepResult_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
-    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) :
-    (checkStepResult (reassign G η) (images.reassign η) j k e codes).value =
-      (checkStepResult G images j k e codes).value :=
-  checkStep_reassign G η images j k e codes
+    (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    (checkStepResult (reassign G η) (images.reassign η) j k e codes sums).value =
+      (checkStepResult G images j k e codes sums).value :=
+  checkStep_reassign G η images j k e codes sums
 
 /-- Descriptor evidence may vary with the assignment while the executable
 body comparison stays fixed. -/
 theorem checkBodyStep_reassign (body : BodySubtyping G)
     (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
+    (ord : ∀ {A B p}, checkUsing G images A B p = true → body.check A B p = true)
+    (ord' : ∀ {A B p}, checkUsing (reassign G η) (images.reassign η) A B p = true → body'.check A B p = true)
     (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)
-    (codes : CodeEntry ι → Bool) :
-    ((Checker.withSubtyping (reassign G η) (images.reassign η) body').run j k e codes).value =
-      ((Checker.withSubtyping G images body).run j k e codes).value := by
+    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    ((Checker.withSubtyping (reassign G η) (images.reassign η) body' ord').run j k e codes sums).value =
+      ((Checker.withSubtyping G images body ord).run j k e codes sums).value := by
   simp only [Checker.withSubtyping, Checker.keepingStable, CheckResult.map, withStable_reassign]
   congr 1
   cases e <;> simp only [Checker.subtypingSteps, CheckResult.value_bind_const,
@@ -336,53 +353,59 @@ theorem checkBodyStep_reassign (body : BodySubtyping G)
 
 theorem checkBodyNode_reassign (body : BodySubtyping G)
     (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
+    (ord : ∀ {A B p}, checkUsing G images A B p = true → body.check A B p = true)
+    (ord' : ∀ {A B p}, checkUsing (reassign G η) (images.reassign η) A B p = true → body'.check A B p = true)
     (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
-    (c : NodeEvidence ι) (codes : CodeEntry ι → Bool) :
+    (c : NodeEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     checkNodeUsing (reassign G η) (images.reassign η) Rty P C node c codes
-      (Checker.withSubtyping (reassign G η) (images.reassign η) body') =
-    checkNodeUsing G images Rty P C node c codes (Checker.withSubtyping G images body) := by
-  simp only [checkNodeUsing_eq, checkBodyStep_reassign G η images body body' same,
+      (Checker.withSubtyping (reassign G η) (images.reassign η) body' ord') sums =
+    checkNodeUsing G images Rty P C node c codes (Checker.withSubtyping G images body ord) sums := by
+  simp only [checkNodeUsing_eq, checkBodyStep_reassign G η images body body' same ord ord',
     checkHandler_reassign, checkTarget_reassign, checkBranchTarget_reassign, checkYields_reassign,
     checkReturn_reassign]
   rfl
 
 theorem checkBodyGraph_reassign (body : BodySubtyping G)
     (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
+    (ord : ∀ {A B p}, checkUsing G images A B p = true → body.check A B p = true)
+    (ord' : ∀ {A B p}, checkUsing (reassign G η) (images.reassign η) A B p = true → body'.check A B p = true)
     (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι)
-    (codes : CodeEntry ι → Bool) :
+    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     checkGraphUsing (reassign G η) (images.reassign η) Rty P C codes
-      (Checker.withSubtyping (reassign G η) (images.reassign η) body') =
-    checkGraphUsing G images Rty P C codes (Checker.withSubtyping G images body) := by
-  simp only [checkGraphUsing_eq, checkBodyNode_reassign G η images body body' same]
+      (Checker.withSubtyping (reassign G η) (images.reassign η) body' ord') sums =
+    checkGraphUsing G images Rty P C codes (Checker.withSubtyping G images body ord) sums := by
+  simp only [checkGraphUsing_eq, checkBodyNode_reassign G η images body body' same ord ord']
 
 theorem checkBodyEntry_reassign (body : BodySubtyping G)
     (body' : BodySubtyping (reassign G η)) (same : body'.check = body.check)
+    (ord : ∀ {A B p}, checkUsing G images A B p = true → body.check A B p = true)
+    (ord' : ∀ {A B p}, checkUsing (reassign G η) (images.reassign η) A B p = true → body'.check A B p = true)
     (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (List ι)) (codes : CodeEntry ι → Bool) :
+    (inputs : List (List ι)) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     checkEntryUsing (reassign G η) (images.reassign η) Rty P C start inputs codes
-      (Checker.withSubtyping (reassign G η) (images.reassign η) body') =
-    checkEntryUsing G images Rty P C start inputs codes (Checker.withSubtyping G images body) := by
-  simp only [checkEntryUsing_eq, checkBodyGraph_reassign G η images body body' same]
+      (Checker.withSubtyping (reassign G η) (images.reassign η) body' ord') sums =
+    checkEntryUsing G images Rty P C start inputs codes (Checker.withSubtyping G images body ord) sums := by
+  simp only [checkEntryUsing_eq, checkBodyGraph_reassign G η images body body' same ord ord']
 
 theorem checkNode_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (node : Node)
-    (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) :
-    checkNodeUsing (reassign G η) (images.reassign η) Rty P C node c codes =
-      checkNodeUsing G images Rty P C node c codes := by
+    (c : NodeEvidence ι) (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
+    checkNodeUsing (sums := sums) (reassign G η) (images.reassign η) Rty P C node c codes =
+      checkNodeUsing (sums := sums) G images Rty P C node c codes := by
   simp only [checkNodeUsing_eq, Checker.ordinary, Checker.keepingStable, Checker.steps, CheckResult.map,
     withStable_reassign, checkHandler_reassign, checkStepResult_value_reassign, checkTarget_reassign,
     checkBranchTarget_reassign, checkYields_reassign, checkReturn_reassign]
   rfl
 
 theorem checkGraph_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) :
-    checkGraphUsing (reassign G η) (images.reassign η) Rty P C codes =
-      checkGraphUsing G images Rty P C codes := by
+    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
+    checkGraphUsing (sums := sums) (reassign G η) (images.reassign η) Rty P C codes =
+      checkGraphUsing (sums := sums) G images Rty P C codes := by
   simp only [checkGraphUsing_eq, checkNode_reassign]
 
 theorem checkEntry_reassign (Rty : ControlFlow.Goal ι) (P : Program) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (List ι)) (codes : CodeEntry ι → Bool := fun _ => false) :
-    checkEntryUsing (reassign G η) (images.reassign η) Rty P C start inputs codes =
-      checkEntryUsing G images Rty P C start inputs codes := by
+    (inputs : List (List ι)) (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
+    checkEntryUsing (sums := sums) (reassign G η) (images.reassign η) Rty P C start inputs codes =
+      checkEntryUsing (sums := sums) G images Rty P C start inputs codes := by
   simp only [checkEntryUsing_eq, checkGraph_reassign]
 
 /-- **Acceptance reads no assignment.** A graph's evidence is accepted exactly
@@ -390,23 +413,24 @@ when it is accepted for every reassignment of the graph's parameter rows, by
 the same image checker. -/
 theorem accept_reassign (R : ControlFlow.Goal ι) (P : Program) (claims : List (CertificateProducer.PointClaim ι))
     (C : ControlFlow.Certificate ι) (start : Nat) (inputs : List (List ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) :
-    CertificateProducer.acceptUsing (reassign G η) (images.reassign η) R P claims C start inputs codes =
-      CertificateProducer.acceptUsing G images R P claims C start inputs codes := by
+    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) :
+    CertificateProducer.acceptUsing (sums := sums) (reassign G η) (images.reassign η) R P claims C start inputs codes =
+      CertificateProducer.acceptUsing (sums := sums) G images R P claims C start inputs codes := by
   simp only [CertificateProducer.acceptUsing_eq, checkEntry_reassign]
 
 /-- **Parametricity.** Accepted evidence is safe at every assignment of the
 graph's parameter rows: every input environment meeting the inputs read at
 `η` runs safely to a result of the result type read at `η`. -/
 theorem accepted_at {G : NormalGraph ι} {images : InstanceImageCheck G} {R : ControlFlow.Goal ι} {P claims C start inputs}
-    {codes : CodeEntry ι → Bool}
-    (hc : CertificateProducer.acceptUsing G images R P claims C start inputs codes = true)
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hc : CertificateProducer.acceptUsing (sums := sums) G images R P claims C start inputs codes = true)
     (η : MixedAssignment ι) (n W h ρ)
     (he : EnvOk (reassign G η) inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hcodes : CodesSound (reassign G η) codes := by exact Verification.ProgramCertificates.codesSound_none _) :
+    (hcodes : CodesSound (reassign G η) codes := by exact Verification.ProgramCertificates.codesSound_none _)
+    (hsums : SummariesSound G images sums := by exact Verification.ProgramCertificates.summariesSound_none _ _) :
     SafeGraph (excOf (reassign G η)) P (ControlFlow.GoalHolds (reassign G η) R (R.argument ρ)) n W h (.at start ρ) := by
-  have hc' := (accept_reassign G η images R P claims C start inputs codes).trans hc
+  have hc' := (accept_reassign G η images R P claims C start inputs codes sums).trans hc
   simp only [CertificateProducer.acceptUsing_eq, Bool.and_eq_true] at hc'
-  exact ControlFlow.accepted_inputs_safe hc'.2 n W h ρ he hw hh hcodes
+  exact ControlFlow.accepted_inputs_safe hc'.2 n W h ρ he hw hh hcodes (summariesSound_reassign G η images hsums)
 
 end Verification.Parametricity

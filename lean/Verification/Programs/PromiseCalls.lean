@@ -794,9 +794,10 @@ checked at, at the same receiver and actuals, so the call's own run is one the
 promise is about (`CallEffects.call_safe`). The result meets the claim's type,
 and the facts kept are those no call changes. -/
 theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {e : Evidence ι}
-    {codes : CodeEntry ι → Bool} {effect a T} {ys : List (Yield ι)}
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {effect a T} {ys : List (Yield ι)}
     (hp : promiseOf G e = some (effect, a, T))
-    (ht : checkTreeUsing G images e codes = true) (hcodes : CodesSound G codes)
+    (ht : checkTreeUsing G images e codes sums = true) (hcodes : CodesSound G codes)
+    (hsums : SummariesSound G images sums)
     (hy : promiseYields G (claim e).type effect a T ys = true)
     {k ρ n W h} (he : EnvOk G (claim e).context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
@@ -816,7 +817,7 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
   have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
     intro p hm
     obtain ⟨e, heq, rfl⟩ := List.mem_map.mp hm
-    exact checkTreeUsing_sound e (ht.2 ⟨e, heq⟩ (by simp)) hcodes
+    exact checkTreeUsing_sound e (ht.2 ⟨e, heq⟩ (by simp)) hcodes hsums
   have hvals' : ∀ p ∈ ps.map claim, ExpressionEffects.valueTerm p.term = true ∧
       checkScope p.context.length p.term = true := by
     intro p hm

@@ -353,10 +353,14 @@ graph, as `claims` is for the program.
 
 The evidence for a request (`Response`) is `{"certificate": [...]}`, a list
 of node evidence per program node, and, when the request has codes,
-`"codes"`: one such list per code request, in its order. The codes are
-checked first, in order, each at its entry `[store, receiver, parameters…,
-captures…]` (no store without a rest) and its row's result, each seeing the
-codes before it; the program is then checked seeing them all.
+`"codes"`: one such list per code request, in its order; and, when its
+derivations use any, `"readSummaries"`, the request's
+[read summaries](#read-summaries). The summaries are checked first, each
+once; the codes then, in order, each at its entry `[store, receiver,
+parameters…, captures…]` (no store without a rest) and its row's result,
+each seeing the codes before it; the program is then checked seeing them
+all. The request's expression obligations in the
+[bundle](#source-evidence-bundle) use the same summaries.
 
 A node's evidence (`NodeEvidence`) has the fields:
 
@@ -403,8 +407,8 @@ A derivation node names the
 `elemOpt`, `elemAny`, `ifBool`, `ifTrue`, `ifFalse`, `ifKnown`, `ifBoolVar`,
 `unionVar`, `callCallable`, `readCallable`, `readBagView`, `writeCallable`,
 `arrParts`, `callRest`, `callPacked`, `bindE`, `bindRestE`, `bindMember`,
-`construct`, `constructRest`, `sub`, `throw`, `merge`, `makeKey` or
-`lenView`. `RequestJson.lean` derives the codec of `Rule`, so the rules are the
+`construct`, `constructRest`, `sub`, `throw`, `merge`, `makeKey`,
+`lenView` or `readSummary`. `RequestJson.lean` derives the codec of `Rule`, so the rules are the
 inductive's constructors and a rule added there extends the protocol;
 `tests/rule-inventory.mts` holds the two to the same set. By kind:
 
@@ -439,7 +443,10 @@ inductive's constructors and a rule added there extends the protocol;
   view); `lenView` with its `slot`, a view of `length` of the object in a
   context slot, by the term that tests it for an array; `readProto` with
   `proto`, a key one of a record's own-key bounds does not admit read from
-  the prototype the record holds under `[[proto]]`.
+  the prototype the record holds under `[[proto]]`; `readSummary` with its
+  `index`, no premises, a read `readAt f (var x)` at entry `index` of the
+  request's read summaries, whose key and result are the read's and whose
+  receiver is the context's type at `x`.
 - **Operators and tests.** `arith`, a binary operator on two operands whose
   types it answers for pair by pair: arithmetic on two numbers or two
   bigints, a comparison on two numeric operands or two strings, equality
@@ -525,6 +532,21 @@ inductive's constructors and a rule added there extends the protocol;
   the method's order. With no proofs, the result may instead be one of the
   method's quantified signatures, a scheme row (`HasTyUsing.bindScheme`),
   which a call instantiates by `sub`.
+
+### Read summaries
+
+`readSummaries` lists entries `{"receiver": C, "field": f, "result": B,
+"arms": [...]}`, one arm per member of `C` in `members` order, each
+`{"view": A, "proof": p}`: the view the member states for `f` and the
+subtype choices comparing `A` to `B`, or `null` where `A` is `B`. An
+entry is checked once against the request's graph and image check: exactly
+one arm per member, each member's view of `f` at `A` (a view of `length`
+only at a type shown to exclude some number, as `readView` requires) and
+each comparison accepted by the
+ordinary subtype checker
+([read summaries](PROGRAM-TYPING.md#read-summaries)). An entry states no
+location, heap fact or cached value, and a summary field beside these is
+refused.
 
 ### Subtype certificates
 

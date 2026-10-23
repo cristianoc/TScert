@@ -259,6 +259,109 @@ any named position's type. -/
 @[nospecialize] def namedAt (T : Tuple (Ty ι)) (b : UInt64) : Option (Ty ι) :=
   (indexOfBits b).bind fun k => positionTy T k
 
+/-! ### Read summaries
+
+A read summary states, for a receiver type `C`, a key `f` and a result `B`,
+that every member of `C` (`members`, enumerated by the checker) states `f`
+as a readonly view whose type is within `B`. It is a judgment about types
+alone: in any context whose slot `i` holds `C`, `readAt f (var i)` has type
+`B` by `unionVar`, then per member `var`, `readView` and `sub`
+(`readSummary_sound`). It names no context, no heap and no code entry. -/
+
+/-- One member's arm of a read summary: the view the member states for the
+key, and the choices comparing it to the summary's result, none where the
+view's type is the result itself. -/
+structure SummaryArm (ι : Type) where
+  view : Ty ι
+  proof : Option (PositiveCertificates.SubtypeChoices ι) := none
+
+/-- A read summary: one arm per member of `receiver`, in `members` order. -/
+structure ReadSummary (ι : Type) where
+  receiver : Ty ι
+  field : PropKey
+  result : Ty ι
+  arms : List (SummaryArm ι)
+
+/-- The member `a` states `f` as a readonly view at `A`, as `readView` reads
+it at a receiver of type `[a]`: a view of `length` only at a type excluding
+a number. -/
+@[nospecialize] def summaryView [DecidableEq ι] (G : NormalGraph ι) (f : PropKey) (a : ι) (A : Ty ι) : Bool :=
+  match expand G [a] with
+  | [c] => match namedMembers c with
+    | some (_, vs) => decide ((f, A) ∈ vs) && (decide (f ≠ lengthKey) || lengthExcluded G A)
+    | none => false
+  | _ => false
+
+/-- One arm checked: its view, then its comparison to the result. -/
+@[nospecialize] def summaryArmResult [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (f : PropKey) (B : Ty ι) (a : ι)
+    (arm : SummaryArm ι) : CheckResult ι Unit :=
+  (CheckResult.ofBool (summaryView G f a arm.view)).bind fun _ =>
+    match arm.proof with
+    | none => CheckResult.ofBool (decide (arm.view = B))
+    | some p => checkSubtypeUsing G images arm.view B p
+
+/-- A summary checked: exactly one arm per member of the receiver, each
+member's arm checked. Unfinished subtype work is retained. -/
+@[nospecialize] def checkReadSummaryResult [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (s : ReadSummary ι) : CheckResult ι Unit :=
+  let ms := members G s.receiver
+  (CheckResult.ofBool (ms.length == s.arms.length)).bind fun _ =>
+    CheckResult.all (ms.zip s.arms) fun x => summaryArmResult G images s.field s.result x.1 x.2
+
+@[nospecialize] def checkReadSummary [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (s : ReadSummary ι) : Bool :=
+  (checkReadSummaryResult G images s).accepted
+
+theorem summaryArmResult_accepted [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (f : PropKey) (B : Ty ι) (a : ι)
+    (arm : SummaryArm ι) :
+    (summaryArmResult G images f B a arm).accepted =
+      (summaryView G f a arm.view && match arm.proof with
+        | none => decide (arm.view = B)
+        | some p => PositiveCertificates.checkUsing G images arm.view B p) := by
+  unfold summaryArmResult
+  rw [CheckResult.accepted_bind, CheckResult.accepted_ofBool]
+  cases arm.proof with
+  | none => rw [CheckResult.accepted_ofBool]
+  | some p => rw [checkSubtypeUsing_accepted]
+
+/-- The acceptance of a summary, as Booleans. -/
+theorem checkReadSummary_eq [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (s : ReadSummary ι) :
+    checkReadSummary G images s =
+      ((members G s.receiver).length == s.arms.length &&
+        ((members G s.receiver).zip s.arms).all fun x =>
+          summaryView G s.field x.1 x.2.view && match x.2.proof with
+            | none => decide (x.2.view = s.result)
+            | some p => PositiveCertificates.checkUsing G images x.2.view s.result p) := by
+  unfold checkReadSummary checkReadSummaryResult
+  simp only [CheckResult.accepted_bind, CheckResult.accepted_ofBool, CheckResult.accepted_all,
+    summaryArmResult_accepted]
+
+/-- A table of read summaries is sound where each entry checks. The table
+of a request is checked once (`checkReadSummaries`); a use looks an entry
+up by index and checks only its own judgment. -/
+def SummariesSound [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (sums : List (ReadSummary ι)) : Prop :=
+  ∀ s ∈ sums, checkReadSummary G images s = true
+
+theorem summariesSound_none [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) : SummariesSound G images [] := by
+  intro s hs; cases hs
+
+/-- Every entry of a table checked, unfinished subtype work retained. -/
+@[nospecialize] def checkReadSummariesResult [DecidableEq ι] (G : NormalGraph ι)
+    (images : PositiveCertificates.InstanceImageCheck G) (sums : List (ReadSummary ι)) : CheckResult ι Unit :=
+  CheckResult.all sums (checkReadSummaryResult G images)
+
+theorem checkReadSummaries_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {sums : List (ReadSummary ι)}
+    (h : (checkReadSummariesResult G images sums).accepted = true) : SummariesSound G images sums := by
+  intro s hs
+  rw [checkReadSummariesResult, CheckResult.accepted_all, List.all_eq_true] at h
+  exact h s hs
+
 inductive Rule (ι : Type) where
   | var | nul | undef | tru | fls | truLit | flsLit | numLit | num | strLit | str
   | bigintLit | bigint
@@ -338,6 +441,9 @@ inductive Rule (ι : Type) where
   | makeKey
   /-- `length` through a view of the object in a slot (`lengthRead`). -/
   | lenView (slot : Nat)
+  /-- A read of a slot's object at the entry `index` of the request's read
+  summaries, whose receiver is the slot's type (`readSummary_sound`). -/
+  | readSummary (index : Nat)
 
 inductive Evidence (ι : Type) where
   | node (claim : Sequent ι) (rule : Rule ι) (premises : List (Evidence ι))
@@ -669,6 +775,15 @@ with each aliased label read as its alias. -/
     (!aliases.isEmpty &&
       lexicalComparison G images source (renameTy aliases A) (renameTy aliases B) proof)
 
+/-- Body subsumption admits every ordinary comparison: a read summary's
+comparisons, made by the ordinary checker, hold in a qualified body. -/
+theorem lexicalBodyCheck_ordinary [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {source : SchemeRow ι}
+    {aliases : List (ι × ι)} {A B : Ty ι} {proof : PositiveCertificates.SubtypeChoices ι}
+    (h : PositiveCertificates.checkUsing G images A B proof = true) :
+    lexicalBodyCheck G images source aliases A B proof = true := by
+  simp [lexicalBodyCheck, lexicalComparison, h]
+
 theorem lexicalComparison_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {source : SchemeRow ι}
     {N : Fam} {C : ResolutionDescriptors.Capabilities (excOf G) N}
@@ -726,7 +841,8 @@ declared bounds. -/
 @[nospecialize] def LocalUsing [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι) (ps : List (Sequent ι))
     (codes : CodeEntry ι → Bool := fun _ => false)
     (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool :=
-      PositiveCertificates.checkUsing G images) : Prop :=
+      PositiveCertificates.checkUsing G images)
+    (sums : List (ReadSummary ι) := []) : Prop :=
   match r with
   | .var =>
     match j.term, ps with
@@ -1235,12 +1351,19 @@ declared bounds. -/
        | [c] => (lengthKey, j.type) ∈ ((namedMembers c).map Prod.snd).getD []
        | _ => False)
     | _, _ => False
+  -- A use of a checked summary: its key, its result, and the slot's type its
+  -- receiver; the summary's arms are checked once, in its table.
+  | .readSummary k =>
+    match j.term, ps, sums[k]? with
+    | .readAt f (.var i), [], some s => s.field = f ∧ s.result = j.type ∧ j.context[i]? = some s.receiver
+    | _, _, _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.InstanceImageCheck G)
     (j : Sequent ι) (r : Rule ι) (ps)
     (codes : CodeEntry ι → Bool)
-    (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool) :
-    Decidable (LocalUsing G images j r ps codes subtype) := by
+    (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool)
+    (sums : List (ReadSummary ι)) :
+    Decidable (LocalUsing G images j r ps codes subtype sums) := by
   unfold LocalUsing
   split <;> (try split) <;> try infer_instance
   all_goals try dsimp [Represents, Answers]
@@ -1250,7 +1373,8 @@ instance [DecidableEq ι] (G : NormalGraph ι) (images : PositiveCertificates.In
 retain the subtype outcome; other rule predicates are their declarative checks. -/
 @[nospecialize] def localCheckUsing [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι)
-    (ps : List (Sequent ι)) (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+    (ps : List (Sequent ι)) (codes : CodeEntry ι → Bool := fun _ => false)
+    (sums : List (ReadSummary ι) := []) : CheckResult ι Unit :=
   match r with
   | .sub choices => match ps with
     | [jt] => if jt.context = j.context ∧ jt.term = j.term then
@@ -1269,13 +1393,14 @@ retain the subtype outcome; other rule predicates are their declarative checks. 
     | .unionVar .. | .callCallable .. | .readCallable | .readBagView | .writeCallable | .arrParts ..
     | .callRest .. | .callPacked .. | .bindE | .bindRestE | .construct .. | .constructRest .. | .throw | .merge
     | .makeKey
-    | .lenView .. =>
-      CheckResult.ofBool (decide (LocalUsing G images j r ps codes))
+    | .lenView .. | .readSummary .. =>
+      CheckResult.ofBool (decide (LocalUsing G images j r ps codes (sums := sums)))
 
 theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι)
-    (ps : List (Sequent ι)) (codes : CodeEntry ι → Bool) :
-    (localCheckUsing G images j r ps codes).accepted = decide (LocalUsing G images j r ps codes) := by
+    (ps : List (Sequent ι)) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    (localCheckUsing G images j r ps codes sums).accepted =
+      decide (LocalUsing G images j r ps codes (sums := sums)) := by
   cases r <;> try exact CheckResult.accepted_ofBool _
   case bindMember proofs rests receivers =>
     apply Bool.eq_iff_iff.mpr
@@ -1288,7 +1413,7 @@ theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
       rename_i heq
       unfold LocalUsing
       simp only [heq, and_assoc]
-    · change (false = true) ↔ LocalUsing G images j (.bindMember proofs rests receivers) _ codes
+    · change (false = true) ↔ LocalUsing G images j (.bindMember proofs rests receivers) _ codes (sums := sums)
       simp only [Bool.false_eq_true, false_iff]
       intro h
       unfold LocalUsing at h
@@ -1301,11 +1426,11 @@ theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
       | cons x xs => rfl
       | nil =>
         by_cases h : jt.context = j.context ∧ jt.term = j.term
-        · have hL : LocalUsing G images j (.sub choices) [jt] codes ↔
+        · have hL : LocalUsing G images j (.sub choices) [jt] codes (sums := sums) ↔
               jt.context = j.context ∧ jt.term = j.term ∧
                 PositiveCertificates.checkUsing G images jt.type j.type choices = true := Iff.rfl
           simp [localCheckUsing, h, checkSubtypeUsing_accepted, hL]
-        · have hf : ¬ LocalUsing G images j (.sub choices) [jt] codes := by
+        · have hf : ¬ LocalUsing G images j (.sub choices) [jt] codes (sums := sums) := by
             intro hp
             exact h ⟨hp.1, hp.2.1⟩
           simp only [localCheckUsing, if_neg h, decide_eq_false hf]
@@ -1314,10 +1439,10 @@ theorem localCheckUsing_accepted [DecidableEq ι] (G : NormalGraph ι)
 /-- Check the evidence tree once, retaining unfinished subtype work. -/
 @[nospecialize] def checkTreeResult [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (e : Evidence ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) : CheckResult ι Unit :=
+    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) : CheckResult ι Unit :=
   match e with
-  | .node j r ps => (localCheckUsing G images j r (ps.map claim) codes).bind fun _ =>
-      CheckResult.all ps.attach (fun e => checkTreeResult G images e.val codes)
+  | .node j r ps => (localCheckUsing G images j r (ps.map claim) codes sums).bind fun _ =>
+      CheckResult.all ps.attach (fun e => checkTreeResult G images e.val codes sums)
 termination_by sizeOf e
 decreasing_by
   have := List.sizeOf_lt_of_mem e.property
@@ -1326,16 +1451,16 @@ decreasing_by
 
 @[nospecialize] def checkTreeUsing [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (e : Evidence ι)
-    (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
-  (checkTreeResult G images e codes).accepted
+    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) : Bool :=
+  (checkTreeResult G images e codes sums).accepted
 
 /-- The acceptance projection has exactly the declarative rule premises. -/
 theorem checkTreeUsing_eq [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G) (j : Sequent ι) (r : Rule ι)
-    (ps : List (Evidence ι)) (codes : CodeEntry ι → Bool) :
-    checkTreeUsing G images (.node j r ps) codes =
-      (decide (LocalUsing G images j r (ps.map claim) codes) &&
-        ps.attach.all (fun e => checkTreeUsing G images e.val codes)) := by
+    (ps : List (Evidence ι)) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
+    checkTreeUsing G images (.node j r ps) codes sums =
+      (decide (LocalUsing G images j r (ps.map claim) codes (sums := sums)) &&
+        ps.attach.all (fun e => checkTreeUsing G images e.val codes sums)) := by
   rw [checkTreeUsing, checkTreeResult, CheckResult.accepted_bind, CheckResult.accepted_all,
     localCheckUsing_accepted]
   rfl
@@ -1571,9 +1696,60 @@ theorem funGraphSelf_of_local [DecidableEq ι] {G : NormalGraph ι}
       (of_decide_eq_true hok.1) (by rw [hfst]; exact offersChecked_sound hcodes hok.2 G.env) hlt hcap
   · contradiction
 
+/-- **A checked read summary types the read.** In any context whose slot `i`
+holds the summary's receiver, `readAt f (var i)` has the summary's result:
+`unionVar` on the slot, then per member its view (`var`, `readView`) and
+the arm's comparison (`sub`), each comparison accepted by the ordinary
+checker and so by any body rule that admits the ordinary one (`hord`). -/
+theorem readSummary_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} {subtyping : BodySubtyping G}
+    {s : ReadSummary ι} {Γ : List (Ty ι)} {i : Nat}
+    (hs : checkReadSummary G images s = true) (hi : Γ[i]? = some s.receiver)
+    (hord : ∀ {A B p}, PositiveCertificates.checkUsing G images A B p = true → subtyping.check A B p = true) :
+    HasTyUsing G images (subtyping := subtyping) Γ (.readAt s.field (.var i)) s.result := by
+  rw [checkReadSummary_eq] at hs
+  simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hs
+  obtain ⟨hlen, hall⟩ := hs
+  have hlt : i < Γ.length := (List.getElem?_eq_some_iff.mp hi).1
+  apply HasTyWith.unionVar hi
+  intro a ha
+  obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem ha
+  have hk' : k < s.arms.length := hlen ▸ hk
+  have hmem : ((members G s.receiver)[k], s.arms[k]) ∈ (members G s.receiver).zip s.arms := by
+    have := List.getElem_mem (l := (members G s.receiver).zip s.arms) (n := k) (by simp only [List.length_zip]; omega)
+    simpa [List.getElem_zip] using this
+  have harm := hall _ hmem
+  obtain ⟨hview, hproof⟩ := harm
+  have hset : (Γ.set i [(members G s.receiver)[k]])[i]? = some [(members G s.receiver)[k]] := by
+    simp [hlt]
+  have hvar : HasTyUsing G images (subtyping := subtyping) (Γ.set i [(members G s.receiver)[k]]) (.var i)
+      [(members G s.receiver)[k]] := HasTyWith.var hset
+  unfold summaryView at hview
+  split at hview
+  · rename_i c hc
+    split at hview
+    · rename_i fs vs hn
+      simp only [Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq] at hview
+      obtain ⟨hin, hlength⟩ := hview
+      have hread := HasTyWith.readView (subtyping := subtyping) hvar hc hn hin hlength
+      cases hp : s.arms[k].proof with
+      | none =>
+        rw [hp] at hproof
+        simp only [decide_eq_true_eq] at hproof
+        rw [← hproof]
+        exact hread
+      | some p =>
+        rw [hp] at hproof
+        exact HasTyWith.sub hread (hord hproof)
+    · contradiction
+  · contradiction
+
 theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {subtyping : BodySubtyping G} {j r ps} {codes : CodeEntry ι → Bool}
-    (hl : LocalUsing G images j r ps codes subtyping.check) (hcodes : CodesSound G codes)
+    {sums : List (ReadSummary ι)}
+    (hl : LocalUsing G images j r ps codes subtyping.check sums) (hcodes : CodesSound G codes)
+    (hsums : SummariesSound G images sums)
+    (hord : ∀ {A B p}, PositiveCertificates.checkUsing G images A B p = true → subtyping.check A B p = true)
     (hp : ∀ p ∈ ps, HasTyUsing G images (subtyping := subtyping) p.context p.term p.type) : HasTyUsing G images (subtyping := subtyping) j.context j.term j.type := by
   rcases j with ⟨Γ, t, A⟩
   unfold LocalUsing at hl
@@ -2312,19 +2488,23 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         simp only [hc, Option.map_some, Option.getD_some] at hr
         exact .lenView hR he hc hr hnum
     · contradiction
+  · rename_i f i _ s hs
+    obtain ⟨rfl, rfl, hi⟩ := hl
+    exact readSummary_sound (hsums s (List.mem_of_getElem? hs)) hi hord
 
 theorem checkTreeUsing_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
-    {codes : CodeEntry ι → Bool} (he : checkTreeUsing G images e codes = true)
-    (hcodes : CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _) :
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (he : checkTreeUsing G images e codes sums = true)
+    (hcodes : CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _)
+    (hsums : SummariesSound G images sums := by exact Verification.ProgramCertificates.summariesSound_none _ _) :
     HasTyUsing G images (claim e).context (claim e).term (claim e).type := by
   cases e with
   | node j r ps =>
     simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at he
-    apply local_sound he.1 hcodes
+    apply local_sound he.1 hcodes hsums (fun h => h)
     intro p hp
     obtain ⟨e, he', rfl⟩ := List.mem_map.mp hp
-    exact checkTreeUsing_sound e (he.2 ⟨e, he'⟩ (by simp)) hcodes
+    exact checkTreeUsing_sound e (he.2 ⟨e, he'⟩ (by simp)) hcodes hsums
 termination_by sizeOf e
 
 /-- Expression evidence under a body's subsumption rule. The rule and every
@@ -2332,10 +2512,10 @@ premise are checked, including closure captures and the checked code table. -/
 @[nospecialize] def checkTreeWith [DecidableEq ι] (G : NormalGraph ι)
     (images : PositiveCertificates.InstanceImageCheck G)
     (subtype : Ty ι → Ty ι → PositiveCertificates.SubtypeChoices ι → Bool)
-    (e : Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false) : Bool :=
+    (e : Evidence ι) (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) : Bool :=
   match e with
-  | .node j r ps => decide (LocalUsing G images j r (ps.map claim) codes subtype) &&
-      ps.attach.all (fun p => checkTreeWith G images subtype p.val codes)
+  | .node j r ps => decide (LocalUsing G images j r (ps.map claim) codes subtype sums) &&
+      ps.attach.all (fun p => checkTreeWith G images subtype p.val codes sums)
 termination_by sizeOf e
 decreasing_by
   have := List.sizeOf_lt_of_mem p.property
@@ -2344,18 +2524,19 @@ decreasing_by
 
 theorem checkTreeWith_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (subtyping : BodySubtyping G)
-    (e : Evidence ι) {codes : CodeEntry ι → Bool}
-    (he : checkTreeWith G images subtyping.check e codes = true)
-    (hcodes : CodesSound G codes) :
+    (e : Evidence ι) {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (he : checkTreeWith G images subtyping.check e codes sums = true)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    (hord : ∀ {A B p}, PositiveCertificates.checkUsing G images A B p = true → subtyping.check A B p = true) :
     HasTyUsing G images (subtyping := subtyping)
       (claim e).context (claim e).term (claim e).type := by
   cases e with
   | node j r ps =>
     simp only [checkTreeWith, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at he
-    apply local_sound he.1 hcodes
+    apply local_sound he.1 hcodes hsums hord
     intro p hp
     obtain ⟨e, he', rfl⟩ := List.mem_map.mp hp
-    exact checkTreeWith_sound subtyping e (he.2 ⟨e, he'⟩ (by simp)) hcodes
+    exact checkTreeWith_sound subtyping e (he.2 ⟨e, he'⟩ (by simp)) hcodes hsums hord
 termination_by sizeOf e
 
 
