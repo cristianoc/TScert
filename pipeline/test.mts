@@ -42,7 +42,7 @@ import { checkOverloads } from "./overload-claims.mts";
 import { checkDefaults, checkSchemeDefaults, checkEarlyDefault, checkPatternDefaults } from "./default-parameters.mts";
 import { decodeFlowDocument, type ExecutionPlan, type ExecutionOperation } from "../tools/source-flow.mts";
 import { runExample } from "./run-example.mts";
-import { checkMutation, forgedEvidence, useMutationVerifier } from "./evidence-mutations.mts";
+import { checkMutation, forgedEvidence, mutationVerifier, useMutationVerifier } from "./evidence-mutations.mts";
 const here = import.meta.dirname;
 
 /** The controls, each a block of this file, registered in order. The
@@ -4800,12 +4800,13 @@ control(async (): Promise<void> => {
 });
 
 control(async (): Promise<void> => {
-  // A guard's reread of `kind` answered by a fact of it links its result
-  // presently where every arm of the receiver states `kind`
-  // (`read-observed-present`). The producer refuses a union with an arm
-  // lacking `kind` (`invalid-guard-after-kind-missing`); claims stating it
-  // there, the fact of `kind` kept at the guard's entry, are refused by
-  // search and by the checker. The neighbour's arm states `kind` and decodes.
+  // Claim admissibility (the claims decoder): a fact of a field is claimed
+  // at a statement entry only where every record arm of the binding's type
+  // names the field. The producer refuses a union with an arm lacking `kind`
+  // (`invalid-guard-after-kind-missing`); claims widening the node at the
+  // guard's entry by such an arm, the fact of `kind` kept, are refused by
+  // search and by the checker at decoding, located at the entry. The
+  // neighbour's arm states `kind` and decodes.
   const artifacts = run("compiler-api-guard-after-kind-tests");
   const source = readFileSync(sourceKey(artifacts), "utf8");
   const start = source.indexOf("if (ts.isParenthesizedExpression(node))");
@@ -4823,14 +4824,49 @@ control(async (): Promise<void> => {
     node.type = [arm, ...declared];
     return writeClaims(artifacts, name, claims);
   };
-  const decoder = "invalid source claims: duplicate identity, span, binding or type labels";
+  const decoder = `invalid source claims: invalid current-contents field of 'node' at the entry at ${start}`;
   const missing = forge("forged-guard-kind-missing-arm", false);
   refusedAt(artifacts, missing, "forged-guard-kind-missing-arm", decoder);
   assert.ok(invoke(missing, join(artifacts, "evidence.json"), artifacts).includes(decoder));
   const neighbour = forge("guard-kind-stated-arm", true);
   const searched = produceWith(artifacts, neighbour, "guard-kind-stated-arm");
   assert.ok(!(searched.stdout + searched.stderr).includes(decoder), searched.stdout + searched.stderr);
-  process.stdout.write("guard after kind tests: a fact of kind at a receiver with an arm lacking kind refused in search and check, its neighbour stating kind decoded\n");
+  process.stdout.write("guard after kind tests: a fact of kind at a receiver with an arm lacking kind refused by the claims decoder in search and check, its neighbour stating kind decoded\n");
+});
+
+mutationControl(async (): Promise<void> => {
+  // The presence decision of `read-observed-present` alone: the guard's
+  // reread of `kind`, answered by the fact the failed tests leave, links its
+  // result presently since `Node` states `kind`, and the guard's true edge
+  // narrows the node through that link. The test-only verifier withholding
+  // it (`absent`: the read's link optional whatever the receiver's type
+  // states) refuses the same claims in search at the guard's true edge and
+  // the honest evidence at the guard; without the mutation it accepts both.
+  const artifacts = run("compiler-api-guard-after-kind-tests");
+  const source = readFileSync(sourceKey(artifacts), "utf8");
+  const ret = source.indexOf("return literal(node.expression);");
+  const guard = source.indexOf("ts.isParenthesizedExpression(node)");
+  const claims = join(artifacts, "claims.json");
+  const call = (args: string[], mutations: string): Invoked =>
+    tested(verifierCall(mutationVerifier(), args, { TSCERT_TEST_MUTATIONS: mutations }));
+  const search = (mutations: string): Invoked => call(["--produce-source-claims", join(artifacts, "fragment.json"),
+    claims, sourceKey(artifacts), join(artifacts, `presence-${mutations || "none"}-evidence.json`), "12"], mutations);
+  const check = (mutations: string): Invoked => call(["--check-source-claims", join(artifacts, "fragment.json"),
+    claims, sourceKey(artifacts), join(artifacts, "evidence.json")], mutations);
+  const words = (p: Invoked): string => p.stdout + p.stderr;
+  const plain = search("");
+  assert.equal(plain.status, 0, words(plain));
+  const withheld = search("absent");
+  assert.equal(withheld.status, 1, words(withheld));
+  assert.ok(words(withheld).includes(
+    `source incoming edge obligation at [${ret},${ret + "return literal(node.expression);".length})`), words(withheld));
+  const accepted = check("");
+  assert.equal(accepted.status, 0, words(accepted));
+  const refused = check("absent");
+  assert.equal(refused.status, 1, words(refused));
+  assert.ok(words(refused).includes(
+    `source evidence refusal at [${guard},${guard + "ts.isParenthesizedExpression(node)".length})`), words(refused));
+  process.stdout.write("guard after kind tests: the observed read's present link withheld, search refused at the guard's true edge and the honest evidence at the guard; both accepted with it\n");
 });
 
 control(async (): Promise<void> => {
