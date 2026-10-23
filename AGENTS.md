@@ -26,46 +26,33 @@ make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of
 
 ### The stage store
 
-Every stage invocation goes through [one mechanism](pipeline/stages.mts),
-and every stage replays from [the stage store](docs/STAGE-STORE.md)
-by content: the parse and TypeScript's diagnostics as
-[observed stages](docs/STAGE-STORE.md#observed-stages), keyed by the file system's
-answers to their reads, on macOS, where the compiler runs confined by
-`sandbox-exec`.
+Every stage and every operation of a control replays from
+[the stage store](docs/STAGE-STORE.md) by content, through
+[one mechanism](pipeline/stages.mts); the parse and TypeScript's diagnostics
+replay as [observed stages](docs/STAGE-STORE.md#observed-stages) on macOS.
 
 - The front end reads the file system only through `tools/files.mts`, and
   opens its compiler only through `openFrontEndCompiler`
   (`tools/compiler-channel.mts`); `tests/observed-stages.mts --reads`, a fast
   check, refuses a module of the stages' code that imports a file-system,
   module or process API itself.
-- A key covers the node side's code by directory: a process stage every
-  `.mts` file directly in `pipeline/`, an in-process stage those of
-  `pipeline/` and `tools/`, each by content, but the files named in
-  `unkeyed` (`pipeline/stage-execution.mts`, listed with their reasons in
-  [keys](docs/STAGE-STORE.md#keys)): the replay policy, the store, the
-  orchestration, the controls and the diagnostics. Editing an unkeyed file
-  replays every entry; editing or adding any other file there misses every
-  entry it keys. A new file that only orchestrates or presents goes on that
-  list, with its reason, in the same commit.
-
+- A key covers every `.mts` file directly in `pipeline/` (and in `tools/` for
+  an in-process stage) by content, but the files `unkeyed` names
+  (`pipeline/stage-execution.mts`). Editing an unkeyed file replays every
+  entry; editing or adding any other file there misses every entry it keys.
+  A new file that only orchestrates or presents goes on `unkeyed`, with its
+  role stated in [keys](docs/STAGE-STORE.md#keys), in the same commit.
 - `TSCERT_STAGE_STORE=<dir>` selects the store, by default
-  `$XDG_CACHE_HOME/tscert/stages` (`~/.cache/tscert/stages`), shared by every
-  checkout and worktree; `TSCERT_STAGE_STORE=off` executes every stage,
-  so `TSCERT_STAGE_STORE=off make test` executes every operation of every
-  control. `make clean-store` removes finished entries, timeout observations and abandoned
-  publication directories on this host; it retains stable source snapshots.
-- A branch uses the default store. Keys include the executables' digests and
-  the keyed code, so a branch's changed verifier, producer, adapter or stage
-  never replays another build's entries; an agent testing the store itself
-  names a store under `$TMPDIR`.
+  `~/.cache/tscert/stages`, shared by every checkout and worktree; `off`
+  executes every stage. A branch uses the default store; an agent testing
+  the store itself names one under `$TMPDIR`. `make clean-store` removes
+  entries and timeout observations.
 - Each process stage is killed after 60 s; `TSCERT_STEP_LIMIT=<seconds>`
-  sets another limit. A timeout is recorded with its limit: a run at that
-  limit or a smaller one reports it again, a longer limit executes the
-  stage, and `TSCERT_RETRY_TIMEOUTS=1` executes it again at the same limit
-  (finished results still replay).
+  sets another limit. A timeout is recorded with its limit and reported
+  again at that limit or a smaller one; `TSCERT_RETRY_TIMEOUTS=1` executes
+  it again at the same limit.
 - A run's directory holds `invocations.jsonl`, each stage invocation's
-  attempt: its stage key, limit, outcome (executed, replayed, timed out,
-  failed) and elapsed time.
+  attempt: its stage key, limit, outcome and elapsed time.
 
 ### Iterating: run what the change touches
 
@@ -77,7 +64,7 @@ that covers what changed, and the wider tier once before committing:
 | OCaml producer (`ocaml-producer/*.ml`) | `dune build --root ocaml-producer`, then `node pipeline/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `make suite`, then `make test` (the controls: forged documents and claims no case can make) |
 | One source file | `node pipeline/verify-source.mts <file.ts> [--project dir]` | — |
 | Lean | `(cd lean && lake build)`, then `run-cases.mts` for the affected cases | `make suite`, then `make test` |
-| Parser, Fragment or SourceClaims wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `make test`, then `make suite` |
+| Parser, Fragment or SourceClaims wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `make suite`, then `make test` |
 
 `run-cases.mts` with no pattern runs every case (26 s on 12 cores, measured
 2026-10-16) and is `make suite` after its build. Cases run in one worker
@@ -128,7 +115,7 @@ merges.
 ### Working in a separate git worktree
 
 A new worktree has an empty `lean/.lake`, and its first
-`lake build` compiles all 180 modules from scratch: 3.5–5 minutes on 12
+`lake build` compiles every module from scratch: 3.5–5 minutes on 12
 cores. Clone the main checkout's cache into it instead, before the first
 build:
 
@@ -168,12 +155,13 @@ It prints the outcome and the directory holding what the run wrote: the
 source snapshot, the parser's `fragment.json`, the producer's `claims.json`
 and the verifier's `evidence.json`.
 
-A change to TScert's own source made so that it verifies (a guard that
-promised more than its body, a type stated at its source, a tag instead of an
-`in` test) is recorded in [source rewrites](docs/SOURCE-REWRITES.md) in the
-same commit: the property the original code lacked, the general rewrite, and
-the commit. A refusal that a verifier fix would remove is fixed in the
-verifier instead.
+TScert's own source is not rewritten to fit the verifier while the
+verifier's rules change ([source rewrites](docs/SOURCE-REWRITES.md)): a
+refusal of TScert's code is fixed in the verifier, or stays a refusal the
+census reports. A change to the source that repairs what the verifier found
+wrong in it (a guard that promised more than its body) is recorded there in
+the same commit: the property the original code lacked, the general
+rewrite, and the commit.
 
 ## Which tests to keep
 
@@ -255,18 +243,15 @@ for every extracted function. Preserve this by construction:
 
 ### Engineering trade-offs
 
-Prefer a simple, useful language over support for every JavaScript corner case.
-Do not add substantial machinery for behavior rarely useful in real programs
-unless its utility justifies the cost. An explicit, enforced restriction is an
-acceptable design decision; completeness for all of TypeScript is not the goal.
-Choose the restriction by the behavior it excludes, not by a particular failing
-example. Document it in SOURCE-FRAGMENT.md, enforce it at the source/semantic boundary,
-and state the same requirement for external code where relevant. Keep a small
-control showing that excluded behavior cannot silently enter the admitted
-fragment. Do not erase a contract or ignore a possible runtime action: a
-restriction simplifies the language, not the meaning of an accepted program.
-Record a motivating ordinary program that remains blocked as unfinished work,
-not as a corner case merely because implementing it is difficult.
+[Utility justifies complexity](docs/DESIGN.md#principles): an explicit,
+enforced restriction is an acceptable decision, chosen by the behaviour it
+excludes, not by a particular failing example. Document it in
+SOURCE-FRAGMENT.md, enforce it at the source/semantic boundary, state the
+same requirement for external code where relevant, and keep a small control
+showing the excluded behaviour cannot silently enter the admitted fragment.
+A restriction simplifies the language, not the meaning of an accepted
+program: never erase a contract or ignore a possible runtime action. A
+motivating ordinary program that stays blocked is open work in WORK.md.
 
 The calculus theorem does not prove that a source annotation was interpreted
 faithfully or that a native library meets its assumed contract. These are
@@ -313,14 +298,12 @@ separate review obligations, even when every Lean proof and suite passes.
   explicitly. Changing an expected result requires inspecting its cause;
   passing tests after reclassification does not close the corresponding goal.
 
-Array presence is separate from read/write capability. Source `T[]` means
-readable elements uniformly in `T`, including after generic substitution; never
-special-case `unknown[]` by spelling. Dense storage and a readable contract are
-distinct when `T` admits `undefined`. Fresh allocation may choose a readable
-lifetime store contract even when its initial contents are dense. An existing
-writable store location cannot change its contract to exploit that fact.
-Preserve the presence mode through every graph/claim mapping and distinguish
-array-store metadata from argument packs, which hold values and have no holes.
+Array presence is separate from read/write capability
+([density belongs to a contract](docs/DESIGN.md#lasting-decisions)). Never
+special-case `unknown[]` by spelling; never let an existing writable store
+location change its contract; preserve the presence mode through every
+graph/claim mapping, and distinguish array-store metadata from argument
+packs, which hold values and have no holes.
 
 For inferred callable effects, follow the
 [elaboration/certification boundary](docs/SOURCE-MODEL.md#inferred-call-effects-elaboration-and-certification).
@@ -370,33 +353,18 @@ increasing trust silently.
   pipe through node's own `_handle`, which bun does not expose
   (`undefined is not an object (evaluating 'stdout._handle.fd')`). Every tool
   that opens the compiler is affected, so this is not a per-suite choice.
-- A unit's boundary is written and what lies inside a unit is inferred.
-  Every function declaration and class member, every function a module
-  binding, a class field or `export default` holds, and every method and
-  function-valued property of an object literal no type gives its context,
-  states the type of each parameter and of its result.
-  `tools/tsconfig.json` sets `isolatedDeclarations`: an export's type is
-  determined by its own syntax, annotated wherever TypeScript would infer it
-  from other code. A local `const` or `let`, and a function written as an
-  argument, are typed by inference. The sources type-check, with no
-  directive silencing the checker, over the external declarations read with
-  each `any` replaced ([shadow contracts](tools/shadow-contracts.mts)): by
-  one opaque type no value has, so TypeScript's own variance refuses every
-  use of it, by the top type in a type-level wildcard, or by the contract
-  the overlay of library globals or a review there states for the member,
-  the compiler API's `any` members an optional `unknown` by reading rule 2;
-  and no value of the sources is typed `any` (a written `any`, an array
-  literal no annotation types). `node tools/unchecked.mts`
-  ([source](tools/unchecked.mts)) reports these, with the boundaries and
-  the assertions, over every file that configuration includes, and fails on
-  one; its header states each rule and what it leaves out, among them a
-  stated limit: the relations that `any` satisfied in an outside
-  declaration are not re-established. Freedom from
-  `any` does not establish that a mutation, a callback's effect, a guard or
-  a native contract keeps a type; that is TScert's to verify. `test-all.sh`
-  runs the command as a suite, over `tests/unchecked-project/`, the
-  counterexamples it must report, and over `tests/unchecked-broken/`, which
-  it must refuse.
+- A unit's boundary is written and what lies inside a unit is inferred:
+  every function declaration, class member, function a module binding, a
+  class field or `export default` holds, and method of an object literal no
+  type gives its context states its parameters' and result's types
+  (`isolatedDeclarations` in `tools/tsconfig.json`); locals and functions
+  written as arguments are inferred. No value of the sources is typed `any`,
+  and they type-check over the external declarations with each `any`
+  replaced ([shadow contracts](tools/shadow-contracts.mts)).
+  `node tools/unchecked.mts` checks both and reports every boundary and
+  assertion; [its header](tools/unchecked.mts) states each rule and its
+  stated limit, and `test-all.sh` runs it over `tests/unchecked-project/`
+  and `tests/unchecked-broken/`.
 - A decoder is the only place that asserts a shape. Everything else narrows:
   a type predicate, a `typeof` before a comparison, a case table keyed by the
   language's own union. `tools/unchecked.mts` reports every `as` and `!` in
