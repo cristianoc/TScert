@@ -445,7 +445,14 @@ if (eligible) sections.push((async (): Promise<void> => {
   const steady = script("steady.sh", `/bin/sleep 1; /bin/cat "$2"`, ["/bin/cat", "/bin/sleep"]);
   const input = file("concurrent.json", "same");
   const both = await Promise.all([child(steady, input), child(steady, input)]);
-  for (const out of both) assert.deepEqual(parsed(out), { execution: "executed", stdout: "same" });
+  // One run executes; the other executes too when the two overlap, and
+  // replays the first's published result when load delays its start.
+  // Either way both give the same output.
+  const executed = JSON.stringify({ execution: "executed", stdout: "same" });
+  const replayed = JSON.stringify({ execution: "replayed", stdout: "same" });
+  const runs = both.map((out) => JSON.stringify(parsed(out)));
+  assert.ok(runs.every((r) => r === executed || r === replayed), runs.join(" "));
+  assert.ok(runs.includes(executed), runs.join(" "));
   assert.equal(readdirSync(join(store.root, "entries", "lower")).length, 1);
   use(store);
   assert.equal(invoke(lower(steady, input)).record.execution, "replayed");
